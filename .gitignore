@@ -93,6 +93,8 @@ rust/**/*.rs.bk
 # ===================
 dotnet/bin/
 dotnet/obj/
+dotnet/**/bin/
+dotnet/**/obj/
 dotnet/*.user
 dotnet/*.suo
 dotnet/*.userosscache
