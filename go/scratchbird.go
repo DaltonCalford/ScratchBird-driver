@@ -13,7 +13,11 @@ func init() {
 type Driver struct{}
 
 func (d *Driver) Open(name string) (driver.Conn, error) {
-	return d.OpenConnector(name).Connect(context.Background())
+	connector, err := d.OpenConnector(name)
+	if err != nil {
+		return nil, err
+	}
+	return connector.Connect(context.Background())
 }
 
 func (d *Driver) OpenConnector(name string) (driver.Connector, error) {

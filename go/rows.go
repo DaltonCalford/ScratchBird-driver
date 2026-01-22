@@ -1,6 +1,7 @@
 package scratchbird
 
 import (
+	"context"
 	"database/sql/driver"
 	"io"
 	"reflect"
@@ -13,6 +14,24 @@ type Rows struct {
 	rowsAffected int64
 	commandTag   string
 	done         bool
+	ctx          context.Context
+	cancel       func()
+}
+
+func newRows(conn *Conn, ctx context.Context) *Rows {
+	rows := &Rows{conn: conn, ctx: ctx}
+	if ctx != nil {
+		cancelCh := make(chan struct{})
+		rows.cancel = func() { close(cancelCh) }
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = conn.sendMessage(msgCancel, buildCancelPayload(0, 0), msgFlagUrgent, false)
+			case <-cancelCh:
+			}
+		}()
+	}
+	return rows
 }
 
 func (r *Rows) Columns() []string {
@@ -26,6 +45,9 @@ func (r *Rows) Columns() []string {
 func (r *Rows) Close() error {
 	if r.done {
 		return nil
+	}
+	if r.cancel != nil {
+		r.cancel()
 	}
 	for !r.done {
 		if _, err := r.nextRow(); err != nil {
@@ -62,23 +84,17 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch msg.typ {
-		case msgQueryError:
-			return nil, buildQueryError(msg.body)
-		case msgQueryResult:
-			_, _, rows, err := parseQueryResult(msg.body)
-			if err != nil {
-				return nil, err
-			}
-			r.rowCountHint = rows
+		switch msg.header.typ {
+		case msgError:
+			return nil, buildProtocolError(msg.body)
 		case msgRowDescription:
 			cols, err := parseRowDescription(msg.body)
 			if err != nil {
 				return nil, err
 			}
 			r.columns = cols
-		case msgRowData:
-			values, err := parseRowData(msg.body)
+		case msgDataRow:
+			values, err := parseDataRow(msg.body, len(r.columns))
 			if err != nil {
 				return nil, err
 			}
@@ -86,25 +102,35 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 			for i, value := range values {
 				if value.null {
 					out[i] = nil
-				} else {
-					typ := wireUnknown
-					if i < len(r.columns) {
-						typ = r.columns[i].wireType
-					}
-					out[i] = decodeValue(typ, value.data)
+					continue
 				}
+				col := columnInfo{}
+				if i < len(r.columns) {
+					col = r.columns[i]
+				}
+				decoded, err := decodeColumnValue(col, value.data)
+				if err != nil {
+					return nil, err
+				}
+				out[i] = decoded
 			}
 			return out, nil
 		case msgCommandComplete:
-			tag, rows, err := parseCommandComplete(msg.body)
+			_, rows, _, tag, err := parseCommandComplete(msg.body)
 			if err != nil {
 				return nil, err
 			}
 			r.commandTag = tag
-			r.rowsAffected = rows
-		case msgEndResults:
+			r.rowsAffected = int64(rows)
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err == nil {
+				r.conn.txnID = txnID
+			}
 			r.done = true
 			return nil, io.EOF
+		default:
+			continue
 		}
 	}
 }
@@ -113,11 +139,14 @@ func (r *Rows) ColumnTypeDatabaseTypeName(index int) string {
 	if index < 0 || index >= len(r.columns) {
 		return ""
 	}
-	return wireTypeName(r.columns[index].wireType)
+	return oidName(r.columns[index].typeOID)
 }
 
 func (r *Rows) ColumnTypeNullable(index int) (nullable, ok bool) {
-	return true, true
+	if index < 0 || index >= len(r.columns) {
+		return true, false
+	}
+	return r.columns[index].nullable, true
 }
 
 func (r *Rows) ColumnTypeLength(index int) (length int64, ok bool) {
@@ -135,5 +164,5 @@ func (r *Rows) ColumnTypeScanType(index int) reflect.Type {
 	if index < 0 || index >= len(r.columns) {
 		return nil
 	}
-	return scanTypeForWire(r.columns[index].wireType)
+	return scanTypeForOID(r.columns[index].typeOID)
 }

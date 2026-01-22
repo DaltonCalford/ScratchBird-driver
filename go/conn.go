@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -15,12 +14,26 @@ import (
 	"time"
 )
 
+const (
+	queryFlagBinaryResult = 0x04
+)
+
+const (
+	formatText   uint16 = 0
+	formatBinary uint16 = 1
+)
+
 type Conn struct {
-	config    Config
-	raw       net.Conn
-	sessionID []byte
-	mu        sync.Mutex
-	closed    bool
+	config       Config
+	raw          net.Conn
+	mu           sync.Mutex
+	closed       bool
+	attachmentID [16]byte
+	txnID        uint64
+	sequence     uint32
+	authed       bool
+	pending      []protocolMessage
+	params       map[string]string
 }
 
 func (c *Conn) connect(ctx context.Context) error {
@@ -34,48 +47,38 @@ func (c *Conn) connect(ctx context.Context) error {
 		return &Error{Kind: ErrConnection, Message: err.Error(), SQLState: "08001"}
 	}
 	c.raw = conn
-	if err := c.applyTLS(ctx, address); err != nil {
-		c.raw.Close()
+	if err := c.applyTLS(ctx); err != nil {
+		_ = c.raw.Close()
 		return err
 	}
 	if err := c.handshake(ctx); err != nil {
-		c.raw.Close()
+		_ = c.raw.Close()
 		return err
 	}
 	return nil
 }
 
-func (c *Conn) applyTLS(ctx context.Context, address string) error {
+func (c *Conn) applyTLS(ctx context.Context) error {
 	mode := strings.ToLower(c.config.SSLMode)
 	if mode == "" {
-		mode = "prefer"
+		mode = "require"
 	}
 	if mode == "disable" {
-		return nil
+		return &Error{Kind: ErrConnection, Message: "TLS is required", SQLState: "08001"}
 	}
-	tlsConfig, err := c.buildTLSConfig(mode)
+	tlsConfig, err := c.buildTLSConfig()
 	if err != nil {
 		return err
 	}
 	tlsConn := tls.Client(c.raw, tlsConfig)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		if mode == "allow" || mode == "prefer" {
-			_ = c.raw.Close()
-			dialer := &net.Dialer{Timeout: c.config.ConnectTimeout}
-			conn, dialErr := dialer.DialContext(ctx, "tcp", address)
-			if dialErr != nil {
-				return &Error{Kind: ErrConnection, Message: dialErr.Error(), SQLState: "08001"}
-			}
-			c.raw = conn
-			return nil
-		}
 		return &Error{Kind: ErrConnection, Message: "TLS handshake failed: " + err.Error(), SQLState: "08001"}
 	}
 	c.raw = tlsConn
 	return nil
 }
 
-func (c *Conn) buildTLSConfig(mode string) (*tls.Config, error) {
+func (c *Conn) buildTLSConfig() (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		ServerName: c.config.Host,
@@ -96,120 +99,129 @@ func (c *Conn) buildTLSConfig(mode string) (*tls.Config, error) {
 		pool.AppendCertsFromPEM(caData)
 		cfg.RootCAs = pool
 	}
-	if mode == "verify-ca" {
-		cfg.InsecureSkipVerify = true
-		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			opts := x509.VerifyOptions{
-				Roots:         cfg.RootCAs,
-				Intermediates: x509.NewCertPool(),
-			}
-			for i := 1; i < len(rawCerts); i++ {
-				cert, err := x509.ParseCertificate(rawCerts[i])
-				if err != nil {
-					continue
-				}
-				opts.Intermediates.AddCert(cert)
-			}
-			leaf, err := x509.ParseCertificate(rawCerts[0])
-			if err != nil {
-				return err
-			}
-			_, err = leaf.Verify(opts)
-			return err
-		}
-	}
-	if mode == "require" || mode == "verify-full" {
-		cfg.InsecureSkipVerify = false
-	}
-	if mode == "allow" || mode == "prefer" {
-		cfg.InsecureSkipVerify = true
-	}
 	return cfg, nil
 }
 
 func (c *Conn) handshake(ctx context.Context) error {
-	connectMsg := buildConnectRequest(c.config.Database, c.config.Application, uint32(os.Getpid()))
-	if err := c.send(connectMsg); err != nil {
+	c.authed = false
+	c.params = map[string]string{}
+	features := c.requestedFeatures()
+	params := map[string]string{
+		"database": c.config.Database,
+		"user":     c.config.User,
+	}
+	if c.config.Application != "" {
+		params["application_name"] = c.config.Application
+	}
+	payload := buildStartupPayload(features, params)
+	if err := c.sendMessage(msgStartup, payload, 0, true); err != nil {
 		return err
 	}
-	msg, err := c.receive()
-	if err != nil {
-		return err
-	}
-	if msg.typ != msgConnectResponse {
-		return &Error{Kind: ErrConnection, Message: "unexpected connect response", SQLState: "08001"}
-	}
-	ok, sessionID, _, _, _, errMsg, err := parseConnectResponse(msg.body)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return &Error{Kind: ErrConnection, Message: errMsg, SQLState: "08001"}
-	}
-	c.sessionID = sessionID
-	if c.config.User != "" {
-		if err := c.authenticate(ctx); err != nil {
+	var scram *scramClient
+	for {
+		msg, err := c.receive()
+		if err != nil {
 			return err
 		}
+		switch msg.header.typ {
+		case msgNegotiateVersion:
+			continue
+		case msgAuthRequest:
+			method, data, err := parseAuthRequest(msg.body)
+			if err != nil {
+				return err
+			}
+			scram, err = c.handleAuthRequest(method, data, scram)
+			if err != nil {
+				return err
+			}
+		case msgAuthContinue:
+			method, _, data, err := parseAuthContinue(msg.body)
+			if err != nil {
+				return err
+			}
+			scram, err = c.handleAuthContinue(method, data, scram)
+			if err != nil {
+				return err
+			}
+		case msgAuthOk:
+			sessionID, info, err := parseAuthOk(msg.body)
+			if err != nil {
+				return err
+			}
+			copy(c.attachmentID[:], msg.header.attachmentID[:])
+			c.txnID = msg.header.txnID
+			c.authed = true
+			if scram != nil && len(info) > 0 && strings.HasPrefix(string(info), "v=") {
+				_ = scram.verifyServerFinal(string(info))
+			}
+			_ = sessionID
+		case msgParameterStatus:
+			name, value, err := parseParameterStatus(msg.body)
+			if err != nil {
+				return err
+			}
+			c.params[name] = value
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err != nil {
+				return err
+			}
+			c.txnID = txnID
+			return nil
+		case msgError:
+			return buildProtocolError(msg.body)
+		default:
+			continue
+		}
 	}
-	return nil
 }
 
-func (c *Conn) authenticate(ctx context.Context) error {
-	scram, err := newScramClient(c.config.User)
-	if err != nil {
-		return err
-	}
-	first := []byte(scram.clientFirstMessage())
-	msg, err := buildAuthRequest(c.sessionID, c.config.User, authScramSha256, first)
-	if err != nil {
-		return err
-	}
-	if err := c.send(msg); err != nil {
-		return err
-	}
-	reply, err := c.receive()
-	if err != nil {
-		return err
-	}
-	if reply.typ != msgAuthResponse {
-		return &Error{Kind: ErrAuth, Message: "unexpected auth response", SQLState: "28000"}
-	}
-	status, _, errMsg, extra, err := parseAuthResponse(reply.body)
-	if err != nil {
-		return err
-	}
-	if status != authContinue {
-		return &Error{Kind: ErrAuth, Message: errMsg, SQLState: "28000"}
-	}
-	clientFinal, err := scram.handleServerFirst(c.config.Password, string(extra))
-	if err != nil {
-		return err
-	}
-	msg, err = buildAuthRequest(c.sessionID, c.config.User, authScramSha256, []byte(clientFinal))
-	if err != nil {
-		return err
-	}
-	if err := c.send(msg); err != nil {
-		return err
-	}
-	reply, err = c.receive()
-	if err != nil {
-		return err
-	}
-	status, _, errMsg, extra, err = parseAuthResponse(reply.body)
-	if err != nil {
-		return err
-	}
-	if status != authOK {
-		return &Error{Kind: ErrAuth, Message: errMsg, SQLState: "28000"}
-	}
-	if len(extra) > 0 {
-		if err := scram.verifyServerFinal(string(extra)); err != nil {
-			return err
+func (c *Conn) handleAuthRequest(method authMethod, data []byte, scram *scramClient) (*scramClient, error) {
+	switch method {
+	case authOK:
+		return scram, nil
+	case authPassword:
+		if err := c.sendMessage(msgAuthResponse, []byte(c.config.Password), 0, true); err != nil {
+			return scram, err
 		}
+		return scram, nil
+	case authScramSha256:
+		if scram == nil {
+			client, err := newScramClient(c.config.User)
+			if err != nil {
+				return nil, err
+			}
+			scram = client
+		}
+		_ = data
+		payload := []byte(scram.clientFirstMessage())
+		if err := c.sendMessage(msgAuthResponse, payload, 0, true); err != nil {
+			return scram, err
+		}
+		return scram, nil
+	default:
+		return scram, &Error{Kind: ErrAuth, Message: "unsupported auth method", SQLState: "28000"}
 	}
-	return nil
+}
+
+func (c *Conn) handleAuthContinue(method authMethod, data []byte, scram *scramClient) (*scramClient, error) {
+	switch method {
+	case authScramSha256:
+		if scram == nil {
+			return nil, &Error{Kind: ErrAuth, Message: "SCRAM state missing", SQLState: "28000"}
+		}
+		clientFinal, err := scram.handleServerFirst(c.config.Password, string(data))
+		if err != nil {
+			return nil, err
+		}
+		if err := c.sendMessage(msgAuthResponse, []byte(clientFinal), 0, true); err != nil {
+			return nil, err
+		}
+		return scram, nil
+	default:
+		return scram, &Error{Kind: ErrAuth, Message: "unsupported auth method", SQLState: "28000"}
+	}
 }
 
 func (c *Conn) Prepare(query string) (driver.Stmt, error) {
@@ -220,7 +232,22 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
-	return &Stmt{conn: c, query: query}, nil
+	stmtName := fmt.Sprintf("stmt_%d", time.Now().UnixNano())
+	normalized, err := normalizeQuery(query, nil)
+	if err != nil {
+		return nil, err
+	}
+	payload := buildParsePayload(stmtName, normalized.sql, nil)
+	if err := c.sendMessage(msgParse, payload, 0, false); err != nil {
+		return nil, err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	if _, _, _, err := c.drainUntilReady(ctx); err != nil {
+		return nil, err
+	}
+	return &Stmt{conn: c, query: normalized.sql, name: stmtName}, nil
 }
 
 func (c *Conn) Begin() (driver.Tx, error) {
@@ -231,23 +258,8 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
-	isolation := byte(0)
-	switch opts.Isolation {
-	case driver.IsolationLevel(sql.LevelReadCommitted):
-		isolation = 1
-	case driver.IsolationLevel(sql.LevelSerializable):
-		isolation = 2
-	}
-	msg, err := buildBegin(c.sessionID, isolation, opts.ReadOnly)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.send(msg); err != nil {
-		return nil, err
-	}
-	if err := c.drainUntilComplete(); err != nil {
-		return nil, err
-	}
+	// ScratchBird uses implicit transactions; explicit begin is a no-op for now.
+	_ = opts
 	return &Tx{conn: c}, nil
 }
 
@@ -255,58 +267,110 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
-	sql, err := rewriteQuery(query, args)
+	normalized, err := normalizeQuery(query, args)
 	if err != nil {
 		return nil, err
 	}
-	msg, err := buildQuery(c.sessionID, sql, 0)
+	if len(normalized.args) == 0 {
+		if err := c.sendSimpleQuery(normalized.sql, ctx); err != nil {
+			return nil, err
+		}
+		tag, rows, lastID, err := c.drainUntilReady(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
+	}
+	if err := c.sendExtendedQuery(normalized.sql, normalized.args, ctx); err != nil {
+		return nil, err
+	}
+	tag, rows, lastID, err := c.drainUntilReady(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.send(msg); err != nil {
-		return nil, err
-	}
-	tag, rows, err := c.drainUntilComplete()
-	if err != nil {
-		return nil, err
-	}
-	return &Result{tag: tag, rowsAffected: rows}, nil
+	return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 }
 
 func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
-	sql, err := rewriteQuery(query, args)
+	normalized, err := normalizeQuery(query, args)
 	if err != nil {
 		return nil, err
 	}
-	msg, err := buildQuery(c.sessionID, sql, 0)
-	if err != nil {
+	if len(normalized.args) == 0 {
+		if err := c.sendSimpleQuery(normalized.sql, ctx); err != nil {
+			return nil, err
+		}
+		return newRows(c, ctx), nil
+	}
+	if err := c.sendExtendedQuery(normalized.sql, normalized.args, ctx); err != nil {
 		return nil, err
 	}
-	if err := c.send(msg); err != nil {
-		return nil, err
+	return newRows(c, ctx), nil
+}
+
+func (c *Conn) sendSimpleQuery(sql string, ctx context.Context) error {
+	flags := uint32(0)
+	if c.config.BinaryTransfer {
+		flags |= queryFlagBinaryResult
 	}
-	return &Rows{conn: c}, nil
+	timeoutMs := uint32(0)
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			timeoutMs = uint32(remaining / time.Millisecond)
+		}
+	}
+	payload := buildQueryPayload(sql, flags, 0, timeoutMs)
+	return c.sendMessage(msgQuery, payload, 0, false)
+}
+
+func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx context.Context) error {
+	paramValues := make([]paramValue, 0, len(args))
+	paramTypes := make([]uint32, 0, len(args))
+	for _, arg := range args {
+		value, oid, err := encodeParam(arg.Value)
+		if err != nil {
+			return err
+		}
+		value.format = formatBinary
+		paramValues = append(paramValues, value)
+		paramTypes = append(paramTypes, oid)
+	}
+	parsePayload := buildParsePayload("", sql, paramTypes)
+	if err := c.sendMessage(msgParse, parsePayload, 0, false); err != nil {
+		return err
+	}
+	resultFormats := []uint16{}
+	if c.config.BinaryTransfer {
+		resultFormats = []uint16{formatBinary}
+	}
+	bindPayload := buildBindPayload("", "", paramValues, resultFormats)
+	if err := c.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+		return err
+	}
+	execPayload := buildExecutePayload("", 0)
+	if err := c.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+		return err
+	}
+	return c.sendMessage(msgSync, nil, 0, false)
 }
 
 func (c *Conn) Ping(ctx context.Context) error {
 	if err := c.ensureOpen(ctx); err != nil {
 		return err
 	}
-	msg, err := buildQuery(c.sessionID, "SELECT 1", 0)
-	if err != nil {
+	if err := c.sendSimpleQuery("SELECT 1", ctx); err != nil {
 		return err
 	}
-	if err := c.send(msg); err != nil {
-		return err
-	}
-	_, _, err = c.drainUntilComplete()
+	_, _, _, err := c.drainUntilReady(ctx)
 	return err
 }
 
 func (c *Conn) ResetSession(ctx context.Context) error {
+	_ = ctx
 	return nil
 }
 
@@ -319,11 +383,6 @@ func (c *Conn) Close() error {
 	c.closed = true
 	if c.raw == nil {
 		return nil
-	}
-	if c.sessionID != nil {
-		if msg, err := buildDisconnect(c.sessionID); err == nil {
-			_ = c.send(msg)
-		}
 	}
 	return c.raw.Close()
 }
@@ -347,62 +406,114 @@ func (c *Conn) ensureOpen(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) send(payload []byte) error {
+func (c *Conn) sendMessage(typ messageType, payload []byte, flags byte, forceZero bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.raw == nil {
 		return errors.New("connection not open")
 	}
+	seq := c.sequence
+	c.sequence++
+	var attachment [16]byte
+	var txnID uint64
+	if c.authed && !forceZero {
+		attachment = c.attachmentID
+		txnID = c.txnID
+	}
+	header := messageHeader{
+		typ:          typ,
+		flags:        flags,
+		sequence:     seq,
+		attachmentID: attachment,
+		txnID:        txnID,
+	}
+	encoded := encodeMessage(header, payload)
 	if c.config.SocketTimeout > 0 {
 		_ = c.raw.SetWriteDeadline(time.Now().Add(c.config.SocketTimeout))
 	}
-	_, err := c.raw.Write(payload)
+	_, err := c.raw.Write(encoded)
 	return err
 }
 
 func (c *Conn) receive() (protocolMessage, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	if len(c.pending) > 0 {
+		msg := c.pending[0]
+		c.pending = c.pending[1:]
+		c.mu.Unlock()
+		return msg, nil
+	}
 	if c.raw == nil {
+		c.mu.Unlock()
 		return protocolMessage{}, errors.New("connection not open")
 	}
 	if c.config.SocketTimeout > 0 {
 		_ = c.raw.SetReadDeadline(time.Now().Add(c.config.SocketTimeout))
 	}
-	return readMessage(c.raw)
+	raw := c.raw
+	c.mu.Unlock()
+	return readMessage(raw)
 }
 
-func (c *Conn) drainUntilComplete() (string, int64, error) {
+func (c *Conn) queue(msg protocolMessage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pending = append(c.pending, msg)
+}
+
+func (c *Conn) requestedFeatures() uint64 {
+	features := uint64(0)
+	if strings.EqualFold(c.config.Compression, "zstd") {
+		features |= featureCompression
+	}
+	if c.config.BinaryTransfer {
+		features |= featureStreaming
+	}
+	return features
+}
+
+func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, error) {
 	var tag string
-	var rows int64
+	var rows uint64
+	var lastID uint64
 	for {
+		select {
+		case <-ctx.Done():
+			_ = c.sendMessage(msgCancel, buildCancelPayload(0, 0), msgFlagUrgent, false)
+			return "", 0, 0, ctx.Err()
+		default:
+		}
 		msg, err := c.receive()
 		if err != nil {
-			return "", 0, err
+			return "", 0, 0, err
 		}
-		switch msg.typ {
-		case msgQueryError:
-			return "", 0, buildQueryError(msg.body)
+		switch msg.header.typ {
+		case msgError:
+			return "", 0, 0, buildProtocolError(msg.body)
 		case msgCommandComplete:
-			var err error
-			tag, rows, err = parseCommandComplete(msg.body)
+			_, rows, lastID, tag, err = parseCommandComplete(msg.body)
 			if err != nil {
-				return "", 0, err
+				return "", 0, 0, err
 			}
-		case msgEndResults:
-			return tag, rows, nil
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err == nil {
+				c.txnID = txnID
+			}
+			return tag, rows, lastID, nil
+		default:
+			continue
 		}
 	}
 }
 
-func buildQueryError(payload []byte) error {
-	code, sqlState, msg, detail, hint, err := parseQueryError(payload)
+func buildProtocolError(payload []byte) error {
+	_, sqlState, msg, detail, hint, err := parseErrorMessage(payload)
 	if err != nil {
 		return err
 	}
 	return &Error{
 		Kind:     mapSQLState(sqlState),
-		Code:     code,
 		SQLState: sqlState,
 		Message:  msg,
 		Detail:   detail,
@@ -413,10 +524,22 @@ func buildQueryError(payload []byte) error {
 type Stmt struct {
 	conn  *Conn
 	query string
+	name  string
 }
 
 func (s *Stmt) Close() error {
-	return nil
+	if s.conn == nil {
+		return nil
+	}
+	payload := buildClosePayload('S', s.name)
+	if err := s.conn.sendMessage(msgClose, payload, 0, false); err != nil {
+		return err
+	}
+	if err := s.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := s.conn.drainUntilReady(context.Background())
+	return err
 }
 
 func (s *Stmt) NumInput() int {
@@ -432,11 +555,69 @@ func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	return s.conn.ExecContext(ctx, s.query, args)
+	if err := s.conn.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	paramValues := make([]paramValue, 0, len(args))
+	for _, arg := range args {
+		value, _, err := encodeParam(arg.Value)
+		if err != nil {
+			return nil, err
+		}
+		value.format = formatBinary
+		paramValues = append(paramValues, value)
+	}
+	resultFormats := []uint16{}
+	if s.conn.config.BinaryTransfer {
+		resultFormats = []uint16{formatBinary}
+	}
+	bindPayload := buildBindPayload("", s.name, paramValues, resultFormats)
+	if err := s.conn.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+		return nil, err
+	}
+	execPayload := buildExecutePayload("", 0)
+	if err := s.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+		return nil, err
+	}
+	if err := s.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	tag, rows, lastID, err := s.conn.drainUntilReady(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 }
 
 func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	return s.conn.QueryContext(ctx, s.query, args)
+	if err := s.conn.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	paramValues := make([]paramValue, 0, len(args))
+	for _, arg := range args {
+		value, _, err := encodeParam(arg.Value)
+		if err != nil {
+			return nil, err
+		}
+		value.format = formatBinary
+		paramValues = append(paramValues, value)
+	}
+	resultFormats := []uint16{}
+	if s.conn.config.BinaryTransfer {
+		resultFormats = []uint16{formatBinary}
+	}
+	bindPayload := buildBindPayload("", s.name, paramValues, resultFormats)
+	if err := s.conn.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+		return nil, err
+	}
+	execPayload := buildExecutePayload("", 0)
+	if err := s.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+		return nil, err
+	}
+	if err := s.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	return newRows(s.conn, ctx), nil
 }
 
 type Tx struct {
@@ -444,25 +625,9 @@ type Tx struct {
 }
 
 func (t *Tx) Commit() error {
-	msg, err := buildCommit(t.conn.sessionID)
-	if err != nil {
-		return err
-	}
-	if err := t.conn.send(msg); err != nil {
-		return err
-	}
-	_, _, err = t.conn.drainUntilComplete()
-	return err
+	return nil
 }
 
 func (t *Tx) Rollback() error {
-	msg, err := buildRollback(t.conn.sessionID)
-	if err != nil {
-		return err
-	}
-	if err := t.conn.send(msg); err != nil {
-		return err
-	}
-	_, _, err = t.conn.drainUntilComplete()
-	return err
+	return nil
 }

@@ -29,7 +29,7 @@ func defaultConfig() Config {
 	return Config{
 		Host:           "localhost",
 		Port:           3092,
-		SSLMode:        "prefer",
+		SSLMode:        "require",
 		ConnectTimeout: 30 * time.Second,
 		SocketTimeout:  0,
 		Application:    "scratchbird_go",

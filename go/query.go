@@ -2,25 +2,47 @@ package scratchbird
 
 import (
 	"database/sql/driver"
-	"encoding/hex"
-	"fmt"
+	"errors"
 	"strings"
-	"time"
 )
 
-func rewriteQuery(query string, args []driver.NamedValue) (string, error) {
+type normalizedQuery struct {
+	sql  string
+	args []driver.NamedValue
+}
+
+func normalizeQuery(query string, args []driver.NamedValue) (normalizedQuery, error) {
 	if len(args) == 0 {
-		return query, nil
+		return normalizedQuery{sql: query, args: nil}, nil
 	}
 	if hasNamedParams(query) {
-		return substituteNamed(query, args), nil
+		sql, ordered, err := rewriteNamedParams(query, args)
+		if err != nil {
+			return normalizedQuery{}, err
+		}
+		return normalizedQuery{sql: sql, args: ordered}, nil
 	}
-	return substitutePositional(query, args), nil
+	if strings.Contains(query, "?") {
+		sql, ordered, err := rewritePositionalParams(query, args)
+		if err != nil {
+			return normalizedQuery{}, err
+		}
+		return normalizedQuery{sql: sql, args: ordered}, nil
+	}
+	return normalizedQuery{sql: query, args: args}, nil
 }
 
 func hasNamedParams(query string) bool {
+	inString := false
 	for i := 0; i+1 < len(query); i++ {
 		ch := query[i]
+		if ch == '\'' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
 		if (ch == '@' || ch == ':') && isIdentStart(query[i+1]) {
 			return true
 		}
@@ -28,7 +50,7 @@ func hasNamedParams(query string) bool {
 	return false
 }
 
-func substituteNamed(query string, args []driver.NamedValue) string {
+func rewriteNamedParams(query string, args []driver.NamedValue) (string, []driver.NamedValue, error) {
 	lookup := map[string]driver.NamedValue{}
 	for _, arg := range args {
 		if arg.Name != "" {
@@ -36,156 +58,83 @@ func substituteNamed(query string, args []driver.NamedValue) string {
 		}
 	}
 	var sb strings.Builder
+	ordered := make([]driver.NamedValue, 0, len(args))
+	inString := false
 	for i := 0; i < len(query); {
 		ch := query[i]
-		if ch == '\'' && i+1 < len(query) {
+		if ch == '\'' {
+			inString = !inString
 			sb.WriteByte(ch)
 			i++
-			for i < len(query) {
-				sb.WriteByte(query[i])
-				if query[i] == '\'' && (i+1 >= len(query) || query[i+1] != '\'') {
-					i++
-					break
-				}
-				if query[i] == '\'' && i+1 < len(query) && query[i+1] == '\'' {
-					i++
-				}
-				i++
-			}
 			continue
 		}
-		if (ch == '@' || ch == ':') && i+1 < len(query) && isIdentStart(query[i+1]) {
+		if !inString && (ch == '@' || ch == ':') && i+1 < len(query) && isIdentStart(query[i+1]) {
 			j := i + 1
 			for j < len(query) && isIdentPart(query[j]) {
 				j++
 			}
 			name := query[i+1 : j]
-			if param, ok := lookup[name]; ok {
-				sb.WriteString(formatValue(param.Value))
-			} else {
-				sb.WriteString(query[i:j])
+			param, ok := lookup[name]
+			if !ok {
+				return "", nil, errors.New("missing named parameter: " + name)
 			}
+			ordered = append(ordered, param)
+			sb.WriteString("$")
+			sb.WriteString(intToString(len(ordered)))
 			i = j
 			continue
 		}
 		sb.WriteByte(ch)
 		i++
 	}
-	return sb.String()
+	return sb.String(), ordered, nil
 }
 
-func substitutePositional(query string, args []driver.NamedValue) string {
+func rewritePositionalParams(query string, args []driver.NamedValue) (string, []driver.NamedValue, error) {
 	var sb strings.Builder
+	ordered := make([]driver.NamedValue, 0, len(args))
+	inString := false
 	index := 0
 	for i := 0; i < len(query); {
 		ch := query[i]
-		if ch == '?' {
-			if index < len(args) {
-				sb.WriteString(formatValue(args[index].Value))
-				index++
-			} else {
-				sb.WriteByte(ch)
-			}
-			i++
-			continue
-		}
-		if ch == '$' && i+1 < len(query) && isDigit(query[i+1]) {
-			j := i + 1
-			num := 0
-			for j < len(query) && isDigit(query[j]) {
-				num = num*10 + int(query[j]-'0')
-				j++
-			}
-			if num > 0 && num <= len(args) {
-				sb.WriteString(formatValue(args[num-1].Value))
-			} else {
-				sb.WriteString(query[i:j])
-			}
-			i = j
-			continue
-		}
-		if ch == '\'' && i+1 < len(query) {
+		if ch == '\'' {
+			inString = !inString
 			sb.WriteByte(ch)
 			i++
-			for i < len(query) {
-				sb.WriteByte(query[i])
-				if query[i] == '\'' && (i+1 >= len(query) || query[i+1] != '\'') {
-					i++
-					break
-				}
-				if query[i] == '\'' && i+1 < len(query) && query[i+1] == '\'' {
-					i++
-				}
-				i++
+			continue
+		}
+		if !inString && ch == '?' {
+			if index >= len(args) {
+				return "", nil, errors.New("not enough parameters")
 			}
+			ordered = append(ordered, args[index])
+			index++
+			sb.WriteString("$")
+			sb.WriteString(intToString(len(ordered)))
+			i++
 			continue
 		}
 		sb.WriteByte(ch)
 		i++
 	}
-	return sb.String()
+	if index < len(args) {
+		return "", nil, errors.New("too many parameters")
+	}
+	return sb.String(), ordered, nil
 }
 
-func formatValue(value interface{}) string {
-	if value == nil {
-		return "NULL"
+func intToString(value int) string {
+	if value == 0 {
+		return "0"
 	}
-	switch v := value.(type) {
-	case bool:
-		if v {
-			return "TRUE"
-		}
-		return "FALSE"
-	case int64:
-		return fmt.Sprintf("%d", v)
-	case int:
-		return fmt.Sprintf("%d", v)
-	case int32:
-		return fmt.Sprintf("%d", v)
-	case int16:
-		return fmt.Sprintf("%d", v)
-	case int8:
-		return fmt.Sprintf("%d", v)
-	case uint64:
-		return fmt.Sprintf("%d", v)
-	case uint:
-		return fmt.Sprintf("%d", v)
-	case uint32:
-		return fmt.Sprintf("%d", v)
-	case uint16:
-		return fmt.Sprintf("%d", v)
-	case uint8:
-		return fmt.Sprintf("%d", v)
-	case float64:
-		return fmt.Sprintf("%g", v)
-	case float32:
-		return fmt.Sprintf("%g", v)
-	case string:
-		return "'" + escapeString(v) + "'"
-	case []byte:
-		return "X'" + hex.EncodeToString(v) + "'"
-	case time.Time:
-		return "'" + v.UTC().Format("2006-01-02 15:04:05.999999") + "'"
-	case fmt.Stringer:
-		return "'" + escapeString(v.String()) + "'"
+	var buf [20]byte
+	pos := len(buf)
+	for value > 0 {
+		pos--
+		buf[pos] = byte('0' + value%10)
+		value /= 10
 	}
-	switch v := value.(type) {
-	case []interface{}:
-		return formatArray(v)
-	}
-	return "'" + escapeString(fmt.Sprintf("%v", value)) + "'"
-}
-
-func formatArray(values []interface{}) string {
-	items := make([]string, 0, len(values))
-	for _, v := range values {
-		items = append(items, formatValue(v))
-	}
-	return "ARRAY[" + strings.Join(items, ", ") + "]"
-}
-
-func escapeString(value string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\\\"), "'", "''")
+	return string(buf[pos:])
 }
 
 func isIdentStart(ch byte) bool {
@@ -193,17 +142,5 @@ func isIdentStart(ch byte) bool {
 }
 
 func isIdentPart(ch byte) bool {
-	return isIdentStart(ch) || isDigit(ch)
-}
-
-func isDigit(ch byte) bool {
-	return ch >= '0' && ch <= '9'
-}
-
-func namedValues(args []driver.Value) []driver.NamedValue {
-	out := make([]driver.NamedValue, len(args))
-	for i, val := range args {
-		out[i] = driver.NamedValue{Ordinal: i + 1, Value: val}
-	}
-	return out
+	return isIdentStart(ch) || (ch >= '0' && ch <= '9')
 }

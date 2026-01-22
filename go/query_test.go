@@ -11,13 +11,16 @@ func TestRewritePositional(t *testing.T) {
 		{Ordinal: 1, Value: 42},
 		{Ordinal: 2, Value: "Ada"},
 	}
-	out, err := rewriteQuery(query, args)
+	out, err := normalizeQuery(query, args)
 	if err != nil {
 		t.Fatalf("rewrite error: %v", err)
 	}
-	expected := "SELECT * FROM t WHERE id = 42 AND name = 'Ada'"
-	if out != expected {
-		t.Fatalf("unexpected query: %s", out)
+	expected := "SELECT * FROM t WHERE id = $1 AND name = $2"
+	if out.sql != expected {
+		t.Fatalf("unexpected query: %s", out.sql)
+	}
+	if len(out.args) != 2 {
+		t.Fatalf("unexpected args: %d", len(out.args))
 	}
 }
 
@@ -27,12 +30,15 @@ func TestRewriteNamed(t *testing.T) {
 		{Name: "name", Value: "Ada"},
 		{Name: "active", Value: true},
 	}
-	out, err := rewriteQuery(query, args)
+	out, err := normalizeQuery(query, args)
 	if err != nil {
 		t.Fatalf("rewrite error: %v", err)
 	}
-	expected := "SELECT * FROM users WHERE name = 'Ada' AND active = TRUE"
-	if out != expected {
-		t.Fatalf("unexpected query: %s", out)
+	expected := "SELECT * FROM users WHERE name = $1 AND active = $2"
+	if out.sql != expected {
+		t.Fatalf("unexpected query: %s", out.sql)
+	}
+	if len(out.args) != 2 {
+		t.Fatalf("unexpected args: %d", len(out.args))
 	}
 }
