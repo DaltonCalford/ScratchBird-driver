@@ -1,3 +1,4 @@
+using System;
 using ScratchBird.Data;
 using Xunit;
 

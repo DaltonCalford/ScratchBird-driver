@@ -23,6 +23,9 @@ public sealed class ScratchBirdDataReader : DbDataReader
         _recordsAffected = -1;
     }
 
+    public override object this[int ordinal] => GetValue(ordinal);
+    public override object this[string name] => GetValue(GetOrdinal(name));
+
     public override int Depth => 0;
     public override bool IsClosed => _closed;
     public override int RecordsAffected => _recordsAffected;

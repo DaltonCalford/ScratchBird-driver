@@ -461,20 +461,20 @@ internal static class TypeDecoder
 
         if (value is JsonElement jsonElement)
         {
-            var raw = Encoding.UTF8.GetBytes(jsonElement.GetRawText());
-            return (new ParamValue { Data = EncodeLengthPrefixed(raw), Format = FormatBinary }, OidJson);
+            var rawJson = Encoding.UTF8.GetBytes(jsonElement.GetRawText());
+            return (new ParamValue { Data = EncodeLengthPrefixed(rawJson), Format = FormatBinary }, OidJson);
         }
 
         if (value is IDictionary)
         {
-            var raw = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value));
-            return (new ParamValue { Data = EncodeLengthPrefixed(raw), Format = FormatBinary }, OidJson);
+            var rawDict = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value));
+            return (new ParamValue { Data = EncodeLengthPrefixed(rawDict), Format = FormatBinary }, OidJson);
         }
 
         if (value is object)
         {
-            var raw = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value));
-            return (new ParamValue { Data = EncodeLengthPrefixed(raw), Format = FormatBinary }, OidJson);
+            var rawObject = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value));
+            return (new ParamValue { Data = EncodeLengthPrefixed(rawObject), Format = FormatBinary }, OidJson);
         }
 
         throw new InvalidOperationException("Unsupported parameter type");

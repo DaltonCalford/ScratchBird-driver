@@ -158,7 +158,7 @@ public sealed class ScratchBirdCommand : DbCommand
         return new ScratchBirdDataReader(stream, behavior, _connection);
     }
 
-    public override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+    protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
     {
         return await Task.Run(() => ExecuteDbDataReader(behavior), cancellationToken);
     }

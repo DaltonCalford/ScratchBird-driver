@@ -10,6 +10,7 @@ public sealed class ScratchBirdParameter : DbParameter
     private bool _isNullable = true;
     private string _parameterName = string.Empty;
     private string _sourceColumn = string.Empty;
+    private bool _sourceColumnNullMapping;
     private DataRowVersion _sourceVersion = DataRowVersion.Current;
     private object? _value;
     private byte _precision;
@@ -59,6 +60,12 @@ public sealed class ScratchBirdParameter : DbParameter
     {
         get => _sourceColumn;
         set => _sourceColumn = value ?? string.Empty;
+    }
+
+    public override bool SourceColumnNullMapping
+    {
+        get => _sourceColumnNullMapping;
+        set => _sourceColumnNullMapping = value;
     }
 
     public override DataRowVersion SourceVersion
