@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional
 
 from . import errors
-from .sql import substitute_parameters
 
 
 class Cursor:
@@ -23,25 +22,20 @@ class Cursor:
         self._ensure_open()
         if sql is None:
             raise errors.ProgrammingError("sql is required")
-        self._results = []
-        self._pos = 0
-        self.description = None
-        self.rowcount = -1
-        self.lastrowid = None
-        rendered = substitute_parameters(sql, params)
-        columns, rows, rowcount = self._connection._execute_query(rendered)
+        self._reset_state()
+        columns, rows, rowcount = self._connection._execute_query(sql, params)
         self._results = rows
         self._pos = 0
         if columns:
             self.description = [
                 (
                     col.name,
-                    col.wire_type,
+                    col.type_oid,
                     None,
                     col.type_modifier or None,
                     None,
                     None,
-                    None,
+                    col.nullable,
                 )
                 for col in columns
             ]
@@ -55,28 +49,23 @@ class Cursor:
         self._ensure_open()
         if sql is None:
             raise errors.ProgrammingError("sql is required")
-        self._results = []
-        self._pos = 0
-        self.description = None
-        self.rowcount = -1
-        self.lastrowid = None
+        self._reset_state()
         total = 0
         rowcount_known = True
         for params in seq_of_params:
-            rendered = substitute_parameters(sql, params)
-            columns, rows, rowcount = self._connection._execute_query(rendered)
+            columns, rows, rowcount = self._connection._execute_query(sql, params)
             self._results = rows
             self._pos = 0
             if columns:
                 self.description = [
                     (
                         col.name,
-                        col.wire_type,
+                        col.type_oid,
                         None,
                         col.type_modifier or None,
                         None,
                         None,
-                        None,
+                        col.nullable,
                     )
                     for col in columns
                 ]
@@ -134,6 +123,13 @@ class Cursor:
     def _ensure_open(self) -> None:
         if self._closed:
             raise errors.InterfaceError("cursor is closed")
+
+    def _reset_state(self) -> None:
+        self._results = []
+        self._pos = 0
+        self.description = None
+        self.rowcount = -1
+        self.lastrowid = None
 
     @property
     def connection(self):

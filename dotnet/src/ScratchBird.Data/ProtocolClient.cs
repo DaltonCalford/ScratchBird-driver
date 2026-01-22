@@ -8,18 +8,28 @@ namespace ScratchBird.Data;
 
 internal sealed class ProtocolClient
 {
+    private const uint QueryFlagBinaryResult = 0x04;
+
     private TcpClient? _client;
     private Stream? _stream;
-    private byte[]? _sessionId;
+    private byte[] _attachmentId = new byte[16];
+    private ulong _txnId;
+    private uint _sequence;
+    private uint _lastQuerySequence;
     private bool _connected;
+    private readonly Dictionary<string, string> _parameters = new();
+    private ScratchBirdConfig? _config;
 
     public bool Connected => _connected;
-    public byte[] SessionId => _sessionId ?? throw new InvalidOperationException("Not connected");
 
     public void Connect(ScratchBirdConfig config)
     {
-        _client = new TcpClient();
-        _client.NoDelay = true;
+        if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Database))
+        {
+            throw new ScratchBirdConnectionException("Username and database are required", "08001");
+        }
+
+        _client = new TcpClient { NoDelay = true };
         _client.SendTimeout = config.SocketTimeoutMs > 0 ? config.SocketTimeoutMs : 0;
         _client.ReceiveTimeout = config.SocketTimeoutMs > 0 ? config.SocketTimeoutMs : 0;
 
@@ -30,91 +40,60 @@ internal sealed class ProtocolClient
         }
 
         _stream = _client.GetStream();
-        var sslMode = (config.SslMode ?? "prefer").ToLowerInvariant();
-        if (sslMode != "disable")
+        var sslMode = (config.SslMode ?? "require").ToLowerInvariant();
+        if (sslMode == "disable")
         {
-            var requireTls = sslMode is "require" or "verify-ca" or "verify-full";
-            try
-            {
-                _stream = UpgradeToTls(_stream, config, sslMode);
-            }
-            catch (Exception ex)
-            {
-                if (sslMode is "allow" or "prefer")
-                {
-                    _stream = _client.GetStream();
-                }
-                else if (requireTls)
-                {
-                    throw new ScratchBirdConnectionException($"TLS handshake failed: {ex.Message}", "08001");
-                }
-            }
+            throw new ScratchBirdConnectionException("TLS is required for ScratchBird connections", "08001");
         }
 
-        var connectMessage = ProtocolCodec.BuildConnectRequest(config.Database, config.ApplicationName, Environment.ProcessId);
-        Send(connectMessage);
-
-        var response = Receive();
-        if (response.Type != MessageType.ConnectResponse)
-        {
-            throw new ScratchBirdConnectionException("Unexpected response to CONNECT_REQUEST", "08001");
-        }
-        var parsed = ProtocolCodec.ParseConnectResponse(response.Payload);
-        if (!parsed.Success)
-        {
-            throw new ScratchBirdConnectionException(parsed.Error, "08001");
-        }
-        _sessionId = parsed.SessionId;
-        Authenticate(config);
+        _stream = UpgradeToTls(_stream, config, sslMode);
+        _config = config;
+        Handshake(config);
         _connected = true;
     }
 
     public QueryStream ExecuteQuery(string sql)
     {
+        return ExecuteQuery(sql, Array.Empty<ScratchBirdParameter>());
+    }
+
+    public QueryStream ExecuteQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    {
         EnsureConnected();
-        var message = ProtocolCodec.BuildQuery(SessionId, sql);
-        Send(message);
+        if (parameters.Count == 0)
+        {
+            SendSimpleQuery(sql);
+        }
+        else
+        {
+            SendExtendedQuery(sql, parameters);
+        }
         return new QueryStream(this);
     }
 
     public void Begin()
     {
-        EnsureConnected();
-        Send(ProtocolCodec.BuildBegin(SessionId));
-        DrainUntilComplete();
     }
 
     public void Commit()
     {
-        EnsureConnected();
-        Send(ProtocolCodec.BuildCommit(SessionId));
-        DrainUntilComplete();
     }
 
     public void Rollback()
     {
-        EnsureConnected();
-        Send(ProtocolCodec.BuildRollback(SessionId));
-        DrainUntilComplete();
+    }
+
+    public void Cancel()
+    {
+        if (!_connected)
+        {
+            return;
+        }
+        SendMessage(MessageType.CANCEL, ProtocolCodec.BuildCancelPayload(0, _lastQuerySequence), ProtocolConstants.MsgFlagUrgent, false);
     }
 
     public void Close()
     {
-        if (!_connected)
-        {
-            _client?.Close();
-            return;
-        }
-        try
-        {
-            if (_sessionId != null)
-            {
-                Send(ProtocolCodec.BuildDisconnect(_sessionId));
-            }
-        }
-        catch
-        {
-        }
         _stream?.Dispose();
         _client?.Close();
         _connected = false;
@@ -128,72 +107,148 @@ internal sealed class ProtocolClient
         }
     }
 
-    private void Authenticate(ScratchBirdConfig config)
+    private void Handshake(ScratchBirdConfig config)
     {
-        if (string.IsNullOrEmpty(config.Username))
+        var parameters = new Dictionary<string, string>
         {
-            return;
+            ["database"] = config.Database,
+            ["user"] = config.Username
+        };
+        if (!string.IsNullOrWhiteSpace(config.ApplicationName))
+        {
+            parameters["application_name"] = config.ApplicationName;
         }
-        var scram = new ScramClient(config.Username);
-        var clientFirst = Encoding.UTF8.GetBytes(scram.ClientFirstMessage());
-        Send(ProtocolCodec.BuildAuthRequest(SessionId, config.Username, AuthMethod.ScramSha256, clientFirst));
 
-        var response = Receive();
-        if (response.Type != MessageType.AuthResponse)
+        var features = 0UL;
+        if (string.Equals(config.Compression, "zstd", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ScratchBirdAuthException("Unexpected auth response", "28000");
+            features |= ProtocolConstants.FeatureCompression;
         }
-        var parsed = ProtocolCodec.ParseAuthResponse(response.Payload);
-        if (parsed.Status != AuthStatus.Continue)
+        if (config.BinaryTransfer)
         {
-            throw new ScratchBirdAuthException(parsed.Error, "28000");
+            features |= ProtocolConstants.FeatureStreaming;
         }
-        var serverFirst = Encoding.UTF8.GetString(parsed.Extra);
-        var clientFinal = scram.HandleServerFirst(config.Password, serverFirst);
-        Send(ProtocolCodec.BuildAuthRequest(SessionId, config.Username, AuthMethod.ScramSha256, Encoding.UTF8.GetBytes(clientFinal)));
 
-        response = Receive();
-        if (response.Type != MessageType.AuthResponse)
-        {
-            throw new ScratchBirdAuthException("Unexpected SCRAM final", "28000");
-        }
-        parsed = ProtocolCodec.ParseAuthResponse(response.Payload);
-        if (parsed.Status != AuthStatus.Ok)
-        {
-            throw new ScratchBirdAuthException(parsed.Error, "28000");
-        }
-        if (parsed.Extra.Length > 0)
-        {
-            scram.VerifyServerFinal(Encoding.UTF8.GetString(parsed.Extra));
-        }
-    }
+        var startup = ProtocolCodec.BuildStartupPayload(features, parameters);
+        SendMessage(MessageType.STARTUP, startup, 0, true);
 
-    private void DrainUntilComplete()
-    {
+        ScramClient? scram = null;
+
         while (true)
         {
             var msg = Receive();
-            if (msg.Type == MessageType.QueryError)
+            switch ((MessageType)msg.Header.Type)
             {
-                throw BuildQueryException(msg.Payload);
-            }
-            if (msg.Type == MessageType.CommandComplete || msg.Type == MessageType.EndOfResults)
-            {
-                return;
+                case MessageType.NEGOTIATE_VERSION:
+                    continue;
+                case MessageType.AUTH_REQUEST:
+                {
+                    var parsed = ProtocolCodec.ParseAuthRequest(msg.Payload);
+                    if (parsed.Method == AuthMethod.OK)
+                    {
+                        continue;
+                    }
+                    if (parsed.Method == AuthMethod.PASSWORD)
+                    {
+                        var passwordBytes = Encoding.UTF8.GetBytes(config.Password ?? string.Empty);
+                        SendMessage(MessageType.AUTH_RESPONSE, passwordBytes, 0, true);
+                        continue;
+                    }
+                    if (parsed.Method == AuthMethod.SCRAM_SHA_256)
+                    {
+                        scram ??= new ScramClient(config.Username);
+                        var clientFirst = Encoding.UTF8.GetBytes(scram.ClientFirstMessage());
+                        SendMessage(MessageType.AUTH_RESPONSE, clientFirst, 0, true);
+                        continue;
+                    }
+                    throw new ScratchBirdAuthException("Unsupported auth method", "28000");
+                }
+                case MessageType.AUTH_CONTINUE:
+                {
+                    var parsed = ProtocolCodec.ParseAuthContinue(msg.Payload);
+                    if (parsed.Method != AuthMethod.SCRAM_SHA_256 || scram == null)
+                    {
+                        throw new ScratchBirdAuthException("Unsupported auth continue", "28000");
+                    }
+                    var serverFirst = Encoding.UTF8.GetString(parsed.Data);
+                    var clientFinal = scram.HandleServerFirst(config.Password ?? string.Empty, serverFirst);
+                    SendMessage(MessageType.AUTH_RESPONSE, Encoding.UTF8.GetBytes(clientFinal), 0, true);
+                    continue;
+                }
+                case MessageType.AUTH_OK:
+                {
+                    var parsed = ProtocolCodec.ParseAuthOk(msg.Payload);
+                    SetAttachment(msg.Header.AttachmentId, msg.Header.TxnId);
+                    if (scram != null && parsed.ServerInfo.Length > 0)
+                    {
+                        var serverFinal = Encoding.UTF8.GetString(parsed.ServerInfo);
+                        if (serverFinal.StartsWith("v=", StringComparison.Ordinal))
+                        {
+                            scram.VerifyServerFinal(serverFinal);
+                        }
+                    }
+                    continue;
+                }
+                case MessageType.PARAMETER_STATUS:
+                {
+                    var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
+                    _parameters[status.Name] = status.Value;
+                    continue;
+                }
+                case MessageType.READY:
+                {
+                    var ready = ProtocolCodec.ParseReady(msg.Payload);
+                    _txnId = ready.TxnId;
+                    return;
+                }
+                case MessageType.ERROR:
+                    throw BuildQueryException(msg.Payload);
+                default:
+                    continue;
             }
         }
+    }
+
+    private void SendSimpleQuery(string sql)
+    {
+        var flags = ConfigBinaryTransfer() ? QueryFlagBinaryResult : 0;
+        var payload = ProtocolCodec.BuildQueryPayload(sql, flags, 0, 0);
+        _lastQuerySequence = SendMessage(MessageType.QUERY, payload, 0, false);
+    }
+
+    private void SendExtendedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    {
+        var paramValues = new List<ParamValue>(parameters.Count);
+        var paramTypes = new List<uint>(parameters.Count);
+        foreach (var param in parameters)
+        {
+            var encoded = TypeDecoder.EncodeParameter(param);
+            paramValues.Add(encoded.Param);
+            paramTypes.Add(encoded.Oid);
+        }
+        var parsePayload = ProtocolCodec.BuildParsePayload(string.Empty, sql, paramTypes);
+        SendMessage(MessageType.PARSE, parsePayload, 0, false);
+
+        var resultFormats = ConfigBinaryTransfer() ? new[] { TypeDecoder.FormatBinary } : Array.Empty<ushort>();
+        var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, string.Empty, paramValues, resultFormats);
+        SendMessage(MessageType.BIND, bindPayload, 0, false);
+
+        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, 0);
+        _lastQuerySequence = SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+        SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+    }
+
+    private bool ConfigBinaryTransfer()
+    {
+        return _config?.BinaryTransfer ?? true;
     }
 
     private ProtocolMessage Receive()
     {
-        if (_stream == null)
-        {
-            throw new InvalidOperationException("No active stream");
-        }
-        var header = ReadExact(12);
-        var (type, flags, length) = ProtocolMessage.ParseHeader(header);
-        var payload = length > 0 ? ReadExact(length) : Array.Empty<byte>();
-        return new ProtocolMessage(type, payload, flags);
+        var headerBytes = ReadExact(ProtocolConstants.HeaderSize);
+        var header = ProtocolMessage.ParseHeader(headerBytes);
+        var payload = header.Length > 0 ? ReadExact((int)header.Length) : Array.Empty<byte>();
+        return new ProtocolMessage(header, payload);
     }
 
     private byte[] ReadExact(int length)
@@ -216,20 +271,32 @@ internal sealed class ProtocolClient
         return buffer;
     }
 
-    private void Send(ProtocolMessage message)
+    private uint SendMessage(MessageType type, byte[] payload, byte flags, bool forceZero)
     {
         if (_stream == null)
         {
             throw new InvalidOperationException("No active stream");
         }
+        var sequence = _sequence++;
+        var attachmentId = forceZero ? new byte[16] : _attachmentId;
+        var txnId = forceZero ? 0UL : _txnId;
+        var header = new MessageHeader((byte)type, flags, (uint)payload.Length, sequence, attachmentId, txnId);
+        var message = new ProtocolMessage(header, payload);
         var data = message.ToBytes();
         _stream.Write(data, 0, data.Length);
         _stream.Flush();
+        return sequence;
+    }
+
+    private void SetAttachment(byte[] attachmentId, ulong txnId)
+    {
+        _attachmentId = attachmentId;
+        _txnId = txnId;
     }
 
     private ScratchBirdException BuildQueryException(byte[] payload)
     {
-        var parsed = ProtocolCodec.ParseQueryError(payload);
+        var parsed = ProtocolCodec.ParseErrorMessage(payload);
         var message = parsed.Message;
         if (!string.IsNullOrEmpty(parsed.Detail))
         {
@@ -308,7 +375,6 @@ internal sealed class ProtocolClient
         private List<ColumnInfo> _columns = new();
         private long _rowsAffected = -1;
         private string _command = string.Empty;
-        private long _rowCountHint = -1;
 
         public QueryStream(ProtocolClient client)
         {
@@ -316,7 +382,7 @@ internal sealed class ProtocolClient
         }
 
         public IReadOnlyList<ColumnInfo> Columns => _columns;
-        public long RowsAffected => _rowsAffected >= 0 ? _rowsAffected : _rowCountHint;
+        public long RowsAffected => _rowsAffected;
         public string Command => _command;
 
         public object?[]? ReadNextRow()
@@ -329,40 +395,47 @@ internal sealed class ProtocolClient
             while (true)
             {
                 var msg = _client.Receive();
-                switch (msg.Type)
+                switch ((MessageType)msg.Header.Type)
                 {
-                    case MessageType.QueryError:
+                    case MessageType.ERROR:
                         throw _client.BuildQueryException(msg.Payload);
-                    case MessageType.QueryResult:
-                    {
-                        var parsed = ProtocolCodec.ParseQueryResult(msg.Payload);
-                        _rowCountHint = parsed.RowCount;
-                        break;
-                    }
-                    case MessageType.RowDescription:
+                    case MessageType.ROW_DESCRIPTION:
                         _columns = ProtocolCodec.ParseRowDescription(msg.Payload);
                         break;
-                    case MessageType.RowData:
+                    case MessageType.DATA_ROW:
                     {
-                        var values = ProtocolCodec.ParseRowData(msg.Payload);
+                        var values = ProtocolCodec.ParseDataRow(msg.Payload);
                         var row = new object?[values.Count];
                         for (var i = 0; i < values.Count; i++)
                         {
-                            var type = i < _columns.Count ? _columns[i].WireType : WireType.Unknown;
-                            row[i] = TypeDecoder.Decode(type, values[i].Data);
+                            var typeOid = i < _columns.Count ? _columns[i].TypeOid : 0;
+                            var format = i < _columns.Count ? _columns[i].Format : (byte)TypeDecoder.FormatBinary;
+                            row[i] = TypeDecoder.Decode(typeOid, values[i].Data, format);
                         }
                         return row;
                     }
-                    case MessageType.CommandComplete:
+                    case MessageType.COMMAND_COMPLETE:
                     {
                         var parsed = ProtocolCodec.ParseCommandComplete(msg.Payload);
                         _command = parsed.Tag;
-                        _rowsAffected = parsed.RowsAffected;
+                        _rowsAffected = (long)parsed.Rows;
                         break;
                     }
-                    case MessageType.EndOfResults:
+                    case MessageType.PARAMETER_STATUS:
+                    {
+                        var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
+                        _client._parameters[status.Name] = status.Value;
+                        break;
+                    }
+                    case MessageType.READY:
+                    {
+                        var ready = ProtocolCodec.ParseReady(msg.Payload);
+                        _client._txnId = ready.TxnId;
                         _done = true;
                         return null;
+                    }
+                    case MessageType.EMPTY_QUERY:
+                        break;
                 }
             }
         }

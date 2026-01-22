@@ -9,7 +9,10 @@ Official database drivers for the [ScratchBird Database Engine](https://github.c
 
 ## Overview
 
-This repository contains native database drivers for ScratchBird in multiple programming languages. These drivers implement the ScratchBird wire protocol and provide idiomatic APIs for each supported language.
+This repository contains native database drivers for ScratchBird in multiple programming languages.
+These drivers target the ScratchBird native protocol (SBWP v1.1) and provide idiomatic APIs for
+each supported language. Emulated protocols (PostgreSQL/MySQL/Firebird) are handled by their
+own native client drivers against ScratchBird's emulation listeners.
 
 ### Supported Languages
 
@@ -32,7 +35,7 @@ This repository contains native database drivers for ScratchBird in multiple pro
 
 ### Prerequisites
 
-- Running ScratchBird server (default ports: Native 3092, PostgreSQL 5432, MySQL 3306, Firebird 3050)
+- Running ScratchBird server (native listener on port 3092)
 - Language-specific toolchain installed
 
 ### Go
@@ -92,26 +95,26 @@ See individual driver directories for complete documentation and examples.
 
 ---
 
-## Features
+## Target Features (SBWP v1.1)
 
-All drivers implement:
+These are the required capabilities for all drivers in this repo:
 
-- **Native Wire Protocol** - ScratchBird native protocol (port 3092)
-- **Connection Pooling** - Built-in connection pool support
-- **TLS/SSL** - Encrypted connections
-- **Authentication** - SCRAM-SHA-256, password, certificate authentication
-- **Prepared Statements** - Parameterized queries
-- **Transactions** - Full ACID transaction support
-- **Type Mapping** - Native type conversion for each language
+- **Native Wire Protocol (SBWP v1.1)** - ScratchBird native protocol (port 3092)
+- **TLS 1.3 Required** - Encrypted connections without plaintext fallback
+- **Server-side Prepare/Bind** - PARSE/BIND/EXECUTE for parameters
+- **Transactions** - Always-in-transaction semantics with autocommit mapping
+- **Type Mapping** - Full wire type coverage (including composite/geometry/range)
 
-### Wire Protocol Compatibility
+### Current Implementation Notes
 
-Drivers connect to ScratchBird's native protocol by default. ScratchBird also supports:
-- PostgreSQL protocol (port 5432)
-- MySQL protocol (port 3306)
-- Firebird protocol (port 3050)
+Many drivers still use a legacy SBDB-style protocol header and client-side SQL substitution.
+See `docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md` and `docs/specifications/` for the required
+SBWP v1.1 migration work.
 
-For legacy protocol support, use the respective language's standard drivers with ScratchBird's emulation layer.
+### Protocol Scope
+
+These drivers are native-only. For emulated protocol access (PostgreSQL/MySQL/Firebird),
+use the standard drivers for those engines against ScratchBird's emulation listeners.
 
 ---
 
@@ -124,6 +127,8 @@ ScratchBird-driver/
 │   ├── api-reference/      API documentation
 │   ├── development/        Development guides
 │   └── specifications/     Wire protocol specs
+│   ├── audit/              Audit reports and gap analysis
+│   └── planning/           Remediation plans
 ├── go/                     Go driver
 ├── python/                 Python driver
 ├── node/                   Node.js driver
@@ -146,7 +151,7 @@ ScratchBird-driver/
 - **[Documentation Index](docs/README.md)** - Full documentation overview
 - **[Getting Started](docs/getting-started/)** - Installation and setup guides
 - **[API Reference](docs/api-reference/)** - Detailed API documentation
-- **[Wire Protocol](docs/specifications/)** - Protocol specifications
+- **[Specifications](docs/specifications/)** - Protocol and driver specs
 
 ---
 

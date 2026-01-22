@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "protocol_version": "sbwp-1.1",
+  "suite": "sbwp-v1.1-minimal",
+  "fixtures": [
+    "core_fixture.sql",
+    "types_fixture.sql"
+  ],
+  "requires": ["tls", "auth", "prepare_bind", "types"],
+  "tests": [
+    {
+      "id": "handshake",
+      "kind": "query",
+      "sql": "SELECT 1",
+      "expect_rows": 1
+    },
+    {
+      "id": "auth",
+      "kind": "auth"
+    },
+    {
+      "id": "prepare_bind",
+      "kind": "prepare_bind",
+      "sql": "SELECT $1::INTEGER",
+      "params": [42],
+      "expect_rows": 1
+    },
+    {
+      "id": "types_one_way",
+      "kind": "query",
+      "sql": "SELECT * FROM sb_conformance.type_coverage",
+      "expect_rows": 1
+    }
+  ]
+}

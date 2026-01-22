@@ -10,6 +10,9 @@ This directory contains documentation for the ScratchBird database drivers.
 | **api-reference/** | API documentation for each language driver |
 | **development/** | Development guides, testing, and contribution information |
 | **specifications/** | Wire protocol and driver specifications |
+| **audit/** | Implementation audits and gap analysis |
+| **planning/** | Remediation plans and implementation checklists |
+| **fixtures/** | Shared SQL fixtures for conformance tests |
 
 ## Driver Documentation
 
@@ -29,5 +32,7 @@ Each driver has its own README in its respective directory with language-specifi
 ## Quick Links
 
 - [Main ScratchBird Project](https://github.com/DaltonCalford/ScratchBird)
-- [Wire Protocol Specification](specifications/WIRE_PROTOCOL.md)
+- [Native Protocol Alignment](specifications/NATIVE_PROTOCOL_ALIGNMENT.md)
+- [Driver Audit](audit/DRIVER_IMPLEMENTATION_AUDIT.md)
+- [Driver Remediation Plan](planning/DRIVER_REMEDIATION_PLAN.md)
 - [Contributing Guide](../CONTRIBUTING.md)

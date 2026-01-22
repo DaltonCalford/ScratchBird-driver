@@ -30,7 +30,7 @@ impl Default for Config {
             database: String::new(),
             user: String::new(),
             password: String::new(),
-            sslmode: "prefer".to_string(),
+            sslmode: "require".to_string(),
             sslrootcert: None,
             sslcert: None,
             sslkey: None,

@@ -110,12 +110,12 @@ public sealed class ScratchBirdDataReader : DbDataReader
 
     public override string GetDataTypeName(int ordinal)
     {
-        return _stream.Columns[ordinal].WireType.ToString();
+        return TypeDecoder.OidToString(_stream.Columns[ordinal].TypeOid);
     }
 
     public override Type GetFieldType(int ordinal)
     {
-        return TypeDecoder.GetClrType(_stream.Columns[ordinal].WireType);
+        return TypeDecoder.GetClrType(_stream.Columns[ordinal].TypeOid);
     }
 
     public override object GetValue(int ordinal)

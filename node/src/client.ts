@@ -3,33 +3,57 @@ import tls from "node:tls";
 import fs from "node:fs";
 import {
   AuthMethod,
-  AuthStatus,
   MessageType,
-  buildAuthRequest,
-  buildBegin,
-  buildCommit,
-  buildConnectRequest,
-  buildDisconnect,
-  buildQuery,
-  buildRollback,
+  MSG_FLAG_URGENT,
+  FEATURE_COMPRESSION,
+  FEATURE_STREAMING,
+  HEADER_SIZE,
+  buildStartupPayload,
+  buildQueryPayload,
+  buildParsePayload,
+  buildBindPayload,
+  buildExecutePayload,
+  buildCancelPayload,
+  encodeMessage,
   decodeHeader,
-  parseAuthResponse,
-  parseCommandComplete,
-  parseConnectResponse,
-  parseQueryError,
-  parseQueryResult,
-  parseRowData,
+  parseAuthRequest,
+  parseAuthContinue,
+  parseAuthOk,
+  parseReady,
+  parseParameterStatus,
   parseRowDescription,
+  parseDataRow,
+  parseCommandComplete,
+  parseErrorMessage,
+  MessageHeader,
 } from "./protocol";
 import { ScramExchange } from "./scram";
 import { parseDsn } from "./dsn";
-import { substituteParameters } from "./sql";
-import { decodeValue, wireTypeToString, ClientConfig, FieldDef, QueryResult } from "./types";
+import { normalizeQuery } from "./sql";
+import {
+  ClientConfig,
+  FieldDef,
+  QueryResult,
+  ParamValue,
+  FORMAT_BINARY,
+  oidToString,
+  encodeParam,
+  decodeValue,
+} from "./types";
 import { mapSqlState, ScratchbirdError } from "./errors";
 
+const QUERY_FLAG_BINARY_RESULT = 0x04;
+const FORMAT_TEXT = 0;
+
 interface Message {
-  type: number;
+  header: MessageHeader;
   payload: Buffer;
+}
+
+interface QueryOptions {
+  signal?: AbortSignal;
+  maxRows?: number;
+  timeoutMs?: number;
 }
 
 class SocketReader {
@@ -85,28 +109,20 @@ class SocketReader {
 class ProtocolConnection {
   private socket?: net.Socket;
   private reader?: SocketReader;
+  private attachmentId = Buffer.alloc(16);
+  private txnId = 0n;
+  private sequence = 0;
 
   async connect(config: ClientConfig): Promise<void> {
     const host = config.host ?? "localhost";
     const port = config.port ?? 3092;
     const sslMode = resolveSslMode(config);
+    if (sslMode === "disable") {
+      throw new Error("TLS is required for ScratchBird connections");
+    }
 
     let rawSocket = await connectTcp(host, port, config.connectTimeoutMs ?? 30000);
-
-    if (sslMode !== "disable") {
-      const requireTls = sslMode === "require" || sslMode === "verify-ca" || sslMode === "verify-full";
-      try {
-        const tlsSocket = await upgradeTls(rawSocket, host, sslMode, config);
-        rawSocket = tlsSocket;
-      } catch (err) {
-        rawSocket.destroy();
-        if (sslMode === "allow" || sslMode === "prefer") {
-          rawSocket = await connectTcp(host, port, config.connectTimeoutMs ?? 30000);
-        } else if (requireTls) {
-          throw err;
-        }
-      }
-    }
+    rawSocket = await upgradeTls(rawSocket, host, sslMode, config);
 
     if (config.socketTimeoutMs && config.socketTimeoutMs > 0) {
       rawSocket.setTimeout(config.socketTimeoutMs);
@@ -116,22 +132,42 @@ class ProtocolConnection {
     this.reader = new SocketReader(rawSocket);
   }
 
-  async send(data: Buffer): Promise<void> {
+  setAttachment(id: Buffer, txnId: bigint): void {
+    this.attachmentId = Buffer.from(id);
+    this.txnId = txnId;
+  }
+
+  setTxnId(txnId: bigint): void {
+    this.txnId = txnId;
+  }
+
+  async sendMessage(type: number, payload: Buffer, flags: number, forceZero: boolean): Promise<number> {
     if (!this.socket) throw new Error("Socket not connected");
+    const seq = this.sequence++;
+    const header: MessageHeader = {
+      type,
+      flags,
+      length: payload.length,
+      sequence: seq,
+      attachmentId: forceZero ? Buffer.alloc(16) : this.attachmentId,
+      txnId: forceZero ? 0n : this.txnId,
+    };
+    const data = encodeMessage(header, payload);
     await new Promise<void>((resolve, reject) => {
       this.socket!.write(data, (err) => {
         if (err) reject(err);
         else resolve();
       });
     });
+    return seq;
   }
 
   async recv(): Promise<Message> {
     if (!this.reader) throw new Error("Socket not connected");
-    const header = await this.reader.readExact(12);
-    const { type, length } = decodeHeader(header);
-    const payload = length ? await this.reader.readExact(length) : Buffer.alloc(0);
-    return { type, payload };
+    const headerBuf = await this.reader.readExact(HEADER_SIZE);
+    const header = decodeHeader(headerBuf);
+    const payload = header.length ? await this.reader.readExact(header.length) : Buffer.alloc(0);
+    return { header, payload };
   }
 
   close(): void {
@@ -145,9 +181,8 @@ export class Client {
   private config: ClientConfig;
   private protocol = new ProtocolConnection();
   private connected = false;
-  private sessionId?: Buffer;
   private prepared = new Map<string, string>();
-  private inTransaction = false;
+  private parameters: Record<string, string> = {};
 
   constructor(config?: ClientConfig | string) {
     const parsed = typeof config === "string" ? parseDsn(config) : {};
@@ -155,6 +190,9 @@ export class Client {
     if (!this.config.host) this.config.host = "localhost";
     if (!this.config.port) this.config.port = 3092;
     if (!this.config.applicationName) this.config.applicationName = "scratchbird_node";
+    if (!this.config.sslmode) this.config.sslmode = "require";
+    if (this.config.binaryTransfer === undefined) this.config.binaryTransfer = true;
+    if (!this.config.compression) this.config.compression = "off";
   }
 
   async connect(): Promise<void> {
@@ -162,71 +200,50 @@ export class Client {
       throw new Error("user and database are required");
     }
     await this.protocol.connect(this.config);
-    const connectMsg = buildConnectRequest(
-      this.config.database,
-      this.config.applicationName ?? "scratchbird_node",
-      process.pid,
-    );
-    await this.protocol.send(connectMsg);
-    const response = await this.protocol.recv();
-    if (response.type !== MessageType.CONNECT_RESPONSE) {
-      throw new Error("Unexpected response to CONNECT_REQUEST");
-    }
-    const parsed = parseConnectResponse(response.payload);
-    if (!parsed.success) {
-      throw new Error(parsed.errorMessage || "connect failed");
-    }
-    this.sessionId = parsed.sessionId;
-    await this.authenticate();
+    await this.handshake();
     this.connected = true;
   }
 
-  async query<T = any>(text: string, params?: any[] | Record<string, any>): Promise<QueryResult<T>> {
+  async query<T = any>(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
     this.ensureConnected();
-    const sql = substituteParameters(text, params);
-    const result = await this.executeQuery(sql);
-    return result as QueryResult<T>;
+    const normalized = normalizeQuery(text, params);
+    return (await this.executeQuery(normalized.sql, normalized.params, options)) as QueryResult<T>;
   }
 
-  async queryStream(text: string, params?: any[] | Record<string, any>): Promise<AsyncGenerator<any, void, void>> {
+  async queryStream(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
     this.ensureConnected();
-    const sql = substituteParameters(text, params);
-    return this.executeQueryStream(sql);
+    const normalized = normalizeQuery(text, params);
+    return this.executeQueryStream(normalized.sql, normalized.params, options);
   }
 
   async prepare(name: string, text: string, _paramTypes?: string[]): Promise<void> {
     if (!name) throw new Error("name is required");
-    this.prepared.set(name, text);
+    this.ensureConnected();
+    const normalized = normalizeQuery(text);
+    await this.protocol.sendMessage(MessageType.PARSE, buildParsePayload(name, normalized.sql, []), 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    await this.drainUntilReady();
+    this.prepared.set(name, normalized.sql);
   }
 
-  async execute<T = any>(name: string, params?: any[] | Record<string, any>): Promise<QueryResult<T>> {
+  async execute<T = any>(name: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
+    this.ensureConnected();
     const sql = this.prepared.get(name);
     if (!sql) throw new Error(`Unknown prepared statement: ${name}`);
-    return this.query(sql, params);
+    const normalized = normalizeQuery(sql, params);
+    return (await this.executePrepared(name, normalized.params, options)) as QueryResult<T>;
   }
 
   async begin(): Promise<void> {
     this.ensureConnected();
-    if (this.inTransaction) return;
-    await this.protocol.send(buildBegin(this.sessionId!));
-    await this.drainUntilComplete();
-    this.inTransaction = true;
   }
 
   async commit(): Promise<void> {
     this.ensureConnected();
-    if (!this.inTransaction) return;
-    await this.protocol.send(buildCommit(this.sessionId!));
-    await this.drainUntilComplete();
-    this.inTransaction = false;
   }
 
   async rollback(): Promise<void> {
     this.ensureConnected();
-    if (!this.inTransaction) return;
-    await this.protocol.send(buildRollback(this.sessionId!));
-    await this.drainUntilComplete();
-    this.inTransaction = false;
   }
 
   async end(): Promise<void> {
@@ -234,174 +251,328 @@ export class Client {
       this.protocol.close();
       return;
     }
-    try {
-      if (this.sessionId) {
-        await this.protocol.send(buildDisconnect(this.sessionId));
-      }
-    } finally {
-      this.protocol.close();
-      this.connected = false;
-      this.sessionId = undefined;
-    }
+    this.protocol.close();
+    this.connected = false;
   }
 
   private ensureConnected(): void {
-    if (!this.connected || !this.sessionId) {
+    if (!this.connected) {
       throw new Error("Client is not connected");
     }
   }
 
-  private async authenticate(): Promise<void> {
-    const exchange = new ScramExchange(this.config.user ?? "");
-    const clientFirst = Buffer.from(exchange.clientFirstMessage(), "utf8");
-    const req = buildAuthRequest(this.sessionId!, this.config.user ?? "", AuthMethod.SCRAM_SHA_256, clientFirst);
-    await this.protocol.send(req);
-
-    let msg = await this.protocol.recv();
-    if (msg.type !== MessageType.AUTH_RESPONSE) {
-      throw new Error("Unexpected response to AUTH_REQUEST");
+  private requestedFeatures(): bigint {
+    let features = 0n;
+    if (this.config.compression === "zstd") {
+      features |= FEATURE_COMPRESSION;
     }
-    let auth = parseAuthResponse(msg.payload);
-    if (auth.status !== AuthStatus.CONTINUE) {
-      throw new Error(auth.errorMessage || "auth failed");
+    if (this.config.binaryTransfer) {
+      features |= FEATURE_STREAMING;
     }
-
-    const serverFirst = auth.extra.toString("utf8");
-    const clientFinal = exchange.handleServerFirst(this.config.password ?? "", serverFirst);
-    const req2 = buildAuthRequest(
-      this.sessionId!,
-      this.config.user ?? "",
-      AuthMethod.SCRAM_SHA_256,
-      Buffer.from(clientFinal, "utf8"),
-    );
-    await this.protocol.send(req2);
-
-    msg = await this.protocol.recv();
-    if (msg.type !== MessageType.AUTH_RESPONSE) {
-      throw new Error("Unexpected response to SCRAM final");
-    }
-    auth = parseAuthResponse(msg.payload);
-    if (auth.status !== AuthStatus.OK) {
-      throw new Error(auth.errorMessage || "auth failed");
-    }
-    if (auth.extra?.length) {
-      exchange.verifyServerFinal(auth.extra.toString("utf8"));
-    }
+    return features;
   }
 
-  private async drainUntilComplete(): Promise<void> {
+  private async handshake(): Promise<void> {
+    const params: Record<string, string> = {
+      database: this.config.database ?? "",
+      user: this.config.user ?? "",
+    };
+    if (this.config.applicationName) {
+      params.application_name = this.config.applicationName;
+    }
+    const startup = buildStartupPayload(this.requestedFeatures(), params);
+    await this.protocol.sendMessage(MessageType.STARTUP, startup, 0, true);
+
+    let scram: ScramExchange | null = null;
+
     while (true) {
       const msg = await this.protocol.recv();
-      if (msg.type === MessageType.QUERY_ERROR) {
-        throw this.raiseQueryError(msg.payload);
-      }
-      if (msg.type === MessageType.COMMAND_COMPLETE || msg.type === MessageType.END_OF_RESULTS) {
-        return;
+      switch (msg.header.type) {
+        case MessageType.NEGOTIATE_VERSION:
+          continue;
+        case MessageType.AUTH_REQUEST: {
+          const { method, data } = parseAuthRequest(msg.payload);
+          if (method === AuthMethod.OK) {
+            continue;
+          }
+          if (method === AuthMethod.PASSWORD) {
+            await this.protocol.sendMessage(MessageType.AUTH_RESPONSE, Buffer.from(this.config.password ?? ""), 0, true);
+            continue;
+          }
+          if (method === AuthMethod.SCRAM_SHA_256) {
+            if (!scram) {
+              scram = new ScramExchange(this.config.user ?? "");
+            }
+            const clientFirst = Buffer.from(scram.clientFirstMessage(), "utf8");
+            await this.protocol.sendMessage(MessageType.AUTH_RESPONSE, clientFirst, 0, true);
+            continue;
+          }
+          throw new Error("Unsupported auth method");
+        }
+        case MessageType.AUTH_CONTINUE: {
+          const { method, data } = parseAuthContinue(msg.payload);
+          if (method !== AuthMethod.SCRAM_SHA_256 || !scram) {
+            throw new Error("Unsupported auth continue");
+          }
+          const clientFinal = scram.handleServerFirst(this.config.password ?? "", data.toString("utf8"));
+          await this.protocol.sendMessage(MessageType.AUTH_RESPONSE, Buffer.from(clientFinal, "utf8"), 0, true);
+          continue;
+        }
+        case MessageType.AUTH_OK: {
+          const { serverInfo } = parseAuthOk(msg.payload);
+          this.protocol.setAttachment(msg.header.attachmentId, msg.header.txnId);
+          if (scram && serverInfo.length && serverInfo.toString("utf8").startsWith("v=")) {
+            scram.verifyServerFinal(serverInfo.toString("utf8"));
+          }
+          continue;
+        }
+        case MessageType.PARAMETER_STATUS: {
+          const { name, value } = parseParameterStatus(msg.payload);
+          this.parameters[name] = value;
+          continue;
+        }
+        case MessageType.READY: {
+          const { txnId } = parseReady(msg.payload);
+          this.protocol.setTxnId(txnId);
+          return;
+        }
+        case MessageType.ERROR:
+          throw this.raiseProtocolError(msg.payload);
+        default:
+          continue;
       }
     }
   }
 
-  private async executeQuery(sql: string): Promise<QueryResult> {
+  private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
+    if (params.length === 0) {
+      await this.sendSimpleQuery(sql, options);
+    } else {
+      await this.sendExtendedQuery(sql, params, options);
+    }
+
     const rows: any[] = [];
     let fields: FieldDef[] = [];
     let columns: ReturnType<typeof parseRowDescription> = [];
     let rowCount = -1;
-    let rowCountHint = -1;
     let command = "";
 
-    await this.protocol.send(buildQuery(this.sessionId!, sql, 0));
-
     while (true) {
+      if (options?.signal?.aborted) {
+        await this.cancelQuery();
+        throw new ScratchbirdError("query canceled", "57014");
+      }
       const msg = await this.protocol.recv();
-      if (msg.type === MessageType.QUERY_ERROR) {
-        throw this.raiseQueryError(msg.payload);
-      }
-      if (msg.type === MessageType.QUERY_RESULT) {
-        const parsed = parseQueryResult(msg.payload);
-        rowCountHint = parsed.rowCount;
-        continue;
-      }
-      if (msg.type === MessageType.ROW_DESCRIPTION) {
-        columns = parseRowDescription(msg.payload);
-        fields = columns.map((col) => ({
-          name: col.name,
-          dataType: wireTypeToString(col.wireType),
-          format: col.formatCode === 1 ? "binary" : "text",
-          nullable: true,
-        }));
-        continue;
-      }
-      if (msg.type === MessageType.ROW_DATA) {
-        const values = parseRowData(msg.payload);
-        const row = buildRow(columns, fields, values);
-        rows.push(row);
-        continue;
-      }
-      if (msg.type === MessageType.COMMAND_COMPLETE) {
-        const parsed = parseCommandComplete(msg.payload);
-        command = parsed.tag;
-        rowCount = parsed.rowsAffected;
-        continue;
-      }
-      if (msg.type === MessageType.END_OF_RESULTS) {
-        break;
-      }
-    }
-
-    if (rowCount < 0 && rowCountHint >= 0) {
-      rowCount = rowCountHint;
-    }
-    if (rowCount < 0) {
-      rowCount = rows.length;
-    }
-
-    return { rows, rowCount, fields, command };
-  }
-
-  private async executeQueryStream(sql: string): Promise<AsyncGenerator<any, void, void>> {
-    await this.protocol.send(buildQuery(this.sessionId!, sql, 0));
-
-    const self = this;
-    async function* iterator() {
-      let fields: FieldDef[] = [];
-      let columns: ReturnType<typeof parseRowDescription> = [];
-      while (true) {
-        const msg = await self.protocol.recv();
-        if (msg.type === MessageType.QUERY_ERROR) {
-          throw self.raiseQueryError(msg.payload);
-        }
-        if (msg.type === MessageType.ROW_DESCRIPTION) {
+      switch (msg.header.type) {
+        case MessageType.ERROR:
+          throw this.raiseProtocolError(msg.payload);
+        case MessageType.ROW_DESCRIPTION:
           columns = parseRowDescription(msg.payload);
           fields = columns.map((col) => ({
             name: col.name,
-            dataType: wireTypeToString(col.wireType),
-            format: col.formatCode === 1 ? "binary" : "text",
-            nullable: true,
+            dataType: oidToString(col.typeOid),
+            format: col.format === FORMAT_TEXT ? "text" : "binary",
+            nullable: col.nullable,
+            typeOid: col.typeOid,
+            typeModifier: col.typeModifier,
           }));
           continue;
-        }
-        if (msg.type === MessageType.ROW_DATA) {
-          const values = parseRowData(msg.payload);
-          yield buildRow(columns, fields, values);
+        case MessageType.DATA_ROW: {
+          const values = parseDataRow(msg.payload, columns.length);
+          rows.push(buildRow(columns, values));
           continue;
         }
-        if (msg.type === MessageType.END_OF_RESULTS) {
-          break;
+        case MessageType.COMMAND_COMPLETE: {
+          const parsed = parseCommandComplete(msg.payload);
+          command = parsed.tag;
+          rowCount = Number(parsed.rows);
+          continue;
+        }
+        case MessageType.EMPTY_QUERY:
+          continue;
+        case MessageType.PARAMETER_STATUS: {
+          const { name, value } = parseParameterStatus(msg.payload);
+          this.parameters[name] = value;
+          continue;
+        }
+        case MessageType.READY: {
+          const { txnId } = parseReady(msg.payload);
+          this.protocol.setTxnId(txnId);
+          if (rowCount < 0) {
+            rowCount = rows.length;
+          }
+          return { rows, rowCount, fields, command };
+        }
+        default:
+          continue;
+      }
+    }
+  }
+
+  private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
+    await this.sendBindExecute(name, params, options);
+
+    const rows: any[] = [];
+    let fields: FieldDef[] = [];
+    let columns: ReturnType<typeof parseRowDescription> = [];
+    let rowCount = -1;
+    let command = "";
+
+    while (true) {
+      if (options?.signal?.aborted) {
+        await this.cancelQuery();
+        throw new ScratchbirdError("query canceled", "57014");
+      }
+      const msg = await this.protocol.recv();
+      switch (msg.header.type) {
+        case MessageType.ERROR:
+          throw this.raiseProtocolError(msg.payload);
+        case MessageType.ROW_DESCRIPTION:
+          columns = parseRowDescription(msg.payload);
+          fields = columns.map((col) => ({
+            name: col.name,
+            dataType: oidToString(col.typeOid),
+            format: col.format === FORMAT_TEXT ? "text" : "binary",
+            nullable: col.nullable,
+            typeOid: col.typeOid,
+            typeModifier: col.typeModifier,
+          }));
+          continue;
+        case MessageType.DATA_ROW: {
+          const values = parseDataRow(msg.payload, columns.length);
+          rows.push(buildRow(columns, values));
+          continue;
+        }
+        case MessageType.COMMAND_COMPLETE: {
+          const parsed = parseCommandComplete(msg.payload);
+          command = parsed.tag;
+          rowCount = Number(parsed.rows);
+          continue;
+        }
+        case MessageType.READY: {
+          const { txnId } = parseReady(msg.payload);
+          this.protocol.setTxnId(txnId);
+          if (rowCount < 0) {
+            rowCount = rows.length;
+          }
+          return { rows, rowCount, fields, command };
+        }
+        default:
+          continue;
+      }
+    }
+  }
+
+  private async executeQueryStream(sql: string, params: any[], options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
+    if (params.length === 0) {
+      await this.sendSimpleQuery(sql, options);
+    } else {
+      await this.sendExtendedQuery(sql, params, options);
+    }
+
+    const self = this;
+    async function* iterator() {
+      let columns: ReturnType<typeof parseRowDescription> = [];
+      while (true) {
+        if (options?.signal?.aborted) {
+          await self.cancelQuery();
+          throw new ScratchbirdError("query canceled", "57014");
+        }
+        const msg = await self.protocol.recv();
+        switch (msg.header.type) {
+          case MessageType.ERROR:
+            throw self.raiseProtocolError(msg.payload);
+          case MessageType.ROW_DESCRIPTION:
+            columns = parseRowDescription(msg.payload);
+            continue;
+          case MessageType.DATA_ROW: {
+            const values = parseDataRow(msg.payload, columns.length);
+            yield buildRow(columns, values);
+            continue;
+          }
+          case MessageType.READY: {
+            const { txnId } = parseReady(msg.payload);
+            self.protocol.setTxnId(txnId);
+            return;
+          }
+          default:
+            continue;
         }
       }
     }
     return iterator();
   }
 
-  private raiseQueryError(payload: Buffer): ScratchbirdError {
+  private async sendSimpleQuery(sql: string, options?: QueryOptions): Promise<void> {
+    const flags = this.config.binaryTransfer ? QUERY_FLAG_BINARY_RESULT : 0;
+    const maxRows = options?.maxRows ?? 0;
+    const timeoutMs = options?.timeoutMs ?? 0;
+    const payload = buildQueryPayload(sql, flags, maxRows, timeoutMs);
+    await this.protocol.sendMessage(MessageType.QUERY, payload, 0, false);
+  }
+
+  private async sendExtendedQuery(sql: string, params: any[], options?: QueryOptions): Promise<void> {
+    const paramValues: ParamValue[] = [];
+    const paramTypes: number[] = [];
+    for (const param of params) {
+      const encoded = encodeParam(param);
+      paramValues.push(encoded.param);
+      paramTypes.push(encoded.oid);
+    }
+    const parsePayload = buildParsePayload("", sql, paramTypes);
+    await this.protocol.sendMessage(MessageType.PARSE, parsePayload, 0, false);
+    const resultFormats = this.config.binaryTransfer ? [FORMAT_BINARY] : [];
+    const bindPayload = buildBindPayload("", "", paramValues, resultFormats);
+    await this.protocol.sendMessage(MessageType.BIND, bindPayload, 0, false);
+    const execPayload = buildExecutePayload("", options?.maxRows ?? 0);
+    await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+  }
+
+  private async sendBindExecute(statementName: string, params: any[], options?: QueryOptions): Promise<void> {
+    const paramValues: ParamValue[] = [];
+    for (const param of params) {
+      const encoded = encodeParam(param);
+      paramValues.push(encoded.param);
+    }
+    const resultFormats = this.config.binaryTransfer ? [FORMAT_BINARY] : [];
+    const bindPayload = buildBindPayload("", statementName, paramValues, resultFormats);
+    await this.protocol.sendMessage(MessageType.BIND, bindPayload, 0, false);
+    const execPayload = buildExecutePayload("", options?.maxRows ?? 0);
+    await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+  }
+
+  private async cancelQuery(): Promise<void> {
+    await this.protocol.sendMessage(MessageType.CANCEL, buildCancelPayload(0, 0), MSG_FLAG_URGENT, false);
+  }
+
+  private async drainUntilReady(): Promise<void> {
+    while (true) {
+      const msg = await this.protocol.recv();
+      switch (msg.header.type) {
+        case MessageType.ERROR:
+          throw this.raiseProtocolError(msg.payload);
+        case MessageType.READY: {
+          const { txnId } = parseReady(msg.payload);
+          this.protocol.setTxnId(txnId);
+          return;
+        }
+        default:
+          continue;
+      }
+    }
+  }
+
+  private raiseProtocolError(payload: Buffer): ScratchbirdError {
     try {
-      const { sqlstate, message, detail, hint } = parseQueryError(payload);
-      const ErrorClass = mapSqlState(sqlstate);
+      const { sqlState, message, detail, hint } = parseErrorMessage(payload);
+      const ErrorClass = mapSqlState(sqlState);
       const full = [message, detail ? `DETAIL: ${detail}` : "", hint ? `HINT: ${hint}` : ""]
         .filter(Boolean)
         .join("\n");
-      return new ErrorClass(full || "query failed", sqlstate, detail, hint);
-    } catch (err) {
+      return new ErrorClass(full || "query failed", sqlState, detail, hint);
+    } catch {
       return new ScratchbirdError("query failed");
     }
   }
@@ -439,10 +610,10 @@ export class Pool {
     });
   }
 
-  async query<T = any>(text: string, params?: any[] | Record<string, any>): Promise<QueryResult<T>> {
+  async query<T = any>(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
     const client = await this.connect();
     try {
-      return await client.query<T>(text, params);
+      return await client.query<T>(text, params, options);
     } finally {
       await (client as any).release();
     }
@@ -489,19 +660,14 @@ export class Pool {
   }
 }
 
-function buildRow(
-  columns: Array<{ wireType: number; name: string }>,
-  fields: FieldDef[],
-  values: { data: Buffer | null }[],
-): Record<string, any> {
+function buildRow(columns: Array<{ name: string; typeOid: number; format: number }>, values: { data: Buffer | null }[]): Record<string, any> {
   const row: Record<string, any> = {};
   for (let i = 0; i < values.length; i++) {
-    const field = fields[i];
+    const column = columns[i];
     const data = values[i];
-    const wireType = columns[i]?.wireType ?? mapFieldType(field);
-    const decoded = decodeValue(wireType ?? 0, data.data);
-    if (field && field.name) {
-      row[field.name] = decoded;
+    const decoded = decodeValue(column.typeOid, data.data, column.format);
+    if (column?.name) {
+      row[column.name] = decoded;
     } else {
       row[i] = decoded;
     }
@@ -509,73 +675,11 @@ function buildRow(
   return row;
 }
 
-function mapFieldType(field?: FieldDef): number {
-  if (!field) return 0xff;
-  switch (field.dataType) {
-    case "boolean":
-      return 0x01;
-    case "int16":
-      return 0x02;
-    case "int32":
-      return 0x03;
-    case "int64":
-      return 0x04;
-    case "float32":
-      return 0x05;
-    case "float64":
-      return 0x06;
-    case "decimal":
-      return 0x07;
-    case "varchar":
-      return 0x08;
-    case "char":
-      return 0x09;
-    case "bytea":
-      return 0x0a;
-    case "date":
-      return 0x0b;
-    case "time":
-      return 0x0c;
-    case "timestamp":
-      return 0x0d;
-    case "timestamptz":
-      return 0x0e;
-    case "interval":
-      return 0x0f;
-    case "uuid":
-      return 0x10;
-    case "json":
-      return 0x11;
-    case "jsonb":
-      return 0x12;
-    case "array":
-      return 0x13;
-    case "vector":
-      return 0x16;
-    case "money":
-      return 0x17;
-    case "xml":
-      return 0x18;
-    case "inet":
-      return 0x19;
-    case "cidr":
-      return 0x1a;
-    case "tsvector":
-      return 0x1c;
-    case "tsquery":
-      return 0x1d;
-    case "range":
-      return 0x1e;
-    default:
-      return 0xff;
-  }
-}
-
 function resolveSslMode(config: ClientConfig): string {
   if (config.ssl === false) return "disable";
   if (typeof config.ssl === "object") return config.sslmode ?? "require";
   if (config.ssl === true) return config.sslmode ?? "require";
-  return config.sslmode ?? "prefer";
+  return config.sslmode ?? "require";
 }
 
 async function connectTcp(host: string, port: number, timeoutMs: number): Promise<net.Socket> {

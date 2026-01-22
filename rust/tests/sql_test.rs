@@ -1,29 +1,24 @@
-use scratchbird::{Param, Params};
-use scratchbird::sql::substitute;
+use scratchbird::{normalize, Param, Params};
 
 #[test]
-fn substitute_positional() {
+fn normalize_positional() {
     let sql = "SELECT * FROM t WHERE id = ? AND name = ?";
-    let out = substitute(
+    let normalized = normalize(
         sql,
         Params::Positional(vec![Param::from(42_i64), Param::from("Ada")]),
-    );
-    assert_eq!(out, "SELECT * FROM t WHERE id = 42 AND name = 'Ada'");
+    )
+    .unwrap();
+    assert_eq!(normalized.sql, "SELECT * FROM t WHERE id = $1 AND name = $2");
+    assert_eq!(normalized.params.len(), 2);
 }
 
 #[test]
-fn substitute_named() {
+fn normalize_named() {
     let sql = "SELECT * FROM users WHERE name = @name AND active = :active";
     let mut params = std::collections::HashMap::new();
     params.insert("name".to_string(), Param::from("Ada"));
     params.insert("active".to_string(), Param::from(true));
-    let out = substitute(sql, Params::Named(params));
-    assert_eq!(out, "SELECT * FROM users WHERE name = 'Ada' AND active = TRUE");
-}
-
-#[test]
-fn substitute_binary() {
-    let sql = "SELECT ?";
-    let out = substitute(sql, Params::Positional(vec![Param::from(vec![1u8, 2u8])]));
-    assert_eq!(out, "SELECT X'0102'");
+    let normalized = normalize(sql, Params::Named(params)).unwrap();
+    assert_eq!(normalized.sql, "SELECT * FROM users WHERE name = $1 AND active = $2");
+    assert_eq!(normalized.params.len(), 2);
 }

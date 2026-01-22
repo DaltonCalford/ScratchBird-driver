@@ -1,161 +1,112 @@
-import { Buffer } from "node:buffer";
-
-function escapeString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "''");
+export interface NormalizedQuery {
+  sql: string;
+  params: any[];
 }
 
-function formatParam(value: any): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  if (typeof value === "boolean") {
-    return value ? "TRUE" : "FALSE";
-  }
-  if (typeof value === "number" || typeof value === "bigint") {
-    return String(value);
-  }
-  if (value instanceof Buffer) {
-    return `X'${value.toString("hex").toUpperCase()}'`;
-  }
-  if (value instanceof Uint8Array) {
-    return `X'${Buffer.from(value).toString("hex").toUpperCase()}'`;
-  }
-  if (value instanceof Date) {
-    const iso = value.toISOString().replace("T", " ").replace("Z", "");
-    return `TIMESTAMP '${iso}'`;
-  }
-  if (Array.isArray(value)) {
-    return formatArray(value);
-  }
-  if (typeof value === "object") {
-    return `JSON '${escapeString(JSON.stringify(value))}'`;
-  }
-  return `'${escapeString(String(value))}'`;
-}
-
-function formatArray(values: any[]): string {
-  const items = values.map((item) => (Array.isArray(item) ? formatArray(item) : formatParam(item)));
-  return `ARRAY[${items.join(", ")}]`;
-}
-
-export function substituteParameters(sql: string, params?: any[] | Record<string, any>): string {
+export function normalizeQuery(sql: string, params?: any[] | Record<string, any>): NormalizedQuery {
   if (!params) {
-    return sql;
+    return { sql, params: [] };
   }
-  if (!Array.isArray(params)) {
-    return substituteNamed(sql, params);
+  if (Array.isArray(params)) {
+    if (sql.includes("?")) {
+      const rewritten = rewritePositional(sql, params);
+      return { sql: rewritten.sql, params: rewritten.params };
+    }
+    return { sql, params };
   }
-  return substitutePositional(sql, params);
+  if (!hasNamedParams(sql)) {
+    throw new Error("named parameters provided but query has no named placeholders");
+  }
+  const rewritten = rewriteNamed(sql, params);
+  return { sql: rewritten.sql, params: rewritten.params };
 }
 
-function substituteNamed(sql: string, params: Record<string, any>): string {
-  let result = "";
-  let i = 0;
-  while (i < sql.length) {
+function hasNamedParams(sql: string): boolean {
+  let inString = false;
+  for (let i = 0; i + 1 < sql.length; i++) {
     const ch = sql[i];
-    if (ch === "'" && i + 1 < sql.length) {
-      result += ch;
-      i++;
-      while (i < sql.length) {
-        result += sql[i];
-        if (sql[i] === "'" && (i + 1 >= sql.length || sql[i + 1] !== "'")) {
-          i++;
-          break;
-        }
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i++;
-        }
-        i++;
-      }
+    if (ch === "'") {
+      inString = !inString;
       continue;
     }
-    if (ch === ":" && i + 1 < sql.length && /[a-zA-Z_]/.test(sql[i + 1])) {
+    if (inString) continue;
+    if ((ch === ":" || ch === "@") && isIdentStart(sql[i + 1])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rewriteNamed(sql: string, params: Record<string, any>): NormalizedQuery {
+  const lookup: Record<string, any> = {};
+  for (const [key, value] of Object.entries(params)) {
+    lookup[key.replace(/^[@:]/, "")] = value;
+  }
+  let result = "";
+  const ordered: any[] = [];
+  let inString = false;
+  for (let i = 0; i < sql.length; ) {
+    const ch = sql[i];
+    if (ch === "'") {
+      inString = !inString;
+      result += ch;
+      i++;
+      continue;
+    }
+    if (!inString && (ch === ":" || ch === "@") && i + 1 < sql.length && isIdentStart(sql[i + 1])) {
       let j = i + 1;
-      while (j < sql.length && /[a-zA-Z0-9_]/.test(sql[j])) j++;
+      while (j < sql.length && isIdentPart(sql[j])) j++;
       const key = sql.slice(i + 1, j);
-      if (Object.prototype.hasOwnProperty.call(params, key)) {
-        result += formatParam(params[key]);
-      } else {
-        result += sql.slice(i, j);
+      if (!(key in lookup)) {
+        throw new Error(`missing named parameter: ${key}`);
       }
+      ordered.push(lookup[key]);
+      result += `$${ordered.length}`;
       i = j;
       continue;
     }
     result += ch;
     i++;
   }
-  return result;
+  return { sql: result, params: ordered };
 }
 
-function substitutePositional(sql: string, values: any[]): string {
+function rewritePositional(sql: string, params: any[]): NormalizedQuery {
   let result = "";
-  let i = 0;
-  let nextParam = 0;
-  while (i < sql.length) {
+  const ordered: any[] = [];
+  let inString = false;
+  let index = 0;
+  for (let i = 0; i < sql.length; ) {
     const ch = sql[i];
-    if (ch === "$" && i + 1 < sql.length && /[0-9]/.test(sql[i + 1])) {
-      let j = i + 1;
-      let num = 0;
-      while (j < sql.length && /[0-9]/.test(sql[j])) {
-        num = num * 10 + Number(sql[j]);
-        j++;
-      }
-      if (num > 0 && num <= values.length) {
-        result += formatParam(values[num - 1]);
-      } else {
-        result += sql.slice(i, j);
-      }
-      i = j;
-      continue;
-    }
-    if (ch === "?") {
-      if (nextParam < values.length) {
-        result += formatParam(values[nextParam]);
-        nextParam++;
-      } else {
-        result += ch;
-      }
-      i++;
-      continue;
-    }
-    if (ch === "'" && i + 1 < sql.length) {
+    if (ch === "'") {
+      inString = !inString;
       result += ch;
       i++;
-      while (i < sql.length) {
-        result += sql[i];
-        if (sql[i] === "'" && (i + 1 >= sql.length || sql[i + 1] !== "'")) {
-          i++;
-          break;
-        }
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i++;
-        }
-        i++;
-      }
       continue;
     }
-    if (ch === "-" && i + 1 < sql.length && sql[i + 1] === "-") {
-      while (i < sql.length && sql[i] !== "\n") {
-        result += sql[i];
-        i++;
+    if (!inString && ch === "?") {
+      if (index >= params.length) {
+        throw new Error("not enough parameters");
       }
-      continue;
-    }
-    if (ch === "/" && i + 1 < sql.length && sql[i + 1] === "*") {
-      result += ch + sql[i + 1];
-      i += 2;
-      while (i + 1 < sql.length && !(sql[i] === "*" && sql[i + 1] === "/")) {
-        result += sql[i];
-        i++;
-      }
-      if (i + 1 < sql.length) {
-        result += sql[i] + sql[i + 1];
-        i += 2;
-      }
+      ordered.push(params[index]);
+      index++;
+      result += `$${ordered.length}`;
+      i++;
       continue;
     }
     result += ch;
     i++;
   }
-  return result;
+  if (index < params.length) {
+    throw new Error("too many parameters");
+  }
+  return { sql: result, params: ordered };
+}
+
+function isIdentStart(ch: string): boolean {
+  return /[A-Za-z_]/.test(ch);
+}
+
+function isIdentPart(ch: string): boolean {
+  return /[A-Za-z0-9_]/.test(ch);
 }

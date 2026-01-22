@@ -9,7 +9,7 @@ public sealed class ScratchBirdConfig
     public string Database { get; set; } = "";
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
-    public string SslMode { get; set; } = "prefer";
+    public string SslMode { get; set; } = "require";
     public string? SslRootCert { get; set; }
     public string? SslCert { get; set; }
     public string? SslKey { get; set; }

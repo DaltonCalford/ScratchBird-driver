@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 export interface ClientConfig {
   host?: string;
   port?: number;
@@ -21,6 +23,8 @@ export interface FieldDef {
   dataType: string;
   format: "text" | "binary";
   nullable: boolean;
+  typeOid?: number;
+  typeModifier?: number;
 }
 
 export interface QueryResult<T = any> {
@@ -30,188 +34,770 @@ export interface QueryResult<T = any> {
   command: string;
 }
 
-export enum WireType {
-  NULL_TYPE = 0x00,
-  BOOLEAN = 0x01,
-  INT16 = 0x02,
-  INT32 = 0x03,
-  INT64 = 0x04,
-  FLOAT32 = 0x05,
-  FLOAT64 = 0x06,
-  DECIMAL = 0x07,
-  VARCHAR = 0x08,
-  CHAR = 0x09,
-  BYTEA = 0x0a,
-  DATE = 0x0b,
-  TIME = 0x0c,
-  TIMESTAMP = 0x0d,
-  TIMESTAMPTZ = 0x0e,
-  INTERVAL = 0x0f,
-  UUID = 0x10,
-  JSON = 0x11,
-  JSONB = 0x12,
-  ARRAY = 0x13,
-  COMPOSITE = 0x14,
-  GEOMETRY = 0x15,
-  VECTOR = 0x16,
-  MONEY = 0x17,
-  XML = 0x18,
-  INET = 0x19,
-  CIDR = 0x1a,
-  MACADDR = 0x1b,
-  TSVECTOR = 0x1c,
-  TSQUERY = 0x1d,
-  RANGE = 0x1e,
-  UNKNOWN = 0xff,
+export interface ParamValue {
+  format: number;
+  data?: Buffer;
+  isNull?: boolean;
 }
 
-export function wireTypeToString(type: number): string {
-  switch (type) {
-    case WireType.BOOLEAN:
+export const FORMAT_TEXT = 0;
+export const FORMAT_BINARY = 1;
+
+export const OID_BOOL = 16;
+export const OID_BYTEA = 17;
+export const OID_CHAR = 18;
+export const OID_INT8 = 20;
+export const OID_INT2 = 21;
+export const OID_INT4 = 23;
+export const OID_TEXT = 25;
+export const OID_JSON = 114;
+export const OID_XML = 142;
+export const OID_POINT = 600;
+export const OID_LSEG = 601;
+export const OID_PATH = 602;
+export const OID_BOX = 603;
+export const OID_POLYGON = 604;
+export const OID_LINE = 628;
+export const OID_FLOAT4 = 700;
+export const OID_FLOAT8 = 701;
+export const OID_CIRCLE = 718;
+export const OID_MONEY = 790;
+export const OID_MACADDR = 829;
+export const OID_CIDR = 650;
+export const OID_INET = 869;
+export const OID_MACADDR8 = 774;
+export const OID_BPCHAR = 1042;
+export const OID_VARCHAR = 1043;
+export const OID_DATE = 1082;
+export const OID_TIME = 1083;
+export const OID_TIMESTAMP = 1114;
+export const OID_TIMESTAMPTZ = 1184;
+export const OID_INTERVAL = 1186;
+export const OID_TIMETZ = 1266;
+export const OID_NUMERIC = 1700;
+export const OID_UUID = 2950;
+export const OID_JSONB = 3802;
+export const OID_INT4RANGE = 3904;
+export const OID_NUMRANGE = 3906;
+export const OID_TSRANGE = 3908;
+export const OID_TSTZRANGE = 3910;
+export const OID_DATERANGE = 3912;
+export const OID_INT8RANGE = 3926;
+export const OID_TSVECTOR = 3614;
+export const OID_TSQUERY = 3615;
+export const OID_SB_VECTOR = 16386;
+
+const RANGE_EMPTY = 0x01;
+const RANGE_LB_INC = 0x02;
+const RANGE_UB_INC = 0x04;
+const RANGE_LB_INF = 0x08;
+const RANGE_UB_INF = 0x10;
+
+export class ScratchbirdJsonb {
+  raw: Buffer;
+  value?: any;
+  constructor(raw: Buffer, value?: any) {
+    this.raw = raw;
+    this.value = value;
+  }
+}
+
+export class ScratchbirdJson {
+  raw: Buffer;
+  value?: any;
+  constructor(raw: Buffer, value?: any) {
+    this.raw = raw;
+    this.value = value;
+  }
+}
+
+export class ScratchbirdGeometry {
+  wkb: Buffer;
+  srid?: number;
+  wkt?: string;
+  constructor(wkb: Buffer, opts?: { srid?: number; wkt?: string }) {
+    this.wkb = wkb;
+    this.srid = opts?.srid;
+    this.wkt = opts?.wkt;
+  }
+}
+
+export class ScratchbirdRange<T> {
+  lower?: T;
+  upper?: T;
+  lowerInclusive = false;
+  upperInclusive = false;
+  lowerInfinite = false;
+  upperInfinite = false;
+  empty = false;
+  rangeOid?: number;
+
+  constructor(init?: Partial<ScratchbirdRange<T>>) {
+    if (!init) return;
+    Object.assign(this, init);
+  }
+}
+
+export class ScratchbirdInterval {
+  months: number;
+  days: number;
+  micros: number;
+  constructor(micros: number, days = 0, months = 0) {
+    this.micros = micros;
+    this.days = days;
+    this.months = months;
+  }
+}
+
+export class ScratchbirdDate {
+  value: Date;
+  constructor(value: Date) {
+    this.value = value;
+  }
+}
+
+export class ScratchbirdTime {
+  micros: number;
+  constructor(micros: number) {
+    this.micros = micros;
+  }
+}
+
+export class ScratchbirdTimestamp {
+  value: Date;
+  constructor(value: Date) {
+    this.value = value;
+  }
+}
+
+export class ScratchbirdTimestampTZ {
+  value: Date;
+  constructor(value: Date) {
+    this.value = value;
+  }
+}
+
+export class ScratchbirdDecimal {
+  value: string;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+export class ScratchbirdMoney {
+  cents: bigint;
+  constructor(cents: bigint) {
+    this.cents = cents;
+  }
+}
+
+export class ScratchbirdRaw {
+  oid: number;
+  data: Buffer;
+  constructor(oid: number, data: Buffer) {
+    this.oid = oid;
+    this.data = data;
+  }
+}
+
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function oidToString(oid: number): string {
+  switch (oid) {
+    case OID_BOOL:
       return "boolean";
-    case WireType.INT16:
-      return "int16";
-    case WireType.INT32:
-      return "int32";
-    case WireType.INT64:
-      return "int64";
-    case WireType.FLOAT32:
-      return "float32";
-    case WireType.FLOAT64:
-      return "float64";
-    case WireType.DECIMAL:
-      return "decimal";
-    case WireType.VARCHAR:
-      return "varchar";
-    case WireType.CHAR:
-      return "char";
-    case WireType.BYTEA:
-      return "bytea";
-    case WireType.DATE:
-      return "date";
-    case WireType.TIME:
-      return "time";
-    case WireType.TIMESTAMP:
-      return "timestamp";
-    case WireType.TIMESTAMPTZ:
-      return "timestamptz";
-    case WireType.INTERVAL:
-      return "interval";
-    case WireType.UUID:
-      return "uuid";
-    case WireType.JSON:
-      return "json";
-    case WireType.JSONB:
-      return "jsonb";
-    case WireType.ARRAY:
-      return "array";
-    case WireType.COMPOSITE:
-      return "composite";
-    case WireType.GEOMETRY:
-      return "geometry";
-    case WireType.VECTOR:
-      return "vector";
-    case WireType.MONEY:
+    case OID_INT2:
+      return "int2";
+    case OID_INT4:
+      return "int4";
+    case OID_INT8:
+      return "int8";
+    case OID_FLOAT4:
+      return "float4";
+    case OID_FLOAT8:
+      return "float8";
+    case OID_NUMERIC:
+      return "numeric";
+    case OID_MONEY:
       return "money";
-    case WireType.XML:
+    case OID_TEXT:
+      return "text";
+    case OID_VARCHAR:
+      return "varchar";
+    case OID_CHAR:
+    case OID_BPCHAR:
+      return "char";
+    case OID_BYTEA:
+      return "bytea";
+    case OID_DATE:
+      return "date";
+    case OID_TIME:
+      return "time";
+    case OID_TIMESTAMP:
+      return "timestamp";
+    case OID_TIMESTAMPTZ:
+      return "timestamptz";
+    case OID_INTERVAL:
+      return "interval";
+    case OID_UUID:
+      return "uuid";
+    case OID_JSON:
+      return "json";
+    case OID_JSONB:
+      return "jsonb";
+    case OID_XML:
       return "xml";
-    case WireType.INET:
+    case OID_INET:
       return "inet";
-    case WireType.CIDR:
+    case OID_CIDR:
       return "cidr";
-    case WireType.MACADDR:
+    case OID_MACADDR:
       return "macaddr";
-    case WireType.TSVECTOR:
+    case OID_MACADDR8:
+      return "macaddr8";
+    case OID_TSVECTOR:
       return "tsvector";
-    case WireType.TSQUERY:
+    case OID_TSQUERY:
       return "tsquery";
-    case WireType.RANGE:
-      return "range";
+    case OID_INT4RANGE:
+      return "int4range";
+    case OID_INT8RANGE:
+      return "int8range";
+    case OID_NUMRANGE:
+      return "numrange";
+    case OID_TSRANGE:
+      return "tsrange";
+    case OID_TSTZRANGE:
+      return "tstzrange";
+    case OID_DATERANGE:
+      return "daterange";
+    case OID_SB_VECTOR:
+      return "vector";
     default:
       return "unknown";
   }
 }
 
-export function decodeValue(type: number, data: Buffer | null): any {
+export function encodeParam(value: any): { param: ParamValue; oid: number } {
+  if (value === null || value === undefined) {
+    return { param: { isNull: true, format: FORMAT_BINARY }, oid: 0 };
+  }
+  if (value instanceof ScratchbirdRaw) {
+    return { param: { data: Buffer.from(value.data), format: FORMAT_BINARY }, oid: value.oid };
+  }
+  if (value instanceof ScratchbirdJsonb) {
+    let raw = value.raw;
+    if ((!raw || raw.length === 0) && value.value !== undefined) {
+      raw = Buffer.from(JSON.stringify(value.value), "utf8");
+    }
+    if (!raw || raw.length === 0) {
+      throw new Error("JSONB requires raw payload");
+    }
+    return { param: { data: encodeLengthPrefixed(raw), format: FORMAT_BINARY }, oid: OID_JSONB };
+  }
+  if (value instanceof ScratchbirdJson) {
+    let raw = value.raw;
+    if ((!raw || raw.length === 0) && value.value !== undefined) {
+      raw = Buffer.from(JSON.stringify(value.value), "utf8");
+    }
+    if (!raw) {
+      throw new Error("JSON requires raw payload");
+    }
+    return { param: { data: encodeLengthPrefixed(raw), format: FORMAT_BINARY }, oid: OID_JSON };
+  }
+  if (value instanceof ScratchbirdGeometry) {
+    if (!value.wkb || value.wkb.length === 0) {
+      throw new Error("geometry requires WKB payload");
+    }
+    return { param: { data: encodeLengthPrefixed(value.wkb), format: FORMAT_BINARY }, oid: OID_POINT };
+  }
+  if (value instanceof ScratchbirdRange) {
+    const encoded = encodeRange(value);
+    return { param: { data: encoded.data, format: FORMAT_BINARY }, oid: encoded.oid };
+  }
+  if (value instanceof ScratchbirdDate) {
+    return { param: { data: encodeDate(value.value), format: FORMAT_BINARY }, oid: OID_DATE };
+  }
+  if (value instanceof ScratchbirdTime) {
+    return { param: { data: encodeTimeMicros(value.micros), format: FORMAT_BINARY }, oid: OID_TIME };
+  }
+  if (value instanceof ScratchbirdTimestamp) {
+    return { param: { data: encodeTimestamp(value.value), format: FORMAT_BINARY }, oid: OID_TIMESTAMP };
+  }
+  if (value instanceof ScratchbirdTimestampTZ) {
+    return { param: { data: encodeTimestamp(value.value), format: FORMAT_BINARY }, oid: OID_TIMESTAMPTZ };
+  }
+  if (value instanceof ScratchbirdInterval) {
+    return { param: { data: encodeInterval(value), format: FORMAT_BINARY }, oid: OID_INTERVAL };
+  }
+  if (value instanceof ScratchbirdDecimal) {
+    return { param: { data: encodeLengthPrefixed(Buffer.from(value.value, "utf8")), format: FORMAT_BINARY }, oid: OID_NUMERIC };
+  }
+  if (value instanceof ScratchbirdMoney) {
+    return { param: { data: encodeInt64(value.cents), format: FORMAT_BINARY }, oid: OID_MONEY };
+  }
+  if (typeof value === "boolean") {
+    return { param: { data: Buffer.from([value ? 1 : 0]), format: FORMAT_BINARY }, oid: OID_BOOL };
+  }
+  if (typeof value === "bigint") {
+    return { param: { data: encodeInt64(value), format: FORMAT_BINARY }, oid: OID_INT8 };
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("numeric value must be finite");
+    }
+    if (Number.isInteger(value)) {
+      if (value >= -2147483648 && value <= 2147483647) {
+        return { param: { data: encodeInt32(value), format: FORMAT_BINARY }, oid: OID_INT4 };
+      }
+      if (Number.isSafeInteger(value)) {
+        return { param: { data: encodeInt64(BigInt(value)), format: FORMAT_BINARY }, oid: OID_INT8 };
+      }
+      throw new Error("integer out of range for int64");
+    }
+    return { param: { data: encodeFloat64(value), format: FORMAT_BINARY }, oid: OID_FLOAT8 };
+  }
+  if (value instanceof Date) {
+    return { param: { data: encodeTimestamp(value), format: FORMAT_BINARY }, oid: OID_TIMESTAMPTZ };
+  }
+  if (value instanceof Buffer) {
+    return { param: { data: encodeLengthPrefixed(value), format: FORMAT_BINARY }, oid: OID_BYTEA };
+  }
+  if (value instanceof Uint8Array) {
+    return { param: { data: encodeLengthPrefixed(Buffer.from(value)), format: FORMAT_BINARY }, oid: OID_BYTEA };
+  }
+  if (value instanceof Float32Array || value instanceof Float64Array) {
+    return { param: { data: encodeLengthPrefixed(Buffer.from(formatVectorLiteral(Array.from(value)))), format: FORMAT_BINARY }, oid: OID_SB_VECTOR };
+  }
+  if (Array.isArray(value)) {
+    if (value.length > 0 && value.every((item) => typeof item === "number")) {
+      return { param: { data: encodeLengthPrefixed(Buffer.from(formatVectorLiteral(value))), format: FORMAT_BINARY }, oid: OID_SB_VECTOR };
+    }
+    return { param: { data: encodeLengthPrefixed(Buffer.from(formatArrayLiteral(value), "utf8")), format: FORMAT_BINARY }, oid: 0 };
+  }
+  if (typeof value === "string") {
+    if (uuidRegex.test(value)) {
+      return { param: { data: Buffer.from(value.replace(/-/g, ""), "hex"), format: FORMAT_BINARY }, oid: OID_UUID };
+    }
+    return { param: { data: encodeLengthPrefixed(Buffer.from(value, "utf8")), format: FORMAT_BINARY }, oid: OID_TEXT };
+  }
+  if (isIntervalObject(value)) {
+    return { param: { data: encodeInterval(value), format: FORMAT_BINARY }, oid: OID_INTERVAL };
+  }
+  if (typeof value === "object") {
+    return { param: { data: encodeLengthPrefixed(Buffer.from(JSON.stringify(value), "utf8")), format: FORMAT_BINARY }, oid: OID_JSON };
+  }
+  throw new Error("unsupported parameter type");
+}
+
+export function decodeValue(typeOid: number, data: Buffer | null, format: number): any {
   if (data === null) {
     return null;
   }
-  switch (type) {
-    case WireType.BOOLEAN:
-      return data[0] === 1;
-    case WireType.INT16:
-      return data.readInt16LE(0);
-    case WireType.INT32:
-      return data.readInt32LE(0);
-    case WireType.INT64:
-      return data.readBigInt64LE(0);
-    case WireType.FLOAT32:
-      return data.readFloatLE(0);
-    case WireType.FLOAT64:
-      return data.readDoubleLE(0);
-    case WireType.DECIMAL:
-      return data.toString("utf8");
-    case WireType.VARCHAR:
-    case WireType.CHAR:
-    case WireType.JSON:
-    case WireType.JSONB:
-    case WireType.XML:
-    case WireType.TSVECTOR:
-    case WireType.TSQUERY:
-      return data.toString("utf8");
-    case WireType.BYTEA:
-      return Buffer.from(data);
-    case WireType.DATE: {
-      const days = data.readInt32LE(0);
-      const base = Date.UTC(2000, 0, 1);
-      const millis = base + days * 86400000;
-      return new Date(millis).toISOString().slice(0, 10);
-    }
-    case WireType.TIME: {
-      const micros = Number(data.readBigInt64LE(0));
-      const totalSeconds = Math.floor(micros / 1_000_000);
-      const micro = micros % 1_000_000;
-      const hours = Math.floor(totalSeconds / 3600) % 24;
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-      const microStr = micro ? "." + String(micro).padStart(6, "0") : "";
-      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}${microStr}`;
-    }
-    case WireType.TIMESTAMP: {
-      const micros = Number(data.readBigInt64LE(0));
-      return new Date(micros / 1000);
-    }
-    case WireType.TIMESTAMPTZ: {
-      const micros = Number(data.readBigInt64LE(0));
-      return new Date(micros / 1000);
-    }
-    case WireType.INTERVAL: {
-      const months = data.readInt32LE(0);
-      const days = data.readInt32LE(4);
-      const micros = Number(data.readBigInt64LE(8));
-      return { months, days, micros };
-    }
-    case WireType.UUID:
-      return bytesToUuid(data);
-    case WireType.MONEY: {
-      const cents = data.readBigInt64LE(0);
-      return Number(cents) / 100;
-    }
-    case WireType.INET:
-    case WireType.CIDR:
-      return data.toString("utf8");
-    case WireType.ARRAY:
-      return parseArrayLiteral(data.toString("utf8"));
-    case WireType.VECTOR:
-      return parseVectorLiteral(data.toString("utf8"));
-    default:
-      return data;
+  if (format === FORMAT_TEXT) {
+    return decodeTextValue(data);
   }
+  return decodeBinaryValue(typeOid, data);
+}
+
+function decodeBinaryValue(typeOid: number, data: Buffer): any {
+  switch (typeOid) {
+    case OID_BOOL:
+      return data.length > 0 && data[0] === 1;
+    case OID_INT2:
+      return data.readInt16LE(0);
+    case OID_INT4:
+      return data.readInt32LE(0);
+    case OID_INT8:
+      return data.readBigInt64LE(0);
+    case OID_FLOAT4:
+      return data.readFloatLE(0);
+    case OID_FLOAT8:
+      return data.readDoubleLE(0);
+    case OID_NUMERIC:
+      return stripLengthPrefix(data).toString("utf8");
+    case OID_MONEY:
+      return moneyToString(data.readBigInt64LE(0));
+    case OID_TEXT:
+    case OID_VARCHAR:
+    case OID_CHAR:
+    case OID_BPCHAR:
+    case OID_JSON:
+    case OID_XML:
+    case OID_TSVECTOR:
+    case OID_TSQUERY:
+      return stripLengthPrefix(data).toString("utf8");
+    case OID_JSONB:
+      return new ScratchbirdJsonb(Buffer.from(stripLengthPrefix(data)));
+    case OID_BYTEA:
+      return Buffer.from(stripLengthPrefix(data));
+    case OID_DATE:
+      return decodeDate(data);
+    case OID_TIME:
+      return decodeTime(data);
+    case OID_TIMESTAMP:
+      return decodeTimestamp(data);
+    case OID_TIMESTAMPTZ:
+      return decodeTimestamp(data);
+    case OID_INTERVAL:
+      return decodeInterval(data);
+    case OID_UUID:
+      return bytesToUuid(data);
+    case OID_INET:
+    case OID_CIDR:
+    case OID_MACADDR:
+    case OID_MACADDR8:
+      return stripLengthPrefix(data).toString("utf8");
+    case OID_INT4RANGE:
+    case OID_INT8RANGE:
+    case OID_NUMRANGE:
+    case OID_TSRANGE:
+    case OID_TSTZRANGE:
+    case OID_DATERANGE:
+      return decodeRange(typeOid, data);
+    case OID_SB_VECTOR:
+      return parseVectorLiteral(stripLengthPrefix(data).toString("utf8"));
+    case OID_POINT:
+    case OID_LSEG:
+    case OID_PATH:
+    case OID_BOX:
+    case OID_POLYGON:
+    case OID_LINE:
+    case OID_CIRCLE:
+      return new ScratchbirdGeometry(Buffer.from(stripLengthPrefix(data)));
+    default:
+      return Buffer.from(data);
+  }
+}
+
+function decodeTextValue(data: Buffer): string {
+  if (data.length >= 4) {
+    const length = data.readUInt32LE(0);
+    if (length <= data.length - 4) {
+      return data.subarray(4, 4 + length).toString("utf8");
+    }
+  }
+  return data.toString("utf8");
+}
+
+function encodeLengthPrefixed(data: Buffer): Buffer {
+  const out = Buffer.alloc(4 + data.length);
+  out.writeUInt32LE(data.length, 0);
+  data.copy(out, 4);
+  return out;
+}
+
+function stripLengthPrefix(data: Buffer): Buffer {
+  if (data.length < 4) {
+    return data;
+  }
+  const length = data.readUInt32LE(0);
+  if (length <= data.length - 4) {
+    return data.subarray(4, 4 + length);
+  }
+  return data;
+}
+
+function encodeInt32(value: number): Buffer {
+  const out = Buffer.alloc(4);
+  out.writeInt32LE(value, 0);
+  return out;
+}
+
+function encodeInt64(value: bigint): Buffer {
+  const out = Buffer.alloc(8);
+  out.writeBigInt64LE(value, 0);
+  return out;
+}
+
+function encodeFloat64(value: number): Buffer {
+  const out = Buffer.alloc(8);
+  out.writeDoubleLE(value, 0);
+  return out;
+}
+
+function encodeDate(value: Date): Buffer {
+  const base = Date.UTC(2000, 0, 1);
+  const days = Math.trunc((value.getTime() - base) / 86400000);
+  const out = Buffer.alloc(4);
+  out.writeInt32LE(days, 0);
+  return out;
+}
+
+function encodeTimeMicros(micros: number): Buffer {
+  const out = Buffer.alloc(8);
+  out.writeBigInt64LE(BigInt(micros), 0);
+  return out;
+}
+
+function encodeTimestamp(value: Date): Buffer {
+  const base = Date.UTC(2000, 0, 1);
+  const micros = BigInt(value.getTime() - base) * 1000n;
+  const out = Buffer.alloc(8);
+  out.writeBigInt64LE(micros, 0);
+  return out;
+}
+
+function encodeInterval(interval: { micros: number; days?: number; months?: number }): Buffer {
+  const out = Buffer.alloc(16);
+  out.writeBigInt64LE(BigInt(interval.micros), 0);
+  out.writeInt32LE(interval.days ?? 0, 8);
+  out.writeInt32LE(interval.months ?? 0, 12);
+  return out;
+}
+
+function decodeDate(data: Buffer): Date {
+  if (data.length < 4) {
+    return new Date(0);
+  }
+  const days = data.readInt32LE(0);
+  const base = Date.UTC(2000, 0, 1);
+  const millis = base + days * 86400000;
+  return new Date(millis);
+}
+
+function decodeTime(data: Buffer): Date {
+  if (data.length < 8) {
+    return new Date(Date.UTC(2000, 0, 1));
+  }
+  const micros = data.readBigInt64LE(0);
+  const base = Date.UTC(2000, 0, 1);
+  const millis = Number(micros / 1000n);
+  return new Date(base + millis);
+}
+
+function decodeTimestamp(data: Buffer): Date {
+  if (data.length < 8) {
+    return new Date(0);
+  }
+  const micros = data.readBigInt64LE(0);
+  const base = Date.UTC(2000, 0, 1);
+  const millis = Number(micros / 1000n);
+  return new Date(base + millis);
+}
+
+function decodeInterval(data: Buffer): { months: number; days: number; micros: number } {
+  if (data.length < 16) {
+    return { months: 0, days: 0, micros: 0 };
+  }
+  const micros = Number(data.readBigInt64LE(0));
+  const days = data.readInt32LE(8);
+  const months = data.readInt32LE(12);
+  return { months, days, micros };
+}
+
+function moneyToString(cents: bigint): string {
+  const negative = cents < 0n;
+  const abs = negative ? -cents : cents;
+  const units = abs / 100n;
+  const fraction = abs % 100n;
+  const value = `${units.toString()}.${fraction.toString().padStart(2, "0")}`;
+  return negative ? `-${value}` : value;
 }
 
 function bytesToUuid(buf: Buffer): string {
   const hex = buf.toString("hex");
+  if (hex.length !== 32) {
+    return hex;
+  }
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function encodeRange(range: ScratchbirdRange<any>): { data: Buffer; oid: number } {
+  const oid = resolveRangeOid(range);
+  const flags =
+    (range.empty ? RANGE_EMPTY : 0) |
+    (range.lowerInclusive ? RANGE_LB_INC : 0) |
+    (range.upperInclusive ? RANGE_UB_INC : 0) |
+    (range.lowerInfinite ? RANGE_LB_INF : 0) |
+    (range.upperInfinite ? RANGE_UB_INF : 0);
+
+  const parts: Buffer[] = [Buffer.from([flags, 0, 0, 0])];
+  if (!range.empty && !range.lowerInfinite) {
+    const bound = encodeRangeBound(oid, range.lower);
+    parts.push(encodeInt32(bound.length));
+    parts.push(bound);
+  }
+  if (!range.empty && !range.upperInfinite) {
+    const bound = encodeRangeBound(oid, range.upper);
+    parts.push(encodeInt32(bound.length));
+    parts.push(bound);
+  }
+  return { data: Buffer.concat(parts), oid };
+}
+
+function resolveRangeOid(range: ScratchbirdRange<any>): number {
+  if (range.rangeOid) {
+    return range.rangeOid;
+  }
+  const sample = range.lower ?? range.upper;
+  if (sample === undefined || sample === null) {
+    throw new Error("range type cannot be inferred from empty bounds");
+  }
+  if (sample instanceof ScratchbirdDate) {
+    return OID_DATERANGE;
+  }
+  if (sample instanceof ScratchbirdTimestamp) {
+    return OID_TSRANGE;
+  }
+  if (sample instanceof ScratchbirdTimestampTZ || sample instanceof Date) {
+    return OID_TSTZRANGE;
+  }
+  if (sample instanceof ScratchbirdDecimal) {
+    return OID_NUMRANGE;
+  }
+  if (typeof sample === "bigint") {
+    return OID_INT8RANGE;
+  }
+  if (typeof sample === "number") {
+    return sample >= -2147483648 && sample <= 2147483647 ? OID_INT4RANGE : OID_INT8RANGE;
+  }
+  throw new Error("unsupported range bound type");
+}
+
+function encodeRangeBound(rangeOid: number, value: any): Buffer {
+  switch (rangeOid) {
+    case OID_INT4RANGE: {
+      if (typeof value !== "number") throw new Error("int4range requires number bounds");
+      return encodeInt32(value);
+    }
+    case OID_INT8RANGE: {
+      if (typeof value === "number") {
+        if (!Number.isSafeInteger(value)) throw new Error("int8range requires safe integer bounds");
+        return encodeInt64(BigInt(value));
+      }
+      if (typeof value === "bigint") {
+        return encodeInt64(value);
+      }
+      throw new Error("int8range requires bigint bounds");
+    }
+    case OID_NUMRANGE: {
+      if (value instanceof ScratchbirdDecimal) {
+        return encodeLengthPrefixed(Buffer.from(value.value, "utf8"));
+      }
+      if (typeof value === "string") {
+        return encodeLengthPrefixed(Buffer.from(value, "utf8"));
+      }
+      throw new Error("numrange requires decimal bounds");
+    }
+    case OID_DATERANGE: {
+      if (value instanceof ScratchbirdDate) {
+        return encodeDate(value.value);
+      }
+      if (value instanceof Date) {
+        return encodeDate(value);
+      }
+      throw new Error("daterange requires date bounds");
+    }
+    case OID_TSRANGE: {
+      if (value instanceof ScratchbirdTimestamp) {
+        return encodeTimestamp(value.value);
+      }
+      if (value instanceof Date) {
+        return encodeTimestamp(value);
+      }
+      throw new Error("tsrange requires timestamp bounds");
+    }
+    case OID_TSTZRANGE: {
+      if (value instanceof ScratchbirdTimestampTZ) {
+        return encodeTimestamp(value.value);
+      }
+      if (value instanceof Date) {
+        return encodeTimestamp(value);
+      }
+      throw new Error("tstzrange requires timestamptz bounds");
+    }
+    default:
+      throw new Error("unsupported range type");
+  }
+}
+
+function decodeRange(rangeOid: number, data: Buffer): ScratchbirdRange<any> {
+  if (data.length < 4) {
+    return new ScratchbirdRange();
+  }
+  const flags = data[0];
+  let offset = 4;
+  const range = new ScratchbirdRange<any>({
+    empty: (flags & RANGE_EMPTY) !== 0,
+    lowerInclusive: (flags & RANGE_LB_INC) !== 0,
+    upperInclusive: (flags & RANGE_UB_INC) !== 0,
+    lowerInfinite: (flags & RANGE_LB_INF) !== 0,
+    upperInfinite: (flags & RANGE_UB_INF) !== 0,
+    rangeOid,
+  });
+  if (range.empty) {
+    return range;
+  }
+  if (!range.lowerInfinite) {
+    if (offset + 4 > data.length) {
+      return range;
+    }
+    const length = data.readInt32LE(offset);
+    offset += 4;
+    if (offset + length > data.length) {
+      return range;
+    }
+    const bound = data.subarray(offset, offset + length);
+    offset += length;
+    range.lower = decodeRangeBound(rangeOid, bound);
+  }
+  if (!range.upperInfinite) {
+    if (offset + 4 > data.length) {
+      return range;
+    }
+    const length = data.readInt32LE(offset);
+    offset += 4;
+    if (offset + length > data.length) {
+      return range;
+    }
+    const bound = data.subarray(offset, offset + length);
+    range.upper = decodeRangeBound(rangeOid, bound);
+  }
+  return range;
+}
+
+function decodeRangeBound(rangeOid: number, data: Buffer): any {
+  switch (rangeOid) {
+    case OID_INT4RANGE:
+      return data.length >= 4 ? data.readInt32LE(0) : 0;
+    case OID_INT8RANGE:
+      return data.length >= 8 ? data.readBigInt64LE(0) : 0n;
+    case OID_NUMRANGE:
+      return stripLengthPrefix(data).toString("utf8");
+    case OID_DATERANGE:
+      return decodeDate(data);
+    case OID_TSRANGE:
+    case OID_TSTZRANGE:
+      return decodeTimestamp(data);
+    default:
+      return null;
+  }
+}
+
+function isIntervalObject(value: any): value is { micros: number; days?: number; months?: number } {
+  return value && typeof value === "object" && typeof value.micros === "number";
+}
+
+function formatArrayLiteral(values: any[]): string {
+  const items = values.map((value) => formatArrayItem(value));
+  return `{${items.join(",")}}`;
+}
+
+function formatArrayItem(value: any): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  if (Array.isArray(value)) {
+    return formatArrayLiteral(value);
+  }
+  if (typeof value === "string") {
+    return `"${value.replace(/"/g, "\\\"")}"`;
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
 }
 
 function parseArrayLiteral(text: string): any[] {
@@ -282,5 +868,17 @@ function parseVectorLiteral(text: string): number[] {
   if (!trimmed) {
     return [];
   }
-  return trimmed.split(",").map((part) => Number(part.trim())).filter((val) => !Number.isNaN(val));
+  return trimmed
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((val) => !Number.isNaN(val));
+}
+
+function formatVectorLiteral(values: number[]): string {
+  const parts = values.map((value) => Number.isFinite(value) ? String(value) : "0");
+  return `[${parts.join(",")}]`;
+}
+
+export function decodeArrayLiteral(text: string): any[] {
+  return parseArrayLiteral(text);
 }

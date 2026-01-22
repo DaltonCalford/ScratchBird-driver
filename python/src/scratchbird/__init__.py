@@ -13,6 +13,7 @@ from .errors import (
     ProgrammingError,
     NotSupportedError,
 )
+from .types import Geometry, Json, Jsonb, Range, RawValue
 
 apilevel = "2.0"
 threadsafety = 2
@@ -31,4 +32,9 @@ __all__ = [
     "InternalError",
     "ProgrammingError",
     "NotSupportedError",
+    "Json",
+    "Jsonb",
+    "Geometry",
+    "Range",
+    "RawValue",
 ]

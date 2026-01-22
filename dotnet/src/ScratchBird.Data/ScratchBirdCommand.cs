@@ -153,8 +153,8 @@ public sealed class ScratchBirdCommand : DbCommand
             throw new InvalidOperationException("Connection must be open");
         }
 
-        var sql = BuildSql();
-        var stream = _connection.Client.ExecuteQuery(sql);
+        var normalized = SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
+        var stream = _connection.Client.ExecuteQuery(normalized.Sql, normalized.Parameters);
         return new ScratchBirdDataReader(stream, behavior, _connection);
     }
 
@@ -165,7 +165,7 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override void Cancel()
     {
-        // Query cancellation is not yet implemented in the native adapter.
+        _connection?.Client.Cancel();
     }
 
     protected override DbParameter CreateDbParameter()
@@ -178,12 +178,4 @@ public sealed class ScratchBirdCommand : DbCommand
         return new ScratchBirdParameter();
     }
 
-    private string BuildSql()
-    {
-        if (_parameters.Count == 0)
-        {
-            return _commandText;
-        }
-        return SqlHelpers.Substitute(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
-    }
 }

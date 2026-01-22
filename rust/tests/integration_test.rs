@@ -12,6 +12,6 @@ async fn basic_query() {
     let mut client = Client::new(config);
     client.connect().await.unwrap();
     let result = client.query("SELECT 1").await.unwrap();
-    client.disconnect().await;
+    client.close().await;
     assert!(!result.rows.is_empty());
 }

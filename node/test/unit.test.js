@@ -2,9 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   parseDsn,
-  substituteParameters,
+  normalizeQuery,
   decodeValue,
-  WireType,
+  OID_INT4,
+  OID_SB_VECTOR,
+  FORMAT_BINARY,
 } = require("../dist/index.js");
 
 test("parseDsn supports uri", () => {
@@ -25,18 +27,28 @@ test("parseDsn supports key-value", () => {
   assert.equal(cfg.user, "me");
 });
 
-test("substituteParameters formats arrays", () => {
-  const sql = substituteParameters("select ?", [[1, "a", null]]);
-  assert.equal(sql, "select ARRAY[1, 'a', NULL]");
+test("normalizeQuery rewrites positional", () => {
+  const normalized = normalizeQuery("select ?", [1]);
+  assert.equal(normalized.sql, "select $1");
+  assert.deepEqual(normalized.params, [1]);
 });
 
-test("decodeValue decodes int32", () => {
+test("normalizeQuery rewrites named", () => {
+  const normalized = normalizeQuery("select :a, @b", { a: 1, b: 2 });
+  assert.equal(normalized.sql, "select $1, $2");
+  assert.deepEqual(normalized.params, [1, 2]);
+});
+
+test("decodeValue decodes int4", () => {
   const buf = Buffer.alloc(4);
   buf.writeInt32LE(42, 0);
-  assert.equal(decodeValue(WireType.INT32, buf), 42);
+  assert.equal(decodeValue(OID_INT4, buf, FORMAT_BINARY), 42);
 });
 
-test("decodeValue decodes arrays", () => {
-  const buf = Buffer.from("{1, 2, 3}");
-  assert.deepEqual(decodeValue(WireType.ARRAY, buf), [1, 2, 3]);
+test("decodeValue decodes vector", () => {
+  const vectorText = "[1, 2, 3]";
+  const buf = Buffer.alloc(4 + vectorText.length);
+  buf.writeUInt32LE(vectorText.length, 0);
+  buf.write(vectorText, 4, "utf8");
+  assert.deepEqual(decodeValue(OID_SB_VECTOR, buf, FORMAT_BINARY), [1, 2, 3]);
 });

@@ -1,238 +1,409 @@
 import { Buffer } from "node:buffer";
 
-export const PROTOCOL_MAGIC = 0x42444253;
+export const PROTOCOL_MAGIC = 0x53425750;
 export const PROTOCOL_VERSION_MAJOR = 1;
-export const PROTOCOL_VERSION_MINOR = 0;
+export const PROTOCOL_VERSION_MINOR = 1;
 export const PROTOCOL_VERSION = (PROTOCOL_VERSION_MAJOR << 8) | PROTOCOL_VERSION_MINOR;
-export const MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
+export const HEADER_SIZE = 40;
+export const MAX_MESSAGE_SIZE = 1024 * 1024 * 1024;
 
 export enum MessageType {
-  CONNECT_REQUEST = 0x01,
-  CONNECT_RESPONSE = 0x02,
-  DISCONNECT = 0x03,
-  AUTH_REQUEST = 0x10,
-  AUTH_RESPONSE = 0x11,
-  QUERY = 0x20,
-  QUERY_RESULT = 0x21,
-  QUERY_ERROR = 0x22,
-  QUERY_CANCEL = 0x23,
-  PREPARE = 0x30,
-  PREPARE_RESPONSE = 0x31,
-  EXECUTE = 0x32,
-  CLOSE_STATEMENT = 0x33,
-  DESCRIBE = 0x34,
-  DESCRIBE_RESPONSE = 0x35,
-  BEGIN_TRANSACTION = 0x40,
-  COMMIT = 0x41,
-  ROLLBACK = 0x42,
-  SAVEPOINT = 0x43,
-  RELEASE_SAVEPOINT = 0x44,
-  ROLLBACK_TO = 0x45,
-  TRANSACTION_STATUS = 0x46,
-  ROW_DESCRIPTION = 0x50,
-  ROW_DATA = 0x51,
-  END_OF_RESULTS = 0x52,
-  COMMAND_COMPLETE = 0x53,
-  COPY_DATA = 0x70,
-  COPY_DONE = 0x71,
-  COPY_FAIL = 0x72,
-  COPY_IN_RESPONSE = 0x73,
-  COPY_OUT_RESPONSE = 0x74,
-  COPY_BOTH_RESPONSE = 0x75,
-  STREAM_CONTROL = 0x76,
-  STREAM_READY = 0x77,
-  STREAM_DATA = 0x78,
-  STREAM_END = 0x79,
+  STARTUP = 0x01,
+  AUTH_RESPONSE = 0x02,
+  QUERY = 0x03,
+  PARSE = 0x04,
+  BIND = 0x05,
+  DESCRIBE = 0x06,
+  EXECUTE = 0x07,
+  CLOSE = 0x08,
+  SYNC = 0x09,
+  FLUSH = 0x0a,
+  CANCEL = 0x0b,
+  COPY_DATA = 0x0d,
+  COPY_DONE = 0x0e,
+  COPY_FAIL = 0x0f,
+
+  AUTH_REQUEST = 0x40,
+  AUTH_OK = 0x41,
+  AUTH_CONTINUE = 0x42,
+  READY = 0x43,
+  ROW_DESCRIPTION = 0x44,
+  DATA_ROW = 0x45,
+  COMMAND_COMPLETE = 0x46,
+  EMPTY_QUERY = 0x47,
+  ERROR = 0x48,
+  NOTICE = 0x49,
+  PARSE_COMPLETE = 0x4a,
+  BIND_COMPLETE = 0x4b,
+  CLOSE_COMPLETE = 0x4c,
+  PORTAL_SUSPENDED = 0x4d,
+  NO_DATA = 0x4e,
+  PARAMETER_STATUS = 0x4f,
+  PARAMETER_DESCRIPTION = 0x50,
+  COPY_IN_RESPONSE = 0x51,
+  COPY_OUT_RESPONSE = 0x52,
+  COPY_BOTH_RESPONSE = 0x53,
+  NOTIFICATION = 0x54,
+  NEGOTIATE_VERSION = 0x56,
+  STREAM_READY = 0x59,
+  STREAM_DATA = 0x5a,
+  STREAM_END = 0x5b,
+  TXN_STATUS = 0x5c,
+  PONG = 0x5d,
 }
 
 export enum AuthMethod {
-  PASSWORD = 0,
-  MD5 = 1,
-  SCRAM_SHA_256 = 2,
-  SCRAM_SHA_512 = 3,
+  OK = 0,
+  PASSWORD = 1,
+  MD5 = 2,
+  SCRAM_SHA_256 = 3,
+  CERTIFICATE = 4,
+  GSSAPI = 5,
+  SSPI = 6,
+  LDAP = 7,
+  SAML = 8,
+  OIDC = 9,
+  MFA_TOTP = 10,
+  CLUSTER_PKI = 11,
 }
 
-export enum AuthStatus {
-  OK = 0,
-  ERROR = 1,
-  CONTINUE = 2,
+export const MSG_FLAG_COMPRESSED = 0x01;
+export const MSG_FLAG_CONTINUED = 0x02;
+export const MSG_FLAG_FINAL = 0x04;
+export const MSG_FLAG_URGENT = 0x08;
+export const MSG_FLAG_ENCRYPTED = 0x10;
+export const MSG_FLAG_CHECKSUM = 0x20;
+
+export const FEATURE_COMPRESSION = 1n << 0n;
+export const FEATURE_STREAMING = 1n << 1n;
+export const FEATURE_SBLR = 1n << 2n;
+export const FEATURE_FEDERATION = 1n << 3n;
+export const FEATURE_NOTIFICATIONS = 1n << 4n;
+export const FEATURE_QUERY_PLAN = 1n << 5n;
+export const FEATURE_BATCH = 1n << 6n;
+export const FEATURE_PIPELINE = 1n << 7n;
+export const FEATURE_BINARY_COPY = 1n << 8n;
+export const FEATURE_SAVEPOINTS = 1n << 9n;
+export const FEATURE_2PC = 1n << 10n;
+export const FEATURE_CHECKSUMS = 1n << 11n;
+
+export interface MessageHeader {
+  type: number;
+  flags: number;
+  length: number;
+  sequence: number;
+  attachmentId: Buffer;
+  txnId: bigint;
+}
+
+export interface Message {
+  header: MessageHeader;
+  payload: Buffer;
 }
 
 export interface ColumnInfo {
   name: string;
-  wireType: number;
+  tableOid: number;
+  columnIndex: number;
+  typeOid: number;
+  typeSize: number;
   typeModifier: number;
-  formatCode: number;
+  format: number;
+  nullable: boolean;
 }
 
 export interface ColumnValue {
   data: Buffer | null;
 }
 
-export function encodeMessage(type: number, payload: Buffer, flags = 0): Buffer {
-  const header = Buffer.alloc(12);
-  header.writeUInt32LE(PROTOCOL_MAGIC, 0);
-  header.writeUInt16LE(PROTOCOL_VERSION, 4);
-  header.writeUInt8(type, 6);
-  header.writeUInt8(flags, 7);
-  header.writeUInt32LE(payload.length, 8);
-  return Buffer.concat([header, payload]);
+export function encodeMessage(header: MessageHeader, payload: Buffer): Buffer {
+  const out = Buffer.alloc(HEADER_SIZE + payload.length);
+  out.writeUInt32LE(PROTOCOL_MAGIC, 0);
+  out.writeUInt8(PROTOCOL_VERSION_MAJOR, 4);
+  out.writeUInt8(PROTOCOL_VERSION_MINOR, 5);
+  out.writeUInt8(header.type, 6);
+  out.writeUInt8(header.flags ?? 0, 7);
+  out.writeUInt32LE(payload.length, 8);
+  out.writeUInt32LE(header.sequence ?? 0, 12);
+  header.attachmentId.copy(out, 16);
+  out.writeBigUInt64LE(header.txnId ?? 0n, 32);
+  payload.copy(out, HEADER_SIZE);
+  return out;
 }
 
-export function decodeHeader(data: Buffer): { version: number; type: number; flags: number; length: number } {
-  if (data.length !== 12) {
+export function decodeHeader(data: Buffer): MessageHeader {
+  if (data.length !== HEADER_SIZE) {
     throw new Error("Invalid header length");
   }
   const magic = data.readUInt32LE(0);
   if (magic !== PROTOCOL_MAGIC) {
     throw new Error("Invalid protocol magic");
   }
-  const version = data.readUInt16LE(4);
+  const major = data.readUInt8(4);
+  const minor = data.readUInt8(5);
+  if (major !== PROTOCOL_VERSION_MAJOR || minor !== PROTOCOL_VERSION_MINOR) {
+    throw new Error("Unsupported protocol version");
+  }
   const type = data.readUInt8(6);
   const flags = data.readUInt8(7);
   const length = data.readUInt32LE(8);
   if (length > MAX_MESSAGE_SIZE) {
     throw new Error("Payload too large");
   }
-  return { version, type, flags, length };
+  const sequence = data.readUInt32LE(12);
+  const attachmentId = data.subarray(16, 32);
+  const txnId = data.readBigUInt64LE(32);
+  return { type, flags, length, sequence, attachmentId, txnId };
 }
 
-export function buildConnectRequest(database: string, clientName: string, pid: number): Buffer {
-  const payload = Buffer.alloc(2 + 2 + 4 + 256 + 64 + 32);
+export function buildStartupPayload(features: bigint, params: Record<string, string>): Buffer {
+  const paramBytes = buildParamList(params);
+  const payload = Buffer.alloc(2 + 2 + 8 + paramBytes.length);
+  payload.writeUInt8(PROTOCOL_VERSION_MAJOR, 0);
+  payload.writeUInt8(PROTOCOL_VERSION_MINOR, 1);
+  payload.writeUInt16LE(0, 2);
+  payload.writeBigUInt64LE(features, 4);
+  paramBytes.copy(payload, 12);
+  return payload;
+}
+
+function buildParamList(params: Record<string, string>): Buffer {
+  const parts: Buffer[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    parts.push(Buffer.from(key, "utf8"));
+    parts.push(Buffer.from([0]));
+    parts.push(Buffer.from(value, "utf8"));
+    parts.push(Buffer.from([0]));
+  }
+  parts.push(Buffer.from([0]));
+  return Buffer.concat(parts);
+}
+
+export function parseAuthRequest(payload: Buffer): { method: number; data: Buffer } {
+  if (payload.length < 4) throw new Error("Auth request truncated");
+  const method = payload.readUInt8(0);
+  const data = payload.subarray(4);
+  return { method, data };
+}
+
+export function parseAuthContinue(payload: Buffer): { method: number; stage: number; data: Buffer } {
+  if (payload.length < 8) throw new Error("Auth continue truncated");
+  const method = payload.readUInt8(0);
+  const stage = payload.readUInt8(1);
+  const dataLen = payload.readUInt32LE(4);
+  if (8 + dataLen > payload.length) throw new Error("Auth continue truncated");
+  return { method, stage, data: payload.subarray(8, 8 + dataLen) };
+}
+
+export function parseAuthOk(payload: Buffer): { sessionId: Buffer; serverInfo: Buffer } {
+  if (payload.length < 20) throw new Error("Auth ok truncated");
+  const sessionId = payload.subarray(0, 16);
+  const infoLen = payload.readUInt32LE(16);
+  if (20 + infoLen > payload.length) throw new Error("Auth ok truncated");
+  return { sessionId, serverInfo: payload.subarray(20, 20 + infoLen) };
+}
+
+export function buildQueryPayload(sql: string, flags: number, maxRows: number, timeoutMs: number): Buffer {
+  const sqlBytes = Buffer.from(sql + "\0", "utf8");
+  const payload = Buffer.alloc(12 + sqlBytes.length);
+  payload.writeUInt32LE(flags, 0);
+  payload.writeUInt32LE(maxRows, 4);
+  payload.writeUInt32LE(timeoutMs, 8);
+  sqlBytes.copy(payload, 12);
+  return payload;
+}
+
+export function buildParsePayload(statementName: string, sql: string, paramTypes: number[]): Buffer {
+  const nameBytes = Buffer.from(statementName, "utf8");
+  const sqlBytes = Buffer.from(sql, "utf8");
+  const payload = Buffer.alloc(4 + nameBytes.length + 4 + sqlBytes.length + 2 + 2 + paramTypes.length * 4);
   let offset = 0;
-  payload.writeUInt16LE(PROTOCOL_VERSION, offset);
+  payload.writeUInt32LE(nameBytes.length, offset);
+  offset += 4;
+  nameBytes.copy(payload, offset);
+  offset += nameBytes.length;
+  payload.writeUInt32LE(sqlBytes.length, offset);
+  offset += 4;
+  sqlBytes.copy(payload, offset);
+  offset += sqlBytes.length;
+  payload.writeUInt16LE(paramTypes.length, offset);
   offset += 2;
   payload.writeUInt16LE(0, offset);
   offset += 2;
-  payload.writeUInt32LE(pid, offset);
-  offset += 4;
-  writeNullTerminated(payload, database, offset, 256);
-  offset += 256;
-  writeNullTerminated(payload, clientName, offset, 64);
-  offset += 64;
-  writeNullTerminated(payload, "1.0.0", offset, 32);
-  return encodeMessage(MessageType.CONNECT_REQUEST, payload);
+  for (const oid of paramTypes) {
+    payload.writeUInt32LE(oid, offset);
+    offset += 4;
+  }
+  return payload;
 }
 
-export function parseConnectResponse(payload: Buffer): {
-  success: boolean;
-  sessionId: Buffer;
-  version: number;
-  serverName: string;
-  serverVersion: string;
-  errorMessage: string;
-} {
-  if (payload.length < 1 + 2 + 2 + 16 + 64 + 32) {
-    throw new Error("Connect response truncated");
+export interface ParamValue {
+  format: number;
+  data?: Buffer;
+  isNull?: boolean;
+}
+
+export function buildBindPayload(portalName: string, statementName: string, params: ParamValue[], resultFormats: number[]): Buffer {
+  const portalBytes = Buffer.from(portalName, "utf8");
+  const stmtBytes = Buffer.from(statementName, "utf8");
+  const paramFormats = params.map((param) => param.format);
+
+  let payloadLen = 4 + portalBytes.length + 4 + stmtBytes.length;
+  payloadLen += 2 + paramFormats.length * 2;
+  payloadLen += 2 + 2;
+  for (const param of params) {
+    payloadLen += 4;
+    if (!param.isNull && param.data) {
+      payloadLen += param.data.length;
+    }
   }
+  payloadLen += 2 + resultFormats.length * 2;
+
+  const payload = Buffer.alloc(payloadLen);
   let offset = 0;
-  const status = payload.readUInt8(offset);
-  offset += 1;
-  const version = payload.readUInt16LE(offset);
+  payload.writeUInt32LE(portalBytes.length, offset);
+  offset += 4;
+  portalBytes.copy(payload, offset);
+  offset += portalBytes.length;
+  payload.writeUInt32LE(stmtBytes.length, offset);
+  offset += 4;
+  stmtBytes.copy(payload, offset);
+  offset += stmtBytes.length;
+  payload.writeUInt16LE(paramFormats.length, offset);
   offset += 2;
-  offset += 2;
-  const sessionId = payload.subarray(offset, offset + 16);
-  offset += 16;
-  const serverName = readNullTerminated(payload.subarray(offset, offset + 64));
-  offset += 64;
-  const serverVersion = readNullTerminated(payload.subarray(offset, offset + 32));
-  offset += 32;
-  let errorMessage = "";
-  if (status !== 0 && offset + 2 <= payload.length) {
-    const msgLen = payload.readUInt16LE(offset);
+  for (const fmt of paramFormats) {
+    payload.writeUInt16LE(fmt, offset);
     offset += 2;
-    errorMessage = payload.subarray(offset, offset + msgLen).toString("utf8");
   }
-  return {
-    success: status === 0,
-    sessionId,
-    version,
-    serverName,
-    serverVersion,
-    errorMessage,
-  };
+  payload.writeUInt16LE(params.length, offset);
+  offset += 2;
+  payload.writeUInt16LE(0, offset);
+  offset += 2;
+  for (const param of params) {
+    if (param.isNull) {
+      payload.writeUInt32LE(0xffffffff, offset);
+      offset += 4;
+      continue;
+    }
+    const data = param.data ?? Buffer.alloc(0);
+    payload.writeUInt32LE(data.length, offset);
+    offset += 4;
+    data.copy(payload, offset);
+    offset += data.length;
+  }
+  payload.writeUInt16LE(resultFormats.length, offset);
+  offset += 2;
+  for (const fmt of resultFormats) {
+    payload.writeUInt16LE(fmt, offset);
+    offset += 2;
+  }
+  return payload;
 }
 
-export function buildAuthRequest(sessionId: Buffer, username: string, method: number, payload: Buffer): Buffer {
-  if (sessionId.length !== 16) {
-    throw new Error("sessionId must be 16 bytes");
-  }
-  const header = Buffer.alloc(16 + 64 + 1 + 2 + payload.length);
-  sessionId.copy(header, 0);
-  writeNullTerminated(header, username, 16, 64);
-  header.writeUInt8(method, 16 + 64);
-  header.writeUInt16LE(payload.length, 16 + 64 + 1);
-  payload.copy(header, 16 + 64 + 1 + 2);
-  return encodeMessage(MessageType.AUTH_REQUEST, header);
+export function buildDescribePayload(describeType: number, name: string): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const payload = Buffer.alloc(8 + nameBytes.length);
+  payload.writeUInt8(describeType, 0);
+  payload.writeUInt32LE(nameBytes.length, 4);
+  nameBytes.copy(payload, 8);
+  return payload;
 }
 
-export function parseAuthResponse(payload: Buffer): {
-  status: number;
-  userId: number;
-  errorMessage: string;
-  extra: Buffer;
-} {
-  if (payload.length < 1 + 4 + 256) {
-    throw new Error("Auth response truncated");
-  }
+export function buildExecutePayload(portalName: string, maxRows: number): Buffer {
+  const portalBytes = Buffer.from(portalName, "utf8");
+  const payload = Buffer.alloc(4 + portalBytes.length + 4);
+  payload.writeUInt32LE(portalBytes.length, 0);
+  portalBytes.copy(payload, 4);
+  payload.writeUInt32LE(maxRows, 4 + portalBytes.length);
+  return payload;
+}
+
+export function buildClosePayload(closeType: number, name: string): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const payload = Buffer.alloc(8 + nameBytes.length);
+  payload.writeUInt8(closeType, 0);
+  payload.writeUInt32LE(nameBytes.length, 4);
+  nameBytes.copy(payload, 8);
+  return payload;
+}
+
+export function buildCancelPayload(cancelType: number, targetSequence: number): Buffer {
+  const payload = Buffer.alloc(8);
+  payload.writeUInt32LE(cancelType, 0);
+  payload.writeUInt32LE(targetSequence, 4);
+  return payload;
+}
+
+export function parseReady(payload: Buffer): { status: number; txnId: bigint; visibility: bigint } {
+  if (payload.length < 20) throw new Error("Ready truncated");
   const status = payload.readUInt8(0);
-  const userId = payload.readUInt32LE(1);
-  const errorMessage = readNullTerminated(payload.subarray(5, 5 + 256));
-  const extra = payload.subarray(5 + 256);
-  return { status, userId, errorMessage, extra };
+  const txnId = payload.readBigUInt64LE(4);
+  const visibility = payload.readBigUInt64LE(12);
+  return { status, txnId, visibility };
 }
 
-export function buildQuery(sessionId: Buffer, sql: string, flags = 0): Buffer {
-  if (sessionId.length !== 16) {
-    throw new Error("sessionId must be 16 bytes");
-  }
-  const sqlBytes = Buffer.from(sql, "utf8");
-  const payload = Buffer.alloc(16 + 4 + 1 + sqlBytes.length);
-  sessionId.copy(payload, 0);
-  payload.writeUInt32LE(sqlBytes.length, 16);
-  payload.writeUInt8(flags, 20);
-  sqlBytes.copy(payload, 21);
-  return encodeMessage(MessageType.QUERY, payload);
+export function parseParameterStatus(payload: Buffer): { name: string; value: string } {
+  if (payload.length < 8) throw new Error("Parameter status truncated");
+  let offset = 0;
+  const nameLen = payload.readUInt32LE(offset);
+  offset += 4;
+  const name = payload.subarray(offset, offset + nameLen).toString("utf8");
+  offset += nameLen;
+  const valueLen = payload.readUInt32LE(offset);
+  offset += 4;
+  const value = payload.subarray(offset, offset + valueLen).toString("utf8");
+  return { name, value };
 }
 
 export function parseRowDescription(payload: Buffer): ColumnInfo[] {
-  if (payload.length < 2) {
-    throw new Error("Row description truncated");
-  }
+  if (payload.length < 4) throw new Error("Row description truncated");
   let offset = 0;
   const count = payload.readUInt16LE(offset);
-  offset += 2;
-  const columns: ColumnInfo[] = [];
+  offset += 4;
+  const cols: ColumnInfo[] = [];
   for (let i = 0; i < count; i++) {
-    if (offset + 2 > payload.length) {
-      throw new Error("Row description truncated");
-    }
-    const nameLen = payload.readUInt16LE(offset);
-    offset += 2;
+    const nameLen = payload.readUInt32LE(offset);
+    offset += 4;
     const name = payload.subarray(offset, offset + nameLen).toString("utf8");
     offset += nameLen;
-    const wireType = payload.readUInt8(offset);
-    offset += 1;
-    const typeModifier = payload.readUInt32LE(offset);
+    const tableOid = payload.readUInt32LE(offset);
     offset += 4;
-    const formatCode = payload.readUInt16LE(offset);
+    const columnIndex = payload.readUInt16LE(offset);
     offset += 2;
-    columns.push({ name, wireType, typeModifier, formatCode });
+    const typeOid = payload.readUInt32LE(offset);
+    offset += 4;
+    const typeSize = payload.readInt16LE(offset);
+    offset += 2;
+    const typeModifier = payload.readInt32LE(offset);
+    offset += 4;
+    const format = payload.readUInt8(offset);
+    offset += 1;
+    const nullable = payload.readUInt8(offset) === 1;
+    offset += 1;
+    offset += 2;
+    cols.push({ name, tableOid, columnIndex, typeOid, typeSize, typeModifier, format, nullable });
   }
-  return columns;
+  return cols;
 }
 
-export function parseRowData(payload: Buffer): ColumnValue[] {
-  if (payload.length < 2) {
-    throw new Error("Row data truncated");
-  }
+export function parseDataRow(payload: Buffer, columnCount: number): ColumnValue[] {
+  if (payload.length < 4) throw new Error("Row data truncated");
   let offset = 0;
   const count = payload.readUInt16LE(offset);
   offset += 2;
+  const nullBytes = payload.readUInt16LE(offset);
+  offset += 2;
+  if (count !== columnCount) throw new Error("Row data column count mismatch");
+  const nullBitmap = payload.subarray(offset, offset + nullBytes);
+  offset += nullBytes;
   const values: ColumnValue[] = [];
   for (let i = 0; i < count; i++) {
-    if (offset + 4 > payload.length) {
-      throw new Error("Row data truncated");
+    const byteIndex = Math.floor(i / 8);
+    const bitIndex = i % 8;
+    const isNull = byteIndex < nullBitmap.length && (nullBitmap[byteIndex] & (1 << bitIndex)) !== 0;
+    if (isNull) {
+      values.push({ data: null });
+      continue;
     }
     const length = payload.readInt32LE(offset);
     offset += 4;
@@ -240,93 +411,57 @@ export function parseRowData(payload: Buffer): ColumnValue[] {
       values.push({ data: null });
       continue;
     }
-    if (offset + length > payload.length) {
-      throw new Error("Row data truncated");
-    }
     const data = payload.subarray(offset, offset + length);
     offset += length;
-    values.push({ data });
+    values.push({ data: Buffer.from(data) });
   }
   return values;
 }
 
-export function parseCommandComplete(payload: Buffer): { tag: string; rowsAffected: number } {
-  if (payload.length < 64 + 8) {
-    throw new Error("Command complete truncated");
-  }
-  const tag = readNullTerminated(payload.subarray(0, 64));
-  const rowsAffected = Number(payload.readBigInt64LE(64));
-  return { tag, rowsAffected };
+export function parseCommandComplete(payload: Buffer): { commandType: number; rows: bigint; lastId: bigint; tag: string } {
+  if (payload.length < 20) throw new Error("Command complete truncated");
+  const commandType = payload.readUInt8(0);
+  const rows = payload.readBigUInt64LE(4);
+  const lastId = payload.readBigUInt64LE(12);
+  const tagBytes = payload.subarray(20);
+  const nullIdx = tagBytes.indexOf(0);
+  const tag = (nullIdx >= 0 ? tagBytes.subarray(0, nullIdx) : tagBytes).toString("utf8");
+  return { commandType, rows, lastId, tag };
 }
 
-export function parseQueryResult(payload: Buffer): { status: number; columnCount: number; rowCount: number } {
-  if (payload.length < 1 + 4 + 8) {
-    throw new Error("Query result truncated");
-  }
-  const status = payload.readUInt8(0);
-  const columnCount = payload.readUInt32LE(1);
-  const rowCount = Number(payload.readBigInt64LE(5));
-  return { status, columnCount, rowCount };
-}
-
-export function parseQueryError(payload: Buffer): {
-  errorCode: number;
-  sqlstate: string;
-  message: string;
-  detail: string;
-  hint: string;
-} {
-  if (payload.length < 4 + 6 + 2 + 2 + 2) {
-    throw new Error("Query error truncated");
-  }
+export function parseErrorMessage(payload: Buffer): { severity: string; sqlState: string; message: string; detail: string; hint: string } {
   let offset = 0;
-  const errorCode = payload.readUInt32LE(offset);
-  offset += 4;
-  const sqlstate = readNullTerminated(payload.subarray(offset, offset + 6));
-  offset += 6;
-  const messageLen = payload.readUInt16LE(offset);
-  offset += 2;
-  const detailLen = payload.readUInt16LE(offset);
-  offset += 2;
-  const hintLen = payload.readUInt16LE(offset);
-  offset += 2;
-  const message = payload.subarray(offset, offset + messageLen).toString("utf8");
-  offset += messageLen;
-  const detail = payload.subarray(offset, offset + detailLen).toString("utf8");
-  offset += detailLen;
-  const hint = payload.subarray(offset, offset + hintLen).toString("utf8");
-  return { errorCode, sqlstate, message, detail, hint };
-}
-
-export function buildCommit(sessionId: Buffer): Buffer {
-  return encodeMessage(MessageType.COMMIT, sessionId);
-}
-
-export function buildRollback(sessionId: Buffer): Buffer {
-  return encodeMessage(MessageType.ROLLBACK, sessionId);
-}
-
-export function buildBegin(sessionId: Buffer, isolationLevel = 0, readOnly = false): Buffer {
-  const payload = Buffer.alloc(16 + 1 + 1);
-  sessionId.copy(payload, 0);
-  payload.writeUInt8(isolationLevel, 16);
-  payload.writeUInt8(readOnly ? 1 : 0, 17);
-  return encodeMessage(MessageType.BEGIN_TRANSACTION, payload);
-}
-
-export function buildDisconnect(sessionId: Buffer): Buffer {
-  return encodeMessage(MessageType.DISCONNECT, sessionId);
-}
-
-function writeNullTerminated(buf: Buffer, value: string, offset: number, maxLen: number): void {
-  const encoded = Buffer.from(value ?? "", "utf8");
-  const len = Math.min(encoded.length, maxLen - 1);
-  encoded.copy(buf, offset, 0, len);
-  buf.fill(0, offset + len, offset + maxLen);
-}
-
-function readNullTerminated(buf: Buffer): string {
-  const idx = buf.indexOf(0);
-  const slice = idx >= 0 ? buf.subarray(0, idx) : buf;
-  return slice.toString("utf8");
+  let severity = "";
+  let sqlState = "";
+  let message = "";
+  let detail = "";
+  let hint = "";
+  while (offset < payload.length) {
+    const field = payload.readUInt8(offset);
+    offset += 1;
+    if (field === 0) break;
+    const start = offset;
+    while (offset < payload.length && payload[offset] !== 0) offset += 1;
+    if (offset >= payload.length) break;
+    const value = payload.subarray(start, offset).toString("utf8");
+    offset += 1;
+    switch (String.fromCharCode(field)) {
+      case "S":
+        severity = value;
+        break;
+      case "C":
+        sqlState = value;
+        break;
+      case "M":
+        message = value;
+        break;
+      case "D":
+        detail = value;
+        break;
+      case "H":
+        hint = value;
+        break;
+    }
+  }
+  return { severity, sqlState, message, detail, hint };
 }

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,19 +11,22 @@ use tokio_rustls::TlsConnector;
 use crate::config::Config;
 use crate::errors::{error_from_sqlstate, Error, ErrorKind, Result};
 use crate::protocol;
+use crate::protocol::MessageHeader;
 use crate::scram::ScramExchange;
-use crate::sql::{substitute, Params};
-use crate::types::{decode_value, Column, Value, WireType};
+use crate::sql::{normalize, Params};
+use crate::types::{decode_value, encode_param, Column, Param, Value, FORMAT_BINARY};
+
+const QUERY_FLAG_BINARY_RESULT: u32 = 0x04;
 
 pub struct Client {
     config: Config,
     stream: Option<Box<dyn AsyncReadWrite>>,
-    session_id: Option<[u8; 16]>,
-    server_name: String,
-    server_version: String,
     connected: bool,
-    autocommit: bool,
-    in_transaction: bool,
+    attachment_id: [u8; 16],
+    txn_id: u64,
+    sequence: u32,
+    authed: bool,
+    parameters: HashMap<String, String>,
 }
 
 pub struct QueryResult {
@@ -35,8 +39,7 @@ pub struct QueryResult {
 pub struct QueryStream<'a> {
     client: &'a mut Client,
     columns: Vec<protocol::ColumnInfo>,
-    rowcount: i64,
-    rowcount_hint: i64,
+    row_count: i64,
     command_tag: String,
     done: bool,
 }
@@ -49,25 +52,13 @@ impl Client {
         Self {
             config,
             stream: None,
-            session_id: None,
-            server_name: String::new(),
-            server_version: String::new(),
             connected: false,
-            autocommit: true,
-            in_transaction: false,
+            attachment_id: [0u8; 16],
+            txn_id: 0,
+            sequence: 0,
+            authed: false,
+            parameters: HashMap::new(),
         }
-    }
-
-    pub fn server_name(&self) -> &str {
-        &self.server_name
-    }
-
-    pub fn server_version(&self) -> &str {
-        &self.server_version
-    }
-
-    pub fn set_autocommit(&mut self, value: bool) {
-        self.autocommit = value;
     }
 
     pub async fn connect(&mut self) -> Result<()> {
@@ -77,7 +68,6 @@ impl Client {
         let stream = self.connect_transport().await?;
         self.stream = Some(stream);
         self.handshake().await?;
-        self.authenticate().await?;
         self.connected = true;
         Ok(())
     }
@@ -87,54 +77,8 @@ impl Client {
             let _ = stream.shutdown().await;
         }
         self.connected = false;
-        self.session_id = None;
-        self.in_transaction = false;
-    }
-
-    pub async fn disconnect(&mut self) {
-        if self.connected {
-            if let Some(session_id) = self.session_id {
-                let msg = protocol::build_disconnect(&session_id);
-                let _ = self.send_message(&msg).await;
-            }
-        }
-        self.close().await;
-    }
-
-    pub async fn begin(&mut self) -> Result<()> {
-        if self.in_transaction {
-            return Ok(());
-        }
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Connection, "no session id"))?;
-        let msg = protocol::build_begin(&session_id, 0, false);
-        self.send_message(&msg).await?;
-        self.drain_until_complete().await?;
-        self.in_transaction = true;
-        Ok(())
-    }
-
-    pub async fn commit(&mut self) -> Result<()> {
-        if !self.in_transaction {
-            return Ok(());
-        }
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Connection, "no session id"))?;
-        let msg = protocol::build_commit(&session_id);
-        self.send_message(&msg).await?;
-        self.drain_until_complete().await?;
-        self.in_transaction = false;
-        Ok(())
-    }
-
-    pub async fn rollback(&mut self) -> Result<()> {
-        if !self.in_transaction {
-            return Ok(());
-        }
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Connection, "no session id"))?;
-        let msg = protocol::build_rollback(&session_id);
-        self.send_message(&msg).await?;
-        self.drain_until_complete().await?;
-        self.in_transaction = false;
-        Ok(())
+        self.authed = false;
+        self.sequence = 0;
     }
 
     pub async fn query(&mut self, sql: &str) -> Result<QueryResult> {
@@ -143,145 +87,180 @@ impl Client {
 
     pub async fn query_params(&mut self, sql: &str, params: Params) -> Result<QueryResult> {
         self.ensure_connected()?;
-        if !self.autocommit {
-            self.begin().await?;
+        let normalized = normalize(sql, params)?;
+        if normalized.params.is_empty() {
+            self.send_simple_query(&normalized.sql, 0, 0).await?;
+        } else {
+            self.send_extended_query(&normalized.sql, &normalized.params).await?;
         }
-        let rendered = substitute(sql, params);
-        self.send_query(&rendered).await
+        self.collect_results().await
     }
 
     pub async fn query_stream(&mut self, sql: &str) -> Result<QueryStream<'_>> {
         self.ensure_connected()?;
-        if !self.autocommit {
-            self.begin().await?;
-        }
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Connection, "no session id"))?;
-        let msg = protocol::build_query(&session_id, sql, 0);
-        self.send_message(&msg).await?;
+        self.send_simple_query(sql, 0, 0).await?;
         Ok(QueryStream {
             client: self,
             columns: Vec::new(),
-            rowcount: -1,
-            rowcount_hint: -1,
+            row_count: -1,
             command_tag: String::new(),
             done: false,
         })
     }
 
-    async fn send_query(&mut self, sql: &str) -> Result<QueryResult> {
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Connection, "no session id"))?;
-        let msg = protocol::build_query(&session_id, sql, 0);
-        self.send_message(&msg).await?;
-        let mut columns = Vec::new();
-        let mut rows = Vec::new();
-        let mut rowcount = -1;
-        let mut rowcount_hint = -1;
-        let mut command_tag = String::new();
-
-        loop {
-            let (msg_type, payload) = self.recv_message().await?;
-            match msg_type {
-                protocol::MSG_QUERY_ERROR => return self.raise_query_error(&payload),
-                protocol::MSG_QUERY_RESULT => {
-                    let (_, _, rows_hint) = protocol::parse_query_result(&payload)?;
-                    rowcount_hint = rows_hint;
-                }
-                protocol::MSG_ROW_DESCRIPTION => {
-                    columns = protocol::parse_row_description(&payload)?;
-                }
-                protocol::MSG_ROW_DATA => {
-                    let values = protocol::parse_row_data(&payload)?;
-                    rows.push(self.decode_row(&columns, &values)?);
-                }
-                protocol::MSG_COMMAND_COMPLETE => {
-                    let (tag, rows_affected) = protocol::parse_command_complete(&payload)?;
-                    command_tag = tag;
-                    rowcount = rows_affected;
-                }
-                protocol::MSG_END_RESULTS => break,
-                _ => {}
-            }
-        }
-
-        if rowcount < 0 && rowcount_hint >= 0 {
-            rowcount = rowcount_hint;
-        }
-        if rowcount < 0 {
-            rowcount = rows.len() as i64;
-        }
-
-        Ok(QueryResult {
-            columns: columns
-                .into_iter()
-                .map(|col| Column {
-                    name: col.name,
-                    wire_type: WireType::from(col.wire_type),
-                    type_modifier: col.type_modifier,
-                    format: col.format,
-                })
-                .collect(),
-            rows,
-            row_count: rowcount,
-            command_tag,
-        })
+    pub async fn cancel(&mut self) -> Result<()> {
+        let payload = protocol::build_cancel_payload(0, 0);
+        self.send_message(protocol::MSG_CANCEL, &payload, protocol::MSG_FLAG_URGENT, false)
+            .await
     }
 
     async fn handshake(&mut self) -> Result<()> {
-        let msg = protocol::build_connect_request(
-            &self.config.database,
-            &self.config.application_name,
-            std::process::id(),
-        );
-        self.send_message(&msg).await?;
-        let (msg_type, payload) = self.recv_message().await?;
-        if msg_type != protocol::MSG_CONNECT_RESPONSE {
-            return Err(Error::new(ErrorKind::Connection, "unexpected response to CONNECT_REQUEST"));
+        self.authed = false;
+        self.parameters.clear();
+        let features = self.requested_features();
+        let mut params = HashMap::new();
+        params.insert("database".to_string(), self.config.database.clone());
+        params.insert("user".to_string(), self.config.user.clone());
+        if !self.config.application_name.is_empty() {
+            params.insert("application_name".to_string(), self.config.application_name.clone());
         }
-        let (success, session_id, server_name, server_version, error_msg) =
-            protocol::parse_connect_response(&payload)?;
-        if !success {
-            return Err(Error::new(
-                ErrorKind::Connection,
-                if error_msg.is_empty() { "connect failed" } else { &error_msg },
-            ));
+        let payload = protocol::build_startup_payload(features, &params);
+        self.send_message(protocol::MSG_STARTUP, &payload, 0, true).await?;
+        let mut scram: Option<ScramExchange> = None;
+
+        loop {
+            let msg = self.recv_message().await?;
+            match msg.header.msg_type {
+                protocol::MSG_NEGOTIATE_VERSION => continue,
+                protocol::MSG_AUTH_REQUEST => {
+                    let (method, _data) = protocol::parse_auth_request(&msg.payload)?;
+                    match method {
+                        protocol::AUTH_OK => continue,
+                        protocol::AUTH_PASSWORD => {
+                            let payload = self.config.password.as_bytes().to_vec();
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true).await?;
+                        }
+                        protocol::AUTH_SCRAM_SHA256 => {
+                            if scram.is_none() {
+                                scram = Some(ScramExchange::new(&self.config.user));
+                            }
+                            let exchange = scram.as_mut().unwrap();
+                            let payload = exchange.client_first_message().into_bytes();
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true).await?;
+                        }
+                        _ => return Err(Error::new(ErrorKind::Auth, "unsupported auth method")),
+                    }
+                }
+                protocol::MSG_AUTH_CONTINUE => {
+                    let (method, _stage, data) = protocol::parse_auth_continue(&msg.payload)?;
+                    if method != protocol::AUTH_SCRAM_SHA256 {
+                        return Err(Error::new(ErrorKind::Auth, "unsupported auth continue"));
+                    }
+                    let exchange = scram.as_mut().ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM state missing"))?;
+                    let server_first = String::from_utf8_lossy(&data).to_string();
+                    let client_final = exchange.handle_server_first(&self.config.password, &server_first)?;
+                    self.send_message(protocol::MSG_AUTH_RESPONSE, client_final.as_bytes(), 0, true).await?;
+                }
+                protocol::MSG_AUTH_OK => {
+                    let (_session_id, info) = protocol::parse_auth_ok(&msg.payload)?;
+                    self.attachment_id.copy_from_slice(&msg.header.attachment_id);
+                    self.txn_id = msg.header.txn_id;
+                    self.authed = true;
+                    if let Some(ref exchange) = scram {
+                        if !info.is_empty() && info.starts_with(b"v=") {
+                            let server_final = String::from_utf8_lossy(&info).to_string();
+                            exchange.verify_server_final(&server_final)?;
+                        }
+                    }
+                }
+                protocol::MSG_PARAMETER_STATUS => {
+                    let (name, value) = protocol::parse_parameter_status(&msg.payload)?;
+                    self.parameters.insert(name, value);
+                }
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                    return Ok(());
+                }
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                _ => continue,
+            }
         }
-        self.session_id = Some(session_id);
-        self.server_name = server_name;
-        self.server_version = server_version;
-        Ok(())
     }
 
-    async fn authenticate(&mut self) -> Result<()> {
-        let session_id = self.session_id.ok_or_else(|| Error::new(ErrorKind::Auth, "missing session"))?;
-        let mut exchange = ScramExchange::new(&self.config.user);
-        let client_first = exchange.client_first_message();
-        let msg = protocol::build_auth_request(&session_id, &self.config.user, protocol::AUTH_SCRAM_SHA256, client_first.as_bytes());
-        self.send_message(&msg).await?;
-        let (msg_type, payload) = self.recv_message().await?;
-        if msg_type != protocol::MSG_AUTH_RESPONSE {
-            return Err(Error::new(ErrorKind::Auth, "unexpected response to AUTH_REQUEST"));
+    async fn collect_results(&mut self) -> Result<QueryResult> {
+        let mut columns = Vec::new();
+        let mut rows = Vec::new();
+        let mut row_count = -1;
+        let mut command_tag = String::new();
+
+        loop {
+            let msg = self.recv_message().await?;
+            match msg.header.msg_type {
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                protocol::MSG_ROW_DESCRIPTION => {
+                    columns = protocol::parse_row_description(&msg.payload)?;
+                }
+                protocol::MSG_DATA_ROW => {
+                    let values = protocol::parse_data_row(&msg.payload, columns.len())?;
+                    rows.push(self.decode_row(&columns, &values)?);
+                }
+                protocol::MSG_COMMAND_COMPLETE => {
+                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
+                    command_tag = tag;
+                    row_count = rows_affected as i64;
+                }
+                protocol::MSG_PARAMETER_STATUS => {
+                    let (name, value) = protocol::parse_parameter_status(&msg.payload)?;
+                    self.parameters.insert(name, value);
+                }
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                    if row_count < 0 {
+                        row_count = rows.len() as i64;
+                    }
+                    let mapped = columns
+                        .into_iter()
+                        .map(|col| Column {
+                            name: col.name,
+                            type_oid: col.type_oid,
+                            type_modifier: col.type_modifier,
+                            format: col.format,
+                            nullable: col.nullable,
+                        })
+                        .collect();
+                    return Ok(QueryResult { columns: mapped, rows, row_count, command_tag });
+                }
+                _ => continue,
+            }
         }
-        let (status, _user_id, error_msg, extra) = protocol::parse_auth_response(&payload)?;
-        if status != 2 {
-            return Err(Error::new(ErrorKind::Auth, if error_msg.is_empty() { "auth failed" } else { &error_msg }));
+    }
+
+    async fn send_simple_query(&mut self, sql: &str, max_rows: u32, timeout_ms: u32) -> Result<()> {
+        let flags = if self.config.binary_transfer { QUERY_FLAG_BINARY_RESULT } else { 0 };
+        let payload = protocol::build_query_payload(sql, flags, max_rows, timeout_ms);
+        self.send_message(protocol::MSG_QUERY, &payload, 0, false).await
+    }
+
+    async fn send_extended_query(&mut self, sql: &str, params: &[Param]) -> Result<()> {
+        let mut param_values = Vec::with_capacity(params.len());
+        let mut param_types = Vec::with_capacity(params.len());
+        for param in params {
+            let (value, oid) = encode_param(param)?;
+            param_values.push(value);
+            param_types.push(oid);
         }
-        let server_first = String::from_utf8_lossy(&extra).to_string();
-        let client_final = exchange.handle_server_first(&self.config.password, &server_first)?;
-        let msg = protocol::build_auth_request(&session_id, &self.config.user, protocol::AUTH_SCRAM_SHA256, client_final.as_bytes());
-        self.send_message(&msg).await?;
-        let (msg_type, payload) = self.recv_message().await?;
-        if msg_type != protocol::MSG_AUTH_RESPONSE {
-            return Err(Error::new(ErrorKind::Auth, "unexpected response to SCRAM final"));
-        }
-        let (status, _user_id, error_msg, extra) = protocol::parse_auth_response(&payload)?;
-        if status != 0 {
-            return Err(Error::new(ErrorKind::Auth, if error_msg.is_empty() { "auth failed" } else { &error_msg }));
-        }
-        if !extra.is_empty() {
-            let server_final = String::from_utf8_lossy(&extra);
-            exchange.verify_server_final(&server_final)?;
-        }
-        Ok(())
+        let parse_payload = protocol::build_parse_payload("", sql, &param_types);
+        self.send_message(protocol::MSG_PARSE, &parse_payload, 0, false).await?;
+
+        let result_formats = if self.config.binary_transfer { vec![FORMAT_BINARY] } else { Vec::new() };
+        let bind_payload = protocol::build_bind_payload("", "", &param_values, &result_formats);
+        self.send_message(protocol::MSG_BIND, &bind_payload, 0, false).await?;
+
+        let exec_payload = protocol::build_execute_payload("", 0);
+        self.send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false).await?;
+        self.send_message(protocol::MSG_SYNC, &[], 0, false).await
     }
 
     async fn connect_transport(&self) -> Result<Box<dyn AsyncReadWrite>> {
@@ -295,24 +274,10 @@ impl Client {
 
         let sslmode = self.config.sslmode.to_ascii_lowercase();
         if sslmode == "disable" {
-            return Ok(Box::new(stream));
+            return Err(Error::new(ErrorKind::Connection, "TLS is required"));
         }
-
-        let require_tls = matches!(sslmode.as_str(), "require" | "verify-ca" | "verify-full");
-        match self.connect_tls(stream).await {
-            Ok(tls) => Ok(Box::new(tls)),
-            Err(err) => {
-                if matches!(sslmode.as_str(), "allow" | "prefer") {
-                    let fallback = TcpStream::connect(&addr).await?;
-                    fallback.set_nodelay(true).ok();
-                    Ok(Box::new(fallback))
-                } else if require_tls {
-                    Err(err)
-                } else {
-                    Ok(Box::new(TcpStream::connect(&addr).await?))
-                }
-            }
-        }
+        let tls = self.connect_tls(stream).await?;
+        Ok(Box::new(tls))
     }
 
     async fn connect_tls(&self, stream: TcpStream) -> Result<TlsStream<TcpStream>> {
@@ -333,7 +298,6 @@ impl Client {
             }
         }
 
-        let sslmode = self.config.sslmode.to_ascii_lowercase();
         let builder = ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(root_store);
@@ -363,6 +327,7 @@ impl Client {
             builder.with_no_client_auth()
         };
 
+        let sslmode = self.config.sslmode.to_ascii_lowercase();
         if matches!(sslmode.as_str(), "allow" | "prefer" | "require") {
             client_config
                 .dangerous()
@@ -376,27 +341,38 @@ impl Client {
         Ok(tls)
     }
 
-    async fn send_message(&mut self, data: &[u8]) -> Result<()> {
+    async fn send_message(&mut self, msg_type: u8, payload: &[u8], flags: u8, force_zero: bool) -> Result<()> {
         let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
+        let sequence = self.sequence;
+        self.sequence = self.sequence.wrapping_add(1);
+        let header = MessageHeader {
+            msg_type,
+            flags,
+            length: payload.len() as u32,
+            sequence,
+            attachment_id: if self.authed && !force_zero { self.attachment_id } else { [0u8; 16] },
+            txn_id: if self.authed && !force_zero { self.txn_id } else { 0 },
+        };
+        let data = protocol::encode_message(&header, payload);
         if self.config.socket_timeout_ms > 0 {
-            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.write_all(data))
+            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.write_all(&data))
                 .await
                 .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
         } else {
-            stream.write_all(data).await?;
+            stream.write_all(&data).await?;
         }
         Ok(())
     }
 
-    async fn recv_message(&mut self) -> Result<(u8, Vec<u8>)> {
-        let mut header = [0u8; 12];
-        self.read_exact(&mut header).await?;
-        let (msg_type, _flags, length) = protocol::decode_header(&header)?;
-        let mut payload = vec![0u8; length as usize];
-        if length > 0 {
+    async fn recv_message(&mut self) -> Result<protocol::Message> {
+        let mut header_bytes = [0u8; protocol::HEADER_SIZE];
+        self.read_exact(&mut header_bytes).await?;
+        let header = protocol::decode_header(&header_bytes)?;
+        let mut payload = vec![0u8; header.length as usize];
+        if header.length > 0 {
             self.read_exact(&mut payload).await?;
         }
-        Ok((msg_type, payload))
+        Ok(protocol::Message { header, payload })
     }
 
     async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
@@ -411,29 +387,19 @@ impl Client {
         Ok(())
     }
 
-    async fn drain_until_complete(&mut self) -> Result<()> {
-        loop {
-            let (msg_type, payload) = self.recv_message().await?;
-            if msg_type == protocol::MSG_QUERY_ERROR {
-                return self.raise_query_error(&payload);
-            }
-            if msg_type == protocol::MSG_COMMAND_COMPLETE || msg_type == protocol::MSG_END_RESULTS {
-                return Ok(());
-            }
-        }
-    }
-
     fn decode_row(&self, columns: &[protocol::ColumnInfo], values: &[protocol::ColumnValue]) -> Result<Vec<Value>> {
         let mut row = Vec::with_capacity(values.len());
         for (idx, value) in values.iter().enumerate() {
-            let wire_type = columns.get(idx).map(|c| c.wire_type).unwrap_or(WireType::Unknown as u8);
-            row.push(decode_value(wire_type, value.data.clone())?);
+            let col = columns.get(idx);
+            let type_oid = col.map(|c| c.type_oid).unwrap_or(0);
+            let format = col.map(|c| c.format as u16).unwrap_or(FORMAT_BINARY);
+            row.push(decode_value(type_oid, value.data.clone(), format)?);
         }
         Ok(row)
     }
 
-    fn raise_query_error<T>(&self, payload: &[u8]) -> Result<T> {
-        let (_code, sqlstate, message, detail, hint) = protocol::parse_query_error(payload)?;
+    fn raise_protocol_error<T>(&self, payload: &[u8]) -> Result<T> {
+        let (_severity, sqlstate, message, detail, hint) = protocol::parse_error_message(payload)?;
         let mut parts = Vec::new();
         if !message.is_empty() {
             parts.push(message.clone());
@@ -444,19 +410,26 @@ impl Client {
         if !hint.is_empty() {
             parts.push(format!("HINT: {}", hint));
         }
-        let combined = if parts.is_empty() {
-            "query failed".to_string()
-        } else {
-            parts.join("\n")
-        };
+        let combined = if parts.is_empty() { "query failed".to_string() } else { parts.join("\n") };
         Err(error_from_sqlstate(&sqlstate, combined, Some(detail), Some(hint)))
     }
 
     fn ensure_connected(&self) -> Result<()> {
-        if !self.connected || self.session_id.is_none() {
+        if !self.connected {
             return Err(Error::new(ErrorKind::Connection, "client is not connected"));
         }
         Ok(())
+    }
+
+    fn requested_features(&self) -> u64 {
+        let mut features = 0u64;
+        if self.config.compression.eq_ignore_ascii_case("zstd") {
+            features |= protocol::FEATURE_COMPRESSION;
+        }
+        if self.config.binary_transfer {
+            features |= protocol::FEATURE_STREAMING;
+        }
+        features
     }
 }
 
@@ -466,30 +439,25 @@ impl<'a> QueryStream<'a> {
             return Ok(None);
         }
         loop {
-            let (msg_type, payload) = self.client.recv_message().await?;
-            match msg_type {
-                protocol::MSG_QUERY_ERROR => return self.client.raise_query_error(&payload),
-                protocol::MSG_QUERY_RESULT => {
-                    let (_, _, rows_hint) = protocol::parse_query_result(&payload)?;
-                    self.rowcount_hint = rows_hint;
-                }
+            let msg = self.client.recv_message().await?;
+            match msg.header.msg_type {
+                protocol::MSG_ERROR => return self.client.raise_protocol_error(&msg.payload),
                 protocol::MSG_ROW_DESCRIPTION => {
-                    self.columns = protocol::parse_row_description(&payload)?;
+                    self.columns = protocol::parse_row_description(&msg.payload)?;
                 }
-                protocol::MSG_ROW_DATA => {
-                    let values = protocol::parse_row_data(&payload)?;
+                protocol::MSG_DATA_ROW => {
+                    let values = protocol::parse_data_row(&msg.payload, self.columns.len())?;
                     let row = self.client.decode_row(&self.columns, &values)?;
                     return Ok(Some(row));
                 }
                 protocol::MSG_COMMAND_COMPLETE => {
-                    let (tag, rows_affected) = protocol::parse_command_complete(&payload)?;
+                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
                     self.command_tag = tag;
-                    self.rowcount = rows_affected;
+                    self.row_count = rows_affected as i64;
                 }
-                protocol::MSG_END_RESULTS => {
-                    if self.rowcount < 0 && self.rowcount_hint >= 0 {
-                        self.rowcount = self.rowcount_hint;
-                    }
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.client.txn_id = txn_id;
                     self.done = true;
                     return Ok(None);
                 }
@@ -503,45 +471,11 @@ impl<'a> QueryStream<'a> {
     }
 
     pub fn row_count(&self) -> i64 {
-        self.rowcount
+        self.row_count
     }
 
     pub fn command_tag(&self) -> &str {
         &self.command_tag
-    }
-}
-
-impl From<u8> for WireType {
-    fn from(value: u8) -> Self {
-        match value {
-            0x01 => WireType::Bool,
-            0x02 => WireType::Int16,
-            0x03 => WireType::Int32,
-            0x04 => WireType::Int64,
-            0x05 => WireType::Float32,
-            0x06 => WireType::Float64,
-            0x07 => WireType::Decimal,
-            0x08 => WireType::Varchar,
-            0x09 => WireType::Char,
-            0x0A => WireType::Bytea,
-            0x0B => WireType::Date,
-            0x0C => WireType::Time,
-            0x0D => WireType::Timestamp,
-            0x0E => WireType::TimestampTz,
-            0x0F => WireType::Interval,
-            0x10 => WireType::Uuid,
-            0x11 => WireType::Json,
-            0x12 => WireType::Jsonb,
-            0x13 => WireType::Array,
-            0x16 => WireType::Vector,
-            0x17 => WireType::Money,
-            0x18 => WireType::Xml,
-            0x19 => WireType::Inet,
-            0x1A => WireType::Cidr,
-            0x1C => WireType::TsVector,
-            0x1D => WireType::TsQuery,
-            _ => WireType::Unknown,
-        }
     }
 }
 

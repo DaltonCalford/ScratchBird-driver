@@ -36,7 +36,7 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
 
     public string SSLMode
     {
-        get => GetString("SSLMode", "prefer");
+        get => GetString("SSLMode", "require");
         set => this["SSLMode"] = value;
     }
 
