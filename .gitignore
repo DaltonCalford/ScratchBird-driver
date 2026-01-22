@@ -1,0 +1,170 @@
+# ===================
+# OS Generated Files
+# ===================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===================
+# IDE / Editor
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ===================
+# Go
+# ===================
+go/bin/
+go/pkg/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# ===================
+# Python
+# ===================
+python/__pycache__/
+python/*.py[cod]
+python/*$py.class
+python/*.so
+python/.Python
+python/build/
+python/develop-eggs/
+python/dist/
+python/downloads/
+python/eggs/
+python/.eggs/
+python/lib/
+python/lib64/
+python/parts/
+python/sdist/
+python/var/
+python/wheels/
+python/*.egg-info/
+python/.installed.cfg
+python/*.egg
+python/.env
+python/.venv
+python/env/
+python/venv/
+python/.pytest_cache/
+python/.mypy_cache/
+python/.tox/
+python/.coverage
+python/htmlcov/
+
+# ===================
+# Node.js
+# ===================
+node/node_modules/
+node/dist/
+node/.npm
+node/.eslintcache
+node/*.tsbuildinfo
+node/coverage/
+
+# ===================
+# Rust
+# ===================
+rust/target/
+rust/Cargo.lock
+rust/**/*.rs.bk
+
+# ===================
+# .NET
+# ===================
+dotnet/bin/
+dotnet/obj/
+dotnet/*.user
+dotnet/*.suo
+dotnet/*.userosscache
+dotnet/*.sln.docstates
+dotnet/packages/
+dotnet/.vs/
+
+# ===================
+# Java / JDBC
+# ===================
+jdbc/build/
+jdbc/.gradle/
+jdbc/bin/
+jdbc/*.class
+jdbc/*.jar
+jdbc/*.war
+jdbc/*.nar
+jdbc/*.ear
+jdbc/*.zip
+jdbc/*.tar.gz
+jdbc/*.rar
+jdbc/hs_err_pid*
+
+# ===================
+# PHP
+# ===================
+php/vendor/
+php/composer.lock
+php/.phpunit.result.cache
+
+# ===================
+# Ruby
+# ===================
+ruby/*.gem
+ruby/.bundle/
+ruby/vendor/bundle
+ruby/coverage/
+ruby/.rspec_status
+
+# ===================
+# R
+# ===================
+r/.Rproj.user
+r/.Rhistory
+r/.RData
+r/*.Rproj
+r/src/*.o
+r/src/*.so
+r/src/*.dll
+
+# ===================
+# Pascal
+# ===================
+pascal/*.o
+pascal/*.ppu
+pascal/*.exe
+pascal/*.dll
+pascal/*.so
+pascal/lib/
+
+# ===================
+# Build artifacts
+# ===================
+build/
+dist/
+out/
+*.log
+
+# ===================
+# Test databases
+# ===================
+*.sbdb
+*.fdb
+*.gdb
+test_*.db

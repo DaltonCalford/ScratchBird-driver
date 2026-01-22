@@ -1,0 +1,16 @@
+Package: scratchbird
+Type: Package
+Title: ScratchBird Native Driver
+Version: 0.1.0
+Authors@R: c(
+    person("ScratchBird", "Contributors", email = "dev@scratchbird.local", role = c("aut", "cre"))
+)
+Description: Native ScratchBird driver using the ScratchBird wire protocol.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Imports:
+    DBI,
+    openssl
+Suggests:
+    testthat

@@ -1,0 +1,19 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { Client } = require("../dist/index.js");
+
+test("connects and runs query", async (t) => {
+  const url = process.env.SCRATCHBIRD_NODE_URL;
+  if (!url) {
+    t.skip("SCRATCHBIRD_NODE_URL not set");
+    return;
+  }
+  const client = new Client(url);
+  await client.connect();
+  try {
+    const res = await client.query("SELECT 1 as one");
+    assert.equal(res.rows[0].one, 1);
+  } finally {
+    await client.end();
+  }
+});
