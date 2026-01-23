@@ -170,3 +170,8 @@ out/
 *.fdb
 *.gdb
 test_*.db
+
+# ===================
+# Wiki (separate git repo)
+# ===================
+wiki/.git/
