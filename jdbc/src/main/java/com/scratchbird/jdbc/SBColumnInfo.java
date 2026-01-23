@@ -15,6 +15,7 @@ public class SBColumnInfo {
     private short typeSize;
     private int typeModifier;
     private short formatCode;
+    private boolean nullable;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -36,4 +37,7 @@ public class SBColumnInfo {
 
     public short getFormatCode() { return formatCode; }
     public void setFormatCode(short formatCode) { this.formatCode = formatCode; }
+
+    public boolean isNullable() { return nullable; }
+    public void setNullable(boolean nullable) { this.nullable = nullable; }
 }

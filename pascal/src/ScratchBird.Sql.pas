@@ -5,84 +5,20 @@ interface
 uses
   SysUtils, Variants;
 
-function SubstituteSql(const Sql: string; const Params: array of Variant): string;
-function SubstituteNamedSql(const Sql: string; const Names: array of string; const Values: array of Variant): string;
+type
+  TScratchBirdParamInput = record
+    Value: Variant;
+    Obj: TObject;
+  end;
+
+function NormalizePositionalSql(const Sql: string; const Params: array of TScratchBirdParamInput;
+  out Ordered: TArray<TScratchBirdParamInput>): string;
+function NormalizeNamedSql(const Sql: string; const Names: array of string; const Params: array of TScratchBirdParamInput;
+  out Ordered: TArray<TScratchBirdParamInput>): string;
 
 function IndexOf(const Names: array of string; const Name: string): Integer;
 
 implementation
-
-function EscapeString(const Value: string): string;
-begin
-  Result := StringReplace(StringReplace(Value, '\', '\\', [rfReplaceAll]), '''', '''''', [rfReplaceAll]);
-end;
-
-function FormatValue(const Value: Variant): string;
-begin
-  if VarIsNull(Value) then
-    Exit('NULL');
-  case VarType(Value) of
-    varBoolean:
-      if Value then
-        Result := 'TRUE'
-      else
-        Result := 'FALSE';
-    varSmallint, varInteger, varInt64, varShortInt, varByte, varWord, varLongWord:
-      Result := VarToStr(Value);
-    varSingle, varDouble, varCurrency:
-      Result := VarToStr(Value);
-    varString, varUString, varOleStr:
-      Result := '''' + EscapeString(VarToStr(Value)) + '''';
-  else
-    Result := '''' + EscapeString(VarToStr(Value)) + '''';
-  end;
-end;
-
-function SubstituteSql(const Sql: string; const Params: array of Variant): string;
-var
-  I, Index: Integer;
-  OutSql: string;
-begin
-  OutSql := '';
-  Index := 0;
-  I := 1;
-  while I <= Length(Sql) do
-  begin
-    if Sql[I] = '?' then
-    begin
-      if Index <= High(Params) then
-      begin
-        OutSql := OutSql + FormatValue(Params[Index]);
-        Inc(Index);
-      end
-      else
-        OutSql := OutSql + '?';
-      Inc(I);
-      Continue;
-    end;
-    if (Sql[I] = '''') and (I < Length(Sql)) then
-    begin
-      OutSql := OutSql + Sql[I];
-      Inc(I);
-      while I <= Length(Sql) do
-      begin
-        OutSql := OutSql + Sql[I];
-        if (Sql[I] = '''') and ((I = Length(Sql)) or (Sql[I + 1] <> '''')) then
-        begin
-          Inc(I);
-          Break;
-        end;
-        if (Sql[I] = '''') and (I < Length(Sql)) and (Sql[I + 1] = '''') then
-          Inc(I);
-        Inc(I);
-      end;
-      Continue;
-    end;
-    OutSql := OutSql + Sql[I];
-    Inc(I);
-  end;
-  Result := OutSql;
-end;
 
 function IndexOf(const Names: array of string; const Name: string): Integer;
 var
@@ -100,31 +36,103 @@ begin
     (Ch >= '0') and (Ch <= '9') or (Ch = '_');
 end;
 
-function SubstituteNamedSql(const Sql: string; const Names: array of string; const Values: array of Variant): string;
+function NormalizePositionalSql(const Sql: string; const Params: array of TScratchBirdParamInput;
+  out Ordered: TArray<TScratchBirdParamInput>): string;
 var
-  I, J: Integer;
+  I: Integer;
   OutSql: string;
-  Token: string;
   Index: Integer;
 begin
+  Ordered := nil;
   OutSql := '';
+  Index := 0;
   I := 1;
   while I <= Length(Sql) do
   begin
-    if (Sql[I] = '''') and (I < Length(Sql)) then
+    if Sql[I] = '''' then
     begin
       OutSql := OutSql + Sql[I];
       Inc(I);
       while I <= Length(Sql) do
       begin
         OutSql := OutSql + Sql[I];
-        if (Sql[I] = '''') and ((I = Length(Sql)) or (Sql[I + 1] <> '''')) then
+        if Sql[I] = '''' then
         begin
-          Inc(I);
-          Break;
+          if (I < Length(Sql)) and (Sql[I + 1] = '''') then
+          begin
+            Inc(I);
+            OutSql := OutSql + Sql[I];
+          end
+          else
+          begin
+            Inc(I);
+            Break;
+          end;
         end;
-        if (Sql[I] = '''') and (I < Length(Sql)) and (Sql[I + 1] = '''') then
-          Inc(I);
+        Inc(I);
+      end;
+      Continue;
+    end;
+    if Sql[I] = '?' then
+    begin
+      if Index > High(Params) then
+        raise Exception.Create('not enough parameters');
+      SetLength(Ordered, Length(Ordered) + 1);
+      Ordered[High(Ordered)] := Params[Index];
+      Inc(Index);
+      OutSql := OutSql + '$' + IntToStr(Length(Ordered));
+      Inc(I);
+      Continue;
+    end;
+    OutSql := OutSql + Sql[I];
+    Inc(I);
+  end;
+  if Index <= High(Params) then
+  begin
+    if Pos('?', Sql) > 0 then
+      raise Exception.Create('too many parameters');
+    SetLength(Ordered, Length(Params));
+    for I := 0 to High(Params) do
+      Ordered[I] := Params[I];
+    Result := Sql;
+    Exit;
+  end;
+  Result := OutSql;
+end;
+
+function NormalizeNamedSql(const Sql: string; const Names: array of string; const Params: array of TScratchBirdParamInput;
+  out Ordered: TArray<TScratchBirdParamInput>): string;
+var
+  I, J: Integer;
+  OutSql: string;
+  Token: string;
+  Index: Integer;
+begin
+  Ordered := nil;
+  OutSql := '';
+  I := 1;
+  while I <= Length(Sql) do
+  begin
+    if Sql[I] = '''' then
+    begin
+      OutSql := OutSql + Sql[I];
+      Inc(I);
+      while I <= Length(Sql) do
+      begin
+        OutSql := OutSql + Sql[I];
+        if Sql[I] = '''' then
+        begin
+          if (I < Length(Sql)) and (Sql[I + 1] = '''') then
+          begin
+            Inc(I);
+            OutSql := OutSql + Sql[I];
+          end
+          else
+          begin
+            Inc(I);
+            Break;
+          end;
+        end;
         Inc(I);
       end;
       Continue;
@@ -136,10 +144,11 @@ begin
         Inc(J);
       Token := Copy(Sql, I + 1, J - I - 1);
       Index := IndexOf(Names, Token);
-      if (Index >= 0) and (Index <= High(Values)) then
-        OutSql := OutSql + FormatValue(Values[Index])
-      else
-        OutSql := OutSql + Copy(Sql, I, J - I);
+      if Index < 0 then
+        raise Exception.Create('missing named parameter: ' + Token);
+      SetLength(Ordered, Length(Ordered) + 1);
+      Ordered[High(Ordered)] := Params[Index];
+      OutSql := OutSql + '$' + IntToStr(Length(Ordered));
       I := J;
       Continue;
     end;

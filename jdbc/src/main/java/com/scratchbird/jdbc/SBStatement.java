@@ -66,7 +66,7 @@ public class SBStatement implements Statement {
         checkClosed();
         clearResults();
 
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
 
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
@@ -86,7 +86,7 @@ public class SBStatement implements Statement {
         checkClosed();
         clearResults();
 
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             throw new SQLException("executeUpdate cannot return a ResultSet", "21000");
@@ -101,7 +101,7 @@ public class SBStatement implements Statement {
         checkClosed();
         clearResults();
 
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());

@@ -223,8 +223,9 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = buildFinalSQL();
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        String sql = getFinalSQL();
+        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
+            maxRows, queryTimeout * 1000);
 
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
@@ -244,8 +245,9 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = buildFinalSQL();
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        String sql = getFinalSQL();
+        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
+            maxRows, queryTimeout * 1000);
 
         if (returnGeneratedKeys && result.getColumns() != null && !result.getColumns().isEmpty()) {
             generatedKeys = new SBResultSet(this, result.getColumns(), result.getRows());
@@ -260,8 +262,9 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = buildFinalSQL();
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        String sql = getFinalSQL();
+        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
+            maxRows, queryTimeout * 1000);
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             if (returnGeneratedKeys) {

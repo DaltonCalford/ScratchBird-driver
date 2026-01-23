@@ -3,13 +3,14 @@ program IntegrationTest;
 {$APPTYPE CONSOLE}
 
 uses
-  SysUtils, ScratchBird.Client;
+  SysUtils, ScratchBird.Client, ScratchBird.Sql;
 
 var
   Dsn: string;
   Client: TScratchBirdClient;
   Stream: TScratchBirdResultStream;
   Row: TArray<Variant>;
+  Param: TScratchBirdParamInput;
 begin
   Dsn := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_URL');
   if Dsn = '' then
@@ -24,6 +25,18 @@ begin
     Row := Stream.ReadRow;
     if Length(Row) = 0 then
       raise Exception.Create('No row returned');
+
+    Param.Value := 42;
+    Param.Obj := nil;
+    Stream := Client.ExecuteQueryParams('SELECT ?::INTEGER', [Param]);
+    Row := Stream.ReadRow;
+    if (Length(Row) = 0) or (Row[0] <> 42) then
+      raise Exception.Create('Prepare/bind failed');
+
+    Stream := Client.ExecuteQuery('SELECT * FROM sb_conformance.type_coverage');
+    Row := Stream.ReadRow;
+    if Length(Row) = 0 then
+      raise Exception.Create('Types fixture returned no rows');
     Writeln('IntegrationTest: OK');
   finally
     Client.Free;

@@ -31,7 +31,7 @@ type
     FSQL: TStringList;
     FParams: TScratchBirdParams;
     FResult: TScratchBirdQueryResult;
-    function BuildSql: string;
+    function BuildSql(out Ordered: TArray<TScratchBirdParamInput>): string;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -106,25 +106,29 @@ begin
   inherited Destroy;
 end;
 
-function TScratchBirdIBQuery.BuildSql: string;
+function TScratchBirdIBQuery.BuildSql(out Ordered: TArray<TScratchBirdParamInput>): string;
 var
   Names: array of string;
-  Values: array of Variant;
+  Values: array of TScratchBirdParamInput;
   I: Integer;
 begin
   if FParams.Count = 0 then
+  begin
+    Ordered := nil;
     Exit(FSQL.Text);
+  end;
   SetLength(Names, FParams.Count);
   SetLength(Values, FParams.Count);
   for I := 0 to FParams.Count - 1 do
   begin
     Names[I] := FParams[I].Name;
-    Values[I] := FParams[I].Value;
+    Values[I].Value := FParams[I].Value;
+    Values[I].Obj := FParams[I].ObjectValue;
   end;
   if (Pos('@', FSQL.Text) > 0) or (Pos(':', FSQL.Text) > 0) then
-    Result := SubstituteNamedSql(FSQL.Text, Names, Values)
+    Result := NormalizeNamedSql(FSQL.Text, Names, Values, Ordered)
   else
-    Result := SubstituteSql(FSQL.Text, Values);
+    Result := NormalizePositionalSql(FSQL.Text, Values, Ordered);
 end;
 
 procedure TScratchBirdIBQuery.Prepare;
@@ -132,18 +136,26 @@ begin
 end;
 
 procedure TScratchBirdIBQuery.Open;
+var
+  Ordered: TArray<TScratchBirdParamInput>;
+  SqlText: string;
 begin
   if FDatabase = nil then
     raise Exception.Create('Database not assigned');
-  FResult := TScratchBirdQueryResult.Create(FDatabase.Client.ExecuteQuery(BuildSql));
+  SqlText := BuildSql(Ordered);
+  FResult := TScratchBirdQueryResult.Create(FDatabase.Client.ExecuteQueryParams(SqlText, Ordered));
   FResult.Next;
 end;
 
 procedure TScratchBirdIBQuery.ExecSQL;
+var
+  Ordered: TArray<TScratchBirdParamInput>;
+  SqlText: string;
 begin
   if FDatabase = nil then
     raise Exception.Create('Database not assigned');
-  FDatabase.Client.ExecSQL(BuildSql);
+  SqlText := BuildSql(Ordered);
+  FDatabase.Client.ExecSQLParams(SqlText, Ordered);
 end;
 
 procedure TScratchBirdIBQuery.Next;

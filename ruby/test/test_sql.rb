@@ -1,21 +1,24 @@
 require "test_helper"
 
 class TestSql < Minitest::Test
-  def test_substitute_positional
+  def test_normalize_positional
     sql = "SELECT * FROM t WHERE id = ? AND name = ?"
-    out = Scratchbird::Sql.substitute(sql, [42, "Ada"])
-    assert_equal "SELECT * FROM t WHERE id = 42 AND name = 'Ada'", out
+    normalized = Scratchbird::Sql.normalize(sql, [42, "Ada"])
+    assert_equal "SELECT * FROM t WHERE id = $1 AND name = $2", normalized.sql
+    assert_equal [42, "Ada"], normalized.params
   end
 
-  def test_substitute_named
+  def test_normalize_named
     sql = "SELECT * FROM users WHERE name = @name AND active = :active"
-    out = Scratchbird::Sql.substitute(sql, { name: "Ada", active: true })
-    assert_equal "SELECT * FROM users WHERE name = 'Ada' AND active = TRUE", out
+    normalized = Scratchbird::Sql.normalize(sql, { name: "Ada", active: true })
+    assert_equal "SELECT * FROM users WHERE name = $1 AND active = $2", normalized.sql
+    assert_equal ["Ada", true], normalized.params
   end
 
-  def test_substitute_binary
+  def test_normalize_binary
     sql = "SELECT ?"
-    out = Scratchbird::Sql.substitute(sql, ["\x01\x02".b])
-    assert_equal "SELECT X'0102'", out
+    normalized = Scratchbird::Sql.normalize(sql, ["\x01\x02".b])
+    assert_equal "SELECT $1", normalized.sql
+    assert_equal ["\x01\x02".b], normalized.params
   end
 end

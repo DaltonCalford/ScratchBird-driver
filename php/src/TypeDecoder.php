@@ -2,178 +2,391 @@
 
 namespace ScratchBird\PDO;
 
+final class Jsonb
+{
+    public string $raw;
+    public mixed $value;
+
+    public function __construct(string $raw, mixed $value = null)
+    {
+        $this->raw = $raw;
+        $this->value = $value;
+    }
+}
+
+final class Geometry
+{
+    public string $wkb;
+    public ?int $srid;
+    public ?string $wkt;
+
+    public function __construct(string $wkb, ?int $srid = null, ?string $wkt = null)
+    {
+        $this->wkb = $wkb;
+        $this->srid = $srid;
+        $this->wkt = $wkt;
+    }
+}
+
+final class Range
+{
+    public mixed $lower = null;
+    public mixed $upper = null;
+    public bool $lowerInclusive = false;
+    public bool $upperInclusive = false;
+    public bool $lowerInfinite = false;
+    public bool $upperInfinite = false;
+    public bool $empty = false;
+    public ?int $rangeOid = null;
+
+    public function __construct(array $init = [])
+    {
+        foreach ($init as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->{$key} = $value;
+            }
+        }
+    }
+}
+
 final class TypeDecoder
 {
-    public const WIRE_BOOL = 0x01;
-    public const WIRE_INT16 = 0x02;
-    public const WIRE_INT32 = 0x03;
-    public const WIRE_INT64 = 0x04;
-    public const WIRE_FLOAT32 = 0x05;
-    public const WIRE_FLOAT64 = 0x06;
-    public const WIRE_DECIMAL = 0x07;
-    public const WIRE_VARCHAR = 0x08;
-    public const WIRE_CHAR = 0x09;
-    public const WIRE_BYTEA = 0x0A;
-    public const WIRE_DATE = 0x0B;
-    public const WIRE_TIME = 0x0C;
-    public const WIRE_TIMESTAMP = 0x0D;
-    public const WIRE_TIMESTAMPTZ = 0x0E;
-    public const WIRE_INTERVAL = 0x0F;
-    public const WIRE_UUID = 0x10;
-    public const WIRE_JSON = 0x11;
-    public const WIRE_JSONB = 0x12;
-    public const WIRE_ARRAY = 0x13;
-    public const WIRE_VECTOR = 0x16;
-    public const WIRE_MONEY = 0x17;
-    public const WIRE_XML = 0x18;
-    public const WIRE_INET = 0x19;
-    public const WIRE_CIDR = 0x1A;
-    public const WIRE_TSVECTOR = 0x1C;
-    public const WIRE_TSQUERY = 0x1D;
+    public const FORMAT_TEXT = 0;
+    public const FORMAT_BINARY = 1;
 
-    public static function decode(int $wireType, ?string $data): mixed
+    public const OID_BOOL = 16;
+    public const OID_BYTEA = 17;
+    public const OID_CHAR = 18;
+    public const OID_INT8 = 20;
+    public const OID_INT2 = 21;
+    public const OID_INT4 = 23;
+    public const OID_TEXT = 25;
+    public const OID_JSON = 114;
+    public const OID_XML = 142;
+    public const OID_POINT = 600;
+    public const OID_LSEG = 601;
+    public const OID_PATH = 602;
+    public const OID_BOX = 603;
+    public const OID_POLYGON = 604;
+    public const OID_LINE = 628;
+    public const OID_FLOAT4 = 700;
+    public const OID_FLOAT8 = 701;
+    public const OID_CIRCLE = 718;
+    public const OID_MONEY = 790;
+    public const OID_MACADDR = 829;
+    public const OID_CIDR = 650;
+    public const OID_INET = 869;
+    public const OID_MACADDR8 = 774;
+    public const OID_BPCHAR = 1042;
+    public const OID_VARCHAR = 1043;
+    public const OID_DATE = 1082;
+    public const OID_TIME = 1083;
+    public const OID_TIMESTAMP = 1114;
+    public const OID_TIMESTAMPTZ = 1184;
+    public const OID_INTERVAL = 1186;
+    public const OID_TIMETZ = 1266;
+    public const OID_NUMERIC = 1700;
+    public const OID_UUID = 2950;
+    public const OID_JSONB = 3802;
+    public const OID_INT4RANGE = 3904;
+    public const OID_NUMRANGE = 3906;
+    public const OID_TSRANGE = 3908;
+    public const OID_TSTZRANGE = 3910;
+    public const OID_DATERANGE = 3912;
+    public const OID_INT8RANGE = 3926;
+    public const OID_TSVECTOR = 3614;
+    public const OID_TSQUERY = 3615;
+    public const OID_SB_VECTOR = 16386;
+
+    private const RANGE_EMPTY = 0x01;
+    private const RANGE_LB_INC = 0x02;
+    private const RANGE_UB_INC = 0x04;
+    private const RANGE_LB_INF = 0x08;
+    private const RANGE_UB_INF = 0x10;
+
+    private const UUID_REGEX = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+
+    public static function encodeParam(mixed $value): array
+    {
+        if ($value === null) {
+            return ['param' => ['format' => self::FORMAT_BINARY, 'isNull' => true], 'oid' => 0];
+        }
+        if ($value instanceof Jsonb) {
+            $raw = $value->raw;
+            if ($raw === '' && $value->value !== null) {
+                $raw = json_encode($value->value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+            if ($raw === '' || $raw === false) {
+                throw new \InvalidArgumentException('JSONB requires raw payload');
+            }
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($raw)], 'oid' => self::OID_JSONB];
+        }
+        if ($value instanceof Geometry) {
+            if ($value->wkb === '') {
+                throw new \InvalidArgumentException('geometry requires WKB payload');
+            }
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($value->wkb)], 'oid' => self::OID_POINT];
+        }
+        if ($value instanceof Range) {
+            $encoded = self::encodeRange($value);
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => $encoded['data']], 'oid' => $encoded['oid']];
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeTimestamp($value)], 'oid' => self::OID_TIMESTAMPTZ];
+        }
+        if (is_bool($value)) {
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => $value ? "\1" : "\0"], 'oid' => self::OID_BOOL];
+        }
+        if (is_int($value)) {
+            if ($value >= -2147483648 && $value <= 2147483647) {
+                return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::packInt32($value)], 'oid' => self::OID_INT4];
+            }
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::packInt64($value)], 'oid' => self::OID_INT8];
+        }
+        if (is_float($value)) {
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => pack('e', $value)], 'oid' => self::OID_FLOAT8];
+        }
+        if (is_string($value)) {
+            if (preg_match(self::UUID_REGEX, $value)) {
+                return ['param' => ['format' => self::FORMAT_BINARY, 'data' => hex2bin(str_replace('-', '', $value))], 'oid' => self::OID_UUID];
+            }
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($value)], 'oid' => self::OID_TEXT];
+        }
+        if (is_array($value)) {
+            if (self::isNumericArray($value)) {
+                $literal = self::formatVectorLiteral($value);
+                return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($literal)], 'oid' => self::OID_SB_VECTOR];
+            }
+            $literal = self::formatArrayLiteral($value);
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($literal)], 'oid' => 0];
+        }
+        if (is_object($value)) {
+            $raw = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($raw === false) {
+                throw new \InvalidArgumentException('Failed to encode JSON');
+            }
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => self::encodeLengthPrefixed($raw)], 'oid' => self::OID_JSON];
+        }
+        throw new \InvalidArgumentException('Unsupported parameter type');
+    }
+
+    public static function decode(int $typeOid, ?string $data, int $format): mixed
     {
         if ($data === null) {
             return null;
         }
-        return match ($wireType) {
-            self::WIRE_BOOL => ord($data[0]) === 1,
-            self::WIRE_INT16 => self::unpackInt16($data),
-            self::WIRE_INT32 => self::unpackInt32($data),
-            self::WIRE_INT64 => self::unpackInt64($data),
-            self::WIRE_FLOAT32 => self::unpackFloat32($data),
-            self::WIRE_FLOAT64 => self::unpackFloat64($data),
-            self::WIRE_DECIMAL => $data,
-            self::WIRE_VARCHAR,
-            self::WIRE_CHAR,
-            self::WIRE_JSON,
-            self::WIRE_JSONB,
-            self::WIRE_XML,
-            self::WIRE_TSVECTOR,
-            self::WIRE_TSQUERY => $data,
-            self::WIRE_BYTEA => $data,
-            self::WIRE_DATE => self::decodeDate($data),
-            self::WIRE_TIME => self::decodeTime($data),
-            self::WIRE_TIMESTAMP,
-            self::WIRE_TIMESTAMPTZ => self::decodeTimestamp($data),
-            self::WIRE_INTERVAL => self::decodeInterval($data),
-            self::WIRE_UUID => self::decodeUuid($data),
-            self::WIRE_MONEY => self::decodeMoney($data),
-            self::WIRE_INET,
-            self::WIRE_CIDR => $data,
-            self::WIRE_ARRAY => self::parseArrayLiteral($data),
-            self::WIRE_VECTOR => self::parseVectorLiteral($data),
-            default => $data,
-        };
+        if ($format === self::FORMAT_TEXT) {
+            return self::decodeTextValue($data);
+        }
+        return self::decodeBinaryValue($typeOid, $data);
     }
 
-    public static function wireTypeName(int $wireType): string
+    public static function oidName(int $oid): string
     {
-        return match ($wireType) {
-            self::WIRE_BOOL => 'boolean',
-            self::WIRE_INT16 => 'int16',
-            self::WIRE_INT32 => 'int32',
-            self::WIRE_INT64 => 'int64',
-            self::WIRE_FLOAT32 => 'float32',
-            self::WIRE_FLOAT64 => 'float64',
-            self::WIRE_DECIMAL => 'decimal',
-            self::WIRE_VARCHAR => 'varchar',
-            self::WIRE_CHAR => 'char',
-            self::WIRE_BYTEA => 'bytea',
-            self::WIRE_DATE => 'date',
-            self::WIRE_TIME => 'time',
-            self::WIRE_TIMESTAMP => 'timestamp',
-            self::WIRE_TIMESTAMPTZ => 'timestamptz',
-            self::WIRE_INTERVAL => 'interval',
-            self::WIRE_UUID => 'uuid',
-            self::WIRE_JSON => 'json',
-            self::WIRE_JSONB => 'jsonb',
-            self::WIRE_ARRAY => 'array',
-            self::WIRE_VECTOR => 'vector',
-            self::WIRE_MONEY => 'money',
-            self::WIRE_XML => 'xml',
-            self::WIRE_INET => 'inet',
-            self::WIRE_CIDR => 'cidr',
+        return match ($oid) {
+            self::OID_BOOL => 'boolean',
+            self::OID_INT2 => 'int2',
+            self::OID_INT4 => 'int4',
+            self::OID_INT8 => 'int8',
+            self::OID_FLOAT4 => 'float4',
+            self::OID_FLOAT8 => 'float8',
+            self::OID_NUMERIC => 'numeric',
+            self::OID_MONEY => 'money',
+            self::OID_TEXT => 'text',
+            self::OID_VARCHAR => 'varchar',
+            self::OID_CHAR, self::OID_BPCHAR => 'char',
+            self::OID_BYTEA => 'bytea',
+            self::OID_DATE => 'date',
+            self::OID_TIME => 'time',
+            self::OID_TIMESTAMP => 'timestamp',
+            self::OID_TIMESTAMPTZ => 'timestamptz',
+            self::OID_INTERVAL => 'interval',
+            self::OID_UUID => 'uuid',
+            self::OID_JSON => 'json',
+            self::OID_JSONB => 'jsonb',
+            self::OID_XML => 'xml',
+            self::OID_INET => 'inet',
+            self::OID_CIDR => 'cidr',
+            self::OID_MACADDR => 'macaddr',
+            self::OID_MACADDR8 => 'macaddr8',
+            self::OID_TSVECTOR => 'tsvector',
+            self::OID_TSQUERY => 'tsquery',
+            self::OID_INT4RANGE => 'int4range',
+            self::OID_INT8RANGE => 'int8range',
+            self::OID_NUMRANGE => 'numrange',
+            self::OID_TSRANGE => 'tsrange',
+            self::OID_TSTZRANGE => 'tstzrange',
+            self::OID_DATERANGE => 'daterange',
+            self::OID_SB_VECTOR => 'vector',
             default => 'unknown',
         };
     }
 
-    private static function unpackInt16(string $data): int
+    private static function decodeBinaryValue(int $typeOid, string $data): mixed
     {
-        $value = unpack('v', $data)[1];
-        if ($value >= 0x8000) {
-            $value -= 0x10000;
+        return match ($typeOid) {
+            self::OID_BOOL => ord($data[0]) === 1,
+            self::OID_INT2 => self::readInt16($data),
+            self::OID_INT4 => self::readInt32($data),
+            self::OID_INT8 => self::readInt64($data),
+            self::OID_FLOAT4 => unpack('g', $data)[1],
+            self::OID_FLOAT8 => unpack('e', $data)[1],
+            self::OID_NUMERIC => self::stripLengthPrefixed($data),
+            self::OID_MONEY => self::decodeMoney(self::readInt64($data)),
+            self::OID_TEXT,
+            self::OID_VARCHAR,
+            self::OID_CHAR,
+            self::OID_BPCHAR,
+            self::OID_JSON,
+            self::OID_XML,
+            self::OID_TSVECTOR,
+            self::OID_TSQUERY => self::stripLengthPrefixed($data),
+            self::OID_JSONB => new Jsonb(self::stripLengthPrefixed($data)),
+            self::OID_BYTEA => self::stripLengthPrefixed($data),
+            self::OID_DATE => self::decodeDate($data),
+            self::OID_TIME => self::decodeTime($data),
+            self::OID_TIMESTAMP => self::decodeTimestamp($data),
+            self::OID_TIMESTAMPTZ => self::decodeTimestamp($data),
+            self::OID_INTERVAL => self::decodeInterval($data),
+            self::OID_UUID => self::decodeUuid($data),
+            self::OID_INET,
+            self::OID_CIDR,
+            self::OID_MACADDR,
+            self::OID_MACADDR8 => self::stripLengthPrefixed($data),
+            self::OID_INT4RANGE,
+            self::OID_INT8RANGE,
+            self::OID_NUMRANGE,
+            self::OID_TSRANGE,
+            self::OID_TSTZRANGE,
+            self::OID_DATERANGE => self::decodeRange($typeOid, $data),
+            self::OID_SB_VECTOR => self::parseVectorLiteral(self::stripLengthPrefixed($data)),
+            self::OID_POINT,
+            self::OID_LSEG,
+            self::OID_PATH,
+            self::OID_BOX,
+            self::OID_POLYGON,
+            self::OID_LINE,
+            self::OID_CIRCLE => new Geometry(self::stripLengthPrefixed($data)),
+            default => $data,
+        };
+    }
+
+    private static function decodeTextValue(string $data): string
+    {
+        if (strlen($data) >= 4) {
+            $length = self::readUInt32($data);
+            if ($length <= strlen($data) - 4) {
+                return substr($data, 4, $length);
+            }
+        }
+        return $data;
+    }
+
+    private static function encodeLengthPrefixed(string $data): string
+    {
+        return pack('V', strlen($data)) . $data;
+    }
+
+    private static function stripLengthPrefixed(string $data): string
+    {
+        if (strlen($data) < 4) {
+            return $data;
+        }
+        $length = self::readUInt32($data);
+        if ($length <= strlen($data) - 4) {
+            return substr($data, 4, $length);
+        }
+        return $data;
+    }
+
+    private static function readUInt32(string $data): int
+    {
+        return unpack('V', substr($data, 0, 4))[1];
+    }
+
+    private static function readInt16(string $data): int
+    {
+        $value = unpack('v', substr($data, 0, 2))[1];
+        return $value >= 0x8000 ? $value - 0x10000 : $value;
+    }
+
+    private static function readInt32(string $data): int
+    {
+        $value = unpack('V', substr($data, 0, 4))[1];
+        return $value >= 0x80000000 ? $value - 0x100000000 : $value;
+    }
+
+    private static function readInt64(string $data): int
+    {
+        $parts = unpack('V2', $data);
+        $value = $parts[1] + ($parts[2] << 32);
+        if ($value >= 0x8000000000000000) {
+            $value -= 0x10000000000000000;
         }
         return $value;
     }
 
-    private static function unpackInt32(string $data): int
+    private static function packInt32(int $value): string
     {
-        $value = unpack('V', $data)[1];
-        if ($value >= 0x80000000) {
-            $value -= 0x100000000;
+        if ($value < 0) {
+            $value = 0x100000000 + $value;
         }
-        return $value;
+        return pack('V', $value);
     }
 
-    private static function unpackInt64(string $data): int
+    private static function packInt64(int $value): string
     {
-        return unpack('q', $data)[1];
-    }
-
-    private static function unpackFloat32(string $data): float
-    {
-        return unpack('g', $data)[1];
-    }
-
-    private static function unpackFloat64(string $data): float
-    {
-        return unpack('e', $data)[1];
+        if ($value < 0) {
+            $value = 0x10000000000000000 + $value;
+        }
+        $low = $value & 0xFFFFFFFF;
+        $high = ($value >> 32) & 0xFFFFFFFF;
+        return pack('V2', $low, $high);
     }
 
     private static function decodeDate(string $data): \DateTimeImmutable
     {
-        $days = self::unpackInt32($data);
+        $days = self::readInt32($data);
         $base = new \DateTimeImmutable('2000-01-01 00:00:00', new \DateTimeZone('UTC'));
-        return $base->modify("+{$days} days");
+        return $base->modify(sprintf('%+d days', $days));
     }
 
     private static function decodeTime(string $data): \DateTimeImmutable
     {
-        $micros = (int)self::unpackInt64($data);
+        $micros = self::readInt64($data);
         $seconds = intdiv($micros, 1000000);
         $microPart = $micros % 1000000;
         $time = new \DateTimeImmutable('@' . $seconds);
         $time = $time->setTimezone(new \DateTimeZone('UTC'));
-        return $time->modify(sprintf('+0 seconds'))->setTime(
+        return $time->setTime(
             (int)$time->format('H'),
             (int)$time->format('i'),
             (int)$time->format('s'),
-            $microPart
+            (int)$microPart
         );
     }
 
     private static function decodeTimestamp(string $data): \DateTimeImmutable
     {
-        $micros = (int)self::unpackInt64($data);
+        $micros = self::readInt64($data);
         $seconds = intdiv($micros, 1000000);
         $microPart = $micros % 1000000;
-        $dt = new \DateTimeImmutable('@' . $seconds);
-        $dt = $dt->setTimezone(new \DateTimeZone('UTC'));
+        $base = new \DateTimeImmutable('2000-01-01 00:00:00', new \DateTimeZone('UTC'));
+        $dt = $base->modify(sprintf('%+d seconds', $seconds));
         return $dt->setTime(
             (int)$dt->format('H'),
             (int)$dt->format('i'),
             (int)$dt->format('s'),
-            $microPart
+            (int)$microPart
         );
     }
 
     private static function decodeInterval(string $data): array
     {
-        $months = unpack('V', substr($data, 0, 4))[1];
-        $days = unpack('V', substr($data, 4, 4))[1];
-        $micros = self::unpackInt64(substr($data, 8, 8));
-        return ['months' => $months, 'days' => $days, 'micros' => $micros];
+        $micros = self::readInt64(substr($data, 0, 8));
+        $days = self::readInt32(substr($data, 8, 4));
+        $months = self::readInt32(substr($data, 12, 4));
+        return ['micros' => $micros, 'days' => $days, 'months' => $months];
     }
 
     private static function decodeUuid(string $data): string
@@ -185,93 +398,196 @@ final class TypeDecoder
         return substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4) . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20);
     }
 
-    private static function decodeMoney(string $data): string
+    private static function decodeMoney(int $cents): string
     {
-        $cents = (string)self::unpackInt64($data);
-        if (strlen($cents) <= 2) {
-            return '0.' . str_pad($cents, 2, '0', STR_PAD_LEFT);
-        }
-        return substr($cents, 0, -2) . '.' . substr($cents, -2);
+        $negative = $cents < 0;
+        $abs = $negative ? -$cents : $cents;
+        $units = intdiv($abs, 100);
+        $fraction = $abs % 100;
+        $value = sprintf('%d.%02d', $units, $fraction);
+        return $negative ? '-' . $value : $value;
     }
 
-    private static function parseArrayLiteral(string $text): array
+    private static function encodeTimestamp(\DateTimeInterface $value): string
     {
-        $trimmed = trim($text);
-        if ($trimmed === '' || $trimmed === '{}') {
-            return [];
-        }
-        if ($trimmed[0] === '{' && $trimmed[strlen($trimmed) - 1] === '}') {
-            $trimmed = substr($trimmed, 1, -1);
-        }
-        return self::splitArrayItems($trimmed);
+        $utc = (new \DateTimeImmutable($value->format('Y-m-d H:i:s.u'), $value->getTimezone()))->setTimezone(new \DateTimeZone('UTC'));
+        $seconds = (int)$utc->format('U');
+        $micros = (int)$utc->format('u');
+        $base = new \DateTimeImmutable('2000-01-01 00:00:00', new \DateTimeZone('UTC'));
+        $baseSeconds = (int)$base->format('U');
+        $deltaMicros = ($seconds - $baseSeconds) * 1000000 + $micros;
+        return self::packInt64($deltaMicros);
     }
 
-    private static function splitArrayItems(string $text): array
+    private static function encodeRange(Range $range): array
     {
-        $items = [];
-        $depth = 0;
-        $buffer = '';
-        $chars = str_split($text);
-        foreach ($chars as $ch) {
-            if ($ch === '{') {
-                $depth++;
-                $buffer .= $ch;
-                continue;
-            }
-            if ($ch === '}') {
-                $depth = max(0, $depth - 1);
-                $buffer .= $ch;
-                continue;
-            }
-            if ($ch === ',' && $depth === 0) {
-                $items[] = self::parseArrayItem($buffer);
-                $buffer = '';
-                continue;
-            }
-            $buffer .= $ch;
+        $oid = self::resolveRangeOid($range);
+        $flags = ($range->empty ? self::RANGE_EMPTY : 0)
+            | ($range->lowerInclusive ? self::RANGE_LB_INC : 0)
+            | ($range->upperInclusive ? self::RANGE_UB_INC : 0)
+            | ($range->lowerInfinite ? self::RANGE_LB_INF : 0)
+            | ($range->upperInfinite ? self::RANGE_UB_INF : 0);
+        $parts = [pack('C4', $flags, 0, 0, 0)];
+        if (!$range->empty && !$range->lowerInfinite) {
+            $bound = self::encodeRangeBound($oid, $range->lower);
+            $parts[] = pack('V', strlen($bound));
+            $parts[] = $bound;
         }
-        if ($buffer !== '' || $text !== '') {
-            $items[] = self::parseArrayItem($buffer);
+        if (!$range->empty && !$range->upperInfinite) {
+            $bound = self::encodeRangeBound($oid, $range->upper);
+            $parts[] = pack('V', strlen($bound));
+            $parts[] = $bound;
         }
-        return $items;
+        return ['data' => implode('', $parts), 'oid' => $oid];
     }
 
-    private static function parseArrayItem(string $raw): mixed
+    private static function resolveRangeOid(Range $range): int
     {
-        $token = trim($raw);
-        if (strcasecmp($token, 'NULL') === 0) {
-            return null;
+        if ($range->rangeOid !== null) {
+            return $range->rangeOid;
         }
-        if (str_starts_with($token, '{') && str_ends_with($token, '}')) {
-            return self::parseArrayLiteral($token);
+        $sample = $range->lower ?? $range->upper;
+        if ($sample === null) {
+            throw new \InvalidArgumentException('range type cannot be inferred from empty bounds');
         }
-        if (str_starts_with($token, '[') && str_ends_with($token, ']')) {
-            return self::parseVectorLiteral($token);
+        if ($sample instanceof \DateTimeInterface) {
+            return self::OID_TSTZRANGE;
         }
-        if (strcasecmp($token, 'true') === 0 || strcasecmp($token, 'false') === 0) {
-            return strcasecmp($token, 'true') === 0;
+        if (is_int($sample)) {
+            return ($sample >= -2147483648 && $sample <= 2147483647) ? self::OID_INT4RANGE : self::OID_INT8RANGE;
         }
-        if (is_numeric($token)) {
-            return strpos($token, '.') !== false ? (float)$token : (int)$token;
+        if (is_float($sample) || is_string($sample)) {
+            return self::OID_NUMRANGE;
         }
-        return $token;
+        return self::OID_NUMRANGE;
+    }
+
+    private static function encodeRangeBound(int $oid, mixed $value): string
+    {
+        return match ($oid) {
+            self::OID_INT4RANGE => self::packInt32((int)$value),
+            self::OID_INT8RANGE => self::packInt64((int)$value),
+            self::OID_NUMRANGE => self::encodeLengthPrefixed((string)$value),
+            self::OID_DATERANGE => self::encodeDate($value),
+            self::OID_TSRANGE, self::OID_TSTZRANGE => self::encodeTimestamp($value instanceof \\DateTimeInterface ? $value : new \\DateTimeImmutable((string)$value)),
+            default => self::encodeLengthPrefixed((string)$value),
+        };
+    }
+
+    private static function decodeRange(int $oid, string $data): Range
+    {
+        if (strlen($data) < 4) {
+            return new Range(['rangeOid' => $oid]);
+        }
+        $flags = ord($data[0]);
+        $offset = 4;
+        $range = new Range([
+            'empty' => ($flags & self::RANGE_EMPTY) !== 0,
+            'lowerInclusive' => ($flags & self::RANGE_LB_INC) !== 0,
+            'upperInclusive' => ($flags & self::RANGE_UB_INC) !== 0,
+            'lowerInfinite' => ($flags & self::RANGE_LB_INF) !== 0,
+            'upperInfinite' => ($flags & self::RANGE_UB_INF) !== 0,
+            'rangeOid' => $oid,
+        ]);
+        if ($range->empty) {
+            return $range;
+        }
+        if (!$range->lowerInfinite) {
+            $length = self::readInt32(substr($data, $offset, 4));
+            $offset += 4;
+            $bound = substr($data, $offset, $length);
+            $offset += $length;
+            $range->lower = self::decodeRangeBound($oid, $bound);
+        }
+        if (!$range->upperInfinite) {
+            $length = self::readInt32(substr($data, $offset, 4));
+            $offset += 4;
+            $bound = substr($data, $offset, $length);
+            $range->upper = self::decodeRangeBound($oid, $bound);
+        }
+        return $range;
+    }
+
+    private static function decodeRangeBound(int $oid, string $data): mixed
+    {
+        return match ($oid) {
+            self::OID_INT4RANGE => self::readInt32($data),
+            self::OID_INT8RANGE => self::readInt64($data),
+            self::OID_NUMRANGE => self::stripLengthPrefixed($data),
+            self::OID_DATERANGE => self::decodeDate($data),
+            self::OID_TSRANGE, self::OID_TSTZRANGE => self::decodeTimestamp($data),
+            default => null,
+        };
+    }
+
+    private static function encodeDate(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            $date = $value;
+        } else {
+            $date = new \DateTimeImmutable((string)$value, new \DateTimeZone('UTC'));
+        }
+        $base = new \DateTimeImmutable('2000-01-01', new \DateTimeZone('UTC'));
+        $days = (int)$base->diff($date)->format('%r%a');
+        return self::packInt32($days);
+    }
+
+    private static function isNumericArray(array $values): bool
+    {
+        foreach ($values as $value) {
+            if (!is_int($value) && !is_float($value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function formatArrayLiteral(array $values): string
+    {
+        $items = array_map([self::class, 'formatArrayItem'], $values);
+        return '{' . implode(',', $items) . '}';
+    }
+
+    private static function formatArrayItem(mixed $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+        if (is_array($value)) {
+            return self::formatArrayLiteral($value);
+        }
+        if (is_string($value)) {
+            return '"' . str_replace('"', '\\"', $value) . '"';
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        return (string)$value;
     }
 
     private static function parseVectorLiteral(string $text): array
     {
         $trimmed = trim($text);
-        if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+        if ($trimmed !== '' && $trimmed[0] === '[' && $trimmed[strlen($trimmed) - 1] === ']') {
             $trimmed = substr($trimmed, 1, -1);
         }
         if ($trimmed === '') {
             return [];
         }
-        $parts = explode(',', $trimmed);
-        $out = [];
+        $parts = array_map('trim', explode(',', $trimmed));
+        $values = [];
         foreach ($parts as $part) {
-            $value = trim($part);
-            $out[] = is_numeric($value) ? (float)$value : 0.0;
+            if ($part === '') {
+                continue;
+            }
+            $values[] = (float)$part;
         }
-        return $out;
+        return $values;
+    }
+
+    private static function formatVectorLiteral(array $values): string
+    {
+        $parts = array_map(static fn($value) => is_finite($value) ? (string)$value : '0', $values);
+        return '[' . implode(',', $parts) . ']';
     }
 }

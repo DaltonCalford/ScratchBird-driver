@@ -11,23 +11,20 @@ sb_connect <- function(dsn = "", ...) {
   client <- new.env(parent = emptyenv())
   client$con <- con
   client$cfg <- cfg
-  client$session_id <- NULL
-  client$server_name <- ""
-  client$server_version <- ""
+  client$attachment_id <- raw(16)
+  client$txn_id <- 0
+  client$sequence <- 0
+  client$last_query_sequence <- 0
+  client$parameters <- list()
+  client$prepared <- new.env(parent = emptyenv())
   client$autocommit <- TRUE
-  client$in_transaction <- FALSE
-  sb_handshake(client)
-  sb_authenticate(client)
+  sb_startup_and_auth(client)
   client
 }
 
 sb_disconnect <- function(client) {
-  if (!is.null(client$session_id)) {
-    msg <- build_disconnect(client$session_id)
-    try(sb_send_message(client, msg), silent = TRUE)
-  }
   try(close(client$con), silent = TRUE)
-  client$session_id <- NULL
+  client$con <- NULL
 }
 
 sb_set_autocommit <- function(client, value) {
@@ -35,12 +32,12 @@ sb_set_autocommit <- function(client, value) {
 }
 
 sb_is_valid <- function(client) {
-  !is.null(client$session_id)
+  !is.null(client$con)
 }
 
 sb_query <- function(client, sql, params = NULL) {
-  rendered <- sb_substitute(sql, params)
-  sb_execute_query(client, rendered)
+  normalized <- sb_normalize(sql, params)
+  sb_execute_query(client, normalized$sql, normalized$params)
 }
 
 sb_get_query <- function(client, sql, params = NULL) {
@@ -49,12 +46,8 @@ sb_get_query <- function(client, sql, params = NULL) {
 }
 
 sb_send_query <- function(client, sql, params = NULL) {
-  rendered <- sb_substitute(sql, params)
-  sb_begin_if_needed(client)
-  msg <- build_query(client$session_id, rendered, 0)
-  sb_send_message(client, msg)
-  result <- sb_collect_result(client)
-  result
+  normalized <- sb_normalize(sql, params)
+  sb_execute_query(client, normalized$sql, normalized$params)
 }
 
 sb_fetch <- function(result, n = -1) {
@@ -73,72 +66,91 @@ sb_clear_result <- function(result) {
 
 sb_open_socket <- function(cfg) {
   sslmode <- tolower(cfg$sslmode)
-  if (sslmode == "disable") {
-    con <- socketConnection(cfg$host, cfg$port, blocking = TRUE, open = "r+b")
-  } else {
-    verify <- sslmode %in% c("verify-ca", "verify-full")
-    if (!exists("ssl_connect", where = asNamespace("openssl"))) stop("openssl::ssl_connect is required for TLS")
-    con <- openssl::ssl_connect(
-      cfg$host,
-      port = cfg$port,
-      verify = verify,
-      cert = cfg$sslcert,
-      key = cfg$sslkey,
-      ca = cfg$sslrootcert
-    )
-  }
+  if (sslmode == "disable") stop("TLS is required for ScratchBird connections")
+  if (!exists("ssl_connect", where = asNamespace("openssl"))) stop("openssl::ssl_connect is required for TLS")
+  verify <- sslmode %in% c("verify-ca", "verify-full", "require")
+  con <- openssl::ssl_connect(
+    cfg$host,
+    port = cfg$port,
+    verify = verify,
+    cert = cfg$sslcert,
+    key = cfg$sslkey,
+    ca = cfg$sslrootcert
+  )
   con
 }
 
-sb_handshake <- function(client) {
-  msg <- build_connect_request(client$cfg$database, client$cfg$application_name, Sys.getpid())
-  sb_send_message(client, msg)
-  response <- sb_recv_message(client)
-  if (response$type != SB_MSG_CONNECT_RESPONSE) stop("unexpected response to CONNECT_REQUEST")
-  parsed <- parse_connect_response(response$payload)
-  if (!parsed$success) stop(ifelse(parsed$error_msg == "", "connect failed", parsed$error_msg))
-  client$session_id <- parsed$session_id
-  client$server_name <- parsed$server_name
-  client$server_version <- parsed$server_version
-}
+sb_startup_and_auth <- function(client) {
+  features <- 0L
+  if (tolower(client$cfg$compression) == "zstd") features <- bitwOr(features, SB_FEATURE_COMPRESSION)
+  if (isTRUE(client$cfg$binary_transfer)) features <- bitwOr(features, SB_FEATURE_STREAMING)
+  params <- list(database = client$cfg$database, user = client$cfg$user)
+  if (client$cfg$application_name != "") params$application_name <- client$cfg$application_name
+  startup <- build_startup_payload(features, params)
+  sb_send_message(client, SB_MSG_STARTUP, startup, 0L, TRUE)
 
-sb_authenticate <- function(client) {
-  state <- sb_scram_client(client$cfg$user)
-  first <- sb_scram_client_first(state)
-  state <- first$state
-  msg <- build_auth_request(client$session_id, client$cfg$user, SB_AUTH_SCRAM_SHA256, charToRaw(first$message))
-  sb_send_message(client, msg)
-  resp <- sb_recv_message(client)
-  if (resp$type != SB_MSG_AUTH_RESPONSE) stop("unexpected response to AUTH_REQUEST")
-  parsed <- parse_auth_response(resp$payload)
-  if (parsed$status != 2) stop(ifelse(parsed$error_msg == "", "auth failed", parsed$error_msg))
-  server_first <- rawToChar(parsed$extra)
-  final <- sb_scram_handle_server_first(state, client$cfg$password, server_first)
-  state <- final$state
-  msg <- build_auth_request(client$session_id, client$cfg$user, SB_AUTH_SCRAM_SHA256, charToRaw(final$message))
-  sb_send_message(client, msg)
-  resp <- sb_recv_message(client)
-  if (resp$type != SB_MSG_AUTH_RESPONSE) stop("unexpected response to SCRAM final")
-  parsed <- parse_auth_response(resp$payload)
-  if (parsed$status != 0) stop(ifelse(parsed$error_msg == "", "auth failed", parsed$error_msg))
-  if (length(parsed$extra) > 0) {
-    sb_scram_verify_server_final(state, rawToChar(parsed$extra))
+  scram <- NULL
+
+  repeat {
+    response <- sb_recv_message(client)
+    type <- response$type
+    payload <- response$payload
+    if (type == SB_MSG_NEGOTIATE_VERSION) {
+      next
+    } else if (type == SB_MSG_AUTH_REQUEST) {
+      parsed <- parse_auth_request(payload)
+      if (parsed$method == SB_AUTH_OK) {
+        next
+      }
+      if (parsed$method == SB_AUTH_PASSWORD) {
+        sb_send_message(client, SB_MSG_AUTH_RESPONSE, charToRaw(client$cfg$password), 0L, TRUE)
+        next
+      }
+      if (parsed$method == SB_AUTH_SCRAM_SHA256) {
+        if (is.null(scram)) scram <- sb_scram_client(client$cfg$user)
+        first <- sb_scram_client_first(scram)
+        scram <- first$state
+        sb_send_message(client, SB_MSG_AUTH_RESPONSE, charToRaw(first$message), 0L, TRUE)
+        next
+      }
+      stop("Unsupported auth method")
+    } else if (type == SB_MSG_AUTH_CONTINUE) {
+      parsed <- parse_auth_continue(payload)
+      if (parsed$method != SB_AUTH_SCRAM_SHA256 || is.null(scram)) stop("Unsupported auth continue")
+      server_first <- rawToChar(parsed$data)
+      final <- sb_scram_handle_server_first(scram, client$cfg$password, server_first)
+      scram <- final$state
+      sb_send_message(client, SB_MSG_AUTH_RESPONSE, charToRaw(final$message), 0L, TRUE)
+      next
+    } else if (type == SB_MSG_AUTH_OK) {
+      parsed <- parse_auth_ok(payload)
+      client$attachment_id <- response$attachment_id
+      client$txn_id <- response$txn_id
+      if (!is.null(scram) && length(parsed$server_info) > 0) {
+        server_info <- rawToChar(parsed$server_info)
+        if (startsWith(server_info, "v=")) sb_scram_verify_server_final(scram, server_info)
+      }
+      next
+    } else if (type == SB_MSG_PARAMETER_STATUS) {
+      parsed <- parse_parameter_status(payload)
+      client$parameters[[parsed$name]] <- parsed$value
+      next
+    } else if (type == SB_MSG_READY) {
+      parsed <- parse_ready(payload)
+      client$txn_id <- parsed$txn_id
+      break
+    } else if (type == SB_MSG_ERROR) {
+      sb_raise_query_error(payload)
+    }
   }
 }
 
-sb_begin_if_needed <- function(client) {
-  if (!client$autocommit && !client$in_transaction) {
-    msg <- build_begin(client$session_id, 0, FALSE)
-    sb_send_message(client, msg)
-    sb_drain_until_complete(client)
-    client$in_transaction <- TRUE
+sb_execute_query <- function(client, sql, params = list()) {
+  if (length(params) == 0) {
+    sb_send_simple_query(client, sql)
+  } else {
+    sb_send_extended_query(client, sql, params)
   }
-}
-
-sb_execute_query <- function(client, sql) {
-  sb_begin_if_needed(client)
-  msg <- build_query(client$session_id, sql, 0)
-  sb_send_message(client, msg)
   sb_collect_result(client)
 }
 
@@ -146,31 +158,31 @@ sb_collect_result <- function(client) {
   columns <- list()
   rows <- list()
   rowcount <- -1
-  rowcount_hint <- -1
   command_tag <- ""
   repeat {
     response <- sb_recv_message(client)
     type <- response$type
     payload <- response$payload
-    if (type == SB_MSG_QUERY_ERROR) {
+    if (type == SB_MSG_ERROR) {
       sb_raise_query_error(payload)
-    } else if (type == SB_MSG_QUERY_RESULT) {
-      parsed <- parse_query_result(payload)
-      rowcount_hint <- parsed$rows
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
       columns <- parse_row_description(payload)
-    } else if (type == SB_MSG_ROW_DATA) {
-      values <- parse_row_data(payload)
+    } else if (type == SB_MSG_DATA_ROW) {
+      values <- parse_data_row(payload)
       rows[[length(rows) + 1]] <- sb_decode_row(columns, values)
     } else if (type == SB_MSG_COMMAND_COMPLETE) {
       parsed <- parse_command_complete(payload)
       command_tag <- parsed$tag
       rowcount <- parsed$rows
-    } else if (type == SB_MSG_END_RESULTS) {
+    } else if (type == SB_MSG_PARAMETER_STATUS) {
+      parsed <- parse_parameter_status(payload)
+      client$parameters[[parsed$name]] <- parsed$value
+    } else if (type == SB_MSG_READY) {
+      parsed <- parse_ready(payload)
+      client$txn_id <- parsed$txn_id
       break
     }
   }
-  if (rowcount < 0 && rowcount_hint >= 0) rowcount <- rowcount_hint
   if (rowcount < 0) rowcount <- length(rows)
   list(columns = columns, rows = rows, rowcount = rowcount, command_tag = command_tag)
 }
@@ -178,14 +190,14 @@ sb_collect_result <- function(client) {
 sb_decode_row <- function(columns, values) {
   row <- vector("list", length(values))
   for (idx in seq_along(values)) {
-    wire_type <- if (length(columns) >= idx) columns[[idx]]$wire_type else 0
-    row[[idx]] <- decode_value(wire_type, values[[idx]]$data)
+    col <- if (length(columns) >= idx) columns[[idx]] else list(type_oid = 0L, format = SB_FORMAT_BINARY)
+    row[[idx]] <- decode_value(col$type_oid, values[[idx]]$data, col$format)
   }
   row
 }
 
 sb_raise_query_error <- function(payload) {
-  parsed <- parse_query_error(payload)
+  parsed <- parse_error_message(payload)
   parts <- c()
   if (parsed$message != "") parts <- c(parts, parsed$message)
   if (parsed$detail != "") parts <- c(parts, paste0("DETAIL: ", parsed$detail))
@@ -195,24 +207,55 @@ sb_raise_query_error <- function(payload) {
   stop(message)
 }
 
-sb_send_message <- function(client, data) {
+sb_send_simple_query <- function(client, sql) {
+  flags <- if (isTRUE(client$cfg$binary_transfer)) 0x04L else 0L
+  payload <- build_query_payload(sql, flags, 0L, 0L)
+  client$last_query_sequence <- sb_send_message(client, SB_MSG_QUERY, payload, 0L, FALSE)
+}
+
+sb_send_extended_query <- function(client, sql, params) {
+  param_values <- list()
+  param_types <- c()
+  for (param in params) {
+    encoded <- encode_param(param)
+    param_values[[length(param_values) + 1]] <- encoded$param
+    param_types <- c(param_types, encoded$oid)
+  }
+  parse_payload <- build_parse_payload("", sql, param_types)
+  sb_send_message(client, SB_MSG_PARSE, parse_payload, 0L, FALSE)
+
+  result_formats <- if (isTRUE(client$cfg$binary_transfer)) c(SB_FORMAT_BINARY) else c()
+  bind_payload <- build_bind_payload("", "", param_values, result_formats)
+  sb_send_message(client, SB_MSG_BIND, bind_payload, 0L, FALSE)
+
+  exec_payload <- build_execute_payload("", 0L)
+  client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
+  sb_send_message(client, SB_MSG_SYNC, raw(), 0L, FALSE)
+}
+
+sb_send_message <- function(client, type, payload, flags = 0L, force_zero = FALSE) {
+  sequence <- client$sequence
+  client$sequence <- client$sequence + 1
+  attachment <- if (force_zero) raw(16) else client$attachment_id
+  txn_id <- if (force_zero) 0 else client$txn_id
+  data <- encode_message(type, payload, flags, sequence, attachment, txn_id)
   writeBin(data, client$con)
+  sequence
 }
 
 sb_recv_message <- function(client) {
-  header <- readBin(client$con, raw(), n = 12)
-  if (length(header) != 12) stop("connection closed")
+  header <- readBin(client$con, raw(), n = SB_HEADER_SIZE)
+  if (length(header) != SB_HEADER_SIZE) stop("connection closed")
   parsed <- decode_header(header)
   payload <- if (parsed$length > 0) readBin(client$con, raw(), n = parsed$length) else raw()
-  list(type = parsed$type, payload = payload)
-}
-
-sb_drain_until_complete <- function(client) {
-  repeat {
-    resp <- sb_recv_message(client)
-    if (resp$type == SB_MSG_QUERY_ERROR) sb_raise_query_error(resp$payload)
-    if (resp$type %in% c(SB_MSG_COMMAND_COMPLETE, SB_MSG_END_RESULTS)) break
-  }
+  list(
+    type = parsed$type,
+    flags = parsed$flags,
+    payload = payload,
+    sequence = parsed$sequence,
+    attachment_id = parsed$attachment_id,
+    txn_id = parsed$txn_id
+  )
 }
 
 sb_rows_to_df <- function(rows, columns) {

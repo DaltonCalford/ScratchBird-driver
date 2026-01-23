@@ -6,94 +6,114 @@ uses
   SysUtils, Classes;
 
 const
-  PROTOCOL_MAGIC = $42444253;
-  PROTOCOL_VERSION = $0100;
-  MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
+  PROTOCOL_MAGIC = $53425750;
+  PROTOCOL_VERSION_MAJOR = 1;
+  PROTOCOL_VERSION_MINOR = 1;
+  HEADER_SIZE = 40;
+  MAX_MESSAGE_SIZE = 1024 * 1024 * 1024;
 
 type
   TScratchBirdMessageType = Byte;
 
 const
-  MSG_CONNECT_REQUEST = $01;
-  MSG_CONNECT_RESPONSE = $02;
-  MSG_DISCONNECT = $03;
-  MSG_AUTH_REQUEST = $10;
-  MSG_AUTH_RESPONSE = $11;
-  MSG_QUERY = $20;
-  MSG_QUERY_RESULT = $21;
-  MSG_QUERY_ERROR = $22;
-  MSG_QUERY_CANCEL = $23;
-  MSG_PREPARE = $30;
-  MSG_PREPARE_RESPONSE = $31;
-  MSG_EXECUTE = $32;
-  MSG_CLOSE_STATEMENT = $33;
-  MSG_DESCRIBE = $34;
-  MSG_DESCRIBE_RESPONSE = $35;
-  MSG_BEGIN = $40;
-  MSG_COMMIT = $41;
-  MSG_ROLLBACK = $42;
-  MSG_ROW_DESCRIPTION = $50;
-  MSG_ROW_DATA = $51;
-  MSG_END_RESULTS = $52;
-  MSG_COMMAND_COMPLETE = $53;
+  MSG_STARTUP = $01;
+  MSG_AUTH_RESPONSE = $02;
+  MSG_QUERY = $03;
+  MSG_PARSE = $04;
+  MSG_BIND = $05;
+  MSG_DESCRIBE = $06;
+  MSG_EXECUTE = $07;
+  MSG_CLOSE = $08;
+  MSG_SYNC = $09;
+  MSG_FLUSH = $0A;
+  MSG_CANCEL = $0B;
+  MSG_COPY_DATA = $0D;
+  MSG_COPY_DONE = $0E;
+  MSG_COPY_FAIL = $0F;
+
+  MSG_AUTH_REQUEST = $40;
+  MSG_AUTH_OK = $41;
+  MSG_AUTH_CONTINUE = $42;
+  MSG_READY = $43;
+  MSG_ROW_DESCRIPTION = $44;
+  MSG_DATA_ROW = $45;
+  MSG_COMMAND_COMPLETE = $46;
+  MSG_EMPTY_QUERY = $47;
+  MSG_ERROR = $48;
+  MSG_NOTICE = $49;
+  MSG_PARSE_COMPLETE = $4A;
+  MSG_BIND_COMPLETE = $4B;
+  MSG_CLOSE_COMPLETE = $4C;
+  MSG_PORTAL_SUSPENDED = $4D;
+  MSG_NO_DATA = $4E;
+  MSG_PARAMETER_STATUS = $4F;
+  MSG_PARAMETER_DESCRIPTION = $50;
+  MSG_COPY_IN_RESPONSE = $51;
+  MSG_COPY_OUT_RESPONSE = $52;
+  MSG_COPY_BOTH_RESPONSE = $53;
+  MSG_NOTIFICATION = $54;
+  MSG_NEGOTIATE_VERSION = $56;
+  MSG_STREAM_READY = $59;
+  MSG_STREAM_DATA = $5A;
+  MSG_STREAM_END = $5B;
+  MSG_TXN_STATUS = $5C;
+  MSG_PONG = $5D;
 
 type
   TAuthMethod = Byte;
 
 const
-  AUTH_SCRAM_SHA256 = 2;
-
-type
-  TAuthStatus = Byte;
-
-const
   AUTH_OK = 0;
-  AUTH_ERROR = 1;
-  AUTH_CONTINUE = 2;
-
-type
-  TWireType = Byte;
+  AUTH_PASSWORD = 1;
+  AUTH_MD5 = 2;
+  AUTH_SCRAM_SHA256 = 3;
+  AUTH_CERTIFICATE = 4;
+  AUTH_GSSAPI = 5;
+  AUTH_SSPI = 6;
+  AUTH_LDAP = 7;
+  AUTH_SAML = 8;
+  AUTH_OIDC = 9;
+  AUTH_MFA_TOTP = 10;
+  AUTH_CLUSTER_PKI = 11;
 
 const
-  WIRE_NULL = $00;
-  WIRE_BOOL = $01;
-  WIRE_INT16 = $02;
-  WIRE_INT32 = $03;
-  WIRE_INT64 = $04;
-  WIRE_FLOAT32 = $05;
-  WIRE_FLOAT64 = $06;
-  WIRE_DECIMAL = $07;
-  WIRE_VARCHAR = $08;
-  WIRE_CHAR = $09;
-  WIRE_BYTEA = $0A;
-  WIRE_DATE = $0B;
-  WIRE_TIME = $0C;
-  WIRE_TIMESTAMP = $0D;
-  WIRE_TIMESTAMPTZ = $0E;
-  WIRE_INTERVAL = $0F;
-  WIRE_UUID = $10;
-  WIRE_JSON = $11;
-  WIRE_JSONB = $12;
-  WIRE_ARRAY = $13;
-  WIRE_COMPOSITE = $14;
-  WIRE_GEOMETRY = $15;
-  WIRE_VECTOR = $16;
-  WIRE_MONEY = $17;
-  WIRE_XML = $18;
-  WIRE_INET = $19;
-  WIRE_CIDR = $1A;
-  WIRE_MACADDR = $1B;
-  WIRE_TSVECTOR = $1C;
-  WIRE_TSQUERY = $1D;
-  WIRE_RANGE = $1E;
-  WIRE_UNKNOWN = $FF;
+  MSG_FLAG_COMPRESSED = $01;
+  MSG_FLAG_CONTINUED = $02;
+  MSG_FLAG_FINAL = $04;
+  MSG_FLAG_URGENT = $08;
+  MSG_FLAG_ENCRYPTED = $10;
+  MSG_FLAG_CHECKSUM = $20;
+
+const
+  FEATURE_COMPRESSION = 1;
+  FEATURE_STREAMING = 2;
+  FEATURE_SBLR = 4;
+  FEATURE_FEDERATION = 8;
+  FEATURE_NOTIFICATIONS = 16;
+  FEATURE_QUERY_PLAN = 32;
+  FEATURE_BATCH = 64;
+  FEATURE_PIPELINE = 128;
+  FEATURE_BINARY_COPY = 256;
+  FEATURE_SAVEPOINTS = 512;
+  FEATURE_2PC = 1024;
+  FEATURE_CHECKSUMS = 2048;
 
 type
+  TParamValue = record
+    Format: Word;
+    Data: TBytes;
+    IsNull: Boolean;
+  end;
+
   TColumnInfo = record
     Name: string;
-    WireType: TWireType;
-    TypeModifier: Cardinal;
-    FormatCode: Word;
+    TableOid: Cardinal;
+    ColumnIndex: Word;
+    TypeOid: Cardinal;
+    TypeSize: SmallInt;
+    TypeModifier: Integer;
+    Format: Word;
+    Nullable: Boolean;
   end;
 
   TColumnValue = record
@@ -105,28 +125,34 @@ type
     MsgType: TScratchBirdMessageType;
     Flags: Byte;
     Payload: TBytes;
+    Sequence: Cardinal;
+    AttachmentId: TBytes;
+    TxnId: UInt64;
   end;
 
-function EncodeMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte = 0): TBytes;
-function DecodeHeader(const Header: TBytes; out MsgType: TScratchBirdMessageType; out Flags: Byte; out Length: Integer): Boolean;
+function EncodeMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte;
+  Sequence: Cardinal; const AttachmentId: TBytes; TxnId: UInt64): TBytes;
+function DecodeHeader(const Header: TBytes; out MsgType: TScratchBirdMessageType; out Flags: Byte;
+  out Length: Integer; out Sequence: Cardinal; out AttachmentId: TBytes; out TxnId: UInt64): Boolean;
 
-function BuildConnectRequest(const Database, ClientName: string; Pid: Cardinal): TBytes;
-function ParseConnectResponse(const Payload: TBytes; out SessionId: TBytes; out ServerName, ServerVersion, ErrorMessage: string): Boolean;
+function BuildStartupPayload(Features: UInt64; const Params: TStringList): TBytes;
+function BuildParamList(const Params: TStringList): TBytes;
+function BuildQueryPayload(const Sql: string; Flags, MaxRows, TimeoutMs: Cardinal): TBytes;
+function BuildParsePayload(const StatementName, Sql: string; const ParamTypes: array of Cardinal): TBytes;
+function BuildBindPayload(const PortalName, StatementName: string; const Params: array of TParamValue;
+  const ResultFormats: array of Word): TBytes;
+function BuildExecutePayload(const PortalName: string; MaxRows: Cardinal): TBytes;
+function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
 
-function BuildAuthRequest(const SessionId: TBytes; const UserName: string; Method: TAuthMethod; const Payload: TBytes): TBytes;
-procedure ParseAuthResponse(const Payload: TBytes; out Status: TAuthStatus; out UserId: Cardinal; out ErrorMessage: string; out Extra: TBytes);
-
-function BuildQuery(const SessionId: TBytes; const Sql: string; Flags: Byte = 0): TBytes;
+procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TBytes);
+procedure ParseAuthContinue(const Payload: TBytes; out Method, Stage: Byte; out Data: TBytes);
+procedure ParseAuthOk(const Payload: TBytes; out SessionId: TBytes; out ServerInfo: TBytes);
+procedure ParseReady(const Payload: TBytes; out Status: Byte; out TxnId, Visibility: UInt64);
+procedure ParseParameterStatus(const Payload: TBytes; out Name, Value: string);
 function ParseRowDescription(const Payload: TBytes): TArray<TColumnInfo>;
 function ParseRowData(const Payload: TBytes): TArray<TColumnValue>;
-procedure ParseCommandComplete(const Payload: TBytes; out Tag: string; out Rows: Int64);
-procedure ParseQueryResult(const Payload: TBytes; out Status: Byte; out ColumnCount: Cardinal; out RowCount: Int64);
-procedure ParseQueryError(const Payload: TBytes; out ErrorCode: Cardinal; out SqlState, Message, Detail, Hint: string);
-
-function BuildBegin(const SessionId: TBytes; Isolation: Byte; ReadOnly: Boolean): TBytes;
-function BuildCommit(const SessionId: TBytes): TBytes;
-function BuildRollback(const SessionId: TBytes): TBytes;
-function BuildDisconnect(const SessionId: TBytes): TBytes;
+procedure ParseCommandComplete(const Payload: TBytes; out CommandType: Byte; out Rows, LastId: UInt64; out Tag: string);
+procedure ParseErrorMessage(const Payload: TBytes; out Severity, SqlState, Message, Detail, Hint: string);
 
 implementation
 
@@ -139,10 +165,13 @@ begin
     Move(Right[0], Result[Length(Left)], Length(Right));
 end;
 
-function ByteToBytes(Value: Byte): TBytes;
+function BytesOf(const Values: array of Byte): TBytes;
+var
+  I: Integer;
 begin
-  SetLength(Result, 1);
-  Result[0] := Value;
+  SetLength(Result, Length(Values));
+  for I := 0 to High(Values) do
+    Result[I] := Values[I];
 end;
 
 function WriteUInt16LE(Value: Word): TBytes;
@@ -152,7 +181,23 @@ begin
   Result[1] := Byte((Value shr 8) and $FF);
 end;
 
+function WriteInt16LE(Value: SmallInt): TBytes;
+begin
+  SetLength(Result, 2);
+  Result[0] := Byte(Value and $FF);
+  Result[1] := Byte((Value shr 8) and $FF);
+end;
+
 function WriteUInt32LE(Value: Cardinal): TBytes;
+begin
+  SetLength(Result, 4);
+  Result[0] := Byte(Value and $FF);
+  Result[1] := Byte((Value shr 8) and $FF);
+  Result[2] := Byte((Value shr 16) and $FF);
+  Result[3] := Byte((Value shr 24) and $FF);
+end;
+
+function WriteInt32LE(Value: Integer): TBytes;
 begin
   SetLength(Result, 4);
   Result[0] := Byte(Value and $FF);
@@ -179,10 +224,20 @@ begin
   Result := Word(Data[Offset]) or (Word(Data[Offset + 1]) shl 8);
 end;
 
+function ReadInt16LE(const Data: TBytes; Offset: Integer): SmallInt;
+begin
+  Result := SmallInt(Word(Data[Offset]) or (Word(Data[Offset + 1]) shl 8));
+end;
+
 function ReadUInt32LE(const Data: TBytes; Offset: Integer): Cardinal;
 begin
   Result := Cardinal(Data[Offset]) or (Cardinal(Data[Offset + 1]) shl 8) or
     (Cardinal(Data[Offset + 2]) shl 16) or (Cardinal(Data[Offset + 3]) shl 24);
+end;
+
+function ReadInt32LE(const Data: TBytes; Offset: Integer): Integer;
+begin
+  Result := Integer(ReadUInt32LE(Data, Offset));
 end;
 
 function ReadUInt64LE(const Data: TBytes; Offset: Integer): UInt64;
@@ -193,266 +248,389 @@ begin
     (UInt64(Data[Offset + 6]) shl 48) or (UInt64(Data[Offset + 7]) shl 56);
 end;
 
-function EncodeMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte): TBytes;
+function PadBytes(const Data: TBytes; Length: Integer): TBytes;
+begin
+  Result := Data;
+  if System.Length(Result) > Length then
+  begin
+    SetLength(Result, Length);
+    Exit;
+  end;
+  if System.Length(Result) < Length then
+  begin
+    SetLength(Result, Length);
+    FillChar(Result[System.Length(Data)], Length - System.Length(Data), 0);
+  end;
+end;
+
+function EncodeMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte;
+  Sequence: Cardinal; const AttachmentId: TBytes; TxnId: UInt64): TBytes;
 var
   Header: TBytes;
-  LengthBytes: TBytes;
 begin
-  SetLength(Header, 12);
-  Move(WriteUInt32LE(PROTOCOL_MAGIC)[0], Header[0], 4);
-  Move(WriteUInt16LE(PROTOCOL_VERSION)[0], Header[4], 2);
-  Header[6] := MsgType;
-  Header[7] := Flags;
-  LengthBytes := WriteUInt32LE(Length(Payload));
-  Move(LengthBytes[0], Header[8], 4);
+  SetLength(Header, 0);
+  Header := ConcatBytes(Header, WriteUInt32LE(PROTOCOL_MAGIC));
+  Header := ConcatBytes(Header, BytesOf([PROTOCOL_VERSION_MAJOR, PROTOCOL_VERSION_MINOR, MsgType, Flags]));
+  Header := ConcatBytes(Header, WriteUInt32LE(System.Length(Payload)));
+  Header := ConcatBytes(Header, WriteUInt32LE(Sequence));
+  Header := ConcatBytes(Header, PadBytes(AttachmentId, 16));
+  Header := ConcatBytes(Header, WriteUInt64LE(TxnId));
   Result := ConcatBytes(Header, Payload);
 end;
 
-function DecodeHeader(const Header: TBytes; out MsgType: TScratchBirdMessageType; out Flags: Byte; out Length: Integer): Boolean;
+function DecodeHeader(const Header: TBytes; out MsgType: TScratchBirdMessageType; out Flags: Byte;
+  out Length: Integer; out Sequence: Cardinal; out AttachmentId: TBytes; out TxnId: UInt64): Boolean;
 var
   Magic: Cardinal;
+  Major, Minor: Byte;
 begin
   Result := False;
-  if Length(Header) <> 12 then
+  if System.Length(Header) <> HEADER_SIZE then
     Exit;
   Magic := ReadUInt32LE(Header, 0);
   if Magic <> PROTOCOL_MAGIC then
+    Exit;
+  Major := Header[4];
+  Minor := Header[5];
+  if (Major <> PROTOCOL_VERSION_MAJOR) or (Minor <> PROTOCOL_VERSION_MINOR) then
     Exit;
   MsgType := Header[6];
   Flags := Header[7];
   Length := Integer(ReadUInt32LE(Header, 8));
   if Length > MAX_MESSAGE_SIZE then
     Exit;
+  Sequence := ReadUInt32LE(Header, 12);
+  SetLength(AttachmentId, 16);
+  Move(Header[16], AttachmentId[0], 16);
+  TxnId := ReadUInt64LE(Header, 32);
   Result := True;
 end;
 
-function WriteNullTerminated(const Value: string; Length: Integer): TBytes;
-var
-  Bytes: TBytes;
-begin
-  Bytes := TEncoding.UTF8.GetBytes(Value);
-  SetLength(Result, Length);
-  FillChar(Result[0], Length, 0);
-  if Length(Bytes) > Length - 1 then
-    SetLength(Bytes, Length - 1);
-  Move(Bytes[0], Result[0], Length(Bytes));
-end;
-
-function ReadNullTerminated(const Data: TBytes; Offset, Length: Integer): string;
+function BuildParamList(const Params: TStringList): TBytes;
 var
   I: Integer;
-begin
-  I := 0;
-  while (I < Length) and (Data[Offset + I] <> 0) do
-    Inc(I);
-  Result := TEncoding.UTF8.GetString(Data, Offset, I);
-end;
-
-function BuildConnectRequest(const Database, ClientName: string; Pid: Cardinal): TBytes;
-var
-  Payload: TBytes;
-begin
-  Payload := WriteUInt16LE(PROTOCOL_VERSION);
-  Payload := ConcatBytes(Payload, WriteUInt16LE(0));
-  Payload := ConcatBytes(Payload, WriteUInt32LE(Pid));
-  Payload := ConcatBytes(Payload, WriteNullTerminated(Database, 256));
-  Payload := ConcatBytes(Payload, WriteNullTerminated(ClientName, 64));
-  Payload := ConcatBytes(Payload, WriteNullTerminated('1.0.0', 32));
-  Result := EncodeMessage(MSG_CONNECT_REQUEST, Payload);
-end;
-
-function ParseConnectResponse(const Payload: TBytes; out SessionId: TBytes; out ServerName, ServerVersion, ErrorMessage: string): Boolean;
-var
-  Offset: Integer;
-  Status: Byte;
-  ErrLen: Word;
-begin
-  Result := False;
-  if Length(Payload) < 1 + 2 + 2 + 16 + 64 + 32 then
-    Exit;
-  Offset := 0;
-  Status := Payload[Offset];
-  Inc(Offset);
-  Inc(Offset, 2);
-  Inc(Offset, 2);
-  SetLength(SessionId, 16);
-  Move(Payload[Offset], SessionId[0], 16);
-  Inc(Offset, 16);
-  ServerName := ReadNullTerminated(Payload, Offset, 64);
-  Inc(Offset, 64);
-  ServerVersion := ReadNullTerminated(Payload, Offset, 32);
-  Inc(Offset, 32);
-  ErrorMessage := '';
-  if (Status <> 0) and (Offset + 2 <= Length(Payload)) then
-  begin
-    ErrLen := ReadUInt16LE(Payload, Offset);
-    Inc(Offset, 2);
-    if Offset + ErrLen <= Length(Payload) then
-      ErrorMessage := TEncoding.UTF8.GetString(Payload, Offset, ErrLen);
-  end;
-  Result := Status = 0;
-end;
-
-function BuildAuthRequest(const SessionId: TBytes; const UserName: string; Method: TAuthMethod; const Payload: TBytes): TBytes;
-var
+  Key, Value: string;
   Buffer: TBytes;
 begin
-  if Length(SessionId) <> 16 then
-    raise Exception.Create('sessionId must be 16 bytes');
-  Buffer := SessionId;
-  Buffer := ConcatBytes(Buffer, WriteNullTerminated(UserName, 64));
-  Buffer := ConcatBytes(Buffer, ByteToBytes(Method));
-  Buffer := ConcatBytes(Buffer, WriteUInt16LE(Length(Payload)));
-  Buffer := ConcatBytes(Buffer, Payload);
-  Result := EncodeMessage(MSG_AUTH_REQUEST, Buffer);
+  Buffer := nil;
+  for I := 0 to Params.Count - 1 do
+  begin
+    Key := Params.Names[I];
+    Value := Params.ValueFromIndex[I];
+    Buffer := ConcatBytes(Buffer, TEncoding.UTF8.GetBytes(Key));
+    Buffer := ConcatBytes(Buffer, BytesOf([0]));
+    Buffer := ConcatBytes(Buffer, TEncoding.UTF8.GetBytes(Value));
+    Buffer := ConcatBytes(Buffer, BytesOf([0]));
+  end;
+  Buffer := ConcatBytes(Buffer, BytesOf([0]));
+  Result := Buffer;
 end;
 
-procedure ParseAuthResponse(const Payload: TBytes; out Status: TAuthStatus; out UserId: Cardinal; out ErrorMessage: string; out Extra: TBytes);
-begin
-  if Length(Payload) < 1 + 4 + 256 then
-    raise Exception.Create('Auth response truncated');
-  Status := Payload[0];
-  UserId := ReadUInt32LE(Payload, 1);
-  ErrorMessage := ReadNullTerminated(Payload, 5, 256);
-  Extra := Copy(Payload, 5 + 256, Length(Payload) - (5 + 256));
-end;
-
-function BuildQuery(const SessionId: TBytes; const Sql: string; Flags: Byte): TBytes;
+function BuildStartupPayload(Features: UInt64; const Params: TStringList): TBytes;
 var
-  SqlBytes: TBytes;
-  Payload: TBytes;
+  Header: TBytes;
 begin
-  if Length(SessionId) <> 16 then
-    raise Exception.Create('sessionId must be 16 bytes');
+  Header := BytesOf([PROTOCOL_VERSION_MAJOR, PROTOCOL_VERSION_MINOR, 0, 0]);
+  Header := ConcatBytes(Header, WriteUInt64LE(Features));
+  Result := ConcatBytes(Header, BuildParamList(Params));
+end;
+
+function BuildQueryPayload(const Sql: string; Flags, MaxRows, TimeoutMs: Cardinal): TBytes;
+begin
+  Result := ConcatBytes(WriteUInt32LE(Flags), WriteUInt32LE(MaxRows));
+  Result := ConcatBytes(Result, WriteUInt32LE(TimeoutMs));
+  Result := ConcatBytes(Result, TEncoding.UTF8.GetBytes(Sql));
+  Result := ConcatBytes(Result, BytesOf([0]));
+end;
+
+function BuildParsePayload(const StatementName, Sql: string; const ParamTypes: array of Cardinal): TBytes;
+var
+  NameBytes, SqlBytes, Payload: TBytes;
+  I: Integer;
+begin
+  NameBytes := TEncoding.UTF8.GetBytes(StatementName);
   SqlBytes := TEncoding.UTF8.GetBytes(Sql);
-  Payload := SessionId;
-  Payload := ConcatBytes(Payload, WriteUInt32LE(Length(SqlBytes)));
-  Payload := ConcatBytes(Payload, ByteToBytes(Flags));
+  Payload := ConcatBytes(WriteUInt32LE(System.Length(NameBytes)), NameBytes);
+  Payload := ConcatBytes(Payload, WriteUInt32LE(System.Length(SqlBytes)));
   Payload := ConcatBytes(Payload, SqlBytes);
-  Result := EncodeMessage(MSG_QUERY, Payload);
+  Payload := ConcatBytes(Payload, WriteUInt16LE(Length(ParamTypes)));
+  Payload := ConcatBytes(Payload, WriteUInt16LE(0));
+  for I := 0 to High(ParamTypes) do
+    Payload := ConcatBytes(Payload, WriteUInt32LE(ParamTypes[I]));
+  Result := Payload;
+end;
+
+function BuildBindPayload(const PortalName, StatementName: string; const Params: array of TParamValue;
+  const ResultFormats: array of Word): TBytes;
+var
+  PortalBytes, StmtBytes, Payload: TBytes;
+  I: Integer;
+begin
+  PortalBytes := TEncoding.UTF8.GetBytes(PortalName);
+  StmtBytes := TEncoding.UTF8.GetBytes(StatementName);
+  Payload := ConcatBytes(WriteUInt32LE(System.Length(PortalBytes)), PortalBytes);
+  Payload := ConcatBytes(Payload, WriteUInt32LE(System.Length(StmtBytes)));
+  Payload := ConcatBytes(Payload, StmtBytes);
+  Payload := ConcatBytes(Payload, WriteUInt16LE(Length(Params)));
+  for I := 0 to High(Params) do
+    Payload := ConcatBytes(Payload, WriteUInt16LE(Params[I].Format));
+  Payload := ConcatBytes(Payload, WriteUInt16LE(Length(Params)));
+  Payload := ConcatBytes(Payload, WriteUInt16LE(0));
+  for I := 0 to High(Params) do
+  begin
+    if Params[I].IsNull then
+      Payload := ConcatBytes(Payload, WriteInt32LE(-1))
+    else
+    begin
+      Payload := ConcatBytes(Payload, WriteInt32LE(System.Length(Params[I].Data)));
+      Payload := ConcatBytes(Payload, Params[I].Data);
+    end;
+  end;
+  Payload := ConcatBytes(Payload, WriteUInt16LE(Length(ResultFormats)));
+  for I := 0 to High(ResultFormats) do
+    Payload := ConcatBytes(Payload, WriteUInt16LE(ResultFormats[I]));
+  Result := Payload;
+end;
+
+function BuildExecutePayload(const PortalName: string; MaxRows: Cardinal): TBytes;
+var
+  PortalBytes: TBytes;
+begin
+  PortalBytes := TEncoding.UTF8.GetBytes(PortalName);
+  Result := ConcatBytes(WriteUInt32LE(System.Length(PortalBytes)), PortalBytes);
+  Result := ConcatBytes(Result, WriteUInt32LE(MaxRows));
+end;
+
+function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
+begin
+  Result := ConcatBytes(WriteUInt32LE(CancelType), WriteUInt32LE(TargetSequence));
+end;
+
+procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TBytes);
+var
+  Offset: Integer;
+begin
+  if System.Length(Payload) < 4 then
+    raise Exception.Create('Auth request truncated');
+  Method := Payload[0];
+  Offset := 4;
+  if Offset < System.Length(Payload) then
+  begin
+    SetLength(Data, System.Length(Payload) - Offset);
+    Move(Payload[Offset], Data[0], System.Length(Data));
+  end
+  else
+    Data := nil;
+end;
+
+procedure ParseAuthContinue(const Payload: TBytes; out Method, Stage: Byte; out Data: TBytes);
+var
+  DataLen, Offset: Integer;
+begin
+  if System.Length(Payload) < 8 then
+    raise Exception.Create('Auth continue truncated');
+  Method := Payload[0];
+  Stage := Payload[1];
+  DataLen := Integer(ReadUInt32LE(Payload, 4));
+  Offset := 8;
+  if Offset + DataLen > System.Length(Payload) then
+    raise Exception.Create('Auth continue truncated');
+  if DataLen > 0 then
+  begin
+    SetLength(Data, DataLen);
+    Move(Payload[Offset], Data[0], DataLen);
+  end
+  else
+    Data := nil;
+end;
+
+procedure ParseAuthOk(const Payload: TBytes; out SessionId: TBytes; out ServerInfo: TBytes);
+var
+  InfoLen: Integer;
+begin
+  if System.Length(Payload) < 20 then
+    raise Exception.Create('Auth ok truncated');
+  SetLength(SessionId, 16);
+  Move(Payload[0], SessionId[0], 16);
+  InfoLen := Integer(ReadUInt32LE(Payload, 16));
+  if 20 + InfoLen > System.Length(Payload) then
+    raise Exception.Create('Auth ok truncated');
+  if InfoLen > 0 then
+  begin
+    SetLength(ServerInfo, InfoLen);
+    Move(Payload[20], ServerInfo[0], InfoLen);
+  end
+  else
+    ServerInfo := nil;
+end;
+
+procedure ParseReady(const Payload: TBytes; out Status: Byte; out TxnId, Visibility: UInt64);
+begin
+  if System.Length(Payload) < 20 then
+    raise Exception.Create('Ready truncated');
+  Status := Payload[0];
+  TxnId := ReadUInt64LE(Payload, 4);
+  Visibility := ReadUInt64LE(Payload, 12);
+end;
+
+procedure ParseParameterStatus(const Payload: TBytes; out Name, Value: string);
+var
+  Offset, NameLen, ValueLen: Integer;
+begin
+  if System.Length(Payload) < 8 then
+    raise Exception.Create('Parameter status truncated');
+  Offset := 0;
+  NameLen := Integer(ReadUInt32LE(Payload, Offset));
+  Offset := Offset + 4;
+  Name := TEncoding.UTF8.GetString(Payload, Offset, NameLen);
+  Offset := Offset + NameLen;
+  ValueLen := Integer(ReadUInt32LE(Payload, Offset));
+  Offset := Offset + 4;
+  Value := TEncoding.UTF8.GetString(Payload, Offset, ValueLen);
 end;
 
 function ParseRowDescription(const Payload: TBytes): TArray<TColumnInfo>;
 var
-  Offset, I, Count, NameLen: Integer;
+  Offset, Count, I: Integer;
+  Col: TColumnInfo;
+  NameLen: Integer;
 begin
-  if Length(Payload) < 2 then
+  if System.Length(Payload) < 4 then
     raise Exception.Create('Row description truncated');
   Offset := 0;
   Count := ReadUInt16LE(Payload, Offset);
-  Inc(Offset, 2);
+  Offset := Offset + 4;
   SetLength(Result, Count);
   for I := 0 to Count - 1 do
   begin
-    NameLen := ReadUInt16LE(Payload, Offset);
-    Inc(Offset, 2);
-    Result[I].Name := TEncoding.UTF8.GetString(Payload, Offset, NameLen);
-    Inc(Offset, NameLen);
-    Result[I].WireType := Payload[Offset];
-    Inc(Offset);
-    Result[I].TypeModifier := ReadUInt32LE(Payload, Offset);
-    Inc(Offset, 4);
-    Result[I].FormatCode := ReadUInt16LE(Payload, Offset);
-    Inc(Offset, 2);
+    NameLen := Integer(ReadUInt32LE(Payload, Offset));
+    Offset := Offset + 4;
+    Col.Name := TEncoding.UTF8.GetString(Payload, Offset, NameLen);
+    Offset := Offset + NameLen;
+    Col.TableOid := ReadUInt32LE(Payload, Offset);
+    Offset := Offset + 4;
+    Col.ColumnIndex := ReadUInt16LE(Payload, Offset);
+    Offset := Offset + 2;
+    Col.TypeOid := ReadUInt32LE(Payload, Offset);
+    Offset := Offset + 4;
+    Col.TypeSize := ReadInt16LE(Payload, Offset);
+    Offset := Offset + 2;
+    Col.TypeModifier := ReadInt32LE(Payload, Offset);
+    Offset := Offset + 4;
+    Col.Format := Payload[Offset];
+    Offset := Offset + 1;
+    Col.Nullable := Payload[Offset] = 1;
+    Offset := Offset + 3;
+    Result[I] := Col;
   end;
 end;
 
 function ParseRowData(const Payload: TBytes): TArray<TColumnValue>;
 var
-  Offset, I, Count: Integer;
-  LengthValue: Integer;
+  Offset, Count, NullBytes, I: Integer;
+  Values: TArray<TColumnValue>;
+  NullOffset, DataOffset: Integer;
+  ByteIndex, BitIndex: Integer;
+  IsNull: Boolean;
+  Len: Integer;
 begin
-  if Length(Payload) < 2 then
+  if System.Length(Payload) < 4 then
     raise Exception.Create('Row data truncated');
   Offset := 0;
   Count := ReadUInt16LE(Payload, Offset);
-  Inc(Offset, 2);
-  SetLength(Result, Count);
+  Offset := Offset + 2;
+  NullBytes := ReadUInt16LE(Payload, Offset);
+  Offset := Offset + 2;
+  NullOffset := Offset;
+  DataOffset := NullOffset + NullBytes;
+  SetLength(Values, Count);
   for I := 0 to Count - 1 do
   begin
-    LengthValue := Integer(ReadUInt32LE(Payload, Offset));
-    Inc(Offset, 4);
-    if LengthValue and Integer($80000000) <> 0 then
+    ByteIndex := I div 8;
+    BitIndex := I mod 8;
+    IsNull := (ByteIndex < NullBytes) and ((Payload[NullOffset + ByteIndex] and (1 shl BitIndex)) <> 0);
+    if IsNull then
     begin
-      Result[I].IsNull := True;
-      Result[I].Data := nil;
+      Values[I].IsNull := True;
+      Values[I].Data := nil;
       Continue;
     end;
-    Result[I].IsNull := False;
-    SetLength(Result[I].Data, LengthValue);
-    if LengthValue > 0 then
-      Move(Payload[Offset], Result[I].Data[0], LengthValue);
-    Inc(Offset, LengthValue);
+    Len := ReadInt32LE(Payload, DataOffset);
+    DataOffset := DataOffset + 4;
+    if Len < 0 then
+    begin
+      Values[I].IsNull := True;
+      Values[I].Data := nil;
+      Continue;
+    end;
+    SetLength(Values[I].Data, Len);
+    if Len > 0 then
+      Move(Payload[DataOffset], Values[I].Data[0], Len);
+    Values[I].IsNull := False;
+    DataOffset := DataOffset + Len;
   end;
+  Result := Values;
 end;
 
-procedure ParseCommandComplete(const Payload: TBytes; out Tag: string; out Rows: Int64);
+procedure ParseCommandComplete(const Payload: TBytes; out CommandType: Byte; out Rows, LastId: UInt64; out Tag: string);
+var
+  TagBytes: TBytes;
+  TagStr: string;
+  ZeroPos: Integer;
 begin
-  if Length(Payload) < 64 + 8 then
+  if System.Length(Payload) < 20 then
     raise Exception.Create('Command complete truncated');
-  Tag := ReadNullTerminated(Payload, 0, 64);
-  Rows := Int64(ReadUInt64LE(Payload, 64));
+  CommandType := Payload[0];
+  Rows := ReadUInt64LE(Payload, 4);
+  LastId := ReadUInt64LE(Payload, 12);
+  if System.Length(Payload) > 20 then
+  begin
+    SetLength(TagBytes, System.Length(Payload) - 20);
+    Move(Payload[20], TagBytes[0], System.Length(TagBytes));
+    TagStr := TEncoding.UTF8.GetString(TagBytes);
+    ZeroPos := Pos(#0, TagStr);
+    if ZeroPos > 0 then
+      Tag := Copy(TagStr, 1, ZeroPos - 1)
+    else
+      Tag := TagStr;
+  end
+  else
+    Tag := '';
 end;
 
-procedure ParseQueryResult(const Payload: TBytes; out Status: Byte; out ColumnCount: Cardinal; out RowCount: Int64);
-begin
-  if Length(Payload) < 1 + 4 + 8 then
-    raise Exception.Create('Query result truncated');
-  Status := Payload[0];
-  ColumnCount := ReadUInt32LE(Payload, 1);
-  RowCount := Int64(ReadUInt64LE(Payload, 5));
-end;
-
-procedure ParseQueryError(const Payload: TBytes; out ErrorCode: Cardinal; out SqlState, Message, Detail, Hint: string);
+procedure ParseErrorMessage(const Payload: TBytes; out Severity, SqlState, Message, Detail, Hint: string);
 var
-  Offset: Integer;
-  MsgLen, DetailLen, HintLen: Word;
+  Offset, Start: Integer;
+  Field: Byte;
+  Value: string;
 begin
-  if Length(Payload) < 4 + 6 + 2 + 2 + 2 then
-    raise Exception.Create('Query error truncated');
+  Severity := '';
+  SqlState := '';
+  Message := '';
+  Detail := '';
+  Hint := '';
   Offset := 0;
-  ErrorCode := ReadUInt32LE(Payload, Offset);
-  Inc(Offset, 4);
-  SqlState := ReadNullTerminated(Payload, Offset, 6);
-  Inc(Offset, 6);
-  MsgLen := ReadUInt16LE(Payload, Offset);
-  Inc(Offset, 2);
-  DetailLen := ReadUInt16LE(Payload, Offset);
-  Inc(Offset, 2);
-  HintLen := ReadUInt16LE(Payload, Offset);
-  Inc(Offset, 2);
-  Message := TEncoding.UTF8.GetString(Payload, Offset, MsgLen);
-  Inc(Offset, MsgLen);
-  Detail := TEncoding.UTF8.GetString(Payload, Offset, DetailLen);
-  Inc(Offset, DetailLen);
-  Hint := TEncoding.UTF8.GetString(Payload, Offset, HintLen);
-end;
-
-function BuildBegin(const SessionId: TBytes; Isolation: Byte; ReadOnly: Boolean): TBytes;
-var
-  Payload: TBytes;
-begin
-  if Length(SessionId) <> 16 then
-    raise Exception.Create('sessionId must be 16 bytes');
-  Payload := SessionId;
-  Payload := ConcatBytes(Payload, ByteToBytes(Isolation));
-  Payload := ConcatBytes(Payload, ByteToBytes(Byte(Ord(ReadOnly))));
-  Result := EncodeMessage(MSG_BEGIN, Payload);
-end;
-
-function BuildCommit(const SessionId: TBytes): TBytes;
-begin
-  Result := EncodeMessage(MSG_COMMIT, SessionId);
-end;
-
-function BuildRollback(const SessionId: TBytes): TBytes;
-begin
-  Result := EncodeMessage(MSG_ROLLBACK, SessionId);
-end;
-
-function BuildDisconnect(const SessionId: TBytes): TBytes;
-begin
-  Result := EncodeMessage(MSG_DISCONNECT, SessionId);
+  while Offset < System.Length(Payload) do
+  begin
+    Field := Payload[Offset];
+    Inc(Offset);
+    if Field = 0 then
+      Break;
+    Start := Offset;
+    while (Offset < System.Length(Payload)) and (Payload[Offset] <> 0) do
+      Inc(Offset);
+    if Offset > System.Length(Payload) then
+      Break;
+    Value := TEncoding.UTF8.GetString(Payload, Start, Offset - Start);
+    Inc(Offset);
+    case AnsiChar(Field) of
+      'S': Severity := Value;
+      'C': SqlState := Value;
+      'M': Message := Value;
+      'D': Detail := Value;
+      'H': Hint := Value;
+    end;
+  end;
 end;
 
 end.

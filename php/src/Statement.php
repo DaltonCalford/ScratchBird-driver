@@ -36,8 +36,8 @@ final class Statement
     public function execute(?array $params = null): bool
     {
         $finalParams = $this->gatherParams($params);
-        $query = Sql::substitute($this->sql, $finalParams);
-        $this->stream = $this->connection->executeQuery($query);
+        $normalized = Sql::normalize($this->sql, $finalParams);
+        $this->stream = $this->connection->executeQuery($normalized['sql'], $normalized['params']);
         $this->rowCount = 0;
         $this->currentRow = [];
         return true;
@@ -97,9 +97,9 @@ final class Statement
         }
         return [
             'name' => $meta['name'],
-            'native_type' => TypeDecoder::wireTypeName($meta['wireType']),
+            'native_type' => TypeDecoder::oidName($meta['typeOid']),
             'len' => $meta['typeModifier'],
-            'format' => $meta['formatCode'],
+            'format' => $meta['format'],
         ];
     }
 

@@ -9,7 +9,7 @@ final class Config
     public string $database = '';
     public string $user = '';
     public string $password = '';
-    public string $sslMode = 'prefer';
+    public string $sslMode = 'require';
     public ?string $sslRootCert = null;
     public ?string $sslCert = null;
     public ?string $sslKey = null;

@@ -24,7 +24,7 @@ public class SBConnectionProperties {
     private String password;
 
     // SSL/TLS
-    private String ssl = "prefer";
+    private String ssl = "require";
     private String sslMode;
     private String sslCert;
     private String sslKey;

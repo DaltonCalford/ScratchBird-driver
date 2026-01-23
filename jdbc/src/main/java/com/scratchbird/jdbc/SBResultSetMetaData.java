@@ -53,7 +53,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public int isNullable(int column) throws SQLException {
-        return columnNullableUnknown;
+        return getColumn(column).isNullable() ? columnNullable : columnNoNulls;
     }
 
     @Override
@@ -176,6 +176,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case Types.DATE: return java.sql.Date.class.getName();
             case Types.TIME: return java.sql.Time.class.getName();
             case Types.TIMESTAMP: return java.sql.Timestamp.class.getName();
+            case Types.TIMESTAMP_WITH_TIMEZONE: return java.time.OffsetDateTime.class.getName();
             case Types.ARRAY: return java.sql.Array.class.getName();
             default: return Object.class.getName();
         }

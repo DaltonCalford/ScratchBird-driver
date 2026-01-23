@@ -13,7 +13,7 @@ module Scratchbird
       @database = ""
       @user = ""
       @password = ""
-      @sslmode = "prefer"
+      @sslmode = "require"
       @sslrootcert = nil
       @sslcert = nil
       @sslkey = nil

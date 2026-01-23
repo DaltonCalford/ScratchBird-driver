@@ -6,17 +6,19 @@ module Scratchbird
     def initialize(connection, sql)
       @connection = connection
       @sql = sql
+      @name = "sb_stmt_#{object_id}"
       @closed = false
+      @connection.client.prepare(@name, @sql)
     end
 
     def execute(params = nil)
       ensure_open
-      @connection.execute(@sql, params)
+      @connection.client.execute(@name, params)
     end
 
     def stream(params = nil)
       ensure_open
-      @connection.stream(@sql, params)
+      @connection.client.execute_stream(@name, params)
     end
 
     def close

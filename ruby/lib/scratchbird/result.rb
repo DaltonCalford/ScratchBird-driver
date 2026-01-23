@@ -1,5 +1,5 @@
 module Scratchbird
-  Column = Struct.new(:name, :wire_type, :type_modifier, :format, keyword_init: true)
+  Column = Struct.new(:name, :type_oid, :type_modifier, :format, :nullable, keyword_init: true)
 
   class Result
     attr_reader :columns, :rowcount, :command_tag
@@ -8,9 +8,10 @@ module Scratchbird
       @columns = (columns || []).map do |col|
         Column.new(
           name: col[:name],
-          wire_type: col[:wire_type],
+          type_oid: col[:type_oid],
           type_modifier: col[:type_modifier],
-          format: col[:format]
+          format: col[:format],
+          nullable: col[:nullable]
         )
       end
       @rows = rows || []

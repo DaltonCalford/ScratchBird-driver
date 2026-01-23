@@ -24,4 +24,43 @@ public class IntegrationTests
 
         Assert.NotNull(result);
     }
+
+    [Fact]
+    public void PrepareBindQuery()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT ?::INTEGER";
+        cmd.Parameters.Add(new ScratchBirdParameter("", 42));
+        var result = cmd.ExecuteScalar();
+
+        Assert.Equal(42, Convert.ToInt32(result));
+    }
+
+    [Fact]
+    public void TypesFixtureQuery()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM sb_conformance.type_coverage";
+        using var reader = cmd.ExecuteReader();
+
+        Assert.True(reader.Read());
+    }
 }

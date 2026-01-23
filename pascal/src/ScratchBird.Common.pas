@@ -10,9 +10,11 @@ type
   private
     FName: string;
     FValue: Variant;
+    FObjectValue: TObject;
   public
     property Name: string read FName write FName;
     property Value: Variant read FValue write FValue;
+    property ObjectValue: TObject read FObjectValue write FObjectValue;
   end;
 
   TScratchBirdParams = class

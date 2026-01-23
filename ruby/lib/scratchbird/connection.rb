@@ -45,7 +45,7 @@ module Scratchbird
     def execute(sql, params = nil)
       ensure_open
       begin_transaction unless autocommit
-      @client.query(Sql.substitute(sql, params))
+      @client.query(sql, params)
     end
 
     def query(sql, params = nil)
@@ -55,7 +55,7 @@ module Scratchbird
     def stream(sql, params = nil)
       ensure_open
       begin_transaction unless autocommit
-      @client.stream(Sql.substitute(sql, params))
+      @client.stream(sql, params)
     end
 
     def prepare(sql)

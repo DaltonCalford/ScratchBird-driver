@@ -1,84 +1,306 @@
 require "bigdecimal"
 require "time"
+require "json"
 
 module Scratchbird
-  module Types
-    WIRE_BOOL = 0x01
-    WIRE_INT16 = 0x02
-    WIRE_INT32 = 0x03
-    WIRE_INT64 = 0x04
-    WIRE_FLOAT32 = 0x05
-    WIRE_FLOAT64 = 0x06
-    WIRE_DECIMAL = 0x07
-    WIRE_VARCHAR = 0x08
-    WIRE_CHAR = 0x09
-    WIRE_BYTEA = 0x0A
-    WIRE_DATE = 0x0B
-    WIRE_TIME = 0x0C
-    WIRE_TIMESTAMP = 0x0D
-    WIRE_TIMESTAMPTZ = 0x0E
-    WIRE_INTERVAL = 0x0F
-    WIRE_UUID = 0x10
-    WIRE_JSON = 0x11
-    WIRE_JSONB = 0x12
-    WIRE_ARRAY = 0x13
-    WIRE_VECTOR = 0x16
-    WIRE_MONEY = 0x17
-    WIRE_XML = 0x18
-    WIRE_INET = 0x19
-    WIRE_CIDR = 0x1A
-    WIRE_TSVECTOR = 0x1C
-    WIRE_TSQUERY = 0x1D
+  class JSONB
+    attr_reader :raw, :value
 
-    def self.decode(wire_type, data)
+    def initialize(raw, value = nil)
+      @raw = raw
+      @value = value
+    end
+  end
+
+  class Geometry
+    attr_reader :wkb, :srid, :wkt
+
+    def initialize(wkb, srid: nil, wkt: nil)
+      @wkb = wkb
+      @srid = srid
+      @wkt = wkt
+    end
+  end
+
+  class RangeValue
+    attr_accessor :lower, :upper, :lower_inclusive, :upper_inclusive,
+                  :lower_infinite, :upper_infinite, :empty, :range_oid
+
+    def initialize(opts = {})
+      @lower = opts[:lower]
+      @upper = opts[:upper]
+      @lower_inclusive = opts.fetch(:lower_inclusive, false)
+      @upper_inclusive = opts.fetch(:upper_inclusive, false)
+      @lower_infinite = opts.fetch(:lower_infinite, false)
+      @upper_infinite = opts.fetch(:upper_infinite, false)
+      @empty = opts.fetch(:empty, false)
+      @range_oid = opts[:range_oid]
+    end
+  end
+
+  module Types
+    FORMAT_TEXT = 0
+    FORMAT_BINARY = 1
+
+    OID_BOOL = 16
+    OID_BYTEA = 17
+    OID_CHAR = 18
+    OID_INT8 = 20
+    OID_INT2 = 21
+    OID_INT4 = 23
+    OID_TEXT = 25
+    OID_JSON = 114
+    OID_XML = 142
+    OID_POINT = 600
+    OID_LSEG = 601
+    OID_PATH = 602
+    OID_BOX = 603
+    OID_POLYGON = 604
+    OID_LINE = 628
+    OID_FLOAT4 = 700
+    OID_FLOAT8 = 701
+    OID_CIRCLE = 718
+    OID_MONEY = 790
+    OID_MACADDR = 829
+    OID_CIDR = 650
+    OID_INET = 869
+    OID_MACADDR8 = 774
+    OID_BPCHAR = 1042
+    OID_VARCHAR = 1043
+    OID_DATE = 1082
+    OID_TIME = 1083
+    OID_TIMESTAMP = 1114
+    OID_TIMESTAMPTZ = 1184
+    OID_INTERVAL = 1186
+    OID_TIMETZ = 1266
+    OID_NUMERIC = 1700
+    OID_UUID = 2950
+    OID_JSONB = 3802
+    OID_INT4RANGE = 3904
+    OID_NUMRANGE = 3906
+    OID_TSRANGE = 3908
+    OID_TSTZRANGE = 3910
+    OID_DATERANGE = 3912
+    OID_INT8RANGE = 3926
+    OID_TSVECTOR = 3614
+    OID_TSQUERY = 3615
+    OID_SB_VECTOR = 16386
+
+    RANGE_EMPTY = 0x01
+    RANGE_LB_INC = 0x02
+    RANGE_UB_INC = 0x04
+    RANGE_LB_INF = 0x08
+    RANGE_UB_INF = 0x10
+
+    UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+    def self.encode_param(value)
+      return { param: { format: FORMAT_BINARY, is_null: true }, oid: 0 } if value.nil?
+
+      if value.is_a?(JSONB)
+        raw = value.raw
+        if (raw.nil? || raw.empty?) && !value.value.nil?
+          raw = JSON.generate(value.value)
+        end
+        raise ArgumentError, "JSONB requires raw payload" if raw.nil? || raw.empty?
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(raw) }, oid: OID_JSONB }
+      end
+
+      if value.is_a?(Geometry)
+        raise ArgumentError, "geometry requires WKB payload" if value.wkb.nil? || value.wkb.empty?
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(value.wkb) }, oid: OID_POINT }
+      end
+
+      if value.is_a?(RangeValue)
+        encoded = encode_range(value)
+        return { param: { format: FORMAT_BINARY, data: encoded[:data] }, oid: encoded[:oid] }
+      end
+
+      if value.is_a?(Time) || value.is_a?(DateTime)
+        return { param: { format: FORMAT_BINARY, data: encode_timestamp(value) }, oid: OID_TIMESTAMPTZ }
+      end
+
+      if value.is_a?(Date)
+        return { param: { format: FORMAT_BINARY, data: encode_date(value) }, oid: OID_DATE }
+      end
+
+      if value == true || value == false
+        return { param: { format: FORMAT_BINARY, data: value ? "\x01" : "\x00" }, oid: OID_BOOL }
+      end
+
+      if value.is_a?(Integer)
+        if value >= -2_147_483_648 && value <= 2_147_483_647
+          return { param: { format: FORMAT_BINARY, data: [value].pack("l<") }, oid: OID_INT4 }
+        end
+        return { param: { format: FORMAT_BINARY, data: [value].pack("q<") }, oid: OID_INT8 }
+      end
+
+      if value.is_a?(Float)
+        return { param: { format: FORMAT_BINARY, data: [value].pack("E") }, oid: OID_FLOAT8 }
+      end
+
+      if value.is_a?(BigDecimal)
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(value.to_s("F")) }, oid: OID_NUMERIC }
+      end
+
+      if value.is_a?(String)
+        if value.match?(UUID_REGEX)
+          return { param: { format: FORMAT_BINARY, data: [value.delete("-")].pack("H*") }, oid: OID_UUID }
+        end
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(value) }, oid: OID_TEXT }
+      end
+
+      if value.is_a?(Array)
+        if value.all? { |item| item.is_a?(Numeric) }
+          literal = format_vector_literal(value)
+          return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(literal) }, oid: OID_SB_VECTOR }
+        end
+        literal = format_array_literal(value)
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(literal) }, oid: 0 }
+      end
+
+      if value.is_a?(Hash) || value.is_a?(Object)
+        raw = JSON.generate(value)
+        return { param: { format: FORMAT_BINARY, data: encode_length_prefixed(raw) }, oid: OID_JSON }
+      end
+
+      raise ArgumentError, "unsupported parameter type"
+    end
+
+    def self.decode(type_oid, data, format)
       return nil if data.nil?
-      case wire_type
-      when WIRE_BOOL
+      return decode_text_value(data) if format == FORMAT_TEXT
+      decode_binary_value(type_oid, data)
+    end
+
+    def self.oid_name(oid)
+      case oid
+      when OID_BOOL then "boolean"
+      when OID_INT2 then "int2"
+      when OID_INT4 then "int4"
+      when OID_INT8 then "int8"
+      when OID_FLOAT4 then "float4"
+      when OID_FLOAT8 then "float8"
+      when OID_NUMERIC then "numeric"
+      when OID_MONEY then "money"
+      when OID_TEXT then "text"
+      when OID_VARCHAR then "varchar"
+      when OID_CHAR, OID_BPCHAR then "char"
+      when OID_BYTEA then "bytea"
+      when OID_DATE then "date"
+      when OID_TIME then "time"
+      when OID_TIMESTAMP then "timestamp"
+      when OID_TIMESTAMPTZ then "timestamptz"
+      when OID_INTERVAL then "interval"
+      when OID_UUID then "uuid"
+      when OID_JSON then "json"
+      when OID_JSONB then "jsonb"
+      when OID_XML then "xml"
+      when OID_INET then "inet"
+      when OID_CIDR then "cidr"
+      when OID_MACADDR then "macaddr"
+      when OID_MACADDR8 then "macaddr8"
+      when OID_TSVECTOR then "tsvector"
+      when OID_TSQUERY then "tsquery"
+      when OID_INT4RANGE then "int4range"
+      when OID_INT8RANGE then "int8range"
+      when OID_NUMRANGE then "numrange"
+      when OID_TSRANGE then "tsrange"
+      when OID_TSTZRANGE then "tstzrange"
+      when OID_DATERANGE then "daterange"
+      when OID_SB_VECTOR then "vector"
+      else "unknown"
+      end
+    end
+
+    def self.decode_binary_value(type_oid, data)
+      case type_oid
+      when OID_BOOL
         data.getbyte(0) == 1
-      when WIRE_INT16
+      when OID_INT2
         data.unpack1("s<")
-      when WIRE_INT32
+      when OID_INT4
         data.unpack1("l<")
-      when WIRE_INT64
+      when OID_INT8
         data.unpack1("q<")
-      when WIRE_FLOAT32
-        data.unpack1("e")
-      when WIRE_FLOAT64
+      when OID_FLOAT4
+        data.unpack1("g")
+      when OID_FLOAT8
         data.unpack1("E")
-      when WIRE_DECIMAL
-        BigDecimal(data)
-      when WIRE_VARCHAR, WIRE_CHAR, WIRE_JSON, WIRE_JSONB, WIRE_XML, WIRE_TSVECTOR, WIRE_TSQUERY
-        data.force_encoding("UTF-8")
-      when WIRE_BYTEA
-        data
-      when WIRE_DATE
-        days = data.unpack1("l<")
-        Time.utc(2000, 1, 1) + (days * 86_400)
-      when WIRE_TIME
-        micros = data.unpack1("q<")
-        Time.at(0, micros, :usec).utc
-      when WIRE_TIMESTAMP, WIRE_TIMESTAMPTZ
-        micros = data.unpack1("q<")
-        Time.at(micros / 1_000_000.0).utc
-      when WIRE_INTERVAL
-        months = data.byteslice(0, 4).unpack1("l<")
-        days = data.byteslice(4, 4).unpack1("l<")
-        micros = data.byteslice(8, 8).unpack1("q<")
-        { months: months, days: days, micros: micros }
-      when WIRE_UUID
-        bytes_to_uuid(data)
-      when WIRE_MONEY
+      when OID_NUMERIC
+        strip_length_prefixed(data)
+      when OID_MONEY
         cents = data.unpack1("q<")
         BigDecimal(cents) / 100
-      when WIRE_INET, WIRE_CIDR
-        data.force_encoding("UTF-8")
-      when WIRE_ARRAY
-        parse_array_literal(data.force_encoding("UTF-8"))
-      when WIRE_VECTOR
-        parse_vector_literal(data.force_encoding("UTF-8"))
+      when OID_TEXT, OID_VARCHAR, OID_CHAR, OID_BPCHAR, OID_JSON, OID_XML, OID_TSVECTOR, OID_TSQUERY
+        strip_length_prefixed(data).force_encoding("UTF-8")
+      when OID_JSONB
+        JSONB.new(strip_length_prefixed(data))
+      when OID_BYTEA
+        strip_length_prefixed(data)
+      when OID_DATE
+        decode_date(data)
+      when OID_TIME
+        decode_time(data)
+      when OID_TIMESTAMP, OID_TIMESTAMPTZ
+        decode_timestamp(data)
+      when OID_INTERVAL
+        decode_interval(data)
+      when OID_UUID
+        bytes_to_uuid(data)
+      when OID_INET, OID_CIDR, OID_MACADDR, OID_MACADDR8
+        strip_length_prefixed(data).force_encoding("UTF-8")
+      when OID_INT4RANGE, OID_INT8RANGE, OID_NUMRANGE, OID_TSRANGE, OID_TSTZRANGE, OID_DATERANGE
+        decode_range(type_oid, data)
+      when OID_SB_VECTOR
+        parse_vector_literal(strip_length_prefixed(data))
+      when OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE
+        Geometry.new(strip_length_prefixed(data))
       else
         data
       end
+    end
+
+    def self.decode_text_value(data)
+      if data.bytesize >= 4
+        length = data.byteslice(0, 4).unpack1("V")
+        return data.byteslice(4, length).to_s if length <= data.bytesize - 4
+      end
+      data
+    end
+
+    def self.encode_length_prefixed(data)
+      [data.to_s.bytesize].pack("V") + data.to_s
+    end
+
+    def self.strip_length_prefixed(data)
+      return data if data.bytesize < 4
+      length = data.byteslice(0, 4).unpack1("V")
+      return data.byteslice(4, length) if length <= data.bytesize - 4
+      data
+    end
+
+    def self.decode_date(data)
+      days = data.unpack1("l<")
+      Time.utc(2000, 1, 1) + (days * 86_400)
+    end
+
+    def self.decode_time(data)
+      micros = data.unpack1("q<")
+      Time.at(0, micros, :usec).utc
+    end
+
+    def self.decode_timestamp(data)
+      micros = data.unpack1("q<")
+      base = Time.utc(2000, 1, 1)
+      base + (micros / 1_000_000.0)
+    end
+
+    def self.decode_interval(data)
+      micros = data.byteslice(0, 8).unpack1("q<")
+      days = data.byteslice(8, 4).unpack1("l<")
+      months = data.byteslice(12, 4).unpack1("l<")
+      { months: months, days: days, micros: micros }
     end
 
     def self.bytes_to_uuid(data)
@@ -87,49 +309,131 @@ module Scratchbird
       "#{hex[0, 8]}-#{hex[8, 4]}-#{hex[12, 4]}-#{hex[16, 4]}-#{hex[20, 12]}"
     end
 
-    def self.parse_array_literal(text)
-      trimmed = text.to_s.strip
-      return [] if trimmed.empty? || trimmed == "{}"
-      trimmed = trimmed[1..-2] if trimmed.start_with?("{") && trimmed.end_with?("}")
-      split_array_items(trimmed)
+    def self.encode_timestamp(value)
+      t = value.is_a?(Time) ? value.utc : value.to_time.utc
+      base = Time.utc(2000, 1, 1)
+      micros = ((t.to_f - base.to_f) * 1_000_000).to_i
+      [micros].pack("q<")
     end
 
-    def self.split_array_items(text)
-      items = []
-      depth = 0
-      buffer = +""
-      text.each_char do |ch|
-        if ch == "{"
-          depth += 1
-          buffer << ch
-        elsif ch == "}"
-          depth -= 1 if depth > 0
-          buffer << ch
-        elsif ch == "," && depth.zero?
-          items << parse_array_item(buffer)
-          buffer.clear
-        else
-          buffer << ch
-        end
-      end
-      items << parse_array_item(buffer) if !buffer.empty? || !text.empty?
-      items
+    def self.encode_date(value)
+      date = value.is_a?(Date) ? value : Date.parse(value.to_s)
+      base = Date.new(2000, 1, 1)
+      days = (date - base).to_i
+      [days].pack("l<")
     end
 
-    def self.parse_array_item(raw)
-      token = raw.to_s.strip
-      return nil if token.casecmp("NULL").zero?
-      if token.start_with?("{") && token.end_with?("}")
-        return parse_array_literal(token)
+    def self.encode_range(range)
+      oid = resolve_range_oid(range)
+      flags = 0
+      flags |= RANGE_EMPTY if range.empty
+      flags |= RANGE_LB_INC if range.lower_inclusive
+      flags |= RANGE_UB_INC if range.upper_inclusive
+      flags |= RANGE_LB_INF if range.lower_infinite
+      flags |= RANGE_UB_INF if range.upper_infinite
+      parts = [flags, 0, 0, 0].pack("C4")
+      if !range.empty && !range.lower_infinite
+        bound = encode_range_bound(oid, range.lower)
+        parts << [bound.bytesize].pack("V")
+        parts << bound
       end
-      if token.start_with?("[") && token.end_with?("]")
-        return parse_vector_literal(token)
+      if !range.empty && !range.upper_infinite
+        bound = encode_range_bound(oid, range.upper)
+        parts << [bound.bytesize].pack("V")
+        parts << bound
       end
-      return true if token.casecmp("true").zero?
-      return false if token.casecmp("false").zero?
-      return token.to_i if token.match?(/\A-?\d+\z/)
-      return token.to_f if token.match?(/\A-?\d+\.\d+\z/)
-      token
+      { data: parts, oid: oid }
+    end
+
+    def self.resolve_range_oid(range)
+      return range.range_oid if range.range_oid
+      sample = range.lower || range.upper
+      raise ArgumentError, "range type cannot be inferred" if sample.nil?
+      return OID_TSTZRANGE if sample.is_a?(Time) || sample.is_a?(DateTime)
+      return OID_DATERANGE if sample.is_a?(Date)
+      return (sample >= -2_147_483_648 && sample <= 2_147_483_647) ? OID_INT4RANGE : OID_INT8RANGE if sample.is_a?(Integer)
+      OID_NUMRANGE
+    end
+
+    def self.encode_range_bound(oid, value)
+      case oid
+      when OID_INT4RANGE
+        [value.to_i].pack("l<")
+      when OID_INT8RANGE
+        [value.to_i].pack("q<")
+      when OID_NUMRANGE
+        encode_length_prefixed(value.to_s)
+      when OID_DATERANGE
+        encode_date(value)
+      when OID_TSRANGE, OID_TSTZRANGE
+        encode_timestamp(value)
+      else
+        encode_length_prefixed(value.to_s)
+      end
+    end
+
+    def self.decode_range(oid, data)
+      return RangeValue.new(range_oid: oid) if data.bytesize < 4
+      flags = data.getbyte(0)
+      offset = 4
+      range = RangeValue.new(
+        empty: (flags & RANGE_EMPTY) != 0,
+        lower_inclusive: (flags & RANGE_LB_INC) != 0,
+        upper_inclusive: (flags & RANGE_UB_INC) != 0,
+        lower_infinite: (flags & RANGE_LB_INF) != 0,
+        upper_infinite: (flags & RANGE_UB_INF) != 0,
+        range_oid: oid
+      )
+      return range if range.empty
+      unless range.lower_infinite
+        length = data.byteslice(offset, 4).unpack1("V")
+        offset += 4
+        bound = data.byteslice(offset, length)
+        offset += length
+        range.lower = decode_range_bound(oid, bound)
+      end
+      unless range.upper_infinite
+        length = data.byteslice(offset, 4).unpack1("V")
+        offset += 4
+        bound = data.byteslice(offset, length)
+        range.upper = decode_range_bound(oid, bound)
+      end
+      range
+    end
+
+    def self.decode_range_bound(oid, data)
+      case oid
+      when OID_INT4RANGE
+        data.unpack1("l<")
+      when OID_INT8RANGE
+        data.unpack1("q<")
+      when OID_NUMRANGE
+        strip_length_prefixed(data)
+      when OID_DATERANGE
+        decode_date(data)
+      when OID_TSRANGE, OID_TSTZRANGE
+        decode_timestamp(data)
+      else
+        nil
+      end
+    end
+
+    def self.format_array_literal(values)
+      items = values.map { |value| format_array_item(value) }
+      "{#{items.join(',')}}"
+    end
+
+    def self.format_array_item(value)
+      return "NULL" if value.nil?
+      return format_array_literal(value) if value.is_a?(Array)
+      return "\"#{value.gsub('"', '\\"')}\"" if value.is_a?(String)
+      return value ? "true" : "false" if value == true || value == false
+      value.to_s
+    end
+
+    def self.format_vector_literal(values)
+      parts = values.map { |v| v.finite? ? v.to_s : "0" }
+      "[#{parts.join(',')}]"
     end
 
     def self.parse_vector_literal(text)

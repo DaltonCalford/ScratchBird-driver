@@ -1,159 +1,112 @@
-require "date"
-require "json"
-require "ipaddr"
-require "bigdecimal"
-
 module Scratchbird
   module Sql
-    def self.substitute(sql, params)
-      return sql if params.nil? || params.empty?
-      if has_named_params?(sql)
-        substitute_named(sql, params)
-      else
-        substitute_positional(sql, params)
+    NormalizedQuery = Struct.new(:sql, :params, keyword_init: true)
+
+    def self.normalize(sql, params = nil)
+      return NormalizedQuery.new(sql: sql, params: []) if params.nil?
+      if params.is_a?(Array)
+        if sql.include?("?")
+          return rewrite_positional(sql, params)
+        end
+        return NormalizedQuery.new(sql: sql, params: params)
       end
+      unless has_named_params?(sql)
+        raise ArgumentError, "named parameters provided but query has no named placeholders"
+      end
+      rewrite_named(sql, params)
     end
 
     def self.has_named_params?(sql)
-      sql.each_char.with_index do |ch, idx|
-        next unless (ch == ":" || ch == "@") && idx + 1 < sql.length
-        return true if sql[idx + 1] =~ /[A-Za-z]/
+      in_string = false
+      i = 0
+      while i + 1 < sql.length
+        ch = sql[i]
+        if ch == "'"
+          in_string = !in_string
+          i += 1
+          next
+        end
+        unless in_string
+          if (ch == ":" || ch == "@") && ident_start?(sql[i + 1])
+            return true
+          end
+        end
+        i += 1
       end
       false
     end
 
-    def self.substitute_named(sql, params)
+    def self.rewrite_named(sql, params)
       lookup = {}
       params.each do |key, value|
         next unless key.is_a?(String) || key.is_a?(Symbol)
         lookup[key.to_s.sub(/\A[@:]/, "")] = value
       end
       out = +""
+      ordered = []
+      in_string = false
       i = 0
       while i < sql.length
         ch = sql[i]
-        if ch == "'" && i + 1 < sql.length
+        if ch == "'"
+          in_string = !in_string
           out << ch
           i += 1
-          while i < sql.length
-            out << sql[i]
-            if sql[i] == "'" && (i + 1 >= sql.length || sql[i + 1] != "'")
-              i += 1
-              break
-            end
-            if sql[i] == "'" && i + 1 < sql.length && sql[i + 1] == "'"
-              i += 1
-            end
-            i += 1
-          end
           next
         end
-        if (ch == ":" || ch == "@") && i + 1 < sql.length && sql[i + 1] =~ /[A-Za-z]/
-          j = i + 1
-          j += 1 while j < sql.length && sql[j] =~ /[A-Za-z0-9_]/
-          name = sql[(i + 1)...j]
-          if lookup.key?(name)
-            out << format_value(lookup[name])
-          else
-            out << sql[i...j]
+        unless in_string
+          if (ch == ":" || ch == "@") && i + 1 < sql.length && ident_start?(sql[i + 1])
+            j = i + 1
+            j += 1 while j < sql.length && ident_part?(sql[j])
+            name = sql[(i + 1)...j]
+            raise ArgumentError, "missing named parameter: #{name}" unless lookup.key?(name)
+            ordered << lookup[name]
+            out << "$#{ordered.length}"
+            i = j
+            next
           end
-          i = j
-          next
         end
         out << ch
         i += 1
       end
-      out
+      NormalizedQuery.new(sql: out, params: ordered)
     end
 
-    def self.substitute_positional(sql, params)
+    def self.rewrite_positional(sql, params)
       out = +""
+      ordered = []
       idx = 0
+      in_string = false
       i = 0
       while i < sql.length
         ch = sql[i]
-        if ch == "?"
-          if idx < params.length
-            out << format_value(params[idx])
-            idx += 1
-          else
-            out << ch
-          end
-          i += 1
-          next
-        end
-        if ch == "$" && i + 1 < sql.length && sql[i + 1] =~ /\d/
-          j = i + 1
-          num = 0
-          while j < sql.length && sql[j] =~ /\d/
-            num = num * 10 + sql[j].ord - "0".ord
-            j += 1
-          end
-          if num > 0 && num <= params.length
-            out << format_value(params[num - 1])
-          else
-            out << sql[i...j]
-          end
-          i = j
-          next
-        end
-        if ch == "'" && i + 1 < sql.length
+        if ch == "'"
+          in_string = !in_string
           out << ch
           i += 1
-          while i < sql.length
-            out << sql[i]
-            if sql[i] == "'" && (i + 1 >= sql.length || sql[i + 1] != "'")
-              i += 1
-              break
-            end
-            if sql[i] == "'" && i + 1 < sql.length && sql[i + 1] == "'"
-              i += 1
-            end
-            i += 1
-          end
+          next
+        end
+        if !in_string && ch == "?"
+          raise ArgumentError, "not enough parameters" if idx >= params.length
+          ordered << params[idx]
+          idx += 1
+          out << "$#{ordered.length}"
+          i += 1
           next
         end
         out << ch
         i += 1
       end
-      out
+      raise ArgumentError, "too many parameters" if idx < params.length
+      NormalizedQuery.new(sql: out, params: ordered)
     end
 
-    def self.format_value(value)
-      return "NULL" if value.nil?
-      case value
-      when TrueClass then "TRUE"
-      when FalseClass then "FALSE"
-      when Integer, Float then value.to_s
-      when BigDecimal then value.to_s("F")
-      when Time
-        "TIMESTAMP '#{value.utc.strftime('%Y-%m-%d %H:%M:%S.%6N')}'"
-      when DateTime
-        "TIMESTAMP '#{value.to_time.utc.strftime('%Y-%m-%d %H:%M:%S.%6N')}'"
-      when Date
-        "DATE '#{value.strftime('%Y-%m-%d')}'"
-      when IPAddr
-        "INET '#{escape(value.to_s)}'"
-      when String
-        if value.encoding == Encoding::BINARY
-          "X'#{value.unpack1('H*').upcase}'"
-        else
-          "'#{escape(value)}'"
-        end
-      when Symbol
-        "'#{escape(value.to_s)}'"
-      when Array
-        "ARRAY[#{value.map { |item| format_value(item) }.join(', ')}]"
-      when Hash
-        payload = JSON.generate(value)
-        "JSON '#{escape(payload)}'"
-      else
-        "'#{escape(value.to_s)}'"
-      end
+    def self.ident_start?(ch)
+      /[A-Za-z_]/.match?(ch)
     end
 
-    def self.escape(value)
-      value.gsub("\\", "\\\\").gsub("'", "''")
+    def self.ident_part?(ch)
+      /[A-Za-z0-9_]/.match?(ch)
     end
   end
 end

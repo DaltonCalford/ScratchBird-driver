@@ -6,4 +6,4 @@ Each audit lists gaps with file/line references and points to remediation plans.
 ## Audits
 
 - [DRIVER_IMPLEMENTATION_AUDIT.md](DRIVER_IMPLEMENTATION_AUDIT.md)
-
+- [DRIVER_CONFORMANCE_CHECKLIST.md](DRIVER_CONFORMANCE_CHECKLIST.md)

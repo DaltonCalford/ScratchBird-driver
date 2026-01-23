@@ -4,12 +4,18 @@ namespace ScratchBird\PDO;
 
 final class Connection
 {
+    private const QUERY_FLAG_BINARY_RESULT = 0x04;
+
     private Config $config;
     /** @var resource|null */
     private $socket = null;
-    private string $sessionId = '';
-    private bool $inTransaction = false;
+    private string $attachmentId = '';
+    private int $txnId = 0;
+    private int $sequence = 0;
+    private int $lastQuerySequence = 0;
+    private bool $connected = false;
     private array $attributes = [];
+    private array $parameters = [];
     private array $lastError = ['00000', 0, null];
 
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, array $options = [])
@@ -51,44 +57,17 @@ final class Connection
 
     public function beginTransaction(): bool
     {
-        try {
-            $payload = Protocol::buildBegin($this->sessionId, 0, false);
-            $this->send($payload);
-            $this->drainUntilComplete();
-            $this->inTransaction = true;
-            return true;
-        } catch (\Throwable $ex) {
-            $this->recordError($ex);
-            return false;
-        }
+        return true;
     }
 
     public function commit(): bool
     {
-        try {
-            $payload = Protocol::buildCommit($this->sessionId);
-            $this->send($payload);
-            $this->drainUntilComplete();
-            $this->inTransaction = false;
-            return true;
-        } catch (\Throwable $ex) {
-            $this->recordError($ex);
-            return false;
-        }
+        return $this->executeSimple('COMMIT');
     }
 
     public function rollBack(): bool
     {
-        try {
-            $payload = Protocol::buildRollback($this->sessionId);
-            $this->send($payload);
-            $this->drainUntilComplete();
-            $this->inTransaction = false;
-            return true;
-        } catch (\Throwable $ex) {
-            $this->recordError($ex);
-            return false;
-        }
+        return $this->executeSimple('ROLLBACK');
     }
 
     public function lastInsertId(?string $name = null): string|false
@@ -122,25 +101,28 @@ final class Connection
         if ($this->socket === null) {
             return;
         }
-        try {
-            if ($this->sessionId !== '') {
-                $payload = Protocol::buildDisconnect($this->sessionId);
-                $this->send($payload);
-            }
-        } catch (\Throwable) {
-        }
         fclose($this->socket);
         $this->socket = null;
+        $this->connected = false;
     }
 
-    public function executeQuery(string $sql): ResultStream
+    public function executeQuery(string $sql, array $params = []): ResultStream
     {
-        $payload = Protocol::buildQuery($this->sessionId, $sql, 0);
-        $this->send($payload);
+        if (empty($params)) {
+            $this->sendSimpleQuery($sql);
+        } else {
+            $this->sendExtendedQuery($sql, $params);
+        }
         return new ResultStream($this);
     }
 
-    public function send(string $payload): void
+    public function cancel(): void
+    {
+        $payload = Protocol::buildCancelPayload(0, $this->lastQuerySequence);
+        $this->sendMessage(Protocol::MSG_CANCEL, $payload, Protocol::MSG_FLAG_URGENT, false);
+    }
+
+    public function sendMessage(int $type, string $payload, int $flags = 0, bool $forceZero = false): int
     {
         if ($this->socket === null) {
             throw new ScratchBirdConnectionException('Connection not open', '08006');
@@ -148,6 +130,10 @@ final class Connection
         if ($this->config->socketTimeoutMs > 0) {
             stream_set_timeout($this->socket, 0, $this->config->socketTimeoutMs * 1000);
         }
+        $sequence = $this->sequence++;
+        $attachmentId = $forceZero ? str_repeat("\0", 16) : $this->attachmentId;
+        $txnId = $forceZero ? 0 : $this->txnId;
+        $payload = Protocol::encodeMessage($type, $payload, $flags, $sequence, $attachmentId, $txnId);
         $total = 0;
         $length = strlen($payload);
         while ($total < $length) {
@@ -157,6 +143,7 @@ final class Connection
             }
             $total += $written;
         }
+        return $sequence;
     }
 
     public function receive(): array
@@ -167,32 +154,32 @@ final class Connection
         if ($this->config->socketTimeoutMs > 0) {
             stream_set_timeout($this->socket, 0, $this->config->socketTimeoutMs * 1000);
         }
-        $header = $this->readExact(12);
-        [$type, $flags, $length] = Protocol::decodeHeader($header);
+        $header = $this->readExact(Protocol::HEADER_SIZE);
+        [$type, $flags, $length, $sequence, $attachmentId, $txnId] = Protocol::decodeHeader($header);
         $payload = $length > 0 ? $this->readExact($length) : '';
-        return [$type, $flags, $payload];
+        return [$type, $flags, $payload, $sequence, $attachmentId, $txnId];
     }
 
-    public function drainUntilComplete(): array
+    public function drainUntilReady(): void
     {
-        $tag = '';
-        $rows = 0;
         while (true) {
             [$type, , $payload] = $this->receive();
-            if ($type === Protocol::MSG_QUERY_ERROR) {
+            if ($type === Protocol::MSG_ERROR) {
                 throw $this->buildQueryException($payload);
             }
-            if ($type === Protocol::MSG_COMMAND_COMPLETE) {
-                [$tag, $rows] = Protocol::parseCommandComplete($payload);
-            }
-            if ($type === Protocol::MSG_END_RESULTS) {
-                return [$tag, $rows];
+            if ($type === Protocol::MSG_READY) {
+                [, $txnId] = Protocol::parseReady($payload);
+                $this->txnId = $txnId;
+                return;
             }
         }
     }
 
     private function connect(): void
     {
+        if ($this->config->user === '' || $this->config->database === '') {
+            throw new ScratchBirdConnectionException('user and database are required', '08001');
+        }
         $timeout = $this->config->connectTimeoutMs / 1000;
         $address = sprintf('tcp://%s:%d', $this->config->host, $this->config->port);
         $socket = @stream_socket_client($address, $errno, $errstr, $timeout);
@@ -201,15 +188,16 @@ final class Connection
         }
         stream_set_blocking($socket, true);
         $this->socket = $socket;
-        $this->applyTls($address);
+        $this->applyTls();
         $this->handshake();
+        $this->connected = true;
     }
 
-    private function applyTls(string $address): void
+    private function applyTls(): void
     {
-        $mode = strtolower($this->config->sslMode ?: 'prefer');
+        $mode = strtolower($this->config->sslMode ?: 'require');
         if ($mode === 'disable') {
-            return;
+            throw new ScratchBirdConnectionException('TLS is required for ScratchBird connections', '08001');
         }
         $options = [
             'ssl' => [
@@ -227,68 +215,124 @@ final class Connection
         }
         stream_context_set_option($this->socket, $options);
         $result = @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
-        if ($result === true) {
-            return;
+        if ($result !== true) {
+            throw new ScratchBirdConnectionException('TLS handshake failed', '08001');
         }
-        if (in_array($mode, ['allow', 'prefer'], true)) {
-            fclose($this->socket);
-            $timeout = $this->config->connectTimeoutMs / 1000;
-            $socket = @stream_socket_client($address, $errno, $errstr, $timeout);
-            if ($socket === false) {
-                throw new ScratchBirdConnectionException($errstr ?: 'Connection failed', '08001');
-            }
-            stream_set_blocking($socket, true);
-            $this->socket = $socket;
-            return;
-        }
-        throw new ScratchBirdConnectionException('TLS handshake failed', '08001');
     }
 
     private function handshake(): void
     {
-        $payload = Protocol::buildConnectRequest($this->config->database, $this->config->applicationName, getmypid());
-        $this->send($payload);
-        [$type, , $body] = $this->receive();
-        if ($type !== Protocol::MSG_CONNECT_RESPONSE) {
-            throw new ScratchBirdConnectionException('Unexpected connect response', '08001');
+        $features = 0;
+        if (strtolower($this->config->compression) === 'zstd') {
+            $features |= Protocol::FEATURE_COMPRESSION;
         }
-        [$ok, $sessionId, , , , $error] = Protocol::parseConnectResponse($body);
-        if (!$ok) {
-            throw new ScratchBirdConnectionException($error, '08001');
+        if ($this->config->binaryTransfer) {
+            $features |= Protocol::FEATURE_STREAMING;
         }
-        $this->sessionId = $sessionId;
-        if ($this->config->user !== '') {
-            $this->authenticate();
+        $params = [
+            'database' => $this->config->database,
+            'user' => $this->config->user,
+        ];
+        if ($this->config->applicationName !== '') {
+            $params['application_name'] = $this->config->applicationName;
+        }
+        $startup = Protocol::buildStartupPayload($features, $params);
+        $this->sendMessage(Protocol::MSG_STARTUP, $startup, 0, true);
+
+        $scram = null;
+
+        while (true) {
+            [$type, , $payload, , $attachmentId, $txnId] = $this->receive();
+            switch ($type) {
+                case Protocol::MSG_NEGOTIATE_VERSION:
+                    continue;
+                case Protocol::MSG_AUTH_REQUEST:
+                    [$method, $data] = Protocol::parseAuthRequest($payload);
+                    if ($method === Protocol::AUTH_OK) {
+                        continue 2;
+                    }
+                    if ($method === Protocol::AUTH_PASSWORD) {
+                        $this->sendMessage(Protocol::MSG_AUTH_RESPONSE, $this->config->password ?? '', 0, true);
+                        continue 2;
+                    }
+                    if ($method === Protocol::AUTH_SCRAM_SHA256) {
+                        if ($scram === null) {
+                            $scram = new Scram($this->config->user);
+                        }
+                        $clientFirst = $scram->clientFirstMessage();
+                        $this->sendMessage(Protocol::MSG_AUTH_RESPONSE, $clientFirst, 0, true);
+                        continue 2;
+                    }
+                    throw new ScratchBirdAuthException('Unsupported auth method', '28000');
+                case Protocol::MSG_AUTH_CONTINUE:
+                    [$method, , $data] = Protocol::parseAuthContinue($payload);
+                    if ($method !== Protocol::AUTH_SCRAM_SHA256 || $scram === null) {
+                        throw new ScratchBirdAuthException('Unsupported auth continue', '28000');
+                    }
+                    $clientFinal = $scram->handleServerFirst($this->config->password, $data);
+                    $this->sendMessage(Protocol::MSG_AUTH_RESPONSE, $clientFinal, 0, true);
+                    continue 2;
+                case Protocol::MSG_AUTH_OK:
+                    [, $serverInfo] = Protocol::parseAuthOk($payload);
+                    $this->attachmentId = $attachmentId;
+                    $this->txnId = $txnId;
+                    if ($scram !== null && $serverInfo !== '' && str_starts_with($serverInfo, 'v=')) {
+                        $scram->verifyServerFinal($serverInfo);
+                    }
+                    continue 2;
+                case Protocol::MSG_PARAMETER_STATUS:
+                    [$name, $value] = Protocol::parseParameterStatus($payload);
+                    $this->parameters[$name] = $value;
+                    continue 2;
+                case Protocol::MSG_READY:
+                    [, $txnId] = Protocol::parseReady($payload);
+                    $this->txnId = $txnId;
+                    return;
+                case Protocol::MSG_ERROR:
+                    throw $this->buildQueryException($payload);
+                default:
+                    continue 2;
+            }
         }
     }
 
-    private function authenticate(): void
+    private function sendSimpleQuery(string $sql): void
     {
-        $scram = new Scram($this->config->user);
-        $first = $scram->clientFirstMessage();
-        $payload = Protocol::buildAuthRequest($this->sessionId, $this->config->user, Protocol::AUTH_SCRAM_SHA256, $first);
-        $this->send($payload);
-        [$type, , $body] = $this->receive();
-        if ($type !== Protocol::MSG_AUTH_RESPONSE) {
-            throw new ScratchBirdAuthException('Unexpected auth response', '28000');
+        $flags = $this->config->binaryTransfer ? self::QUERY_FLAG_BINARY_RESULT : 0;
+        $payload = Protocol::buildQueryPayload($sql, $flags, 0, 0);
+        $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_QUERY, $payload, 0, false);
+    }
+
+    private function sendExtendedQuery(string $sql, array $params): void
+    {
+        $paramValues = [];
+        $paramTypes = [];
+        foreach ($params as $param) {
+            $encoded = TypeDecoder::encodeParam($param);
+            $paramValues[] = $encoded['param'];
+            $paramTypes[] = $encoded['oid'];
         }
-        [$status, , $error, $extra] = Protocol::parseAuthResponse($body);
-        if ($status !== 2) {
-            throw new ScratchBirdAuthException($error, '28000');
-        }
-        $final = $scram->handleServerFirst($this->config->password, $extra);
-        $payload = Protocol::buildAuthRequest($this->sessionId, $this->config->user, Protocol::AUTH_SCRAM_SHA256, $final);
-        $this->send($payload);
-        [$type, , $body] = $this->receive();
-        if ($type !== Protocol::MSG_AUTH_RESPONSE) {
-            throw new ScratchBirdAuthException('Unexpected SCRAM final', '28000');
-        }
-        [$status, , $error, $extra] = Protocol::parseAuthResponse($body);
-        if ($status !== 0) {
-            throw new ScratchBirdAuthException($error, '28000');
-        }
-        if ($extra !== '') {
-            $scram->verifyServerFinal($extra);
+        $parsePayload = Protocol::buildParsePayload('', $sql, $paramTypes);
+        $this->sendMessage(Protocol::MSG_PARSE, $parsePayload, 0, false);
+
+        $resultFormats = $this->config->binaryTransfer ? [TypeDecoder::FORMAT_BINARY] : [];
+        $bindPayload = Protocol::buildBindPayload('', '', $paramValues, $resultFormats);
+        $this->sendMessage(Protocol::MSG_BIND, $bindPayload, 0, false);
+
+        $execPayload = Protocol::buildExecutePayload('', 0);
+        $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
+        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+    }
+
+    private function executeSimple(string $sql): bool
+    {
+        try {
+            $this->sendSimpleQuery($sql);
+            $this->drainUntilReady();
+            return true;
+        } catch (\Throwable $ex) {
+            $this->recordError($ex);
+            return false;
         }
     }
 
@@ -307,7 +351,7 @@ final class Connection
 
     public function buildQueryException(string $payload): ScratchBirdException
     {
-        [, $sqlState, $message, $detail, $hint] = Protocol::parseQueryError($payload);
+        [, $sqlState, $message, $detail, $hint] = Protocol::parseErrorMessage($payload);
         return ErrorMapper::map($sqlState, $message, $detail, $hint);
     }
 

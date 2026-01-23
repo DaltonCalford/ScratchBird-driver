@@ -35,7 +35,7 @@ begin
   Result.Database := '';
   Result.UserName := '';
   Result.Password := '';
-  Result.SSLMode := 'prefer';
+  Result.SSLMode := 'require';
   Result.SSLRootCert := '';
   Result.SSLCert := '';
   Result.SSLKey := '';

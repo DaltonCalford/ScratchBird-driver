@@ -4,128 +4,132 @@
  */
 package com.scratchbird.jdbc;
 
-import java.io.*;
-import java.net.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.security.KeyStore;
-import java.util.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.net.ssl.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 /**
  * Protocol handler for ScratchBird native wire protocol.
- *
- * <p>This class manages the low-level communication with the ScratchBird server
- * using the native binary protocol on port 3092.</p>
  */
 public class SBProtocolHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(SBProtocolHandler.class.getName());
-
-    // Protocol message types
-    private static final byte MSG_STARTUP = 'S';
-    private static final byte MSG_AUTH_REQUEST = 'R';
-    private static final byte MSG_AUTH_OK = 'A';
-    private static final byte MSG_QUERY = 'Q';
-    private static final byte MSG_PARSE = 'P';
-    private static final byte MSG_BIND = 'B';
-    private static final byte MSG_DESCRIBE = 'D';
-    private static final byte MSG_EXECUTE = 'E';
-    private static final byte MSG_SYNC = 'Y';
-    private static final byte MSG_CLOSE = 'C';
-    private static final byte MSG_TERMINATE = 'X';
-    private static final byte MSG_ROW_DESCRIPTION = 'T';
-    private static final byte MSG_DATA_ROW = 'D';
-    private static final byte MSG_COMMAND_COMPLETE = 'C';
-    private static final byte MSG_READY_FOR_QUERY = 'Z';
-    private static final byte MSG_ERROR = 'E';
-    private static final byte MSG_NOTICE = 'N';
-    private static final byte MSG_PARAMETER_STATUS = 'S';
-    private static final byte MSG_CANCEL_REQUEST = 'F';
-    private static final byte MSG_BACKEND_KEY_DATA = 'K';
-
-    // Protocol version
+    private static final int PROTOCOL_MAGIC = 0x53425750;
     private static final int PROTOCOL_VERSION_MAJOR = 1;
-    private static final int PROTOCOL_VERSION_MINOR = 0;
+    private static final int PROTOCOL_VERSION_MINOR = 1;
+    private static final int HEADER_SIZE = 40;
+    private static final int MAX_MESSAGE_SIZE = 1024 * 1024 * 1024;
 
-    // Connection properties
+    private static final byte MSG_STARTUP = 0x01;
+    private static final byte MSG_AUTH_RESPONSE = 0x02;
+    private static final byte MSG_QUERY = 0x03;
+    private static final byte MSG_PARSE = 0x04;
+    private static final byte MSG_BIND = 0x05;
+    private static final byte MSG_DESCRIBE = 0x06;
+    private static final byte MSG_EXECUTE = 0x07;
+    private static final byte MSG_CLOSE = 0x08;
+    private static final byte MSG_SYNC = 0x09;
+    private static final byte MSG_FLUSH = 0x0A;
+    private static final byte MSG_CANCEL = 0x0B;
+
+    private static final byte MSG_AUTH_REQUEST = 0x40;
+    private static final byte MSG_AUTH_OK = 0x41;
+    private static final byte MSG_AUTH_CONTINUE = 0x42;
+    private static final byte MSG_READY = 0x43;
+    private static final byte MSG_ROW_DESCRIPTION = 0x44;
+    private static final byte MSG_DATA_ROW = 0x45;
+    private static final byte MSG_COMMAND_COMPLETE = 0x46;
+    private static final byte MSG_EMPTY_QUERY = 0x47;
+    private static final byte MSG_ERROR = 0x48;
+    private static final byte MSG_NOTICE = 0x49;
+    private static final byte MSG_PARSE_COMPLETE = 0x4A;
+    private static final byte MSG_BIND_COMPLETE = 0x4B;
+    private static final byte MSG_CLOSE_COMPLETE = 0x4C;
+    private static final byte MSG_PORTAL_SUSPENDED = 0x4D;
+    private static final byte MSG_NO_DATA = 0x4E;
+    private static final byte MSG_PARAMETER_STATUS = 0x4F;
+    private static final byte MSG_NEGOTIATE_VERSION = 0x56;
+    private static final byte MSG_TXN_STATUS = 0x5C;
+    private static final byte MSG_PONG = 0x5D;
+
+    private static final int AUTH_OK = 0;
+    private static final int AUTH_PASSWORD = 1;
+    private static final int AUTH_SCRAM_SHA_256 = 3;
+
+    private static final byte MSG_FLAG_URGENT = 0x08;
+
+    private static final long FEATURE_STREAMING = 1L << 1;
+
+    private static final int QUERY_FLAG_BINARY_RESULT = 0x04;
+
     private final SBConnectionProperties props;
 
-    // Network I/O
     private Socket socket;
     private InputStream inputStream;
     private OutputStream outputStream;
-    private DataInputStream dataInput;
-    private DataOutputStream dataOutput;
 
-    // Connection state
     private boolean connected = false;
-    private int processId;
-    private int secretKey;
     private int networkTimeout = 0;
+    private int sequence = 0;
+    private byte[] attachmentId = new byte[16];
+    private long txnId = 0;
 
-    // Server parameters
-    private Map<String, String> serverParameters = new HashMap<>();
-
-    // Buffer for message construction
-    private ByteArrayOutputStream messageBuffer = new ByteArrayOutputStream(8192);
-    private DataOutputStream messageOutput = new DataOutputStream(messageBuffer);
-
+    private final Map<String, String> serverParameters = new HashMap<>();
     private SBScramClient scramClient;
 
-    /**
-     * Creates a new protocol handler.
-     *
-     * @param props connection properties
-     */
     public SBProtocolHandler(SBConnectionProperties props) {
         this.props = props;
     }
 
-    /**
-     * Establishes connection to the server.
-     *
-     * @throws SQLException if connection fails
-     */
     public void connect() throws SQLException {
         try {
-            // Create socket
             socket = new Socket();
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(props.isTcpKeepAlive());
-
             if (props.getSocketTimeout() > 0) {
                 socket.setSoTimeout(props.getSocketTimeout() * 1000);
             }
 
-            // Connect with timeout
             InetSocketAddress address = new InetSocketAddress(props.getHost(), props.getPort());
             socket.connect(address, props.getConnectTimeout() * 1000);
 
-            // Setup streams
-            inputStream = new BufferedInputStream(socket.getInputStream(), 65536);
-            outputStream = new BufferedOutputStream(socket.getOutputStream(), 65536);
-            dataInput = new DataInputStream(inputStream);
-            dataOutput = new DataOutputStream(outputStream);
-
-            // Upgrade to SSL if needed
             String sslMode = props.getSslMode();
-            if (sslMode != null && !"disable".equalsIgnoreCase(sslMode)) {
-                boolean allowFallback = "allow".equalsIgnoreCase(sslMode) ||
-                                        "prefer".equalsIgnoreCase(sslMode);
-                upgradeToSSL(allowFallback);
+            if (sslMode == null || sslMode.isEmpty()) {
+                sslMode = "require";
             }
+            if ("disable".equalsIgnoreCase(sslMode)) {
+                throw new SQLException("TLS is required for ScratchBird connections", "08001");
+            }
+            upgradeToSSL(sslMode);
 
-            // Send startup message
             sendStartupMessage();
-
-            // Handle authentication
             handleAuthentication();
-
             connected = true;
 
         } catch (IOException e) {
@@ -134,457 +138,692 @@ public class SBProtocolHandler {
         }
     }
 
-    /**
-     * Sends startup message to server.
-     */
-    private void sendStartupMessage() throws IOException {
-        messageBuffer.reset();
-
-        // Protocol version (4 bytes)
-        messageOutput.writeInt((PROTOCOL_VERSION_MAJOR << 16) | PROTOCOL_VERSION_MINOR);
-
-        // Parameters (key=value pairs, null terminated)
-        writeString("user");
-        writeString(props.getUser() != null ? props.getUser() : "");
-
-        writeString("database");
-        writeString(props.getDatabase() != null ? props.getDatabase() : "");
-
-        if (props.getApplicationName() != null) {
-            writeString("application_name");
-            writeString(props.getApplicationName());
-        }
-
-        writeString("client_encoding");
-        writeString("UTF8");
-
-        // Terminate parameters list
-        messageOutput.writeByte(0);
-
-        // Send message (length prefix + content)
-        byte[] message = messageBuffer.toByteArray();
-        dataOutput.writeInt(message.length + 4);  // Length includes itself
-        dataOutput.write(message);
-        dataOutput.flush();
-    }
-
-    /**
-     * Handles authentication handshake.
-     */
-    private void handleAuthentication() throws IOException, SQLException {
-        while (true) {
-            byte type = dataInput.readByte();
-            int length = dataInput.readInt() - 4;
-
-            switch (type) {
-                case MSG_AUTH_REQUEST:
-                    handleAuthRequest(length);
-                    break;
-
-                case MSG_AUTH_OK:
-                    // Authentication successful
-                    break;
-
-                case MSG_PARAMETER_STATUS:
-                    handleParameterStatus(length);
-                    break;
-
-                case MSG_BACKEND_KEY_DATA:
-                    processId = dataInput.readInt();
-                    secretKey = dataInput.readInt();
-                    break;
-
-                case MSG_READY_FOR_QUERY:
-                    dataInput.readByte();  // Transaction status
-                    return;  // Authentication complete
-
-                case MSG_ERROR:
-                    String error = readErrorMessage(length);
-                    throw new SQLException("Authentication failed: " + error, "28000");
-
-                default:
-                    // Skip unknown message
-                    dataInput.skipBytes(length);
-                    break;
-            }
-        }
-    }
-
-    /**
-     * Handles authentication request from server.
-     */
-    private void handleAuthRequest(int length) throws IOException, SQLException {
-        int authType = dataInput.readInt();
-        length -= 4;
-
-        switch (authType) {
-            case 0:  // AuthenticationOk
-                break;
-
-            case 3:  // CleartextPassword
-                sendPasswordMessage(props.getPassword());
-                break;
-
-            case 5:  // MD5Password
-                byte[] salt = new byte[4];
-                dataInput.readFully(salt);
-                String md5Pass = encryptPasswordMD5(props.getPassword(), props.getUser(), salt);
-                sendPasswordMessage(md5Pass);
-                break;
-
-            case 10:  // SASL
-                byte[] mechanisms = new byte[length];
-                dataInput.readFully(mechanisms);
-                handleSASLAuth(mechanisms);
-                break;
-            case 11:  // SASLContinue
-                byte[] serverFirst = new byte[length];
-                dataInput.readFully(serverFirst);
-                handleSASLContinue(new String(serverFirst, StandardCharsets.UTF_8));
-                break;
-            case 12:  // SASLFinal
-                byte[] serverFinal = new byte[length];
-                dataInput.readFully(serverFinal);
-                handleSASLFinal(new String(serverFinal, StandardCharsets.UTF_8));
-                break;
-
-            default:
-                dataInput.skipBytes(length);
-                throw new SQLException("Unsupported authentication type: " + authType, "28000");
-        }
-    }
-
-    /**
-     * Sends password message.
-     */
-    private void sendPasswordMessage(String password) throws IOException {
-        messageBuffer.reset();
-        writeString(password != null ? password : "");
-
-        byte[] message = messageBuffer.toByteArray();
-        dataOutput.writeByte('p');
-        dataOutput.writeInt(message.length + 4);
-        dataOutput.write(message);
-        dataOutput.flush();
-    }
-
-    /**
-     * Encrypts password using MD5.
-     */
-    private String encryptPasswordMD5(String password, String user, byte[] salt) {
-        try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
-
-            // md5(password + user)
-            md.update((password != null ? password : "").getBytes(StandardCharsets.UTF_8));
-            md.update((user != null ? user : "").getBytes(StandardCharsets.UTF_8));
-            byte[] digest1 = md.digest();
-
-            // md5(hex(digest1) + salt)
-            md.reset();
-            md.update(bytesToHex(digest1).getBytes(StandardCharsets.US_ASCII));
-            md.update(salt);
-            byte[] digest2 = md.digest();
-
-            return "md5" + bytesToHex(digest2);
-
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException("MD5 not available", e);
-        }
-    }
-
-    /**
-     * Handles SASL authentication (stub).
-     */
-    private void handleSASLAuth(byte[] mechanismData) throws IOException, SQLException {
-        List<String> mechanisms = new ArrayList<>();
-        StringBuilder sb = new StringBuilder();
-        for (byte b : mechanismData) {
-            if (b == 0) {
-                if (sb.length() > 0) {
-                    mechanisms.add(sb.toString());
-                    sb.setLength(0);
-                }
-            } else {
-                sb.append((char) b);
-            }
-        }
-
-        String selected = null;
-        for (String mech : mechanisms) {
-            if ("SCRAM-SHA-256".equalsIgnoreCase(mech)) {
-                selected = "SCRAM-SHA-256";
-                break;
-            }
-        }
-        if (selected == null) {
-            throw new SQLException("SASL SCRAM-SHA-256 not offered by server", "28000");
-        }
-
-        scramClient = new SBScramClient(props.getUser());
-        String clientFirst = scramClient.getClientFirstMessage();
-        sendSaslInitialResponse(selected, clientFirst);
-    }
-
-    private void handleSASLContinue(String serverFirst) throws IOException, SQLException {
-        if (scramClient == null) {
-            throw new SQLException("SCRAM state missing during SASL continue", "28000");
-        }
-        String clientFinal = scramClient.handleServerFirst(serverFirst, props.getPassword());
-        sendSaslResponse(clientFinal);
-    }
-
-    private void handleSASLFinal(String serverFinal) throws SQLException {
-        if (scramClient == null) {
-            throw new SQLException("SCRAM state missing during SASL final", "28000");
-        }
-        scramClient.verifyServerFinal(serverFinal);
-    }
-
-    private void sendSaslInitialResponse(String mechanism, String initialResponse) throws IOException {
-        byte[] responseBytes = initialResponse.getBytes(StandardCharsets.UTF_8);
-        messageBuffer.reset();
-        writeString(mechanism);
-        messageOutput.writeInt(responseBytes.length);
-        messageOutput.write(responseBytes);
-
-        byte[] message = messageBuffer.toByteArray();
-        dataOutput.writeByte('p');
-        dataOutput.writeInt(message.length + 4);
-        dataOutput.write(message);
-        dataOutput.flush();
-    }
-
-    private void sendSaslResponse(String response) throws IOException {
-        byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-        dataOutput.writeByte('p');
-        dataOutput.writeInt(responseBytes.length + 4);
-        dataOutput.write(responseBytes);
-        dataOutput.flush();
-    }
-
-    /**
-     * Handles parameter status message.
-     */
-    private void handleParameterStatus(int length) throws IOException {
-        String name = readString();
-        String value = readString();
-        serverParameters.put(name, value);
-        LOGGER.log(Level.FINEST, "Server parameter: {0}={1}", new Object[]{name, value});
-    }
-
-    /**
-     * Reads error message from server.
-     */
-    private String readErrorMessage(int length) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        byte[] data = new byte[length];
-        dataInput.readFully(data);
-
-        int pos = 0;
-        while (pos < data.length) {
-            byte field = data[pos++];
-            if (field == 0) break;
-
-            int end = pos;
-            while (end < data.length && data[end] != 0) end++;
-            String value = new String(data, pos, end - pos, StandardCharsets.UTF_8);
-            pos = end + 1;
-
-            switch (field) {
-                case 'S': sb.append("Severity: ").append(value).append("; "); break;
-                case 'C': sb.append("Code: ").append(value).append("; "); break;
-                case 'M': sb.append("Message: ").append(value).append("; "); break;
-                case 'D': sb.append("Detail: ").append(value).append("; "); break;
-                case 'H': sb.append("Hint: ").append(value).append("; "); break;
-            }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Executes a simple query.
-     *
-     * @param sql SQL statement
-     * @return query result
-     * @throws SQLException if execution fails
-     */
     public SBQueryResult execute(String sql) throws SQLException {
+        return execute(sql, Collections.emptyList(), Collections.emptyList(), 0, 0);
+    }
+
+    public SBQueryResult execute(String sql, int maxRows, int timeoutMs) throws SQLException {
+        return execute(sql, Collections.emptyList(), Collections.emptyList(), maxRows, timeoutMs);
+    }
+
+    public SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
+                                 int maxRows, int timeoutMs) throws SQLException {
         try {
-            // Send Query message
-            messageBuffer.reset();
-            writeString(sql);
-
-            byte[] message = messageBuffer.toByteArray();
-            dataOutput.writeByte(MSG_QUERY);
-            dataOutput.writeInt(message.length + 4);
-            dataOutput.write(message);
-            dataOutput.flush();
-
-            // Read response
+            if (params == null || params.isEmpty()) {
+                sendSimpleQuery(sql, maxRows, timeoutMs);
+            } else {
+                sendExtendedQuery(sql, params, paramTypes, maxRows);
+            }
             return readQueryResult();
-
         } catch (IOException e) {
             throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
         }
     }
 
-    /**
-     * Reads query result from server.
-     */
+    public void cancelCurrentQuery() throws SQLException {
+        if (!connected) return;
+        try {
+            sendMessage(MSG_CANCEL, buildCancelPayload(0, 0), MSG_FLAG_URGENT, false);
+        } catch (IOException e) {
+            throw new SQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public boolean isAlive(int timeout) {
+        if (!connected || socket == null || socket.isClosed()) {
+            return false;
+        }
+        try {
+            int oldTimeout = socket.getSoTimeout();
+            socket.setSoTimeout(timeout * 1000);
+            try {
+                sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+                while (true) {
+                    ProtocolMessage msg = readMessage();
+                    if (msg.type == MSG_READY) {
+                        ReadyStatus ready = parseReady(msg.payload);
+                        txnId = ready.txnId;
+                        return true;
+                    }
+                    if (msg.type == MSG_ERROR) {
+                        return false;
+                    }
+                }
+            } finally {
+                socket.setSoTimeout(oldTimeout);
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public void abort() {
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+        } catch (IOException e) {
+            // Ignore
+        }
+        connected = false;
+    }
+
+    public void close() {
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+        } catch (IOException e) {
+            // Ignore
+        }
+        connected = false;
+    }
+
+    public void setNetworkTimeout(int milliseconds) {
+        this.networkTimeout = milliseconds;
+        try {
+            if (socket != null) {
+                socket.setSoTimeout(milliseconds);
+            }
+        } catch (IOException e) {
+            // Ignore
+        }
+    }
+
+    public int getNetworkTimeout() {
+        return networkTimeout;
+    }
+
+    public String getServerParameter(String name) {
+        return serverParameters.get(name);
+    }
+
+    private void sendStartupMessage() throws IOException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("database", props.getDatabase() != null ? props.getDatabase() : "");
+        params.put("user", props.getUser() != null ? props.getUser() : "");
+        if (props.getApplicationName() != null) {
+            params.put("application_name", props.getApplicationName());
+        }
+
+        long features = 0;
+        if (props.isBinaryTransfer()) {
+            features |= FEATURE_STREAMING;
+        }
+
+        byte[] payload = buildStartupPayload(features, params);
+        sendMessage(MSG_STARTUP, payload, (byte) 0, true);
+    }
+
+    private void handleAuthentication() throws IOException, SQLException {
+        while (true) {
+            ProtocolMessage msg = readMessage();
+            switch (msg.type) {
+                case MSG_NEGOTIATE_VERSION:
+                    continue;
+                case MSG_AUTH_REQUEST: {
+                    AuthRequest request = parseAuthRequest(msg.payload);
+                    if (request.method == AUTH_OK) {
+                        continue;
+                    }
+                    if (request.method == AUTH_PASSWORD) {
+                        byte[] response = props.getPassword() != null
+                            ? props.getPassword().getBytes(StandardCharsets.UTF_8) : new byte[0];
+                        sendMessage(MSG_AUTH_RESPONSE, response, (byte) 0, true);
+                        continue;
+                    }
+                    if (request.method == AUTH_SCRAM_SHA_256) {
+                        if (scramClient == null) {
+                            scramClient = new SBScramClient(props.getUser());
+                        }
+                        String clientFirst = scramClient.getClientFirstMessage();
+                        sendMessage(MSG_AUTH_RESPONSE, clientFirst.getBytes(StandardCharsets.UTF_8), (byte) 0, true);
+                        continue;
+                    }
+                    throw new SQLException("Unsupported authentication method", "28000");
+                }
+                case MSG_AUTH_CONTINUE: {
+                    AuthContinue cont = parseAuthContinue(msg.payload);
+                    if (cont.method != AUTH_SCRAM_SHA_256 || scramClient == null) {
+                        throw new SQLException("Unsupported SCRAM continuation", "28000");
+                    }
+                    String clientFinal = scramClient.handleServerFirst(
+                        new String(cont.data, StandardCharsets.UTF_8), props.getPassword());
+                    sendMessage(MSG_AUTH_RESPONSE, clientFinal.getBytes(StandardCharsets.UTF_8), (byte) 0, true);
+                    continue;
+                }
+                case MSG_AUTH_OK: {
+                    AuthOk ok = parseAuthOk(msg.payload);
+                    attachmentId = msg.attachmentId;
+                    txnId = msg.txnId;
+                    if (scramClient != null && ok.serverInfo.length > 0) {
+                        String info = new String(ok.serverInfo, StandardCharsets.UTF_8);
+                        if (info.startsWith("v=")) {
+                            scramClient.verifyServerFinal(info);
+                        }
+                    }
+                    continue;
+                }
+                case MSG_PARAMETER_STATUS: {
+                    ParameterStatus status = parseParameterStatus(msg.payload);
+                    serverParameters.put(status.name, status.value);
+                    continue;
+                }
+                case MSG_READY: {
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
+                    return;
+                }
+                case MSG_ERROR: {
+                    ProtocolError error = parseErrorMessage(msg.payload);
+                    throw new SQLException(buildErrorMessage(error), error.sqlState != null ? error.sqlState : "28000");
+                }
+                default:
+                    continue;
+            }
+        }
+    }
+
     private SBQueryResult readQueryResult() throws IOException, SQLException {
         SBQueryResult result = new SBQueryResult();
         List<SBColumnInfo> columns = new ArrayList<>();
         List<Object[]> rows = new ArrayList<>();
+        long updateCount = -1;
+        String commandTag = null;
 
         while (true) {
-            byte type = dataInput.readByte();
-            int length = dataInput.readInt() - 4;
-
-            switch (type) {
+            ProtocolMessage msg = readMessage();
+            switch (msg.type) {
                 case MSG_ROW_DESCRIPTION:
-                    columns = readRowDescription(length);
+                    columns = parseRowDescription(msg.payload);
                     result.setColumns(columns);
                     break;
-
                 case MSG_DATA_ROW:
-                    Object[] row = readDataRow(length, columns);
-                    rows.add(row);
+                    rows.add(parseDataRow(msg.payload, columns));
                     break;
-
-                case MSG_COMMAND_COMPLETE:
-                    String tag = readString();
-                    result.setCommandTag(tag);
-                    result.setUpdateCount(parseUpdateCount(tag));
+                case MSG_COMMAND_COMPLETE: {
+                    CommandComplete complete = parseCommandComplete(msg.payload);
+                    commandTag = complete.tag;
+                    updateCount = complete.rows;
                     break;
-
-                case MSG_READY_FOR_QUERY:
-                    dataInput.readByte();  // Transaction status
+                }
+                case MSG_PARAMETER_STATUS: {
+                    ParameterStatus status = parseParameterStatus(msg.payload);
+                    serverParameters.put(status.name, status.value);
+                    break;
+                }
+                case MSG_READY: {
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
                     result.setRows(rows);
+                    result.setCommandTag(commandTag);
+                    if (updateCount >= 0) {
+                        result.setUpdateCount(updateCount);
+                    } else {
+                        result.setUpdateCount(rows.size());
+                    }
                     return result;
-
-                case MSG_ERROR:
-                    String error = readErrorMessage(length);
-                    throw new SQLException(error, "42000");
-
+                }
+                case MSG_ERROR: {
+                    ProtocolError error = parseErrorMessage(msg.payload);
+                    throw new SQLException(buildErrorMessage(error),
+                        error.sqlState != null ? error.sqlState : "42000");
+                }
                 case MSG_NOTICE:
-                    // Just skip notices for now
-                    dataInput.skipBytes(length);
+                case MSG_PARSE_COMPLETE:
+                case MSG_BIND_COMPLETE:
+                case MSG_CLOSE_COMPLETE:
+                case MSG_NO_DATA:
+                case MSG_PORTAL_SUSPENDED:
+                case MSG_EMPTY_QUERY:
+                case MSG_TXN_STATUS:
+                case MSG_PONG:
                     break;
-
-                case MSG_PARAMETER_STATUS:
-                    handleParameterStatus(length);
-                    break;
-
                 default:
-                    dataInput.skipBytes(length);
                     break;
             }
         }
     }
 
-    /**
-     * Reads row description (column metadata).
-     */
-    private List<SBColumnInfo> readRowDescription(int length) throws IOException {
-        int columnCount = dataInput.readShort();
-        List<SBColumnInfo> columns = new ArrayList<>(columnCount);
+    private void sendSimpleQuery(String sql, int maxRows, int timeoutMs) throws IOException {
+        int flags = props.isBinaryTransfer() ? QUERY_FLAG_BINARY_RESULT : 0;
+        byte[] payload = buildQueryPayload(sql, flags, maxRows, timeoutMs);
+        sendMessage(MSG_QUERY, payload, (byte) 0, false);
+    }
 
-        for (int i = 0; i < columnCount; i++) {
+    private void sendExtendedQuery(String sql, List<Object> params, List<Integer> paramTypes,
+                                   int maxRows) throws IOException, SQLException {
+        List<SBTypeCodec.ParamEncoding> encoded = new ArrayList<>();
+        List<Integer> oids = new ArrayList<>();
+        for (int i = 0; i < params.size(); i++) {
+            Integer sqlType = (paramTypes != null && i < paramTypes.size()) ? paramTypes.get(i) : null;
+            SBTypeCodec.ParamEncoding enc = SBTypeCodec.encodeParam(params.get(i), sqlType);
+            encoded.add(enc);
+            oids.add(enc.getOid());
+        }
+
+        byte[] parsePayload = buildParsePayload("", sql, oids);
+        sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
+
+        int[] resultFormats = props.isBinaryTransfer() ? new int[]{SBTypeCodec.FORMAT_BINARY} : new int[0];
+        byte[] bindPayload = buildBindPayload("", "", encoded, resultFormats);
+        sendMessage(MSG_BIND, bindPayload, (byte) 0, false);
+
+        byte[] execPayload = buildExecutePayload("", maxRows);
+        sendMessage(MSG_EXECUTE, execPayload, (byte) 0, false);
+        sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+    }
+
+    private byte[] buildStartupPayload(long features, Map<String, String> params) {
+        byte[] paramBytes = buildParamList(params);
+        ByteBuffer buf = ByteBuffer.allocate(2 + 2 + 8 + paramBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put((byte) PROTOCOL_VERSION_MAJOR);
+        buf.put((byte) PROTOCOL_VERSION_MINOR);
+        buf.putShort((short) 0);
+        buf.putLong(features);
+        buf.put(paramBytes);
+        return buf.array();
+    }
+
+    private byte[] buildParamList(Map<String, String> params) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                out.write(entry.getKey().getBytes(StandardCharsets.UTF_8));
+                out.write(0);
+                out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                out.write(0);
+            }
+            out.write(0);
+        } catch (IOException e) {
+            // ByteArrayOutputStream does not throw
+        }
+        return out.toByteArray();
+    }
+
+    private byte[] buildQueryPayload(String sql, int flags, int maxRows, int timeoutMs) {
+        byte[] sqlBytes = sql.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(12 + sqlBytes.length + 1).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(flags);
+        buf.putInt(maxRows);
+        buf.putInt(timeoutMs);
+        buf.put(sqlBytes);
+        buf.put((byte) 0);
+        return buf.array();
+    }
+
+    private byte[] buildParsePayload(String statementName, String sql, List<Integer> paramTypes) {
+        byte[] nameBytes = statementName.getBytes(StandardCharsets.UTF_8);
+        byte[] sqlBytes = sql.getBytes(StandardCharsets.UTF_8);
+        int count = paramTypes != null ? paramTypes.size() : 0;
+        int length = 4 + nameBytes.length + 4 + sqlBytes.length + 2 + 2 + (count * 4);
+        ByteBuffer buf = ByteBuffer.allocate(length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(nameBytes.length);
+        buf.put(nameBytes);
+        buf.putInt(sqlBytes.length);
+        buf.put(sqlBytes);
+        buf.putShort((short) count);
+        buf.putShort((short) 0);
+        if (paramTypes != null) {
+            for (int oid : paramTypes) {
+                buf.putInt(oid);
+            }
+        }
+        return buf.array();
+    }
+
+    private byte[] buildBindPayload(String portalName, String statementName,
+                                    List<SBTypeCodec.ParamEncoding> params, int[] resultFormats) {
+        byte[] portalBytes = portalName.getBytes(StandardCharsets.UTF_8);
+        byte[] stmtBytes = statementName.getBytes(StandardCharsets.UTF_8);
+        int paramCount = params != null ? params.size() : 0;
+
+        int length = 4 + portalBytes.length + 4 + stmtBytes.length;
+        length += 2 + (paramCount * 2);
+        length += 2 + 2;
+        for (SBTypeCodec.ParamEncoding param : params) {
+            length += 4;
+            if (!param.isNull() && param.getData() != null) {
+                length += param.getData().length;
+            }
+        }
+        length += 2 + (resultFormats != null ? resultFormats.length * 2 : 0);
+
+        ByteBuffer buf = ByteBuffer.allocate(length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(portalBytes.length);
+        buf.put(portalBytes);
+        buf.putInt(stmtBytes.length);
+        buf.put(stmtBytes);
+        buf.putShort((short) paramCount);
+        for (SBTypeCodec.ParamEncoding param : params) {
+            buf.putShort((short) param.getFormat());
+        }
+        buf.putShort((short) paramCount);
+        buf.putShort((short) 0);
+        for (SBTypeCodec.ParamEncoding param : params) {
+            if (param.isNull()) {
+                buf.putInt(-1);
+                continue;
+            }
+            byte[] data = param.getData() != null ? param.getData() : new byte[0];
+            buf.putInt(data.length);
+            buf.put(data);
+        }
+        if (resultFormats == null) {
+            buf.putShort((short) 0);
+        } else {
+            buf.putShort((short) resultFormats.length);
+            for (int fmt : resultFormats) {
+                buf.putShort((short) fmt);
+            }
+        }
+        return buf.array();
+    }
+
+    private byte[] buildExecutePayload(String portalName, int maxRows) {
+        byte[] portalBytes = portalName.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + portalBytes.length + 4).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(portalBytes.length);
+        buf.put(portalBytes);
+        buf.putInt(maxRows);
+        return buf.array();
+    }
+
+    private byte[] buildCancelPayload(int cancelType, int targetSequence) {
+        ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(cancelType);
+        buf.putInt(targetSequence);
+        return buf.array();
+    }
+
+    private int sendMessage(byte type, byte[] payload, byte flags, boolean forceZero) throws IOException {
+        int seq = sequence++;
+        ByteBuffer buf = ByteBuffer.allocate(HEADER_SIZE + payload.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(PROTOCOL_MAGIC);
+        buf.put((byte) PROTOCOL_VERSION_MAJOR);
+        buf.put((byte) PROTOCOL_VERSION_MINOR);
+        buf.put(type);
+        buf.put(flags);
+        buf.putInt(payload.length);
+        buf.putInt(seq);
+        if (forceZero) {
+            buf.put(new byte[16]);
+            buf.putLong(0);
+        } else {
+            buf.put(attachmentId);
+            buf.putLong(txnId);
+        }
+        buf.put(payload);
+        outputStream.write(buf.array());
+        outputStream.flush();
+        return seq;
+    }
+
+    private ProtocolMessage readMessage() throws IOException {
+        byte[] header = new byte[HEADER_SIZE];
+        readFully(header);
+        ByteBuffer buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+        int magic = buf.getInt();
+        if (magic != PROTOCOL_MAGIC) {
+            throw new IOException("Invalid protocol magic");
+        }
+        int major = buf.get() & 0xff;
+        int minor = buf.get() & 0xff;
+        if (major != PROTOCOL_VERSION_MAJOR || minor != PROTOCOL_VERSION_MINOR) {
+            throw new IOException("Unsupported protocol version");
+        }
+        byte type = buf.get();
+        byte flags = buf.get();
+        int length = buf.getInt();
+        if (length > MAX_MESSAGE_SIZE) {
+            throw new IOException("Message too large");
+        }
+        int sequence = buf.getInt();
+        byte[] attach = new byte[16];
+        buf.get(attach);
+        long txnId = buf.getLong();
+        byte[] payload = new byte[length];
+        if (length > 0) {
+            readFully(payload);
+        }
+        return new ProtocolMessage(type, flags, length, sequence, attach, txnId, payload);
+    }
+
+    private void readFully(byte[] buffer) throws IOException {
+        int offset = 0;
+        while (offset < buffer.length) {
+            int read = inputStream.read(buffer, offset, buffer.length - offset);
+            if (read < 0) {
+                throw new EOFException("Connection closed");
+            }
+            offset += read;
+        }
+    }
+
+    private List<SBColumnInfo> parseRowDescription(byte[] payload) throws SQLException {
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int count = Short.toUnsignedInt(buf.getShort());
+        buf.getShort();
+        List<SBColumnInfo> columns = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            int nameLen = buf.getInt();
+            byte[] nameBytes = new byte[nameLen];
+            buf.get(nameBytes);
+            String name = new String(nameBytes, StandardCharsets.UTF_8);
+            int tableOid = buf.getInt();
+            int columnIndex = Short.toUnsignedInt(buf.getShort());
+            int typeOid = buf.getInt();
+            short typeSize = buf.getShort();
+            int typeModifier = buf.getInt();
+            short format = (short) (buf.get() & 0xff);
+            boolean nullable = buf.get() == 1;
+            buf.getShort();
+
             SBColumnInfo col = new SBColumnInfo();
-            col.setName(readString());
-            col.setTableOid(dataInput.readInt());
-            col.setColumnNumber(dataInput.readShort());
-            col.setTypeOid(dataInput.readInt());
-            col.setTypeSize(dataInput.readShort());
-            col.setTypeModifier(dataInput.readInt());
-            col.setFormatCode(dataInput.readShort());
+            col.setName(name);
+            col.setTableOid(tableOid);
+            col.setColumnNumber((short) columnIndex);
+            col.setTypeOid(typeOid);
+            col.setTypeSize(typeSize);
+            col.setTypeModifier(typeModifier);
+            col.setFormatCode(format);
+            col.setNullable(nullable);
             columns.add(col);
         }
         return columns;
     }
 
-    /**
-     * Reads a data row.
-     */
-    private Object[] readDataRow(int length, List<SBColumnInfo> columns) throws IOException {
-        int columnCount = dataInput.readShort();
-        Object[] row = new Object[columnCount];
-
-        for (int i = 0; i < columnCount; i++) {
-            int valueLength = dataInput.readInt();
-            if (valueLength == -1) {
-                row[i] = null;  // NULL value
-            } else {
-                byte[] data = new byte[valueLength];
-                dataInput.readFully(data);
-                row[i] = parseValue(data, columns.get(i));
+    private Object[] parseDataRow(byte[] payload, List<SBColumnInfo> columns) throws SQLException {
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int count = Short.toUnsignedInt(buf.getShort());
+        int nullBytes = Short.toUnsignedInt(buf.getShort());
+        byte[] nullBitmap = new byte[nullBytes];
+        buf.get(nullBitmap);
+        Object[] row = new Object[count];
+        for (int i = 0; i < count; i++) {
+            boolean isNull = false;
+            if (nullBytes > 0) {
+                isNull = (nullBitmap[i / 8] & (1 << (i % 8))) != 0;
             }
+            if (isNull) {
+                row[i] = null;
+                continue;
+            }
+            int len = buf.getInt();
+            if (len < 0) {
+                row[i] = null;
+                continue;
+            }
+            byte[] data = new byte[len];
+            buf.get(data);
+            SBColumnInfo col = columns.get(i);
+            row[i] = SBTypeCodec.decodeValue(col.getTypeOid(), data, col.getFormatCode());
         }
         return row;
     }
 
-    /**
-     * Parses a value based on column type.
-     */
-    private Object parseValue(byte[] data, SBColumnInfo column) throws IOException {
-        if (column.getFormatCode() == 1) {
-            return parseBinaryValue(data, column.getTypeOid());
+    private CommandComplete parseCommandComplete(byte[] payload) {
+        if (payload.length < 20) {
+            return new CommandComplete(0, 0, "");
         }
-        return parseTextValue(new String(data, StandardCharsets.UTF_8), column.getTypeOid());
-    }
-
-    /**
-     * Parses update count from command tag.
-     */
-    private long parseUpdateCount(String tag) {
-        if (tag == null) return 0;
-        String[] parts = tag.split(" ");
-        if (parts.length >= 2) {
-            try {
-                return Long.parseLong(parts[parts.length - 1]);
-            } catch (NumberFormatException e) {
-                // Ignore
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        buf.get();
+        buf.get(new byte[3]);
+        long rows = buf.getLong();
+        long lastId = buf.getLong();
+        byte[] tagBytes = new byte[payload.length - 20];
+        buf.get(tagBytes);
+        int nullIdx = -1;
+        for (int i = 0; i < tagBytes.length; i++) {
+            if (tagBytes[i] == 0) {
+                nullIdx = i;
+                break;
             }
         }
-        return 0;
+        String tag = nullIdx >= 0
+            ? new String(tagBytes, 0, nullIdx, StandardCharsets.UTF_8)
+            : new String(tagBytes, StandardCharsets.UTF_8);
+        return new CommandComplete(rows, lastId, tag);
     }
 
-    /**
-     * Upgrades connection to SSL.
-     */
-    private void upgradeToSSL(boolean allowFallback) throws IOException, SQLException {
-        // Send SSLRequest
-        dataOutput.writeInt(8);  // Length
-        dataOutput.writeInt(80877103);  // SSL request code
-        dataOutput.flush();
-
-        // Read response
-        int response = inputStream.read();
-        if (response != 'S') {
-            if (allowFallback && response == 'N') {
-                return;
+    private ProtocolError parseErrorMessage(byte[] payload) {
+        String severity = null;
+        String sqlState = null;
+        String message = null;
+        String detail = null;
+        String hint = null;
+        int pos = 0;
+        while (pos < payload.length) {
+            byte field = payload[pos++];
+            if (field == 0) {
+                break;
             }
-            throw new SQLException("Server does not support SSL", "08001");
+            int start = pos;
+            while (pos < payload.length && payload[pos] != 0) {
+                pos++;
+            }
+            if (pos >= payload.length) {
+                break;
+            }
+            String value = new String(payload, start, pos - start, StandardCharsets.UTF_8);
+            pos++;
+            switch ((char) field) {
+                case 'S':
+                    severity = value;
+                    break;
+                case 'C':
+                    sqlState = value;
+                    break;
+                case 'M':
+                    message = value;
+                    break;
+                case 'D':
+                    detail = value;
+                    break;
+                case 'H':
+                    hint = value;
+                    break;
+                default:
+                    break;
+            }
         }
+        return new ProtocolError(severity, sqlState, message, detail, hint);
+    }
 
-        // Upgrade to SSL socket
+    private String buildErrorMessage(ProtocolError error) {
+        if (error == null) {
+            return "query failed";
+        }
+        StringBuilder sb = new StringBuilder();
+        if (error.message != null) {
+            sb.append(error.message);
+        }
+        if (error.detail != null && !error.detail.isEmpty()) {
+            if (sb.length() > 0) sb.append("\n");
+            sb.append("DETAIL: ").append(error.detail);
+        }
+        if (error.hint != null && !error.hint.isEmpty()) {
+            if (sb.length() > 0) sb.append("\n");
+            sb.append("HINT: ").append(error.hint);
+        }
+        return sb.length() > 0 ? sb.toString() : "query failed";
+    }
+
+    private AuthRequest parseAuthRequest(byte[] payload) {
+        if (payload.length < 4) {
+            return new AuthRequest(AUTH_OK, new byte[0]);
+        }
+        int method = payload[0] & 0xff;
+        byte[] data = Arrays.copyOfRange(payload, 4, payload.length);
+        return new AuthRequest(method, data);
+    }
+
+    private AuthContinue parseAuthContinue(byte[] payload) {
+        if (payload.length < 8) {
+            return new AuthContinue(AUTH_OK, 0, new byte[0]);
+        }
+        int method = payload[0] & 0xff;
+        int stage = payload[1] & 0xff;
+        int dataLen = ByteBuffer.wrap(payload, 4, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        int end = Math.min(payload.length, 8 + dataLen);
+        byte[] data = Arrays.copyOfRange(payload, 8, end);
+        return new AuthContinue(method, stage, data);
+    }
+
+    private AuthOk parseAuthOk(byte[] payload) {
+        if (payload.length < 20) {
+            return new AuthOk(new byte[16], new byte[0]);
+        }
+        byte[] sessionId = Arrays.copyOfRange(payload, 0, 16);
+        int infoLen = ByteBuffer.wrap(payload, 16, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        int end = Math.min(payload.length, 20 + infoLen);
+        byte[] serverInfo = Arrays.copyOfRange(payload, 20, end);
+        return new AuthOk(sessionId, serverInfo);
+    }
+
+    private ParameterStatus parseParameterStatus(byte[] payload) {
+        if (payload.length < 8) {
+            return new ParameterStatus("", "");
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int nameLen = buf.getInt();
+        byte[] nameBytes = new byte[nameLen];
+        buf.get(nameBytes);
+        int valueLen = buf.getInt();
+        byte[] valueBytes = new byte[valueLen];
+        buf.get(valueBytes);
+        return new ParameterStatus(new String(nameBytes, StandardCharsets.UTF_8),
+            new String(valueBytes, StandardCharsets.UTF_8));
+    }
+
+    private ReadyStatus parseReady(byte[] payload) {
+        if (payload.length < 20) {
+            return new ReadyStatus((byte) 0, 0, 0);
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        byte status = buf.get();
+        buf.get(new byte[3]);
+        long txn = buf.getLong();
+        long visibility = buf.getLong();
+        return new ReadyStatus(status, txn, visibility);
+    }
+
+    private void upgradeToSSL(String sslMode) throws IOException, SQLException {
         SSLSocketFactory factory = createSslContext().getSocketFactory();
-        SSLSocket sslSocket = (SSLSocket) factory.createSocket(
-            socket, props.getHost(), props.getPort(), true);
-        if ("verify-full".equalsIgnoreCase(props.getSslMode())) {
+        SSLSocket sslSocket = (SSLSocket) factory.createSocket(socket, props.getHost(), props.getPort(), true);
+        if ("verify-full".equalsIgnoreCase(sslMode)) {
             SSLParameters params = sslSocket.getSSLParameters();
             params.setEndpointIdentificationAlgorithm("HTTPS");
             sslSocket.setSSLParameters(params);
         }
         sslSocket.startHandshake();
+        if (props.getSocketTimeout() > 0) {
+            sslSocket.setSoTimeout(props.getSocketTimeout() * 1000);
+        }
 
-        // Replace streams
         socket = sslSocket;
         inputStream = new BufferedInputStream(socket.getInputStream(), 65536);
         outputStream = new BufferedOutputStream(socket.getOutputStream(), 65536);
-        dataInput = new DataInputStream(inputStream);
-        dataOutput = new DataOutputStream(outputStream);
     }
 
     private SSLContext createSslContext() throws SQLException {
@@ -638,420 +877,106 @@ public class SBProtocolHandler {
         return kmf.getKeyManagers();
     }
 
-    private Object parseBinaryValue(byte[] data, int oid) {
-        ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN);
-        switch (oid) {
-            case 16:  // bool
-                return data[0] != 0;
-            case 21:  // int2
-                return buf.getShort();
-            case 23:  // int4
-                return buf.getInt();
-            case 20:  // int8
-                return buf.getLong();
-            case 700: // float4
-                return buf.getFloat();
-            case 701: // float8
-                return buf.getDouble();
-            case 17:  // bytea
-                return data;
-            case 2950: // uuid
-                long msb = buf.getLong();
-                long lsb = buf.getLong();
-                return new java.util.UUID(msb, lsb);
-            default:
-                return new String(data, StandardCharsets.UTF_8);
+    private static final class ProtocolMessage {
+        final byte type;
+        final byte flags;
+        final int length;
+        final int sequence;
+        final byte[] attachmentId;
+        final long txnId;
+        final byte[] payload;
+
+        ProtocolMessage(byte type, byte flags, int length, int sequence,
+                        byte[] attachmentId, long txnId, byte[] payload) {
+            this.type = type;
+            this.flags = flags;
+            this.length = length;
+            this.sequence = sequence;
+            this.attachmentId = attachmentId;
+            this.txnId = txnId;
+            this.payload = payload;
         }
     }
 
-    private Object parseTextValue(String text, int oid) {
-        switch (oid) {
-            case 16:   // bool
-                return "t".equals(text) || "true".equalsIgnoreCase(text);
-            case 21:   // int2
-                return Short.parseShort(text);
-            case 23:   // int4
-                return Integer.parseInt(text);
-            case 20:   // int8
-                return Long.parseLong(text);
-            case 700:  // float4
-                return Float.parseFloat(text);
-            case 701:  // float8
-                return Double.parseDouble(text);
-            case 1700: // numeric
-                return new java.math.BigDecimal(text);
-            case 17:   // bytea
-                return decodeBytea(text);
-            case 1082: // date
-                return java.sql.Date.valueOf(text);
-            case 1083: // time
-                return java.sql.Time.valueOf(text);
-            case 1114: // timestamp
-            case 1184: // timestamptz
-                return java.sql.Timestamp.valueOf(text.replace('T', ' '));
-            case 2950: // uuid
-                return java.util.UUID.fromString(text);
-            case 869:  // inet
-            case 650:  // cidr
-                return text;
-            case 114:  // json
-            case 3802: // jsonb
-                return text;
-            case 1000: // bool[]
-                return buildArray("boolean", text);
-            case 1001: // bytea[]
-                return buildArray("bytea", text);
-            case 1005: // int2[]
-                return buildArray("smallint", text);
-            case 1007: // int4[]
-                return buildArray("integer", text);
-            case 1016: // int8[]
-                return buildArray("bigint", text);
-            case 1021: // float4[]
-                return buildArray("real", text);
-            case 1022: // float8[]
-                return buildArray("double precision", text);
-            case 1009: // text[]
-            case 1015: // varchar[]
-                return buildArray("text", text);
-            case 1182: // date[]
-                return buildArray("date", text);
-            case 1115: // timestamp[]
-            case 1185: // timestamptz[]
-                return buildArray("timestamp", text);
-            case 2951: // uuid[]
-                return buildArray("uuid", text);
-            default:
-                return text;
+    private static final class AuthRequest {
+        final int method;
+        final byte[] data;
+
+        AuthRequest(int method, byte[] data) {
+            this.method = method;
+            this.data = data;
         }
     }
 
-    private SBArray buildArray(String baseType, String literal) {
-        Object[] elements = parseArrayLiteral(literal);
-        Object[] converted = convertArrayElements(baseType, elements);
-        return new SBArray(baseType, converted);
-    }
+    private static final class AuthContinue {
+        final int method;
+        final int stage;
+        final byte[] data;
 
-    private Object[] parseArrayLiteral(String literal) {
-        if (literal == null) {
-            return new Object[0];
-        }
-        String trimmed = literal.trim();
-        if (trimmed.equals("{}")) {
-            return new Object[0];
-        }
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-            return new Object[]{trimmed};
-        }
-        ParseResult result = parseArray(trimmed, 0);
-        return result.items.toArray(new Object[0]);
-    }
-
-    private static class ParseResult {
-        final List<Object> items;
-        final int nextIdx;
-
-        ParseResult(List<Object> items, int nextIdx) {
-            this.items = items;
-            this.nextIdx = nextIdx;
+        AuthContinue(int method, int stage, byte[] data) {
+            this.method = method;
+            this.stage = stage;
+            this.data = data;
         }
     }
 
-    private ParseResult parseArray(String text, int start) {
-        List<Object> items = new ArrayList<>();
-        StringBuilder token = new StringBuilder();
-        boolean inQuotes = false;
-        boolean tokenActive = false;
-        boolean tokenQuoted = false;
-        int i = start + 1;
+    private static final class AuthOk {
+        final byte[] sessionId;
+        final byte[] serverInfo;
 
-        while (i < text.length()) {
-            char ch = text.charAt(i);
-            if (inQuotes) {
-                if (ch == '\\' && i + 1 < text.length()) {
-                    token.append(text.charAt(i + 1));
-                    i += 2;
-                    continue;
-                }
-                if (ch == '"') {
-                    inQuotes = false;
-                    tokenQuoted = true;
-                    i++;
-                    continue;
-                }
-                token.append(ch);
-                tokenActive = true;
-                i++;
-                continue;
-            }
-
-            if (ch == '"') {
-                inQuotes = true;
-                tokenActive = true;
-                i++;
-                continue;
-            }
-            if (ch == '{') {
-                ParseResult nested = parseArray(text, i);
-                items.add(nested.items.toArray(new Object[0]));
-                i = nested.nextIdx;
-                tokenActive = false;
-                tokenQuoted = false;
-                token.setLength(0);
-                continue;
-            }
-            if (ch == '}') {
-                if (tokenActive || tokenQuoted) {
-                    items.add(parseArrayToken(token.toString(), tokenQuoted));
-                }
-                return new ParseResult(items, i + 1);
-            }
-            if (ch == ',') {
-                if (tokenActive || tokenQuoted) {
-                    items.add(parseArrayToken(token.toString(), tokenQuoted));
-                } else {
-                    items.add("");
-                }
-                token.setLength(0);
-                tokenActive = false;
-                tokenQuoted = false;
-                i++;
-                continue;
-            }
-            if (!Character.isWhitespace(ch) || tokenActive) {
-                token.append(ch);
-                tokenActive = true;
-            }
-            i++;
-        }
-        return new ParseResult(items, text.length());
-    }
-
-    private Object parseArrayToken(String token, boolean quoted) {
-        String value = token;
-        if (!quoted) {
-            String upper = value.trim();
-            if ("NULL".equalsIgnoreCase(upper)) {
-                return null;
-            }
-        }
-        return quoted ? value : value.trim();
-    }
-
-    private Object[] convertArrayElements(String baseType, Object[] elements) {
-        Object[] converted = new Object[elements.length];
-        for (int i = 0; i < elements.length; i++) {
-            Object element = elements[i];
-            if (element instanceof Object[]) {
-                converted[i] = convertArrayElements(baseType, (Object[]) element);
-                continue;
-            }
-            if (element == null) {
-                converted[i] = null;
-                continue;
-            }
-            String text = element.toString();
-            converted[i] = convertElement(baseType, text);
-        }
-        return converted;
-    }
-
-    private Object convertElement(String baseType, String text) {
-        if (text == null) {
-            return null;
-        }
-        String lower = baseType.toLowerCase();
-        switch (lower) {
-            case "boolean":
-                return "t".equalsIgnoreCase(text) || "true".equalsIgnoreCase(text);
-            case "smallint":
-                return Short.parseShort(text);
-            case "integer":
-                return Integer.parseInt(text);
-            case "bigint":
-                return Long.parseLong(text);
-            case "real":
-                return Float.parseFloat(text);
-            case "double precision":
-                return Double.parseDouble(text);
-            case "numeric":
-                return new java.math.BigDecimal(text);
-            case "bytea":
-                return decodeBytea(text);
-            case "date":
-                return java.sql.Date.valueOf(text);
-            case "time":
-                return java.sql.Time.valueOf(text);
-            case "timestamp":
-                return java.sql.Timestamp.valueOf(text.replace('T', ' '));
-            case "uuid":
-                return java.util.UUID.fromString(text);
-            default:
-                return text;
+        AuthOk(byte[] sessionId, byte[] serverInfo) {
+            this.sessionId = sessionId;
+            this.serverInfo = serverInfo;
         }
     }
 
-    private byte[] decodeBytea(String text) {
-        if (text == null) {
-            return null;
-        }
-        if (text.startsWith("\\x") || text.startsWith("0x")) {
-            String hex = text.startsWith("\\x") ? text.substring(2) : text.substring(2);
-            int len = hex.length();
-            byte[] out = new byte[len / 2];
-            for (int i = 0; i < out.length; i++) {
-                out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-            }
-            return out;
-        }
-        return text.getBytes(StandardCharsets.UTF_8);
-    }
+    private static final class ParameterStatus {
+        final String name;
+        final String value;
 
-    /**
-     * Cancels current query.
-     */
-    public void cancelCurrentQuery() throws SQLException {
-        if (!connected) return;
-
-        try {
-            // Send cancel on a new connection
-            Socket cancelSocket = new Socket();
-            cancelSocket.connect(new InetSocketAddress(props.getHost(), props.getPort()),
-                props.getConnectTimeout() * 1000);
-
-            DataOutputStream out = new DataOutputStream(cancelSocket.getOutputStream());
-            out.writeInt(16);  // Length
-            out.writeInt(80877102);  // Cancel request code
-            out.writeInt(processId);
-            out.writeInt(secretKey);
-            out.flush();
-            cancelSocket.close();
-
-        } catch (IOException e) {
-            throw new SQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
+        ParameterStatus(String name, String value) {
+            this.name = name;
+            this.value = value;
         }
     }
 
-    /**
-     * Checks if connection is alive.
-     */
-    public boolean isAlive(int timeout) {
-        if (!connected || socket == null || socket.isClosed()) {
-            return false;
-        }
-        try {
-            int oldTimeout = socket.getSoTimeout();
-            socket.setSoTimeout(timeout * 1000);
-            try {
-                // Send a sync and wait for response
-                dataOutput.writeByte(MSG_SYNC);
-                dataOutput.writeInt(4);
-                dataOutput.flush();
+    private static final class ReadyStatus {
+        final byte status;
+        final long txnId;
+        final long visibility;
 
-                byte type = dataInput.readByte();
-                dataInput.readInt();  // length
-                if (type == MSG_READY_FOR_QUERY) {
-                    dataInput.readByte();  // status
-                    return true;
-                }
-            } finally {
-                socket.setSoTimeout(oldTimeout);
-            }
-        } catch (IOException e) {
-            return false;
-        }
-        return false;
-    }
-
-    /**
-     * Aborts the connection.
-     */
-    public void abort() {
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (IOException e) {
-            // Ignore
-        }
-        connected = false;
-    }
-
-    /**
-     * Closes the connection.
-     */
-    public void close() {
-        if (connected) {
-            try {
-                // Send terminate message
-                dataOutput.writeByte(MSG_TERMINATE);
-                dataOutput.writeInt(4);
-                dataOutput.flush();
-            } catch (IOException e) {
-                // Ignore
-            }
-        }
-
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException e) {
-            // Ignore
-        }
-
-        connected = false;
-    }
-
-    /**
-     * Sets network timeout.
-     */
-    public void setNetworkTimeout(int milliseconds) {
-        this.networkTimeout = milliseconds;
-        try {
-            if (socket != null) {
-                socket.setSoTimeout(milliseconds);
-            }
-        } catch (IOException e) {
-            // Ignore
+        ReadyStatus(byte status, long txnId, long visibility) {
+            this.status = status;
+            this.txnId = txnId;
+            this.visibility = visibility;
         }
     }
 
-    /**
-     * Gets network timeout.
-     */
-    public int getNetworkTimeout() {
-        return networkTimeout;
-    }
+    private static final class CommandComplete {
+        final long rows;
+        final long lastId;
+        final String tag;
 
-    /**
-     * Gets a server parameter.
-     */
-    public String getServerParameter(String name) {
-        return serverParameters.get(name);
-    }
-
-    // ==================== Helper Methods ====================
-
-    private void writeString(String s) throws IOException {
-        if (s != null) {
-            messageOutput.write(s.getBytes(StandardCharsets.UTF_8));
+        CommandComplete(long rows, long lastId, String tag) {
+            this.rows = rows;
+            this.lastId = lastId;
+            this.tag = tag;
         }
-        messageOutput.writeByte(0);  // Null terminator
     }
 
-    private String readString() throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        int b;
-        while ((b = dataInput.read()) > 0) {
-            baos.write(b);
-        }
-        return baos.toString("UTF-8");
-    }
+    private static final class ProtocolError {
+        final String severity;
+        final String sqlState;
+        final String message;
+        final String detail;
+        final String hint;
 
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b & 0xff));
+        ProtocolError(String severity, String sqlState, String message, String detail, String hint) {
+            this.severity = severity;
+            this.sqlState = sqlState;
+            this.message = message;
+            this.detail = detail;
+            this.hint = hint;
         }
-        return sb.toString();
     }
 }
