@@ -2,6 +2,11 @@
 
 ScratchBird DB-API 2.0 driver using the ScratchBird native wire protocol.
 
+## Documentation
+
+- Getting started: `docs/getting-started/python.md`
+- API reference: `docs/api-reference/python.md`
+
 ## Development
 
 ```bash

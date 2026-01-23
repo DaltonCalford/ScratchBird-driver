@@ -1,20 +1,13 @@
-# ScratchBird Ruby Driver
+# Ruby Driver
 
-Native ScratchBird Ruby driver using the ScratchBird wire protocol.
-
-## Documentation
-
-- Getting started: `docs/getting-started/ruby.md`
-- API reference: `docs/api-reference/ruby.md`
-
-## Installation
+## Install
 
 ```bash
-gem build scratchbird.gemspec
+gem build ruby/scratchbird.gemspec
 gem install scratchbird-0.1.0.gem
 ```
 
-## Usage
+## Quick Start
 
 ```ruby
 require "scratchbird"
@@ -25,7 +18,7 @@ puts result.first[0]
 conn.close
 ```
 
-## Connection strings
+## Connection Strings
 
 URI:
 
@@ -38,3 +31,15 @@ Key-value:
 ```
 host=localhost port=3092 dbname=mydb user=myuser password=mypass
 ```
+
+See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+
+## TLS
+
+TLS 1.3 is required. `sslmode=disable` is rejected.
+
+## Tests
+
+Integration tests are gated by:
+
+- `SCRATCHBIRD_RUBY_URL`

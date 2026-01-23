@@ -129,6 +129,7 @@ ScratchBird-driver/
 │   └── specifications/     Wire protocol specs
 │   ├── audit/              Audit reports and gap analysis
 │   └── planning/           Remediation plans
+├── wiki/                   GitHub wiki pages (source)
 ├── go/                     Go driver
 ├── python/                 Python driver
 ├── node/                   Node.js driver
@@ -152,6 +153,7 @@ ScratchBird-driver/
 - **[Getting Started](docs/getting-started/)** - Installation and setup guides
 - **[API Reference](docs/api-reference/)** - Detailed API documentation
 - **[Specifications](docs/specifications/)** - Protocol and driver specs
+- **[Wiki Source](wiki/)** - GitHub wiki pages (ready to sync)
 
 ---
 

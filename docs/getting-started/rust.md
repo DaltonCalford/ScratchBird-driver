@@ -1,13 +1,14 @@
-# ScratchBird Rust Driver
+# Rust Driver
 
-Async Rust driver for ScratchBird using the native wire protocol.
+## Install
 
-## Documentation
+Add to Cargo.toml:
 
-- Getting started: `docs/getting-started/rust.md`
-- API reference: `docs/api-reference/rust.md`
+```toml
+scratchbird = "0.1.0"
+```
 
-## Usage
+## Quick Start
 
 ```rust
 use scratchbird::{Client, Config};
@@ -15,7 +16,7 @@ use scratchbird::{Client, Config};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = Client::new(Config::from_dsn(
-        "scratchbird://user:pass@localhost:3092/mydb"
+        "scratchbird://user:pass@localhost:3092/mydb",
     )?);
     client.connect().await?;
     let result = client.query("SELECT 1").await?;
@@ -25,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Connection strings
+## Connection Strings
 
 URI:
 
@@ -38,3 +39,15 @@ Key-value:
 ```
 host=localhost port=3092 dbname=mydb user=myuser password=mypass
 ```
+
+See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+
+## TLS
+
+TLS 1.3 is required. `sslmode=disable` is rejected.
+
+## Tests
+
+Integration tests are gated by:
+
+- `SCRATCHBIRD_RUST_URL`

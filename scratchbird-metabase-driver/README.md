@@ -3,6 +3,11 @@
 This is a starter scaffold for a Metabase driver that targets ScratchBird
 using the ScratchBird JDBC driver (SBWP v1.1).
 
+## Documentation
+
+- Getting started: `docs/getting-started/metabase.md`
+- API reference: `docs/api-reference/metabase.md`
+
 ## Contents
 
 - `metabase-plugin.yaml` plugin manifest

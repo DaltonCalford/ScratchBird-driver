@@ -2,6 +2,11 @@
 
 Native ScratchBird driver for Node.js with full TypeScript types.
 
+## Documentation
+
+- Getting started: `docs/getting-started/node.md`
+- API reference: `docs/api-reference/node.md`
+
 ## Install
 
 ```bash

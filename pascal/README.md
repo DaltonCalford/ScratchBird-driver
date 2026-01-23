@@ -2,6 +2,11 @@
 
 ScratchBird native wire protocol client and adapters for Delphi/FreePascal.
 
+## Documentation
+
+- Getting started: `docs/getting-started/pascal.md`
+- API reference: `docs/api-reference/pascal.md`
+
 ## Usage (core client)
 
 ```pascal

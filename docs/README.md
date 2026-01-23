@@ -16,7 +16,10 @@ This directory contains documentation for the ScratchBird database drivers.
 
 ## Driver Documentation
 
-Each driver has its own README in its respective directory with language-specific setup and usage instructions:
+Each driver has two documentation layers:
+
+- Per-driver guides in `docs/getting-started/` and `docs/api-reference/`
+- Language READMEs in the driver directories
 
 - [Go Driver](../go/README.md)
 - [Python Driver](../python/README.md)
@@ -28,6 +31,12 @@ Each driver has its own README in its respective directory with language-specifi
 - [Pascal Driver](../pascal/README.md)
 - [.NET Driver](../dotnet/) - See solution file
 - [JDBC Driver](../jdbc/) - Java/Gradle project
+
+Quick links:
+
+- [Getting Started Index](getting-started/README.md)
+- [API Reference Index](api-reference/README.md)
+- [Development Guides](development/README.md)
 
 ## Quick Links
 
