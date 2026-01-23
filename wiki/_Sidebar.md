@@ -1,7 +1,15 @@
-* [Home](Home.md)
-* [Getting Started](Getting-Started.md)
-* [Drivers](Drivers.md)
-* [Conformance Testing](Conformance-Testing.md)
-* [Protocol and Specs](Protocol-and-Specs.md)
-* [Metabase Driver](Metabase-Driver.md)
-* [Development](Development.md)
+**ScratchBird Drivers**
+
+* [Home](Home)
+* [Getting Started](Getting-Started)
+* [Drivers](Drivers)
+
+**Reference**
+
+* [Protocol and Specs](Protocol-and-Specs)
+* [Conformance Testing](Conformance-Testing)
+
+**Development**
+
+* [Development](Development)
+* [Metabase Driver](Metabase-Driver)
