@@ -190,6 +190,7 @@ final class Connection
         $this->socket = $socket;
         $this->applyTls();
         $this->handshake();
+        $this->applySchema();
         $this->connected = true;
     }
 
@@ -218,6 +219,41 @@ final class Connection
         if ($result !== true) {
             throw new ScratchBirdConnectionException('TLS handshake failed', '08001');
         }
+    }
+
+    private function applySchema(): void
+    {
+        $schema = trim($this->config->schema);
+        if ($schema === '' || strtolower($schema) === 'public') {
+            return;
+        }
+        $statement = $this->buildSchemaStatement($schema);
+        if ($statement === '') {
+            return;
+        }
+        $this->executeSimple($statement);
+    }
+
+    private function buildSchemaStatement(string $schema): string
+    {
+        $schema = trim($schema);
+        if ($schema === '') {
+            return '';
+        }
+        if (str_contains($schema, ',')) {
+            $parts = array_filter(array_map('trim', explode(',', $schema)));
+            if (!$parts) {
+                return '';
+            }
+            $quoted = array_map([$this, 'quoteIdentifier'], $parts);
+            return 'SET SEARCH_PATH TO ' . implode(', ', $quoted);
+        }
+        return 'SET SCHEMA ' . $this->quoteIdentifier($schema);
+    }
+
+    private function quoteIdentifier(string $name): string
+    {
+        return '"' . str_replace('"', '""', $name) . '"';
     }
 
     private function handshake(): void

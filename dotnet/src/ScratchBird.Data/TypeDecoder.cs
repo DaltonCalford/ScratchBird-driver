@@ -144,6 +144,32 @@ public sealed class ScratchBirdRaw
     }
 }
 
+public sealed class ScratchBirdCompositeField
+{
+    public uint Oid { get; }
+    public object? Value { get; }
+    public byte[]? Raw { get; }
+
+    public ScratchBirdCompositeField(uint oid, object? value = null, byte[]? raw = null)
+    {
+        Oid = oid;
+        Value = value;
+        Raw = raw;
+    }
+}
+
+public sealed class ScratchBirdComposite
+{
+    public uint TypeOid { get; }
+    public IReadOnlyList<ScratchBirdCompositeField> Fields { get; }
+
+    public ScratchBirdComposite(IReadOnlyList<ScratchBirdCompositeField> fields, uint typeOid = 0)
+    {
+        Fields = fields;
+        TypeOid = typeOid;
+    }
+}
+
 internal static class TypeDecoder
 {
     public const ushort FormatText = 0;
@@ -183,6 +209,7 @@ internal static class TypeDecoder
     public const uint OidNumeric = 1700;
     public const uint OidUuid = 2950;
     public const uint OidJsonb = 3802;
+    public const uint OidRecord = 2249;
     public const uint OidInt4Range = 3904;
     public const uint OidNumRange = 3906;
     public const uint OidTsRange = 3908;
@@ -216,6 +243,12 @@ internal static class TypeDecoder
         if (value is ScratchBirdRaw raw)
         {
             return (new ParamValue { Data = raw.Data, Format = FormatBinary }, raw.Oid);
+        }
+
+        if (value is ScratchBirdComposite composite)
+        {
+            var encoded = EncodeComposite(composite);
+            return (new ParamValue { Data = encoded.Data, Format = FormatBinary }, encoded.Oid);
         }
 
         if (value is ScratchBirdJsonb jsonb)
@@ -645,6 +678,8 @@ internal static class TypeDecoder
             case OidLine:
             case OidCircle:
                 return new ScratchBirdGeometry(StripLengthPrefix(data));
+            case OidRecord:
+                return DecodeComposite(data);
             default:
                 return data;
         }
@@ -669,6 +704,82 @@ internal static class TypeDecoder
         BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0, 4), (uint)data.Length);
         Buffer.BlockCopy(data, 0, buffer, 4, data.Length);
         return buffer;
+    }
+
+    private static (byte[] Data, uint Oid) EncodeComposite(ScratchBirdComposite composite)
+    {
+        var fields = composite.Fields ?? Array.Empty<ScratchBirdCompositeField>();
+        var typeOid = composite.TypeOid == 0 ? OidRecord : composite.TypeOid;
+        var buffer = new List<byte>(4 + fields.Count * 12);
+        buffer.AddRange(BitConverter.GetBytes(fields.Count));
+        foreach (var field in fields)
+        {
+            var fieldOid = field.Oid;
+            byte[]? data = null;
+            if (field.Raw != null)
+            {
+                data = field.Raw;
+            }
+            else if (field.Value != null)
+            {
+                var encoded = EncodeParam(field.Value);
+                if (fieldOid == 0)
+                {
+                    fieldOid = encoded.Oid;
+                }
+                data = encoded.Param.IsNull ? null : encoded.Param.Data;
+            }
+
+            if (fieldOid == 0)
+            {
+                throw new InvalidOperationException("Composite field OID is required");
+            }
+            buffer.AddRange(BitConverter.GetBytes(fieldOid));
+            if (data == null)
+            {
+                buffer.AddRange(BitConverter.GetBytes(-1));
+                continue;
+            }
+            buffer.AddRange(BitConverter.GetBytes(data.Length));
+            buffer.AddRange(data);
+        }
+        return (buffer.ToArray(), typeOid);
+    }
+
+    private static ScratchBirdComposite DecodeComposite(byte[] data)
+    {
+        if (data.Length < 4)
+        {
+            return new ScratchBirdComposite(Array.Empty<ScratchBirdCompositeField>());
+        }
+        var count = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, 4));
+        var offset = 4;
+        var fields = new List<ScratchBirdCompositeField>(count);
+        for (var i = 0; i < count; i++)
+        {
+            if (offset + 8 > data.Length)
+            {
+                break;
+            }
+            var oid = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4));
+            offset += 4;
+            var length = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, 4));
+            offset += 4;
+            if (length < 0)
+            {
+                fields.Add(new ScratchBirdCompositeField(oid, null, null));
+                continue;
+            }
+            if (offset + length > data.Length)
+            {
+                break;
+            }
+            var raw = data.Skip(offset).Take(length).ToArray();
+            offset += length;
+            var value = DecodeBinaryValue(oid, raw);
+            fields.Add(new ScratchBirdCompositeField(oid, value, raw));
+        }
+        return new ScratchBirdComposite(fields, OidRecord);
     }
 
     private static byte[] StripLengthPrefix(byte[] data)

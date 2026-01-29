@@ -45,3 +45,22 @@ test("types fixture returns row", async (t) => {
     await client.end();
   }
 });
+
+test("cancel query", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  const cancelSql = process.env.SCRATCHBIRD_NODE_CANCEL_SQL;
+  if (!cancelSql) {
+    t.skip("SCRATCHBIRD_NODE_CANCEL_SQL not set");
+    await client.end();
+    return;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 200);
+  try {
+    await assert.rejects(client.query(cancelSql, [], { signal: controller.signal }));
+  } finally {
+    clearTimeout(timer);
+    await client.end();
+  }
+});

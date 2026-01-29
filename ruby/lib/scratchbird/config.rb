@@ -3,7 +3,7 @@ require "uri"
 module Scratchbird
   class Config
     attr_accessor :host, :port, :database, :user, :password, :sslmode,
-                  :sslrootcert, :sslcert, :sslkey, :connect_timeout_ms,
+                  :schema, :sslrootcert, :sslcert, :sslkey, :connect_timeout_ms,
                   :socket_timeout_ms, :application_name, :binary_transfer,
                   :compression
 
@@ -13,6 +13,7 @@ module Scratchbird
       @database = ""
       @user = ""
       @password = ""
+      @schema = ""
       @sslmode = "require"
       @sslrootcert = nil
       @sslcert = nil
@@ -79,6 +80,8 @@ module Scratchbird
         cfg.user = value
       when "password", "pwd"
         cfg.password = value
+      when "schema", "search_path", "searchpath", "currentschema"
+        cfg.schema = value
       when "sslmode", "ssl mode"
         cfg.sslmode = value
       when "sslrootcert"

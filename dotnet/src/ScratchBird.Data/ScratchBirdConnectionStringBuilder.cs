@@ -34,6 +34,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["Password"] = value;
     }
 
+    public string Schema
+    {
+        get => GetString("Schema", string.Empty);
+        set => this["Schema"] = value;
+    }
+
     public string SSLMode
     {
         get => GetString("SSLMode", "require");

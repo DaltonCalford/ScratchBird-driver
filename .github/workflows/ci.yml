@@ -1,0 +1,274 @@
+name: Driver CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  driver-matrix:
+    name: ${{ matrix.language }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            language: go
+          - os: windows-latest
+            language: go
+          - os: ubuntu-latest
+            language: node
+          - os: windows-latest
+            language: node
+          - os: ubuntu-latest
+            language: python
+          - os: windows-latest
+            language: python
+          - os: ubuntu-latest
+            language: ruby
+          - os: windows-latest
+            language: ruby
+          - os: ubuntu-latest
+            language: rust
+          - os: windows-latest
+            language: rust
+          - os: ubuntu-latest
+            language: php
+          - os: windows-latest
+            language: php
+          - os: ubuntu-latest
+            language: r
+          - os: windows-latest
+            language: r
+          - os: ubuntu-latest
+            language: dotnet
+          - os: windows-latest
+            language: dotnet
+          - os: ubuntu-latest
+            language: jdbc
+          - os: windows-latest
+            language: jdbc
+          - os: ubuntu-latest
+            language: pascal
+          - os: windows-latest
+            language: pascal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Setup Node
+        if: matrix.language == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache npm
+        if: matrix.language == 'node'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('node/package-lock.json', 'node/npm-shrinkwrap.json', 'node/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Setup Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        if: matrix.language == 'python'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('python/pyproject.toml', 'python/setup.cfg', 'python/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Setup Ruby
+        if: matrix.language == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+
+      - name: Setup Rust
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: matrix.language == 'rust'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup PHP
+        if: matrix.language == 'php'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer
+
+      - name: Cache Composer
+        if: matrix.language == 'php'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/composer
+            ~/.composer/cache
+            ~\AppData\Local\Composer\cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('php/composer.lock', 'php/composer.json') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Setup R
+        if: matrix.language == 'r'
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.3"
+
+      - name: Setup R dependencies
+        if: matrix.language == 'r'
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: r
+
+      - name: Setup .NET
+        if: matrix.language == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet
+        if: matrix.language == 'dotnet'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+            ~/.nuget/v3-cache
+            ~\AppData\Local\NuGet\v3-cache
+          key: ${{ runner.os }}-nuget-${{ hashFiles('dotnet/**/*.csproj', 'dotnet/**/*.sln', 'dotnet/**/packages.lock.json', 'dotnet/global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup Java
+        if: matrix.language == 'jdbc'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Cache Gradle
+        if: matrix.language == 'jdbc'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('jdbc/**/*.gradle*', 'jdbc/gradle.properties', 'jdbc/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install FreePascal (Linux)
+        if: matrix.language == 'pascal' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fp-compiler
+
+      - name: Install FreePascal (Windows)
+        if: matrix.language == 'pascal' && runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install freepascal --no-progress -y
+
+      - name: Go tests
+        if: matrix.language == 'go'
+        working-directory: go
+        run: go test ./...
+
+      - name: Node tests
+        if: matrix.language == 'node'
+        working-directory: node
+        run: |
+          npm install
+          npm test
+
+      - name: Python tests
+        if: matrix.language == 'python'
+        working-directory: python
+        run: |
+          python -m pip install -e ".[test]"
+          python -m pytest
+
+      - name: Ruby tests
+        if: matrix.language == 'ruby'
+        working-directory: ruby
+        run: ruby -Ilib test/*.rb
+
+      - name: Rust tests
+        if: matrix.language == 'rust'
+        working-directory: rust
+        run: cargo test
+
+      - name: PHP tests
+        if: matrix.language == 'php'
+        working-directory: php
+        run: |
+          composer install
+          vendor/bin/phpunit tests
+
+      - name: R checks
+        if: matrix.language == 'r'
+        working-directory: r
+        run: |
+          R CMD build .
+          R CMD check scratchbird_*.tar.gz --no-manual
+
+      - name: .NET tests
+        if: matrix.language == 'dotnet'
+        working-directory: dotnet
+        run: dotnet test
+
+      - name: JDBC tests (Linux)
+        if: matrix.language == 'jdbc' && runner.os == 'Linux'
+        working-directory: jdbc
+        run: ./gradlew test
+
+      - name: JDBC tests (Windows)
+        if: matrix.language == 'jdbc' && runner.os == 'Windows'
+        working-directory: jdbc
+        shell: cmd
+        run: gradlew.bat test
+
+      - name: Pascal build (Linux)
+        if: matrix.language == 'pascal' && runner.os == 'Linux'
+        run: |
+          fpc -Fu./pascal/src pascal/tests/ConfigTests.pas
+          fpc -Fu./pascal/src pascal/tests/SqlTests.pas
+          fpc -Fu./pascal/src pascal/tests/IntegrationTest.pas
+
+      - name: Pascal build (Windows)
+        if: matrix.language == 'pascal' && runner.os == 'Windows'
+        shell: cmd
+        run: |
+          fpc -Fu.\pascal\src pascal\tests\ConfigTests.pas
+          fpc -Fu.\pascal\src pascal\tests\SqlTests.pas
+          fpc -Fu.\pascal\src pascal\tests\IntegrationTest.pas

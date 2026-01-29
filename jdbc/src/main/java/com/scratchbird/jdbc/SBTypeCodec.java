@@ -63,6 +63,7 @@ public final class SBTypeCodec {
     public static final int OID_NUMERIC = 1700;
     public static final int OID_UUID = 2950;
     public static final int OID_JSONB = 3802;
+    public static final int OID_RECORD = 2249;
     public static final int OID_TSVECTOR = 3614;
     public static final int OID_TSQUERY = 3615;
     public static final int OID_SB_VECTOR = 16386;
@@ -149,6 +150,9 @@ public final class SBTypeCodec {
         if (value instanceof SBRange) {
             RangeEncoding encoded = encodeRange((SBRange<?>) value);
             return new ParamEncoding(FORMAT_BINARY, encoded.oid, encoded.data, false);
+        }
+        if (value instanceof Struct) {
+            return encodeComposite((Struct) value);
         }
         if (value instanceof Boolean) {
             return new ParamEncoding(FORMAT_BINARY, OID_BOOL,
@@ -345,6 +349,8 @@ public final class SBTypeCodec {
             case OID_LINE:
             case OID_CIRCLE:
                 return new SBGeometry(stripLengthPrefixed(data));
+            case OID_RECORD:
+                return decodeComposite(data);
             default:
                 if (isArrayOid(oid)) {
                     return decodeArray(oid, data);
@@ -997,6 +1003,65 @@ public final class SBTypeCodec {
             default:
                 return null;
         }
+    }
+
+    private static ParamEncoding encodeComposite(Struct value) throws SQLException {
+        Object[] attributes = value.getAttributes();
+        int fieldCount = attributes != null ? attributes.length : 0;
+        ByteBuffer buffer = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(fieldCount);
+        if (attributes != null) {
+            for (Object attr : attributes) {
+                int fieldOid = 0;
+                byte[] fieldData = null;
+                if (attr != null) {
+                    ParamEncoding encoded = encodeParam(attr, null);
+                    fieldOid = encoded.oid;
+                    fieldData = encoded.isNull ? null : encoded.data;
+                }
+                buffer = ensureCapacity(buffer, 8 + (fieldData != null ? fieldData.length : 0));
+                buffer.putInt(fieldOid);
+                if (fieldData == null) {
+                    buffer.putInt(-1);
+                } else {
+                    buffer.putInt(fieldData.length);
+                    buffer.put(fieldData);
+                }
+            }
+        }
+        buffer.flip();
+        byte[] out = new byte[buffer.limit()];
+        buffer.get(out);
+        return new ParamEncoding(FORMAT_BINARY, OID_RECORD, out, false);
+    }
+
+    private static Struct decodeComposite(byte[] data) throws SQLException {
+        if (data.length < 4) {
+            return new SBStruct("record", new Object[0]);
+        }
+        int count = ByteBuffer.wrap(data, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        int offset = 4;
+        Object[] attrs = new Object[count];
+        for (int i = 0; i < count; i++) {
+            if (offset + 8 > data.length) {
+                break;
+            }
+            int oid = ByteBuffer.wrap(data, offset, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+            offset += 4;
+            int length = ByteBuffer.wrap(data, offset, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+            offset += 4;
+            if (length < 0) {
+                attrs[i] = null;
+                continue;
+            }
+            if (offset + length > data.length) {
+                break;
+            }
+            byte[] raw = slice(data, offset, length);
+            offset += length;
+            attrs[i] = decodeValue(oid, raw, FORMAT_BINARY);
+        }
+        return new SBStruct("record", attrs);
     }
 
     private static int mapSqlTypeToOid(Integer sqlType) {

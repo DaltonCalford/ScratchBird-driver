@@ -49,6 +49,7 @@ class ConnectionConfig:
     database: Optional[str] = None
     user: Optional[str] = None
     password: Optional[str] = None
+    schema: Optional[str] = None
     sslmode: str = "require"
     sslrootcert: Optional[str] = None
     sslcert: Optional[str] = None
@@ -83,6 +84,7 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.database = params.get("database", cfg.database)
     cfg.user = params.get("user", cfg.user)
     cfg.password = params.get("password", cfg.password)
+    cfg.schema = params.get("schema", params.get("search_path", params.get("searchpath", params.get("currentschema", cfg.schema))))
     cfg.sslmode = params.get("sslmode", params.get("ssl", cfg.sslmode))
     cfg.sslrootcert = params.get("sslrootcert", cfg.sslrootcert)
     cfg.sslcert = params.get("sslcert", cfg.sslcert)
@@ -101,6 +103,10 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "database",
             "user",
             "password",
+            "schema",
+            "search_path",
+            "searchpath",
+            "currentschema",
             "sslmode",
             "ssl",
             "sslrootcert",
@@ -170,6 +176,7 @@ class Connection:
         self._socket = sock
 
         self._startup_and_auth()
+        self._apply_schema()
         self._connected = True
 
     def close(self) -> None:
@@ -342,6 +349,14 @@ class Connection:
         self._send_simple_query(sql)
         self._drain_until_ready()
 
+    def _apply_schema(self) -> None:
+        schema = (self._config.schema or "").strip()
+        if not schema or schema.lower() == "public":
+            return
+        statement = _build_schema_statement(schema)
+        if statement:
+            self._execute_command(statement)
+
     def _send_simple_query(self, sql: str) -> None:
         flags = QUERY_FLAG_BINARY_RESULT if self._config.binary_transfer else 0
         payload = build_query_payload(sql, flags, 0, 0)
@@ -430,6 +445,23 @@ class Connection:
             text = f"[{sqlstate}] {text}"
             raise _map_sqlstate(sqlstate)(text)
         raise errors.DatabaseError(text)
+
+
+def _build_schema_statement(schema: str) -> str:
+    trimmed = schema.strip()
+    if not trimmed:
+        return ""
+    if "," in trimmed:
+        parts = [part.strip() for part in trimmed.split(",") if part.strip()]
+        if not parts:
+            return ""
+        quoted = ", ".join(_quote_identifier(part) for part in parts)
+        return f"SET SEARCH_PATH TO {quoted}"
+    return f"SET SCHEMA {_quote_identifier(trimmed)}"
+
+
+def _quote_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
 
 
 def _map_sqlstate(sqlstate: str):

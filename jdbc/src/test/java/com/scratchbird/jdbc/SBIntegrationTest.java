@@ -4,12 +4,17 @@
 package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -56,6 +61,30 @@ public class SBIntegrationTest {
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery("SELECT * FROM sb_conformance.type_coverage")) {
             assertEquals(true, rs.next());
+        }
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "SCRATCHBIRD_JDBC_URL", matches = ".*")
+    public void cancelQuery() throws Exception {
+        String cancelSql = System.getenv("SCRATCHBIRD_JDBC_CANCEL_SQL");
+        if (cancelSql == null || cancelSql.isEmpty()) {
+            return;
+        }
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection conn = openConnection();
+             Statement stmt = conn.createStatement()) {
+            Future<Boolean> future = executor.submit(() -> stmt.execute(cancelSql));
+            Thread.sleep(200);
+            stmt.cancel();
+            try {
+                future.get();
+                assertTrue(false, "expected cancel error");
+            } catch (ExecutionException ex) {
+                // expected cancel or execution error
+            }
+        } finally {
+            executor.shutdownNow();
         }
     }
 }

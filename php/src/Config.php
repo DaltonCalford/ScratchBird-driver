@@ -9,6 +9,7 @@ final class Config
     public string $database = '';
     public string $user = '';
     public string $password = '';
+    public string $schema = '';
     public string $sslMode = 'require';
     public ?string $sslRootCert = null;
     public ?string $sslCert = null;
@@ -104,6 +105,12 @@ final class Config
             case 'password':
             case 'pwd':
                 $cfg->password = $value;
+                break;
+            case 'schema':
+            case 'search_path':
+            case 'searchpath':
+            case 'currentschema':
+                $cfg->schema = $value;
                 break;
             case 'sslmode':
             case 'ssl mode':

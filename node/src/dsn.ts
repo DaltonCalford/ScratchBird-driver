@@ -60,6 +60,12 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "password":
       config.password = value;
       break;
+    case "schema":
+    case "search_path":
+    case "searchpath":
+    case "currentschema":
+      config.schema = value;
+      break;
     case "sslmode":
       config.sslmode = value;
       break;

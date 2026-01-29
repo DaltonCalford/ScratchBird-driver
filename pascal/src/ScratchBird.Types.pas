@@ -43,6 +43,7 @@ const
   OID_NUMERIC = 1700;
   OID_UUID = 2950;
   OID_JSONB = 3802;
+  OID_RECORD = 2249;
   OID_INT4RANGE = 3904;
   OID_NUMRANGE = 3906;
   OID_TSRANGE = 3908;
@@ -90,6 +91,13 @@ type
     function GetUpperInfinite: Boolean;
     function GetEmpty: Boolean;
     function GetRangeOid: Cardinal;
+  end;
+
+  IScratchBirdComposite = interface
+    ['{B2E9A9B5-9CC1-4C1E-9BA2-6C2C92C3B83B}']
+    function GetFieldCount: Integer;
+    function GetFieldOid(Index: Integer): Cardinal;
+    function GetFieldValue(Index: Integer): Variant;
   end;
 
   TScratchBirdJsonb = class(TInterfacedObject, IScratchBirdJsonb)
@@ -147,6 +155,19 @@ type
     property UpperInfinite: Boolean read FUpperInfinite write FUpperInfinite;
     property Empty: Boolean read FEmpty write FEmpty;
     property RangeOid: Cardinal read FRangeOid write FRangeOid;
+  end;
+
+  TScratchBirdComposite = class(TInterfacedObject, IScratchBirdComposite)
+  private
+    FFieldOids: TArray<Cardinal>;
+    FFieldValues: TArray<Variant>;
+  public
+    constructor Create(const AOids: array of Cardinal; const AValues: array of Variant);
+    function GetFieldCount: Integer;
+    function GetFieldOid(Index: Integer): Cardinal;
+    function GetFieldValue(Index: Integer): Variant;
+    property FieldOids: TArray<Cardinal> read FFieldOids;
+    property FieldValues: TArray<Variant> read FFieldValues;
   end;
 
 function EncodeParam(const Value: Variant; Obj: TObject; out Param: TParamValue; out Oid: Cardinal): Boolean;
@@ -387,6 +408,39 @@ begin
   Result := FRangeOid;
 end;
 
+constructor TScratchBirdComposite.Create(const AOids: array of Cardinal; const AValues: array of Variant);
+var
+  I: Integer;
+begin
+  SetLength(FFieldOids, Length(AOids));
+  for I := 0 to High(AOids) do
+    FFieldOids[I] := AOids[I];
+  SetLength(FFieldValues, Length(AValues));
+  for I := 0 to High(AValues) do
+    FFieldValues[I] := AValues[I];
+end;
+
+function TScratchBirdComposite.GetFieldCount: Integer;
+begin
+  Result := Length(FFieldValues);
+end;
+
+function TScratchBirdComposite.GetFieldOid(Index: Integer): Cardinal;
+begin
+  if (Index >= 0) and (Index < Length(FFieldOids)) then
+    Result := FFieldOids[Index]
+  else
+    Result := 0;
+end;
+
+function TScratchBirdComposite.GetFieldValue(Index: Integer): Variant;
+begin
+  if (Index >= 0) and (Index < Length(FFieldValues)) then
+    Result := FFieldValues[Index]
+  else
+    Result := Null;
+end;
+
 function EncodeLengthPrefixed(const Data: TBytes): TBytes;
 begin
   Result := ConcatBytes(WriteUInt32LE(System.Length(Data)), Data);
@@ -578,6 +632,93 @@ begin
   Result := Parts;
 end;
 
+function EncodeComposite(const Comp: TScratchBirdComposite; out TypeOid: Cardinal): TBytes;
+var
+  FieldCount: Integer;
+  I: Integer;
+  FieldOid: Cardinal;
+  EncodedOid: Cardinal;
+  FieldParam: TParamValue;
+  FieldBytes: TBytes;
+begin
+  FieldCount := Length(Comp.FieldValues);
+  TypeOid := OID_RECORD;
+  Result := WriteInt32LE(FieldCount);
+  for I := 0 to FieldCount - 1 do
+  begin
+    FieldOid := 0;
+    if I < Length(Comp.FieldOids) then
+      FieldOid := Comp.FieldOids[I];
+
+    if VarIsNull(Comp.FieldValues[I]) or VarIsEmpty(Comp.FieldValues[I]) then
+    begin
+      Result := ConcatBytes(Result, WriteUInt32LE(FieldOid));
+      Result := ConcatBytes(Result, WriteInt32LE(-1));
+      Continue;
+    end;
+
+    if not EncodeParam(Comp.FieldValues[I], nil, FieldParam, EncodedOid) then
+      raise Exception.Create('Failed to encode composite field');
+
+    if FieldOid = 0 then
+      FieldOid := EncodedOid;
+    if FieldOid = 0 then
+      raise Exception.Create('Composite field OID is required');
+
+    Result := ConcatBytes(Result, WriteUInt32LE(FieldOid));
+    if FieldParam.IsNull or (FieldParam.Data = nil) then
+    begin
+      Result := ConcatBytes(Result, WriteInt32LE(-1));
+      Continue;
+    end;
+    FieldBytes := FieldParam.Data;
+    Result := ConcatBytes(Result, WriteInt32LE(System.Length(FieldBytes)));
+    Result := ConcatBytes(Result, FieldBytes);
+  end;
+end;
+
+function DecodeComposite(const Data: TBytes): IInterface;
+var
+  Count: Integer;
+  Offset: Integer;
+  I: Integer;
+  FieldOid: Cardinal;
+  FieldLen: Integer;
+  FieldData: TBytes;
+  FieldOids: TArray<Cardinal>;
+  FieldValues: TArray<Variant>;
+begin
+  if System.Length(Data) < 4 then
+    Exit(nil);
+  Count := ReadInt32LE(Data, 0);
+  Offset := 4;
+  SetLength(FieldOids, Count);
+  SetLength(FieldValues, Count);
+  for I := 0 to Count - 1 do
+  begin
+    if Offset + 8 > System.Length(Data) then
+      Break;
+    FieldOid := ReadUInt32LE(Data, Offset);
+    Inc(Offset, 4);
+    FieldLen := ReadInt32LE(Data, Offset);
+    Inc(Offset, 4);
+    FieldOids[I] := FieldOid;
+    if FieldLen < 0 then
+    begin
+      FieldValues[I] := Null;
+      Continue;
+    end;
+    if Offset + FieldLen > System.Length(Data) then
+      Break;
+    SetLength(FieldData, FieldLen);
+    if FieldLen > 0 then
+      Move(Data[Offset], FieldData[0], FieldLen);
+    Inc(Offset, FieldLen);
+    FieldValues[I] := DecodeValue(FieldOid, FieldData, FORMAT_BINARY);
+  end;
+  Result := IInterface(TScratchBirdComposite.Create(FieldOids, FieldValues));
+end;
+
 function EncodeParam(const Value: Variant; Obj: TObject; out Param: TParamValue; out Oid: Cardinal): Boolean;
 var
   Items: TArray<Variant>;
@@ -587,9 +728,14 @@ var
   Range: TScratchBirdRange;
   Jsonb: TScratchBirdJsonb;
   Geometry: TScratchBirdGeometry;
+  Composite: TScratchBirdComposite;
   JsonbIntf: IScratchBirdJsonb;
   GeometryIntf: IScratchBirdGeometry;
   RangeIntf: IScratchBirdRange;
+  CompositeIntf: IScratchBirdComposite;
+  FieldOids: TArray<Cardinal>;
+  FieldValues: TArray<Variant>;
+  FieldCount: Integer;
 begin
   Param.Format := FORMAT_BINARY;
   Param.IsNull := False;
@@ -624,6 +770,13 @@ begin
     Exit;
   end;
 
+  if Obj is TScratchBirdComposite then
+  begin
+    Composite := TScratchBirdComposite(Obj);
+    Param.Data := EncodeComposite(Composite, Oid);
+    Exit;
+  end;
+
   if (VarType(Value) = varUnknown) and Supports(IInterface(Value), IScratchBirdJsonb, JsonbIntf) then
   begin
     Param.Data := EncodeLengthPrefixed(JsonbIntf.GetRaw);
@@ -651,6 +804,22 @@ begin
     Range.RangeOid := RangeIntf.GetRangeOid;
     Param.Data := EncodeRange(Range, Oid);
     Range.Free;
+    Exit;
+  end;
+
+  if (VarType(Value) = varUnknown) and Supports(IInterface(Value), IScratchBirdComposite, CompositeIntf) then
+  begin
+    FieldCount := CompositeIntf.GetFieldCount;
+    SetLength(FieldOids, FieldCount);
+    SetLength(FieldValues, FieldCount);
+    for I := 0 to FieldCount - 1 do
+    begin
+      FieldOids[I] := CompositeIntf.GetFieldOid(I);
+      FieldValues[I] := CompositeIntf.GetFieldValue(I);
+    end;
+    Composite := TScratchBirdComposite.Create(FieldOids, FieldValues);
+    Param.Data := EncodeComposite(Composite, Oid);
+    Composite.Free;
     Exit;
   end;
 
@@ -903,6 +1072,8 @@ begin
         Geometry := TScratchBirdGeometry.Create(StripLengthPrefixed(Data));
         Result := IInterface(Geometry);
       end;
+    OID_RECORD:
+      Result := DecodeComposite(Data);
   else
     Result := Data;
   end;

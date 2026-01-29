@@ -68,6 +68,7 @@ impl Client {
         let stream = self.connect_transport().await?;
         self.stream = Some(stream);
         self.handshake().await?;
+        self.apply_schema().await?;
         self.connected = true;
         Ok(())
     }
@@ -186,6 +187,20 @@ impl Client {
                 _ => continue,
             }
         }
+    }
+
+    async fn apply_schema(&mut self) -> Result<()> {
+        let schema = self.config.schema.trim();
+        if schema.is_empty() || schema.eq_ignore_ascii_case("public") {
+            return Ok(());
+        }
+        let statement = build_schema_statement(schema);
+        if statement.is_empty() {
+            return Ok(());
+        }
+        self.send_simple_query(&statement, 0, 0).await?;
+        let _ = self.collect_results().await?;
+        Ok(())
     }
 
     async fn collect_results(&mut self) -> Result<QueryResult> {
@@ -493,4 +508,28 @@ impl rustls::client::ServerCertVerifier for NoVerifier {
     ) -> std::result::Result<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
+}
+
+fn build_schema_statement(schema: &str) -> String {
+    let trimmed = schema.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.contains(',') {
+        let parts: Vec<String> = trimmed
+            .split(',')
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .map(quote_identifier)
+            .collect();
+        if parts.is_empty() {
+            return String::new();
+        }
+        return format!("SET SEARCH_PATH TO {}", parts.join(", "));
+    }
+    format!("SET SCHEMA {}", quote_identifier(trimmed))
+}
+
+fn quote_identifier(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
 }

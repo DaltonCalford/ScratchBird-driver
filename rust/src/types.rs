@@ -45,6 +45,7 @@ pub const OID_TIMETZ: u32 = 1266;
 pub const OID_NUMERIC: u32 = 1700;
 pub const OID_UUID: u32 = 2950;
 pub const OID_JSONB: u32 = 3802;
+pub const OID_RECORD: u32 = 2249;
 pub const OID_INT4RANGE: u32 = 3904;
 pub const OID_NUMRANGE: u32 = 3906;
 pub const OID_TSRANGE: u32 = 3908;
@@ -133,6 +134,19 @@ pub struct RawValue {
 }
 
 #[derive(Debug, Clone)]
+pub struct CompositeField {
+    pub oid: u32,
+    pub value: Option<Value>,
+    pub raw: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Composite {
+    pub type_oid: u32,
+    pub fields: Vec<CompositeField>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Range<T> {
     pub lower: Option<T>,
     pub upper: Option<T>,
@@ -198,6 +212,7 @@ pub enum Param {
     Range(Range<RangeValue>),
     Raw(RawValue),
     Money(i64),
+    Composite(Composite),
 }
 
 #[derive(Debug, Clone)]
@@ -223,6 +238,7 @@ pub enum Value {
     Vector(Vec<f32>),
     Range(Range<RangeValue>),
     Geometry(Geometry),
+    Composite(Composite),
 }
 
 impl From<bool> for Param {
@@ -445,6 +461,10 @@ pub fn encode_param(param: &Param) -> Result<(ParamValue, u32)> {
             Ok((ParamValue { format: FORMAT_BINARY, data: Some(data) }, oid))
         }
         Param::Raw(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.data.clone()) }, value.oid)),
+        Param::Composite(value) => {
+            let (data, oid) = encode_composite(value)?;
+            Ok((ParamValue { format: FORMAT_BINARY, data: Some(data) }, oid))
+        }
     }
 }
 
@@ -498,6 +518,7 @@ fn decode_binary_value(type_oid: u32, data: &[u8]) -> Result<Value> {
         OID_POINT | OID_LSEG | OID_PATH | OID_BOX | OID_POLYGON | OID_LINE | OID_CIRCLE => {
             Ok(Value::Geometry(Geometry { wkb: strip_length_prefix(data).to_vec(), srid: None, wkt: None }))
         }
+        OID_RECORD => Ok(Value::Composite(decode_composite(data)?)),
         _ => Ok(Value::Bytes(data.to_vec())),
     }
 }
@@ -510,6 +531,105 @@ fn decode_text_value(data: &[u8]) -> String {
         }
     }
     String::from_utf8_lossy(data).to_string()
+}
+
+fn encode_composite(value: &Composite) -> Result<(Vec<u8>, u32)> {
+    let type_oid = if value.type_oid != 0 { value.type_oid } else { OID_RECORD };
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&(value.fields.len() as i32).to_le_bytes());
+    for field in &value.fields {
+        let mut field_oid = field.oid;
+        let mut data: Option<Vec<u8>> = None;
+        if let Some(raw) = &field.raw {
+            data = Some(raw.clone());
+        } else if let Some(val) = &field.value {
+            let param = value_to_param(val)?;
+            let (encoded, oid) = encode_param(&param)?;
+            if field_oid == 0 {
+                field_oid = oid;
+            }
+            data = encoded.data;
+        }
+
+        if field_oid == 0 {
+            return Err(Error::new(ErrorKind::Data, "composite field OID is required"));
+        }
+        buf.extend_from_slice(&field_oid.to_le_bytes());
+        match data {
+            Some(bytes) => {
+                buf.extend_from_slice(&(bytes.len() as i32).to_le_bytes());
+                buf.extend_from_slice(&bytes);
+            }
+            None => {
+                buf.extend_from_slice(&(-1i32).to_le_bytes());
+            }
+        }
+    }
+    Ok((buf, type_oid))
+}
+
+fn decode_composite(data: &[u8]) -> Result<Composite> {
+    if data.len() < 4 {
+        return Ok(Composite { type_oid: OID_RECORD, fields: Vec::new() });
+    }
+    let count = i32::from_le_bytes(read_fixed::<4>(data)) as usize;
+    let mut offset = 4;
+    let mut fields = Vec::with_capacity(count);
+    for _ in 0..count {
+        if offset + 8 > data.len() {
+            break;
+        }
+        let oid = u32::from_le_bytes(read_fixed::<4>(&data[offset..]));
+        offset += 4;
+        let length = i32::from_le_bytes(read_fixed::<4>(&data[offset..]));
+        offset += 4;
+        if length < 0 {
+            fields.push(CompositeField { oid, value: None, raw: None });
+            continue;
+        }
+        let len = length as usize;
+        if offset + len > data.len() {
+            break;
+        }
+        let raw = data[offset..offset + len].to_vec();
+        offset += len;
+        let value = decode_binary_value(oid, &raw).ok();
+        fields.push(CompositeField { oid, value, raw: Some(raw) });
+    }
+    Ok(Composite { type_oid: OID_RECORD, fields })
+}
+
+fn value_to_param(value: &Value) -> Result<Param> {
+    match value {
+        Value::Null => Ok(Param::Null),
+        Value::Bool(v) => Ok(Param::Bool(*v)),
+        Value::Int16(v) => Ok(Param::Int16(*v)),
+        Value::Int32(v) => Ok(Param::Int32(*v)),
+        Value::Int64(v) => Ok(Param::Int64(*v)),
+        Value::Float32(v) => Ok(Param::Float32(*v)),
+        Value::Float64(v) => Ok(Param::Float64(*v)),
+        Value::Decimal(v) => Ok(Param::Decimal(v.clone())),
+        Value::String(v) => Ok(Param::String(v.clone())),
+        Value::Bytes(v) => Ok(Param::Bytes(v.clone())),
+        Value::Date(v) => Ok(Param::Date(*v)),
+        Value::Time(v) => Ok(Param::Time(*v)),
+        Value::Timestamp(v) => Ok(Param::Timestamp(*v)),
+        Value::Interval(v) => Ok(Param::Interval(v.clone())),
+        Value::Uuid(v) => Ok(Param::Uuid(v.clone())),
+        Value::Json(v) => Ok(Param::Json(v.clone())),
+        Value::Jsonb(v) => Ok(Param::Jsonb(v.clone())),
+        Value::Array(values) => {
+            let mut params = Vec::with_capacity(values.len());
+            for item in values {
+                params.push(value_to_param(item)?);
+            }
+            Ok(Param::Array(params))
+        }
+        Value::Vector(values) => Ok(Param::Vector(values.clone())),
+        Value::Range(range) => Ok(Param::Range(range.clone())),
+        Value::Geometry(geom) => Ok(Param::Geometry(geom.clone())),
+        Value::Composite(comp) => Ok(Param::Composite(comp.clone())),
+    }
 }
 
 fn read_fixed<const N: usize>(data: &[u8]) -> [u8; N] {

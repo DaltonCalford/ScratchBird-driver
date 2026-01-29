@@ -7,6 +7,7 @@ uses
 
 var
   Dsn: string;
+  CancelSql: string;
   Client: TScratchBirdClient;
   Stream: TScratchBirdResultStream;
   Row: TArray<Variant>;
@@ -37,6 +38,20 @@ begin
     Row := Stream.ReadRow;
     if Length(Row) = 0 then
       raise Exception.Create('Types fixture returned no rows');
+
+    CancelSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_CANCEL_SQL');
+    if CancelSql <> '' then
+    begin
+      Stream := Client.ExecuteQuery(CancelSql);
+      Client.Cancel;
+      try
+        Row := Stream.ReadRow;
+        raise Exception.Create('Cancel did not interrupt query');
+      except
+        on E: Exception do
+          Writeln('CancelTest: OK');
+      end;
+    end;
     Writeln('IntegrationTest: OK');
   finally
     Client.Free;

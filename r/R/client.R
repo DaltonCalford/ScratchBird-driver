@@ -19,6 +19,7 @@ sb_connect <- function(dsn = "", ...) {
   client$prepared <- new.env(parent = emptyenv())
   client$autocommit <- TRUE
   sb_startup_and_auth(client)
+  sb_apply_schema(client)
   client
 }
 
@@ -62,6 +63,11 @@ sb_fetch <- function(result, n = -1) {
 sb_clear_result <- function(result) {
   result$rows <- list()
   result
+}
+
+sb_cancel <- function(client) {
+  payload <- build_cancel_payload(0L, client$last_query_sequence)
+  sb_send_message(client, SB_MSG_CANCEL, payload, SB_MSG_FLAG_URGENT, FALSE)
 }
 
 sb_open_socket <- function(cfg) {
@@ -143,6 +149,32 @@ sb_startup_and_auth <- function(client) {
       sb_raise_query_error(payload)
     }
   }
+}
+
+sb_apply_schema <- function(client) {
+  schema <- trimws(client$cfg$schema)
+  if (schema == "" || tolower(schema) == "public") return(invisible(NULL))
+  statement <- build_schema_statement(schema)
+  if (statement == "") return(invisible(NULL))
+  sb_execute_query(client, statement)
+  invisible(NULL)
+}
+
+build_schema_statement <- function(schema) {
+  trimmed <- trimws(schema)
+  if (trimmed == "") return("")
+  if (grepl(",", trimmed, fixed = TRUE)) {
+    parts <- trimws(strsplit(trimmed, ",", fixed = TRUE)[[1]])
+    parts <- parts[parts != ""]
+    if (length(parts) == 0) return("")
+    quoted <- vapply(parts, quote_identifier, character(1))
+    return(paste("SET SEARCH_PATH TO", paste(quoted, collapse = ", ")))
+  }
+  paste("SET SCHEMA", quote_identifier(trimmed))
+}
+
+quote_identifier <- function(name) {
+  paste0('"', gsub('"', '""', name, fixed = TRUE), '"')
 }
 
 sb_execute_query <- function(client, sql, params = list()) {

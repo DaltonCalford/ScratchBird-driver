@@ -10,6 +10,7 @@ from each spec below.
 - [PREPARE_BIND_REQUIREMENTS.md](PREPARE_BIND_REQUIREMENTS.md) - Server-side prepare/bind rules
 - [TYPE_MAPPING_MATRIX.md](TYPE_MAPPING_MATRIX.md) - Required type coverage and conversions
 - [METADATA_SCHEMA_CONTRACT.md](METADATA_SCHEMA_CONTRACT.md) - Schema/search path + metadata queries
+- [DRIVER_MONITORING_VIEW_SUPPORT.md](DRIVER_MONITORING_VIEW_SUPPORT.md) - sys.* monitoring view support
 - [DRIVER_CONFORMANCE_TEST_HARNESS.md](DRIVER_CONFORMANCE_TEST_HARNESS.md) - Shared test harness contract
 - [DRIVER_DSN_AND_CONFIG_STANDARD.md](DRIVER_DSN_AND_CONFIG_STANDARD.md) - Canonical DSN and config keys
 - [DRIVER_AUTHENTICATION_MAPPING.md](DRIVER_AUTHENTICATION_MAPPING.md) - Auth method mapping

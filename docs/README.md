@@ -31,6 +31,8 @@ Each driver has two documentation layers:
 - [Pascal Driver](../pascal/README.md)
 - [.NET Driver](../dotnet/) - See solution file
 - [JDBC Driver](../jdbc/) - Java/Gradle project
+- [Superset Driver](../scratchbird-superset-driver/README.md)
+- [Metabase Driver](../scratchbird-metabase-driver/README.md)
 
 Quick links:
 

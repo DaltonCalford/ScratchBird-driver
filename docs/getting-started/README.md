@@ -23,6 +23,7 @@ ScratchBird driver in this repository.
 - [.NET](dotnet.md)
 - [JDBC (Java)](jdbc.md)
 - [Metabase Plugin](metabase.md)
+- [Superset Driver](superset.md)
 
 ## Shared References
 

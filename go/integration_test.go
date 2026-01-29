@@ -3,6 +3,7 @@ package scratchbird
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -72,5 +73,23 @@ func TestIntegrationTypesFixture(t *testing.T) {
 	}
 	if err := rows.Scan(ptrs...); err != nil {
 		t.Fatalf("scan error: %v", err)
+	}
+}
+
+func TestIntegrationCancel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	cancelSQL := os.Getenv("SCRATCHBIRD_GO_CANCEL_SQL")
+	if cancelSQL == "" {
+		t.Skip("SCRATCHBIRD_GO_CANCEL_SQL not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := db.ExecContext(ctx, cancelSQL)
+	if err == nil {
+		t.Fatalf("expected cancel error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Logf("cancel error: %v", err)
 	}
 }

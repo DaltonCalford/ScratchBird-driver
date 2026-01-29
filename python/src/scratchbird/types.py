@@ -50,6 +50,7 @@ OID_TIMETZ = 1266
 OID_NUMERIC = 1700
 OID_UUID = 2950
 OID_JSONB = 3802
+OID_RECORD = 2249
 OID_INT4RANGE = 3904
 OID_NUMRANGE = 3906
 OID_TSRANGE = 3908
@@ -99,6 +100,19 @@ class Range:
 
 
 @dataclass
+class CompositeField:
+    oid: int
+    value: Optional[Any] = None
+    data: Optional[bytes] = None
+
+
+@dataclass
+class Composite:
+    fields: list[CompositeField]
+    type_oid: int = OID_RECORD
+
+
+@dataclass
 class RawValue:
     oid: int
     data: bytes
@@ -107,6 +121,9 @@ class RawValue:
 def encode_param(value: Any) -> tuple[ParamValue, int]:
     if value is None:
         return ParamValue(FORMAT_BINARY, None), 0
+    if isinstance(value, Composite):
+        data, oid = _encode_composite(value)
+        return ParamValue(FORMAT_BINARY, data), oid
     if isinstance(value, RawValue):
         return ParamValue(FORMAT_BINARY, value.data), value.oid
     if isinstance(value, Jsonb):
@@ -227,6 +244,8 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
         return _parse_vector_literal(_strip_length_prefix(data).decode("utf-8", errors="replace"))
     if type_oid in (OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE):
         return Geometry(_strip_length_prefix(data))
+    if type_oid == OID_RECORD:
+        return _decode_composite(data)
     return data
 
 
@@ -240,6 +259,61 @@ def _decode_text_value(data: bytes) -> str:
 
 def _encode_length_prefixed(data: bytes) -> bytes:
     return struct.pack("<I", len(data)) + data
+
+
+def _encode_composite(value: Composite) -> tuple[bytes, int]:
+    fields = value.fields or []
+    buf = bytearray()
+    buf += struct.pack("<i", len(fields))
+    for field in fields:
+        field_oid = field.oid
+        data = None
+        if field.data is not None:
+            data = field.data
+        elif field.value is not None:
+            param, oid = encode_param(field.value)
+            if field_oid == 0:
+                field_oid = oid
+            if param.is_null:
+                data = None
+            else:
+                data = param.data or b""
+
+        if field_oid == 0:
+            raise ValueError("composite field OID is required")
+        buf += struct.pack("<I", field_oid)
+        if data is None:
+            buf += struct.pack("<i", -1)
+            continue
+        buf += struct.pack("<i", len(data))
+        buf += data
+    type_oid = value.type_oid or OID_RECORD
+    return bytes(buf), type_oid
+
+
+def _decode_composite(data: bytes) -> Composite:
+    if len(data) < 4:
+        return Composite(fields=[])
+    count = struct.unpack_from("<i", data, 0)[0]
+    offset = 4
+    fields: list[CompositeField] = []
+    for _ in range(count):
+        if offset + 8 > len(data):
+            break
+        oid = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        length = struct.unpack_from("<i", data, offset)[0]
+        offset += 4
+        if length < 0:
+            fields.append(CompositeField(oid=oid, value=None, data=None))
+            continue
+        if offset + length > len(data):
+            break
+        raw = data[offset : offset + length]
+        offset += length
+        value = _decode_binary_value(oid, raw)
+        fields.append(CompositeField(oid=oid, value=value, data=raw))
+    return Composite(fields=fields)
 
 
 def _strip_length_prefix(data: bytes) -> bytes:

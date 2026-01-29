@@ -9,6 +9,7 @@ public sealed class ScratchBirdConfig
     public string Database { get; set; } = "";
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
+    public string Schema { get; set; } = "";
     public string SslMode { get; set; } = "require";
     public string? SslRootCert { get; set; }
     public string? SslCert { get; set; }
@@ -130,6 +131,12 @@ internal static class DsnParser
             case "password":
             case "pwd":
                 cfg.Password = value;
+                break;
+            case "schema":
+            case "search_path":
+            case "searchpath":
+            case "currentschema":
+                cfg.Schema = value;
                 break;
             case "sslmode":
             case "ssl mode":

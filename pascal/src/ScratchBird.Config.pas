@@ -12,6 +12,7 @@ type
     Database: string;
     UserName: string;
     Password: string;
+    Schema: string;
     SSLMode: string;
     SSLRootCert: string;
     SSLCert: string;
@@ -35,6 +36,7 @@ begin
   Result.Database := '';
   Result.UserName := '';
   Result.Password := '';
+  Result.Schema := '';
   Result.SSLMode := 'require';
   Result.SSLRootCert := '';
   Result.SSLCert := '';
@@ -61,6 +63,8 @@ begin
     Config.UserName := Value
   else if (KeyLower = 'password') or (KeyLower = 'pwd') then
     Config.Password := Value
+  else if (KeyLower = 'schema') or (KeyLower = 'search_path') or (KeyLower = 'searchpath') or (KeyLower = 'currentschema') then
+    Config.Schema := Value
   else if (KeyLower = 'sslmode') or (KeyLower = 'ssl mode') then
     Config.SSLMode := Value
   else if KeyLower = 'sslrootcert' then

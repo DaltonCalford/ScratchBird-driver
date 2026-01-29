@@ -6,6 +6,7 @@ export interface ClientConfig {
   user?: string;
   password?: string;
   database?: string;
+  schema?: string;
   ssl?: boolean | Record<string, any>;
   sslmode?: string;
   sslrootcert?: string;
@@ -77,6 +78,7 @@ export const OID_TIMETZ = 1266;
 export const OID_NUMERIC = 1700;
 export const OID_UUID = 2950;
 export const OID_JSONB = 3802;
+export const OID_RECORD = 2249;
 export const OID_INT4RANGE = 3904;
 export const OID_NUMRANGE = 3906;
 export const OID_TSRANGE = 3908;
@@ -135,6 +137,21 @@ export class ScratchbirdRange<T> {
   constructor(init?: Partial<ScratchbirdRange<T>>) {
     if (!init) return;
     Object.assign(this, init);
+  }
+}
+
+export interface ScratchbirdCompositeField {
+  oid: number;
+  value?: any;
+  raw?: Buffer | null;
+}
+
+export class ScratchbirdComposite {
+  typeOid: number;
+  fields: ScratchbirdCompositeField[];
+  constructor(fields: ScratchbirdCompositeField[], typeOid: number = OID_RECORD) {
+    this.fields = fields;
+    this.typeOid = typeOid;
   }
 }
 
@@ -305,6 +322,10 @@ export function encodeParam(value: any): { param: ParamValue; oid: number } {
     }
     return { param: { data: encodeLengthPrefixed(raw), format: FORMAT_BINARY }, oid: OID_JSON };
   }
+  if (value instanceof ScratchbirdComposite) {
+    const encoded = encodeComposite(value);
+    return { param: { data: encoded.data, format: FORMAT_BINARY }, oid: encoded.oid };
+  }
   if (value instanceof ScratchbirdGeometry) {
     if (!value.wkb || value.wkb.length === 0) {
       throw new Error("geometry requires WKB payload");
@@ -465,9 +486,82 @@ function decodeBinaryValue(typeOid: number, data: Buffer): any {
     case OID_LINE:
     case OID_CIRCLE:
       return new ScratchbirdGeometry(Buffer.from(stripLengthPrefix(data)));
+    case OID_RECORD:
+      return decodeComposite(data);
     default:
       return Buffer.from(data);
   }
+}
+
+function encodeComposite(value: ScratchbirdComposite): { data: Buffer; oid: number } {
+  const chunks: Buffer[] = [];
+  const fields = value.fields ?? [];
+  const header = Buffer.alloc(4);
+  header.writeInt32LE(fields.length, 0);
+  chunks.push(header);
+
+  for (const field of fields) {
+    let oid = field.oid ?? 0;
+    let data: Buffer | null = null;
+    if (field.raw !== undefined) {
+      data = field.raw;
+    } else if (field.value !== undefined) {
+      const encoded = encodeParam(field.value);
+      if (!oid) {
+        oid = encoded.oid;
+      }
+      if (encoded.param.isNull) {
+        data = null;
+      } else {
+        data = encoded.param.data ?? Buffer.alloc(0);
+      }
+    }
+
+    if (!oid) {
+      throw new Error("composite field OID is required");
+    }
+    const oidBuf = Buffer.alloc(4);
+    oidBuf.writeUInt32LE(oid, 0);
+    const lenBuf = Buffer.alloc(4);
+    if (data === null) {
+      lenBuf.writeInt32LE(-1, 0);
+      chunks.push(oidBuf, lenBuf);
+      continue;
+    }
+    lenBuf.writeInt32LE(data.length, 0);
+    chunks.push(oidBuf, lenBuf, data);
+  }
+
+  const typeOid = value.typeOid || OID_RECORD;
+  return { data: Buffer.concat(chunks), oid: typeOid };
+}
+
+function decodeComposite(data: Buffer): ScratchbirdComposite {
+  if (data.length < 4) {
+    return new ScratchbirdComposite([]);
+  }
+  const count = data.readInt32LE(0);
+  let offset = 4;
+  const fields: ScratchbirdCompositeField[] = [];
+  for (let i = 0; i < count; i++) {
+    if (offset + 8 > data.length) break;
+    const oid = data.readUInt32LE(offset);
+    offset += 4;
+    const length = data.readInt32LE(offset);
+    offset += 4;
+    if (length < 0) {
+      fields.push({ oid, value: null, raw: null });
+      continue;
+    }
+    if (offset + length > data.length) {
+      break;
+    }
+    const raw = data.subarray(offset, offset + length);
+    offset += length;
+    const value = decodeBinaryValue(oid, raw);
+    fields.push({ oid, value, raw: Buffer.from(raw) });
+  }
+  return new ScratchbirdComposite(fields);
 }
 
 function decodeTextValue(data: Buffer): string {

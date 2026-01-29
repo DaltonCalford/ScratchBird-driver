@@ -93,6 +93,11 @@ let rows = client.query("SELECT * FROM users", &[]).await?;
 
 See individual driver directories for complete documentation and examples.
 
+## Build Matrix (Windows/Linux)
+
+Cross-platform build and test commands are captured in:
+- `docs/BUILD_MATRIX.md`
+
 ---
 
 ## Target Features (SBWP v1.1)

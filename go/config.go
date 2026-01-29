@@ -14,6 +14,7 @@ type Config struct {
 	Database       string
 	User           string
 	Password       string
+	Schema         string
 	SSLMode        string
 	SSLRootCert    string
 	SSLCert        string
@@ -122,6 +123,8 @@ func applyParam(cfg *Config, key, value string) {
 		cfg.User = value
 	case "password", "pwd":
 		cfg.Password = value
+	case "schema", "search_path", "searchpath", "currentschema":
+		cfg.Schema = value
 	case "sslmode", "ssl mode":
 		cfg.SSLMode = value
 	case "sslrootcert":

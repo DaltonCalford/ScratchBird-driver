@@ -7,6 +7,10 @@ ScratchBird native wire protocol driver for Go (`database/sql`).
 - Getting started: `docs/getting-started/go.md`
 - API reference: `docs/api-reference/go.md`
 
+## Build/Test (Windows/Linux)
+
+See `docs/BUILD_MATRIX.md`.
+
 ## Usage
 
 ```go

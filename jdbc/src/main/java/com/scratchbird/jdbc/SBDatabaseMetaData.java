@@ -6,6 +6,7 @@ package com.scratchbird.jdbc;
 
 import java.sql.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * JDBC DatabaseMetaData implementation for ScratchBird.
@@ -660,14 +661,120 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types)
             throws SQLException {
-        // Return empty result set - would need to query system tables
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "TABLE_TYPE", "REMARKS",
-                         "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SELF_REFERENCING_COL_NAME",
-                         "REF_GENERATION"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "TABLE_TYPE", "REMARKS",
+                             "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SELF_REFERENCING_COL_NAME",
+                             "REF_GENERATION"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        Set<String> typeFilter = normalizeTypes(types);
+        List<Object[]> rows = new ArrayList<>();
+
+        for (Object[] row : queryRows(
+            "SELECT t.table_name, t.table_type, s.schema_name " +
+            "FROM sys.tables t " +
+            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+            "WHERE t.is_valid = 1 AND s.is_valid = 1"
+        )) {
+            String tableName = toStringValue(row, 0);
+            String schemaName = toStringValue(row, 2);
+            if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(tableName, tableNamePattern)) {
+                continue;
+            }
+            String tableType = mapTableType(row[1], schemaName, false);
+            if (!matchesTypeFilter(tableType, typeFilter)) {
+                continue;
+            }
+            rows.add(new Object[]{
+                currentCatalog,
+                schemaName,
+                tableName,
+                tableType,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+            });
+        }
+
+        for (Object[] row : queryRows(
+            "SELECT v.view_name, v.is_materialized, s.schema_name " +
+            "FROM sys.views v " +
+            "JOIN sys.schemas s ON s.schema_id = v.schema_id " +
+            "WHERE v.is_valid = 1 AND s.is_valid = 1"
+        )) {
+            String viewName = toStringValue(row, 0);
+            String schemaName = toStringValue(row, 2);
+            if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(viewName, tableNamePattern)) {
+                continue;
+            }
+            String tableType = mapTableType(row[1], schemaName, true);
+            if (!matchesTypeFilter(tableType, typeFilter)) {
+                continue;
+            }
+            rows.add(new Object[]{
+                currentCatalog,
+                schemaName,
+                viewName,
+                tableType,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+            });
+        }
+
+        if (matchesTypeFilter("SYSTEM VIEW", typeFilter)) {
+            Set<String> existing = new HashSet<>();
+            for (Object[] row : rows) {
+                if (row[2] != null && row[1] != null) {
+                    existing.add(row[1].toString().toLowerCase() + "." + row[2].toString().toLowerCase());
+                }
+            }
+            for (String name : monitoringViews()) {
+                if (!matchesPattern("sys", schemaPattern) || !matchesPattern(name, tableNamePattern)) {
+                    continue;
+                }
+                String key = "sys." + name.toLowerCase();
+                if (existing.contains(key)) {
+                    continue;
+                }
+                rows.add(new Object[]{
+                    currentCatalog,
+                    "sys",
+                    name,
+                    "SYSTEM VIEW",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                });
+            }
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("TABLE_TYPE", 25));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("TYPE_CAT", 25));
+        cols.add(column("TYPE_SCHEM", 25));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("SELF_REFERENCING_COL_NAME", 25));
+        cols.add(column("REF_GENERATION", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -677,20 +784,37 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
-        // Return empty result set - would need to query system tables
-        return createEmptyResultSet(
-            new String[]{"TABLE_SCHEM", "TABLE_CATALOG"},
-            new int[]{Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_SCHEM", "TABLE_CATALOG"},
+                new int[]{Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : queryRows("SELECT schema_name FROM sys.schemas WHERE is_valid = 1")) {
+            String schemaName = toStringValue(row, 0);
+            if (!matchesPattern(schemaName, schemaPattern)) {
+                continue;
+            }
+            rows.add(new Object[]{schemaName, currentCatalog});
+        }
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_CATALOG", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getCatalogs() throws SQLException {
-        // Return empty result set - would need to query system tables
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT"},
-            new int[]{Types.VARCHAR}
-        );
+        List<Object[]> rows = new ArrayList<>();
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (currentCatalog != null && !currentCatalog.isEmpty()) {
+            rows.add(new Object[]{currentCatalog});
+        }
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -715,20 +839,106 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getColumns(String catalog, String schemaPattern, String tableNamePattern,
             String columnNamePattern) throws SQLException {
-        // Return empty result set - would need to query system tables
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
-                         "TYPE_NAME", "COLUMN_SIZE", "BUFFER_LENGTH", "DECIMAL_DIGITS",
-                         "NUM_PREC_RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
-                         "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE",
-                         "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE", "SOURCE_DATA_TYPE",
-                         "IS_AUTOINCREMENT", "IS_GENERATEDCOLUMN"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
-                      Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.INTEGER,
-                      Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
-                      Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
+                             "TYPE_NAME", "COLUMN_SIZE", "BUFFER_LENGTH", "DECIMAL_DIGITS",
+                             "NUM_PREC_RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
+                             "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE",
+                             "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE", "SOURCE_DATA_TYPE",
+                             "IS_AUTOINCREMENT", "IS_GENERATEDCOLUMN"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.INTEGER,
+                          Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
+                          Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : queryRows(
+            "SELECT c.column_name, c.data_type_id, c.ordinal_position, c.is_nullable, c.default_value, " +
+            "t.table_name, s.schema_name " +
+            "FROM sys.columns c " +
+            "JOIN sys.tables t ON t.table_id = c.table_id " +
+            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+            "WHERE c.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
+        )) {
+            String columnName = toStringValue(row, 0);
+            String tableName = toStringValue(row, 5);
+            String schemaName = toStringValue(row, 6);
+            if (!matchesPattern(schemaName, schemaPattern) ||
+                !matchesPattern(tableName, tableNamePattern) ||
+                !matchesPattern(columnName, columnNamePattern)) {
+                continue;
+            }
+
+            Object typeValue = row[1];
+            Integer oid = parseOid(typeValue);
+            String typeName = oid != null ? typeNameFromOid(oid) : toStringValue(typeValue);
+            int jdbcType = oid != null ? jdbcTypeFromOid(oid) : jdbcTypeFromTypeName(typeName);
+
+            int ordinal = toIntValue(row[2], 0);
+            boolean nullable = toBooleanValue(row[3]);
+            String nullableText = nullable ? "YES" : "NO";
+            int nullableFlag = nullable ? DatabaseMetaData.columnNullable : DatabaseMetaData.columnNoNulls;
+            String defaultValue = toStringValue(row, 4);
+
+            rows.add(new Object[]{
+                currentCatalog,
+                schemaName,
+                tableName,
+                columnName,
+                jdbcType,
+                typeName,
+                0,
+                0,
+                0,
+                10,
+                nullableFlag,
+                null,
+                defaultValue,
+                null,
+                null,
+                0,
+                ordinal,
+                nullableText,
+                null,
+                null,
+                null,
+                null,
+                "NO",
+                "NO"
+            });
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("COLUMN_SIZE", 23));
+        cols.add(column("BUFFER_LENGTH", 23));
+        cols.add(column("DECIMAL_DIGITS", 23));
+        cols.add(column("NUM_PREC_RADIX", 23));
+        cols.add(column("NULLABLE", 23));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("COLUMN_DEF", 25));
+        cols.add(column("SQL_DATA_TYPE", 23));
+        cols.add(column("SQL_DATETIME_SUB", 23));
+        cols.add(column("CHAR_OCTET_LENGTH", 23));
+        cols.add(column("ORDINAL_POSITION", 23));
+        cols.add(column("IS_NULLABLE", 25));
+        cols.add(column("SCOPE_CATALOG", 25));
+        cols.add(column("SCOPE_SCHEMA", 25));
+        cols.add(column("SCOPE_TABLE", 25));
+        cols.add(column("SOURCE_DATA_TYPE", 21));
+        cols.add(column("IS_AUTOINCREMENT", 25));
+        cols.add(column("IS_GENERATEDCOLUMN", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -823,13 +1033,421 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique,
             boolean approximate) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER",
-                         "INDEX_NAME", "TYPE", "ORDINAL_POSITION", "COLUMN_NAME", "ASC_OR_DESC",
-                         "CARDINALITY", "PAGES", "FILTER_CONDITION"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.BOOLEAN, Types.VARCHAR,
-                      Types.VARCHAR, Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR,
-                      Types.BIGINT, Types.BIGINT, Types.VARCHAR}
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER",
+                             "INDEX_NAME", "TYPE", "ORDINAL_POSITION", "COLUMN_NAME", "ASC_OR_DESC",
+                             "CARDINALITY", "PAGES", "FILTER_CONDITION"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.BOOLEAN, Types.VARCHAR,
+                          Types.VARCHAR, Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR,
+                          Types.BIGINT, Types.BIGINT, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : queryRows(
+            "SELECT i.index_name, i.index_type, i.is_unique, " +
+            "t.table_name, s.schema_name " +
+            "FROM sys.indexes i " +
+            "JOIN sys.tables t ON t.table_id = i.table_id " +
+            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+            "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
+        )) {
+            String indexName = toStringValue(row, 0);
+            String tableName = toStringValue(row, 3);
+            String schemaName = toStringValue(row, 4);
+            if (!matchesPattern(schemaName, schema) || !matchesPattern(tableName, table)) {
+                continue;
+            }
+            boolean isUnique = toBooleanValue(row[2]);
+            if (unique && !isUnique) {
+                continue;
+            }
+
+            rows.add(new Object[]{
+                currentCatalog,
+                schemaName,
+                tableName,
+                !isUnique,
+                null,
+                indexName,
+                DatabaseMetaData.tableIndexOther,
+                0,
+                null,
+                null,
+                0,
+                0,
+                null
+            });
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("NON_UNIQUE", 16));
+        cols.add(column("INDEX_QUALIFIER", 25));
+        cols.add(column("INDEX_NAME", 25));
+        cols.add(column("TYPE", 21));
+        cols.add(column("ORDINAL_POSITION", 21));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("ASC_OR_DESC", 25));
+        cols.add(column("CARDINALITY", 20));
+        cols.add(column("PAGES", 20));
+        cols.add(column("FILTER_CONDITION", 25));
+        return new SBResultSet(null, cols, rows);
+    }
+
+    private List<Object[]> queryRows(String sql) throws SQLException {
+        SBQueryResult result = connection.getProtocol().execute(sql);
+        if (result == null || result.getRows() == null) {
+            return Collections.emptyList();
+        }
+        return result.getRows();
+    }
+
+    private boolean matchesPattern(String value, String pattern) {
+        if (pattern == null || pattern.isEmpty()) {
+            return true;
+        }
+        if (value == null) {
+            return false;
+        }
+        return Pattern.compile(patternToRegex(pattern), Pattern.CASE_INSENSITIVE).matcher(value).matches();
+    }
+
+    private String patternToRegex(String pattern) {
+        StringBuilder out = new StringBuilder("^");
+        boolean escaped = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char ch = pattern.charAt(i);
+            if (escaped) {
+                out.append(Pattern.quote(String.valueOf(ch)));
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '%') {
+                out.append(".*");
+            } else if (ch == '_') {
+                out.append('.');
+            } else {
+                out.append(Pattern.quote(String.valueOf(ch)));
+            }
+        }
+        out.append('$');
+        return out.toString();
+    }
+
+    private SBColumnInfo column(String name, int typeOid) {
+        SBColumnInfo col = new SBColumnInfo();
+        col.setName(name);
+        col.setTypeOid(typeOid);
+        return col;
+    }
+
+    private String toStringValue(Object[] row, int index) {
+        if (row == null || index < 0 || index >= row.length) {
+            return null;
+        }
+        return toStringValue(row[index]);
+    }
+
+    private String toStringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value.toString();
+    }
+
+    private int toIntValue(Object value, int fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private boolean toBooleanValue(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue() != 0;
+        }
+        String text = value.toString().trim();
+        if ("1".equals(text)) {
+            return true;
+        }
+        if ("0".equals(text)) {
+            return false;
+        }
+        return Boolean.parseBoolean(text);
+    }
+
+    private Integer parseOid(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            String text = value.toString();
+            if (text.matches("^[0-9]+$")) {
+                return Integer.parseInt(text);
+            }
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+        return null;
+    }
+
+    private String typeNameFromOid(int oid) {
+        switch (oid) {
+            case SBTypeCodec.OID_BOOL:
+                return "boolean";
+            case SBTypeCodec.OID_CHAR:
+                return "char";
+            case SBTypeCodec.OID_INT2:
+                return "int2";
+            case SBTypeCodec.OID_INT4:
+                return "int4";
+            case SBTypeCodec.OID_INT8:
+                return "int8";
+            case SBTypeCodec.OID_FLOAT4:
+                return "float4";
+            case SBTypeCodec.OID_FLOAT8:
+                return "float8";
+            case SBTypeCodec.OID_NUMERIC:
+                return "numeric";
+            case SBTypeCodec.OID_MONEY:
+                return "money";
+            case SBTypeCodec.OID_TEXT:
+                return "text";
+            case SBTypeCodec.OID_VARCHAR:
+                return "varchar";
+            case SBTypeCodec.OID_BPCHAR:
+                return "char";
+            case SBTypeCodec.OID_DATE:
+                return "date";
+            case SBTypeCodec.OID_TIME:
+                return "time";
+            case SBTypeCodec.OID_TIMESTAMP:
+                return "timestamp";
+            case SBTypeCodec.OID_TIMESTAMPTZ:
+                return "timestamptz";
+            case SBTypeCodec.OID_INTERVAL:
+                return "interval";
+            case SBTypeCodec.OID_UUID:
+                return "uuid";
+            case SBTypeCodec.OID_JSON:
+                return "json";
+            case SBTypeCodec.OID_JSONB:
+                return "jsonb";
+            case SBTypeCodec.OID_XML:
+                return "xml";
+            case SBTypeCodec.OID_BYTEA:
+                return "bytea";
+            case SBTypeCodec.OID_INET:
+                return "inet";
+            case SBTypeCodec.OID_CIDR:
+                return "cidr";
+            case SBTypeCodec.OID_MACADDR:
+                return "macaddr";
+            case SBTypeCodec.OID_MACADDR8:
+                return "macaddr8";
+            case SBTypeCodec.OID_RECORD:
+                return "record";
+            default:
+                return "unknown";
+        }
+    }
+
+    private int jdbcTypeFromOid(int oid) {
+        switch (oid) {
+            case SBTypeCodec.OID_BOOL:
+                return Types.BOOLEAN;
+            case SBTypeCodec.OID_CHAR:
+                return Types.CHAR;
+            case SBTypeCodec.OID_INT2:
+                return Types.SMALLINT;
+            case SBTypeCodec.OID_INT4:
+                return Types.INTEGER;
+            case SBTypeCodec.OID_INT8:
+                return Types.BIGINT;
+            case SBTypeCodec.OID_FLOAT4:
+                return Types.REAL;
+            case SBTypeCodec.OID_FLOAT8:
+                return Types.DOUBLE;
+            case SBTypeCodec.OID_NUMERIC:
+            case SBTypeCodec.OID_MONEY:
+                return Types.NUMERIC;
+            case SBTypeCodec.OID_TEXT:
+            case SBTypeCodec.OID_VARCHAR:
+                return Types.VARCHAR;
+            case SBTypeCodec.OID_BPCHAR:
+                return Types.CHAR;
+            case SBTypeCodec.OID_BYTEA:
+                return Types.BINARY;
+            case SBTypeCodec.OID_DATE:
+                return Types.DATE;
+            case SBTypeCodec.OID_TIME:
+                return Types.TIME;
+            case SBTypeCodec.OID_TIMESTAMP:
+            case SBTypeCodec.OID_TIMESTAMPTZ:
+                return Types.TIMESTAMP;
+            case SBTypeCodec.OID_UUID:
+            case SBTypeCodec.OID_JSON:
+            case SBTypeCodec.OID_JSONB:
+            case SBTypeCodec.OID_XML:
+            case SBTypeCodec.OID_INET:
+            case SBTypeCodec.OID_CIDR:
+            case SBTypeCodec.OID_MACADDR:
+            case SBTypeCodec.OID_MACADDR8:
+            case SBTypeCodec.OID_RECORD:
+                return Types.OTHER;
+            default:
+                return Types.OTHER;
+        }
+    }
+
+    private int jdbcTypeFromTypeName(String typeName) {
+        if (typeName == null) {
+            return Types.OTHER;
+        }
+        String normalized = typeName.toLowerCase(Locale.ROOT);
+        if (normalized.contains("int2") || normalized.contains("smallint")) {
+            return Types.SMALLINT;
+        }
+        if (normalized.contains("int4") || normalized.equals("int") || normalized.contains("integer")) {
+            return Types.INTEGER;
+        }
+        if (normalized.contains("int8") || normalized.contains("bigint")) {
+            return Types.BIGINT;
+        }
+        if (normalized.contains("float4") || normalized.contains("real")) {
+            return Types.REAL;
+        }
+        if (normalized.contains("float8") || normalized.contains("double")) {
+            return Types.DOUBLE;
+        }
+        if (normalized.contains("numeric") || normalized.contains("decimal") || normalized.contains("money")) {
+            return Types.NUMERIC;
+        }
+        if (normalized.contains("char") && !normalized.contains("varchar")) {
+            return Types.CHAR;
+        }
+        if (normalized.contains("varchar") || normalized.contains("text")) {
+            return Types.VARCHAR;
+        }
+        if (normalized.contains("date")) {
+            return Types.DATE;
+        }
+        if (normalized.contains("time")) {
+            return Types.TIME;
+        }
+        if (normalized.contains("timestamp")) {
+            return Types.TIMESTAMP;
+        }
+        if (normalized.contains("bytea") || normalized.contains("blob")) {
+            return Types.BINARY;
+        }
+        return Types.OTHER;
+    }
+
+    private String mapTableType(Object rawType, String schemaName, boolean fromView) {
+        String schema = schemaName != null ? schemaName.toLowerCase(Locale.ROOT) : "";
+        String type;
+        if (fromView) {
+            boolean materialized = toBooleanValue(rawType);
+            type = materialized ? "MATERIALIZED VIEW" : "VIEW";
+        } else if (rawType instanceof Number) {
+            int code = ((Number) rawType).intValue();
+            switch (code) {
+                case 1:
+                    type = "TABLE";
+                    break;
+                case 2:
+                    type = "TEMPORARY TABLE";
+                    break;
+                case 3:
+                    type = "FOREIGN TABLE";
+                    break;
+                case 4:
+                    type = "MATERIALIZED VIEW";
+                    break;
+                case 5:
+                    type = "SYSTEM TABLE";
+                    break;
+                case 0:
+                default:
+                    type = "TABLE";
+                    break;
+            }
+        } else {
+            type = rawType != null ? rawType.toString().toUpperCase(Locale.ROOT) : "TABLE";
+        }
+
+        if ("sys".equals(schema)) {
+            if ("VIEW".equals(type) || "MATERIALIZED VIEW".equals(type)) {
+                return "SYSTEM VIEW";
+            }
+            if ("TABLE".equals(type)) {
+                return "SYSTEM TABLE";
+            }
+        }
+        return type;
+    }
+
+    private Set<String> normalizeTypes(String[] types) {
+        if (types == null || types.length == 0) {
+            return Collections.emptySet();
+        }
+        Set<String> normalized = new HashSet<>();
+        for (String type : types) {
+            if (type != null) {
+                normalized.add(type.toUpperCase(Locale.ROOT));
+            }
+        }
+        return normalized;
+    }
+
+    private boolean matchesTypeFilter(String tableType, Set<String> filter) {
+        if (filter == null || filter.isEmpty()) {
+            return true;
+        }
+        if (tableType == null) {
+            return false;
+        }
+        return filter.contains(tableType.toUpperCase(Locale.ROOT));
+    }
+
+    private List<String> monitoringViews() {
+        return Arrays.asList(
+            "sessions",
+            "context_variables",
+            "transactions",
+            "locks",
+            "statements",
+            "io_stats",
+            "performance",
+            "jobs",
+            "job_runs",
+            "job_dependencies"
         );
     }
 

@@ -7,6 +7,10 @@ Pure-PHP ScratchBird PDO-style driver using the native wire protocol.
 - Getting started: `docs/getting-started/php.md`
 - API reference: `docs/api-reference/php.md`
 
+## Build/Test (Windows/Linux)
+
+See `docs/BUILD_MATRIX.md`.
+
 ## Usage
 
 ```php

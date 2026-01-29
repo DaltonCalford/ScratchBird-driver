@@ -201,6 +201,7 @@ export class Client {
     }
     await this.protocol.connect(this.config);
     await this.handshake();
+    await this.applySchema();
     this.connected = true;
   }
 
@@ -342,6 +343,19 @@ export class Client {
           continue;
       }
     }
+  }
+
+  private async applySchema(): Promise<void> {
+    const schema = this.config.schema?.trim();
+    if (!schema || schema.toLowerCase() === "public") {
+      return;
+    }
+    const statement = buildSchemaStatement(schema);
+    if (!statement) {
+      return;
+    }
+    await this.sendSimpleQuery(statement);
+    await this.drainUntilReady();
   }
 
   private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
@@ -673,6 +687,29 @@ function buildRow(columns: Array<{ name: string; typeOid: number; format: number
     }
   }
   return row;
+}
+
+function buildSchemaStatement(schema: string): string {
+  const trimmed = schema.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.includes(",")) {
+    const parts = trimmed
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .map((part) => quoteIdentifier(part));
+    if (!parts.length) {
+      return "";
+    }
+    return `SET SEARCH_PATH TO ${parts.join(", ")}`;
+  }
+  return `SET SCHEMA ${quoteIdentifier(trimmed)}`;
+}
+
+function quoteIdentifier(name: string): string {
+  return `"${name.replace(/"/g, "\"\"")}"`;
 }
 
 function resolveSslMode(config: ClientConfig): string {

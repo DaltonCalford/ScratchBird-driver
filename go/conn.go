@@ -55,6 +55,10 @@ func (c *Conn) connect(ctx context.Context) error {
 		_ = c.raw.Close()
 		return err
 	}
+	if err := c.applySchema(ctx); err != nil {
+		_ = c.raw.Close()
+		return err
+	}
 	return nil
 }
 
@@ -470,6 +474,49 @@ func (c *Conn) requestedFeatures() uint64 {
 		features |= featureStreaming
 	}
 	return features
+}
+
+func (c *Conn) applySchema(ctx context.Context) error {
+	schema := strings.TrimSpace(c.config.Schema)
+	if schema == "" || strings.EqualFold(schema, "public") {
+		return nil
+	}
+	stmt := buildSchemaStatement(schema)
+	if stmt == "" {
+		return nil
+	}
+	if err := c.sendSimpleQuery(stmt, ctx); err != nil {
+		return err
+	}
+	_, _, _, err := c.drainUntilReady(ctx)
+	return err
+}
+
+func buildSchemaStatement(schema string) string {
+	schema = strings.TrimSpace(schema)
+	if schema == "" {
+		return ""
+	}
+	if strings.Contains(schema, ",") {
+		parts := strings.Split(schema, ",")
+		quoted := make([]string, 0, len(parts))
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			quoted = append(quoted, quoteIdentifier(part))
+		}
+		if len(quoted) == 0 {
+			return ""
+		}
+		return "SET SEARCH_PATH TO " + strings.Join(quoted, ", ")
+	}
+	return "SET SCHEMA " + quoteIdentifier(schema)
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, error) {

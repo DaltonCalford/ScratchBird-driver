@@ -16,6 +16,7 @@ protocol behavior is defined by the specs in `docs/specifications/`.
 - [.NET](dotnet.md)
 - [JDBC (Java)](jdbc.md)
 - [Metabase Plugin](metabase.md)
+- [Superset Driver](superset.md)
 
 ## Shared References
 

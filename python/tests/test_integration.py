@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 
 import pytest
 
@@ -48,3 +50,30 @@ def test_types_fixture_integration():
         assert len(row) > 0
     finally:
         conn.close()
+
+
+def test_cancel_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    cancel_sql = os.environ.get("SCRATCHBIRD_TEST_CANCEL_SQL")
+    if not cancel_sql:
+        pytest.skip("SCRATCHBIRD_TEST_CANCEL_SQL not set")
+    conn = scratchbird.connect(dsn)
+    error = []
+
+    def run_query():
+        try:
+            cur = conn.cursor()
+            cur.execute(cancel_sql)
+            cur.fetchall()
+        except Exception as exc:  # noqa: BLE001
+            error.append(exc)
+
+    thread = threading.Thread(target=run_query)
+    thread.start()
+    time.sleep(0.2)
+    conn.cancel()
+    thread.join(timeout=5)
+    conn.close()
+    assert error, "expected cancel error"

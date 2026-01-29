@@ -22,6 +22,25 @@ module Scratchbird
     end
   end
 
+  class CompositeField
+    attr_reader :oid, :value, :raw
+
+    def initialize(oid:, value: nil, raw: nil)
+      @oid = oid
+      @value = value
+      @raw = raw
+    end
+  end
+
+  class Composite
+    attr_reader :type_oid, :fields
+
+    def initialize(fields = [], type_oid: nil)
+      @fields = fields
+      @type_oid = type_oid
+    end
+  end
+
   class RangeValue
     attr_accessor :lower, :upper, :lower_inclusive, :upper_inclusive,
                   :lower_infinite, :upper_infinite, :empty, :range_oid
@@ -76,6 +95,7 @@ module Scratchbird
     OID_NUMERIC = 1700
     OID_UUID = 2950
     OID_JSONB = 3802
+    OID_RECORD = 2249
     OID_INT4RANGE = 3904
     OID_NUMRANGE = 3906
     OID_TSRANGE = 3908
@@ -114,6 +134,11 @@ module Scratchbird
       if value.is_a?(RangeValue)
         encoded = encode_range(value)
         return { param: { format: FORMAT_BINARY, data: encoded[:data] }, oid: encoded[:oid] }
+      end
+
+      if value.is_a?(Composite)
+        data, oid = encode_composite(value)
+        return { param: { format: FORMAT_BINARY, data: data }, oid: oid }
       end
 
       if value.is_a?(Time) || value.is_a?(DateTime)
@@ -256,6 +281,8 @@ module Scratchbird
         parse_vector_literal(strip_length_prefixed(data))
       when OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE
         Geometry.new(strip_length_prefixed(data))
+      when OID_RECORD
+        decode_composite(data)
       else
         data
       end
@@ -271,6 +298,57 @@ module Scratchbird
 
     def self.encode_length_prefixed(data)
       [data.to_s.bytesize].pack("V") + data.to_s
+    end
+
+    def self.encode_composite(value)
+      fields = value.fields || []
+      type_oid = value.type_oid || OID_RECORD
+      buffer = +""
+      buffer << [fields.length].pack("l<")
+      fields.each do |field|
+        field_oid = field.oid
+        data = nil
+        if !field.raw.nil?
+          data = field.raw
+        elsif !field.value.nil?
+          encoded = encode_param(field.value)
+          field_oid = encoded[:oid] if field_oid.to_i == 0
+          data = encoded[:param][:is_null] ? nil : encoded[:param][:data]
+        end
+        raise ArgumentError, "composite field OID is required" if field_oid.to_i == 0
+        buffer << [field_oid].pack("L<")
+        if data.nil?
+          buffer << [-1].pack("l<")
+        else
+          buffer << [data.bytesize].pack("l<")
+          buffer << data
+        end
+      end
+      [buffer, type_oid]
+    end
+
+    def self.decode_composite(data)
+      return Composite.new([]) if data.bytesize < 4
+      count = data.byteslice(0, 4).unpack1("l<")
+      offset = 4
+      fields = []
+      count.times do
+        break if offset + 8 > data.bytesize
+        oid = data.byteslice(offset, 4).unpack1("L<")
+        offset += 4
+        length = data.byteslice(offset, 4).unpack1("l<")
+        offset += 4
+        if length < 0
+          fields << CompositeField.new(oid: oid, value: nil, raw: nil)
+          next
+        end
+        break if offset + length > data.bytesize
+        raw = data.byteslice(offset, length)
+        offset += length
+        value = decode_binary_value(oid, raw)
+        fields << CompositeField.new(oid: oid, value: value, raw: raw)
+      end
+      Composite.new(fields)
     end
 
     def self.strip_length_prefixed(data)

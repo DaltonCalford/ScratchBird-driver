@@ -49,6 +49,33 @@ final class Range
     }
 }
 
+final class CompositeField
+{
+    public int $oid;
+    public mixed $value;
+    public ?string $raw;
+
+    public function __construct(int $oid, mixed $value = null, ?string $raw = null)
+    {
+        $this->oid = $oid;
+        $this->value = $value;
+        $this->raw = $raw;
+    }
+}
+
+final class Composite
+{
+    /** @var CompositeField[] */
+    public array $fields;
+    public int $typeOid;
+
+    public function __construct(array $fields = [], int $typeOid = 0)
+    {
+        $this->fields = $fields;
+        $this->typeOid = $typeOid;
+    }
+}
+
 final class TypeDecoder
 {
     public const FORMAT_TEXT = 0;
@@ -88,6 +115,7 @@ final class TypeDecoder
     public const OID_NUMERIC = 1700;
     public const OID_UUID = 2950;
     public const OID_JSONB = 3802;
+    public const OID_RECORD = 2249;
     public const OID_INT4RANGE = 3904;
     public const OID_NUMRANGE = 3906;
     public const OID_TSRANGE = 3908;
@@ -129,6 +157,10 @@ final class TypeDecoder
         }
         if ($value instanceof Range) {
             $encoded = self::encodeRange($value);
+            return ['param' => ['format' => self::FORMAT_BINARY, 'data' => $encoded['data']], 'oid' => $encoded['oid']];
+        }
+        if ($value instanceof Composite) {
+            $encoded = self::encodeComposite($value);
             return ['param' => ['format' => self::FORMAT_BINARY, 'data' => $encoded['data']], 'oid' => $encoded['oid']];
         }
         if ($value instanceof \DateTimeInterface) {
@@ -267,6 +299,7 @@ final class TypeDecoder
             self::OID_POLYGON,
             self::OID_LINE,
             self::OID_CIRCLE => new Geometry(self::stripLengthPrefixed($data)),
+            self::OID_RECORD => self::decodeComposite($data),
             default => $data,
         };
     }
@@ -285,6 +318,68 @@ final class TypeDecoder
     private static function encodeLengthPrefixed(string $data): string
     {
         return pack('V', strlen($data)) . $data;
+    }
+
+    private static function encodeComposite(Composite $value): array
+    {
+        $fields = $value->fields ?? [];
+        $typeOid = $value->typeOid ?: self::OID_RECORD;
+        $buffer = pack('l<', count($fields));
+        foreach ($fields as $field) {
+            $fieldOid = $field->oid ?? 0;
+            $data = null;
+            if ($field->raw !== null) {
+                $data = $field->raw;
+            } elseif ($field->value !== null) {
+                $encoded = self::encodeParam($field->value);
+                if ($fieldOid === 0) {
+                    $fieldOid = $encoded['oid'];
+                }
+                $data = $encoded['param']['isNull'] ?? false ? null : ($encoded['param']['data'] ?? '');
+            }
+            if ($fieldOid === 0) {
+                throw new \InvalidArgumentException('composite field OID is required');
+            }
+            $buffer .= pack('V', $fieldOid);
+            if ($data === null) {
+                $buffer .= pack('l<', -1);
+                continue;
+            }
+            $buffer .= pack('l<', strlen($data));
+            $buffer .= $data;
+        }
+        return ['data' => $buffer, 'oid' => $typeOid];
+    }
+
+    private static function decodeComposite(string $data): Composite
+    {
+        if (strlen($data) < 4) {
+            return new Composite([]);
+        }
+        $count = unpack('l<', substr($data, 0, 4))[1];
+        $offset = 4;
+        $fields = [];
+        for ($i = 0; $i < $count; $i++) {
+            if ($offset + 8 > strlen($data)) {
+                break;
+            }
+            $oid = unpack('V', substr($data, $offset, 4))[1];
+            $offset += 4;
+            $length = unpack('l<', substr($data, $offset, 4))[1];
+            $offset += 4;
+            if ($length < 0) {
+                $fields[] = new CompositeField($oid, null, null);
+                continue;
+            }
+            if ($offset + $length > strlen($data)) {
+                break;
+            }
+            $raw = substr($data, $offset, $length);
+            $offset += $length;
+            $value = self::decodeBinaryValue($oid, $raw);
+            $fields[] = new CompositeField($oid, $value, $raw);
+        }
+        return new Composite($fields, self::OID_RECORD);
     }
 
     private static function stripLengthPrefixed(string $data): string

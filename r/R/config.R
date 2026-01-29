@@ -5,6 +5,7 @@ sb_config <- function(dsn = "") {
     database = "",
     user = "",
     password = "",
+    schema = "",
     sslmode = "require",
     sslrootcert = NULL,
     sslcert = NULL,
@@ -90,6 +91,8 @@ apply_param <- function(cfg, key, value) {
     cfg$user <- value
   } else if (key %in% c("password", "pwd")) {
     cfg$password <- value
+  } else if (key %in% c("schema", "search_path", "searchpath", "currentschema")) {
+    cfg$schema <- value
   } else if (key %in% c("sslmode", "ssl mode")) {
     cfg$sslmode <- value
   } else if (key == "sslrootcert") {

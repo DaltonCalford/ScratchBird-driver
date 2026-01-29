@@ -7,6 +7,10 @@ R DBI-compatible driver for ScratchBird using the ScratchBird wire protocol.
 - Getting started: `docs/getting-started/r.md`
 - API reference: `docs/api-reference/r.md`
 
+## Build/Test (Windows/Linux)
+
+See `docs/BUILD_MATRIX.md`.
+
 ## Usage
 
 ```r

@@ -33,6 +33,7 @@ module Scratchbird
       raw_socket = connect_tcp
       @socket = wrap_tls(raw_socket)
       handshake
+      apply_schema
       @connected = true
     end
 
@@ -265,6 +266,14 @@ module Scratchbird
       end
     end
 
+    def apply_schema
+      schema = @config.schema.to_s.strip
+      return if schema.empty? || schema.casecmp("public").zero?
+      statement = build_schema_statement(schema)
+      return if statement.empty?
+      execute_simple(statement)
+    end
+
     def send_message(type, payload, flags, force_zero)
       raise ConnectionError, "no active socket" unless @socket
       sequence = @sequence
@@ -421,6 +430,21 @@ module Scratchbird
       true
     rescue StandardError
       false
+    end
+
+    def build_schema_statement(schema)
+      trimmed = schema.strip
+      return "" if trimmed.empty?
+      if trimmed.include?(",")
+        parts = trimmed.split(",").map(&:strip).reject(&:empty?).map { |part| quote_identifier(part) }
+        return "" if parts.empty?
+        return "SET SEARCH_PATH TO #{parts.join(", ")}"
+      end
+      "SET SCHEMA #{quote_identifier(trimmed)}"
+    end
+
+    def quote_identifier(name)
+      "\"#{name.to_s.gsub('"', '""')}\""
     end
   end
 

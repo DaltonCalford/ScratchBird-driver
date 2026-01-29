@@ -7,16 +7,32 @@ Pure Java (Type 4) driver for ScratchBird.
 - Getting started: `docs/getting-started/jdbc.md`
 - API reference: `docs/api-reference/jdbc.md`
 
+## Build/Test (Windows/Linux)
+
+See `docs/BUILD_MATRIX.md`.
+
 ## Build
 
 ```bash
 ./gradlew build
 ```
 
+Windows:
+
+```cmd
+gradlew.bat build
+```
+
 ## Tests
 
 ```bash
 ./gradlew test
+```
+
+Windows:
+
+```cmd
+gradlew.bat test
 ```
 
 Integration env:

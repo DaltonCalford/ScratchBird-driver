@@ -35,6 +35,7 @@ SB_OID_TIMETZ <- 1266L
 SB_OID_NUMERIC <- 1700L
 SB_OID_UUID <- 2950L
 SB_OID_JSONB <- 3802L
+SB_OID_RECORD <- 2249L
 SB_OID_INT4RANGE <- 3904L
 SB_OID_NUMRANGE <- 3906L
 SB_OID_TSRANGE <- 3908L
@@ -73,6 +74,10 @@ sb_range <- function(lower = NULL, upper = NULL, lower_inclusive = FALSE, upper_
   ), class = "sb_range")
 }
 
+sb_composite <- function(fields = list(), type_oid = SB_OID_RECORD) {
+  structure(list(fields = fields, type_oid = type_oid), class = "sb_composite")
+}
+
 encode_param <- function(value) {
   if (is.null(value) || (is.atomic(value) && all(is.na(value)))) {
     return(list(param = list(format = SB_FORMAT_BINARY, is_null = TRUE), oid = 0L))
@@ -96,6 +101,11 @@ encode_param <- function(value) {
 
   if (inherits(value, "sb_range")) {
     encoded <- encode_range(value)
+    return(list(param = list(format = SB_FORMAT_BINARY, data = encoded$data), oid = encoded$oid))
+  }
+
+  if (inherits(value, "sb_composite")) {
+    encoded <- encode_composite(value)
     return(list(param = list(format = SB_FORMAT_BINARY, data = encoded$data), oid = encoded$oid))
   }
 
@@ -229,6 +239,9 @@ decode_binary_value <- function(type_oid, data) {
   }
   if (type_oid %in% c(SB_OID_POINT, SB_OID_LSEG, SB_OID_PATH, SB_OID_BOX, SB_OID_POLYGON, SB_OID_LINE, SB_OID_CIRCLE)) {
     return(sb_geometry(strip_length_prefixed(data)))
+  }
+  if (type_oid == SB_OID_RECORD) {
+    return(decode_composite(data))
   }
   data
 }
@@ -371,6 +384,57 @@ decode_range_bound <- function(range_oid, data) {
     return(decode_binary_value(SB_OID_DATE, strip_length_prefixed(data)))
   }
   rawToChar(strip_length_prefixed(data))
+}
+
+encode_composite <- function(value) {
+  fields <- value$fields
+  if (is.null(fields)) fields <- list()
+  type_oid <- value$type_oid
+  if (is.null(type_oid) || type_oid == 0) type_oid <- SB_OID_RECORD
+  buffer <- pack_i32(length(fields))
+  for (field in fields) {
+    field_oid <- if (!is.null(field$oid)) field$oid else 0L
+    data <- NULL
+    if (!is.null(field$raw)) {
+      data <- field$raw
+    } else if (!is.null(field$value)) {
+      encoded <- encode_param(field$value)
+      if (field_oid == 0) field_oid <- encoded$oid
+      if (!isTRUE(encoded$param$is_null)) data <- encoded$param$data
+    }
+    if (field_oid == 0) stop("composite field OID is required")
+    buffer <- c(buffer, pack_u32(field_oid))
+    if (is.null(data)) {
+      buffer <- c(buffer, pack_i32(-1))
+    } else {
+      buffer <- c(buffer, pack_i32(length(data)), data)
+    }
+  }
+  list(data = buffer, oid = type_oid)
+}
+
+decode_composite <- function(data) {
+  if (length(data) < 4) return(sb_composite(list()))
+  count <- read_i32(data, 1)
+  offset <- 5
+  fields <- list()
+  for (i in seq_len(count)) {
+    if (offset + 7 > length(data)) break
+    oid <- read_u32(data, offset)
+    offset <- offset + 4
+    length_val <- read_i32(data, offset)
+    offset <- offset + 4
+    if (length_val < 0) {
+      fields[[length(fields) + 1]] <- list(oid = oid, value = NULL, raw = NULL)
+      next
+    }
+    if (offset + length_val - 1 > length(data)) break
+    raw <- data[offset:(offset + length_val - 1)]
+    offset <- offset + length_val
+    value <- decode_binary_value(oid, raw)
+    fields[[length(fields) + 1]] <- list(oid = oid, value = value, raw = raw)
+  }
+  sb_composite(fields)
 }
 
 format_array_literal <- function(values) {

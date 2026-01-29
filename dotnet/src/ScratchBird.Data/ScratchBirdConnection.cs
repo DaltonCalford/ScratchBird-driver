@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 
 namespace ScratchBird.Data;
 
@@ -49,6 +50,7 @@ public sealed class ScratchBirdConnection : DbConnection
         }
         _client = new ProtocolClient();
         _client.Connect(_config);
+        ApplySchema();
         _state = ConnectionState.Open;
     }
 
@@ -85,5 +87,49 @@ public sealed class ScratchBirdConnection : DbConnection
     protected override DbCommand CreateDbCommand()
     {
         return new ScratchBirdCommand { Connection = this };
+    }
+
+    private void ApplySchema()
+    {
+        if (string.IsNullOrWhiteSpace(_config.Schema) ||
+            _config.Schema.Equals("public", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        var statement = BuildSchemaStatement(_config.Schema);
+        if (string.IsNullOrWhiteSpace(statement) || _client == null)
+        {
+            return;
+        }
+        var stream = _client.ExecuteQuery(statement);
+        while (stream.ReadNextRow() != null)
+        {
+        }
+    }
+
+    private static string BuildSchemaStatement(string schema)
+    {
+        var trimmed = schema.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return string.Empty;
+        }
+        if (trimmed.Contains(',', StringComparison.Ordinal))
+        {
+            var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(QuoteIdentifier)
+                .ToArray();
+            if (parts.Length == 0)
+            {
+                return string.Empty;
+            }
+            return $"SET SEARCH_PATH TO {string.Join(", ", parts)}";
+        }
+        return $"SET SCHEMA {QuoteIdentifier(trimmed)}";
+    }
+
+    private static string QuoteIdentifier(string name)
+    {
+        return $"\"{name.Replace("\"", "\"\"")}\"";
     }
 }

@@ -41,4 +41,21 @@ final class IntegrationTest extends TestCase
         $row = $stmt->fetch(\PDO::FETCH_NUM);
         $this->assertNotFalse($row);
     }
+
+    public function testCancel(): void
+    {
+        $dsn = getenv('SCRATCHBIRD_PHP_URL');
+        if (!$dsn) {
+            $this->markTestSkipped('SCRATCHBIRD_PHP_URL not set');
+        }
+        $cancelSql = getenv('SCRATCHBIRD_PHP_CANCEL_SQL');
+        if (!$cancelSql) {
+            $this->markTestSkipped('SCRATCHBIRD_PHP_CANCEL_SQL not set');
+        }
+        $conn = new \ScratchBird\PDO\Connection($dsn);
+        $stream = $conn->executeQuery($cancelSql);
+        $conn->cancel();
+        $this->expectException(\Throwable::class);
+        $stream->readRow();
+    }
 }

@@ -42,6 +42,7 @@ type
     procedure SendBytes(const Data: TBytes);
     function ReceiveMessage: TScratchBirdMessage;
     procedure HandshakeAndAuth;
+    procedure ApplySchema;
     function BuildQueryError(const Payload: TBytes): EScratchBirdError;
     procedure DrainUntilReady;
     function SendMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte; ForceZero: Boolean): Cardinal;
@@ -59,6 +60,7 @@ type
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
     function ExecuteQuery(const Sql: string): TScratchBirdResultStream;
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+    procedure Cancel;
     property Connected: Boolean read FConnected;
     property Config: TScratchBirdConfig read FConfig;
   end;
@@ -72,6 +74,44 @@ begin
   {$ELSE}
   Result := fpGetPid;
   {$ENDIF}
+end;
+
+function QuoteIdentifier(const Name: string): string;
+begin
+  Result := '"' + StringReplace(Name, '"', '""', [rfReplaceAll]) + '"';
+end;
+
+function BuildSchemaStatement(const Schema: string): string;
+var
+  Parts: TStringList;
+  I: Integer;
+  Trimmed: string;
+begin
+  Trimmed := Trim(Schema);
+  if Trimmed = '' then
+    Exit('');
+  if Pos(',', Trimmed) > 0 then
+  begin
+    Parts := TStringList.Create;
+    try
+      ExtractStrings([','], [], PChar(Trimmed), Parts);
+      for I := Parts.Count - 1 downto 0 do
+      begin
+        Parts[I] := Trim(Parts[I]);
+        if Parts[I] = '' then
+          Parts.Delete(I)
+        else
+          Parts[I] := QuoteIdentifier(Parts[I]);
+      end;
+      if Parts.Count = 0 then
+        Exit('');
+      Result := 'SET SEARCH_PATH TO ' + StringReplace(Parts.CommaText, ',', ', ', [rfReplaceAll]);
+      Exit;
+    finally
+      Parts.Free;
+    end;
+  end;
+  Result := 'SET SCHEMA ' + QuoteIdentifier(Trimmed);
 end;
 
 constructor TScratchBirdResultStream.Create(Client: TObject);
@@ -190,6 +230,7 @@ begin
   FTcp.IOHandler := FSSL;
   FTcp.Connect;
   HandshakeAndAuth;
+  ApplySchema;
   FConnected := True;
 end;
 
@@ -199,6 +240,20 @@ begin
     Exit;
   FTcp.Disconnect;
   FConnected := False;
+end;
+
+procedure TScratchBirdClient.ApplySchema;
+var
+  Schema: string;
+  Statement: string;
+begin
+  Schema := Trim(FConfig.Schema);
+  if (Schema = '') or SameText(Schema, 'public') then
+    Exit;
+  Statement := BuildSchemaStatement(Schema);
+  if Statement = '' then
+    Exit;
+  ExecSQL(Statement);
 end;
 
 procedure TScratchBirdClient.BeginTransaction;
@@ -245,6 +300,11 @@ begin
   else
     SendExtendedQuery(Sql, Params);
   Result := TScratchBirdResultStream.Create(Self);
+end;
+
+procedure TScratchBirdClient.Cancel;
+begin
+  SendMessage(MSG_CANCEL, BuildCancelPayload(0, FLastQuerySequence), MSG_FLAG_URGENT, False);
 end;
 
 procedure TScratchBirdClient.SendBytes(const Data: TBytes);

@@ -59,8 +59,15 @@ The queries below are the minimum baseline and should be treated as stable.
 Drivers that expose JDBC/ODBC metadata must map the sys catalog data into the
 standard metadata result shapes (DatabaseMetaData, INFORMATION_SCHEMA, etc.).
 
+## Monitoring Views
+
+Runtime monitoring views (e.g., `sys.sessions`, `sys.transactions`, `sys.locks`,
+`sys.statements`, `sys.io_stats`, `sys.performance`, `sys.jobs`) are defined in
+`docs/specifications/DRIVER_MONITORING_VIEW_SUPPORT.md`. Drivers must not hide
+the `sys` schema and should surface these views as read-only system views in
+metadata APIs where applicable.
+
 ## Notes
 
 If any required sys.* view is missing in the server, a specification update in
 ScratchBird must define the view or table required for driver metadata queries.
-

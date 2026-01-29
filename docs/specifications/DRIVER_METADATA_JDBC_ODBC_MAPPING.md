@@ -39,6 +39,9 @@ Map to sys.tables:
 - TABLE_NAME -> table_name
 - TABLE_TYPE -> table_type (TABLE/VIEW/SYSTEM TABLE)
 
+Include sys.* monitoring views (sessions/locks/statements/jobs, etc.) as
+`SYSTEM VIEW` when the caller requests system tables.
+
 ### getColumns
 
 Map to sys.columns:
@@ -58,6 +61,8 @@ Map to sys.columns:
 - TABLE_SCHEM -> schema_name
 - TABLE_NAME -> table_name
 - TABLE_TYPE -> table_type
+
+Include sys.* monitoring views as `SYSTEM VIEW` when requesting system tables.
 
 ### SQLColumns
 

@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using ScratchBird.Data;
 using Xunit;
 
@@ -62,5 +63,30 @@ public class IntegrationTests
         using var reader = cmd.ExecuteReader();
 
         Assert.True(reader.Read());
+    }
+
+    [Fact]
+    public async Task CancelQuery()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
+        if (string.IsNullOrWhiteSpace(cancelSql))
+        {
+            return;
+        }
+
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = cancelSql;
+        var task = cmd.ExecuteNonQueryAsync();
+        await Task.Delay(200);
+        cmd.Cancel();
+        await Assert.ThrowsAnyAsync<Exception>(async () => await task);
     }
 }

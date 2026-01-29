@@ -50,6 +50,7 @@ const (
 	oidNumeric     = 1700
 	oidUUID        = 2950
 	oidJSONB       = 3802
+	oidRecord      = 2249
 	oidInt4Range   = 3904
 	oidNumRange    = 3906
 	oidTSRange     = 3908
@@ -130,11 +131,37 @@ type RawValue struct{
 	Data []byte
 }
 
+type CompositeField struct {
+	OID   uint32
+	Value any
+	Raw   []byte
+}
+
+type Composite struct {
+	TypeOID uint32
+	Fields  []CompositeField
+}
+
 func encodeParam(value any) (paramValue, uint32, error) {
 	if value == nil {
 		return paramValue{null: true}, 0, nil
 	}
 	switch v := value.(type) {
+	case Composite:
+		data, oid, err := encodeComposite(v)
+		if err != nil {
+			return paramValue{}, 0, err
+		}
+		return paramValue{data: data}, oid, nil
+	case *Composite:
+		if v == nil {
+			return paramValue{null: true}, 0, nil
+		}
+		data, oid, err := encodeComposite(*v)
+		if err != nil {
+			return paramValue{}, 0, err
+		}
+		return paramValue{data: data}, oid, nil
 	case RawValue:
 		return paramValue{data: append([]byte{}, v.Data...)}, v.OID, nil
 	case JSONB:
@@ -306,6 +333,8 @@ func decodeBinaryValue(oid uint32, data []byte) (any, error) {
 		return decodeRange(oid, data)
 	case oidSBVector:
 		return parseVectorLiteral(string(stripLengthPrefix(data))), nil
+	case oidRecord:
+		return decodeComposite(data)
 	default:
 		return append([]byte{}, data...), nil
 	}
@@ -337,6 +366,101 @@ func encodeLengthPrefixed(data []byte) []byte {
 	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(data)))
 	copy(buf[4:], data)
 	return buf
+}
+
+func encodeComposite(comp Composite) ([]byte, uint32, error) {
+	typeOID := comp.TypeOID
+	if typeOID == 0 {
+		typeOID = oidRecord
+	}
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.LittleEndian, int32(len(comp.Fields))); err != nil {
+		return nil, 0, err
+	}
+	for _, field := range comp.Fields {
+		fieldOID := field.OID
+		var data []byte
+		if field.Raw != nil {
+			data = field.Raw
+		} else if field.Value != nil {
+			encoded, oid, err := encodeParam(field.Value)
+			if err != nil {
+				return nil, 0, err
+			}
+			if fieldOID == 0 {
+				fieldOID = oid
+			}
+			if encoded.null {
+				if err := binary.Write(buf, binary.LittleEndian, uint32(fieldOID)); err != nil {
+					return nil, 0, err
+				}
+				if err := binary.Write(buf, binary.LittleEndian, int32(-1)); err != nil {
+					return nil, 0, err
+				}
+				continue
+			}
+			data = encoded.data
+		} else {
+			if fieldOID == 0 {
+				return nil, 0, errors.New("composite field OID is required")
+			}
+			if err := binary.Write(buf, binary.LittleEndian, uint32(fieldOID)); err != nil {
+				return nil, 0, err
+			}
+			if err := binary.Write(buf, binary.LittleEndian, int32(-1)); err != nil {
+				return nil, 0, err
+			}
+			continue
+		}
+		if fieldOID == 0 {
+			return nil, 0, errors.New("composite field OID is required")
+		}
+		if err := binary.Write(buf, binary.LittleEndian, uint32(fieldOID)); err != nil {
+			return nil, 0, err
+		}
+		if err := binary.Write(buf, binary.LittleEndian, int32(len(data))); err != nil {
+			return nil, 0, err
+		}
+		if _, err := buf.Write(data); err != nil {
+			return nil, 0, err
+		}
+	}
+	return buf.Bytes(), typeOID, nil
+}
+
+func decodeComposite(data []byte) (Composite, error) {
+	comp := Composite{TypeOID: oidRecord}
+	if len(data) < 4 {
+		return comp, errors.New("composite payload truncated")
+	}
+	count := int(int32(binary.LittleEndian.Uint32(data[:4])))
+	offset := 4
+	fields := make([]CompositeField, 0, count)
+	for i := 0; i < count; i++ {
+		if offset+8 > len(data) {
+			return Composite{TypeOID: oidRecord, Fields: fields}, errors.New("composite payload truncated")
+		}
+		oid := binary.LittleEndian.Uint32(data[offset : offset+4])
+		offset += 4
+		length := int(int32(binary.LittleEndian.Uint32(data[offset : offset+4])))
+		offset += 4
+		if length < 0 {
+			fields = append(fields, CompositeField{OID: oid})
+			continue
+		}
+		if offset+length > len(data) {
+			return Composite{TypeOID: oidRecord, Fields: fields}, errors.New("composite payload truncated")
+		}
+		raw := append([]byte{}, data[offset:offset+length]...)
+		offset += length
+		value, err := decodeBinaryValue(oid, raw)
+		if err != nil {
+			value = RawValue{OID: oid, Data: raw}
+		}
+		fields = append(fields, CompositeField{OID: oid, Value: value, Raw: raw})
+	}
+	comp.Fields = fields
+	return comp, nil
 }
 
 func encodeDate(t time.Time) []byte {

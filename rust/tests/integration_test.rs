@@ -1,8 +1,10 @@
 use std::env;
+use std::time::Duration;
 
 use scratchbird::{Client, Config};
 use scratchbird::types::{Param, Value};
 use scratchbird::sql::Params;
+use tokio::time::timeout;
 
 #[tokio::test]
 async fn basic_query() {
@@ -52,4 +54,26 @@ async fn types_fixture_query() {
     let result = client.query("SELECT * FROM sb_conformance.type_coverage").await.unwrap();
     client.close().await;
     assert!(!result.rows.is_empty());
+}
+
+#[tokio::test]
+async fn cancel_query() {
+    let dsn = match env::var("SCRATCHBIRD_RUST_URL") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let cancel_sql = match env::var("SCRATCHBIRD_RUST_CANCEL_SQL") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let config = Config::from_dsn(&dsn).unwrap();
+    let mut client = Client::new(config);
+    client.connect().await.unwrap();
+    let result = timeout(Duration::from_millis(200), client.query(&cancel_sql)).await;
+    if result.is_ok() {
+        client.close().await;
+        panic!("expected cancel timeout");
+    }
+    let _ = client.cancel().await;
+    client.close().await;
 }

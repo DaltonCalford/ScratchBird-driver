@@ -7,6 +7,10 @@ Async Rust driver for ScratchBird using the native wire protocol.
 - Getting started: `docs/getting-started/rust.md`
 - API reference: `docs/api-reference/rust.md`
 
+## Build/Test (Windows/Linux)
+
+See `docs/BUILD_MATRIX.md`.
+
 ## Usage
 
 ```rust
