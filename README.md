@@ -2,7 +2,7 @@
 
 Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
 
-**Status:** Development / Test Platform
+**Status:** Active Development (SBWP v1.1 drivers feature-complete for current server capabilities)
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 
 ---
@@ -14,7 +14,7 @@ These drivers target the ScratchBird native protocol (SBWP v1.1) and provide idi
 each supported language. Emulated protocols (PostgreSQL/MySQL/Firebird) are handled by their
 own native client drivers against ScratchBird's emulation listeners.
 
-### Supported Languages
+### Supported Languages (Native SBWP v1.1)
 
 | Language | Directory | Status | Package Manager |
 |----------|-----------|--------|-----------------|
@@ -112,14 +112,23 @@ These are the required capabilities for all drivers in this repo:
 
 ### Current Implementation Notes
 
-Many drivers still use a legacy SBDB-style protocol header and client-side SQL substitution.
-See `docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md` and `docs/specifications/` for the required
-SBWP v1.1 migration work.
+- SBWP v1.1 conformance is implemented across all native drivers.
+- Binary-only mode is enforced; `binary_transfer=false` is rejected.
+- `compression=zstd` is intentionally disabled until server support exists.
+- Streaming/paging via `fetch_size` is supported where applicable.
+- JDBC/Superset/Metabase metadata uses `sys.*` views with safe fallbacks.
+
+Server-side feature backlog that unlocks optional driver capabilities:
+`docs/planning/DRIVER_SERVER_FEATURE_BACKLOG.md`.
 
 ### Protocol Scope
 
 These drivers are native-only. For emulated protocol access (PostgreSQL/MySQL/Firebird),
 use the standard drivers for those engines against ScratchBird's emulation listeners.
+
+Application-specific drivers (early):
+- Superset: `scratchbird-superset-driver/`
+- Metabase: `scratchbird-metabase-driver/`
 
 ---
 

@@ -21,6 +21,7 @@ from each spec below.
 - [DRIVER_STREAMING_AND_PAGING.md](DRIVER_STREAMING_AND_PAGING.md) - Streaming and paging rules
 - [DRIVER_METADATA_JDBC_ODBC_MAPPING.md](DRIVER_METADATA_JDBC_ODBC_MAPPING.md) - JDBC/ODBC metadata mapping
 - [DRIVER_THREAD_SAFETY_POOLING.md](DRIVER_THREAD_SAFETY_POOLING.md) - Thread safety and pooling
+- [DRIVER_SERVER_FEATURE_GAPS_AND_EXTENSIONS.md](DRIVER_SERVER_FEATURE_GAPS_AND_EXTENSIONS.md) - Server features drivers can leverage
 
 ## Related Specs (ScratchBird)
 
