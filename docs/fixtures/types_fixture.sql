@@ -1,3 +1,10 @@
+-- ScratchBird-driver
+-- Copyright (c) 2025-2026 Dalton Calford
+--
+-- Licensed under the Initial Developer's Public License Version 1.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at:
+-- https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 -- ScratchBird driver conformance type fixture
 -- Assumes core_fixture.sql has created schema sb_conformance.
 
@@ -125,4 +132,3 @@ INSERT INTO sb_conformance.type_coverage (
     'POINT(1 2)'::GEOMETRY(POINT, 4326),
     ROW('123 Main St', 'Anytown', 'CA', '12345')::sb_conformance.address_record
 );
-
