@@ -37,6 +37,7 @@ type
     FTxnId: UInt64;
     FSequence: Cardinal;
     FLastQuerySequence: Cardinal;
+    FLastMaxRows: Cardinal;
     FParameters: TStringList;
     function ReadExact(Length: Integer): TBytes;
     procedure SendBytes(const Data: TBytes);
@@ -45,9 +46,11 @@ type
     procedure ApplySchema;
     function BuildQueryError(const Payload: TBytes): EScratchBirdError;
     procedure DrainUntilReady;
+    function DescribeStatement(const StatementName: string): Integer;
     function SendMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte; ForceZero: Boolean): Cardinal;
-    procedure SendSimpleQuery(const Sql: string);
-    procedure SendExtendedQuery(const Sql: string; const Params: array of TScratchBirdParamInput);
+    procedure SendSimpleQuery(const Sql: string; MaxRows: Cardinal);
+    procedure SendExtendedQuery(const Sql: string; const Params: array of TScratchBirdParamInput; MaxRows: Cardinal);
+    function CurrentMaxRows: Cardinal;
   public
     constructor Create;
     destructor Destroy; override;
@@ -166,6 +169,11 @@ begin
         FCommandTag := Tag;
         FRowsAffected := Rows;
       end;
+      MSG_PORTAL_SUSPENDED:
+      begin
+        Client.SendMessage(MSG_EXECUTE, BuildExecutePayload('', Client.CurrentMaxRows), 0, False);
+        Client.SendMessage(MSG_SYNC, nil, 0, False);
+      end;
       MSG_READY:
       begin
         FDone := True;
@@ -187,6 +195,7 @@ begin
   FillChar(FAttachmentId[0], 16, 0);
   FSequence := 0;
   FTxnId := 0;
+  FLastMaxRows := 0;
   FParameters := TStringList.Create;
 end;
 
@@ -206,6 +215,10 @@ begin
   FConfig := ParseConfig(Dsn);
   if (FConfig.UserName = '') or (FConfig.Database = '') then
     raise EScratchbirdConnectionError.CreateWithInfo('user and database are required', '08001', '', '');
+  if not FConfig.BinaryTransfer then
+    raise EScratchbirdNotSupported.CreateWithInfo('binary_transfer=false is not supported', '0A000', '', '');
+  if SameText(FConfig.Compression, 'zstd') then
+    raise EScratchbirdNotSupported.CreateWithInfo('compression=zstd is not supported', '0A000', '', '');
 
   Mode := LowerCase(FConfig.SSLMode);
   if Mode = 'disable' then
@@ -279,11 +292,11 @@ procedure TScratchBirdClient.ExecSQLParams(const Sql: string; const Params: arra
 begin
   if Length(Params) = 0 then
   begin
-    SendSimpleQuery(Sql);
+    SendSimpleQuery(Sql, 0);
   end
   else
   begin
-    SendExtendedQuery(Sql, Params);
+    SendExtendedQuery(Sql, Params, 0);
   end;
   DrainUntilReady;
 end;
@@ -296,9 +309,9 @@ end;
 function TScratchBirdClient.ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
 begin
   if Length(Params) = 0 then
-    SendSimpleQuery(Sql)
+    SendSimpleQuery(Sql, Cardinal(FConfig.FetchSize))
   else
-    SendExtendedQuery(Sql, Params);
+    SendExtendedQuery(Sql, Params, Cardinal(FConfig.FetchSize));
   Result := TScratchBirdResultStream.Create(Self);
 end;
 
@@ -382,6 +395,8 @@ begin
   try
     Params.Values['database'] := FConfig.Database;
     Params.Values['user'] := FConfig.UserName;
+    if FConfig.Role <> '' then
+      Params.Values['role'] := FConfig.Role;
     if FConfig.ApplicationName <> '' then
       Params.Values['application_name'] := FConfig.ApplicationName;
     Features := 0;
@@ -497,7 +512,46 @@ begin
   end;
 end;
 
-procedure TScratchBirdClient.SendSimpleQuery(const Sql: string);
+function TScratchBirdClient.DescribeStatement(const StatementName: string): Integer;
+var
+  Payload: TBytes;
+  Msg: TScratchBirdMessage;
+  Status: Byte;
+  TxnId, Visibility: UInt64;
+  Name, Value: string;
+  Types: TArray<Cardinal>;
+begin
+  Payload := BuildDescribePayload(Ord('S'), StatementName);
+  SendMessage(MSG_DESCRIBE, Payload, 0, False);
+  SendMessage(MSG_SYNC, nil, 0, False);
+  Result := -1;
+  while True do
+  begin
+    Msg := ReceiveMessage;
+    case Msg.MsgType of
+      MSG_PARAMETER_DESCRIPTION:
+        begin
+          Types := ParseParameterDescription(Msg.Payload);
+          Result := Length(Types);
+        end;
+      MSG_PARAMETER_STATUS:
+        begin
+          ParseParameterStatus(Msg.Payload, Name, Value);
+          FParameters.Values[Name] := Value;
+        end;
+      MSG_ERROR:
+        raise BuildQueryError(Msg.Payload);
+      MSG_READY:
+        begin
+          ParseReady(Msg.Payload, Status, TxnId, Visibility);
+          FTxnId := TxnId;
+          Exit;
+        end;
+    end;
+  end;
+end;
+
+procedure TScratchBirdClient.SendSimpleQuery(const Sql: string; MaxRows: Cardinal);
 var
   Flags: Cardinal;
   Payload: TBytes;
@@ -505,17 +559,19 @@ begin
   Flags := 0;
   if FConfig.BinaryTransfer then
     Flags := Flags or $04;
-  Payload := BuildQueryPayload(Sql, Flags, 0, 0);
+  FLastMaxRows := MaxRows;
+  Payload := BuildQueryPayload(Sql, Flags, MaxRows, 0);
   FLastQuerySequence := SendMessage(MSG_QUERY, Payload, 0, False);
 end;
 
-procedure TScratchBirdClient.SendExtendedQuery(const Sql: string; const Params: array of TScratchBirdParamInput);
+procedure TScratchBirdClient.SendExtendedQuery(const Sql: string; const Params: array of TScratchBirdParamInput; MaxRows: Cardinal);
 var
   ParamValues: TArray<TParamValue>;
   ParamTypes: TArray<Cardinal>;
   I: Integer;
   Param: TParamValue;
   Oid: Cardinal;
+  ParamCount: Integer;
   ParsePayload, BindPayload, ExecPayload: TBytes;
   ResultFormats: TArray<Word>;
 begin
@@ -529,6 +585,9 @@ begin
   end;
   ParsePayload := BuildParsePayload('', Sql, ParamTypes);
   SendMessage(MSG_PARSE, ParsePayload, 0, False);
+  ParamCount := DescribeStatement('');
+  if (ParamCount >= 0) and (ParamCount <> Length(Params)) then
+    raise EScratchBirdError.CreateWithInfo('parameter count mismatch', '07001', '', '');
   if FConfig.BinaryTransfer then
   begin
     SetLength(ResultFormats, 1);
@@ -538,9 +597,15 @@ begin
     ResultFormats := nil;
   BindPayload := BuildBindPayload('', '', ParamValues, ResultFormats);
   SendMessage(MSG_BIND, BindPayload, 0, False);
-  ExecPayload := BuildExecutePayload('', 0);
+  FLastMaxRows := MaxRows;
+  ExecPayload := BuildExecutePayload('', MaxRows);
   FLastQuerySequence := SendMessage(MSG_EXECUTE, ExecPayload, 0, False);
   SendMessage(MSG_SYNC, nil, 0, False);
+end;
+
+function TScratchBirdClient.CurrentMaxRows: Cardinal;
+begin
+  Result := FLastMaxRows;
 end;
 
 end.

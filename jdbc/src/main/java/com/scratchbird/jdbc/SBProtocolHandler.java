@@ -26,6 +26,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -74,6 +79,7 @@ public class SBProtocolHandler {
     private static final byte MSG_PORTAL_SUSPENDED = 0x4D;
     private static final byte MSG_NO_DATA = 0x4E;
     private static final byte MSG_PARAMETER_STATUS = 0x4F;
+    private static final byte MSG_PARAMETER_DESCRIPTION = 0x50;
     private static final byte MSG_NEGOTIATE_VERSION = 0x56;
     private static final byte MSG_TXN_STATUS = 0x5C;
     private static final byte MSG_PONG = 0x5D;
@@ -87,6 +93,16 @@ public class SBProtocolHandler {
     private static final long FEATURE_STREAMING = 1L << 1;
 
     private static final int QUERY_FLAG_BINARY_RESULT = 0x04;
+
+    private static final ScheduledExecutorService TIMEOUT_SCHEDULER =
+        Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "sbjdbc-timeouts");
+                t.setDaemon(true);
+                return t;
+            }
+        });
 
     private final SBConnectionProperties props;
 
@@ -148,6 +164,7 @@ public class SBProtocolHandler {
 
     public SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
                                  int maxRows, int timeoutMs) throws SQLException {
+        ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
         try {
             if (params == null || params.isEmpty()) {
                 sendSimpleQuery(sql, maxRows, timeoutMs);
@@ -156,6 +173,34 @@ public class SBProtocolHandler {
             }
             return readQueryResult();
         } catch (IOException e) {
+            throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
+        } finally {
+            if (cancelTask != null) {
+                cancelTask.cancel(false);
+            }
+        }
+    }
+
+    public SBQueryResult executeStreaming(String sql, int pageSize, int timeoutMs) throws SQLException {
+        return executeStreaming(sql, Collections.emptyList(), Collections.emptyList(), pageSize, timeoutMs);
+    }
+
+    public SBQueryResult executeStreaming(String sql, List<Object> params, List<Integer> paramTypes,
+                                          int pageSize, int timeoutMs) throws SQLException {
+        ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
+        try {
+            if (params == null || params.isEmpty()) {
+                sendSimpleQuery(sql, pageSize, timeoutMs);
+            } else {
+                sendExtendedQuery(sql, params, paramTypes, pageSize);
+            }
+            SBQueryResult result = new SBQueryResult();
+            result.setStream(new StreamingCursor(this, pageSize, cancelTask));
+            return result;
+        } catch (IOException e) {
+            if (cancelTask != null) {
+                cancelTask.cancel(false);
+            }
             throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
         }
     }
@@ -167,6 +212,19 @@ public class SBProtocolHandler {
         } catch (IOException e) {
             throw new SQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
         }
+    }
+
+    private ScheduledFuture<?> scheduleCancel(int timeoutMs) {
+        if (timeoutMs <= 0) {
+            return null;
+        }
+        return TIMEOUT_SCHEDULER.schedule(() -> {
+            try {
+                cancelCurrentQuery();
+            } catch (SQLException e) {
+                // Ignore cancellation errors.
+            }
+        }, timeoutMs, TimeUnit.MILLISECONDS);
     }
 
     public boolean isAlive(int timeout) {
@@ -242,6 +300,9 @@ public class SBProtocolHandler {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("database", props.getDatabase() != null ? props.getDatabase() : "");
         params.put("user", props.getUser() != null ? props.getUser() : "");
+        if (props.getRole() != null && !props.getRole().isEmpty()) {
+            params.put("role", props.getRole());
+        }
         if (props.getApplicationName() != null) {
             params.put("application_name", props.getApplicationName());
         }
@@ -404,6 +465,10 @@ public class SBProtocolHandler {
 
         byte[] parsePayload = buildParsePayload("", sql, oids);
         sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
+        int described = describeStatement("");
+        if (described >= 0 && described != params.size()) {
+            throw new SQLException("parameter count mismatch", "07001");
+        }
 
         int[] resultFormats = props.isBinaryTransfer() ? new int[]{SBTypeCodec.FORMAT_BINARY} : new int[0];
         byte[] bindPayload = buildBindPayload("", "", encoded, resultFormats);
@@ -469,6 +534,16 @@ public class SBProtocolHandler {
                 buf.putInt(oid);
             }
         }
+        return buf.array();
+    }
+
+    private byte[] buildDescribePayload(byte describeType, String name) {
+        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(8 + nameBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put(describeType);
+        buf.put(new byte[]{0, 0, 0});
+        buf.putInt(nameBytes.length);
+        buf.put(nameBytes);
         return buf.array();
     }
 
@@ -796,6 +871,53 @@ public class SBProtocolHandler {
             new String(valueBytes, StandardCharsets.UTF_8));
     }
 
+    private List<Integer> parseParameterDescription(byte[] payload) throws SQLException {
+        if (payload.length < 4) {
+            throw new SQLException("Parameter description truncated", "08P01");
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int count = buf.getShort() & 0xffff;
+        buf.getShort();
+        List<Integer> types = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            if (buf.remaining() < 4) {
+                throw new SQLException("Parameter description truncated", "08P01");
+            }
+            types.add(buf.getInt());
+        }
+        return types;
+    }
+
+    private int describeStatement(String name) throws IOException, SQLException {
+        byte[] payload = buildDescribePayload((byte) 'S', name);
+        sendMessage(MSG_DESCRIBE, payload, (byte) 0, false);
+        sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+        int paramCount = -1;
+        while (true) {
+            ProtocolMessage msg = readMessage();
+            switch (msg.type) {
+                case MSG_PARAMETER_DESCRIPTION:
+                    paramCount = parseParameterDescription(msg.payload).size();
+                    break;
+                case MSG_PARAMETER_STATUS: {
+                    ParameterStatus status = parseParameterStatus(msg.payload);
+                    serverParameters.put(status.name, status.value);
+                    break;
+                }
+                case MSG_ERROR:
+                    ProtocolError error = parseErrorMessage(msg.payload);
+                    throw new SQLException(buildErrorMessage(error),
+                        error.sqlState != null ? error.sqlState : "42000");
+                case MSG_READY:
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
+                    return paramCount;
+                default:
+                    break;
+            }
+        }
+    }
+
     private ReadyStatus parseReady(byte[] payload) {
         if (payload.length < 20) {
             return new ReadyStatus((byte) 0, 0, 0);
@@ -895,6 +1017,104 @@ public class SBProtocolHandler {
             this.attachmentId = attachmentId;
             this.txnId = txnId;
             this.payload = payload;
+        }
+    }
+
+    private static final class StreamingCursor implements SBRowStream {
+        private final SBProtocolHandler protocol;
+        private List<SBColumnInfo> columns = new ArrayList<>();
+        private long updateCount = -1;
+        private String commandTag;
+        private boolean done = false;
+        private final int pageSize;
+        private final ScheduledFuture<?> cancelTask;
+
+        StreamingCursor(SBProtocolHandler protocol, int pageSize, ScheduledFuture<?> cancelTask) {
+            this.protocol = protocol;
+            this.pageSize = pageSize;
+            this.cancelTask = cancelTask;
+        }
+
+        @Override
+        public Object[] nextRow() throws SQLException {
+            if (done) {
+                return null;
+            }
+            while (true) {
+                ProtocolMessage msg;
+                try {
+                    msg = protocol.readMessage();
+                } catch (IOException e) {
+                    throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
+                }
+                switch (msg.type) {
+                    case MSG_ROW_DESCRIPTION:
+                        columns = protocol.parseRowDescription(msg.payload);
+                        break;
+                    case MSG_DATA_ROW:
+                        return protocol.parseDataRow(msg.payload, columns);
+                    case MSG_COMMAND_COMPLETE: {
+                        CommandComplete complete = protocol.parseCommandComplete(msg.payload);
+                        commandTag = complete.tag;
+                        updateCount = complete.rows;
+                        break;
+                    }
+                    case MSG_PARAMETER_STATUS: {
+                        ParameterStatus status = protocol.parseParameterStatus(msg.payload);
+                        protocol.serverParameters.put(status.name, status.value);
+                        break;
+                    }
+                    case MSG_PORTAL_SUSPENDED: {
+                        byte[] payload = buildExecutePayload("", pageSize);
+                        try {
+                            protocol.sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
+                            protocol.sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+                        } catch (IOException e) {
+                            throw new SQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
+                        }
+                        break;
+                    }
+                    case MSG_READY: {
+                        ReadyStatus ready = protocol.parseReady(msg.payload);
+                        protocol.txnId = ready.txnId;
+                        done = true;
+                        if (cancelTask != null) {
+                            cancelTask.cancel(false);
+                        }
+                        return null;
+                    }
+                    case MSG_ERROR: {
+                        ProtocolError error = protocol.parseErrorMessage(msg.payload);
+                        if (cancelTask != null) {
+                            cancelTask.cancel(false);
+                        }
+                        throw new SQLException(protocol.buildErrorMessage(error),
+                            error.sqlState != null ? error.sqlState : "42000");
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+
+        @Override
+        public List<SBColumnInfo> getColumns() {
+            return columns;
+        }
+
+        @Override
+        public long getUpdateCount() {
+            return updateCount;
+        }
+
+        @Override
+        public String getCommandTag() {
+            return commandTag;
+        }
+
+        @Override
+        public boolean isDone() {
+            return done;
         }
     }
 

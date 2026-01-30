@@ -112,6 +112,8 @@
         binary-transfer (if (contains? details :binaryTransfer)
                           (:binaryTransfer details)
                           true)]
+    (when (false? binary-transfer)
+      (throw (ex-info "binary_transfer=false is not supported." {:binaryTransfer binary-transfer})))
     (cond-> {"sslmode" sslmode
              "application_name" (or (:application_name details) "metabase")}
       (:sslrootcert details) (assoc "sslrootcert" (:sslrootcert details))
@@ -119,7 +121,9 @@
       (:sslkey details) (assoc "sslkey" (:sslkey details))
       (some? (:connectTimeout details)) (assoc "connectTimeout" (str (:connectTimeout details)))
       (some? (:socketTimeout details)) (assoc "socketTimeout" (str (:socketTimeout details)))
-      (some? binary-transfer) (assoc "binaryTransfer" (str (boolean binary-transfer))))))
+      (some? binary-transfer) (assoc "binaryTransfer" (str (boolean binary-transfer)))
+      (some? (:sslpassword details)) (assoc "sslpassword" (:sslpassword details))
+      (some? (:role details)) (assoc "role" (:role details)))))
 
 (defmethod driver/display-name :scratchbird [_] "ScratchBird")
 
@@ -138,6 +142,8 @@
    {:name "sslrootcert" :display-name "CA Certificate" :type :string}
    {:name "sslcert" :display-name "Client Certificate" :type :string}
    {:name "sslkey" :display-name "Client Key" :type :string}
+   {:name "sslpassword" :display-name "SSL Key Password" :type :password}
+   {:name "role" :display-name "Role" :type :string}
    {:name "application_name" :display-name "Application Name" :type :string :default "metabase"}
    {:name "connectTimeout" :display-name "Connect Timeout (seconds)" :type :integer}
    {:name "socketTimeout" :display-name "Socket Timeout (seconds)" :type :integer}

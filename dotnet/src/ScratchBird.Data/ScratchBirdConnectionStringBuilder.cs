@@ -58,6 +58,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["CommandTimeout"] = value;
     }
 
+    public int FetchSize
+    {
+        get => GetInt("FetchSize", 0);
+        set => this["FetchSize"] = value;
+    }
+
     public bool Pooling
     {
         get => GetBool("Pooling", true);

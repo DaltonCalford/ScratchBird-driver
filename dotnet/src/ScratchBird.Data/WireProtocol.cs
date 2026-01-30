@@ -450,6 +450,27 @@ internal static class ProtocolCodec
         return (name, value);
     }
 
+    public static List<uint> ParseParameterDescription(byte[] payload)
+    {
+        if (payload.Length < 4)
+        {
+            throw new InvalidOperationException("Parameter description truncated");
+        }
+        var count = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(0, 2));
+        var offset = 4;
+        var types = new List<uint>(count);
+        for (var i = 0; i < count; i++)
+        {
+            if (offset + 4 > payload.Length)
+            {
+                throw new InvalidOperationException("Parameter description truncated");
+            }
+            types.Add(BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4)));
+            offset += 4;
+        }
+        return types;
+    }
+
     public static List<ColumnInfo> ParseRowDescription(byte[] payload)
     {
         if (payload.Length < 4)

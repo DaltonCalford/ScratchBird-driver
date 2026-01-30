@@ -234,6 +234,11 @@ build_execute_payload <- function(portal_name, max_rows = 0L) {
   c(pack_u32(length(portal_bytes)), portal_bytes, pack_u32(max_rows))
 }
 
+build_describe_payload <- function(describe_type, name) {
+  name_bytes <- charToRaw(name)
+  c(pack_u8(describe_type), as.raw(c(0x00, 0x00, 0x00)), pack_u32(length(name_bytes)), name_bytes)
+}
+
 build_cancel_payload <- function(cancel_type, target_sequence) {
   c(pack_u32(cancel_type), pack_u32(target_sequence))
 }
@@ -257,6 +262,20 @@ parse_parameter_status <- function(payload) {
   offset <- offset + 4
   value <- rawToChar(payload[offset:(offset + value_len - 1)])
   list(name = name, value = value)
+}
+
+parse_parameter_description <- function(payload) {
+  if (length(payload) < 4) stop("Parameter description truncated")
+  offset <- 1
+  count <- read_u16(payload, offset)
+  offset <- offset + 4
+  types <- integer()
+  for (idx in seq_len(count)) {
+    if (offset + 3 > length(payload)) stop("Parameter description truncated")
+    types <- c(types, read_u32(payload, offset))
+    offset <- offset + 4
+  }
+  types
 }
 
 parse_row_description <- function(payload) {

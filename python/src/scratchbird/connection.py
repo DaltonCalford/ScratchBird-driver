@@ -21,6 +21,7 @@ from .protocol import (
     MessageHeader,
     build_bind_payload,
     build_cancel_payload,
+    build_describe_payload,
     build_execute_payload,
     build_parse_payload,
     build_query_payload,
@@ -33,6 +34,7 @@ from .protocol import (
     parse_command_complete,
     parse_data_row,
     parse_error_message,
+    parse_parameter_description,
     parse_parameter_status,
     parse_ready,
     parse_row_description,
@@ -54,9 +56,11 @@ class ConnectionConfig:
     sslrootcert: Optional[str] = None
     sslcert: Optional[str] = None
     sslkey: Optional[str] = None
+    sslpassword: Optional[str] = None
     connect_timeout: int = 30
     socket_timeout: int = 0
     application_name: Optional[str] = None
+    role: Optional[str] = None
     binary_transfer: bool = True
     compression: str = "off"
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -89,10 +93,16 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.sslrootcert = params.get("sslrootcert", cfg.sslrootcert)
     cfg.sslcert = params.get("sslcert", cfg.sslcert)
     cfg.sslkey = params.get("sslkey", cfg.sslkey)
+    cfg.sslpassword = params.get("sslpassword", cfg.sslpassword)
     cfg.connect_timeout = int(params.get("connect_timeout", cfg.connect_timeout))
     cfg.socket_timeout = int(params.get("socket_timeout", cfg.socket_timeout))
     cfg.application_name = params.get("application_name", cfg.application_name)
-    cfg.binary_transfer = bool(params.get("binary_transfer", cfg.binary_transfer))
+    cfg.role = params.get("role", cfg.role)
+    raw_binary = params.get("binary_transfer", cfg.binary_transfer)
+    if isinstance(raw_binary, str):
+        cfg.binary_transfer = raw_binary.lower() in ("1", "true", "yes", "on")
+    else:
+        cfg.binary_transfer = bool(raw_binary)
     cfg.compression = params.get("compression", cfg.compression) or "off"
     cfg.extra = {
         k: v
@@ -112,9 +122,11 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "sslrootcert",
             "sslcert",
             "sslkey",
+            "sslpassword",
             "connect_timeout",
             "socket_timeout",
             "application_name",
+            "role",
             "binary_transfer",
             "compression",
         }
@@ -142,6 +154,10 @@ class Connection:
     def _connect(self) -> None:
         if not self._config.user or not self._config.database:
             raise errors.InterfaceError("user and database are required")
+        if not self._config.binary_transfer:
+            raise errors.NotSupportedError("binary_transfer=false is not supported")
+        if (self._config.compression or "").lower() == "zstd":
+            raise errors.NotSupportedError("compression=zstd is not supported")
         raw_sock = socket.create_connection(
             (self._config.host, self._config.port),
             timeout=self._config.connect_timeout,
@@ -166,7 +182,7 @@ class Connection:
         if self._config.sslrootcert:
             ctx.load_verify_locations(self._config.sslrootcert)
         if self._config.sslcert and self._config.sslkey:
-            ctx.load_cert_chain(self._config.sslcert, self._config.sslkey)
+            ctx.load_cert_chain(self._config.sslcert, self._config.sslkey, password=self._config.sslpassword)
 
         try:
             sock = ctx.wrap_socket(raw_sock, server_hostname=self._config.host)
@@ -248,6 +264,8 @@ class Connection:
             "database": self._config.database or "",
             "user": self._config.user or "",
         }
+        if self._config.role:
+            params["role"] = self._config.role
         if self._config.application_name:
             params["application_name"] = self._config.application_name
         features = 0
@@ -357,12 +375,12 @@ class Connection:
         if statement:
             self._execute_command(statement)
 
-    def _send_simple_query(self, sql: str) -> None:
+    def _send_simple_query(self, sql: str, max_rows: int = 0) -> None:
         flags = QUERY_FLAG_BINARY_RESULT if self._config.binary_transfer else 0
-        payload = build_query_payload(sql, flags, 0, 0)
+        payload = build_query_payload(sql, flags, max_rows, 0)
         self._send_message(MessageType.QUERY, payload)
 
-    def _send_extended_query(self, sql: str, params) -> None:
+    def _send_extended_query(self, sql: str, params, max_rows: int = 0) -> None:
         param_values = []
         param_types = []
         for param in params:
@@ -371,52 +389,42 @@ class Connection:
             param_types.append(oid)
         parse_payload = build_parse_payload("", sql, param_types)
         self._send_message(MessageType.PARSE, parse_payload)
+        param_count = self._describe_statement("")
+        if param_count >= 0 and param_count != len(param_types):
+            raise errors.ProgrammingError("parameter count mismatch (07001)")
         result_formats = [FORMAT_BINARY] if self._config.binary_transfer else []
         bind_payload = build_bind_payload("", "", param_values, result_formats)
         self._send_message(MessageType.BIND, bind_payload)
-        exec_payload = build_execute_payload("", 0)
+        exec_payload = build_execute_payload("", max_rows)
         self._send_message(MessageType.EXECUTE, exec_payload)
         self._send_message(MessageType.SYNC, b"")
 
-    def _execute_query(self, sql: str, params=None):
+    def _execute_query(self, sql: str, params=None, max_rows: int = 0):
         normalized_sql, ordered = normalize_query(sql, params)
         if ordered:
-            self._send_extended_query(normalized_sql, ordered)
+            self._send_extended_query(normalized_sql, ordered, max_rows)
         else:
-            self._send_simple_query(normalized_sql)
+            self._send_simple_query(normalized_sql, max_rows)
+        return ResultStream(self, max_rows)
 
-        columns = []
-        rows = []
-        rowcount = -1
+    def _describe_statement(self, statement_name: str) -> int:
+        describe_payload = build_describe_payload(ord("S"), statement_name)
+        self._send_message(MessageType.DESCRIBE, describe_payload)
+        self._send_message(MessageType.SYNC, b"")
+        param_count = -1
         while True:
             header, payload = self._recv_message()
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
-            if header.msg_type == MessageType.ROW_DESCRIPTION:
-                columns = parse_row_description(payload)
-            elif header.msg_type == MessageType.DATA_ROW:
-                values = parse_data_row(payload, len(columns))
-                decoded = []
-                for idx, value in enumerate(values):
-                    if idx < len(columns):
-                        col = columns[idx]
-                        decoded.append(decode_value(col.type_oid, value.data, col.format))
-                    else:
-                        decoded.append(decode_value(0, value.data, FORMAT_BINARY))
-                rows.append(tuple(decoded))
-            elif header.msg_type == MessageType.COMMAND_COMPLETE:
-                _, rows_affected, _, _ = parse_command_complete(payload)
-                rowcount = int(rows_affected)
+            if header.msg_type == MessageType.PARAMETER_DESCRIPTION:
+                param_count = len(parse_parameter_description(payload))
             elif header.msg_type == MessageType.PARAMETER_STATUS:
                 name, value = parse_parameter_status(payload)
                 self._parameters[name] = value
             elif header.msg_type == MessageType.READY:
                 _, txn_id, _ = parse_ready(payload)
                 self._txn_id = txn_id
-                break
-        if rowcount < 0:
-            rowcount = len(rows)
-        return columns, rows, rowcount
+                return param_count
 
     def _drain_until_ready(self) -> None:
         while True:
@@ -485,3 +493,47 @@ def _map_sqlstate(sqlstate: str):
 
 
 QUERY_FLAG_BINARY_RESULT = 0x04
+
+
+class ResultStream:
+    def __init__(self, connection: Connection, page_size: int = 0):
+        self._connection = connection
+        self._page_size = page_size
+        self.columns = []
+        self.rowcount = -1
+        self._done = False
+
+    def read_row(self):
+        if self._done:
+            return None
+        while True:
+            header, payload = self._connection._recv_message()
+            if header.msg_type == MessageType.ERROR:
+                self._connection._raise_protocol_error(payload)
+            if header.msg_type == MessageType.ROW_DESCRIPTION:
+                self.columns = parse_row_description(payload)
+            elif header.msg_type == MessageType.DATA_ROW:
+                values = parse_data_row(payload, len(self.columns))
+                decoded = []
+                for idx, value in enumerate(values):
+                    if idx < len(self.columns):
+                        col = self.columns[idx]
+                        decoded.append(decode_value(col.type_oid, value.data, col.format))
+                    else:
+                        decoded.append(decode_value(0, value.data, FORMAT_BINARY))
+                return tuple(decoded)
+            elif header.msg_type == MessageType.COMMAND_COMPLETE:
+                _, rows_affected, _, _ = parse_command_complete(payload)
+                self.rowcount = int(rows_affected)
+            elif header.msg_type == MessageType.PARAMETER_STATUS:
+                name, value = parse_parameter_status(payload)
+                self._connection._parameters[name] = value
+            elif header.msg_type == MessageType.PORTAL_SUSPENDED:
+                exec_payload = build_execute_payload("", self._page_size)
+                self._connection._send_message(MessageType.EXECUTE, exec_payload)
+                self._connection._send_message(MessageType.SYNC, b"")
+            elif header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._connection._txn_id = txn_id
+                self._done = True
+                return None

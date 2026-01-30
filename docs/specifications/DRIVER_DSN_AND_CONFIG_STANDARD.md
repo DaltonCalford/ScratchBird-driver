@@ -41,6 +41,7 @@ Optional:
 - role
 - binary_transfer (must be true)
 - compression (off|zstd)
+- fetch_size (rows per page; 0 = all rows)
 
 ## Key Aliases (Must Accept)
 
@@ -52,6 +53,7 @@ Optional:
 - connect_timeout, connectTimeout
 - socket_timeout, socketTimeout
 - binary_transfer, binarytransfer
+- fetch_size, fetchsize, default_fetch_size
 
 ## Binary-Only Requirement
 
@@ -82,10 +84,10 @@ binary_transfer=false it must reject the connection with NotSupported.
 
 - DSN keys: host, port, database/dbname, user/username, password/pwd,
   sslmode, sslrootcert, sslcert, sslkey, connect_timeout, socket_timeout,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 - Config fields: Host, Port, Database, User, Password, SSLMode,
   SSLRootCert, SSLCert, SSLKey, ConnectTimeout, SocketTimeout,
-  Application, BinaryTransfer, Compression.
+  Application, BinaryTransfer, Compression, FetchSize.
 
 ### Node.js/TypeScript
 
@@ -118,43 +120,43 @@ binary_transfer=false it must reject the connection with NotSupported.
 
 - DSN keys: host, port, database/dbname, user/username, password/pwd,
   sslmode, sslrootcert, sslcert, sslkey, connect_timeout, socket_timeout,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 - Config fields: host, port, database, user, password, sslmode,
   sslrootcert, sslcert, sslkey, connect_timeout_ms, socket_timeout_ms,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 
 ### PHP
 
 - DSN keys: host, port, database/dbname, user/username, password/pwd,
   sslmode, sslrootcert, sslcert, sslkey, connect_timeout, socket_timeout,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 - Config fields: host, port, database, user, password, sslMode,
   sslRootCert, sslCert, sslKey, connectTimeoutMs, socketTimeoutMs,
-  applicationName, binaryTransfer, compression.
+  applicationName, binaryTransfer, compression, fetchSize.
 
 ### R
 
 - DSN keys: host, port, database/dbname, user/username, password/pwd,
   sslmode, sslrootcert, sslcert, sslkey, connect_timeout, socket_timeout,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 - Config fields: host, port, database, user, password, sslmode,
   sslrootcert, sslcert, sslkey, connect_timeout_ms, socket_timeout_ms,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 
 ### Pascal/Delphi
 
 - DSN keys: host, port, database/dbname, user/username, password/pwd,
   sslmode, sslrootcert, sslcert, sslkey, connect_timeout, socket_timeout,
-  application_name, binary_transfer, compression.
+  application_name, binary_transfer, compression, fetch_size.
 - Config fields: Host, Port, Database, UserName, Password, SSLMode,
   SSLRootCert, SSLCert, SSLKey, ConnectTimeoutMs, SocketTimeoutMs,
-  ApplicationName, BinaryTransfer, Compression.
+  ApplicationName, BinaryTransfer, Compression, FetchSize.
 
 ### .NET
 
 - Connection string keys: Host, Port, Database, Username, Password,
   SSLMode, Timeout, CommandTimeout, Pooling, MinPoolSize, MaxPoolSize,
-  ConnectionLifetime, Enlist.
+  ConnectionLifetime, Enlist, FetchSize.
 - Required alias support: user -> Username, database/dbname -> Database.
 - SSL cert key support is required even if not yet implemented.
 
@@ -164,5 +166,6 @@ binary_transfer=false it must reject the connection with NotSupported.
   ssl/sslmode, sslcert, sslkey, sslrootcert, sslpassword,
   connecttimeout, sockettimeout, logintimeout, tcpkeepalive,
   currentSchema/searchPath, applicationName, readOnly, autocommit,
-  defaultRowFetchSize, prepareThreshold, binaryTransfer,
+  defaultRowFetchSize (or fetch_size), prepareThreshold, binaryTransfer,
+  compression,
   rewriteBatchedInserts.

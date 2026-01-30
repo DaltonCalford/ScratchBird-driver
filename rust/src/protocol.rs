@@ -301,6 +301,16 @@ pub fn build_execute_payload(portal_name: &str, max_rows: u32) -> Vec<u8> {
     out
 }
 
+pub fn build_describe_payload(describe_type: u8, name: &str) -> Vec<u8> {
+    let name_bytes = name.as_bytes();
+    let mut out = Vec::with_capacity(8 + name_bytes.len());
+    out.push(describe_type);
+    out.extend_from_slice(&[0, 0, 0]);
+    out.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(name_bytes);
+    out
+}
+
 pub fn build_cancel_payload(cancel_type: u32, target_sequence: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(8);
     out.extend_from_slice(&cancel_type.to_le_bytes());
@@ -342,6 +352,28 @@ pub fn parse_parameter_status(payload: &[u8]) -> Result<(String, String)> {
     }
     let value = String::from_utf8_lossy(&payload[value_start..value_end]).to_string();
     Ok((name, value))
+}
+
+pub fn parse_parameter_description(payload: &[u8]) -> Result<Vec<u32>> {
+    if payload.len() < 4 {
+        return Err(Error::new(ErrorKind::Connection, "parameter description truncated"));
+    }
+    let count = u16::from_le_bytes([payload[0], payload[1]]) as usize;
+    let mut offset = 4;
+    let mut types = Vec::with_capacity(count);
+    for _ in 0..count {
+        if offset + 4 > payload.len() {
+            return Err(Error::new(ErrorKind::Connection, "parameter description truncated"));
+        }
+        types.push(u32::from_le_bytes([
+            payload[offset],
+            payload[offset + 1],
+            payload[offset + 2],
+            payload[offset + 3],
+        ]));
+        offset += 4;
+    }
+    Ok(types)
 }
 
 pub fn parse_row_description(payload: &[u8]) -> Result<Vec<ColumnInfo>> {

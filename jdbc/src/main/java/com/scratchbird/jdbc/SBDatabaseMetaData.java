@@ -986,22 +986,115 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "KEY_SEQ", "PK_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        List<Object[]> source;
+        try {
+            source = queryRows(
+                "SELECT tc.table_schema, tc.table_name, kcu.column_name, kcu.ordinal_position, tc.constraint_name " +
+                    "FROM information_schema.table_constraints tc " +
+                    "JOIN information_schema.key_column_usage kcu " +
+                    "  ON tc.constraint_name = kcu.constraint_name " +
+                    " AND tc.table_schema = kcu.table_schema " +
+                    " AND tc.table_name = kcu.table_name " +
+                    "WHERE tc.constraint_type = 'PRIMARY KEY'"
+            );
+        } catch (SQLException e) {
+            source = Collections.emptyList();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : source) {
+            String schemaName = toStringValue(row, 0);
+            String tableName = toStringValue(row, 1);
+            if (!matchesPattern(schemaName, schema) || !matchesPattern(tableName, table)) {
+                continue;
+            }
+            String columnName = toStringValue(row, 2);
+            short keySeq = toShortValue(row, 3);
+            String pkName = toStringValue(row, 4);
+            rows.add(new Object[]{currentCatalog, schemaName, tableName, columnName, keySeq, pkName});
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("KEY_SEQ", 21));
+        cols.add(column("PK_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"PKTABLE_CAT", "PKTABLE_SCHEM", "PKTABLE_NAME", "PKCOLUMN_NAME",
-                         "FKTABLE_CAT", "FKTABLE_SCHEM", "FKTABLE_NAME", "FKCOLUMN_NAME",
-                         "KEY_SEQ", "UPDATE_RULE", "DELETE_RULE", "FK_NAME", "PK_NAME", "DEFERRABILITY"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT, Types.SMALLINT,
-                      Types.SMALLINT, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        List<Object[]> source;
+        try {
+            source = queryRows(
+                "SELECT tc.table_schema AS fk_schema, tc.table_name AS fk_table, " +
+                    "kcu.column_name AS fk_column, ccu.table_schema AS pk_schema, " +
+                    "ccu.table_name AS pk_table, ccu.column_name AS pk_column, " +
+                    "kcu.ordinal_position AS key_seq, rc.update_rule, rc.delete_rule, " +
+                    "tc.constraint_name AS fk_name, rc.unique_constraint_name AS pk_name, " +
+                    "rc.deferrable AS deferrable " +
+                    "FROM information_schema.table_constraints tc " +
+                    "JOIN information_schema.key_column_usage kcu " +
+                    "  ON tc.constraint_name = kcu.constraint_name " +
+                    " AND tc.table_schema = kcu.table_schema " +
+                    " AND tc.table_name = kcu.table_name " +
+                    "JOIN information_schema.constraint_column_usage ccu " +
+                    "  ON ccu.constraint_name = tc.constraint_name " +
+                    " AND ccu.constraint_schema = tc.table_schema " +
+                    "LEFT JOIN information_schema.referential_constraints rc " +
+                    "  ON rc.constraint_name = tc.constraint_name " +
+                    " AND rc.constraint_schema = tc.table_schema " +
+                    "WHERE tc.constraint_type = 'FOREIGN KEY'"
+            );
+        } catch (SQLException e) {
+            source = Collections.emptyList();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : source) {
+            String fkSchema = toStringValue(row, 0);
+            String fkTable = toStringValue(row, 1);
+            if (!matchesPattern(fkSchema, schema) || !matchesPattern(fkTable, table)) {
+                continue;
+            }
+            String fkColumn = toStringValue(row, 2);
+            String pkSchema = toStringValue(row, 3);
+            String pkTable = toStringValue(row, 4);
+            String pkColumn = toStringValue(row, 5);
+            short keySeq = toShortValue(row, 6);
+            short updateRule = mapRule(toStringValue(row, 7));
+            short deleteRule = mapRule(toStringValue(row, 8));
+            String fkName = toStringValue(row, 9);
+            String pkName = toStringValue(row, 10);
+            short deferrability = mapDeferrable(toStringValue(row, 11));
+
+            rows.add(new Object[]{
+                currentCatalog, pkSchema, pkTable, pkColumn,
+                currentCatalog, fkSchema, fkTable, fkColumn,
+                keySeq, updateRule, deleteRule, fkName, pkName, deferrability
+            });
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("PKTABLE_CAT", 25));
+        cols.add(column("PKTABLE_SCHEM", 25));
+        cols.add(column("PKTABLE_NAME", 25));
+        cols.add(column("PKCOLUMN_NAME", 25));
+        cols.add(column("FKTABLE_CAT", 25));
+        cols.add(column("FKTABLE_SCHEM", 25));
+        cols.add(column("FKTABLE_NAME", 25));
+        cols.add(column("FKCOLUMN_NAME", 25));
+        cols.add(column("KEY_SEQ", 21));
+        cols.add(column("UPDATE_RULE", 21));
+        cols.add(column("DELETE_RULE", 21));
+        cols.add(column("FK_NAME", 25));
+        cols.add(column("PK_NAME", 25));
+        cols.add(column("DEFERRABILITY", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -1017,17 +1110,47 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getTypeInfo() throws SQLException {
-        // Return empty result set - would need full type definitions
-        return createEmptyResultSet(
-            new String[]{"TYPE_NAME", "DATA_TYPE", "PRECISION", "LITERAL_PREFIX", "LITERAL_SUFFIX",
-                         "CREATE_PARAMS", "NULLABLE", "CASE_SENSITIVE", "SEARCHABLE", "UNSIGNED_ATTRIBUTE",
-                         "FIXED_PREC_SCALE", "AUTO_INCREMENT", "LOCAL_TYPE_NAME", "MINIMUM_SCALE",
-                         "MAXIMUM_SCALE", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "NUM_PREC_RADIX"},
-            new int[]{Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.SMALLINT, Types.BOOLEAN, Types.SMALLINT, Types.BOOLEAN,
-                      Types.BOOLEAN, Types.BOOLEAN, Types.VARCHAR, Types.SMALLINT, Types.SMALLINT,
-                      Types.INTEGER, Types.INTEGER, Types.INTEGER}
-        );
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(typeInfoRow("BOOLEAN", Types.BOOLEAN, 1, null));
+        rows.add(typeInfoRow("SMALLINT", Types.SMALLINT, 5, null));
+        rows.add(typeInfoRow("INTEGER", Types.INTEGER, 10, null));
+        rows.add(typeInfoRow("BIGINT", Types.BIGINT, 19, null));
+        rows.add(typeInfoRow("REAL", Types.REAL, 24, null));
+        rows.add(typeInfoRow("DOUBLE", Types.DOUBLE, 53, null));
+        rows.add(typeInfoRow("NUMERIC", Types.NUMERIC, 38, "precision,scale"));
+        rows.add(typeInfoRow("DECIMAL", Types.DECIMAL, 38, "precision,scale"));
+        rows.add(typeInfoRow("CHAR", Types.CHAR, 255, "length"));
+        rows.add(typeInfoRow("VARCHAR", Types.VARCHAR, 65535, "length"));
+        rows.add(typeInfoRow("TEXT", Types.LONGVARCHAR, 2147483647, null));
+        rows.add(typeInfoRow("BYTEA", Types.BINARY, 2147483647, null));
+        rows.add(typeInfoRow("DATE", Types.DATE, 10, null));
+        rows.add(typeInfoRow("TIME", Types.TIME, 15, null));
+        rows.add(typeInfoRow("TIMESTAMP", Types.TIMESTAMP, 29, null));
+        rows.add(typeInfoRow("TIMESTAMPTZ", Types.TIMESTAMP_WITH_TIMEZONE, 35, null));
+        rows.add(typeInfoRow("UUID", Types.OTHER, 16, null));
+        rows.add(typeInfoRow("JSON", Types.OTHER, 2147483647, null));
+        rows.add(typeInfoRow("JSONB", Types.OTHER, 2147483647, null));
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("PRECISION", 23));
+        cols.add(column("LITERAL_PREFIX", 25));
+        cols.add(column("LITERAL_SUFFIX", 25));
+        cols.add(column("CREATE_PARAMS", 25));
+        cols.add(column("NULLABLE", 21));
+        cols.add(column("CASE_SENSITIVE", 16));
+        cols.add(column("SEARCHABLE", 21));
+        cols.add(column("UNSIGNED_ATTRIBUTE", 16));
+        cols.add(column("FIXED_PREC_SCALE", 16));
+        cols.add(column("AUTO_INCREMENT", 16));
+        cols.add(column("LOCAL_TYPE_NAME", 25));
+        cols.add(column("MINIMUM_SCALE", 21));
+        cols.add(column("MAXIMUM_SCALE", 21));
+        cols.add(column("SQL_DATA_TYPE", 23));
+        cols.add(column("SQL_DATETIME_SUB", 23));
+        cols.add(column("NUM_PREC_RADIX", 23));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -1046,14 +1169,33 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         }
 
         List<Object[]> rows = new ArrayList<>();
-        for (Object[] row : queryRows(
-            "SELECT i.index_name, i.index_type, i.is_unique, " +
-            "t.table_name, s.schema_name " +
-            "FROM sys.indexes i " +
-            "JOIN sys.tables t ON t.table_id = i.table_id " +
-            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
-            "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
-        )) {
+        boolean hasColumnInfo = true;
+        Iterable<Object[]> resultRows;
+        try {
+            resultRows = queryRows(
+                "SELECT i.index_name, i.index_type, i.is_unique, " +
+                "t.table_name, s.schema_name, ic.ordinal_position, c.column_name " +
+                "FROM sys.indexes i " +
+                "JOIN sys.tables t ON t.table_id = i.table_id " +
+                "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+                "LEFT JOIN sys.index_columns ic ON ic.index_id = i.index_id " +
+                "LEFT JOIN sys.columns c ON c.column_id = ic.column_id " +
+                "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1 " +
+                "ORDER BY i.index_name, ic.ordinal_position"
+            );
+        } catch (SQLException ex) {
+            hasColumnInfo = false;
+            resultRows = queryRows(
+                "SELECT i.index_name, i.index_type, i.is_unique, " +
+                "t.table_name, s.schema_name " +
+                "FROM sys.indexes i " +
+                "JOIN sys.tables t ON t.table_id = i.table_id " +
+                "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+                "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
+            );
+        }
+
+        for (Object[] row : resultRows) {
             String indexName = toStringValue(row, 0);
             String tableName = toStringValue(row, 3);
             String schemaName = toStringValue(row, 4);
@@ -1065,6 +1207,13 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 continue;
             }
 
+            Short ordinal = 0;
+            String columnName = null;
+            if (hasColumnInfo && row.length > 6) {
+                ordinal = toShortValue(row, 5);
+                columnName = toStringValue(row, 6);
+            }
+
             rows.add(new Object[]{
                 currentCatalog,
                 schemaName,
@@ -1073,8 +1222,8 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 null,
                 indexName,
                 DatabaseMetaData.tableIndexOther,
-                0,
-                null,
+                ordinal,
+                columnName,
                 null,
                 0,
                 0,
@@ -1178,6 +1327,27 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         }
     }
 
+    private short toShortValue(Object[] row, int index) {
+        if (row == null || index < 0 || index >= row.length) {
+            return 0;
+        }
+        return toShortValue(row[index]);
+    }
+
+    private short toShortValue(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).shortValue();
+        }
+        try {
+            return Short.parseShort(value.toString());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
     private boolean toBooleanValue(Object value) {
         if (value == null) {
             return false;
@@ -1196,6 +1366,78 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             return false;
         }
         return Boolean.parseBoolean(text);
+    }
+
+    private short mapRule(String rule) {
+        if (rule == null) {
+            return DatabaseMetaData.importedKeyNoAction;
+        }
+        String normalized = rule.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "CASCADE" -> DatabaseMetaData.importedKeyCascade;
+            case "SET NULL" -> DatabaseMetaData.importedKeySetNull;
+            case "SET DEFAULT" -> DatabaseMetaData.importedKeySetDefault;
+            case "RESTRICT" -> DatabaseMetaData.importedKeyRestrict;
+            case "NO ACTION" -> DatabaseMetaData.importedKeyNoAction;
+            default -> DatabaseMetaData.importedKeyNoAction;
+        };
+    }
+
+    private short mapDeferrable(String deferrable) {
+        if (deferrable == null) {
+            return DatabaseMetaData.importedKeyNotDeferrable;
+        }
+        String normalized = deferrable.trim().toUpperCase(Locale.ROOT);
+        if (normalized.contains("DEFERRED")) {
+            return DatabaseMetaData.importedKeyInitiallyDeferred;
+        }
+        if (normalized.contains("NOT")) {
+            return DatabaseMetaData.importedKeyNotDeferrable;
+        }
+        return DatabaseMetaData.importedKeyInitiallyImmediate;
+    }
+
+    private Object[] typeInfoRow(String typeName, int dataType, int precision, String createParams) {
+        String literalPrefix = null;
+        String literalSuffix = null;
+        boolean caseSensitive = false;
+        if (dataType == Types.CHAR || dataType == Types.VARCHAR || dataType == Types.LONGVARCHAR) {
+            literalPrefix = "'";
+            literalSuffix = "'";
+            caseSensitive = true;
+        }
+        short searchable = DatabaseMetaData.typeSearchable;
+        boolean unsigned = false;
+        boolean fixedScale = false;
+        boolean autoIncrement = false;
+        String localTypeName = typeName;
+        Short minScale = null;
+        Short maxScale = null;
+        if (dataType == Types.NUMERIC || dataType == Types.DECIMAL) {
+            minScale = 0;
+            maxScale = 38;
+        }
+        Integer numPrecRadix = 10;
+        return new Object[]{
+            typeName,
+            dataType,
+            precision,
+            literalPrefix,
+            literalSuffix,
+            createParams,
+            DatabaseMetaData.typeNullable,
+            caseSensitive,
+            searchable,
+            unsigned,
+            fixedScale,
+            autoIncrement,
+            localTypeName,
+            minScale,
+            maxScale,
+            null,
+            null,
+            numPrecRadix
+        };
     }
 
     private Integer parseOid(Object value) {

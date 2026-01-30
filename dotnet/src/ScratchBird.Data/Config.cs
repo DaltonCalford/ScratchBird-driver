@@ -10,15 +10,18 @@ public sealed class ScratchBirdConfig
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
     public string Schema { get; set; } = "";
+    public string Role { get; set; } = "";
     public string SslMode { get; set; } = "require";
     public string? SslRootCert { get; set; }
     public string? SslCert { get; set; }
     public string? SslKey { get; set; }
+    public string? SslPassword { get; set; }
     public int ConnectTimeoutMs { get; set; } = 30000;
     public int SocketTimeoutMs { get; set; } = 0;
     public string ApplicationName { get; set; } = "scratchbird_dotnet";
     public bool BinaryTransfer { get; set; } = true;
     public string Compression { get; set; } = "off";
+    public int DefaultFetchSize { get; set; } = 0;
 
     public static ScratchBirdConfig FromConnectionString(string connectionString)
     {
@@ -138,6 +141,9 @@ internal static class DsnParser
             case "currentschema":
                 cfg.Schema = value;
                 break;
+            case "role":
+                cfg.Role = value;
+                break;
             case "sslmode":
             case "ssl mode":
                 cfg.SslMode = value;
@@ -150,6 +156,9 @@ internal static class DsnParser
                 break;
             case "sslkey":
                 cfg.SslKey = value;
+                break;
+            case "sslpassword":
+                cfg.SslPassword = value;
                 break;
             case "connect_timeout":
             case "connecttimeout":
@@ -172,6 +181,12 @@ internal static class DsnParser
                 break;
             case "compression":
                 cfg.Compression = value.Equals("zstd", StringComparison.OrdinalIgnoreCase) ? "zstd" : "off";
+                break;
+            case "fetch_size":
+            case "fetchsize":
+            case "default_fetch_size":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fetch))
+                    cfg.DefaultFetchSize = Math.Max(0, fetch);
                 break;
         }
     }

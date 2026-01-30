@@ -13,6 +13,7 @@ class Cursor:
         self._closed = False
         self._results: List = []
         self._pos = 0
+        self._stream = None
         self.description = None
         self.rowcount = -1
         self.arraysize = 1
@@ -23,27 +24,12 @@ class Cursor:
         if sql is None:
             raise errors.ProgrammingError("sql is required")
         self._reset_state()
-        columns, rows, rowcount = self._connection._execute_query(sql, params)
-        self._results = rows
+        page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
+        self._stream = self._connection._execute_query(sql, params, page_size)
+        self._results = []
         self._pos = 0
-        if columns:
-            self.description = [
-                (
-                    col.name,
-                    col.type_oid,
-                    None,
-                    col.type_modifier or None,
-                    None,
-                    None,
-                    col.nullable,
-                )
-                for col in columns
-            ]
-        if rowcount is None:
-            rowcount = -1
-        if rowcount < 0 and rows:
-            rowcount = len(rows)
-        self.rowcount = rowcount
+        self.description = None
+        self.rowcount = -1
 
     def executemany(self, sql: str, seq_of_params: Iterable) -> None:
         self._ensure_open()
@@ -52,23 +38,14 @@ class Cursor:
         self._reset_state()
         total = 0
         rowcount_known = True
+        page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
         for params in seq_of_params:
-            columns, rows, rowcount = self._connection._execute_query(sql, params)
-            self._results = rows
+            stream = self._connection._execute_query(sql, params, page_size)
+            self._stream = stream
+            self._results = []
             self._pos = 0
-            if columns:
-                self.description = [
-                    (
-                        col.name,
-                        col.type_oid,
-                        None,
-                        col.type_modifier or None,
-                        None,
-                        None,
-                        col.nullable,
-                    )
-                    for col in columns
-                ]
+            self._update_description(stream)
+            rowcount = self._drain_stream(stream)
             if rowcount is None or rowcount < 0:
                 rowcount_known = False
             else:
@@ -86,10 +63,18 @@ class Cursor:
 
     def fetchone(self):
         self._ensure_open()
-        if self._pos >= len(self._results):
+        if self._pos < len(self._results):
+            row = self._results[self._pos]
+            self._pos += 1
+            return row
+        if self._stream is None:
             return None
-        row = self._results[self._pos]
-        self._pos += 1
+        row = self._stream.read_row()
+        self._update_description(self._stream)
+        if row is None:
+            if self._stream.rowcount is not None and self._stream.rowcount >= 0:
+                self.rowcount = self._stream.rowcount
+            return None
         return row
 
     def fetchmany(self, size: Optional[int] = None) -> List:
@@ -98,17 +83,22 @@ class Cursor:
             size = self.arraysize
         if size <= 0:
             return []
-        start = self._pos
-        end = min(self._pos + size, len(self._results))
-        self._pos = end
-        return self._results[start:end]
+        rows = []
+        while len(rows) < size:
+            row = self.fetchone()
+            if row is None:
+                break
+            rows.append(row)
+        return rows
 
     def fetchall(self) -> List:
         self._ensure_open()
-        if self._pos >= len(self._results):
-            return []
-        rows = self._results[self._pos :]
-        self._pos = len(self._results)
+        rows = []
+        while True:
+            row = self.fetchone()
+            if row is None:
+                break
+            rows.append(row)
         return rows
 
     def close(self) -> None:
@@ -127,9 +117,36 @@ class Cursor:
     def _reset_state(self) -> None:
         self._results = []
         self._pos = 0
+        self._stream = None
         self.description = None
         self.rowcount = -1
         self.lastrowid = None
+
+    def _update_description(self, stream) -> None:
+        if self.description is not None:
+            return
+        if stream is None or not getattr(stream, "columns", None):
+            return
+        self.description = [
+            (
+                col.name,
+                col.type_oid,
+                None,
+                col.type_modifier or None,
+                None,
+                None,
+                col.nullable,
+            )
+            for col in stream.columns
+        ]
+
+    def _drain_stream(self, stream):
+        count = stream.rowcount
+        while True:
+            row = stream.read_row()
+            if row is None:
+                break
+        return stream.rowcount if stream.rowcount is not None else count
 
     @property
     def connection(self):

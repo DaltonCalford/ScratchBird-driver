@@ -3,9 +3,9 @@ require "uri"
 module Scratchbird
   class Config
     attr_accessor :host, :port, :database, :user, :password, :sslmode,
-                  :schema, :sslrootcert, :sslcert, :sslkey, :connect_timeout_ms,
-                  :socket_timeout_ms, :application_name, :binary_transfer,
-                  :compression
+                  :schema, :role, :sslrootcert, :sslcert, :sslkey, :sslpassword,
+                  :connect_timeout_ms, :socket_timeout_ms, :application_name,
+                  :binary_transfer, :compression
 
     def initialize
       @host = "localhost"
@@ -14,10 +14,12 @@ module Scratchbird
       @user = ""
       @password = ""
       @schema = ""
+      @role = ""
       @sslmode = "require"
       @sslrootcert = nil
       @sslcert = nil
       @sslkey = nil
+      @sslpassword = nil
       @connect_timeout_ms = 30_000
       @socket_timeout_ms = 0
       @application_name = "scratchbird_ruby"
@@ -82,6 +84,8 @@ module Scratchbird
         cfg.password = value
       when "schema", "search_path", "searchpath", "currentschema"
         cfg.schema = value
+      when "role"
+        cfg.role = value
       when "sslmode", "ssl mode"
         cfg.sslmode = value
       when "sslrootcert"
@@ -90,6 +94,8 @@ module Scratchbird
         cfg.sslcert = value
       when "sslkey"
         cfg.sslkey = value
+      when "sslpassword"
+        cfg.sslpassword = value
       when "connect_timeout", "connecttimeout", "timeout"
         cfg.connect_timeout_ms = value.to_i * 1000
       when "socket_timeout", "sockettimeout"

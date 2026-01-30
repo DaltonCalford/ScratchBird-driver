@@ -20,11 +20,15 @@ public class SBResultSet implements ResultSet {
     private final SBStatement statement;
 
     // Column metadata
-    private final List<SBColumnInfo> columns;
+    private List<SBColumnInfo> columns;
     private final Map<String, Integer> columnNameIndex;
 
     // Row data
+    private final SBRowStream stream;
     private final List<Object[]> rows;
+    private Object[] currentRowData;
+    private int rowsRead = 0;
+    private final int maxRowsLimit;
 
     // Position (0-indexed internally, before-first is -1)
     private int currentRow = -1;
@@ -41,21 +45,24 @@ public class SBResultSet implements ResultSet {
     private int fetchSize = 0;
 
     /**
-     * Creates a new result set.
+     * Creates a new result set from a buffered row list.
      */
     public SBResultSet(SBStatement statement, List<SBColumnInfo> columns, List<Object[]> rows) {
-        this.statement = statement;
-        this.columns = columns != null ? columns : Collections.emptyList();
-        this.rows = rows != null ? rows : Collections.emptyList();
+        this(statement, new ListRowStream(columns, rows), 0);
+    }
 
-        // Build column name index (case-insensitive)
+    /**
+     * Creates a new result set backed by a streaming cursor.
+     */
+    public SBResultSet(SBStatement statement, SBRowStream stream, int maxRowsLimit) {
+        this.statement = statement;
+        this.stream = stream;
+        this.maxRowsLimit = maxRowsLimit;
+        this.columns = stream != null && stream.getColumns() != null ? stream.getColumns() : Collections.emptyList();
+        this.rows = stream instanceof ListRowStream ? ((ListRowStream) stream).getRows() : Collections.emptyList();
+
         this.columnNameIndex = new HashMap<>();
-        for (int i = 0; i < this.columns.size(); i++) {
-            String name = this.columns.get(i).getName();
-            if (name != null) {
-                columnNameIndex.put(name.toLowerCase(), i + 1);
-            }
-        }
+        rebuildColumnIndex();
     }
 
     // ==================== Navigation ====================
@@ -63,12 +70,22 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean next() throws SQLException {
         checkClosed();
-        if (currentRow < rows.size() - 1) {
-            currentRow++;
-            return true;
+        if (maxRowsLimit > 0 && rowsRead >= maxRowsLimit) {
+            currentRow = rowsRead;
+            currentRowData = null;
+            return false;
         }
-        currentRow = rows.size();  // After last
-        return false;
+        Object[] row = stream != null ? stream.nextRow() : null;
+        if (row == null) {
+            currentRow = rowsRead;
+            currentRowData = null;
+            return false;
+        }
+        currentRowData = row;
+        rowsRead++;
+        currentRow = rowsRead - 1;
+        syncColumns();
+        return true;
     }
 
     @Override
@@ -387,7 +404,7 @@ public class SBResultSet implements ResultSet {
         checkRow();
         checkColumnIndex(columnIndex);
 
-        Object value = rows.get(currentRow)[columnIndex - 1];
+        Object value = currentRowData[columnIndex - 1];
         wasNull = (value == null);
         return value;
     }
@@ -475,12 +492,14 @@ public class SBResultSet implements ResultSet {
     @Override
     public ResultSetMetaData getMetaData() throws SQLException {
         checkClosed();
+        syncColumns();
         return new SBResultSetMetaData(columns);
     }
 
     @Override
     public int findColumn(String columnLabel) throws SQLException {
         checkClosed();
+        syncColumns();
         Integer index = columnNameIndex.get(columnLabel.toLowerCase());
         if (index == null) {
             throw new SQLException("Column not found: " + columnLabel, "42703");
@@ -491,65 +510,96 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean isBeforeFirst() throws SQLException {
         checkClosed();
-        return !rows.isEmpty() && currentRow < 0;
+        if (!rows.isEmpty()) {
+            return currentRow < 0;
+        }
+        return currentRow < 0 && currentRowData == null && rowsRead == 0;
     }
 
     @Override
     public boolean isAfterLast() throws SQLException {
         checkClosed();
-        return !rows.isEmpty() && currentRow >= rows.size();
+        if (!rows.isEmpty()) {
+            return currentRow >= rows.size();
+        }
+        return stream != null && stream.isDone() && currentRowData == null;
     }
 
     @Override
     public boolean isFirst() throws SQLException {
         checkClosed();
-        return !rows.isEmpty() && currentRow == 0;
+        if (!rows.isEmpty()) {
+            return currentRow == 0;
+        }
+        return rowsRead == 1 && currentRowData != null;
     }
 
     @Override
     public boolean isLast() throws SQLException {
         checkClosed();
-        return !rows.isEmpty() && currentRow == rows.size() - 1;
+        if (!rows.isEmpty()) {
+            return currentRow == rows.size() - 1;
+        }
+        return stream != null && stream.isDone() && currentRowData != null;
     }
 
     @Override
     public void beforeFirst() throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         currentRow = -1;
+        currentRowData = null;
     }
 
     @Override
     public void afterLast() throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         currentRow = rows.size();
+        currentRowData = null;
     }
 
     @Override
     public boolean first() throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         if (rows.isEmpty()) return false;
         currentRow = 0;
+        currentRowData = rows.get(0);
         return true;
     }
 
     @Override
     public boolean last() throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         if (rows.isEmpty()) return false;
         currentRow = rows.size() - 1;
+        currentRowData = rows.get(currentRow);
         return true;
     }
 
     @Override
     public int getRow() throws SQLException {
         checkClosed();
-        if (currentRow < 0 || currentRow >= rows.size()) return 0;
+        if (currentRowData == null) return 0;
         return currentRow + 1;  // 1-indexed for JDBC
     }
 
     @Override
     public boolean absolute(int row) throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         if (rows.isEmpty()) return false;
 
         if (row > 0) {
@@ -559,7 +609,12 @@ public class SBResultSet implements ResultSet {
         } else {
             currentRow = -1;
         }
-        return currentRow >= 0 && currentRow < rows.size();
+        if (currentRow >= 0 && currentRow < rows.size()) {
+            currentRowData = rows.get(currentRow);
+            return true;
+        }
+        currentRowData = null;
+        return false;
     }
 
     @Override
@@ -571,6 +626,9 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean previous() throws SQLException {
         checkClosed();
+        if (rows.isEmpty()) {
+            throw new SQLException("ResultSet is forward-only", "0A000");
+        }
         if (currentRow > 0) {
             currentRow--;
             return true;
@@ -1240,7 +1298,7 @@ public class SBResultSet implements ResultSet {
     }
 
     private void checkRow() throws SQLException {
-        if (currentRow < 0 || currentRow >= rows.size()) {
+        if (currentRowData == null) {
             throw new SQLException("Cursor not on a valid row", "HY109");
         }
     }
@@ -1249,6 +1307,70 @@ public class SBResultSet implements ResultSet {
         if (columnIndex < 1 || columnIndex > columns.size()) {
             throw new SQLException("Column index out of range: " + columnIndex +
                 " (expected 1-" + columns.size() + ")", "42703");
+        }
+    }
+
+    private void syncColumns() {
+        if (stream == null) {
+            return;
+        }
+        List<SBColumnInfo> updated = stream.getColumns();
+        if (updated == null) {
+            return;
+        }
+        if (columns != updated) {
+            columns = updated;
+            rebuildColumnIndex();
+        }
+    }
+
+    private void rebuildColumnIndex() {
+        columnNameIndex.clear();
+        for (int i = 0; i < columns.size(); i++) {
+            columnNameIndex.put(columns.get(i).name.toLowerCase(), i + 1);
+        }
+    }
+
+    private static final class ListRowStream implements SBRowStream {
+        private final List<SBColumnInfo> columns;
+        private final List<Object[]> rows;
+        private int index = 0;
+
+        ListRowStream(List<SBColumnInfo> columns, List<Object[]> rows) {
+            this.columns = columns == null ? Collections.emptyList() : columns;
+            this.rows = rows == null ? Collections.emptyList() : rows;
+        }
+
+        @Override
+        public Object[] nextRow() {
+            if (index >= rows.size()) {
+                return null;
+            }
+            return rows.get(index++);
+        }
+
+        @Override
+        public List<SBColumnInfo> getColumns() {
+            return columns;
+        }
+
+        @Override
+        public long getUpdateCount() {
+            return -1;
+        }
+
+        @Override
+        public String getCommandTag() {
+            return null;
+        }
+
+        @Override
+        public boolean isDone() {
+            return index >= rows.size();
+        }
+
+        List<Object[]> getRows() {
+            return rows;
         }
     }
 }

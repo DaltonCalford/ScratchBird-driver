@@ -65,13 +65,24 @@ public class SBStatement implements Statement {
     public ResultSet executeQuery(String sql) throws SQLException {
         checkClosed();
         clearResults();
+        int pageSize = fetchSize > 0 ? fetchSize : 0;
+        if (maxRows > 0 && pageSize > 0) {
+            pageSize = Math.min(pageSize, maxRows);
+        }
+
+        if (pageSize > 0) {
+            SBQueryResult result = connection.getProtocol().executeStreaming(sql, pageSize, queryTimeout * 1000);
+            if (result.getStream() == null) {
+                throw new SQLException("Query did not return a result set", "02000");
+            }
+            currentResultSet = new SBResultSet(this, result.getStream(), maxRows);
+            return currentResultSet;
+        }
 
         SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
-
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
         }
-
         currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
         return currentResultSet;
     }

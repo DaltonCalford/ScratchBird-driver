@@ -26,10 +26,33 @@
       "expect_rows": 1
     },
     {
+      "id": "describe_param_mismatch",
+      "kind": "prepare_bind",
+      "sql": "SELECT $1::INTEGER, $2::INTEGER",
+      "params": [1],
+      "expect_sqlstate": "07001"
+    },
+    {
       "id": "types_one_way",
       "kind": "query",
       "sql": "SELECT * FROM sb_conformance.type_coverage",
       "expect_rows": 1
+    },
+    {
+      "id": "paging_basic_table",
+      "kind": "query",
+      "sql": "SELECT id FROM sb_conformance.basic_table ORDER BY id",
+      "expect_rows": 6,
+      "dsn_append": "fetch_size=1"
+    },
+    {
+      "id": "cancel_stream",
+      "kind": "cancel",
+      "sql": "SELECT id FROM sb_conformance.basic_table ORDER BY id",
+      "cancel_after_rows": 1,
+      "expect_sqlstate": "57014",
+      "dsn_append": "fetch_size=1",
+      "requires": ["cancel"]
     }
   ]
 }

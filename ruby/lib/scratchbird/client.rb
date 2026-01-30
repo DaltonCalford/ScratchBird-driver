@@ -26,10 +26,13 @@ module Scratchbird
       @parameters = {}
       @prepared = {}
       @socket_timeout = config.socket_timeout_ms.to_i
+      @last_max_rows = 0
     end
 
     def connect
       raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
+      raise NotSupportedError, "binary_transfer=false is not supported" unless @config.binary_transfer
+      raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
       raw_socket = connect_tcp
       @socket = wrap_tls(raw_socket)
       handshake
@@ -89,24 +92,29 @@ module Scratchbird
       normalized = Sql.normalize(sql)
       payload = Protocol.build_parse_payload(name, normalized.sql, [])
       send_message(Protocol::MSG_PARSE, payload, 0, false)
-      send_message(Protocol::MSG_SYNC, +"", 0, false)
-      drain_until_ready
-      @prepared[name] = normalized.sql
+      param_count = describe_statement(name)
+      @prepared[name] = { sql: normalized.sql, param_count: param_count }
     end
 
     def execute(name, params = nil, options = nil)
       ensure_connected
-      sql = @prepared[name]
-      raise ArgumentError, "unknown prepared statement: #{name}" unless sql
-      normalized = Sql.normalize(sql, params)
+      entry = @prepared[name]
+      raise ArgumentError, "unknown prepared statement: #{name}" unless entry
+      normalized = Sql.normalize(entry[:sql], params)
+      if entry[:param_count].to_i >= 0 && entry[:param_count].to_i != normalized.params.length
+        raise Error.new("parameter count mismatch", "07001")
+      end
       execute_prepared(name, normalized.params, options)
     end
 
     def execute_stream(name, params = nil, options = nil)
       ensure_connected
-      sql = @prepared[name]
-      raise ArgumentError, "unknown prepared statement: #{name}" unless sql
-      normalized = Sql.normalize(sql, params)
+      entry = @prepared[name]
+      raise ArgumentError, "unknown prepared statement: #{name}" unless entry
+      normalized = Sql.normalize(entry[:sql], params)
+      if entry[:param_count].to_i >= 0 && entry[:param_count].to_i != normalized.params.length
+        raise Error.new("parameter count mismatch", "07001")
+      end
       execute_prepared_stream(name, normalized.params, options)
     end
 
@@ -186,7 +194,7 @@ module Scratchbird
       ctx.ca_file = @config.sslrootcert if @config.sslrootcert
       if @config.sslcert && @config.sslkey
         ctx.cert = OpenSSL::X509::Certificate.new(File.read(@config.sslcert))
-        ctx.key = OpenSSL::PKey.read(File.read(@config.sslkey))
+        ctx.key = OpenSSL::PKey.read(File.read(@config.sslkey), @config.sslpassword)
       end
 
       ssl_socket = OpenSSL::SSL::SSLSocket.new(raw_socket, ctx)
@@ -207,6 +215,7 @@ module Scratchbird
       features |= Protocol::FEATURE_COMPRESSION if @config.compression.to_s.downcase == "zstd"
       features |= Protocol::FEATURE_STREAMING if @config.binary_transfer
       params = { "database" => @config.database, "user" => @config.user }
+      params["role"] = @config.role if @config.role.to_s != ""
       params["application_name"] = @config.application_name if @config.application_name.to_s != ""
       startup = Protocol.build_startup_payload(features, params)
       send_message(Protocol::MSG_STARTUP, startup, 0, true)
@@ -366,6 +375,8 @@ module Scratchbird
         when Protocol::MSG_PARAMETER_STATUS
           name, value = Protocol.parse_parameter_status(payload)
           @parameters[name] = value
+        when Protocol::MSG_PORTAL_SUSPENDED
+          resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
           @txn_id = txn_id
@@ -382,6 +393,7 @@ module Scratchbird
     def send_simple_query(sql, options)
       flags = @config.binary_transfer ? QUERY_FLAG_BINARY_RESULT : 0
       max_rows = options && options[:max_rows] ? options[:max_rows].to_i : 0
+      @last_max_rows = max_rows
       timeout_ms = options && options[:timeout_ms] ? options[:timeout_ms].to_i : 0
       payload = Protocol.build_query_payload(sql, flags, max_rows, timeout_ms)
       @last_query_sequence = send_message(Protocol::MSG_QUERY, payload, 0, false)
@@ -397,12 +409,17 @@ module Scratchbird
       end
       parse_payload = Protocol.build_parse_payload("", sql, param_types)
       send_message(Protocol::MSG_PARSE, parse_payload, 0, false)
+      param_count = describe_statement("")
+      if param_count.to_i >= 0 && param_count.to_i != params.length
+        raise Error.new("parameter count mismatch", "07001")
+      end
 
       result_formats = @config.binary_transfer ? [Types::FORMAT_BINARY] : []
       bind_payload = Protocol.build_bind_payload("", "", param_values, result_formats)
       send_message(Protocol::MSG_BIND, bind_payload, 0, false)
 
       max_rows = options && options[:max_rows] ? options[:max_rows].to_i : 0
+      @last_max_rows = max_rows
       exec_payload = Protocol.build_execute_payload("", max_rows)
       @last_query_sequence = send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
       send_message(Protocol::MSG_SYNC, +"", 0, false)
@@ -419,9 +436,42 @@ module Scratchbird
       send_message(Protocol::MSG_BIND, bind_payload, 0, false)
 
       max_rows = options && options[:max_rows] ? options[:max_rows].to_i : 0
+      @last_max_rows = max_rows
       exec_payload = Protocol.build_execute_payload("", max_rows)
       @last_query_sequence = send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
       send_message(Protocol::MSG_SYNC, +"", 0, false)
+    end
+
+    def resume_portal
+      exec_payload = Protocol.build_execute_payload("", @last_max_rows.to_i)
+      send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false)
+    end
+
+    def describe_statement(statement_name)
+      payload = Protocol.build_describe_payload("S".ord, statement_name)
+      send_message(Protocol::MSG_DESCRIBE, payload, 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      param_count = -1
+      loop do
+        type, _flags, payload, _sequence, _attachment_id, txn_id = recv_message
+        case type
+        when Protocol::MSG_PARAMETER_DESCRIPTION
+          param_count = Protocol.parse_parameter_description(payload).length
+        when Protocol::MSG_PARAMETER_STATUS
+          name, value = Protocol.parse_parameter_status(payload)
+          @parameters[name] = value
+        when Protocol::MSG_ERROR
+          handle_query_error(payload)
+        when Protocol::MSG_READY
+          _status, txn = Protocol.parse_ready(payload)
+          @txn_id = txn
+          break
+        else
+          next
+        end
+      end
+      param_count
     end
 
     def execute_simple(sql)
@@ -483,6 +533,8 @@ module Scratchbird
         when Protocol::MSG_PARAMETER_STATUS
           name, value = Protocol.parse_parameter_status(payload)
           @client.parameters[name] = value
+        when Protocol::MSG_PORTAL_SUSPENDED
+          @client.resume_portal if @client.instance_variable_get(:@last_max_rows).to_i > 0
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
           @client.update_txn_id(txn_id)

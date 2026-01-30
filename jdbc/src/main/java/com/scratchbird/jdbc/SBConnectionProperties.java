@@ -39,6 +39,7 @@ public class SBConnectionProperties {
     // Connection options
     private boolean tcpKeepAlive = true;
     private String currentSchema = "public";
+    private String role;
     private String applicationName;
     private boolean readOnly = false;
     private boolean autoCommit = true;
@@ -47,6 +48,7 @@ public class SBConnectionProperties {
     private int defaultRowFetchSize = 0;
     private int prepareThreshold = 5;
     private boolean binaryTransfer = true;
+    private String compression = "off";
     private boolean reWriteBatchedInserts = false;
 
     // Logging
@@ -149,6 +151,9 @@ public class SBConnectionProperties {
             case "searchpath":
                 this.currentSchema = value;
                 break;
+            case "role":
+                this.role = value;
+                break;
             case "applicationname":
             case "application_name":
                 this.applicationName = value;
@@ -161,6 +166,7 @@ public class SBConnectionProperties {
                 break;
             case "defaultrowfetchsize":
             case "fetchsize":
+            case "fetch_size":
                 this.defaultRowFetchSize = Integer.parseInt(value);
                 break;
             case "preparethreshold":
@@ -168,6 +174,9 @@ public class SBConnectionProperties {
                 break;
             case "binarytransfer":
                 this.binaryTransfer = Boolean.parseBoolean(value);
+                break;
+            case "compression":
+                this.compression = value;
                 break;
             case "rewritebatchedinserts":
                 this.reWriteBatchedInserts = Boolean.parseBoolean(value);
@@ -235,6 +244,8 @@ public class SBConnectionProperties {
                 return String.valueOf(tcpKeepAlive);
             case "currentschema":
                 return currentSchema;
+            case "role":
+                return role;
             case "applicationname":
                 return applicationName;
             case "readonly":
@@ -242,11 +253,14 @@ public class SBConnectionProperties {
             case "autocommit":
                 return String.valueOf(autoCommit);
             case "defaultrowfetchsize":
+            case "fetch_size":
                 return String.valueOf(defaultRowFetchSize);
             case "preparethreshold":
                 return String.valueOf(prepareThreshold);
             case "binarytransfer":
                 return String.valueOf(binaryTransfer);
+            case "compression":
+                return compression;
             case "rewritebatchedinserts":
                 return String.valueOf(reWriteBatchedInserts);
             case "loggerlevel":
@@ -388,6 +402,14 @@ public class SBConnectionProperties {
         this.currentSchema = currentSchema;
     }
 
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
     public String getApplicationName() {
         return applicationName;
     }
@@ -434,6 +456,14 @@ public class SBConnectionProperties {
 
     public void setBinaryTransfer(boolean binaryTransfer) {
         this.binaryTransfer = binaryTransfer;
+    }
+
+    public String getCompression() {
+        return compression;
+    }
+
+    public void setCompression(String compression) {
+        this.compression = compression;
     }
 
     public boolean isReWriteBatchedInserts() {
@@ -515,6 +545,7 @@ public class SBConnectionProperties {
         props.setProperty("defaultRowFetchSize", String.valueOf(defaultRowFetchSize));
         props.setProperty("prepareThreshold", String.valueOf(prepareThreshold));
         props.setProperty("binaryTransfer", String.valueOf(binaryTransfer));
+        props.setProperty("compression", compression);
         props.setProperty("reWriteBatchedInserts", String.valueOf(reWriteBatchedInserts));
         props.setProperty("loggerLevel", loggerLevel);
         if (loggerFile != null) props.setProperty("loggerFile", loggerFile);

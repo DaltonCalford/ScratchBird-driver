@@ -273,6 +273,15 @@ def build_execute_payload(portal_name: str, max_rows: int) -> bytes:
     return bytes(out)
 
 
+def build_describe_payload(describe_type: int, name: str) -> bytes:
+    name_bytes = name.encode("utf-8")
+    out = bytearray()
+    out.append(describe_type)
+    out += b"\x00\x00\x00"
+    out += struct.pack("<I", len(name_bytes)) + name_bytes
+    return bytes(out)
+
+
 def build_cancel_payload(cancel_type: int, target_sequence: int) -> bytes:
     return struct.pack("<II", cancel_type, target_sequence)
 
@@ -302,6 +311,20 @@ def parse_parameter_status(payload: bytes) -> Tuple[str, str]:
     name = payload[name_start:name_end].decode("utf-8", errors="replace")
     value = payload[value_start:value_end].decode("utf-8", errors="replace")
     return name, value
+
+
+def parse_parameter_description(payload: bytes) -> List[int]:
+    if len(payload) < 4:
+        raise ValueError("parameter description truncated")
+    count = struct.unpack_from("<H", payload, 0)[0]
+    offset = 4
+    types: List[int] = []
+    for _ in range(count):
+        if offset + 4 > len(payload):
+            raise ValueError("parameter description truncated")
+        types.append(struct.unpack_from("<I", payload, offset)[0])
+        offset += 4
+    return types
 
 
 def parse_row_description(payload: bytes) -> List[ColumnInfo]:

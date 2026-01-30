@@ -84,6 +84,12 @@ public class SBConnection implements Connection {
      */
     private void connect() throws SQLException {
         try {
+            if (!properties.isBinaryTransfer()) {
+                throw new SQLException("binary_transfer=false is not supported", "0A000");
+            }
+            if ("zstd".equalsIgnoreCase(properties.getCompression())) {
+                throw new SQLException("compression=zstd is not supported", "0A000");
+            }
             protocol = new SBProtocolHandler(properties);
             protocol.connect();
 

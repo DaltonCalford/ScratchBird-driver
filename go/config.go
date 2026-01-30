@@ -15,15 +15,18 @@ type Config struct {
 	User           string
 	Password       string
 	Schema         string
+	Role           string
 	SSLMode        string
 	SSLRootCert    string
 	SSLCert        string
 	SSLKey         string
+	SSLPassword    string
 	ConnectTimeout time.Duration
 	SocketTimeout  time.Duration
 	Application    string
 	BinaryTransfer bool
 	Compression    string
+	FetchSize      uint32
 }
 
 func defaultConfig() Config {
@@ -36,6 +39,7 @@ func defaultConfig() Config {
 		Application:    "scratchbird_go",
 		BinaryTransfer: true,
 		Compression:    "off",
+		FetchSize:      0,
 	}
 }
 
@@ -125,6 +129,8 @@ func applyParam(cfg *Config, key, value string) {
 		cfg.Password = value
 	case "schema", "search_path", "searchpath", "currentschema":
 		cfg.Schema = value
+	case "role":
+		cfg.Role = value
 	case "sslmode", "ssl mode":
 		cfg.SSLMode = value
 	case "sslrootcert":
@@ -133,6 +139,8 @@ func applyParam(cfg *Config, key, value string) {
 		cfg.SSLCert = value
 	case "sslkey":
 		cfg.SSLKey = value
+	case "sslpassword":
+		cfg.SSLPassword = value
 	case "connect_timeout", "connecttimeout", "timeout":
 		if seconds, err := strconv.Atoi(value); err == nil {
 			cfg.ConnectTimeout = time.Duration(seconds) * time.Second
@@ -150,6 +158,10 @@ func applyParam(cfg *Config, key, value string) {
 			cfg.Compression = "zstd"
 		} else {
 			cfg.Compression = "off"
+		}
+	case "fetch_size", "fetchsize", "default_fetch_size":
+		if rows, err := strconv.Atoi(value); err == nil && rows >= 0 {
+			cfg.FetchSize = uint32(rows)
 		}
 	}
 }

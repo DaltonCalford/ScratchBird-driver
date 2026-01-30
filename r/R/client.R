@@ -7,6 +7,8 @@ sb_connect <- function(dsn = "", ...) {
     }
   }
   if (cfg$user == "" || cfg$database == "") stop("user and database are required")
+  if (!isTRUE(cfg$binary_transfer)) stop("binary_transfer=false is not supported")
+  if (tolower(cfg$compression) == "zstd") stop("compression=zstd is not supported")
   con <- sb_open_socket(cfg)
   client <- new.env(parent = emptyenv())
   client$con <- con
@@ -52,16 +54,12 @@ sb_send_query <- function(client, sql, params = NULL) {
 }
 
 sb_fetch <- function(result, n = -1) {
-  if (is.null(result$rows)) return(data.frame())
-  rows <- result$rows
-  if (n >= 0 && n < length(rows)) {
-    rows <- rows[seq_len(n)]
-  }
+  rows <- sb_fetch_rows(result, n)
   sb_rows_to_df(rows, result$columns)
 }
 
 sb_clear_result <- function(result) {
-  result$rows <- list()
+  result$done <- TRUE
   result
 }
 
@@ -91,6 +89,7 @@ sb_startup_and_auth <- function(client) {
   if (tolower(client$cfg$compression) == "zstd") features <- bitwOr(features, SB_FEATURE_COMPRESSION)
   if (isTRUE(client$cfg$binary_transfer)) features <- bitwOr(features, SB_FEATURE_STREAMING)
   params <- list(database = client$cfg$database, user = client$cfg$user)
+  if (client$cfg$role != "") params$role <- client$cfg$role
   if (client$cfg$application_name != "") params$application_name <- client$cfg$application_name
   startup <- build_startup_payload(features, params)
   sb_send_message(client, SB_MSG_STARTUP, startup, 0L, TRUE)
@@ -178,19 +177,25 @@ quote_identifier <- function(name) {
 }
 
 sb_execute_query <- function(client, sql, params = list()) {
+  page_size <- if (!is.null(client$cfg$fetch_size) && client$cfg$fetch_size > 0) client$cfg$fetch_size else 0L
   if (length(params) == 0) {
-    sb_send_simple_query(client, sql)
+    sb_send_simple_query(client, sql, page_size)
   } else {
-    sb_send_extended_query(client, sql, params)
+    sb_send_extended_query(client, sql, params, page_size)
   }
-  sb_collect_result(client)
+  result <- new.env(parent = emptyenv())
+  result$client <- client
+  result$columns <- list()
+  result$rowcount <- -1
+  result$command_tag <- ""
+  result$done <- FALSE
+  result$page_size <- page_size
+  result
 }
 
-sb_collect_result <- function(client) {
-  columns <- list()
-  rows <- list()
-  rowcount <- -1
-  command_tag <- ""
+sb_result_next_row <- function(result) {
+  if (isTRUE(result$done)) return(NULL)
+  client <- result$client
   repeat {
     response <- sb_recv_message(client)
     type <- response$type
@@ -198,25 +203,40 @@ sb_collect_result <- function(client) {
     if (type == SB_MSG_ERROR) {
       sb_raise_query_error(payload)
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
-      columns <- parse_row_description(payload)
+      result$columns <- parse_row_description(payload)
     } else if (type == SB_MSG_DATA_ROW) {
       values <- parse_data_row(payload)
-      rows[[length(rows) + 1]] <- sb_decode_row(columns, values)
+      return(sb_decode_row(result$columns, values))
     } else if (type == SB_MSG_COMMAND_COMPLETE) {
       parsed <- parse_command_complete(payload)
-      command_tag <- parsed$tag
-      rowcount <- parsed$rows
+      result$command_tag <- parsed$tag
+      result$rowcount <- parsed$rows
     } else if (type == SB_MSG_PARAMETER_STATUS) {
       parsed <- parse_parameter_status(payload)
       client$parameters[[parsed$name]] <- parsed$value
+    } else if (type == SB_MSG_PORTAL_SUSPENDED) {
+      exec_payload <- build_execute_payload("", result$page_size)
+      client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
+      sb_send_message(client, SB_MSG_SYNC, raw(), 0L, FALSE)
     } else if (type == SB_MSG_READY) {
       parsed <- parse_ready(payload)
       client$txn_id <- parsed$txn_id
-      break
+      result$done <- TRUE
+      return(NULL)
     }
   }
-  if (rowcount < 0) rowcount <- length(rows)
-  list(columns = columns, rows = rows, rowcount = rowcount, command_tag = command_tag)
+}
+
+sb_fetch_rows <- function(result, n = -1) {
+  rows <- list()
+  if (n == 0) return(rows)
+  repeat {
+    if (n > 0 && length(rows) >= n) break
+    row <- sb_result_next_row(result)
+    if (is.null(row)) break
+    rows[[length(rows) + 1]] <- row
+  }
+  rows
 }
 
 sb_decode_row <- function(columns, values) {
@@ -239,13 +259,13 @@ sb_raise_query_error <- function(payload) {
   stop(message)
 }
 
-sb_send_simple_query <- function(client, sql) {
+sb_send_simple_query <- function(client, sql, max_rows = 0L) {
   flags <- if (isTRUE(client$cfg$binary_transfer)) 0x04L else 0L
-  payload <- build_query_payload(sql, flags, 0L, 0L)
+  payload <- build_query_payload(sql, flags, max_rows, 0L)
   client$last_query_sequence <- sb_send_message(client, SB_MSG_QUERY, payload, 0L, FALSE)
 }
 
-sb_send_extended_query <- function(client, sql, params) {
+sb_send_extended_query <- function(client, sql, params, max_rows = 0L) {
   param_values <- list()
   param_types <- c()
   for (param in params) {
@@ -255,14 +275,43 @@ sb_send_extended_query <- function(client, sql, params) {
   }
   parse_payload <- build_parse_payload("", sql, param_types)
   sb_send_message(client, SB_MSG_PARSE, parse_payload, 0L, FALSE)
+  described <- sb_describe_statement(client, "")
+  if (described >= 0 && described != length(param_types)) {
+    stop("parameter count mismatch (07001)")
+  }
 
   result_formats <- if (isTRUE(client$cfg$binary_transfer)) c(SB_FORMAT_BINARY) else c()
   bind_payload <- build_bind_payload("", "", param_values, result_formats)
   sb_send_message(client, SB_MSG_BIND, bind_payload, 0L, FALSE)
 
-  exec_payload <- build_execute_payload("", 0L)
+  exec_payload <- build_execute_payload("", max_rows)
   client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
   sb_send_message(client, SB_MSG_SYNC, raw(), 0L, FALSE)
+}
+
+sb_describe_statement <- function(client, statement_name) {
+  payload <- build_describe_payload(as.integer(charToRaw("S")), statement_name)
+  sb_send_message(client, SB_MSG_DESCRIBE, payload, 0L, FALSE)
+  sb_send_message(client, SB_MSG_SYNC, raw(), 0L, FALSE)
+  param_count <- -1L
+  repeat {
+    response <- sb_recv_message(client)
+    type <- response$type
+    payload <- response$payload
+    if (type == SB_MSG_ERROR) {
+      sb_raise_query_error(payload)
+    } else if (type == SB_MSG_PARAMETER_DESCRIPTION) {
+      param_count <- length(parse_parameter_description(payload))
+    } else if (type == SB_MSG_PARAMETER_STATUS) {
+      parsed <- parse_parameter_status(payload)
+      client$parameters[[parsed$name]] <- parsed$value
+    } else if (type == SB_MSG_READY) {
+      parsed <- parse_ready(payload)
+      client$txn_id <- parsed$txn_id
+      break
+    }
+  }
+  param_count
 }
 
 sb_send_message <- function(client, type, payload, flags = 0L, force_zero = FALSE) {
@@ -302,5 +351,6 @@ sb_rows_to_df <- function(rows, columns) {
 }
 
 sb_result_to_df <- function(result) {
-  sb_rows_to_df(result$rows, result$columns)
+  rows <- sb_fetch_rows(result, -1)
+  sb_rows_to_df(rows, result$columns)
 }

@@ -142,6 +142,7 @@ function BuildParsePayload(const StatementName, Sql: string; const ParamTypes: a
 function BuildBindPayload(const PortalName, StatementName: string; const Params: array of TParamValue;
   const ResultFormats: array of Word): TBytes;
 function BuildExecutePayload(const PortalName: string; MaxRows: Cardinal): TBytes;
+function BuildDescribePayload(DescribeType: Byte; const Name: string): TBytes;
 function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
 
 procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TBytes);
@@ -149,6 +150,7 @@ procedure ParseAuthContinue(const Payload: TBytes; out Method, Stage: Byte; out 
 procedure ParseAuthOk(const Payload: TBytes; out SessionId: TBytes; out ServerInfo: TBytes);
 procedure ParseReady(const Payload: TBytes; out Status: Byte; out TxnId, Visibility: UInt64);
 procedure ParseParameterStatus(const Payload: TBytes; out Name, Value: string);
+function ParseParameterDescription(const Payload: TBytes): TArray<Cardinal>;
 function ParseRowDescription(const Payload: TBytes): TArray<TColumnInfo>;
 function ParseRowData(const Payload: TBytes): TArray<TColumnValue>;
 procedure ParseCommandComplete(const Payload: TBytes; out CommandType: Byte; out Rows, LastId: UInt64; out Tag: string);
@@ -401,6 +403,16 @@ begin
   Result := ConcatBytes(Result, WriteUInt32LE(MaxRows));
 end;
 
+function BuildDescribePayload(DescribeType: Byte; const Name: string): TBytes;
+var
+  NameBytes: TBytes;
+begin
+  NameBytes := TEncoding.UTF8.GetBytes(Name);
+  Result := BytesOf([DescribeType, 0, 0, 0]);
+  Result := ConcatBytes(Result, WriteUInt32LE(System.Length(NameBytes)));
+  Result := ConcatBytes(Result, NameBytes);
+end;
+
 function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
 begin
   Result := ConcatBytes(WriteUInt32LE(CancelType), WriteUInt32LE(TargetSequence));
@@ -487,6 +499,25 @@ begin
   ValueLen := Integer(ReadUInt32LE(Payload, Offset));
   Offset := Offset + 4;
   Value := TEncoding.UTF8.GetString(Payload, Offset, ValueLen);
+end;
+
+function ParseParameterDescription(const Payload: TBytes): TArray<Cardinal>;
+var
+  Offset, Count, I: Integer;
+begin
+  if System.Length(Payload) < 4 then
+    raise Exception.Create('Parameter description truncated');
+  Offset := 0;
+  Count := ReadUInt16LE(Payload, Offset);
+  Offset := Offset + 4;
+  SetLength(Result, Count);
+  for I := 0 to Count - 1 do
+  begin
+    if Offset + 4 > System.Length(Payload) then
+      raise Exception.Create('Parameter description truncated');
+    Result[I] := ReadUInt32LE(Payload, Offset);
+    Offset := Offset + 4;
+  end;
 end;
 
 function ParseRowDescription(const Payload: TBytes): TArray<TColumnInfo>;

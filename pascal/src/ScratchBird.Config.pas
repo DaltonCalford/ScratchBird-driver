@@ -13,15 +13,18 @@ type
     UserName: string;
     Password: string;
     Schema: string;
+    Role: string;
     SSLMode: string;
     SSLRootCert: string;
     SSLCert: string;
     SSLKey: string;
+    SSLPassword: string;
     ConnectTimeoutMs: Integer;
     SocketTimeoutMs: Integer;
     ApplicationName: string;
     BinaryTransfer: Boolean;
     Compression: string;
+    FetchSize: Integer;
   end;
 
 function DefaultConfig: TScratchBirdConfig;
@@ -37,15 +40,18 @@ begin
   Result.UserName := '';
   Result.Password := '';
   Result.Schema := '';
+  Result.Role := '';
   Result.SSLMode := 'require';
   Result.SSLRootCert := '';
   Result.SSLCert := '';
   Result.SSLKey := '';
+  Result.SSLPassword := '';
   Result.ConnectTimeoutMs := 30000;
   Result.SocketTimeoutMs := 0;
   Result.ApplicationName := 'scratchbird_pascal';
   Result.BinaryTransfer := True;
   Result.Compression := 'off';
+  Result.FetchSize := 0;
 end;
 
 procedure ApplyParam(var Config: TScratchBirdConfig; const Key, Value: string);
@@ -65,6 +71,8 @@ begin
     Config.Password := Value
   else if (KeyLower = 'schema') or (KeyLower = 'search_path') or (KeyLower = 'searchpath') or (KeyLower = 'currentschema') then
     Config.Schema := Value
+  else if KeyLower = 'role' then
+    Config.Role := Value
   else if (KeyLower = 'sslmode') or (KeyLower = 'ssl mode') then
     Config.SSLMode := Value
   else if KeyLower = 'sslrootcert' then
@@ -73,6 +81,8 @@ begin
     Config.SSLCert := Value
   else if KeyLower = 'sslkey' then
     Config.SSLKey := Value
+  else if KeyLower = 'sslpassword' then
+    Config.SSLPassword := Value
   else if (KeyLower = 'connect_timeout') or (KeyLower = 'connecttimeout') or (KeyLower = 'timeout') then
     Config.ConnectTimeoutMs := StrToIntDef(Value, Config.ConnectTimeoutMs div 1000) * 1000
   else if (KeyLower = 'socket_timeout') or (KeyLower = 'sockettimeout') then
@@ -81,6 +91,8 @@ begin
     Config.ApplicationName := Value
   else if (KeyLower = 'binary_transfer') or (KeyLower = 'binarytransfer') then
     Config.BinaryTransfer := SameText(Value, 'true') or (Value = '1')
+  else if (KeyLower = 'fetch_size') or (KeyLower = 'fetchsize') or (KeyLower = 'default_fetch_size') then
+    Config.FetchSize := StrToIntDef(Value, 0)
   else if KeyLower = 'compression' then
   begin
     if SameText(Value, 'zstd') then

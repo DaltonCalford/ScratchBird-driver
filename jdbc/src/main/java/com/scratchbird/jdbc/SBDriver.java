@@ -221,6 +221,13 @@ public class SBDriver implements Driver {
         binaryProp.choices = new String[]{"true", "false"};
         propList.add(binaryProp);
 
+        // Compression
+        DriverPropertyInfo compressionProp = new DriverPropertyInfo("compression",
+            props.getProperty("compression", "off"));
+        compressionProp.description = "Compression mode (off or zstd)";
+        compressionProp.choices = new String[]{"off", "zstd"};
+        propList.add(compressionProp);
+
         // Batch insert rewrite
         DriverPropertyInfo batchProp = new DriverPropertyInfo("reWriteBatchedInserts",
             props.getProperty("reWriteBatchedInserts", "false"));

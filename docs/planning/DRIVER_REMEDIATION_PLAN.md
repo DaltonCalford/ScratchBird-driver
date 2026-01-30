@@ -1,138 +1,177 @@
 # ScratchBird Driver Remediation Plan
 
-Status: Complete (buffered streaming remains in Python/R/JDBC)
-Last Updated: 2026-02-06
+Status: Complete
+Last Updated: 2026-01-30
 
 ## Goal
 
 Bring all drivers to native ScratchBird parity using SBWP v1.1, server-side
-prepare/bind, full type coverage, and consistent metadata behavior.
+prepare/bind, binary-only transfer, streaming/paging, and consistent metadata
+behavior.
 
-## Dependencies
+## Inputs
 
-- SBWP v1.1 server implementation and conformance testing
-- Stable sys.* catalog views for metadata queries
-- Driver metadata contract in ScratchBird specs
+- `docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md`
+- `docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md`
+- `docs/specifications/PREPARE_BIND_REQUIREMENTS.md`
+- `docs/specifications/DRIVER_STREAMING_AND_PAGING.md`
+- `docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md`
+- `docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md`
 
 ## Phased Work
 
-### Phase 0 - Documentation and Baseline
+### Phase 0 - Baseline Alignment (Complete)
 
 - [x] Publish driver specs in `docs/specifications/`
 - [x] Align README claims with actual status
 - [x] Define a conformance test matrix (handshake, auth, prepare/bind, types)
-- [x] Implement Go in-language harness helper, then extract CLI adapter contract
+- [x] Implement Go in-language harness helper
 
-### Phase 1 - Protocol Alignment (SBWP v1.1)
+### Phase 1 - Binary-Only Enforcement + DSN Coverage
 
-- [x] Replace SBDB 12-byte header with SBWP 40-byte header
-- [x] Implement TLS 1.3 negotiation and enforce required modes
-- [x] Implement attachment_id/txn_id tracking and message headers
-- [x] Remove legacy message codes
+- [x] Reject `binary_transfer=false` with SQLSTATE 0A000 in all drivers
+- [x] Add DSN key support for `role` + `sslpassword` (per spec)
+- [x] Ensure Superset/Metabase pass through binary-only defaults
 
-### Phase 2 - Prepare/Bind Execution
+### Phase 2 - Compression (zstd)
 
-- [x] Add server-side PARSE/BIND/EXECUTE support in each driver
-- [x] Remove client-side SQL substitution for parameters
-- [x] Add BIND-based batch execution
+- [x] Disable compression negotiation until server support is ready (reject zstd)
 
-### Phase 3 - Type Coverage
+Note: zstd compression + integration tests are deferred until server-side
+compression is implemented.
 
-- [x] Implement composite, geometry, macaddr, range decoding/encoding
-- [x] Validate array/vector parsing against SBWP type serialization
-- [x] Add type round-trip tests for each driver
+### Phase 3 - Streaming + Portal Paging
 
-### Phase 4 - Metadata and Schema
+- [x] Handle `MSG_PORTAL_SUSPENDED` and resume via EXECUTE max_rows
+- [x] Add paging support to streaming APIs (fetch size, maxRows)
+- [x] Update Python/R/JDBC to avoid full buffering; support incremental fetch
+- [x] Add paging tests to the conformance harness
 
-- [x] Apply search_path/currentSchema on connect
-- [x] Implement sys.* metadata queries for schemas/tables/columns/indexes
-- [x] Populate JDBC DatabaseMetaData and similar APIs in other drivers
-- [x] Expose sys.* monitoring views (sessions/locks/statements/jobs/performance) as SYSTEM VIEW in metadata APIs
+### Phase 4 - DESCRIBE + Metadata Fidelity
 
-### Phase 5 - Cancellation and Robustness
+- [x] Send DESCRIBE after PARSE to populate parameter/result metadata
+- [x] Use DESCRIBE results to validate parameter counts/types
+- [x] Add tests for DESCRIBE flows
 
-- [x] Implement CANCEL and timeout propagation in all drivers
-- [x] Add streaming result support where applicable (QueryStream/ResultStream/DataReader; Python/R/JDBC still buffer in-memory)
-- [x] Add integration tests for cancel, timeout, and large result sets
+### Phase 5 - Timeout + Cancel Enforcement
+
+- [x] .NET: wire CommandTimeout to timeoutMs/CANCEL
+- [x] JDBC: enforce query timeout with CANCEL and surface 57014
+- [x] Add tests for timeout-triggered CANCEL
+
+### Phase 6 - Metadata Completeness (JDBC/Superset/Metabase)
+
+- [x] JDBC: implement getPrimaryKeys/getImportedKeys/getTypeInfo from sys.*
+- [x] Superset dialect: implement get_pk_constraint/get_foreign_keys/get_indexes
+- [x] Superset: resolve type mapping via sys.types instead of raw ids
+- [x] Metabase: align feature flags with actual JDBC metadata, or add missing
+      metadata support first
 
 ## Driver Checklists
 
 ### Go
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Portal paging (MSG_PORTAL_SUSPENDED)
 
 ### Node.js
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Portal paging in queryStream + non-streamed queries
 
 ### Python
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Apply search_path on connect
-- [x] Add cancel tests
-
-### Rust
-
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Incremental fetch (avoid buffering in Cursor)
+- [x] Portal paging for large results
 
 ### Ruby
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Portal paging in ResultStream
+
+### Rust
+
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Parameterized streaming queries
+- [x] Portal paging
 
 ### PHP
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Portal paging in ResultStream
 
 ### R
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Incremental fetch API (avoid buffering)
+- [x] Portal paging
 
 ### Pascal
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Add schema/search_path support
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Portal paging in ResultStream
 
 ### .NET
 
-- [x] Replace SBDB protocol with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add missing wire types (composite/geometry/macaddr/range)
-- [x] Implement Cancel
-- [x] Add schema/search_path support
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role/sslpassword DSN keys
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] CommandTimeout -> timeoutMs/CANCEL
+- [x] Portal paging
 
 ### JDBC
 
-- [x] Replace PG-style message set with SBWP v1.1
-- [x] Implement PARSE/BIND/EXECUTE
-- [x] Add sys.* metadata queries (getTables/getSchemas/getColumns)
-- [x] Apply currentSchema on connect
-- [x] Add cancel tests
+- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
+- [x] Enforce binary-only (reject binary_transfer=false)
+- [x] Add role DSN key
+- [x] Implement zstd or disable compression negotiation
+- [x] DESCRIBE integration
+- [x] Streaming via fetchSize (avoid full buffering)
+- [x] Portal paging
+- [x] Metadata: PK/FK/TypeInfo from sys.*
+
+### Superset
+
+- [x] Implement get_pk_constraint/get_foreign_keys/get_indexes
+- [x] Resolve type names via sys.types rather than raw data_type_id
+- [x] Align connection param names to DSN spec
+
+### Metabase
+
+- [x] Align feature flags with actual JDBC metadata coverage
+- [x] Enforce binaryTransfer=true in connection details

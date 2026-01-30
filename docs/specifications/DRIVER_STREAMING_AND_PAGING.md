@@ -23,6 +23,7 @@ Drivers must request binary format for all columns when streaming.
 
 - Use EXECUTE max_rows to page through a portal.
 - Drivers should support repeated EXECUTE calls to fetch subsequent pages.
+- Where possible, drivers should expose a `fetch_size` (rows per page) option.
 
 ## SQLSTATE Codes (Streaming/Paging)
 

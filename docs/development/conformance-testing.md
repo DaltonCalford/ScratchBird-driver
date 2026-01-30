@@ -20,3 +20,9 @@ SCRATCHBIRD_GO_URL="scratchbird://user:pass@localhost:3092/db" \
 SCRATCHBIRD_CONFORMANCE_MANIFEST="../docs/fixtures/sbwp_conformance_manifest.json" \
 go test ./conformance
 ```
+
+Optional gating for long-running/cancel tests:
+
+```bash
+SCRATCHBIRD_CONFORMANCE_CANCEL=1
+```

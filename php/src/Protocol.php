@@ -287,6 +287,24 @@ final class Protocol
         return [$name, $value];
     }
 
+    public static function parseParameterDescription(string $payload): array
+    {
+        if (strlen($payload) < 4) {
+            throw new \RuntimeException('Parameter description truncated');
+        }
+        $count = self::readUInt16LE(substr($payload, 0, 2));
+        $offset = 4;
+        $types = [];
+        for ($i = 0; $i < $count; $i++) {
+            if ($offset + 4 > strlen($payload)) {
+                throw new \RuntimeException('Parameter description truncated');
+            }
+            $types[] = self::readUInt32LE(substr($payload, $offset, 4));
+            $offset += 4;
+        }
+        return $types;
+    }
+
     public static function parseRowDescription(string $payload): array
     {
         if (strlen($payload) < 4) {

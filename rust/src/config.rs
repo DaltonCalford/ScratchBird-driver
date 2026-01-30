@@ -11,15 +11,18 @@ pub struct Config {
     pub user: String,
     pub password: String,
     pub schema: String,
+    pub role: String,
     pub sslmode: String,
     pub sslrootcert: Option<String>,
     pub sslcert: Option<String>,
     pub sslkey: Option<String>,
+    pub sslpassword: Option<String>,
     pub connect_timeout_ms: u64,
     pub socket_timeout_ms: u64,
     pub application_name: String,
     pub binary_transfer: bool,
     pub compression: String,
+    pub fetch_size: u32,
     pub extra: HashMap<String, String>,
 }
 
@@ -32,15 +35,18 @@ impl Default for Config {
             user: String::new(),
             password: String::new(),
             schema: String::new(),
+            role: String::new(),
             sslmode: "require".to_string(),
             sslrootcert: None,
             sslcert: None,
             sslkey: None,
+            sslpassword: None,
             connect_timeout_ms: 30_000,
             socket_timeout_ms: 0,
             application_name: "scratchbird_rust".to_string(),
             binary_transfer: true,
             compression: "off".to_string(),
+            fetch_size: 0,
             extra: HashMap::new(),
         }
     }
@@ -114,10 +120,12 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) {
         "user" | "username" | "user id" | "uid" => cfg.user = value.to_string(),
         "password" | "pwd" => cfg.password = value.to_string(),
         "schema" | "search_path" | "searchpath" | "currentschema" => cfg.schema = value.to_string(),
+        "role" => cfg.role = value.to_string(),
         "sslmode" | "ssl mode" => cfg.sslmode = value.to_string(),
         "sslrootcert" => cfg.sslrootcert = Some(value.to_string()),
         "sslcert" => cfg.sslcert = Some(value.to_string()),
         "sslkey" => cfg.sslkey = Some(value.to_string()),
+        "sslpassword" => cfg.sslpassword = Some(value.to_string()),
         "connect_timeout" | "connecttimeout" | "timeout" => {
             if let Ok(seconds) = value.parse::<u64>() {
                 cfg.connect_timeout_ms = seconds * 1000;
@@ -138,6 +146,11 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) {
             } else {
                 "off".to_string()
             };
+        }
+        "fetch_size" | "fetchsize" | "default_fetch_size" => {
+            if let Ok(rows) = value.parse::<u32>() {
+                cfg.fetch_size = rows;
+            }
         }
         other => {
             cfg.extra.insert(other.to_string(), value.to_string());

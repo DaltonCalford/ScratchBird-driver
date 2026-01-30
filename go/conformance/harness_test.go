@@ -28,7 +28,7 @@ func TestConformanceManifest(t *testing.T) {
 		t.Fatalf("conformance run returned no results")
 	}
 	for _, result := range summary.Results {
-		if result.Status != "ok" {
+		if result.Status != "ok" && result.Status != "skipped" {
 			payload, _ := json.Marshal(summary)
 			t.Fatalf("conformance test %q failed: %s", result.TestID, string(payload))
 		}

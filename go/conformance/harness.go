@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	_ "github.com/scratchbird/scratchbird-go"
+	scratchbird "github.com/scratchbird/scratchbird-go"
 )
 
 type Manifest struct {
@@ -22,11 +23,16 @@ type Manifest struct {
 }
 
 type TestSpec struct {
-	ID         string        `json:"id"`
-	Kind       string        `json:"kind"`
-	SQL        string        `json:"sql,omitempty"`
-	Params     []interface{} `json:"params,omitempty"`
-	ExpectRows *int          `json:"expect_rows,omitempty"`
+	ID             string        `json:"id"`
+	Kind           string        `json:"kind"`
+	SQL            string        `json:"sql,omitempty"`
+	Params         []interface{} `json:"params,omitempty"`
+	ExpectRows     *int          `json:"expect_rows,omitempty"`
+	ExpectSQLState string        `json:"expect_sqlstate,omitempty"`
+	TimeoutMs      *int          `json:"timeout_ms,omitempty"`
+	DsnAppend      string        `json:"dsn_append,omitempty"`
+	Requires       []string      `json:"requires,omitempty"`
+	CancelAfter    *int          `json:"cancel_after_rows,omitempty"`
 }
 
 type TestResult struct {
@@ -113,14 +119,19 @@ func applyFixtures(ctx context.Context, dsn, fixtureDir string, fixtures []strin
 }
 
 func runTests(ctx context.Context, dsn string, tests []TestSpec) ([]TestResult, error) {
-	db, err := sql.Open("scratchbird", dsn)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
 	results := make([]TestResult, 0, len(tests))
 	for _, test := range tests {
 		result := TestResult{TestID: test.ID}
+		if !requirementsSatisfied(test.Requires) {
+			result.Status = "skipped"
+			results = append(results, result)
+			continue
+		}
+		testDsn := buildTestDSN(dsn, test.DsnAppend)
+		db, err := sql.Open("scratchbird", testDsn)
+		if err != nil {
+			return nil, err
+		}
 		switch test.Kind {
 		case "auth":
 			err = db.PingContext(ctx)
@@ -128,8 +139,23 @@ func runTests(ctx context.Context, dsn string, tests []TestSpec) ([]TestResult, 
 			result, err = runPrepareBind(ctx, db, test)
 		case "query":
 			result, err = runQuery(ctx, db, test)
+		case "cancel":
+			result, err = runCancel(ctx, db, test)
 		default:
 			err = errors.New("unknown test kind: " + test.Kind)
+		}
+		db.Close()
+		if test.ExpectSQLState != "" {
+			if err == nil {
+				result.Status = "error"
+				result.Errors = append(result.Errors, "expected SQLSTATE "+test.ExpectSQLState)
+			} else if !strings.EqualFold(extractSQLState(err), test.ExpectSQLState) {
+				result.Status = "error"
+				result.Errors = append(result.Errors, err.Error())
+			} else {
+				result.Status = "ok"
+				err = nil
+			}
 		}
 		if err != nil {
 			result.Status = "error"
@@ -148,30 +174,100 @@ func runQuery(ctx context.Context, db *sql.DB, test TestSpec) (TestResult, error
 	if sqlText == "" {
 		sqlText = "SELECT 1"
 	}
-	rows, err := db.QueryContext(ctx, sqlText)
+	queryCtx := ctx
+	if test.TimeoutMs != nil && *test.TimeoutMs > 0 {
+		timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(*test.TimeoutMs)*time.Millisecond)
+		defer cancel()
+		queryCtx = timeoutCtx
+	}
+	rows, err := db.QueryContext(queryCtx, sqlText)
 	if err != nil {
 		return TestResult{TestID: test.ID}, err
 	}
 	defer rows.Close()
-	return readRows(test.ID, rows)
+	result, err := readRows(test.ID, rows)
+	if err == nil && test.ExpectRows != nil && len(result.Rows) != *test.ExpectRows {
+		return result, errors.New("unexpected row count")
+	}
+	return result, err
 }
 
 func runPrepareBind(ctx context.Context, db *sql.DB, test TestSpec) (TestResult, error) {
 	if strings.TrimSpace(test.SQL) == "" {
 		return TestResult{TestID: test.ID}, errors.New("prepare_bind requires sql")
 	}
-	stmt, err := db.PrepareContext(ctx, test.SQL)
+	queryCtx := ctx
+	if test.TimeoutMs != nil && *test.TimeoutMs > 0 {
+		timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(*test.TimeoutMs)*time.Millisecond)
+		defer cancel()
+		queryCtx = timeoutCtx
+	}
+	stmt, err := db.PrepareContext(queryCtx, test.SQL)
 	if err != nil {
 		return TestResult{TestID: test.ID}, err
 	}
 	defer stmt.Close()
 	params := normalizeParams(test.Params)
-	rows, err := stmt.QueryContext(ctx, params...)
+	rows, err := stmt.QueryContext(queryCtx, params...)
 	if err != nil {
 		return TestResult{TestID: test.ID}, err
 	}
 	defer rows.Close()
-	return readRows(test.ID, rows)
+	result, err := readRows(test.ID, rows)
+	if err == nil && test.ExpectRows != nil && len(result.Rows) != *test.ExpectRows {
+		return result, errors.New("unexpected row count")
+	}
+	return result, err
+}
+
+func runCancel(ctx context.Context, db *sql.DB, test TestSpec) (TestResult, error) {
+	sqlText := strings.TrimSpace(test.SQL)
+	if sqlText == "" {
+		return TestResult{TestID: test.ID}, errors.New("cancel requires sql")
+	}
+	cancelAfter := 1
+	if test.CancelAfter != nil && *test.CancelAfter > 0 {
+		cancelAfter = *test.CancelAfter
+	}
+	cancelCtx, cancel := context.WithCancel(ctx)
+	rows, err := db.QueryContext(cancelCtx, sqlText)
+	if err != nil {
+		cancel()
+		return TestResult{TestID: test.ID}, err
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		cancel()
+		return TestResult{TestID: test.ID}, err
+	}
+	result := TestResult{TestID: test.ID, Columns: cols}
+	count := 0
+	for rows.Next() {
+		dest := make([]any, len(cols))
+		for i := range dest {
+			var holder any
+			dest[i] = &holder
+		}
+		if err := rows.Scan(dest...); err != nil {
+			cancel()
+			return result, err
+		}
+		row := make([]any, len(cols))
+		for i, item := range dest {
+			row[i] = *(item.(*any))
+		}
+		result.Rows = append(result.Rows, row)
+		count++
+		if count >= cancelAfter {
+			cancel()
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func readRows(testID string, rows *sql.Rows) (TestResult, error) {
@@ -242,4 +338,53 @@ func normalizeParams(params []any) []any {
 		}
 	}
 	return out
+}
+
+func buildTestDSN(base, appendQuery string) string {
+	if strings.TrimSpace(appendQuery) == "" {
+		return base
+	}
+	if strings.Contains(base, "://") {
+		sep := "?"
+		if strings.Contains(base, "?") {
+			sep = "&"
+		}
+		return base + sep + appendQuery
+	}
+	if strings.Contains(base, ";") {
+		return base + ";" + appendQuery
+	}
+	return base + " " + appendQuery
+}
+
+func requirementsSatisfied(requires []string) bool {
+	if len(requires) == 0 {
+		return true
+	}
+	for _, req := range requires {
+		env := "SCRATCHBIRD_CONFORMANCE_" + strings.ToUpper(req)
+		val := strings.ToLower(os.Getenv(env))
+		if val != "1" && val != "true" && val != "yes" {
+			return false
+		}
+	}
+	return true
+}
+
+func extractSQLState(err error) string {
+	if err == nil {
+		return ""
+	}
+	var sbErr *scratchbird.Error
+	if errors.As(err, &sbErr) && sbErr != nil {
+		return sbErr.SQLState
+	}
+	type sqlStateCarrier interface {
+		SQLState() string
+	}
+	var carrier sqlStateCarrier
+	if errors.As(err, &carrier) {
+		return carrier.SQLState()
+	}
+	return ""
 }

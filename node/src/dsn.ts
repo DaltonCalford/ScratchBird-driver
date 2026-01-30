@@ -78,6 +78,9 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "sslkey":
       config.sslkey = value;
       break;
+    case "sslpassword":
+      config.sslpassword = value;
+      break;
     case "connect_timeout":
     case "connecttimeout":
       config.connectTimeoutMs = Number(value) * 1000;
@@ -89,6 +92,9 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "application_name":
     case "applicationname":
       config.applicationName = value;
+      break;
+    case "role":
+      config.role = value;
       break;
     case "binary_transfer":
     case "binarytransfer":

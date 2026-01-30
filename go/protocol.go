@@ -417,6 +417,23 @@ func parseParameterStatus(payload []byte) (string, string, error) {
 	return name, value, nil
 }
 
+func parseParameterDescription(payload []byte) ([]uint32, error) {
+	if len(payload) < 4 {
+		return nil, errors.New("parameter description truncated")
+	}
+	num := int(binary.LittleEndian.Uint16(payload[:2]))
+	pos := 4
+	types := make([]uint32, 0, num)
+	for i := 0; i < num; i++ {
+		if len(payload) < pos+4 {
+			return nil, errors.New("parameter description truncated")
+		}
+		types = append(types, binary.LittleEndian.Uint32(payload[pos:pos+4]))
+		pos += 4
+	}
+	return types, nil
+}
+
 func parseRowDescription(payload []byte) ([]columnInfo, error) {
 	if len(payload) < 4 {
 		return nil, errors.New("row description truncated")

@@ -12,9 +12,11 @@ export interface ClientConfig {
   sslrootcert?: string;
   sslcert?: string;
   sslkey?: string;
+  sslpassword?: string;
   connectTimeoutMs?: number;
   socketTimeoutMs?: number;
   applicationName?: string;
+  role?: string;
   binaryTransfer?: boolean;
   compression?: "zstd" | "off";
 }

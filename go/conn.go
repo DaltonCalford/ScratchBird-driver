@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql/driver"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -39,6 +40,12 @@ type Conn struct {
 func (c *Conn) connect(ctx context.Context) error {
 	if c.raw != nil {
 		return nil
+	}
+	if !c.config.BinaryTransfer {
+		return &Error{Kind: ErrNotSupported, Message: "binary_transfer=false is not supported", SQLState: "0A000"}
+	}
+	if strings.EqualFold(c.config.Compression, "zstd") {
+		return &Error{Kind: ErrNotSupported, Message: "compression=zstd is not supported", SQLState: "0A000"}
 	}
 	address := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	dialer := &net.Dialer{Timeout: c.config.ConnectTimeout}
@@ -88,7 +95,7 @@ func (c *Conn) buildTLSConfig() (*tls.Config, error) {
 		ServerName: c.config.Host,
 	}
 	if c.config.SSLCert != "" {
-		cert, err := tls.LoadX509KeyPair(c.config.SSLCert, c.config.SSLKey)
+		cert, err := loadTLSKeyPair(c.config.SSLCert, c.config.SSLKey, c.config.SSLPassword)
 		if err != nil {
 			return nil, err
 		}
@@ -106,6 +113,59 @@ func (c *Conn) buildTLSConfig() (*tls.Config, error) {
 	return cfg, nil
 }
 
+func loadTLSKeyPair(certFile, keyFile, password string) (tls.Certificate, error) {
+	if password == "" {
+		return tls.LoadX509KeyPair(certFile, keyFile)
+	}
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEM, err := os.ReadFile(keyFile)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	var certs [][]byte
+	rest := certPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" {
+			certs = append(certs, block.Bytes)
+		}
+	}
+	if len(certs) == 0 {
+		return tls.Certificate{}, errors.New("no certificates found in client cert")
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return tls.Certificate{}, errors.New("no private key found in client key")
+	}
+	keyDER := keyBlock.Bytes
+	if x509.IsEncryptedPEMBlock(keyBlock) {
+		decrypted, err := x509.DecryptPEMBlock(keyBlock, []byte(password))
+		if err != nil {
+			return tls.Certificate{}, err
+		}
+		keyDER = decrypted
+	}
+	var privateKey any
+	if parsed, err := x509.ParsePKCS8PrivateKey(keyDER); err == nil {
+		privateKey = parsed
+	} else if parsed, err := x509.ParsePKCS1PrivateKey(keyDER); err == nil {
+		privateKey = parsed
+	} else if parsed, err := x509.ParseECPrivateKey(keyDER); err == nil {
+		privateKey = parsed
+	} else {
+		return tls.Certificate{}, errors.New("unsupported private key format")
+	}
+	return tls.Certificate{Certificate: certs, PrivateKey: privateKey}, nil
+}
+
 func (c *Conn) handshake(ctx context.Context) error {
 	c.authed = false
 	c.params = map[string]string{}
@@ -113,6 +173,9 @@ func (c *Conn) handshake(ctx context.Context) error {
 	params := map[string]string{
 		"database": c.config.Database,
 		"user":     c.config.User,
+	}
+	if c.config.Role != "" {
+		params["role"] = c.config.Role
 	}
 	if c.config.Application != "" {
 		params["application_name"] = c.config.Application
@@ -245,13 +308,45 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 	if err := c.sendMessage(msgParse, payload, 0, false); err != nil {
 		return nil, err
 	}
+	describePayload := buildDescribePayload('S', stmtName)
+	if err := c.sendMessage(msgDescribe, describePayload, 0, false); err != nil {
+		return nil, err
+	}
 	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
 		return nil, err
 	}
-	if _, _, _, err := c.drainUntilReady(ctx); err != nil {
-		return nil, err
+	paramCount := -1
+	for {
+		msg, err := c.receive()
+		if err != nil {
+			return nil, err
+		}
+		switch msg.header.typ {
+		case msgParameterDescription:
+			types, err := parseParameterDescription(msg.body)
+			if err != nil {
+				return nil, err
+			}
+			paramCount = len(types)
+		case msgParameterStatus:
+			name, value, err := parseParameterStatus(msg.body)
+			if err != nil {
+				return nil, err
+			}
+			c.params[name] = value
+		case msgError:
+			return nil, buildProtocolError(msg.body)
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err != nil {
+				return nil, err
+			}
+			c.txnID = txnID
+			return &Stmt{conn: c, query: normalized.sql, name: stmtName, paramCount: paramCount}, nil
+		default:
+			continue
+		}
 	}
-	return &Stmt{conn: c, query: normalized.sql, name: stmtName}, nil
 }
 
 func (c *Conn) Begin() (driver.Tx, error) {
@@ -320,6 +415,7 @@ func (c *Conn) sendSimpleQuery(sql string, ctx context.Context) error {
 	if c.config.BinaryTransfer {
 		flags |= queryFlagBinaryResult
 	}
+	maxRows := uint32(c.config.FetchSize)
 	timeoutMs := uint32(0)
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
@@ -327,7 +423,7 @@ func (c *Conn) sendSimpleQuery(sql string, ctx context.Context) error {
 			timeoutMs = uint32(remaining / time.Millisecond)
 		}
 	}
-	payload := buildQueryPayload(sql, flags, 0, timeoutMs)
+	payload := buildQueryPayload(sql, flags, maxRows, timeoutMs)
 	return c.sendMessage(msgQuery, payload, 0, false)
 }
 
@@ -347,6 +443,49 @@ func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx conte
 	if err := c.sendMessage(msgParse, parsePayload, 0, false); err != nil {
 		return err
 	}
+	describePayload := buildDescribePayload('S', "")
+	if err := c.sendMessage(msgDescribe, describePayload, 0, false); err != nil {
+		return err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		return err
+	}
+	paramCount := -1
+	for {
+		msg, err := c.receive()
+		if err != nil {
+			return err
+		}
+		switch msg.header.typ {
+		case msgParameterDescription:
+			types, err := parseParameterDescription(msg.body)
+			if err != nil {
+				return err
+			}
+			paramCount = len(types)
+		case msgParameterStatus:
+			name, value, err := parseParameterStatus(msg.body)
+			if err != nil {
+				return err
+			}
+			c.params[name] = value
+		case msgError:
+			return buildProtocolError(msg.body)
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err != nil {
+				return err
+			}
+			c.txnID = txnID
+			goto described
+		default:
+			continue
+		}
+	}
+described:
+	if paramCount >= 0 && paramCount != len(args) {
+		return &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
+	}
 	resultFormats := []uint16{}
 	if c.config.BinaryTransfer {
 		resultFormats = []uint16{formatBinary}
@@ -355,7 +494,8 @@ func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx conte
 	if err := c.sendMessage(msgBind, bindPayload, 0, false); err != nil {
 		return err
 	}
-	execPayload := buildExecutePayload("", 0)
+	maxRows := uint32(c.config.FetchSize)
+	execPayload := buildExecutePayload("", maxRows)
 	if err := c.sendMessage(msgExecute, execPayload, 0, false); err != nil {
 		return err
 	}
@@ -569,9 +709,10 @@ func buildProtocolError(payload []byte) error {
 }
 
 type Stmt struct {
-	conn  *Conn
-	query string
-	name  string
+	conn       *Conn
+	query      string
+	name       string
+	paramCount int
 }
 
 func (s *Stmt) Close() error {
@@ -604,6 +745,9 @@ func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	if err := s.conn.ensureOpen(ctx); err != nil {
 		return nil, err
+	}
+	if s.paramCount >= 0 && s.paramCount != len(args) {
+		return nil, &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {
@@ -639,6 +783,9 @@ func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	if err := s.conn.ensureOpen(ctx); err != nil {
 		return nil, err
+	}
+	if s.paramCount >= 0 && s.paramCount != len(args) {
+		return nil, &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {

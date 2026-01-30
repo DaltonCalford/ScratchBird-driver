@@ -6,13 +6,16 @@ sb_config <- function(dsn = "") {
     user = "",
     password = "",
     schema = "",
+    role = "",
     sslmode = "require",
     sslrootcert = NULL,
     sslcert = NULL,
     sslkey = NULL,
+    sslpassword = NULL,
     connect_timeout_ms = 30000L,
     socket_timeout_ms = 0L,
     application_name = "scratchbird_r",
+    fetch_size = 0L,
     binary_transfer = TRUE,
     compression = "off",
     extra = list()
@@ -93,6 +96,8 @@ apply_param <- function(cfg, key, value) {
     cfg$password <- value
   } else if (key %in% c("schema", "search_path", "searchpath", "currentschema")) {
     cfg$schema <- value
+  } else if (key == "role") {
+    cfg$role <- value
   } else if (key %in% c("sslmode", "ssl mode")) {
     cfg$sslmode <- value
   } else if (key == "sslrootcert") {
@@ -101,12 +106,16 @@ apply_param <- function(cfg, key, value) {
     cfg$sslcert <- value
   } else if (key == "sslkey") {
     cfg$sslkey <- value
+  } else if (key == "sslpassword") {
+    cfg$sslpassword <- value
   } else if (key %in% c("connect_timeout", "connecttimeout", "timeout")) {
     cfg$connect_timeout_ms <- as.integer(value) * 1000L
   } else if (key %in% c("socket_timeout", "sockettimeout")) {
     cfg$socket_timeout_ms <- as.integer(value) * 1000L
   } else if (key %in% c("application_name", "applicationname")) {
     cfg$application_name <- value
+  } else if (key %in% c("fetch_size", "fetchsize", "defaultrowfetchsize")) {
+    cfg$fetch_size <- as.integer(value)
   } else if (key %in% c("binary_transfer", "binarytransfer")) {
     cfg$binary_transfer <- value %in% c("1", "true", "TRUE")
   } else if (key == "compression") {

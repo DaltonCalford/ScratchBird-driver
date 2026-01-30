@@ -29,13 +29,26 @@ A JSON manifest defines the test suite and required capabilities:
   "suite": "sbwp-v1.1",
   "requires": ["tls", "auth", "prepare_bind", "types"],
   "tests": [
-    {"id": "handshake", "sql": "SELECT 1"},
-    {"id": "auth", "action": "authenticate"},
-    {"id": "prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
-    {"id": "types", "sql": "SELECT $1::uuid, $2::jsonb", "params": ["...", "{...}"]}
+    {"id": "handshake", "kind": "query", "sql": "SELECT 1", "expect_rows": 1},
+    {"id": "auth", "kind": "auth"},
+    {"id": "prepare_bind", "kind": "prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
+    {"id": "describe_mismatch", "kind": "prepare_bind", "sql": "SELECT $1, $2", "params": [1], "expect_sqlstate": "07001"},
+    {"id": "paging_basic", "kind": "query", "sql": "SELECT id FROM sb_conformance.basic_table", "dsn_append": "fetch_size=1"},
+    {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT id FROM sb_conformance.basic_table", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]}
   ]
 }
 ```
+
+Supported test fields:
+- `kind`: auth | query | prepare_bind | cancel
+- `sql`: SQL to execute (query/prepare_bind/cancel)
+- `params`: bound parameters for prepare_bind
+- `expect_rows`: optional row count assertion
+- `expect_sqlstate`: expected SQLSTATE on failure
+- `timeout_ms`: per-test timeout in milliseconds (query/prepare_bind)
+- `dsn_append`: query-string or key-value suffix appended to base DSN
+- `requires`: optional list of env-gated requirements
+- `cancel_after_rows`: rows to read before issuing CANCEL (cancel kind)
 
 ### 2. Driver Adapter Contract
 

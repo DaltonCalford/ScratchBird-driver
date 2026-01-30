@@ -355,6 +355,20 @@ export function parseParameterStatus(payload: Buffer): { name: string; value: st
   return { name, value };
 }
 
+export function parseParameterDescription(payload: Buffer): number[] {
+  if (payload.length < 4) throw new Error("Parameter description truncated");
+  let offset = 0;
+  const count = payload.readUInt16LE(offset);
+  offset += 4;
+  const types: number[] = [];
+  for (let i = 0; i < count; i++) {
+    if (offset + 4 > payload.length) throw new Error("Parameter description truncated");
+    types.push(payload.readUInt32LE(offset));
+    offset += 4;
+  }
+  return types;
+}
+
 export function parseRowDescription(payload: Buffer): ColumnInfo[] {
   if (payload.length < 4) throw new Error("Row description truncated");
   let offset = 0;

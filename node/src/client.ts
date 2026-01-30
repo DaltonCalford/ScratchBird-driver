@@ -21,6 +21,7 @@ import {
   parseAuthOk,
   parseReady,
   parseParameterStatus,
+  parseParameterDescription,
   parseRowDescription,
   parseDataRow,
   parseCommandComplete,
@@ -40,7 +41,7 @@ import {
   encodeParam,
   decodeValue,
 } from "./types";
-import { mapSqlState, ScratchbirdError } from "./errors";
+import { mapSqlState, ScratchbirdError, ScratchbirdNotSupportedError } from "./errors";
 
 const QUERY_FLAG_BINARY_RESULT = 0x04;
 const FORMAT_TEXT = 0;
@@ -181,7 +182,7 @@ export class Client {
   private config: ClientConfig;
   private protocol = new ProtocolConnection();
   private connected = false;
-  private prepared = new Map<string, string>();
+  private prepared = new Map<string, { sql: string; paramCount: number }>();
   private parameters: Record<string, string> = {};
 
   constructor(config?: ClientConfig | string) {
@@ -198,6 +199,12 @@ export class Client {
   async connect(): Promise<void> {
     if (!this.config.user || !this.config.database) {
       throw new Error("user and database are required");
+    }
+    if (this.config.binaryTransfer === false) {
+      throw new ScratchbirdNotSupportedError("binary_transfer=false is not supported", "0A000");
+    }
+    if (this.config.compression === "zstd") {
+      throw new ScratchbirdNotSupportedError("compression=zstd is not supported", "0A000");
     }
     await this.protocol.connect(this.config);
     await this.handshake();
@@ -222,16 +229,18 @@ export class Client {
     this.ensureConnected();
     const normalized = normalizeQuery(text);
     await this.protocol.sendMessage(MessageType.PARSE, buildParsePayload(name, normalized.sql, []), 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
-    await this.drainUntilReady();
-    this.prepared.set(name, normalized.sql);
+    const paramCount = await this.describeStatement(name);
+    this.prepared.set(name, { sql: normalized.sql, paramCount });
   }
 
   async execute<T = any>(name: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
     this.ensureConnected();
-    const sql = this.prepared.get(name);
-    if (!sql) throw new Error(`Unknown prepared statement: ${name}`);
-    const normalized = normalizeQuery(sql, params);
+    const prepared = this.prepared.get(name);
+    if (!prepared) throw new Error(`Unknown prepared statement: ${name}`);
+    const normalized = normalizeQuery(prepared.sql, params);
+    if (prepared.paramCount >= 0 && prepared.paramCount !== normalized.params.length) {
+      throw new ScratchbirdError("parameter count mismatch", "07001");
+    }
     return (await this.executePrepared(name, normalized.params, options)) as QueryResult<T>;
   }
 
@@ -278,6 +287,9 @@ export class Client {
       database: this.config.database ?? "",
       user: this.config.user ?? "",
     };
+    if (this.config.role) {
+      params.role = this.config.role;
+    }
     if (this.config.applicationName) {
       params.application_name = this.config.applicationName;
     }
@@ -359,6 +371,7 @@ export class Client {
   }
 
   private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
+    const pageSize = options?.maxRows ?? 0;
     if (params.length === 0) {
       await this.sendSimpleQuery(sql, options);
     } else {
@@ -409,6 +422,12 @@ export class Client {
           this.parameters[name] = value;
           continue;
         }
+        case MessageType.PORTAL_SUSPENDED: {
+          if (pageSize > 0) {
+            await this.resumePortal(pageSize);
+          }
+          continue;
+        }
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
           this.protocol.setTxnId(txnId);
@@ -424,6 +443,7 @@ export class Client {
   }
 
   private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
+    const pageSize = options?.maxRows ?? 0;
     await this.sendBindExecute(name, params, options);
 
     const rows: any[] = [];
@@ -471,6 +491,12 @@ export class Client {
           }
           return { rows, rowCount, fields, command };
         }
+        case MessageType.PORTAL_SUSPENDED: {
+          if (pageSize > 0) {
+            await this.resumePortal(pageSize);
+          }
+          continue;
+        }
         default:
           continue;
       }
@@ -478,6 +504,7 @@ export class Client {
   }
 
   private async executeQueryStream(sql: string, params: any[], options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
+    const pageSize = options?.maxRows ?? 0;
     if (params.length === 0) {
       await this.sendSimpleQuery(sql, options);
     } else {
@@ -502,6 +529,12 @@ export class Client {
           case MessageType.DATA_ROW: {
             const values = parseDataRow(msg.payload, columns.length);
             yield buildRow(columns, values);
+            continue;
+          }
+          case MessageType.PORTAL_SUSPENDED: {
+            if (pageSize > 0) {
+              await self.resumePortal(pageSize);
+            }
             continue;
           }
           case MessageType.READY: {
@@ -535,6 +568,10 @@ export class Client {
     }
     const parsePayload = buildParsePayload("", sql, paramTypes);
     await this.protocol.sendMessage(MessageType.PARSE, parsePayload, 0, false);
+    const paramCount = await this.describeStatement("");
+    if (paramCount >= 0 && paramCount !== params.length) {
+      throw new ScratchbirdError("parameter count mismatch", "07001");
+    }
     const resultFormats = this.config.binaryTransfer ? [FORMAT_BINARY] : [];
     const bindPayload = buildBindPayload("", "", paramValues, resultFormats);
     await this.protocol.sendMessage(MessageType.BIND, bindPayload, 0, false);
@@ -555,6 +592,41 @@ export class Client {
     const execPayload = buildExecutePayload("", options?.maxRows ?? 0);
     await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
     await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+  }
+
+  private async resumePortal(maxRows: number): Promise<void> {
+    const execPayload = buildExecutePayload("", maxRows);
+    await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+  }
+
+  private async describeStatement(statementName: string): Promise<number> {
+    const describePayload = buildDescribePayload("S".charCodeAt(0), statementName);
+    await this.protocol.sendMessage(MessageType.DESCRIBE, describePayload, 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    let paramCount = -1;
+    while (true) {
+      const msg = await this.protocol.recv();
+      switch (msg.header.type) {
+        case MessageType.ERROR:
+          throw this.raiseProtocolError(msg.payload);
+        case MessageType.PARAMETER_DESCRIPTION:
+          paramCount = parseParameterDescription(msg.payload).length;
+          continue;
+        case MessageType.PARAMETER_STATUS: {
+          const { name, value } = parseParameterStatus(msg.payload);
+          this.parameters[name] = value;
+          continue;
+        }
+        case MessageType.READY: {
+          const { txnId } = parseReady(msg.payload);
+          this.protocol.setTxnId(txnId);
+          return paramCount;
+        }
+        default:
+          continue;
+      }
+    }
   }
 
   private async cancelQuery(): Promise<void> {
@@ -757,6 +829,9 @@ async function upgradeTls(socket: net.Socket, host: string, sslMode: string, con
   }
   if (config.sslkey) {
     tlsOptions.key = fs.readFileSync(config.sslkey);
+  }
+  if (config.sslpassword) {
+    tlsOptions.passphrase = config.sslpassword;
   }
 
   if (typeof config.ssl === "object") {

@@ -28,6 +28,14 @@ internal sealed class ProtocolClient
         {
             throw new ScratchBirdConnectionException("Username and database are required", "08001");
         }
+        if (!config.BinaryTransfer)
+        {
+            throw new ScratchBirdNotSupportedException("binary_transfer=false is not supported", "0A000");
+        }
+        if (string.Equals(config.Compression, "zstd", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ScratchBirdNotSupportedException("compression=zstd is not supported", "0A000");
+        }
 
         _client = new TcpClient { NoDelay = true };
         _client.SendTimeout = config.SocketTimeoutMs > 0 ? config.SocketTimeoutMs : 0;
@@ -54,21 +62,21 @@ internal sealed class ProtocolClient
 
     public QueryStream ExecuteQuery(string sql)
     {
-        return ExecuteQuery(sql, Array.Empty<ScratchBirdParameter>());
+        return ExecuteQuery(sql, Array.Empty<ScratchBirdParameter>(), 0, 0);
     }
 
-    public QueryStream ExecuteQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    public QueryStream ExecuteQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int timeoutMs, int maxRows)
     {
         EnsureConnected();
         if (parameters.Count == 0)
         {
-            SendSimpleQuery(sql);
+            SendSimpleQuery(sql, timeoutMs, maxRows);
         }
         else
         {
-            SendExtendedQuery(sql, parameters);
+            SendExtendedQuery(sql, parameters, maxRows);
         }
-        return new QueryStream(this);
+        return new QueryStream(this, timeoutMs, maxRows);
     }
 
     public void Begin()
@@ -114,6 +122,10 @@ internal sealed class ProtocolClient
             ["database"] = config.Database,
             ["user"] = config.Username
         };
+        if (!string.IsNullOrWhiteSpace(config.Role))
+        {
+            parameters["role"] = config.Role;
+        }
         if (!string.IsNullOrWhiteSpace(config.ApplicationName))
         {
             parameters["application_name"] = config.ApplicationName;
@@ -209,14 +221,14 @@ internal sealed class ProtocolClient
         }
     }
 
-    private void SendSimpleQuery(string sql)
+    private void SendSimpleQuery(string sql, int timeoutMs, int maxRows)
     {
         var flags = ConfigBinaryTransfer() ? QueryFlagBinaryResult : 0;
-        var payload = ProtocolCodec.BuildQueryPayload(sql, flags, 0, 0);
+        var payload = ProtocolCodec.BuildQueryPayload(sql, flags, (uint)Math.Max(0, maxRows), (uint)Math.Max(0, timeoutMs));
         _lastQuerySequence = SendMessage(MessageType.QUERY, payload, 0, false);
     }
 
-    private void SendExtendedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    private void SendExtendedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int maxRows)
     {
         var paramValues = new List<ParamValue>(parameters.Count);
         var paramTypes = new List<uint>(parameters.Count);
@@ -228,14 +240,49 @@ internal sealed class ProtocolClient
         }
         var parsePayload = ProtocolCodec.BuildParsePayload(string.Empty, sql, paramTypes);
         SendMessage(MessageType.PARSE, parsePayload, 0, false);
+        var described = DescribeStatement(string.Empty);
+        if (described >= 0 && described != paramTypes.Count)
+        {
+            throw new ScratchBirdSyntaxException("parameter count mismatch", "07001");
+        }
 
         var resultFormats = ConfigBinaryTransfer() ? new[] { TypeDecoder.FormatBinary } : Array.Empty<ushort>();
         var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, string.Empty, paramValues, resultFormats);
         SendMessage(MessageType.BIND, bindPayload, 0, false);
 
-        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, 0);
+        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)Math.Max(0, maxRows));
         _lastQuerySequence = SendMessage(MessageType.EXECUTE, execPayload, 0, false);
         SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+    }
+
+    private int DescribeStatement(string name)
+    {
+        var payload = ProtocolCodec.BuildDescribePayload((byte)'S', name);
+        SendMessage(MessageType.DESCRIBE, payload, 0, false);
+        SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+        var paramCount = -1;
+        while (true)
+        {
+            var msg = Receive();
+            switch ((MessageType)msg.Header.Type)
+            {
+                case MessageType.PARAMETER_DESCRIPTION:
+                    paramCount = ProtocolCodec.ParseParameterDescription(msg.Payload).Count;
+                    continue;
+                case MessageType.PARAMETER_STATUS:
+                    var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
+                    _parameters[status.Name] = status.Value;
+                    continue;
+                case MessageType.ERROR:
+                    throw BuildQueryException(msg.Payload);
+                case MessageType.READY:
+                    var ready = ProtocolCodec.ParseReady(msg.Payload);
+                    _txnId = ready.TxnId;
+                    return paramCount;
+                default:
+                    continue;
+            }
+        }
     }
 
     private bool ConfigBinaryTransfer()
@@ -311,7 +358,7 @@ internal sealed class ProtocolClient
 
     private Stream UpgradeToTls(Stream stream, ScratchBirdConfig config, string sslMode)
     {
-        var cert = LoadClientCertificate(config.SslCert, config.SslKey);
+        var cert = LoadClientCertificate(config.SslCert, config.SslKey, config.SslPassword);
         var certs = new X509CertificateCollection();
         if (cert != null)
         {
@@ -353,7 +400,7 @@ internal sealed class ProtocolClient
         return sslStream;
     }
 
-    private X509Certificate2? LoadClientCertificate(string? certPath, string? keyPath)
+    private X509Certificate2? LoadClientCertificate(string? certPath, string? keyPath, string? password)
     {
         if (string.IsNullOrEmpty(certPath))
         {
@@ -362,6 +409,10 @@ internal sealed class ProtocolClient
 
         if (!string.IsNullOrEmpty(keyPath))
         {
+            if (!string.IsNullOrEmpty(password))
+            {
+                return X509Certificate2.CreateFromEncryptedPemFile(certPath, keyPath, password);
+            }
             return X509Certificate2.CreateFromPemFile(certPath, keyPath);
         }
 
@@ -375,10 +426,19 @@ internal sealed class ProtocolClient
         private List<ColumnInfo> _columns = new();
         private long _rowsAffected = -1;
         private string _command = string.Empty;
+        private readonly int _pageSize;
 
-        public QueryStream(ProtocolClient client)
+        private readonly CancellationTokenSource? _timeoutCts;
+
+        public QueryStream(ProtocolClient client, int timeoutMs, int pageSize)
         {
             _client = client;
+            _pageSize = Math.Max(0, pageSize);
+            if (timeoutMs > 0)
+            {
+                _timeoutCts = new CancellationTokenSource(timeoutMs);
+                _timeoutCts.Token.Register(() => _client.Cancel());
+            }
         }
 
         public IReadOnlyList<ColumnInfo> Columns => _columns;
@@ -421,6 +481,13 @@ internal sealed class ProtocolClient
                         _rowsAffected = (long)parsed.Rows;
                         break;
                     }
+                    case MessageType.PORTAL_SUSPENDED:
+                    {
+                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
+                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        _client.SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+                        break;
+                    }
                     case MessageType.PARAMETER_STATUS:
                     {
                         var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
@@ -432,6 +499,7 @@ internal sealed class ProtocolClient
                         var ready = ProtocolCodec.ParseReady(msg.Payload);
                         _client._txnId = ready.TxnId;
                         _done = true;
+                        _timeoutCts?.Cancel();
                         return null;
                     }
                     case MessageType.EMPTY_QUERY:

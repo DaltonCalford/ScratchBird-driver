@@ -12,6 +12,7 @@ public sealed class ScratchBirdCommand : DbCommand
     private UpdateRowSource _updatedRowSource = UpdateRowSource.Both;
     private ScratchBirdConnection? _connection;
     private ScratchBirdTransaction? _transaction;
+    private int _fetchSize;
     private readonly ScratchBirdParameterCollection _parameters = new();
 
     public ScratchBirdCommand() { }
@@ -69,6 +70,12 @@ public sealed class ScratchBirdCommand : DbCommand
     {
         get => _updatedRowSource;
         set => _updatedRowSource = value;
+    }
+
+    public int FetchSize
+    {
+        get => _fetchSize;
+        set => _fetchSize = Math.Max(0, value);
     }
 
     public new ScratchBirdConnection? Connection
@@ -154,7 +161,9 @@ public sealed class ScratchBirdCommand : DbCommand
         }
 
         var normalized = SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
-        var stream = _connection.Client.ExecuteQuery(normalized.Sql, normalized.Parameters);
+        var timeoutMs = _commandTimeout > 0 ? _commandTimeout * 1000 : 0;
+        var maxRows = _fetchSize > 0 ? _fetchSize : _connection.Config.DefaultFetchSize;
+        var stream = _connection.Client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
         return new ScratchBirdDataReader(stream, behavior, _connection);
     }
 

@@ -41,6 +41,7 @@ public sealed class ScratchBirdConnection : DbConnection
     public override ConnectionState State => _state;
 
     internal ProtocolClient Client => _client ?? throw new InvalidOperationException("Connection not open");
+    internal ScratchBirdConfig Config => _config;
 
     public override void Open()
     {

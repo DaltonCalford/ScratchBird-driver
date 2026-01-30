@@ -185,6 +185,14 @@ module Scratchbird
       [portal_bytes.bytesize].pack("V") + portal_bytes + [max_rows].pack("V")
     end
 
+    def self.build_describe_payload(describe_type, name)
+      name_bytes = name.to_s
+      payload = [describe_type].pack("C")
+      payload << "\0\0\0"
+      payload << [name_bytes.bytesize].pack("V") + name_bytes
+      payload
+    end
+
     def self.build_cancel_payload(cancel_type, target_sequence)
       [cancel_type, target_sequence].pack("VV")
     end
@@ -208,6 +216,19 @@ module Scratchbird
       offset += 4
       value = payload.byteslice(offset, value_len).to_s
       [name, value]
+    end
+
+    def self.parse_parameter_description(payload)
+      raise "Parameter description truncated" if payload.bytesize < 4
+      count = payload.byteslice(0, 2).unpack1("v")
+      offset = 4
+      types = []
+      count.times do
+        raise "Parameter description truncated" if offset + 4 > payload.bytesize
+        types << payload.byteslice(offset, 4).unpack1("V")
+        offset += 4
+      end
+      types
     end
 
     def self.parse_row_description(payload)

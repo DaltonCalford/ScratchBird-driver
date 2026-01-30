@@ -4,7 +4,7 @@ Scratchbird <- function() {
 
 setClass("ScratchbirdDriver", contains = "DBIDriver")
 setClass("ScratchbirdConnection", contains = "DBIConnection", slots = list(ptr = "environment"))
-setClass("ScratchbirdResult", contains = "DBIResult", slots = list(rows = "list", columns = "list", rowcount = "numeric", idx = "numeric"))
+setClass("ScratchbirdResult", contains = "DBIResult", slots = list(result = "environment"))
 
 setMethod("dbConnect", "ScratchbirdDriver", function(drv, dsn = "", ...) {
   client <- sb_connect(dsn, ...)
@@ -24,23 +24,15 @@ setMethod("dbIsValid", "ScratchbirdConnection", function(conn, ...) {
 
 setMethod("dbSendQuery", "ScratchbirdConnection", function(conn, statement, ...) {
   result <- sb_send_query(conn@ptr$client, statement, ...)
-  new("ScratchbirdResult",
-      rows = result$rows,
-      columns = result$columns,
-      rowcount = result$rowcount,
-      idx = 0)
+  new("ScratchbirdResult", result = result)
 })
 
 setMethod("dbFetch", "ScratchbirdResult", function(res, n = -1, ...) {
-  rows <- res@rows
-  if (n >= 0 && n < length(rows)) {
-    rows <- rows[seq_len(n)]
-  }
-  sb_rows_to_df(rows, res@columns)
+  sb_fetch(res@result, n)
 })
 
 setMethod("dbClearResult", "ScratchbirdResult", function(res, ...) {
-  res@rows <- list()
+  sb_clear_result(res@result)
   TRUE
 })
 
@@ -50,5 +42,6 @@ setMethod("dbGetQuery", "ScratchbirdConnection", function(conn, statement, ...) 
 
 setMethod("dbExecute", "ScratchbirdConnection", function(conn, statement, ...) {
   result <- sb_send_query(conn@ptr$client, statement, ...)
+  sb_fetch_rows(result, -1)
   as.integer(result$rowcount)
 })

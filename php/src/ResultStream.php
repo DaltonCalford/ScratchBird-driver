@@ -57,6 +57,9 @@ final class ResultStream
                     $this->commandTag = $tag;
                     $this->rowsAffected = (int)$rows;
                     break;
+                case Protocol::MSG_PORTAL_SUSPENDED:
+                    $this->connection->resumePortal();
+                    break;
                 case Protocol::MSG_READY:
                     $this->done = true;
                     return null;

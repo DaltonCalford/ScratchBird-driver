@@ -12,6 +12,7 @@ import java.util.*;
 public class SBQueryResult {
     private List<SBColumnInfo> columns;
     private List<Object[]> rows;
+    private SBRowStream stream;
     private String commandTag;
     private long updateCount;
 
@@ -20,6 +21,9 @@ public class SBQueryResult {
 
     public List<Object[]> getRows() { return rows; }
     public void setRows(List<Object[]> rows) { this.rows = rows; }
+
+    public SBRowStream getStream() { return stream; }
+    public void setStream(SBRowStream stream) { this.stream = stream; }
 
     public String getCommandTag() { return commandTag; }
     public void setCommandTag(String commandTag) { this.commandTag = commandTag; }

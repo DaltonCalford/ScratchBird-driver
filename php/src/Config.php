@@ -10,15 +10,18 @@ final class Config
     public string $user = '';
     public string $password = '';
     public string $schema = '';
+    public string $role = '';
     public string $sslMode = 'require';
     public ?string $sslRootCert = null;
     public ?string $sslCert = null;
     public ?string $sslKey = null;
+    public ?string $sslPassword = null;
     public int $connectTimeoutMs = 30000;
     public int $socketTimeoutMs = 0;
     public string $applicationName = 'scratchbird_php';
     public bool $binaryTransfer = true;
     public string $compression = 'off';
+    public int $fetchSize = 0;
 
     public static function fromDsn(string $dsn): self
     {
@@ -112,6 +115,9 @@ final class Config
             case 'currentschema':
                 $cfg->schema = $value;
                 break;
+            case 'role':
+                $cfg->role = $value;
+                break;
             case 'sslmode':
             case 'ssl mode':
                 $cfg->sslMode = $value;
@@ -124,6 +130,9 @@ final class Config
                 break;
             case 'sslkey':
                 $cfg->sslKey = $value;
+                break;
+            case 'sslpassword':
+                $cfg->sslPassword = $value;
                 break;
             case 'connect_timeout':
             case 'connecttimeout':
@@ -144,6 +153,11 @@ final class Config
                 break;
             case 'compression':
                 $cfg->compression = strtolower($value) === 'zstd' ? 'zstd' : 'off';
+                break;
+            case 'fetch_size':
+            case 'fetchsize':
+            case 'default_fetch_size':
+                $cfg->fetchSize = max(0, (int)$value);
                 break;
         }
     }

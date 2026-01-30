@@ -42,6 +42,7 @@ pub struct QueryStream<'a> {
     row_count: i64,
     command_tag: String,
     done: bool,
+    page_size: u32,
 }
 
 trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -64,6 +65,24 @@ impl Client {
     pub async fn connect(&mut self) -> Result<()> {
         if self.config.user.is_empty() || self.config.database.is_empty() {
             return Err(Error::new(ErrorKind::Connection, "user and database are required"));
+        }
+        if !self.config.binary_transfer {
+            return Err(Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                "binary_transfer=false is not supported",
+                Some("0A000".to_string()),
+                None,
+                None,
+            ));
+        }
+        if self.config.compression.eq_ignore_ascii_case("zstd") {
+            return Err(Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                "compression=zstd is not supported",
+                Some("0A000".to_string()),
+                None,
+                None,
+            ));
         }
         let stream = self.connect_transport().await?;
         self.stream = Some(stream);
@@ -92,20 +111,41 @@ impl Client {
         if normalized.params.is_empty() {
             self.send_simple_query(&normalized.sql, 0, 0).await?;
         } else {
-            self.send_extended_query(&normalized.sql, &normalized.params).await?;
+            self.send_extended_query(&normalized.sql, &normalized.params, 0).await?;
         }
         self.collect_results().await
     }
 
     pub async fn query_stream(&mut self, sql: &str) -> Result<QueryStream<'_>> {
         self.ensure_connected()?;
-        self.send_simple_query(sql, 0, 0).await?;
+        let page_size = self.config.fetch_size;
+        self.send_simple_query(sql, page_size, 0).await?;
         Ok(QueryStream {
             client: self,
             columns: Vec::new(),
             row_count: -1,
             command_tag: String::new(),
             done: false,
+            page_size,
+        })
+    }
+
+    pub async fn query_stream_params(&mut self, sql: &str, params: Params) -> Result<QueryStream<'_>> {
+        self.ensure_connected()?;
+        let normalized = normalize(sql, params)?;
+        let page_size = self.config.fetch_size;
+        if normalized.params.is_empty() {
+            self.send_simple_query(&normalized.sql, page_size, 0).await?;
+        } else {
+            self.send_extended_query(&normalized.sql, &normalized.params, page_size).await?;
+        }
+        Ok(QueryStream {
+            client: self,
+            columns: Vec::new(),
+            row_count: -1,
+            command_tag: String::new(),
+            done: false,
+            page_size,
         })
     }
 
@@ -122,6 +162,9 @@ impl Client {
         let mut params = HashMap::new();
         params.insert("database".to_string(), self.config.database.clone());
         params.insert("user".to_string(), self.config.user.clone());
+        if !self.config.role.is_empty() {
+            params.insert("role".to_string(), self.config.role.clone());
+        }
         if !self.config.application_name.is_empty() {
             params.insert("application_name".to_string(), self.config.application_name.clone());
         }
@@ -258,7 +301,7 @@ impl Client {
         self.send_message(protocol::MSG_QUERY, &payload, 0, false).await
     }
 
-    async fn send_extended_query(&mut self, sql: &str, params: &[Param]) -> Result<()> {
+    async fn send_extended_query(&mut self, sql: &str, params: &[Param], max_rows: u32) -> Result<()> {
         let mut param_values = Vec::with_capacity(params.len());
         let mut param_types = Vec::with_capacity(params.len());
         for param in params {
@@ -268,14 +311,51 @@ impl Client {
         }
         let parse_payload = protocol::build_parse_payload("", sql, &param_types);
         self.send_message(protocol::MSG_PARSE, &parse_payload, 0, false).await?;
+        let described = self.describe_statement("").await?;
+        if described > 0 && described != params.len() {
+            return Err(Error::with_sqlstate(
+                ErrorKind::Syntax,
+                "parameter count mismatch",
+                Some("07001".to_string()),
+                None,
+                None,
+            ));
+        }
 
         let result_formats = if self.config.binary_transfer { vec![FORMAT_BINARY] } else { Vec::new() };
         let bind_payload = protocol::build_bind_payload("", "", &param_values, &result_formats);
         self.send_message(protocol::MSG_BIND, &bind_payload, 0, false).await?;
 
-        let exec_payload = protocol::build_execute_payload("", 0);
+        let exec_payload = protocol::build_execute_payload("", max_rows);
         self.send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false).await?;
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await
+    }
+
+    async fn describe_statement(&mut self, statement_name: &str) -> Result<usize> {
+        let payload = protocol::build_describe_payload(b'S', statement_name);
+        self.send_message(protocol::MSG_DESCRIBE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
+        let mut param_count = 0usize;
+        loop {
+            let msg = self.receive().await?;
+            match msg.header.typ {
+                protocol::MSG_PARAMETER_DESCRIPTION => {
+                    let types = protocol::parse_parameter_description(&msg.body)?;
+                    param_count = types.len();
+                }
+                protocol::MSG_PARAMETER_STATUS => {
+                    let (name, value) = protocol::parse_parameter_status(&msg.body)?;
+                    self.parameters.insert(name, value);
+                }
+                protocol::MSG_ERROR => return Err(protocol_error(&msg.body)),
+                protocol::MSG_READY => {
+                    let (_, txn_id, _) = protocol::parse_ready(&msg.body)?;
+                    self.txn_id = txn_id;
+                    return Ok(param_count);
+                }
+                _ => continue,
+            }
+        }
     }
 
     async fn connect_transport(&self) -> Result<Box<dyn AsyncReadWrite>> {
@@ -469,6 +549,11 @@ impl<'a> QueryStream<'a> {
                     let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
                     self.command_tag = tag;
                     self.row_count = rows_affected as i64;
+                }
+                protocol::MSG_PORTAL_SUSPENDED => {
+                    let payload = protocol::build_execute_payload("", self.page_size);
+                    self.client.send_message(protocol::MSG_EXECUTE, &payload, 0, false).await?;
+                    self.client.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;

@@ -13,6 +13,7 @@ final class Connection
     private int $txnId = 0;
     private int $sequence = 0;
     private int $lastQuerySequence = 0;
+    private int $lastMaxRows = 0;
     private bool $connected = false;
     private array $attributes = [];
     private array $parameters = [];
@@ -106,14 +107,22 @@ final class Connection
         $this->connected = false;
     }
 
-    public function executeQuery(string $sql, array $params = []): ResultStream
+    public function executeQuery(string $sql, array $params = [], ?int $maxRows = null): ResultStream
     {
+        $pageSize = $maxRows ?? $this->config->fetchSize;
         if (empty($params)) {
-            $this->sendSimpleQuery($sql);
+            $this->sendSimpleQuery($sql, $pageSize);
         } else {
-            $this->sendExtendedQuery($sql, $params);
+            $this->sendExtendedQuery($sql, $params, $pageSize);
         }
         return new ResultStream($this);
+    }
+
+    public function resumePortal(): void
+    {
+        $execPayload = Protocol::buildExecutePayload('', $this->lastMaxRows);
+        $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
+        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
     }
 
     public function cancel(): void
@@ -180,6 +189,12 @@ final class Connection
         if ($this->config->user === '' || $this->config->database === '') {
             throw new ScratchBirdConnectionException('user and database are required', '08001');
         }
+        if (!$this->config->binaryTransfer) {
+            throw new ScratchBirdNotSupportedException('binary_transfer=false is not supported', '0A000');
+        }
+        if (strtolower($this->config->compression) === 'zstd') {
+            throw new ScratchBirdNotSupportedException('compression=zstd is not supported', '0A000');
+        }
         $timeout = $this->config->connectTimeoutMs / 1000;
         $address = sprintf('tcp://%s:%d', $this->config->host, $this->config->port);
         $socket = @stream_socket_client($address, $errno, $errstr, $timeout);
@@ -213,6 +228,9 @@ final class Connection
         if ($this->config->sslCert && $this->config->sslKey) {
             $options['ssl']['local_cert'] = $this->config->sslCert;
             $options['ssl']['local_pk'] = $this->config->sslKey;
+            if ($this->config->sslPassword) {
+                $options['ssl']['passphrase'] = $this->config->sslPassword;
+            }
         }
         stream_context_set_option($this->socket, $options);
         $result = @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
@@ -269,6 +287,9 @@ final class Connection
             'database' => $this->config->database,
             'user' => $this->config->user,
         ];
+        if ($this->config->role !== '') {
+            $params['role'] = $this->config->role;
+        }
         if ($this->config->applicationName !== '') {
             $params['application_name'] = $this->config->applicationName;
         }
@@ -332,14 +353,15 @@ final class Connection
         }
     }
 
-    private function sendSimpleQuery(string $sql): void
+    private function sendSimpleQuery(string $sql, int $maxRows): void
     {
         $flags = $this->config->binaryTransfer ? self::QUERY_FLAG_BINARY_RESULT : 0;
-        $payload = Protocol::buildQueryPayload($sql, $flags, 0, 0);
+        $payload = Protocol::buildQueryPayload($sql, $flags, $maxRows, 0);
+        $this->lastMaxRows = max(0, $maxRows);
         $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_QUERY, $payload, 0, false);
     }
 
-    private function sendExtendedQuery(string $sql, array $params): void
+    private function sendExtendedQuery(string $sql, array $params, int $maxRows): void
     {
         $paramValues = [];
         $paramTypes = [];
@@ -350,20 +372,53 @@ final class Connection
         }
         $parsePayload = Protocol::buildParsePayload('', $sql, $paramTypes);
         $this->sendMessage(Protocol::MSG_PARSE, $parsePayload, 0, false);
+        $paramCount = $this->describeStatement('');
+        if ($paramCount >= 0 && $paramCount !== count($paramTypes)) {
+            throw new ScratchBirdException('parameter count mismatch', '07001');
+        }
 
         $resultFormats = $this->config->binaryTransfer ? [TypeDecoder::FORMAT_BINARY] : [];
         $bindPayload = Protocol::buildBindPayload('', '', $paramValues, $resultFormats);
         $this->sendMessage(Protocol::MSG_BIND, $bindPayload, 0, false);
 
-        $execPayload = Protocol::buildExecutePayload('', 0);
+        $execPayload = Protocol::buildExecutePayload('', $maxRows);
+        $this->lastMaxRows = max(0, $maxRows);
         $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
         $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+    }
+
+    private function describeStatement(string $name): int
+    {
+        $payload = Protocol::buildDescribePayload(ord('S'), $name);
+        $this->sendMessage(Protocol::MSG_DESCRIBE, $payload, 0, false);
+        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+        $paramCount = -1;
+        while (true) {
+            [$type, , $payload] = $this->receive();
+            if ($type === Protocol::MSG_ERROR) {
+                throw $this->buildQueryException($payload);
+            }
+            if ($type === Protocol::MSG_PARAMETER_DESCRIPTION) {
+                $paramCount = count(Protocol::parseParameterDescription($payload));
+                continue;
+            }
+            if ($type === Protocol::MSG_PARAMETER_STATUS) {
+                [$name, $value] = Protocol::parseParameterStatus($payload);
+                $this->parameters[$name] = $value;
+                continue;
+            }
+            if ($type === Protocol::MSG_READY) {
+                [, $txnId] = Protocol::parseReady($payload);
+                $this->txnId = $txnId;
+                return $paramCount;
+            }
+        }
     }
 
     private function executeSimple(string $sql): bool
     {
         try {
-            $this->sendSimpleQuery($sql);
+            $this->sendSimpleQuery($sql, 0);
             $this->drainUntilReady();
             return true;
         } catch (\Throwable $ex) {

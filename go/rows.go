@@ -14,12 +14,13 @@ type Rows struct {
 	rowsAffected int64
 	commandTag   string
 	done         bool
+	pageSize     uint32
 	ctx          context.Context
 	cancel       func()
 }
 
 func newRows(conn *Conn, ctx context.Context) *Rows {
-	rows := &Rows{conn: conn, ctx: ctx}
+	rows := &Rows{conn: conn, ctx: ctx, pageSize: conn.config.FetchSize}
 	if ctx != nil {
 		cancelCh := make(chan struct{})
 		rows.cancel = func() { close(cancelCh) }
@@ -122,6 +123,14 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 			}
 			r.commandTag = tag
 			r.rowsAffected = int64(rows)
+		case msgPortalSuspended:
+			execPayload := buildExecutePayload("", r.pageSize)
+			if err := r.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+				return nil, err
+			}
+			if err := r.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+				return nil, err
+			}
 		case msgReady:
 			_, txnID, _, err := parseReady(msg.body)
 			if err == nil {

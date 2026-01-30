@@ -13,11 +13,16 @@ Required checks per manifest:
 - handshake (query)
 - auth
 - prepare_bind
+- describe_param_mismatch
 - types_one_way
+- paging_basic_table
+- cancel_stream (env-gated)
 
 Notes:
 - Auth is validated implicitly by a successful connection in integration tests.
 - Each integration test assumes the fixtures are loaded into the target database.
+- cancel_stream requires `SCRATCHBIRD_CONFORMANCE_CANCEL=1` when using the
+  manifest harness.
 
 ## Per-Driver Checklist
 

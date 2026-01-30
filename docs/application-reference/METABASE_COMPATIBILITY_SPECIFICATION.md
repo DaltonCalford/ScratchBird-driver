@@ -393,6 +393,8 @@ and connection properties.
 - sslrootcert (string, optional)
 - sslcert (string, optional)
 - sslkey (string, optional)
+- sslpassword (password, optional)
+- role (string, optional)
 - application_name (string, default `metabase`)
 - connectTimeout (integer seconds, optional)
 - socketTimeout (integer seconds, optional)
@@ -408,6 +410,8 @@ jdbc:scratchbird://{host}:{port}/{db}?sslmode={sslmode}&application_name={applic
 - `sslrootcert` -> JDBC property `sslrootcert`
 - `sslcert` -> JDBC property `sslcert`
 - `sslkey` -> JDBC property `sslkey`
+- `sslpassword` -> JDBC property `sslpassword`
+- `role` -> JDBC property `role`
 - `connectTimeout` -> JDBC property `connectTimeout`
 - `socketTimeout` -> JDBC property `socketTimeout`
 - `binaryTransfer` -> JDBC property `binaryTransfer`
