@@ -326,3 +326,16 @@ props.setProperty("sslmode", "require");
 - `SCRATCHBIRD_JDBC_URL`
 - `SCRATCHBIRD_JDBC_USER`
 - `SCRATCHBIRD_JDBC_PASSWORD`
+
+---
+
+## Application Integrations
+
+For Metabase and Superset integration, see:
+
+- [Metabase Driver](Metabase-Driver)
+- [Superset Driver](Superset-Driver)
+
+---
+
+**Last Updated:** 2026-01-30

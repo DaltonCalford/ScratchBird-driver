@@ -4,6 +4,11 @@
 * [Getting Started](Getting-Started)
 * [Drivers](Drivers)
 
+**Application Integrations**
+
+* [Metabase Driver](Metabase-Driver)
+* [Superset Driver](Superset-Driver)
+
 **Reference**
 
 * [Protocol and Specs](Protocol-and-Specs)
@@ -12,4 +17,8 @@
 **Development**
 
 * [Development](Development)
-* [Metabase Driver](Metabase-Driver)
+
+**Resources**
+
+* [Main Repository](https://github.com/DaltonCalford/ScratchBird-driver)
+* [ScratchBird Engine](https://github.com/DaltonCalford/ScratchBird)

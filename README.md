@@ -255,4 +255,4 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Last Updated:** January 2026
+**Last Updated:** 2026-01-30

@@ -32,14 +32,17 @@ host=localhost port=3092 dbname=mydb user=myuser password=mypass sslmode=require
 | Key | Description | Default |
 |-----|-------------|---------|
 | password | User password | - |
+| role | Session role | - |
 | sslmode | TLS mode (require/verify-ca/verify-full) | require |
 | sslrootcert | CA certificate path | - |
 | sslcert | Client certificate path | - |
 | sslkey | Client key path | - |
+| sslpassword | Client key passphrase | - |
 | connect_timeout | Connection timeout (seconds) | 30 |
 | socket_timeout | Socket timeout (seconds) | 0 |
 | application_name | Application identifier | - |
-| compression | Compression (off/zstd) | off |
+| compression | Compression (off only; zstd disabled) | off |
+| fetch_size | Rows per portal fetch (paging) | 0 (all) |
 
 ### Key Aliases
 
@@ -50,6 +53,15 @@ These aliases are accepted by all drivers:
 - `application_name` / `applicationName`
 - `connect_timeout` / `connectTimeout`
 - `socket_timeout` / `socketTimeout`
+- `fetch_size` / `fetchSize`
+
+### Binary Transfer Mode
+
+All drivers enforce binary-only transfer. Setting `binary_transfer=false` is rejected with SQLSTATE 0A000 (feature not supported).
+
+### Compression
+
+zstd compression is currently disabled pending server-side implementation. Setting `compression=zstd` will be rejected.
 
 ## TLS Requirements
 

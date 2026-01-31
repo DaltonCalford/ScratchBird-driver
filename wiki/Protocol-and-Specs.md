@@ -17,8 +17,8 @@ After AUTH_OK, every message includes `attachment_id` and `txn_id`. Always-in-tr
 ### Message Format
 
 - 40-byte header with magic `0x53425750` ("SBWP")
-- Binary payload
-- Optional zstd compression (when negotiated)
+- Binary payload (text mode rejected with SQLSTATE 0A000)
+- Compression: zstd disabled pending server-side implementation
 
 ### Query Models
 
@@ -140,8 +140,41 @@ Drivers must surface:
 | .NET | ScratchBirdException subclasses |
 | JDBC | java.sql.SQLException |
 
+## Streaming and Paging
+
+### Portal Paging
+
+Large result sets are fetched incrementally using portal paging:
+
+1. **EXECUTE** with `max_rows` limit
+2. Server returns `MSG_PORTAL_SUSPENDED` when limit reached
+3. Client issues another EXECUTE to fetch next batch
+4. Repeat until `MSG_COMMAND_COMPLETE`
+
+### fetch_size Configuration
+
+Drivers support `fetch_size` (or `fetchSize`) to control rows per fetch:
+
+```
+scratchbird://host:3092/db?fetch_size=1000
+```
+
+Set to 0 (default) to fetch all rows at once.
+
+### Language-Specific APIs
+
+| Language | Streaming API |
+|----------|---------------|
+| Go | `Rows` iterator |
+| Python | `Cursor.fetchmany()` |
+| Node.js | `queryStream()` |
+| Ruby | `ResultStream` |
+| Rust | `RowStream` |
+| JDBC | `setFetchSize()` |
+
 ## Cancellation
 
 - Use CANCEL messages with MSG_FLAG_URGENT
 - Surface cancellation as distinct error (SQLSTATE 57014)
 - Drivers must not block indefinitely on long queries
+- Timeout enforcement wired to CANCEL (e.g., .NET CommandTimeout, JDBC queryTimeout)

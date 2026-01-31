@@ -34,6 +34,8 @@ The manifest defines required capabilities and test cases:
 2. **Authentication** - Valid credentials via SCRAM-SHA-256
 3. **Prepare/Bind** - With nulls and binary formats
 4. **Type Coverage** - One-way decode for every wire type
+5. **Streaming/Paging** - Portal paging with MSG_PORTAL_SUSPENDED
+6. **Cancellation** - Query timeout and CANCEL message handling
 
 ## Fixtures
 
@@ -126,3 +128,10 @@ Each driver follows the same pattern:
 - Generate JSON summary with pass/fail per test
 - Produce per-driver report artifacts
 - Failures include expected vs actual payloads
+- Cross-platform testing on Windows and Linux
+
+## Build Matrix
+
+See `docs/BUILD_MATRIX.md` for complete build and test commands across all platforms.
+
+**Last Updated:** 2026-01-30

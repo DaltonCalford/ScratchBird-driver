@@ -180,3 +180,20 @@ clj -T:build jar
 ```
 
 Distribute the JAR with `metabase-plugin.yaml` embedded.
+
+### Superset Dialect
+
+```bash
+cd scratchbird-superset-driver
+pip install build
+python -m build
+pip install dist/*.whl
+```
+
+---
+
+## Cross-Platform CI
+
+Build and test commands are documented for both Windows and Linux in `docs/BUILD_MATRIX.md`.
+
+**Last Updated:** 2026-01-30

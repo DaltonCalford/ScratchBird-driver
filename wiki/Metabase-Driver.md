@@ -63,3 +63,14 @@ jdbc:scratchbird://host:3092/database
 - Check JAR is in `MB_PLUGINS_DIR`
 - Check Metabase logs for plugin initialization errors
 - Verify JAR contains `metabase-plugin.yaml`
+
+## Feature Flags
+
+The plugin reports these capabilities to Metabase:
+
+- Primary key discovery via `getPrimaryKeys()`
+- Foreign key discovery via `getImportedKeys()`
+- Type information via `getTypeInfo()`
+- Binary transfer mode enforced (`binaryTransfer=true`)
+
+**Last Updated:** 2026-01-30
