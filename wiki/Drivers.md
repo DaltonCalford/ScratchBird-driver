@@ -329,6 +329,50 @@ props.setProperty("sslmode", "require");
 
 ---
 
+## Elixir (Ecto) - Planned (P1)
+
+Spec:
+https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md
+
+Notes:
+- Native SBWP v1.1 driver with `ecto_sql` + `db_connection` integration.
+- Binary-only transfer with server-side prepare/bind.
+
+---
+
+## Swift Async/Await - Planned (P1)
+
+Spec:
+https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md
+
+Notes:
+- Swift Concurrency API with async/await.
+- Targets iOS/macOS and server-side Swift.
+
+---
+
+## Dart - Planned (P2)
+
+Spec:
+https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_DART_DATABASE_API.md
+
+Notes:
+- Flutter-ready Dart driver with async/await.
+- Binary-only SBWP v1.1 protocol implementation.
+
+---
+
+## Mojo - Planned (P2)
+
+Spec:
+https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_MOJO_NATIVE_API.md
+
+Notes:
+- Native Mojo driver for AI/ML infrastructure workloads.
+- Binary-only SBWP v1.1 with minimal transport abstraction.
+
+---
+
 ## Application Integrations
 
 For Metabase and Superset integration, see:

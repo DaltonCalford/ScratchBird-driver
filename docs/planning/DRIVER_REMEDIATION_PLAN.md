@@ -1,6 +1,6 @@
 # ScratchBird Driver Remediation Plan
 
-Status: Complete
+Status: In Progress
 Last Updated: 2026-01-30
 
 ## Goal
@@ -66,6 +66,13 @@ compression is implemented.
 - [x] Superset: resolve type mapping via sys.types instead of raw ids
 - [x] Metabase: align feature flags with actual JDBC metadata, or add missing
       metadata support first
+
+### Phase 7 - New Drivers (Planned)
+
+- [ ] Elixir Ecto adapter (P1) - implement SBWP v1.1 driver + `ecto_sql` adapter
+- [ ] Swift async/await driver (P1) - SwiftNIO transport + SBWP client
+- [ ] Dart database driver (P2) - Flutter-ready API + SBWP client
+- [ ] Mojo native driver (P2) - SBWP client + minimal transport abstraction
 
 ## Driver Checklists
 
@@ -175,3 +182,29 @@ compression is implemented.
 
 - [x] Align feature flags with actual JDBC metadata coverage
 - [x] Enforce binaryTransfer=true in connection details
+
+### Elixir (Ecto) - Planned (P1)
+
+- [ ] Implement SBWP v1.1 client (binary-only, prepare/bind)
+- [ ] Ecto adapter (`Ecto.Adapters.SQL` + `DBConnection`)
+- [ ] Type wrappers: Jsonb/Range/Geometry
+- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
+
+### Swift Async/Await - Planned (P1)
+
+- [ ] SwiftNIO transport + SBWP client
+- [ ] Async/await API surface + streaming
+- [ ] Type wrappers: Jsonb/Range/Geometry
+- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
+
+### Dart - Planned (P2)
+
+- [ ] Pure Dart SBWP client + async API
+- [ ] Type wrappers: Jsonb/Range/Geometry
+- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
+
+### Mojo - Planned (P2)
+
+- [ ] SBWP client + transport abstraction
+- [ ] Type wrappers: Jsonb/Range/Geometry
+- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)

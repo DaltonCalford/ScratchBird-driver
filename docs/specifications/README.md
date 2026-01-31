@@ -22,6 +22,10 @@ from each spec below.
 - [DRIVER_METADATA_JDBC_ODBC_MAPPING.md](DRIVER_METADATA_JDBC_ODBC_MAPPING.md) - JDBC/ODBC metadata mapping
 - [DRIVER_THREAD_SAFETY_POOLING.md](DRIVER_THREAD_SAFETY_POOLING.md) - Thread safety and pooling
 - [DRIVER_SERVER_FEATURE_GAPS_AND_EXTENSIONS.md](DRIVER_SERVER_FEATURE_GAPS_AND_EXTENSIONS.md) - Server features drivers can leverage
+- [DRIVER_ELIXIR_ECTO_ADAPTER.md](DRIVER_ELIXIR_ECTO_ADAPTER.md) - Elixir Ecto adapter requirements
+- [DRIVER_SWIFT_ASYNC_ADAPTER.md](DRIVER_SWIFT_ASYNC_ADAPTER.md) - Swift async/await driver requirements
+- [DRIVER_DART_DATABASE_API.md](DRIVER_DART_DATABASE_API.md) - Dart database API requirements
+- [DRIVER_MOJO_NATIVE_API.md](DRIVER_MOJO_NATIVE_API.md) - Mojo native driver requirements
 
 ## Related Specs (ScratchBird)
 

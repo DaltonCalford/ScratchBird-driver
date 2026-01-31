@@ -33,6 +33,10 @@ Each driver has two documentation layers:
 - [JDBC Driver](../jdbc/) - Java/Gradle project
 - [Superset Driver](../scratchbird-superset-driver/README.md)
 - [Metabase Driver](../scratchbird-metabase-driver/README.md)
+- [Elixir (Ecto) Driver (planned)](specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md)
+- [Swift Async Driver (planned)](specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md)
+- [Dart Driver (planned)](specifications/DRIVER_DART_DATABASE_API.md)
+- [Mojo Driver (planned)](specifications/DRIVER_MOJO_NATIVE_API.md)
 
 Quick links:
 
