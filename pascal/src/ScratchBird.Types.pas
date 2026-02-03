@@ -1032,6 +1032,11 @@ begin
   end;
 end;
 
+function StripTrailingNulls(const Data: TBytes): TBytes;
+function LooksLikeText(const Data: TBytes): Boolean;
+function ParseUnknownText(const Text: string): Variant;
+function DecodeUnknownBinary(const Data: TBytes): Variant;
+
 function DecodeValue(TypeOid: Cardinal; const Data: TBytes; Format: Word): Variant;
 var
   Jsonb: TScratchBirdJsonb;
@@ -1039,6 +1044,12 @@ var
 begin
   if System.Length(Data) = 0 then
     Exit(Null);
+  if TypeOid = 0 then
+  begin
+    if Format = FORMAT_TEXT then
+      Exit(ParseUnknownText(TEncoding.UTF8.GetString(Data)));
+    Exit(DecodeUnknownBinary(Data));
+  end;
   if Format = FORMAT_TEXT then
     Exit(TEncoding.UTF8.GetString(Data));
 
@@ -1082,6 +1093,78 @@ begin
       end;
     OID_RECORD:
       Result := DecodeComposite(Data);
+  else
+    Result := Data;
+  end;
+end;
+
+function StripTrailingNulls(const Data: TBytes): TBytes;
+var
+  EndPos: Integer;
+begin
+  EndPos := System.Length(Data);
+  while (EndPos > 0) and (Data[EndPos - 1] = 0) do
+    Dec(EndPos);
+  SetLength(Result, EndPos);
+  if EndPos > 0 then
+    Move(Data[0], Result[0], EndPos);
+end;
+
+function LooksLikeText(const Data: TBytes): Boolean;
+var
+  I: Integer;
+  ByteVal: Byte;
+begin
+  Result := True;
+  for I := 0 to System.Length(Data) - 1 do
+  begin
+    ByteVal := Data[I];
+    if (ByteVal = $09) or (ByteVal = $0A) or (ByteVal = $0D) then
+      Continue;
+    if (ByteVal < $20) or (ByteVal > $7E) then
+      Exit(False);
+  end;
+end;
+
+function ParseUnknownText(const Text: string): Variant;
+var
+  Trimmed: string;
+  Lowered: string;
+  IntVal: Int64;
+  FloatVal: Double;
+begin
+  Trimmed := Trim(Text);
+  if Trimmed = '' then
+    Exit(Text);
+  Lowered := LowerCase(Trimmed);
+  if Lowered = 'true' then
+    Exit(True);
+  if Lowered = 'false' then
+    Exit(False);
+  if TryStrToInt64(Trimmed, IntVal) then
+  begin
+    if (IntVal >= Low(Integer)) and (IntVal <= High(Integer)) then
+      Exit(Integer(IntVal));
+    Exit(IntVal);
+  end;
+  if TryStrToFloat(Trimmed, FloatVal) then
+    Exit(FloatVal);
+  Result := Text;
+end;
+
+function DecodeUnknownBinary(const Data: TBytes): Variant;
+var
+  Trimmed: TBytes;
+begin
+  Trimmed := StripTrailingNulls(Data);
+  if (System.Length(Trimmed) > 0) and LooksLikeText(Trimmed) then
+    Exit(ParseUnknownText(TEncoding.UTF8.GetString(Trimmed)));
+  case System.Length(Data) of
+    1: Result := Integer(Data[0]);
+    2: Result := ReadInt16LE(Data, 0);
+    4: Result := Integer(ReadUInt32LE(Data, 0));
+    8: Result := Int64(ReadUInt64LE(Data, 0));
+    16: Result := BytesToUuid(Data);
   else
     Result := Data;
   end;

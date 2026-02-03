@@ -14,7 +14,7 @@ uses
   SysUtils, Classes;
 
 const
-  PROTOCOL_MAGIC = $53425750;
+  PROTOCOL_MAGIC = $50574253;
   PROTOCOL_VERSION_MAJOR = 1;
   PROTOCOL_VERSION_MINOR = 1;
   HEADER_SIZE = 40;
@@ -35,9 +35,27 @@ const
   MSG_SYNC = $09;
   MSG_FLUSH = $0A;
   MSG_CANCEL = $0B;
+  MSG_TERMINATE = $0C;
   MSG_COPY_DATA = $0D;
   MSG_COPY_DONE = $0E;
   MSG_COPY_FAIL = $0F;
+  MSG_SBLR_EXECUTE = $10;
+  MSG_SUBSCRIBE = $11;
+  MSG_UNSUBSCRIBE = $12;
+  MSG_FEDERATED_QUERY = $13;
+  MSG_STREAM_CONTROL = $14;
+  MSG_TXN_BEGIN = $15;
+  MSG_TXN_COMMIT = $16;
+  MSG_TXN_ROLLBACK = $17;
+  MSG_TXN_SAVEPOINT = $18;
+  MSG_TXN_RELEASE = $19;
+  MSG_TXN_ROLLBACK_TO = $1A;
+  MSG_PING = $1B;
+  MSG_SET_OPTION = $1C;
+  MSG_CLUSTER_AUTH = $1D;
+  MSG_ATTACH_CREATE = $1E;
+  MSG_ATTACH_DETACH = $1F;
+  MSG_ATTACH_LIST = $20;
 
   MSG_AUTH_REQUEST = $40;
   MSG_AUTH_OK = $41;
@@ -60,12 +78,19 @@ const
   MSG_COPY_OUT_RESPONSE = $52;
   MSG_COPY_BOTH_RESPONSE = $53;
   MSG_NOTIFICATION = $54;
+  MSG_FUNCTION_RESULT = $55;
   MSG_NEGOTIATE_VERSION = $56;
+  MSG_SBLR_COMPILED = $57;
+  MSG_QUERY_PLAN = $58;
   MSG_STREAM_READY = $59;
   MSG_STREAM_DATA = $5A;
   MSG_STREAM_END = $5B;
   MSG_TXN_STATUS = $5C;
   MSG_PONG = $5D;
+  MSG_CLUSTER_AUTH_OK = $5E;
+  MSG_FEDERATED_RESULT = $5F;
+  MSG_HEARTBEAT = $80;
+  MSG_EXTENSION = $81;
 
 type
   TAuthMethod = Byte;
@@ -105,6 +130,36 @@ const
   FEATURE_SAVEPOINTS = 512;
   FEATURE_2PC = 1024;
   FEATURE_CHECKSUMS = 2048;
+
+  QUERY_FLAG_DESCRIBE_ONLY = $01;
+  QUERY_FLAG_NO_PORTAL = $02;
+  QUERY_FLAG_BINARY_RESULT = $04;
+  QUERY_FLAG_INCLUDE_PLAN = $08;
+  QUERY_FLAG_RETURN_SBLR = $10;
+  QUERY_FLAG_NO_CACHE = $20;
+
+  ISOLATION_READ_UNCOMMITTED = 0;
+  ISOLATION_READ_COMMITTED = 1;
+  ISOLATION_REPEATABLE_READ = 2;
+  ISOLATION_SERIALIZABLE = 3;
+
+  TXN_FLAG_HAS_ISOLATION = $0001;
+  TXN_FLAG_HAS_ACCESS = $0002;
+  TXN_FLAG_HAS_DEFERRABLE = $0004;
+  TXN_FLAG_HAS_WAIT = $0008;
+  TXN_FLAG_HAS_TIMEOUT = $0010;
+  TXN_FLAG_HAS_AUTOCOMMIT = $0020;
+
+  STREAM_START = 0;
+  STREAM_PAUSE = 1;
+  STREAM_RESUME = 2;
+  STREAM_CANCEL = 3;
+  STREAM_ACK = 4;
+
+  SUB_TYPE_CHANNEL = 0;
+  SUB_TYPE_TABLE = 1;
+  SUB_TYPE_QUERY = 2;
+  SUB_TYPE_EVENT = 3;
 
 type
   TParamValue = record
@@ -152,6 +207,19 @@ function BuildBindPayload(const PortalName, StatementName: string; const Params:
 function BuildExecutePayload(const PortalName: string; MaxRows: Cardinal): TBytes;
 function BuildDescribePayload(DescribeType: Byte; const Name: string): TBytes;
 function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
+function BuildSblrExecutePayload(SblrHash: UInt64; const SblrBytecode: TBytes; const Params: array of TParamValue): TBytes;
+function BuildSubscribePayload(SubscribeType: Byte; const Channel, FilterExpr: string): TBytes;
+function BuildUnsubscribePayload(const Channel: string): TBytes;
+function BuildTxnBeginPayload(Flags: Word; ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode: Byte;
+  TimeoutMs: Cardinal): TBytes;
+function BuildTxnCommitPayload(Flags: Byte): TBytes;
+function BuildTxnRollbackPayload(Flags: Byte): TBytes;
+function BuildTxnSavepointPayload(const Name: string): TBytes;
+function BuildTxnReleasePayload(const Name: string): TBytes;
+function BuildTxnRollbackToPayload(const Name: string): TBytes;
+function BuildSetOptionPayload(const Name, Value: string): TBytes;
+function BuildStreamControlPayload(ControlType: Byte; WindowSize, TimeoutMs: Cardinal): TBytes;
+function BuildAttachCreatePayload(const EmulationMode, DbName: string): TBytes;
 
 procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TBytes);
 procedure ParseAuthContinue(const Payload: TBytes; out Method, Stage: Byte; out Data: TBytes);
@@ -424,6 +492,116 @@ end;
 function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
 begin
   Result := ConcatBytes(WriteUInt32LE(CancelType), WriteUInt32LE(TargetSequence));
+end;
+
+function BuildSblrExecutePayload(SblrHash: UInt64; const SblrBytecode: TBytes; const Params: array of TParamValue): TBytes;
+var
+  Payload: TBytes;
+  I: Integer;
+begin
+  Payload := WriteUInt64LE(SblrHash);
+  Payload := ConcatBytes(Payload, WriteUInt32LE(System.Length(SblrBytecode)));
+  Payload := ConcatBytes(Payload, WriteUInt16LE(Length(Params)));
+  Payload := ConcatBytes(Payload, WriteUInt16LE(0));
+  if System.Length(SblrBytecode) > 0 then
+    Payload := ConcatBytes(Payload, SblrBytecode);
+  for I := 0 to High(Params) do
+  begin
+    if Params[I].IsNull then
+      Payload := ConcatBytes(Payload, WriteInt32LE(-1))
+    else
+    begin
+      Payload := ConcatBytes(Payload, WriteInt32LE(System.Length(Params[I].Data)));
+      Payload := ConcatBytes(Payload, Params[I].Data);
+    end;
+  end;
+  Result := Payload;
+end;
+
+function BuildSubscribePayload(SubscribeType: Byte; const Channel, FilterExpr: string): TBytes;
+var
+  ChannelBytes, FilterBytes: TBytes;
+begin
+  ChannelBytes := TEncoding.UTF8.GetBytes(Channel);
+  FilterBytes := TEncoding.UTF8.GetBytes(FilterExpr);
+  Result := BytesOf([SubscribeType, 0, 0, 0]);
+  Result := ConcatBytes(Result, WriteUInt32LE(System.Length(ChannelBytes)));
+  Result := ConcatBytes(Result, ChannelBytes);
+  Result := ConcatBytes(Result, WriteUInt32LE(System.Length(FilterBytes)));
+  Result := ConcatBytes(Result, FilterBytes);
+end;
+
+function BuildUnsubscribePayload(const Channel: string): TBytes;
+var
+  ChannelBytes: TBytes;
+begin
+  ChannelBytes := TEncoding.UTF8.GetBytes(Channel);
+  Result := ConcatBytes(WriteUInt32LE(System.Length(ChannelBytes)), ChannelBytes);
+end;
+
+function BuildTxnBeginPayload(Flags: Word; ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode: Byte;
+  TimeoutMs: Cardinal): TBytes;
+begin
+  Result := WriteUInt16LE(Flags);
+  Result := ConcatBytes(Result, BytesOf([ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode]));
+  Result := ConcatBytes(Result, WriteUInt32LE(TimeoutMs));
+end;
+
+function BuildTxnCommitPayload(Flags: Byte): TBytes;
+begin
+  Result := BytesOf([Flags, 0, 0, 0]);
+end;
+
+function BuildTxnRollbackPayload(Flags: Byte): TBytes;
+begin
+  Result := BytesOf([Flags, 0, 0, 0]);
+end;
+
+function BuildTxnSavepointPayload(const Name: string): TBytes;
+var
+  NameBytes: TBytes;
+begin
+  NameBytes := TEncoding.UTF8.GetBytes(Name);
+  Result := ConcatBytes(WriteUInt32LE(System.Length(NameBytes)), NameBytes);
+end;
+
+function BuildTxnReleasePayload(const Name: string): TBytes;
+begin
+  Result := BuildTxnSavepointPayload(Name);
+end;
+
+function BuildTxnRollbackToPayload(const Name: string): TBytes;
+begin
+  Result := BuildTxnSavepointPayload(Name);
+end;
+
+function BuildSetOptionPayload(const Name, Value: string): TBytes;
+var
+  NameBytes, ValueBytes: TBytes;
+begin
+  NameBytes := TEncoding.UTF8.GetBytes(Name);
+  ValueBytes := TEncoding.UTF8.GetBytes(Value);
+  Result := ConcatBytes(WriteUInt32LE(System.Length(NameBytes)), NameBytes);
+  Result := ConcatBytes(Result, WriteUInt32LE(System.Length(ValueBytes)));
+  Result := ConcatBytes(Result, ValueBytes);
+end;
+
+function BuildStreamControlPayload(ControlType: Byte; WindowSize, TimeoutMs: Cardinal): TBytes;
+begin
+  Result := BytesOf([ControlType, 0, 0, 0]);
+  Result := ConcatBytes(Result, WriteUInt32LE(WindowSize));
+  Result := ConcatBytes(Result, WriteUInt32LE(TimeoutMs));
+end;
+
+function BuildAttachCreatePayload(const EmulationMode, DbName: string): TBytes;
+var
+  ModeBytes, DbBytes: TBytes;
+begin
+  ModeBytes := TEncoding.UTF8.GetBytes(EmulationMode);
+  DbBytes := TEncoding.UTF8.GetBytes(DbName);
+  Result := ConcatBytes(WriteUInt32LE(System.Length(ModeBytes)), ModeBytes);
+  Result := ConcatBytes(Result, WriteUInt32LE(System.Length(DbBytes)));
+  Result := ConcatBytes(Result, DbBytes);
 end;
 
 procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TBytes);

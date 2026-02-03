@@ -526,6 +526,14 @@ internal static class TypeDecoder
         {
             return null;
         }
+        if (typeOid == 0)
+        {
+            if (format == FormatText)
+            {
+                return ParseUnknownText(DecodeTextValue(data).ToString() ?? string.Empty);
+            }
+            return DecodeUnknownBinary(data);
+        }
         if (format == FormatText)
         {
             return DecodeTextValue(data);
@@ -703,6 +711,86 @@ internal static class TypeDecoder
             }
         }
         return Encoding.UTF8.GetString(data);
+    }
+
+    private static object DecodeUnknownBinary(byte[] data)
+    {
+        var trimmed = StripTrailingNulls(data);
+        if (trimmed.Length > 0 && LooksLikeText(trimmed))
+        {
+            return ParseUnknownText(Encoding.UTF8.GetString(trimmed));
+        }
+        return data.Length switch
+        {
+            1 => (int)data[0],
+            2 => BinaryPrimitives.ReadInt16LittleEndian(data),
+            4 => BinaryPrimitives.ReadInt32LittleEndian(data),
+            8 => BinaryPrimitives.ReadInt64LittleEndian(data),
+            16 => Guid.Parse(BytesToUuid(data)),
+            _ => data
+        };
+    }
+
+    private static object ParseUnknownText(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0)
+        {
+            return text;
+        }
+        if (string.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        if (long.TryParse(trimmed, out var intValue))
+        {
+            if (intValue >= int.MinValue && intValue <= int.MaxValue)
+            {
+                return (int)intValue;
+            }
+            return intValue;
+        }
+        if (double.TryParse(trimmed, out var floatValue))
+        {
+            return floatValue;
+        }
+        return text;
+    }
+
+    private static byte[] StripTrailingNulls(byte[] data)
+    {
+        var end = data.Length;
+        while (end > 0 && data[end - 1] == 0)
+        {
+            end--;
+        }
+        if (end == data.Length)
+        {
+            return data;
+        }
+        var trimmed = new byte[end];
+        Buffer.BlockCopy(data, 0, trimmed, 0, end);
+        return trimmed;
+    }
+
+    private static bool LooksLikeText(byte[] data)
+    {
+        foreach (var b in data)
+        {
+            if (b == 0x09 || b == 0x0a || b == 0x0d)
+            {
+                continue;
+            }
+            if (b < 0x20 || b > 0x7e)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static byte[] EncodeLengthPrefixed(byte[] data)

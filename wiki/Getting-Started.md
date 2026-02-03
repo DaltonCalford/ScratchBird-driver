@@ -120,3 +120,9 @@ Connection conn = DriverManager.getConnection(
 ```
 
 See the [Drivers](Drivers) page for complete examples for all languages.
+
+## CLI Tools
+
+Native and emulated protocol CLI tools are documented here:
+
+- [CLI Tools](cli-tools/README)

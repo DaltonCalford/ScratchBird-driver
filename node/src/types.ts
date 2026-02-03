@@ -424,6 +424,12 @@ export function decodeValue(typeOid: number, data: Buffer | null, format: number
   if (data === null) {
     return null;
   }
+  if (typeOid === 0) {
+    if (format === FORMAT_TEXT) {
+      return parseUnknownText(decodeTextValue(data));
+    }
+    return decodeUnknownBinary(data);
+  }
   if (format === FORMAT_TEXT) {
     return decodeTextValue(data);
   }
@@ -581,6 +587,75 @@ function decodeTextValue(data: Buffer): string {
     }
   }
   return data.toString("utf8");
+}
+
+function decodeUnknownBinary(data: Buffer): any {
+  const trimmed = stripTrailingNulls(data);
+  if (trimmed.length > 0 && looksLikeText(trimmed)) {
+    return parseUnknownText(trimmed.toString("utf8"));
+  }
+  switch (data.length) {
+    case 1:
+      return data[0];
+    case 2:
+      return data.readInt16LE(0);
+    case 4:
+      return data.readInt32LE(0);
+    case 8:
+      return data.readBigInt64LE(0);
+    case 16:
+      return bytesToUuid(data);
+    default:
+      return Buffer.from(data);
+  }
+}
+
+function parseUnknownText(text: string): any {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return text;
+  }
+  if (/^(true|false)$/i.test(trimmed)) {
+    return trimmed.toLowerCase() === "true";
+  }
+  if (/^[+-]?\d+$/.test(trimmed)) {
+    const asNum = Number(trimmed);
+    if (Number.isSafeInteger(asNum) && String(asNum) === trimmed) {
+      return asNum;
+    }
+    try {
+      return BigInt(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (/^[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
+    const asNum = Number(trimmed);
+    if (!Number.isNaN(asNum)) {
+      return asNum;
+    }
+  }
+  return text;
+}
+
+function stripTrailingNulls(data: Buffer): Buffer {
+  let end = data.length;
+  while (end > 0 && data[end - 1] === 0) {
+    end -= 1;
+  }
+  return data.subarray(0, end);
+}
+
+function looksLikeText(data: Buffer): boolean {
+  for (const byte of data) {
+    if (byte === 0x09 || byte === 0x0a || byte === 0x0d) {
+      continue;
+    }
+    if (byte < 0x20 || byte > 0x7e) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function encodeLengthPrefixed(data: Buffer): Buffer {

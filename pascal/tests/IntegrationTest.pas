@@ -42,7 +42,7 @@ begin
     if (Length(Row) = 0) or (Row[0] <> 42) then
       raise Exception.Create('Prepare/bind failed');
 
-    Stream := Client.ExecuteQuery('SELECT * FROM sb_conformance.type_coverage');
+    Stream := Client.ExecuteQuery('SELECT * FROM type_coverage');
     Row := Stream.ReadRow;
     if Length(Row) = 0 then
       raise Exception.Create('Types fixture returned no rows');

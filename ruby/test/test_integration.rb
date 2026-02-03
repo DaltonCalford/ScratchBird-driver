@@ -40,7 +40,7 @@ class TestIntegration < Minitest::Test
 
     conn = Scratchbird.connect(dsn)
     begin
-      result = conn.query("SELECT * FROM sb_conformance.type_coverage")
+      result = conn.query("SELECT * FROM type_coverage")
       refute result.rows.empty?
     ensure
       conn.close

@@ -50,6 +50,10 @@ func hasNamedParams(query string) bool {
 		if inString {
 			continue
 		}
+		if ch == ':' && query[i+1] == ':' {
+			i++
+			continue
+		}
 		if (ch == '@' || ch == ':') && isIdentStart(query[i+1]) {
 			return true
 		}
@@ -73,6 +77,11 @@ func rewriteNamedParams(query string, args []driver.NamedValue) (string, []drive
 			inString = !inString
 			sb.WriteByte(ch)
 			i++
+			continue
+		}
+		if !inString && ch == ':' && i+1 < len(query) && query[i+1] == ':' {
+			sb.WriteString("::")
+			i += 2
 			continue
 		}
 		if !inString && (ch == '@' || ch == ':') && i+1 < len(query) && isIdentStart(query[i+1]) {

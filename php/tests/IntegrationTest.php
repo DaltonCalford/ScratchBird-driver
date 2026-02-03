@@ -46,7 +46,7 @@ final class IntegrationTest extends TestCase
             $this->markTestSkipped('SCRATCHBIRD_PHP_URL not set');
         }
         $pdo = new ScratchBirdPDO($dsn);
-        $stmt = $pdo->query('SELECT * FROM sb_conformance.type_coverage');
+        $stmt = $pdo->query('SELECT * FROM type_coverage');
         $row = $stmt->fetch(\PDO::FETCH_NUM);
         $this->assertNotFalse($row);
     }

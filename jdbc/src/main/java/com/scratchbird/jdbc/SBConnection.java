@@ -50,7 +50,7 @@ public class SBConnection implements Connection {
     private int holdability = ResultSet.HOLD_CURSORS_OVER_COMMIT;
     private Map<String, Class<?>> typeMap = new HashMap<>();
 
-    // Network protocol handler (stub for now)
+    // Network protocol handler
     private SBProtocolHandler protocol;
 
     // Warnings
@@ -225,6 +225,9 @@ public class SBConnection implements Connection {
             }
             this.autoCommit = autoCommit;
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
+            if (!autoCommit) {
+                protocol.beginTransaction();
+            }
         }
     }
 
@@ -240,7 +243,7 @@ public class SBConnection implements Connection {
         if (autoCommit) {
             throw new SQLException("Cannot commit when autoCommit is enabled", "25000");
         }
-        protocol.execute("COMMIT");
+        protocol.commitTransaction((byte) 0);
     }
 
     @Override
@@ -249,7 +252,7 @@ public class SBConnection implements Connection {
         if (autoCommit) {
             throw new SQLException("Cannot rollback when autoCommit is enabled", "25000");
         }
-        protocol.execute("ROLLBACK");
+        protocol.rollbackTransaction((byte) 0);
     }
 
     @Override
@@ -262,7 +265,7 @@ public class SBConnection implements Connection {
             throw new SQLException("Savepoint cannot be null", "HY000");
         }
         String name = ((SBSavepoint) savepoint).getSavepointName();
-        protocol.execute("ROLLBACK TO SAVEPOINT " + name);
+        protocol.rollbackToSavepoint(name);
     }
 
     @Override
@@ -403,7 +406,7 @@ public class SBConnection implements Connection {
             throw new SQLException("Cannot set savepoint when autoCommit is enabled", "25000");
         }
         String name = "sp_" + (++savepointCounter);
-        protocol.execute("SAVEPOINT " + name);
+        protocol.savepoint(name);
         return new SBSavepoint(savepointCounter, name);
     }
 
@@ -416,7 +419,7 @@ public class SBConnection implements Connection {
         if (name == null || name.isEmpty()) {
             throw new SQLException("Savepoint name cannot be null or empty", "HY000");
         }
-        protocol.execute("SAVEPOINT " + name);
+        protocol.savepoint(name);
         return new SBSavepoint(0, name);
     }
 
@@ -427,7 +430,7 @@ public class SBConnection implements Connection {
             throw new SQLException("Savepoint cannot be null", "HY000");
         }
         String name = ((SBSavepoint) savepoint).getSavepointName();
-        protocol.execute("RELEASE SAVEPOINT " + name);
+        protocol.releaseSavepoint(name);
     }
 
     @Override

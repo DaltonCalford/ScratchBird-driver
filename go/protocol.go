@@ -36,9 +36,27 @@ const (
 	msgSync        messageType = 0x09
 	msgFlush       messageType = 0x0A
 	msgCancel      messageType = 0x0B
+	msgTerminate   messageType = 0x0C
 	msgCopyData    messageType = 0x0D
 	msgCopyDone    messageType = 0x0E
 	msgCopyFail    messageType = 0x0F
+	msgSblrExecute messageType = 0x10
+	msgSubscribe   messageType = 0x11
+	msgUnsubscribe messageType = 0x12
+	msgFederatedQuery messageType = 0x13
+	msgStreamControl  messageType = 0x14
+	msgTxnBegin    messageType = 0x15
+	msgTxnCommit   messageType = 0x16
+	msgTxnRollback messageType = 0x17
+	msgTxnSavepoint messageType = 0x18
+	msgTxnRelease   messageType = 0x19
+	msgTxnRollbackTo messageType = 0x1A
+	msgPing        messageType = 0x1B
+	msgSetOption   messageType = 0x1C
+	msgClusterAuth messageType = 0x1D
+	msgAttachCreate messageType = 0x1E
+	msgAttachDetach messageType = 0x1F
+	msgAttachList  messageType = 0x20
 
 	msgAuthRequest       messageType = 0x40
 	msgAuthOk            messageType = 0x41
@@ -61,12 +79,19 @@ const (
 	msgCopyOutResponse   messageType = 0x52
 	msgCopyBothResponse  messageType = 0x53
 	msgNotification      messageType = 0x54
+	msgFunctionResult    messageType = 0x55
 	msgNegotiateVersion  messageType = 0x56
+	msgSblrCompiled      messageType = 0x57
+	msgQueryPlan         messageType = 0x58
 	msgStreamReady       messageType = 0x59
 	msgStreamData        messageType = 0x5A
 	msgStreamEnd         messageType = 0x5B
 	msgTxnStatus         messageType = 0x5C
 	msgPong              messageType = 0x5D
+	msgClusterAuthOk     messageType = 0x5E
+	msgFederatedResult   messageType = 0x5F
+	msgHeartbeat         messageType = 0x80
+	msgExtension         messageType = 0x81
 )
 
 const (
@@ -91,6 +116,46 @@ const (
 	featureSavepoints    uint64 = 1 << 9
 	feature2PC           uint64 = 1 << 10
 	featureChecksums     uint64 = 1 << 11
+)
+
+const (
+	queryFlagDescribeOnly uint32 = 0x01
+	queryFlagNoPortal     uint32 = 0x02
+	queryFlagBinaryResult uint32 = 0x04
+	queryFlagIncludePlan  uint32 = 0x08
+	queryFlagReturnSblr   uint32 = 0x10
+	queryFlagNoCache      uint32 = 0x20
+)
+
+const (
+	isolationReadUncommitted byte = 0
+	isolationReadCommitted   byte = 1
+	isolationRepeatableRead  byte = 2
+	isolationSerializable    byte = 3
+)
+
+const (
+	txnFlagHasIsolation uint16 = 0x0001
+	txnFlagHasAccess    uint16 = 0x0002
+	txnFlagHasDeferrable uint16 = 0x0004
+	txnFlagHasWait      uint16 = 0x0008
+	txnFlagHasTimeout   uint16 = 0x0010
+	txnFlagHasAutocommit uint16 = 0x0020
+)
+
+const (
+	streamStart  byte = 0
+	streamPause  byte = 1
+	streamResume byte = 2
+	streamCancel byte = 3
+	streamAck    byte = 4
+)
+
+const (
+	subTypeChannel byte = 0
+	subTypeTable   byte = 1
+	subTypeQuery   byte = 2
+	subTypeEvent   byte = 3
 )
 
 type authMethod byte
@@ -142,7 +207,7 @@ type columnValue struct {
 
 func encodeMessage(header messageHeader, payload []byte) []byte {
 	buf := make([]byte, headerSize+len(payload))
-	binary.LittleEndian.PutUint32(buf[0:4], protocolMagic)
+	copy(buf[0:4], []byte("SBWP"))
 	buf[4] = protocolMajor
 	buf[5] = protocolMinor
 	buf[6] = byte(header.typ)
@@ -159,8 +224,7 @@ func decodeHeader(header []byte) (messageHeader, error) {
 	if len(header) != headerSize {
 		return messageHeader{}, errors.New("invalid header length")
 	}
-	magic := binary.LittleEndian.Uint32(header[0:4])
-	if magic != protocolMagic {
+	if string(header[0:4]) != "SBWP" {
 		return messageHeader{}, errors.New("invalid protocol magic")
 	}
 	major := header[4]
@@ -377,6 +441,138 @@ func buildExecutePayload(portalName string, maxRows uint32) []byte {
 	return payload
 }
 
+func buildSblrExecutePayload(sblrHash uint64, bytecode []byte, params []paramValue) []byte {
+	payloadLen := 8 + 4 + 2 + 2 + len(bytecode)
+	for _, param := range params {
+		payloadLen += 4
+		if !param.null {
+			payloadLen += len(param.data)
+		}
+	}
+	payload := make([]byte, payloadLen)
+	offset := 0
+	binary.LittleEndian.PutUint64(payload[offset:offset+8], sblrHash)
+	offset += 8
+	binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(bytecode)))
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:offset+2], uint16(len(params)))
+	offset += 2
+	binary.LittleEndian.PutUint16(payload[offset:offset+2], 0)
+	offset += 2
+	copy(payload[offset:offset+len(bytecode)], bytecode)
+	offset += len(bytecode)
+	for _, param := range params {
+		if param.null {
+			binary.LittleEndian.PutUint32(payload[offset:offset+4], 0xFFFFFFFF)
+			offset += 4
+			continue
+		}
+		binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(param.data)))
+		offset += 4
+		copy(payload[offset:offset+len(param.data)], param.data)
+		offset += len(param.data)
+	}
+	return payload
+}
+
+func buildSubscribePayload(subscribeType uint8, channel, filter string) []byte {
+	channelBytes := []byte(channel)
+	filterBytes := []byte(filter)
+	payloadLen := 4 + 4 + len(channelBytes) + 4 + len(filterBytes)
+	payload := make([]byte, payloadLen)
+	payload[0] = subscribeType
+	offset := 4
+	binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(channelBytes)))
+	offset += 4
+	copy(payload[offset:offset+len(channelBytes)], channelBytes)
+	offset += len(channelBytes)
+	binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(filterBytes)))
+	offset += 4
+	copy(payload[offset:offset+len(filterBytes)], filterBytes)
+	return payload
+}
+
+func buildUnsubscribePayload(channel string) []byte {
+	channelBytes := []byte(channel)
+	payload := make([]byte, 4+len(channelBytes))
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(len(channelBytes)))
+	copy(payload[4:], channelBytes)
+	return payload
+}
+
+func buildTxnBeginPayload(flags uint16, conflictAction uint8, autocommitMode uint8, isolationLevel uint8, accessMode uint8, deferrable uint8, waitMode uint8, timeoutMs uint32) []byte {
+	payload := make([]byte, 2+1+1+1+1+1+1+4)
+	binary.LittleEndian.PutUint16(payload[0:2], flags)
+	payload[2] = conflictAction
+	payload[3] = autocommitMode
+	payload[4] = isolationLevel
+	payload[5] = accessMode
+	payload[6] = deferrable
+	payload[7] = waitMode
+	binary.LittleEndian.PutUint32(payload[8:12], timeoutMs)
+	return payload
+}
+
+func buildTxnCommitPayload(flags uint8) []byte {
+	payload := make([]byte, 4)
+	payload[0] = flags
+	return payload
+}
+
+func buildTxnRollbackPayload(flags uint8) []byte {
+	payload := make([]byte, 4)
+	payload[0] = flags
+	return payload
+}
+
+func buildTxnSavepointPayload(name string) []byte {
+	nameBytes := []byte(name)
+	payload := make([]byte, 4+len(nameBytes))
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(len(nameBytes)))
+	copy(payload[4:], nameBytes)
+	return payload
+}
+
+func buildTxnReleasePayload(name string) []byte {
+	return buildTxnSavepointPayload(name)
+}
+
+func buildTxnRollbackToPayload(name string) []byte {
+	return buildTxnSavepointPayload(name)
+}
+
+func buildSetOptionPayload(name, value string) []byte {
+	nameBytes := []byte(name)
+	valueBytes := []byte(value)
+	payload := make([]byte, 4+len(nameBytes)+4+len(valueBytes))
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(len(nameBytes)))
+	copy(payload[4:4+len(nameBytes)], nameBytes)
+	offset := 4 + len(nameBytes)
+	binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(valueBytes)))
+	copy(payload[offset+4:], valueBytes)
+	return payload
+}
+
+func buildStreamControlPayload(controlType uint8, windowSize uint32, timeoutMs uint32) []byte {
+	payload := make([]byte, 8+4)
+	payload[0] = controlType
+	binary.LittleEndian.PutUint32(payload[4:8], windowSize)
+	binary.LittleEndian.PutUint32(payload[8:12], timeoutMs)
+	return payload
+}
+
+func buildAttachCreatePayload(mode, dbName string) []byte {
+	modeBytes := []byte(mode)
+	dbBytes := []byte(dbName)
+	payload := make([]byte, 4+len(modeBytes)+4+len(dbBytes))
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(len(modeBytes)))
+	copy(payload[4:4+len(modeBytes)], modeBytes)
+	offset := 4 + len(modeBytes)
+	binary.LittleEndian.PutUint32(payload[offset:offset+4], uint32(len(dbBytes)))
+	copy(payload[offset+4:], dbBytes)
+	return payload
+}
+
 func buildClosePayload(closeType byte, name string) []byte {
 	nameBytes := []byte(name)
 	payload := make([]byte, 4+4+len(nameBytes))
@@ -550,6 +746,107 @@ func parseCommandComplete(payload []byte) (byte, uint64, uint64, string, error) 
 		}
 	}
 	return commandType, rows, lastID, tag, nil
+}
+
+type notificationMessage struct {
+	processID uint32
+	channel   string
+	payload   []byte
+	change    byte
+	rowID     uint64
+	hasRow    bool
+}
+
+func parseNotification(payload []byte) (notificationMessage, error) {
+	if len(payload) < 12 {
+		return notificationMessage{}, errors.New("notification truncated")
+	}
+	offset := 0
+	processID := binary.LittleEndian.Uint32(payload[offset : offset+4])
+	offset += 4
+	channelLen := int(binary.LittleEndian.Uint32(payload[offset : offset+4]))
+	offset += 4
+	if offset+channelLen+4 > len(payload) {
+		return notificationMessage{}, errors.New("notification truncated")
+	}
+	channel := string(payload[offset : offset+channelLen])
+	offset += channelLen
+	payloadLen := int(binary.LittleEndian.Uint32(payload[offset : offset+4]))
+	offset += 4
+	if offset+payloadLen > len(payload) {
+		return notificationMessage{}, errors.New("notification truncated")
+	}
+	data := payload[offset : offset+payloadLen]
+	offset += payloadLen
+	var change byte
+	var rowID uint64
+	hasRow := false
+	if offset < len(payload) {
+		change = payload[offset]
+		offset++
+		if offset+8 <= len(payload) {
+			rowID = binary.LittleEndian.Uint64(payload[offset : offset+8])
+			hasRow = true
+		}
+	}
+	return notificationMessage{
+		processID: processID,
+		channel:   channel,
+		payload:   append([]byte(nil), data...),
+		change:    change,
+		rowID:     rowID,
+		hasRow:    hasRow,
+	}, nil
+}
+
+type queryPlan struct {
+	format        uint32
+	planningTime  uint64
+	estimatedRows uint64
+	estimatedCost uint64
+	plan          []byte
+}
+
+func parseQueryPlan(payload []byte) (queryPlan, error) {
+	if len(payload) < 32 {
+		return queryPlan{}, errors.New("query plan truncated")
+	}
+	format := binary.LittleEndian.Uint32(payload[0:4])
+	planLength := int(binary.LittleEndian.Uint32(payload[4:8]))
+	planning := binary.LittleEndian.Uint64(payload[8:16])
+	estimatedRows := binary.LittleEndian.Uint64(payload[16:24])
+	estimatedCost := binary.LittleEndian.Uint64(payload[24:32])
+	if 32+planLength > len(payload) {
+		return queryPlan{}, errors.New("query plan truncated")
+	}
+	plan := payload[32 : 32+planLength]
+	return queryPlan{
+		format:        format,
+		planningTime:  planning,
+		estimatedRows: estimatedRows,
+		estimatedCost: estimatedCost,
+		plan:          append([]byte(nil), plan...),
+	}, nil
+}
+
+type sblrCompiled struct {
+	hash     uint64
+	version  uint32
+	bytecode []byte
+}
+
+func parseSblrCompiled(payload []byte) (sblrCompiled, error) {
+	if len(payload) < 16 {
+		return sblrCompiled{}, errors.New("sblr compiled truncated")
+	}
+	hash := binary.LittleEndian.Uint64(payload[0:8])
+	version := binary.LittleEndian.Uint32(payload[8:12])
+	length := int(binary.LittleEndian.Uint32(payload[12:16]))
+	if 16+length > len(payload) {
+		return sblrCompiled{}, errors.New("sblr compiled truncated")
+	}
+	bytecode := payload[16 : 16+length]
+	return sblrCompiled{hash: hash, version: version, bytecode: append([]byte(nil), bytecode...)}, nil
 }
 
 func parseErrorMessage(payload []byte) (string, string, string, string, string, error) {

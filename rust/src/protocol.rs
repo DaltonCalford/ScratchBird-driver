@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, ErrorKind, Result};
 
-pub const MAGIC: u32 = 0x53425750;
+pub const MAGIC_BYTES: [u8; 4] = *b"SBWP";
 pub const VERSION_MAJOR: u8 = 1;
 pub const VERSION_MINOR: u8 = 1;
 pub const HEADER_SIZE: usize = 40;
@@ -26,9 +26,27 @@ pub const MSG_CLOSE: u8 = 0x08;
 pub const MSG_SYNC: u8 = 0x09;
 pub const MSG_FLUSH: u8 = 0x0A;
 pub const MSG_CANCEL: u8 = 0x0B;
+pub const MSG_TERMINATE: u8 = 0x0C;
 pub const MSG_COPY_DATA: u8 = 0x0D;
 pub const MSG_COPY_DONE: u8 = 0x0E;
 pub const MSG_COPY_FAIL: u8 = 0x0F;
+pub const MSG_SBLR_EXECUTE: u8 = 0x10;
+pub const MSG_SUBSCRIBE: u8 = 0x11;
+pub const MSG_UNSUBSCRIBE: u8 = 0x12;
+pub const MSG_FEDERATED_QUERY: u8 = 0x13;
+pub const MSG_STREAM_CONTROL: u8 = 0x14;
+pub const MSG_TXN_BEGIN: u8 = 0x15;
+pub const MSG_TXN_COMMIT: u8 = 0x16;
+pub const MSG_TXN_ROLLBACK: u8 = 0x17;
+pub const MSG_TXN_SAVEPOINT: u8 = 0x18;
+pub const MSG_TXN_RELEASE: u8 = 0x19;
+pub const MSG_TXN_ROLLBACK_TO: u8 = 0x1A;
+pub const MSG_PING: u8 = 0x1B;
+pub const MSG_SET_OPTION: u8 = 0x1C;
+pub const MSG_CLUSTER_AUTH: u8 = 0x1D;
+pub const MSG_ATTACH_CREATE: u8 = 0x1E;
+pub const MSG_ATTACH_DETACH: u8 = 0x1F;
+pub const MSG_ATTACH_LIST: u8 = 0x20;
 
 pub const MSG_AUTH_REQUEST: u8 = 0x40;
 pub const MSG_AUTH_OK: u8 = 0x41;
@@ -51,12 +69,19 @@ pub const MSG_COPY_IN_RESPONSE: u8 = 0x51;
 pub const MSG_COPY_OUT_RESPONSE: u8 = 0x52;
 pub const MSG_COPY_BOTH_RESPONSE: u8 = 0x53;
 pub const MSG_NOTIFICATION: u8 = 0x54;
+pub const MSG_FUNCTION_RESULT: u8 = 0x55;
 pub const MSG_NEGOTIATE_VERSION: u8 = 0x56;
+pub const MSG_SBLR_COMPILED: u8 = 0x57;
+pub const MSG_QUERY_PLAN: u8 = 0x58;
 pub const MSG_STREAM_READY: u8 = 0x59;
 pub const MSG_STREAM_DATA: u8 = 0x5A;
 pub const MSG_STREAM_END: u8 = 0x5B;
 pub const MSG_TXN_STATUS: u8 = 0x5C;
 pub const MSG_PONG: u8 = 0x5D;
+pub const MSG_CLUSTER_AUTH_OK: u8 = 0x5E;
+pub const MSG_FEDERATED_RESULT: u8 = 0x5F;
+pub const MSG_HEARTBEAT: u8 = 0x80;
+pub const MSG_EXTENSION: u8 = 0x81;
 
 pub const MSG_FLAG_COMPRESSED: u8 = 0x01;
 pub const MSG_FLAG_CONTINUED: u8 = 0x02;
@@ -77,6 +102,36 @@ pub const FEATURE_BINARY_COPY: u64 = 1 << 8;
 pub const FEATURE_SAVEPOINTS: u64 = 1 << 9;
 pub const FEATURE_2PC: u64 = 1 << 10;
 pub const FEATURE_CHECKSUMS: u64 = 1 << 11;
+
+pub const QUERY_FLAG_DESCRIBE_ONLY: u32 = 0x01;
+pub const QUERY_FLAG_NO_PORTAL: u32 = 0x02;
+pub const QUERY_FLAG_BINARY_RESULT: u32 = 0x04;
+pub const QUERY_FLAG_INCLUDE_PLAN: u32 = 0x08;
+pub const QUERY_FLAG_RETURN_SBLR: u32 = 0x10;
+pub const QUERY_FLAG_NO_CACHE: u32 = 0x20;
+
+pub const ISOLATION_READ_UNCOMMITTED: u8 = 0;
+pub const ISOLATION_READ_COMMITTED: u8 = 1;
+pub const ISOLATION_REPEATABLE_READ: u8 = 2;
+pub const ISOLATION_SERIALIZABLE: u8 = 3;
+
+pub const TXN_FLAG_HAS_ISOLATION: u16 = 0x0001;
+pub const TXN_FLAG_HAS_ACCESS: u16 = 0x0002;
+pub const TXN_FLAG_HAS_DEFERRABLE: u16 = 0x0004;
+pub const TXN_FLAG_HAS_WAIT: u16 = 0x0008;
+pub const TXN_FLAG_HAS_TIMEOUT: u16 = 0x0010;
+pub const TXN_FLAG_HAS_AUTOCOMMIT: u16 = 0x0020;
+
+pub const STREAM_START: u8 = 0;
+pub const STREAM_PAUSE: u8 = 1;
+pub const STREAM_RESUME: u8 = 2;
+pub const STREAM_CANCEL: u8 = 3;
+pub const STREAM_ACK: u8 = 4;
+
+pub const SUB_TYPE_CHANNEL: u8 = 0;
+pub const SUB_TYPE_TABLE: u8 = 1;
+pub const SUB_TYPE_QUERY: u8 = 2;
+pub const SUB_TYPE_EVENT: u8 = 3;
 
 pub const AUTH_OK: u8 = 0;
 pub const AUTH_PASSWORD: u8 = 1;
@@ -130,9 +185,34 @@ pub struct ParamValue {
     pub data: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub process_id: u32,
+    pub channel: String,
+    pub payload: Vec<u8>,
+    pub change_type: Option<char>,
+    pub row_id: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryPlan {
+    pub format: u32,
+    pub planning_time_us: u64,
+    pub estimated_rows: u64,
+    pub estimated_cost: u64,
+    pub plan: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SblrCompiled {
+    pub hash: u64,
+    pub version: u32,
+    pub bytecode: Vec<u8>,
+}
+
 pub fn encode_message(header: &MessageHeader, payload: &[u8]) -> Vec<u8> {
     let mut out = vec![0u8; HEADER_SIZE + payload.len()];
-    out[0..4].copy_from_slice(&MAGIC.to_le_bytes());
+    out[0..4].copy_from_slice(&MAGIC_BYTES);
     out[4] = VERSION_MAJOR;
     out[5] = VERSION_MINOR;
     out[6] = header.msg_type;
@@ -149,8 +229,7 @@ pub fn decode_header(data: &[u8]) -> Result<MessageHeader> {
     if data.len() != HEADER_SIZE {
         return Err(Error::new(ErrorKind::Connection, "invalid header length"));
     }
-    let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-    if magic != MAGIC {
+    if data[0..4] != MAGIC_BYTES {
         return Err(Error::new(ErrorKind::Connection, "invalid protocol magic"));
     }
     if data[4] != VERSION_MAJOR || data[5] != VERSION_MINOR {
@@ -322,6 +401,123 @@ pub fn build_cancel_payload(cancel_type: u32, target_sequence: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(8);
     out.extend_from_slice(&cancel_type.to_le_bytes());
     out.extend_from_slice(&target_sequence.to_le_bytes());
+    out
+}
+
+pub fn build_sblr_execute_payload(sblr_hash: u64, sblr_bytecode: &[u8], params: &[ParamValue]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&sblr_hash.to_le_bytes());
+    out.extend_from_slice(&(sblr_bytecode.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(params.len() as u16).to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(sblr_bytecode);
+    for param in params {
+        match param.data {
+            None => out.extend_from_slice(&(-1i32).to_le_bytes()),
+            Some(ref data) => {
+                out.extend_from_slice(&(data.len() as i32).to_le_bytes());
+                out.extend_from_slice(data);
+            }
+        }
+    }
+    out
+}
+
+pub fn build_subscribe_payload(subscribe_type: u8, channel: &str, filter_expr: &str) -> Vec<u8> {
+    let channel_bytes = channel.as_bytes();
+    let filter_bytes = filter_expr.as_bytes();
+    let mut out = Vec::with_capacity(8 + channel_bytes.len() + filter_bytes.len());
+    out.push(subscribe_type);
+    out.extend_from_slice(&[0, 0, 0]);
+    out.extend_from_slice(&(channel_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(channel_bytes);
+    out.extend_from_slice(&(filter_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(filter_bytes);
+    out
+}
+
+pub fn build_unsubscribe_payload(channel: &str) -> Vec<u8> {
+    let channel_bytes = channel.as_bytes();
+    let mut out = Vec::with_capacity(4 + channel_bytes.len());
+    out.extend_from_slice(&(channel_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(channel_bytes);
+    out
+}
+
+pub fn build_txn_begin_payload(
+    flags: u16,
+    conflict_action: u8,
+    autocommit_mode: u8,
+    isolation_level: u8,
+    access_mode: u8,
+    deferrable: u8,
+    wait_mode: u8,
+    timeout_ms: u32,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12);
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.push(conflict_action);
+    out.push(autocommit_mode);
+    out.push(isolation_level);
+    out.push(access_mode);
+    out.push(deferrable);
+    out.push(wait_mode);
+    out.extend_from_slice(&timeout_ms.to_le_bytes());
+    out
+}
+
+pub fn build_txn_commit_payload(flags: u8) -> Vec<u8> {
+    vec![flags, 0, 0, 0]
+}
+
+pub fn build_txn_rollback_payload(flags: u8) -> Vec<u8> {
+    vec![flags, 0, 0, 0]
+}
+
+pub fn build_txn_savepoint_payload(name: &str) -> Vec<u8> {
+    let name_bytes = name.as_bytes();
+    let mut out = Vec::with_capacity(4 + name_bytes.len());
+    out.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(name_bytes);
+    out
+}
+
+pub fn build_txn_release_payload(name: &str) -> Vec<u8> {
+    build_txn_savepoint_payload(name)
+}
+
+pub fn build_txn_rollback_to_payload(name: &str) -> Vec<u8> {
+    build_txn_savepoint_payload(name)
+}
+
+pub fn build_set_option_payload(name: &str, value: &str) -> Vec<u8> {
+    let name_bytes = name.as_bytes();
+    let value_bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(8 + name_bytes.len() + value_bytes.len());
+    out.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(name_bytes);
+    out.extend_from_slice(&(value_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(value_bytes);
+    out
+}
+
+pub fn build_stream_control_payload(control_type: u8, window_size: u32, timeout_ms: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12);
+    out.push(control_type);
+    out.extend_from_slice(&[0, 0, 0]);
+    out.extend_from_slice(&window_size.to_le_bytes());
+    out.extend_from_slice(&timeout_ms.to_le_bytes());
+    out
+}
+
+pub fn build_attach_create_payload(emulation_mode: &str, db_name: &str) -> Vec<u8> {
+    let mode_bytes = emulation_mode.as_bytes();
+    let db_bytes = db_name.as_bytes();
+    let mut out = Vec::with_capacity(8 + mode_bytes.len() + db_bytes.len());
+    out.extend_from_slice(&(mode_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(mode_bytes);
+    out.extend_from_slice(&(db_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(db_bytes);
     out
 }
 
@@ -514,6 +710,86 @@ pub fn parse_command_complete(payload: &[u8]) -> Result<(u8, u64, u64, String)> 
     let null_pos = tag_bytes.iter().position(|b| *b == 0).unwrap_or(tag_bytes.len());
     let tag = String::from_utf8_lossy(&tag_bytes[..null_pos]).to_string();
     Ok((command_type, rows, last_id, tag))
+}
+
+pub fn parse_notification(payload: &[u8]) -> Result<Notification> {
+    if payload.len() < 12 {
+        return Err(Error::new(ErrorKind::Connection, "notification truncated"));
+    }
+    let mut offset = 0;
+    let process_id = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4]));
+    offset += 4;
+    let channel_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
+    offset += 4;
+    if offset + channel_len + 4 > payload.len() {
+        return Err(Error::new(ErrorKind::Connection, "notification truncated"));
+    }
+    let channel = String::from_utf8_lossy(&payload[offset..offset + channel_len]).to_string();
+    offset += channel_len;
+    let data_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
+    offset += 4;
+    if offset + data_len > payload.len() {
+        return Err(Error::new(ErrorKind::Connection, "notification truncated"));
+    }
+    let payload_data = payload[offset..offset + data_len].to_vec();
+    offset += data_len;
+    let mut change_type = None;
+    let mut row_id = None;
+    if offset < payload.len() {
+        change_type = Some(payload[offset] as char);
+        offset += 1;
+        if offset + 8 <= payload.len() {
+            row_id = Some(u64::from_le_bytes(
+                payload[offset..offset + 8].try_into().unwrap_or([0u8; 8]),
+            ));
+        }
+    }
+    Ok(Notification {
+        process_id,
+        channel,
+        payload: payload_data,
+        change_type,
+        row_id,
+    })
+}
+
+pub fn parse_query_plan(payload: &[u8]) -> Result<QueryPlan> {
+    if payload.len() < 32 {
+        return Err(Error::new(ErrorKind::Connection, "query plan truncated"));
+    }
+    let format = u32::from_le_bytes(payload[0..4].try_into().unwrap_or([0u8; 4]));
+    let plan_len = u32::from_le_bytes(payload[4..8].try_into().unwrap_or([0u8; 4])) as usize;
+    let planning_time_us = u64::from_le_bytes(payload[8..16].try_into().unwrap_or([0u8; 8]));
+    let estimated_rows = u64::from_le_bytes(payload[16..24].try_into().unwrap_or([0u8; 8]));
+    let estimated_cost = u64::from_le_bytes(payload[24..32].try_into().unwrap_or([0u8; 8]));
+    if 32 + plan_len > payload.len() {
+        return Err(Error::new(ErrorKind::Connection, "query plan truncated"));
+    }
+    let plan = payload[32..32 + plan_len].to_vec();
+    Ok(QueryPlan {
+        format,
+        planning_time_us,
+        estimated_rows,
+        estimated_cost,
+        plan,
+    })
+}
+
+pub fn parse_sblr_compiled(payload: &[u8]) -> Result<SblrCompiled> {
+    if payload.len() < 16 {
+        return Err(Error::new(ErrorKind::Connection, "sblr compiled truncated"));
+    }
+    let hash = u64::from_le_bytes(payload[0..8].try_into().unwrap_or([0u8; 8]));
+    let version = u32::from_le_bytes(payload[8..12].try_into().unwrap_or([0u8; 4]));
+    let len = u32::from_le_bytes(payload[12..16].try_into().unwrap_or([0u8; 4])) as usize;
+    if 16 + len > payload.len() {
+        return Err(Error::new(ErrorKind::Connection, "sblr compiled truncated"));
+    }
+    Ok(SblrCompiled {
+        hash,
+        version,
+        bytecode: payload[16..16 + len].to_vec(),
+    })
 }
 
 pub fn parse_error_message(payload: &[u8]) -> Result<(String, String, String, String, String)> {

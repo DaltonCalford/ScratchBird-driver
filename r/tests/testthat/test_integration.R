@@ -35,7 +35,7 @@ test_that("integration types fixture", {
   }
   client <- sb_connect(dsn)
   on.exit(sb_disconnect(client), add = TRUE)
-  result <- sb_query(client, "SELECT * FROM sb_conformance.type_coverage")
+  result <- sb_query(client, "SELECT * FROM type_coverage")
   expect_true(length(result$rows) > 0)
 })
 

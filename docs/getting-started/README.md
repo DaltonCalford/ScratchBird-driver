@@ -22,8 +22,18 @@ ScratchBird driver in this repository.
 - [Pascal/Delphi](pascal.md)
 - [.NET](dotnet.md)
 - [JDBC (Java)](jdbc.md)
+- [Elixir (Ecto)](elixir.md)
+- [Swift](swift.md)
+- [Dart](dart.md)
+- [Mojo](mojo.md)
 - [Metabase Plugin](metabase.md)
 - [Superset Driver](superset.md)
+
+## CLI Tools
+
+CLI documentation lives in `docs/user-documentation/tools/`:
+
+- [CLI tool index](../user-documentation/tools/README.md)
 
 ## Shared References
 

@@ -19,6 +19,7 @@ import java.net.*;
 import java.sql.*;
 import java.util.*;
 import java.util.Calendar;
+import java.time.*;
 
 /**
  * JDBC PreparedStatement implementation for ScratchBird.
@@ -392,8 +393,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setDate(int parameterIndex, java.sql.Date x, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        setParameter(parameterIndex, x, Types.DATE);
+        setParameter(parameterIndex, applyCalendarDate(x, cal), Types.DATE);
     }
 
     @Override
@@ -403,8 +403,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setTime(int parameterIndex, java.sql.Time x, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        setParameter(parameterIndex, x, Types.TIME);
+        setParameter(parameterIndex, applyCalendarTime(x, cal), Types.TIME);
     }
 
     @Override
@@ -414,8 +413,37 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setTimestamp(int parameterIndex, java.sql.Timestamp x, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        setParameter(parameterIndex, x, Types.TIMESTAMP);
+        setParameter(parameterIndex, applyCalendarTimestamp(x, cal), Types.TIMESTAMP);
+    }
+
+    private static java.sql.Date applyCalendarDate(java.sql.Date value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        LocalDate localDate = value.toLocalDate();
+        ZonedDateTime zoned = localDate.atStartOfDay(cal.getTimeZone().toZoneId());
+        return new java.sql.Date(zoned.toInstant().toEpochMilli());
+    }
+
+    private static java.sql.Time applyCalendarTime(java.sql.Time value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        LocalTime localTime = value.toLocalTime();
+        LocalDate base = LocalDate.of(1970, 1, 1);
+        ZonedDateTime zoned = ZonedDateTime.of(base, localTime, cal.getTimeZone().toZoneId());
+        return new java.sql.Time(zoned.toInstant().toEpochMilli());
+    }
+
+    private static java.sql.Timestamp applyCalendarTimestamp(java.sql.Timestamp value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        LocalDateTime localDateTime = value.toLocalDateTime();
+        ZonedDateTime zoned = ZonedDateTime.of(localDateTime, cal.getTimeZone().toZoneId());
+        java.sql.Timestamp adjusted = java.sql.Timestamp.from(zoned.toInstant());
+        adjusted.setNanos(value.getNanos());
+        return adjusted;
     }
 
     @Override

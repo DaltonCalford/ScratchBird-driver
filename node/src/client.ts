@@ -15,12 +15,38 @@ import {
   FEATURE_COMPRESSION,
   FEATURE_STREAMING,
   HEADER_SIZE,
+  QUERY_FLAG_DESCRIBE_ONLY,
+  QUERY_FLAG_INCLUDE_PLAN,
+  QUERY_FLAG_RETURN_SBLR,
+  QUERY_FLAG_NO_CACHE,
+  ISOLATION_READ_COMMITTED,
+  ISOLATION_REPEATABLE_READ,
+  ISOLATION_SERIALIZABLE,
+  TXN_FLAG_HAS_ACCESS,
+  TXN_FLAG_HAS_AUTOCOMMIT,
+  TXN_FLAG_HAS_DEFERRABLE,
+  TXN_FLAG_HAS_ISOLATION,
+  TXN_FLAG_HAS_TIMEOUT,
+  TXN_FLAG_HAS_WAIT,
   buildStartupPayload,
   buildQueryPayload,
   buildParsePayload,
   buildBindPayload,
   buildExecutePayload,
   buildCancelPayload,
+  buildSblrExecutePayload,
+  buildDescribePayload,
+  buildSubscribePayload,
+  buildUnsubscribePayload,
+  buildTxnBeginPayload,
+  buildTxnCommitPayload,
+  buildTxnRollbackPayload,
+  buildTxnSavepointPayload,
+  buildTxnReleasePayload,
+  buildTxnRollbackToPayload,
+  buildSetOptionPayload,
+  buildStreamControlPayload,
+  buildAttachCreatePayload,
   encodeMessage,
   decodeHeader,
   parseAuthRequest,
@@ -32,8 +58,14 @@ import {
   parseRowDescription,
   parseDataRow,
   parseCommandComplete,
+  parseNotification,
+  parseQueryPlan,
+  parseSblrCompiled,
   parseErrorMessage,
   MessageHeader,
+  NotificationMessage,
+  QueryPlanMessage,
+  SblrCompiledMessage,
 } from "./protocol";
 import { ScramExchange } from "./scram";
 import { parseDsn } from "./dsn";
@@ -62,10 +94,33 @@ interface QueryOptions {
   signal?: AbortSignal;
   maxRows?: number;
   timeoutMs?: number;
+  includePlan?: boolean;
+  returnSblr?: boolean;
+  describeOnly?: boolean;
+  noCache?: boolean;
+}
+
+interface TxnBeginOptions {
+  isolationLevel?: number;
+  accessMode?: number;
+  deferrable?: boolean;
+  wait?: boolean;
+  timeoutMs?: number;
+  autocommitMode?: number;
+  conflictAction?: number;
+}
+
+interface TxnEndOptions {
+  flags?: number;
+}
+
+interface SubscribeOptions {
+  type?: number;
+  filter?: string;
 }
 
 class SocketReader {
-  private buffer = Buffer.alloc(0);
+  private buffer: Buffer = Buffer.alloc(0);
   private pending: Array<{ len: number; resolve: (buf: Buffer) => void; reject: (err: Error) => void }> = [];
   private closed = false;
 
@@ -90,7 +145,7 @@ class SocketReader {
   }
 
   private onData(chunk: Buffer): void {
-    this.buffer = this.buffer.length ? Buffer.concat([this.buffer, chunk]) : chunk;
+    this.buffer = this.buffer.length ? (Buffer.concat([this.buffer, chunk]) as Buffer) : chunk;
     this.flush();
   }
 
@@ -149,6 +204,10 @@ class ProtocolConnection {
     this.txnId = txnId;
   }
 
+  getTxnId(): bigint {
+    return this.txnId;
+  }
+
   async sendMessage(type: number, payload: Buffer, flags: number, forceZero: boolean): Promise<number> {
     if (!this.socket) throw new Error("Socket not connected");
     const seq = this.sequence++;
@@ -191,6 +250,9 @@ export class Client {
   private connected = false;
   private prepared = new Map<string, { sql: string; paramCount: number }>();
   private parameters: Record<string, string> = {};
+  private notificationHandlers: Array<(notice: NotificationMessage) => void> = [];
+  private lastPlan?: QueryPlanMessage;
+  private lastSblr?: SblrCompiledMessage;
 
   constructor(config?: ClientConfig | string) {
     const parsed = typeof config === "string" ? parseDsn(config) : {};
@@ -251,16 +313,176 @@ export class Client {
     return (await this.executePrepared(name, normalized.params, options)) as QueryResult<T>;
   }
 
-  async begin(): Promise<void> {
-    this.ensureConnected();
+  async begin(options?: TxnBeginOptions): Promise<void> {
+    await this.beginTransaction(options);
   }
 
-  async commit(): Promise<void> {
-    this.ensureConnected();
+  async commit(options?: TxnEndOptions): Promise<void> {
+    await this.commitTransaction(options);
   }
 
-  async rollback(): Promise<void> {
+  async rollback(options?: TxnEndOptions): Promise<void> {
+    await this.rollbackTransaction(options);
+  }
+
+  async beginTransaction(options?: TxnBeginOptions): Promise<void> {
     this.ensureConnected();
+    const isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
+    let flags = 0;
+    if (options?.isolationLevel !== undefined) flags |= TXN_FLAG_HAS_ISOLATION;
+    if (options?.accessMode !== undefined) flags |= TXN_FLAG_HAS_ACCESS;
+    if (options?.deferrable !== undefined) flags |= TXN_FLAG_HAS_DEFERRABLE;
+    if (options?.wait !== undefined) flags |= TXN_FLAG_HAS_WAIT;
+    if (options?.timeoutMs !== undefined) flags |= TXN_FLAG_HAS_TIMEOUT;
+    if (options?.autocommitMode !== undefined) flags |= TXN_FLAG_HAS_AUTOCOMMIT;
+    const payload = buildTxnBeginPayload(
+      flags,
+      options?.conflictAction ?? 0,
+      options?.autocommitMode ?? 0,
+      isolation,
+      options?.accessMode ?? 0,
+      options?.deferrable ? 1 : 0,
+      options?.wait ? 1 : 0,
+      options?.timeoutMs ?? 0
+    );
+    await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async commitTransaction(options?: TxnEndOptions): Promise<void> {
+    this.ensureConnected();
+    const payload = buildTxnCommitPayload(options?.flags ?? 0);
+    await this.protocol.sendMessage(MessageType.TXN_COMMIT, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async rollbackTransaction(options?: TxnEndOptions): Promise<void> {
+    this.ensureConnected();
+    const payload = buildTxnRollbackPayload(options?.flags ?? 0);
+    await this.protocol.sendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async savepoint(name: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildTxnSavepointPayload(name);
+    await this.protocol.sendMessage(MessageType.TXN_SAVEPOINT, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async releaseSavepoint(name: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildTxnReleasePayload(name);
+    await this.protocol.sendMessage(MessageType.TXN_RELEASE, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async rollbackToSavepoint(name: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildTxnRollbackToPayload(name);
+    await this.protocol.sendMessage(MessageType.TXN_ROLLBACK_TO, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async setOption(name: string, value: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildSetOptionPayload(name, value);
+    await this.protocol.sendMessage(MessageType.SET_OPTION, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async ping(): Promise<void> {
+    this.ensureConnected();
+    await this.protocol.sendMessage(MessageType.PING, Buffer.alloc(0), 0, false);
+    while (true) {
+      const msg = await this.protocol.recv();
+      if (this.handleAsyncMessage(msg)) {
+        continue;
+      }
+      if (msg.header.type === MessageType.PONG || msg.header.type === MessageType.READY) {
+        return;
+      }
+      if (msg.header.type === MessageType.ERROR) {
+        throw this.raiseProtocolError(msg.payload);
+      }
+    }
+  }
+
+  async terminate(): Promise<void> {
+    if (!this.connected) {
+      this.protocol.close();
+      return;
+    }
+    await this.protocol.sendMessage(MessageType.TERMINATE, Buffer.alloc(0), 0, false);
+    this.protocol.close();
+    this.connected = false;
+  }
+
+  async subscribe(channel: string, options?: SubscribeOptions): Promise<void> {
+    this.ensureConnected();
+    const payload = buildSubscribePayload(options?.type ?? 0, channel, options?.filter ?? "");
+    await this.protocol.sendMessage(MessageType.SUBSCRIBE, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async unsubscribe(channel: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildUnsubscribePayload(channel);
+    await this.protocol.sendMessage(MessageType.UNSUBSCRIBE, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async executeSblr(hash: bigint, bytecode: Buffer | null, params?: any[], options?: QueryOptions): Promise<QueryResult> {
+    this.ensureConnected();
+    const paramValues: ParamValue[] = [];
+    if (params) {
+      for (const param of params) {
+        const encoded = encodeParam(param);
+        paramValues.push(encoded.param);
+      }
+    }
+    const payload = buildSblrExecutePayload(hash, bytecode ?? Buffer.alloc(0), paramValues);
+    await this.protocol.sendMessage(MessageType.SBLR_EXECUTE, payload, 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    return this.collectResults(options?.maxRows ?? 0, options);
+  }
+
+  async streamControl(controlType: number, windowSize: number, timeoutMs: number): Promise<void> {
+    this.ensureConnected();
+    const payload = buildStreamControlPayload(controlType, windowSize, timeoutMs);
+    await this.protocol.sendMessage(MessageType.STREAM_CONTROL, payload, 0, false);
+  }
+
+  async attachCreate(emulationMode: string, dbName: string): Promise<void> {
+    this.ensureConnected();
+    const payload = buildAttachCreatePayload(emulationMode, dbName);
+    await this.protocol.sendMessage(MessageType.ATTACH_CREATE, payload, 0, false);
+    await this.drainUntilReady();
+  }
+
+  async attachDetach(): Promise<void> {
+    this.ensureConnected();
+    await this.protocol.sendMessage(MessageType.ATTACH_DETACH, Buffer.alloc(0), 0, false);
+    await this.drainUntilReady();
+  }
+
+  async attachList(): Promise<QueryResult> {
+    this.ensureConnected();
+    await this.protocol.sendMessage(MessageType.ATTACH_LIST, Buffer.alloc(0), 0, false);
+    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    return this.collectResults(0, {});
+  }
+
+  onNotification(handler: (notice: NotificationMessage) => void): void {
+    this.notificationHandlers.push(handler);
+  }
+
+  getLastPlan(): QueryPlanMessage | undefined {
+    return this.lastPlan;
+  }
+
+  getLastSblr(): SblrCompiledMessage | undefined {
+    return this.lastSblr;
   }
 
   async end(): Promise<void> {
@@ -307,6 +529,9 @@ export class Client {
 
     while (true) {
       const msg = await this.protocol.recv();
+      if (this.handleAsyncMessage(msg)) {
+        continue;
+      }
       switch (msg.header.type) {
         case MessageType.NEGOTIATE_VERSION:
           continue;
@@ -346,11 +571,6 @@ export class Client {
           }
           continue;
         }
-        case MessageType.PARAMETER_STATUS: {
-          const { name, value } = parseParameterStatus(msg.payload);
-          this.parameters[name] = value;
-          continue;
-        }
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
           this.protocol.setTxnId(txnId);
@@ -377,14 +597,7 @@ export class Client {
     await this.drainUntilReady();
   }
 
-  private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
-    const pageSize = options?.maxRows ?? 0;
-    if (params.length === 0) {
-      await this.sendSimpleQuery(sql, options);
-    } else {
-      await this.sendExtendedQuery(sql, params, options);
-    }
-
+  private async collectResults(pageSize: number, options?: QueryOptions): Promise<QueryResult> {
     const rows: any[] = [];
     let fields: FieldDef[] = [];
     let columns: ReturnType<typeof parseRowDescription> = [];
@@ -397,6 +610,9 @@ export class Client {
         throw new ScratchbirdError("query canceled", "57014");
       }
       const msg = await this.protocol.recv();
+      if (this.handleAsyncMessage(msg)) {
+        continue;
+      }
       switch (msg.header.type) {
         case MessageType.ERROR:
           throw this.raiseProtocolError(msg.payload);
@@ -420,13 +636,6 @@ export class Client {
           const parsed = parseCommandComplete(msg.payload);
           command = parsed.tag;
           rowCount = Number(parsed.rows);
-          continue;
-        }
-        case MessageType.EMPTY_QUERY:
-          continue;
-        case MessageType.PARAMETER_STATUS: {
-          const { name, value } = parseParameterStatus(msg.payload);
-          this.parameters[name] = value;
           continue;
         }
         case MessageType.PORTAL_SUSPENDED: {
@@ -449,65 +658,63 @@ export class Client {
     }
   }
 
+  private handleParameterStatus(name: string, value: string): void {
+    this.parameters[name] = value;
+    if (name === "attachment_id") {
+      const attachment = parseUuidBytes(value);
+      if (attachment) {
+        this.protocol.setAttachment(attachment, this.protocol.getTxnId());
+      }
+    }
+    if (name === "current_txn_id") {
+      const parsed = parseBigInt(value);
+      if (parsed !== null) {
+        this.protocol.setTxnId(parsed);
+      }
+    }
+  }
+
+  private handleAsyncMessage(msg: Message): boolean {
+    switch (msg.header.type) {
+      case MessageType.PARAMETER_STATUS: {
+        const { name, value } = parseParameterStatus(msg.payload);
+        this.handleParameterStatus(name, value);
+        return true;
+      }
+      case MessageType.NOTIFICATION: {
+        const notice = parseNotification(msg.payload);
+        for (const handler of this.notificationHandlers) {
+          handler(notice);
+        }
+        return true;
+      }
+      case MessageType.QUERY_PLAN: {
+        this.lastPlan = parseQueryPlan(msg.payload);
+        return true;
+      }
+      case MessageType.SBLR_COMPILED: {
+        this.lastSblr = parseSblrCompiled(msg.payload);
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
+    const pageSize = options?.maxRows ?? 0;
+    if (params.length === 0) {
+      await this.sendSimpleQuery(sql, options);
+    } else {
+      await this.sendExtendedQuery(sql, params, options);
+    }
+    return this.collectResults(pageSize, options);
+  }
+
   private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
     await this.sendBindExecute(name, params, options);
-
-    const rows: any[] = [];
-    let fields: FieldDef[] = [];
-    let columns: ReturnType<typeof parseRowDescription> = [];
-    let rowCount = -1;
-    let command = "";
-
-    while (true) {
-      if (options?.signal?.aborted) {
-        await this.cancelQuery();
-        throw new ScratchbirdError("query canceled", "57014");
-      }
-      const msg = await this.protocol.recv();
-      switch (msg.header.type) {
-        case MessageType.ERROR:
-          throw this.raiseProtocolError(msg.payload);
-        case MessageType.ROW_DESCRIPTION:
-          columns = parseRowDescription(msg.payload);
-          fields = columns.map((col) => ({
-            name: col.name,
-            dataType: oidToString(col.typeOid),
-            format: col.format === FORMAT_TEXT ? "text" : "binary",
-            nullable: col.nullable,
-            typeOid: col.typeOid,
-            typeModifier: col.typeModifier,
-          }));
-          continue;
-        case MessageType.DATA_ROW: {
-          const values = parseDataRow(msg.payload, columns.length);
-          rows.push(buildRow(columns, values));
-          continue;
-        }
-        case MessageType.COMMAND_COMPLETE: {
-          const parsed = parseCommandComplete(msg.payload);
-          command = parsed.tag;
-          rowCount = Number(parsed.rows);
-          continue;
-        }
-        case MessageType.READY: {
-          const { txnId } = parseReady(msg.payload);
-          this.protocol.setTxnId(txnId);
-          if (rowCount < 0) {
-            rowCount = rows.length;
-          }
-          return { rows, rowCount, fields, command };
-        }
-        case MessageType.PORTAL_SUSPENDED: {
-          if (pageSize > 0) {
-            await this.resumePortal(pageSize);
-          }
-          continue;
-        }
-        default:
-          continue;
-      }
-    }
+    return this.collectResults(pageSize, options);
   }
 
   private async executeQueryStream(sql: string, params: any[], options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
@@ -527,6 +734,9 @@ export class Client {
           throw new ScratchbirdError("query canceled", "57014");
         }
         const msg = await self.protocol.recv();
+        if (self.handleAsyncMessage(msg)) {
+          continue;
+        }
         switch (msg.header.type) {
           case MessageType.ERROR:
             throw self.raiseProtocolError(msg.payload);
@@ -558,7 +768,11 @@ export class Client {
   }
 
   private async sendSimpleQuery(sql: string, options?: QueryOptions): Promise<void> {
-    const flags = this.config.binaryTransfer ? QUERY_FLAG_BINARY_RESULT : 0;
+    let flags = this.config.binaryTransfer ? QUERY_FLAG_BINARY_RESULT : 0;
+    if (options?.includePlan) flags |= QUERY_FLAG_INCLUDE_PLAN;
+    if (options?.returnSblr) flags |= QUERY_FLAG_RETURN_SBLR;
+    if (options?.describeOnly) flags |= QUERY_FLAG_DESCRIBE_ONLY;
+    if (options?.noCache) flags |= QUERY_FLAG_NO_CACHE;
     const maxRows = options?.maxRows ?? 0;
     const timeoutMs = options?.timeoutMs ?? 0;
     const payload = buildQueryPayload(sql, flags, maxRows, timeoutMs);
@@ -582,9 +796,12 @@ export class Client {
     const resultFormats = this.config.binaryTransfer ? [FORMAT_BINARY] : [];
     const bindPayload = buildBindPayload("", "", paramValues, resultFormats);
     await this.protocol.sendMessage(MessageType.BIND, bindPayload, 0, false);
-    const execPayload = buildExecutePayload("", options?.maxRows ?? 0);
+    const maxRows = options?.maxRows ?? 0;
+    const execPayload = buildExecutePayload("", maxRows);
     await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    if (maxRows === 0) {
+      await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    }
   }
 
   private async sendBindExecute(statementName: string, params: any[], options?: QueryOptions): Promise<void> {
@@ -596,15 +813,17 @@ export class Client {
     const resultFormats = this.config.binaryTransfer ? [FORMAT_BINARY] : [];
     const bindPayload = buildBindPayload("", statementName, paramValues, resultFormats);
     await this.protocol.sendMessage(MessageType.BIND, bindPayload, 0, false);
-    const execPayload = buildExecutePayload("", options?.maxRows ?? 0);
+    const maxRows = options?.maxRows ?? 0;
+    const execPayload = buildExecutePayload("", maxRows);
     await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    if (maxRows === 0) {
+      await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+    }
   }
 
   private async resumePortal(maxRows: number): Promise<void> {
     const execPayload = buildExecutePayload("", maxRows);
     await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
   }
 
   private async describeStatement(statementName: string): Promise<number> {
@@ -614,17 +833,15 @@ export class Client {
     let paramCount = -1;
     while (true) {
       const msg = await this.protocol.recv();
+      if (this.handleAsyncMessage(msg)) {
+        continue;
+      }
       switch (msg.header.type) {
         case MessageType.ERROR:
           throw this.raiseProtocolError(msg.payload);
         case MessageType.PARAMETER_DESCRIPTION:
           paramCount = parseParameterDescription(msg.payload).length;
           continue;
-        case MessageType.PARAMETER_STATUS: {
-          const { name, value } = parseParameterStatus(msg.payload);
-          this.parameters[name] = value;
-          continue;
-        }
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
           this.protocol.setTxnId(txnId);
@@ -643,6 +860,9 @@ export class Client {
   private async drainUntilReady(): Promise<void> {
     while (true) {
       const msg = await this.protocol.recv();
+      if (this.handleAsyncMessage(msg)) {
+        continue;
+      }
       switch (msg.header.type) {
         case MessageType.ERROR:
           throw this.raiseProtocolError(msg.payload);
@@ -750,6 +970,22 @@ export class Pool {
       }
     }
     this.idle = remaining;
+  }
+}
+
+function parseUuidBytes(value: string): Buffer | null {
+  const hex = value.replace(/-/g, "").trim();
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
+    return null;
+  }
+  return Buffer.from(hex, "hex");
+}
+
+function parseBigInt(value: string): bigint | null {
+  try {
+    return BigInt(value.trim());
+  } catch {
+    return null;
   }
 }
 

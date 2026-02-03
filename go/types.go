@@ -289,6 +289,12 @@ func encodeParam(value any) (paramValue, uint32, error) {
 }
 
 func decodeColumnValue(col columnInfo, data []byte) (any, error) {
+	if col.typeOID == 0 {
+		if col.format == uint8(formatText) {
+			return parseUnknownText(decodeTextValue(data)), nil
+		}
+		return decodeUnknownBinary(data), nil
+	}
 	if col.format == uint8(formatText) {
 		return decodeTextValue(data), nil
 	}
@@ -355,6 +361,71 @@ func decodeTextValue(data []byte) string {
 		}
 	}
 	return string(data)
+}
+
+func decodeUnknownBinary(data []byte) any {
+	trimmed := stripTrailingNulls(data)
+	if len(trimmed) > 0 && looksLikeText(trimmed) {
+		return parseUnknownText(string(trimmed))
+	}
+	switch len(data) {
+	case 1:
+		return int16(int8(data[0]))
+	case 2:
+		return int16(binary.LittleEndian.Uint16(data))
+	case 4:
+		return int32(binary.LittleEndian.Uint32(data))
+	case 8:
+		return int64(binary.LittleEndian.Uint64(data))
+	case 16:
+		return bytesToUUIDString(data)
+	default:
+		return append([]byte{}, data...)
+	}
+}
+
+func parseUnknownText(text string) any {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return text
+	}
+	lowered := strings.ToLower(trimmed)
+	if lowered == "true" {
+		return true
+	}
+	if lowered == "false" {
+		return false
+	}
+	if intVal, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+		if intVal >= math.MinInt32 && intVal <= math.MaxInt32 {
+			return int32(intVal)
+		}
+		return intVal
+	}
+	if floatVal, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		return floatVal
+	}
+	return text
+}
+
+func stripTrailingNulls(data []byte) []byte {
+	end := len(data)
+	for end > 0 && data[end-1] == 0 {
+		end--
+	}
+	return data[:end]
+}
+
+func looksLikeText(data []byte) bool {
+	for _, b := range data {
+		if b == 0x09 || b == 0x0a || b == 0x0d {
+			continue
+		}
+		if b < 0x20 || b > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func stripLengthPrefix(data []byte) []byte {

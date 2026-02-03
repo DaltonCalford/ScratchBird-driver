@@ -19,6 +19,24 @@
 - `sb_geometry()`
 - `sb_range()`
 
+## SBWP v1.1 Extensions
+
+Low-level helpers (in addition to DBI):
+
+- `sb_begin(conn, ...)`, `sb_commit(conn, flags)`, `sb_rollback(conn, flags)`
+- `sb_savepoint(conn, name)`, `sb_release_savepoint(conn, name)`,
+  `sb_rollback_to_savepoint(conn, name)`
+- `sb_set_option(conn, name, value)`
+- `sb_ping(conn)`, `sb_terminate(conn)`, `sb_cancel(conn)`
+- `sb_subscribe(conn, channel, subscribe_type, filter_expr)`,
+  `sb_unsubscribe(conn, channel)`
+- `sb_execute_sblr(conn, hash, bytecode, params)`
+- `sb_stream_control(conn, control_type, window_size, timeout_ms)`
+- `sb_attach_create(conn, emulation_mode, db_name)`, `sb_attach_detach(conn)`,
+  `sb_attach_list(conn)`
+- `sb_on_notification(conn, handler)`
+- `sb_get_last_plan(conn)`, `sb_get_last_sblr(conn)`
+
 ## Errors
 
 Errors map to SQLSTATE codes per

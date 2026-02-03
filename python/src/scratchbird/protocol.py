@@ -13,7 +13,7 @@ import struct
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-PROTOCOL_MAGIC = 0x53425750  # "SBWP"
+PROTOCOL_MAGIC_BYTES = b"SBWP"
 PROTOCOL_VERSION_MAJOR = 1
 PROTOCOL_VERSION_MINOR = 1
 PROTOCOL_VERSION = (PROTOCOL_VERSION_MAJOR << 8) | PROTOCOL_VERSION_MINOR
@@ -34,9 +34,27 @@ class MessageType:
     SYNC = 0x09
     FLUSH = 0x0A
     CANCEL = 0x0B
+    TERMINATE = 0x0C
     COPY_DATA = 0x0D
     COPY_DONE = 0x0E
     COPY_FAIL = 0x0F
+    SBLR_EXECUTE = 0x10
+    SUBSCRIBE = 0x11
+    UNSUBSCRIBE = 0x12
+    FEDERATED_QUERY = 0x13
+    STREAM_CONTROL = 0x14
+    TXN_BEGIN = 0x15
+    TXN_COMMIT = 0x16
+    TXN_ROLLBACK = 0x17
+    TXN_SAVEPOINT = 0x18
+    TXN_RELEASE = 0x19
+    TXN_ROLLBACK_TO = 0x1A
+    PING = 0x1B
+    SET_OPTION = 0x1C
+    CLUSTER_AUTH = 0x1D
+    ATTACH_CREATE = 0x1E
+    ATTACH_DETACH = 0x1F
+    ATTACH_LIST = 0x20
 
     AUTH_REQUEST = 0x40
     AUTH_OK = 0x41
@@ -59,12 +77,19 @@ class MessageType:
     COPY_OUT_RESPONSE = 0x52
     COPY_BOTH_RESPONSE = 0x53
     NOTIFICATION = 0x54
+    FUNCTION_RESULT = 0x55
     NEGOTIATE_VERSION = 0x56
+    SBLR_COMPILED = 0x57
+    QUERY_PLAN = 0x58
     STREAM_READY = 0x59
     STREAM_DATA = 0x5A
     STREAM_END = 0x5B
     TXN_STATUS = 0x5C
     PONG = 0x5D
+    CLUSTER_AUTH_OK = 0x5E
+    FEDERATED_RESULT = 0x5F
+    HEARTBEAT = 0x80
+    EXTENSION = 0x81
 
 
 class AuthMethod:
@@ -101,6 +126,36 @@ FEATURE_BINARY_COPY = 1 << 8
 FEATURE_SAVEPOINTS = 1 << 9
 FEATURE_2PC = 1 << 10
 FEATURE_CHECKSUMS = 1 << 11
+
+QUERY_FLAG_DESCRIBE_ONLY = 0x01
+QUERY_FLAG_NO_PORTAL = 0x02
+QUERY_FLAG_BINARY_RESULT = 0x04
+QUERY_FLAG_INCLUDE_PLAN = 0x08
+QUERY_FLAG_RETURN_SBLR = 0x10
+QUERY_FLAG_NO_CACHE = 0x20
+
+ISOLATION_READ_UNCOMMITTED = 0
+ISOLATION_READ_COMMITTED = 1
+ISOLATION_REPEATABLE_READ = 2
+ISOLATION_SERIALIZABLE = 3
+
+TXN_FLAG_HAS_ISOLATION = 0x0001
+TXN_FLAG_HAS_ACCESS = 0x0002
+TXN_FLAG_HAS_DEFERRABLE = 0x0004
+TXN_FLAG_HAS_WAIT = 0x0008
+TXN_FLAG_HAS_TIMEOUT = 0x0010
+TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
+
+STREAM_START = 0
+STREAM_PAUSE = 1
+STREAM_RESUME = 2
+STREAM_CANCEL = 3
+STREAM_ACK = 4
+
+SUB_TYPE_CHANNEL = 0
+SUB_TYPE_TABLE = 1
+SUB_TYPE_QUERY = 2
+SUB_TYPE_EVENT = 3
 
 
 @dataclass
@@ -146,7 +201,7 @@ def encode_message(header: MessageHeader, payload: bytes) -> bytes:
     if len(header.attachment_id) != 16:
         raise ValueError("attachment_id must be 16 bytes")
     out = bytearray(HEADER_SIZE + len(payload))
-    struct.pack_into("<I", out, 0, PROTOCOL_MAGIC)
+    out[0:4] = PROTOCOL_MAGIC_BYTES
     out[4] = PROTOCOL_VERSION_MAJOR
     out[5] = PROTOCOL_VERSION_MINOR
     out[6] = header.msg_type
@@ -162,8 +217,7 @@ def encode_message(header: MessageHeader, payload: bytes) -> bytes:
 def decode_header(data: bytes) -> MessageHeader:
     if len(data) != HEADER_SIZE:
         raise ValueError("invalid header length")
-    magic = struct.unpack_from("<I", data, 0)[0]
-    if magic != PROTOCOL_MAGIC:
+    if data[0:4] != PROTOCOL_MAGIC_BYTES:
         raise ValueError("invalid protocol magic")
     major = data[4]
     minor = data[5]
@@ -293,6 +347,106 @@ def build_cancel_payload(cancel_type: int, target_sequence: int) -> bytes:
     return struct.pack("<II", cancel_type, target_sequence)
 
 
+def build_sblr_execute_payload(sblr_hash: int, sblr_bytecode: Optional[bytes], params: List[ParamValue]) -> bytes:
+    bytecode = sblr_bytecode or b""
+    out = bytearray()
+    out += struct.pack("<Q", sblr_hash)
+    out += struct.pack("<I", len(bytecode))
+    out += struct.pack("<H", len(params))
+    out += struct.pack("<H", 0)
+    if bytecode:
+        out += bytecode
+    for param in params:
+        if param.data is None:
+            out += struct.pack("<i", -1)
+        else:
+            out += struct.pack("<i", len(param.data))
+            out += param.data
+    return bytes(out)
+
+
+def build_subscribe_payload(subscribe_type: int, channel: str, filter_expr: str = "") -> bytes:
+    channel_bytes = channel.encode("utf-8")
+    filter_bytes = filter_expr.encode("utf-8")
+    out = bytearray()
+    out.append(subscribe_type)
+    out += b"\x00\x00\x00"
+    out += struct.pack("<I", len(channel_bytes)) + channel_bytes
+    out += struct.pack("<I", len(filter_bytes)) + filter_bytes
+    return bytes(out)
+
+
+def build_unsubscribe_payload(channel: str) -> bytes:
+    channel_bytes = channel.encode("utf-8")
+    return struct.pack("<I", len(channel_bytes)) + channel_bytes
+
+
+def build_txn_begin_payload(
+    flags: int,
+    conflict_action: int,
+    autocommit_mode: int,
+    isolation_level: int,
+    access_mode: int,
+    deferrable: int,
+    wait_mode: int,
+    timeout_ms: int,
+) -> bytes:
+    return struct.pack(
+        "<HBBBBBBI",
+        flags,
+        conflict_action,
+        autocommit_mode,
+        isolation_level,
+        access_mode,
+        deferrable,
+        wait_mode,
+        timeout_ms,
+    )
+
+
+def build_txn_commit_payload(flags: int) -> bytes:
+    return struct.pack("<B3x", flags)
+
+
+def build_txn_rollback_payload(flags: int) -> bytes:
+    return struct.pack("<B3x", flags)
+
+
+def build_txn_savepoint_payload(name: str) -> bytes:
+    name_bytes = name.encode("utf-8")
+    return struct.pack("<I", len(name_bytes)) + name_bytes
+
+
+def build_txn_release_payload(name: str) -> bytes:
+    return build_txn_savepoint_payload(name)
+
+
+def build_txn_rollback_to_payload(name: str) -> bytes:
+    return build_txn_savepoint_payload(name)
+
+
+def build_set_option_payload(name: str, value: str) -> bytes:
+    name_bytes = name.encode("utf-8")
+    value_bytes = value.encode("utf-8")
+    out = bytearray()
+    out += struct.pack("<I", len(name_bytes)) + name_bytes
+    out += struct.pack("<I", len(value_bytes)) + value_bytes
+    return bytes(out)
+
+
+def build_stream_control_payload(control_type: int, window_size: int, timeout_ms: int) -> bytes:
+    return struct.pack("<B3xII", control_type, window_size, timeout_ms)
+
+
+def build_attach_create_payload(emulation_mode: str, db_name: str) -> bytes:
+    mode_bytes = emulation_mode.encode("utf-8")
+    db_bytes = db_name.encode("utf-8")
+    out = bytearray()
+    out += struct.pack("<I", len(mode_bytes)) + mode_bytes
+    out += struct.pack("<I", len(db_bytes)) + db_bytes
+    return bytes(out)
+
+
 def parse_ready(payload: bytes) -> Tuple[int, int, int]:
     if len(payload) < 20:
         raise ValueError("ready truncated")
@@ -416,6 +570,61 @@ def parse_command_complete(payload: bytes) -> Tuple[int, int, int, str]:
         tag_bytes = tag_bytes.split(b"\x00", 1)[0]
     tag = tag_bytes.decode("utf-8", errors="replace")
     return command_type, rows, last_id, tag
+
+
+def parse_notification(payload: bytes) -> Tuple[int, str, bytes, Optional[str], Optional[int]]:
+    if len(payload) < 12:
+        raise ValueError("notification truncated")
+    offset = 0
+    process_id = struct.unpack_from("<I", payload, offset)[0]
+    offset += 4
+    channel_len = struct.unpack_from("<I", payload, offset)[0]
+    offset += 4
+    if offset + channel_len + 4 > len(payload):
+        raise ValueError("notification truncated")
+    channel = payload[offset : offset + channel_len].decode("utf-8", errors="replace")
+    offset += channel_len
+    payload_len = struct.unpack_from("<I", payload, offset)[0]
+    offset += 4
+    if offset + payload_len > len(payload):
+        raise ValueError("notification truncated")
+    data = payload[offset : offset + payload_len]
+    offset += payload_len
+    change_type = None
+    row_id = None
+    if offset + 1 <= len(payload):
+        change_type = chr(payload[offset])
+        offset += 1
+        if offset + 8 <= len(payload):
+            row_id = struct.unpack_from("<Q", payload, offset)[0]
+    return process_id, channel, data, change_type, row_id
+
+
+def parse_query_plan(payload: bytes) -> Tuple[int, int, int, int, bytes]:
+    if len(payload) < 32:
+        raise ValueError("query plan truncated")
+    plan_format = struct.unpack_from("<I", payload, 0)[0]
+    plan_length = struct.unpack_from("<I", payload, 4)[0]
+    planning_time_us = struct.unpack_from("<Q", payload, 8)[0]
+    estimated_rows = struct.unpack_from("<Q", payload, 16)[0]
+    estimated_cost = struct.unpack_from("<Q", payload, 24)[0]
+    start = 32
+    if start + plan_length > len(payload):
+        raise ValueError("query plan truncated")
+    plan_data = payload[start : start + plan_length]
+    return plan_format, planning_time_us, estimated_rows, estimated_cost, plan_data
+
+
+def parse_sblr_compiled(payload: bytes) -> Tuple[int, int, bytes]:
+    if len(payload) < 16:
+        raise ValueError("sblr compiled truncated")
+    sblr_hash = struct.unpack_from("<Q", payload, 0)[0]
+    sblr_version = struct.unpack_from("<I", payload, 8)[0]
+    sblr_length = struct.unpack_from("<I", payload, 12)[0]
+    if 16 + sblr_length > len(payload):
+        raise ValueError("sblr compiled truncated")
+    bytecode = payload[16 : 16 + sblr_length]
+    return sblr_hash, sblr_version, bytecode
 
 
 def parse_error_message(payload: bytes) -> Tuple[str, str, str, str, str]:

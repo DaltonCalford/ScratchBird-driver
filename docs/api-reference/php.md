@@ -22,6 +22,21 @@
 - `execute(params = null)`
 - `fetch()`, `fetchAll()`, `rowCount()`
 
+## SBWP v1.1 Extensions
+
+Advanced protocol operations are available on `ScratchBird\Connection`:
+
+- `savepoint(name)`, `releaseSavepoint(name)`, `rollbackToSavepoint(name)`
+- `setOption(name, value)`
+- `ping()`
+- `subscribe(channel, subType = ..., filterExpr = "")`, `unsubscribe(channel)`
+- `executeSblr(hash, bytecode = null, params = [])`
+- `streamControl(controlType, windowSize, timeoutMs)`
+- `attachCreate(emulationMode, dbName)`, `attachDetach()`, `attachList()`
+- `onNotification(callable)`
+- `lastPlan()`, `lastSblr()`
+- `cancel()`
+
 ## Wrapper Types
 
 - `ScratchBird\PDO\Jsonb`

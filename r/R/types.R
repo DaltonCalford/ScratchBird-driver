@@ -173,6 +173,10 @@ encode_param <- function(value) {
 
 decode_value <- function(type_oid, data, format) {
   if (is.null(data)) return(NA)
+  if (type_oid == 0) {
+    if (format == SB_FORMAT_TEXT) return(parse_unknown_text(decode_text_value(data)))
+    return(decode_unknown_binary(data))
+  }
   if (format == SB_FORMAT_TEXT) return(decode_text_value(data))
   decode_binary_value(type_oid, data)
 }
@@ -261,6 +265,54 @@ decode_text_value <- function(data) {
     }
   }
   rawToChar(data)
+}
+
+decode_unknown_binary <- function(data) {
+  trimmed <- strip_trailing_nulls(data)
+  if (length(trimmed) > 0 && looks_like_text(trimmed)) {
+    return(parse_unknown_text(rawToChar(trimmed)))
+  }
+  len <- length(data)
+  if (len == 1) return(as.integer(data[1]))
+  if (len == 2) return(readBin(data, integer(), size = 2, endian = "little"))
+  if (len == 4) return(readBin(data, integer(), size = 4, endian = "little"))
+  if (len == 8) return(readBin(data, numeric(), size = 8, endian = "little"))
+  data
+}
+
+parse_unknown_text <- function(text) {
+  trimmed <- trimws(text)
+  if (trimmed == "") return(text)
+  lowered <- tolower(trimmed)
+  if (lowered == "true") return(TRUE)
+  if (lowered == "false") return(FALSE)
+  if (grepl("^[+-]?\\d+$", trimmed)) {
+    value <- suppressWarnings(as.numeric(trimmed))
+    return(ifelse(is.na(value), text, value))
+  }
+  if (grepl("^[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?$", trimmed)) {
+    value <- suppressWarnings(as.numeric(trimmed))
+    return(ifelse(is.na(value), text, value))
+  }
+  text
+}
+
+strip_trailing_nulls <- function(data) {
+  end <- length(data)
+  while (end > 0 && data[end] == as.raw(0)) {
+    end <- end - 1
+  }
+  if (end == 0) return(raw())
+  data[1:end]
+}
+
+looks_like_text <- function(data) {
+  bytes <- as.integer(data)
+  for (byte in bytes) {
+    if (byte == 0x09 || byte == 0x0a || byte == 0x0d) next
+    if (byte < 0x20 || byte > 0x7e) return(FALSE)
+  }
+  TRUE
 }
 
 encode_length_prefixed <- function(data) {

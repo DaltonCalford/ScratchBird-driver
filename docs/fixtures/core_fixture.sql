@@ -8,9 +8,7 @@
 -- ScratchBird driver conformance core fixture
 -- Assumes a clean database or a dedicated test database.
 
-CREATE SCHEMA sb_conformance;
-
-CREATE TABLE sb_conformance.basic_table (
+CREATE TABLE basic_table (
     id UUID PRIMARY KEY,
     name VARCHAR(100),
     created_at TIMESTAMP,
@@ -18,21 +16,44 @@ CREATE TABLE sb_conformance.basic_table (
     amount DECIMAL(10,2)
 );
 
-INSERT INTO sb_conformance.basic_table (
+DELETE FROM basic_table;
+
+INSERT INTO basic_table (
     id, name, created_at, active, amount
 ) VALUES (
-    '00000000-0000-0000-0000-000000000001'::UUID,
+    CAST('00000000-0000-0000-0000-000000000001' AS UUID),
     'baseline',
-    TIMESTAMP '2026-01-09 12:34:56.789',
+    CAST('2026-01-09 12:34:56.789' AS TIMESTAMP),
     TRUE,
     123.45
 );
 
-INSERT INTO sb_conformance.basic_table (
+INSERT INTO basic_table (
     id, name, created_at, active, amount
-) VALUES
-    ('00000000-0000-0000-0000-000000000002'::UUID, 'sample-02', TIMESTAMP '2026-01-09 12:35:56.789', FALSE, 10.00),
-    ('00000000-0000-0000-0000-000000000003'::UUID, 'sample-03', TIMESTAMP '2026-01-09 12:36:56.789', TRUE, 20.00),
-    ('00000000-0000-0000-0000-000000000004'::UUID, 'sample-04', TIMESTAMP '2026-01-09 12:37:56.789', TRUE, 30.00),
-    ('00000000-0000-0000-0000-000000000005'::UUID, 'sample-05', TIMESTAMP '2026-01-09 12:38:56.789', FALSE, 40.00),
-    ('00000000-0000-0000-0000-000000000006'::UUID, 'sample-06', TIMESTAMP '2026-01-09 12:39:56.789', TRUE, 50.00);
+) VALUES (
+    CAST('00000000-0000-0000-0000-000000000002' AS UUID), 'sample-02', CAST('2026-01-09 12:35:56.789' AS TIMESTAMP), FALSE, 10.00
+);
+
+INSERT INTO basic_table (
+    id, name, created_at, active, amount
+) VALUES (
+    CAST('00000000-0000-0000-0000-000000000003' AS UUID), 'sample-03', CAST('2026-01-09 12:36:56.789' AS TIMESTAMP), TRUE, 20.00
+);
+
+INSERT INTO basic_table (
+    id, name, created_at, active, amount
+) VALUES (
+    CAST('00000000-0000-0000-0000-000000000004' AS UUID), 'sample-04', CAST('2026-01-09 12:37:56.789' AS TIMESTAMP), TRUE, 30.00
+);
+
+INSERT INTO basic_table (
+    id, name, created_at, active, amount
+) VALUES (
+    CAST('00000000-0000-0000-0000-000000000005' AS UUID), 'sample-05', CAST('2026-01-09 12:38:56.789' AS TIMESTAMP), FALSE, 40.00
+);
+
+INSERT INTO basic_table (
+    id, name, created_at, active, amount
+) VALUES (
+    CAST('00000000-0000-0000-0000-000000000006' AS UUID), 'sample-06', CAST('2026-01-09 12:39:56.789' AS TIMESTAMP), TRUE, 50.00
+);

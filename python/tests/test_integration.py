@@ -51,7 +51,7 @@ def test_types_fixture_integration():
     conn = scratchbird.connect(dsn)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM sb_conformance.type_coverage")
+        cur.execute("SELECT * FROM type_coverage")
         row = cur.fetchone()
         assert row is not None
         assert len(row) > 0

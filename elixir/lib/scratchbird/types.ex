@@ -1,0 +1,314 @@
+# ScratchBird-driver
+# Copyright (c) 2025-2026 Dalton Calford
+#
+# Licensed under the Initial Developer's Public License Version 1.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+# https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
+
+defmodule ScratchBird.Types do
+  @moduledoc false
+  use Bitwise
+  alias Decimal
+
+  @format_text 0
+  @format_binary 1
+
+  @oid_bool 16
+  @oid_bytea 17
+  @oid_char 18
+  @oid_int8 20
+  @oid_int2 21
+  @oid_int4 23
+  @oid_text 25
+  @oid_json 114
+  @oid_xml 142
+  @oid_point 600
+  @oid_float4 700
+  @oid_float8 701
+  @oid_money 790
+  @oid_cidr 650
+  @oid_inet 869
+  @oid_macaddr 829
+  @oid_bpchar 1042
+  @oid_varchar 1043
+  @oid_date 1082
+  @oid_time 1083
+  @oid_timestamp 1114
+  @oid_timestamptz 1184
+  @oid_interval 1186
+  @oid_numeric 1700
+  @oid_uuid 2950
+  @oid_jsonb 3802
+  @oid_record 2249
+  @oid_int4range 3904
+  @oid_numrange 3906
+  @oid_tsrange 3908
+  @oid_tstzrange 3910
+  @oid_daterange 3912
+  @oid_int8range 3926
+  @oid_tsvector 3614
+  @oid_tsquery 3615
+  @oid_sb_vector 16386
+
+  @range_empty 0x01
+  @range_lb_inc 0x02
+  @range_ub_inc 0x04
+  @range_lb_inf 0x08
+  @range_ub_inf 0x10
+
+  defstruct [:raw, :value]
+
+  defmodule Jsonb do
+    defstruct [:raw, :value]
+  end
+
+  defmodule Json do
+    defstruct [:raw, :value]
+  end
+
+  defmodule Geometry do
+    defstruct [:wkb, :srid, :wkt]
+  end
+
+  defmodule Range do
+    defstruct [
+      :lower,
+      :upper,
+      lower_inclusive: false,
+      upper_inclusive: false,
+      lower_infinite: false,
+      upper_infinite: false,
+      empty: false,
+      range_oid: nil
+    ]
+  end
+
+  defmodule Interval do
+    defstruct [:micros, :days, :months]
+  end
+
+  defmodule RawValue do
+    defstruct [:oid, :data]
+  end
+
+  def encode_param(nil), do: {%{format: @format_binary, is_null: true}, 0}
+
+  def encode_param(%RawValue{oid: oid, data: data}) do
+    {%{format: @format_binary, data: data, is_null: false}, oid}
+  end
+
+  def encode_param(%Jsonb{raw: raw, value: value}) do
+    data = raw || encode_json(value)
+    {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_jsonb}
+  end
+
+  def encode_param(%Json{raw: raw, value: value}) do
+    data = raw || encode_json(value)
+    {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_json}
+  end
+
+  def encode_param(%Geometry{wkb: wkb}) when is_binary(wkb) do
+    {%{format: @format_binary, data: encode_length_prefixed(wkb), is_null: false}, @oid_point}
+  end
+
+  def encode_param(%Interval{micros: micros, days: days, months: months}) do
+    data = <<micros::little-64, days::little-32, months::little-32>>
+    {%{format: @format_binary, data: data, is_null: false}, @oid_interval}
+  end
+
+  def encode_param(%Decimal{} = dec) do
+    data = Decimal.to_string(dec)
+    {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_numeric}
+  end
+
+  def encode_param(value) when is_boolean(value) do
+    data = if value, do: <<1>>, else: <<0>>
+    {%{format: @format_binary, data: data, is_null: false}, @oid_bool}
+  end
+
+  def encode_param(value) when is_integer(value) do
+    cond do
+      value >= -32768 and value <= 32767 ->
+        {%{format: @format_binary, data: <<value::little-16>>, is_null: false}, @oid_int2}
+
+      value >= -2_147_483_648 and value <= 2_147_483_647 ->
+        {%{format: @format_binary, data: <<value::little-32>>, is_null: false}, @oid_int4}
+
+      true ->
+        {%{format: @format_binary, data: <<value::little-64>>, is_null: false}, @oid_int8}
+    end
+  end
+
+  def encode_param(value) when is_float(value) do
+    {%{format: @format_binary, data: <<value::little-float-64>>, is_null: false}, @oid_float8}
+  end
+
+  def encode_param(%Date{} = date) do
+    base = ~D[2000-01-01]
+    days = Date.diff(date, base)
+    {%{format: @format_binary, data: <<days::little-32>>, is_null: false}, @oid_date}
+  end
+
+  def encode_param(%Time{} = time) do
+    micros = time.hour * 3_600_000_000 + time.minute * 60_000_000 + time.second * 1_000_000 + div(time.microsecond |> elem(0), 1)
+    {%{format: @format_binary, data: <<micros::little-64>>, is_null: false}, @oid_time}
+  end
+
+  def encode_param(%NaiveDateTime{} = ts) do
+    data = encode_timestamp(ts)
+    {%{format: @format_binary, data: data, is_null: false}, @oid_timestamp}
+  end
+
+  def encode_param(%DateTime{} = ts) do
+    data = encode_timestamp(ts)
+    {%{format: @format_binary, data: data, is_null: false}, @oid_timestamptz}
+  end
+
+  def encode_param(value) when is_binary(value) do
+    case uuid_to_bytes(value) do
+      {:ok, bytes} ->
+        {%{format: @format_binary, data: bytes, is_null: false}, @oid_uuid}
+
+      :error ->
+        {%{format: @format_binary, data: encode_length_prefixed(value), is_null: false}, @oid_text}
+    end
+  end
+
+  def encode_param(value) when is_map(value) do
+    data = encode_json(value)
+    {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_json}
+  end
+
+  def decode_value(type_oid, data, format) do
+    cond do
+      data == nil -> nil
+      format == @format_text -> data
+      true -> decode_binary(type_oid, data)
+    end
+  end
+
+  defp decode_binary(@oid_bool, <<1, _::binary>>), do: true
+  defp decode_binary(@oid_bool, _), do: false
+  defp decode_binary(@oid_int2, data), do: :binary.decode_unsigned(data, :little) |> to_signed(16)
+  defp decode_binary(@oid_int4, data), do: :binary.decode_unsigned(data, :little) |> to_signed(32)
+  defp decode_binary(@oid_int8, data), do: :binary.decode_unsigned(data, :little) |> to_signed(64)
+  defp decode_binary(@oid_float4, <<val::little-float-32>>), do: val
+  defp decode_binary(@oid_float8, <<val::little-float-64>>), do: val
+  defp decode_binary(@oid_numeric, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_money, <<val::little-signed-64>>), do: val
+  defp decode_binary(@oid_text, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_varchar, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_char, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_bpchar, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_json, data), do: %Json{raw: strip_length_prefix(data)}
+  defp decode_binary(@oid_xml, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_jsonb, data), do: %Jsonb{raw: strip_length_prefix(data)}
+  defp decode_binary(@oid_tsvector, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_tsquery, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_point, data), do: %Geometry{wkb: strip_length_prefix(data)}
+  defp decode_binary(@oid_uuid, data), do: uuid_from_bytes(data)
+  defp decode_binary(@oid_date, <<days::little-32>>), do: Date.add(~D[2000-01-01], days)
+  defp decode_binary(@oid_time, <<micros::little-64>>), do: micros
+  defp decode_binary(@oid_timestamp, data), do: decode_timestamp(data)
+  defp decode_binary(@oid_timestamptz, data), do: decode_timestamp(data)
+  defp decode_binary(@oid_interval, <<micros::little-64, days::little-32, months::little-32>>) do
+    %Interval{micros: micros, days: days, months: months}
+  end
+
+  defp decode_binary(@oid_int4range, data), do: decode_range(@oid_int4range, data)
+  defp decode_binary(@oid_int8range, data), do: decode_range(@oid_int8range, data)
+  defp decode_binary(@oid_numrange, data), do: decode_range(@oid_numrange, data)
+  defp decode_binary(@oid_tsrange, data), do: decode_range(@oid_tsrange, data)
+  defp decode_binary(@oid_tstzrange, data), do: decode_range(@oid_tstzrange, data)
+  defp decode_binary(@oid_daterange, data), do: decode_range(@oid_daterange, data)
+
+  defp decode_binary(_oid, data), do: %RawValue{oid: _oid, data: data}
+
+  defp encode_json(value) when is_binary(value), do: value
+  defp encode_json(value) do
+    if Code.ensure_loaded?(Jason) do
+      Jason.encode!(value)
+    else
+      raise "Jason is required to encode JSON values"
+    end
+  end
+
+  defp encode_length_prefixed(data) when is_binary(data) do
+    <<byte_size(data)::little-32, data::binary>>
+  end
+
+  defp strip_length_prefix(<<len::little-32, rest::binary>>) do
+    <<value::binary-size(len), _::binary>> = rest
+    value
+  end
+
+  defp to_signed(value, bits) do
+    sign_bit = 1 <<< (bits - 1)
+    if (value &&& sign_bit) != 0 do
+      value - (1 <<< bits)
+    else
+      value
+    end
+  end
+
+  defp encode_timestamp(%NaiveDateTime{} = ts) do
+    base = ~N[2000-01-01 00:00:00]
+    micros = NaiveDateTime.diff(ts, base, :microsecond)
+    <<micros::little-64>>
+  end
+
+  defp encode_timestamp(%DateTime{} = ts) do
+    base = ~U[2000-01-01 00:00:00Z]
+    micros = DateTime.diff(ts, base, :microsecond)
+    <<micros::little-64>>
+  end
+
+  defp decode_timestamp(<<micros::little-64>>) do
+    base = ~U[2000-01-01 00:00:00Z]
+    DateTime.add(base, micros, :microsecond)
+  end
+
+  defp uuid_to_bytes(value) do
+    if String.match?(value, ~r/^[0-9a-fA-F\-]{36}$/) do
+      {:ok, value |> String.replace("-", "") |> Base.decode16!(case: :mixed)}
+    else
+      :error
+    end
+  end
+
+  defp uuid_from_bytes(bytes) when byte_size(bytes) == 16 do
+    <<a::binary-size(4), b::binary-size(2), c::binary-size(2), d::binary-size(2), e::binary-size(6)>> = Base.encode16(bytes, case: :lower)
+    Enum.join([a, b, c, d, e], "-")
+  end
+
+  defp decode_range(range_oid, <<flags::8, rest::binary>>) do
+    range = %Range{
+      empty: (flags &&& @range_empty) != 0,
+      lower_inclusive: (flags &&& @range_lb_inc) != 0,
+      upper_inclusive: (flags &&& @range_ub_inc) != 0,
+      lower_infinite: (flags &&& @range_lb_inf) != 0,
+      upper_infinite: (flags &&& @range_ub_inf) != 0,
+      range_oid: range_oid
+    }
+
+    {lower, rest2} = decode_range_bound(range_oid, rest, range.lower_infinite)
+    {upper, rest3} = decode_range_bound(range_oid, rest2, range.upper_infinite)
+    %{range | lower: lower, upper: upper, range_oid: range_oid} |> then(fn r -> {r, rest3} end) |> elem(0)
+  end
+
+  defp decode_range_bound(_range_oid, data, true), do: {nil, data}
+
+  defp decode_range_bound(range_oid, <<len::little-32, rest::binary>>, false) do
+    <<raw::binary-size(len), rest2::binary>> = rest
+    {decode_range_value(range_oid, raw), rest2}
+  end
+
+  defp decode_range_value(@oid_int4range, raw), do: decode_binary(@oid_int4, raw)
+  defp decode_range_value(@oid_int8range, raw), do: decode_binary(@oid_int8, raw)
+  defp decode_range_value(@oid_numrange, raw), do: strip_length_prefix(raw)
+  defp decode_range_value(@oid_daterange, raw), do: decode_binary(@oid_date, raw)
+  defp decode_range_value(@oid_tsrange, raw), do: decode_binary(@oid_timestamp, raw)
+  defp decode_range_value(@oid_tstzrange, raw), do: decode_binary(@oid_timestamptz, raw)
+  defp decode_range_value(_oid, raw), do: raw
+end

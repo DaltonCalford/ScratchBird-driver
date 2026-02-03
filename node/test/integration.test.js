@@ -46,7 +46,7 @@ test("types fixture returns row", async (t) => {
   const client = await connectClient(t);
   if (!client) return;
   try {
-    const res = await client.query("SELECT * FROM sb_conformance.type_coverage");
+    const res = await client.query("SELECT * FROM type_coverage");
     assert.ok(res.rows.length >= 1);
   } finally {
     await client.end();

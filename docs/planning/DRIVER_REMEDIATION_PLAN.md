@@ -67,12 +67,12 @@ compression is implemented.
 - [x] Metabase: align feature flags with actual JDBC metadata, or add missing
       metadata support first
 
-### Phase 7 - New Drivers (Planned)
+### Phase 7 - New Drivers (In Progress)
 
-- [ ] Elixir Ecto adapter (P1) - implement SBWP v1.1 driver + `ecto_sql` adapter
-- [ ] Swift async/await driver (P1) - SwiftNIO transport + SBWP client
-- [ ] Dart database driver (P2) - Flutter-ready API + SBWP client
-- [ ] Mojo native driver (P2) - SBWP client + minimal transport abstraction
+- [x] Elixir Ecto adapter (P1) - initial SBWP v1.1 client + `ecto_sql` adapter scaffolding
+- [x] Swift async/await driver (P1) - initial SBWP client (TCP transport; TLS pending)
+- [x] Dart database driver (P2) - initial SBWP client + SCRAM
+- [x] Mojo native driver (P2) - SBWP v1.1 via Python transport bridge
 
 ## Driver Checklists
 
@@ -185,26 +185,28 @@ compression is implemented.
 
 ### Elixir (Ecto) - Planned (P1)
 
-- [ ] Implement SBWP v1.1 client (binary-only, prepare/bind)
-- [ ] Ecto adapter (`Ecto.Adapters.SQL` + `DBConnection`)
-- [ ] Type wrappers: Jsonb/Range/Geometry
+- [x] Implement SBWP v1.1 client (binary-only, prepare/bind)
+- [x] Ecto adapter (`Ecto.Adapters.SQL` + `DBConnection`)
+- [x] Type wrappers: Jsonb/Range/Geometry
 - [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
 
 ### Swift Async/Await - Planned (P1)
 
-- [ ] SwiftNIO transport + SBWP client
-- [ ] Async/await API surface + streaming
-- [ ] Type wrappers: Jsonb/Range/Geometry
+- [x] SBWP client + TCP transport
+- [ ] TLS transport integration (required for production)
+- [x] Async/await API surface + streaming
+- [x] Type wrappers: Jsonb/Range/Geometry
 - [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
 
 ### Dart - Planned (P2)
 
-- [ ] Pure Dart SBWP client + async API
-- [ ] Type wrappers: Jsonb/Range/Geometry
+- [x] Pure Dart SBWP client + async API
+- [x] Type wrappers: Jsonb/Range/Geometry
 - [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
 
 ### Mojo - Planned (P2)
 
-- [ ] SBWP client + transport abstraction
+- [x] SBWP protocol + transport abstraction complete
+- [ ] Real TCP/TLS transport implementation
 - [ ] Type wrappers: Jsonb/Range/Geometry
 - [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)

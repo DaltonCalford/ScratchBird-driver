@@ -18,6 +18,7 @@ import java.math.*;
 import java.net.*;
 import java.sql.*;
 import java.util.*;
+import java.time.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -225,8 +226,7 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public java.sql.Date getDate(int columnIndex, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        return getDate(columnIndex);
+        return adjustDate(getDate(columnIndex), cal);
     }
 
     @Override
@@ -240,8 +240,7 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public Time getTime(int columnIndex, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        return getTime(columnIndex);
+        return adjustTime(getTime(columnIndex), cal);
     }
 
     @Override
@@ -255,8 +254,36 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
-        // TODO: Apply calendar timezone
-        return getTimestamp(columnIndex);
+        return adjustTimestamp(getTimestamp(columnIndex), cal);
+    }
+
+    private static java.sql.Date adjustDate(java.sql.Date value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        Instant instant = Instant.ofEpochMilli(value.getTime());
+        LocalDate localDate = instant.atZone(cal.getTimeZone().toZoneId()).toLocalDate();
+        return java.sql.Date.valueOf(localDate);
+    }
+
+    private static java.sql.Time adjustTime(java.sql.Time value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        Instant instant = Instant.ofEpochMilli(value.getTime());
+        LocalTime localTime = instant.atZone(cal.getTimeZone().toZoneId()).toLocalTime();
+        return java.sql.Time.valueOf(localTime);
+    }
+
+    private static java.sql.Timestamp adjustTimestamp(java.sql.Timestamp value, Calendar cal) {
+        if (value == null || cal == null) {
+            return value;
+        }
+        Instant instant = value.toInstant();
+        LocalDateTime localDateTime = instant.atZone(cal.getTimeZone().toZoneId()).toLocalDateTime();
+        java.sql.Timestamp adjusted = java.sql.Timestamp.valueOf(localDateTime);
+        adjusted.setNanos(value.getNanos());
+        return adjusted;
     }
 
     @Override

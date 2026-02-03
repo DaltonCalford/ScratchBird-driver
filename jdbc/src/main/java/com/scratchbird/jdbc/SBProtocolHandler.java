@@ -54,7 +54,55 @@ import javax.net.ssl.TrustManagerFactory;
  */
 public class SBProtocolHandler {
 
-    private static final int PROTOCOL_MAGIC = 0x53425750;
+    public interface NotificationListener {
+        void onNotification(NotificationMessage notification);
+    }
+
+    public static final class NotificationMessage {
+        public final int processId;
+        public final String channel;
+        public final byte[] payload;
+        public final Character changeType;
+        public final Long rowId;
+
+        NotificationMessage(int processId, String channel, byte[] payload, Character changeType, Long rowId) {
+            this.processId = processId;
+            this.channel = channel;
+            this.payload = payload;
+            this.changeType = changeType;
+            this.rowId = rowId;
+        }
+    }
+
+    public static final class QueryPlanMessage {
+        public final int format;
+        public final long planningTimeUs;
+        public final long estimatedRows;
+        public final long estimatedCost;
+        public final byte[] plan;
+
+        QueryPlanMessage(int format, long planningTimeUs, long estimatedRows, long estimatedCost, byte[] plan) {
+            this.format = format;
+            this.planningTimeUs = planningTimeUs;
+            this.estimatedRows = estimatedRows;
+            this.estimatedCost = estimatedCost;
+            this.plan = plan;
+        }
+    }
+
+    public static final class SblrCompiledMessage {
+        public final long hash;
+        public final int version;
+        public final byte[] bytecode;
+
+        SblrCompiledMessage(long hash, int version, byte[] bytecode) {
+            this.hash = hash;
+            this.version = version;
+            this.bytecode = bytecode;
+        }
+    }
+
+    private static final int PROTOCOL_MAGIC = 0x50574253;
     private static final int PROTOCOL_VERSION_MAJOR = 1;
     private static final int PROTOCOL_VERSION_MINOR = 1;
     private static final int HEADER_SIZE = 40;
@@ -71,6 +119,27 @@ public class SBProtocolHandler {
     private static final byte MSG_SYNC = 0x09;
     private static final byte MSG_FLUSH = 0x0A;
     private static final byte MSG_CANCEL = 0x0B;
+    private static final byte MSG_TERMINATE = 0x0C;
+    private static final byte MSG_COPY_DATA = 0x0D;
+    private static final byte MSG_COPY_DONE = 0x0E;
+    private static final byte MSG_COPY_FAIL = 0x0F;
+    private static final byte MSG_SBLR_EXECUTE = 0x10;
+    private static final byte MSG_SUBSCRIBE = 0x11;
+    private static final byte MSG_UNSUBSCRIBE = 0x12;
+    private static final byte MSG_FEDERATED_QUERY = 0x13;
+    private static final byte MSG_STREAM_CONTROL = 0x14;
+    private static final byte MSG_TXN_BEGIN = 0x15;
+    private static final byte MSG_TXN_COMMIT = 0x16;
+    private static final byte MSG_TXN_ROLLBACK = 0x17;
+    private static final byte MSG_TXN_SAVEPOINT = 0x18;
+    private static final byte MSG_TXN_RELEASE = 0x19;
+    private static final byte MSG_TXN_ROLLBACK_TO = 0x1A;
+    private static final byte MSG_PING = 0x1B;
+    private static final byte MSG_SET_OPTION = 0x1C;
+    private static final byte MSG_CLUSTER_AUTH = 0x1D;
+    private static final byte MSG_ATTACH_CREATE = 0x1E;
+    private static final byte MSG_ATTACH_DETACH = 0x1F;
+    private static final byte MSG_ATTACH_LIST = 0x20;
 
     private static final byte MSG_AUTH_REQUEST = 0x40;
     private static final byte MSG_AUTH_OK = 0x41;
@@ -89,9 +158,23 @@ public class SBProtocolHandler {
     private static final byte MSG_NO_DATA = 0x4E;
     private static final byte MSG_PARAMETER_STATUS = 0x4F;
     private static final byte MSG_PARAMETER_DESCRIPTION = 0x50;
+    private static final byte MSG_COPY_IN_RESPONSE = 0x51;
+    private static final byte MSG_COPY_OUT_RESPONSE = 0x52;
+    private static final byte MSG_COPY_BOTH_RESPONSE = 0x53;
+    private static final byte MSG_NOTIFICATION = 0x54;
+    private static final byte MSG_FUNCTION_RESULT = 0x55;
     private static final byte MSG_NEGOTIATE_VERSION = 0x56;
+    private static final byte MSG_SBLR_COMPILED = 0x57;
+    private static final byte MSG_QUERY_PLAN = 0x58;
+    private static final byte MSG_STREAM_READY = 0x59;
+    private static final byte MSG_STREAM_DATA = 0x5A;
+    private static final byte MSG_STREAM_END = 0x5B;
     private static final byte MSG_TXN_STATUS = 0x5C;
     private static final byte MSG_PONG = 0x5D;
+    private static final byte MSG_CLUSTER_AUTH_OK = 0x5E;
+    private static final byte MSG_FEDERATED_RESULT = 0x5F;
+    private static final byte MSG_HEARTBEAT = (byte) 0x80;
+    private static final byte MSG_EXTENSION = (byte) 0x81;
 
     private static final int AUTH_OK = 0;
     private static final int AUTH_PASSWORD = 1;
@@ -101,7 +184,21 @@ public class SBProtocolHandler {
 
     private static final long FEATURE_STREAMING = 1L << 1;
 
+    private static final int QUERY_FLAG_DESCRIBE_ONLY = 0x01;
+    private static final int QUERY_FLAG_NO_PORTAL = 0x02;
     private static final int QUERY_FLAG_BINARY_RESULT = 0x04;
+    private static final int QUERY_FLAG_INCLUDE_PLAN = 0x08;
+    private static final int QUERY_FLAG_RETURN_SBLR = 0x10;
+    private static final int QUERY_FLAG_NO_CACHE = 0x20;
+
+    private static final byte ISOLATION_READ_COMMITTED = 1;
+
+    private static final short TXN_FLAG_HAS_ISOLATION = 0x0001;
+    private static final short TXN_FLAG_HAS_ACCESS = 0x0002;
+    private static final short TXN_FLAG_HAS_DEFERRABLE = 0x0004;
+    private static final short TXN_FLAG_HAS_WAIT = 0x0008;
+    private static final short TXN_FLAG_HAS_TIMEOUT = 0x0010;
+    private static final short TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
 
     private static final ScheduledExecutorService TIMEOUT_SCHEDULER =
         Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
@@ -127,9 +224,27 @@ public class SBProtocolHandler {
 
     private final Map<String, String> serverParameters = new HashMap<>();
     private SBScramClient scramClient;
+    private int lastQuerySequence = 0;
+    private QueryPlanMessage lastPlan;
+    private SblrCompiledMessage lastSblr;
+    private final List<NotificationListener> notificationListeners = new ArrayList<>();
 
     public SBProtocolHandler(SBConnectionProperties props) {
         this.props = props;
+    }
+
+    public void addNotificationListener(NotificationListener listener) {
+        if (listener != null) {
+            notificationListeners.add(listener);
+        }
+    }
+
+    public QueryPlanMessage getLastQueryPlan() {
+        return lastPlan;
+    }
+
+    public SblrCompiledMessage getLastSblrCompiled() {
+        return lastSblr;
     }
 
     public void connect() throws SQLException {
@@ -214,10 +329,186 @@ public class SBProtocolHandler {
         }
     }
 
+    public void beginTransaction() throws SQLException {
+        beginTransaction(ISOLATION_READ_COMMITTED, (byte) 0, false, false, 0, (byte) 0, (byte) 0);
+    }
+
+    public void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
+                                 boolean wait, int timeoutMs, byte autocommitMode, byte conflictAction) throws SQLException {
+        try {
+            short flags = TXN_FLAG_HAS_ISOLATION;
+            if (accessMode != 0) flags |= TXN_FLAG_HAS_ACCESS;
+            if (deferrable) flags |= TXN_FLAG_HAS_DEFERRABLE;
+            if (wait) flags |= TXN_FLAG_HAS_WAIT;
+            if (timeoutMs > 0) flags |= TXN_FLAG_HAS_TIMEOUT;
+            if (autocommitMode != 0) flags |= TXN_FLAG_HAS_AUTOCOMMIT;
+            byte[] payload = buildTxnBeginPayload(flags, conflictAction, autocommitMode, isolationLevel,
+                accessMode, (byte) (deferrable ? 1 : 0), (byte) (wait ? 1 : 0), timeoutMs);
+            sendMessage(MSG_TXN_BEGIN, payload, (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to begin transaction: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void commitTransaction(byte flags) throws SQLException {
+        try {
+            sendMessage(MSG_TXN_COMMIT, buildTxnCommitPayload(flags), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to commit transaction: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void rollbackTransaction(byte flags) throws SQLException {
+        try {
+            sendMessage(MSG_TXN_ROLLBACK, buildTxnRollbackPayload(flags), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to rollback transaction: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void savepoint(String name) throws SQLException {
+        try {
+            sendMessage(MSG_TXN_SAVEPOINT, buildTxnSavepointPayload(name), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to create savepoint: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void releaseSavepoint(String name) throws SQLException {
+        try {
+            sendMessage(MSG_TXN_RELEASE, buildTxnReleasePayload(name), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to release savepoint: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void rollbackToSavepoint(String name) throws SQLException {
+        try {
+            sendMessage(MSG_TXN_ROLLBACK_TO, buildTxnRollbackToPayload(name), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to rollback savepoint: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void setOption(String name, String value) throws SQLException {
+        try {
+            sendMessage(MSG_SET_OPTION, buildSetOptionPayload(name, value), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to set option: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void ping() throws SQLException {
+        try {
+            sendMessage(MSG_PING, new byte[0], (byte) 0, false);
+            while (true) {
+                ProtocolMessage msg = readMessage();
+                if (handleAsyncMessage(msg)) {
+                    continue;
+                }
+                if (msg.type == MSG_PONG) {
+                    return;
+                }
+                if (msg.type == MSG_READY) {
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
+                    return;
+                }
+                if (msg.type == MSG_ERROR) {
+                    ProtocolError error = parseErrorMessage(msg.payload);
+                    throw new SQLException(buildErrorMessage(error),
+                        error.sqlState != null ? error.sqlState : "42000");
+                }
+            }
+        } catch (IOException e) {
+            throw new SQLException("Failed to ping server: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void subscribe(byte subscribeType, String channel, String filterExpr) throws SQLException {
+        try {
+            sendMessage(MSG_SUBSCRIBE, buildSubscribePayload(subscribeType, channel, filterExpr), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to subscribe: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void unsubscribe(String channel) throws SQLException {
+        try {
+            sendMessage(MSG_UNSUBSCRIBE, buildUnsubscribePayload(channel), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to unsubscribe: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public SBQueryResult executeSblr(long sblrHash, byte[] bytecode, List<Object> params, List<Integer> paramTypes)
+        throws SQLException {
+        try {
+            List<SBTypeCodec.ParamEncoding> encoded = new ArrayList<>();
+            for (int i = 0; i < params.size(); i++) {
+                Integer sqlType = (paramTypes != null && i < paramTypes.size()) ? paramTypes.get(i) : null;
+                encoded.add(SBTypeCodec.encodeParam(params.get(i), sqlType));
+            }
+            lastPlan = null;
+            lastSblr = null;
+            lastQuerySequence = sequence;
+            sendMessage(MSG_SBLR_EXECUTE, buildSblrExecutePayload(sblrHash, bytecode, encoded), (byte) 0, false);
+            sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+            return readQueryResult();
+        } catch (IOException e) {
+            throw new SQLException("SBLR execution failed: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void streamControl(byte controlType, int windowSize, int timeoutMs) throws SQLException {
+        try {
+            sendMessage(MSG_STREAM_CONTROL, buildStreamControlPayload(controlType, windowSize, timeoutMs), (byte) 0, false);
+        } catch (IOException e) {
+            throw new SQLException("Failed to send stream control: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void attachCreate(String emulationMode, String dbName) throws SQLException {
+        try {
+            sendMessage(MSG_ATTACH_CREATE, buildAttachCreatePayload(emulationMode, dbName), (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to create attachment: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public void attachDetach() throws SQLException {
+        try {
+            sendMessage(MSG_ATTACH_DETACH, new byte[0], (byte) 0, false);
+            drainUntilReady();
+        } catch (IOException e) {
+            throw new SQLException("Failed to detach attachment: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public SBQueryResult attachList() throws SQLException {
+        try {
+            sendMessage(MSG_ATTACH_LIST, new byte[0], (byte) 0, false);
+            sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+            return readQueryResult();
+        } catch (IOException e) {
+            throw new SQLException("Failed to list attachments: " + e.getMessage(), "08006", e);
+        }
+    }
+
     public void cancelCurrentQuery() throws SQLException {
         if (!connected) return;
         try {
-            sendMessage(MSG_CANCEL, buildCancelPayload(0, 0), MSG_FLAG_URGENT, false);
+            sendMessage(MSG_CANCEL, buildCancelPayload(0, lastQuerySequence), MSG_FLAG_URGENT, false);
         } catch (IOException e) {
             throw new SQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
         }
@@ -247,6 +538,13 @@ public class SBProtocolHandler {
                 sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
                 while (true) {
                     ProtocolMessage msg = readMessage();
+                    try {
+                        if (handleAsyncMessage(msg)) {
+                            continue;
+                        }
+                    } catch (SQLException e) {
+                        return false;
+                    }
                     if (msg.type == MSG_READY) {
                         ReadyStatus ready = parseReady(msg.payload);
                         txnId = ready.txnId;
@@ -376,7 +674,7 @@ public class SBProtocolHandler {
                 }
                 case MSG_PARAMETER_STATUS: {
                     ParameterStatus status = parseParameterStatus(msg.payload);
-                    serverParameters.put(status.name, status.value);
+                    handleParameterStatus(status);
                     continue;
                 }
                 case MSG_READY: {
@@ -394,6 +692,49 @@ public class SBProtocolHandler {
         }
     }
 
+    private void handleParameterStatus(ParameterStatus status) {
+        serverParameters.put(status.name, status.value);
+        if ("attachment_id".equalsIgnoreCase(status.name)) {
+            byte[] parsed = parseUuidBytes(status.value);
+            if (parsed != null) {
+                attachmentId = parsed;
+            }
+        }
+        if ("current_txn_id".equalsIgnoreCase(status.name)) {
+            try {
+                txnId = Long.parseLong(status.value.trim());
+            } catch (NumberFormatException ignore) {
+                // Ignore invalid txn id.
+            }
+        }
+    }
+
+    private boolean handleAsyncMessage(ProtocolMessage msg) throws SQLException {
+        switch (msg.type) {
+            case MSG_PARAMETER_STATUS: {
+                handleParameterStatus(parseParameterStatus(msg.payload));
+                return true;
+            }
+            case MSG_NOTIFICATION: {
+                NotificationMessage notice = parseNotification(msg.payload);
+                for (NotificationListener listener : notificationListeners) {
+                    listener.onNotification(notice);
+                }
+                return true;
+            }
+            case MSG_QUERY_PLAN: {
+                lastPlan = parseQueryPlan(msg.payload);
+                return true;
+            }
+            case MSG_SBLR_COMPILED: {
+                lastSblr = parseSblrCompiled(msg.payload);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
     private SBQueryResult readQueryResult() throws IOException, SQLException {
         SBQueryResult result = new SBQueryResult();
         List<SBColumnInfo> columns = new ArrayList<>();
@@ -403,6 +744,9 @@ public class SBProtocolHandler {
 
         while (true) {
             ProtocolMessage msg = readMessage();
+            if (handleAsyncMessage(msg)) {
+                continue;
+            }
             switch (msg.type) {
                 case MSG_ROW_DESCRIPTION:
                     columns = parseRowDescription(msg.payload);
@@ -415,11 +759,6 @@ public class SBProtocolHandler {
                     CommandComplete complete = parseCommandComplete(msg.payload);
                     commandTag = complete.tag;
                     updateCount = complete.rows;
-                    break;
-                }
-                case MSG_PARAMETER_STATUS: {
-                    ParameterStatus status = parseParameterStatus(msg.payload);
-                    serverParameters.put(status.name, status.value);
                     break;
                 }
                 case MSG_READY: {
@@ -455,9 +794,35 @@ public class SBProtocolHandler {
         }
     }
 
+    private void drainUntilReady() throws IOException, SQLException {
+        while (true) {
+            ProtocolMessage msg = readMessage();
+            if (handleAsyncMessage(msg)) {
+                continue;
+            }
+            switch (msg.type) {
+                case MSG_READY: {
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
+                    return;
+                }
+                case MSG_ERROR: {
+                    ProtocolError error = parseErrorMessage(msg.payload);
+                    throw new SQLException(buildErrorMessage(error),
+                        error.sqlState != null ? error.sqlState : "42000");
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
     private void sendSimpleQuery(String sql, int maxRows, int timeoutMs) throws IOException {
         int flags = props.isBinaryTransfer() ? QUERY_FLAG_BINARY_RESULT : 0;
         byte[] payload = buildQueryPayload(sql, flags, maxRows, timeoutMs);
+        lastPlan = null;
+        lastSblr = null;
+        lastQuerySequence = sequence;
         sendMessage(MSG_QUERY, payload, (byte) 0, false);
     }
 
@@ -484,8 +849,13 @@ public class SBProtocolHandler {
         sendMessage(MSG_BIND, bindPayload, (byte) 0, false);
 
         byte[] execPayload = buildExecutePayload("", maxRows);
+        lastPlan = null;
+        lastSblr = null;
+        lastQuerySequence = sequence;
         sendMessage(MSG_EXECUTE, execPayload, (byte) 0, false);
-        sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+        if (maxRows <= 0) {
+            sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
+        }
     }
 
     private byte[] buildStartupPayload(long features, Map<String, String> params) {
@@ -617,6 +987,120 @@ public class SBProtocolHandler {
         ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(cancelType);
         buf.putInt(targetSequence);
+        return buf.array();
+    }
+
+    private byte[] buildSblrExecutePayload(long sblrHash, byte[] bytecode, List<SBTypeCodec.ParamEncoding> params) {
+        byte[] safeBytecode = bytecode != null ? bytecode : new byte[0];
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteBuffer header = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
+        header.putLong(sblrHash);
+        header.putInt(safeBytecode.length);
+        header.putShort((short) params.size());
+        header.putShort((short) 0);
+        out.writeBytes(header.array());
+        out.writeBytes(safeBytecode);
+        for (SBTypeCodec.ParamEncoding param : params) {
+            byte[] data = param.getData();
+            if (param.isNull() || data == null) {
+                out.writeBytes(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(-1).array());
+            } else {
+                ByteBuffer len = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+                len.putInt(data.length);
+                out.writeBytes(len.array());
+                out.writeBytes(data);
+            }
+        }
+        return out.toByteArray();
+    }
+
+    private byte[] buildSubscribePayload(byte subscribeType, String channel, String filterExpr) {
+        byte[] channelBytes = channel.getBytes(StandardCharsets.UTF_8);
+        byte[] filterBytes = filterExpr != null ? filterExpr.getBytes(StandardCharsets.UTF_8) : new byte[0];
+        ByteBuffer buf = ByteBuffer.allocate(8 + channelBytes.length + filterBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put(subscribeType);
+        buf.put(new byte[3]);
+        buf.putInt(channelBytes.length);
+        buf.put(channelBytes);
+        buf.putInt(filterBytes.length);
+        buf.put(filterBytes);
+        return buf.array();
+    }
+
+    private byte[] buildUnsubscribePayload(String channel) {
+        byte[] channelBytes = channel.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + channelBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(channelBytes.length);
+        buf.put(channelBytes);
+        return buf.array();
+    }
+
+    private byte[] buildTxnBeginPayload(short flags, byte conflictAction, byte autocommitMode,
+                                        byte isolationLevel, byte accessMode, byte deferrable, byte waitMode, int timeoutMs) {
+        ByteBuffer buf = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putShort(flags);
+        buf.put(conflictAction);
+        buf.put(autocommitMode);
+        buf.put(isolationLevel);
+        buf.put(accessMode);
+        buf.put(deferrable);
+        buf.put(waitMode);
+        buf.putInt(timeoutMs);
+        return buf.array();
+    }
+
+    private byte[] buildTxnCommitPayload(byte flags) {
+        return new byte[]{flags, 0, 0, 0};
+    }
+
+    private byte[] buildTxnRollbackPayload(byte flags) {
+        return new byte[]{flags, 0, 0, 0};
+    }
+
+    private byte[] buildTxnSavepointPayload(String name) {
+        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + nameBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(nameBytes.length);
+        buf.put(nameBytes);
+        return buf.array();
+    }
+
+    private byte[] buildTxnReleasePayload(String name) {
+        return buildTxnSavepointPayload(name);
+    }
+
+    private byte[] buildTxnRollbackToPayload(String name) {
+        return buildTxnSavepointPayload(name);
+    }
+
+    private byte[] buildSetOptionPayload(String name, String value) {
+        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+        byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(8 + nameBytes.length + valueBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(nameBytes.length);
+        buf.put(nameBytes);
+        buf.putInt(valueBytes.length);
+        buf.put(valueBytes);
+        return buf.array();
+    }
+
+    private byte[] buildStreamControlPayload(byte controlType, int windowSize, int timeoutMs) {
+        ByteBuffer buf = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put(controlType);
+        buf.put(new byte[3]);
+        buf.putInt(windowSize);
+        buf.putInt(timeoutMs);
+        return buf.array();
+    }
+
+    private byte[] buildAttachCreatePayload(String emulationMode, String dbName) {
+        byte[] modeBytes = emulationMode.getBytes(StandardCharsets.UTF_8);
+        byte[] dbBytes = dbName.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(8 + modeBytes.length + dbBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(modeBytes.length);
+        buf.put(modeBytes);
+        buf.putInt(dbBytes.length);
+        buf.put(dbBytes);
         return buf.array();
     }
 
@@ -770,6 +1254,85 @@ public class SBProtocolHandler {
         return new CommandComplete(rows, lastId, tag);
     }
 
+    private NotificationMessage parseNotification(byte[] payload) throws SQLException {
+        if (payload.length < 12) {
+            throw new SQLException("Notification truncated", "08P01");
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int processId = buf.getInt();
+        int channelLen = buf.getInt();
+        if (channelLen < 0 || channelLen > buf.remaining() - 4) {
+            throw new SQLException("Notification truncated", "08P01");
+        }
+        byte[] channelBytes = new byte[channelLen];
+        buf.get(channelBytes);
+        int payloadLen = buf.getInt();
+        if (payloadLen < 0 || payloadLen > buf.remaining()) {
+            throw new SQLException("Notification truncated", "08P01");
+        }
+        byte[] noticePayload = new byte[payloadLen];
+        buf.get(noticePayload);
+        Character changeType = null;
+        Long rowId = null;
+        if (buf.remaining() >= 1) {
+            changeType = (char) (buf.get() & 0xff);
+            if (buf.remaining() >= 8) {
+                rowId = buf.getLong();
+            }
+        }
+        return new NotificationMessage(processId, new String(channelBytes, StandardCharsets.UTF_8), noticePayload, changeType, rowId);
+    }
+
+    private QueryPlanMessage parseQueryPlan(byte[] payload) throws SQLException {
+        if (payload.length < 32) {
+            throw new SQLException("Query plan truncated", "08P01");
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        int format = buf.getInt();
+        int planLen = buf.getInt();
+        long planningTimeUs = buf.getLong();
+        long estimatedRows = buf.getLong();
+        long estimatedCost = buf.getLong();
+        if (planLen < 0 || planLen > buf.remaining()) {
+            throw new SQLException("Query plan truncated", "08P01");
+        }
+        byte[] plan = new byte[planLen];
+        buf.get(plan);
+        return new QueryPlanMessage(format, planningTimeUs, estimatedRows, estimatedCost, plan);
+    }
+
+    private SblrCompiledMessage parseSblrCompiled(byte[] payload) throws SQLException {
+        if (payload.length < 16) {
+            throw new SQLException("SBLR compiled truncated", "08P01");
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        long hash = buf.getLong();
+        int version = buf.getInt();
+        int length = buf.getInt();
+        if (length < 0 || length > buf.remaining()) {
+            throw new SQLException("SBLR compiled truncated", "08P01");
+        }
+        byte[] bytecode = new byte[length];
+        buf.get(bytecode);
+        return new SblrCompiledMessage(hash, version, bytecode);
+    }
+
+    private byte[] parseUuidBytes(String value) {
+        if (value == null) {
+            return null;
+        }
+        String hex = value.replace("-", "").trim();
+        if (!hex.matches("^[0-9A-Fa-f]{32}$")) {
+            return null;
+        }
+        byte[] out = new byte[16];
+        for (int i = 0; i < 16; i++) {
+            int idx = i * 2;
+            out[i] = (byte) Integer.parseInt(hex.substring(idx, idx + 2), 16);
+        }
+        return out;
+    }
+
     private ProtocolError parseErrorMessage(byte[] payload) {
         String severity = null;
         String sqlState = null;
@@ -904,15 +1467,13 @@ public class SBProtocolHandler {
         int paramCount = -1;
         while (true) {
             ProtocolMessage msg = readMessage();
+            if (handleAsyncMessage(msg)) {
+                continue;
+            }
             switch (msg.type) {
                 case MSG_PARAMETER_DESCRIPTION:
                     paramCount = parseParameterDescription(msg.payload).size();
                     break;
-                case MSG_PARAMETER_STATUS: {
-                    ParameterStatus status = parseParameterStatus(msg.payload);
-                    serverParameters.put(status.name, status.value);
-                    break;
-                }
                 case MSG_ERROR:
                     ProtocolError error = parseErrorMessage(msg.payload);
                     throw new SQLException(buildErrorMessage(error),
@@ -1056,6 +1617,9 @@ public class SBProtocolHandler {
                 } catch (IOException e) {
                     throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
                 }
+                if (protocol.handleAsyncMessage(msg)) {
+                    continue;
+                }
                 switch (msg.type) {
                     case MSG_ROW_DESCRIPTION:
                         columns = protocol.parseRowDescription(msg.payload);
@@ -1068,16 +1632,10 @@ public class SBProtocolHandler {
                         updateCount = complete.rows;
                         break;
                     }
-                    case MSG_PARAMETER_STATUS: {
-                        ParameterStatus status = protocol.parseParameterStatus(msg.payload);
-                        protocol.serverParameters.put(status.name, status.value);
-                        break;
-                    }
                     case MSG_PORTAL_SUSPENDED: {
                         byte[] payload = buildExecutePayload("", pageSize);
                         try {
                             protocol.sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
-                            protocol.sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
                         } catch (IOException e) {
                             throw new SQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
                         }

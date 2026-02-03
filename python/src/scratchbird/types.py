@@ -13,6 +13,7 @@ import datetime as _dt
 import decimal as _decimal
 import ipaddress as _ip
 import json as _json
+import re
 import struct
 import uuid
 from dataclasses import dataclass
@@ -201,6 +202,10 @@ def encode_param(value: Any) -> tuple[ParamValue, int]:
 def decode_value(type_oid: int, data: Optional[bytes], format_code: int) -> Any:
     if data is None:
         return None
+    if type_oid == 0:
+        if format_code == FORMAT_TEXT:
+            return _parse_unknown_text(_decode_text_value(data))
+        return _decode_unknown_binary(data)
     if format_code == FORMAT_TEXT:
         return _decode_text_value(data)
     return _decode_binary_value(type_oid, data)
@@ -262,6 +267,61 @@ def _decode_text_value(data: bytes) -> str:
         if 0 <= length <= len(data) - 4:
             return data[4 : 4 + length].decode("utf-8", errors="replace")
     return data.decode("utf-8", errors="replace")
+
+
+def _decode_unknown_binary(data: bytes) -> Any:
+    trimmed = _strip_trailing_nulls(data)
+    if trimmed and _looks_like_text(trimmed):
+        return _parse_unknown_text(trimmed.decode("utf-8", errors="replace"))
+    if len(data) == 1:
+        return data[0]
+    if len(data) == 2:
+        return struct.unpack_from("<h", data)[0]
+    if len(data) == 4:
+        return struct.unpack_from("<i", data)[0]
+    if len(data) == 8:
+        return struct.unpack_from("<q", data)[0]
+    if len(data) == 16:
+        return uuid.UUID(bytes=data[:16])
+    return data
+
+
+def _parse_unknown_text(text: str) -> Any:
+    trimmed = text.strip()
+    if trimmed == "":
+        return text
+    lowered = trimmed.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if re.fullmatch(r"[+-]?\d+", trimmed):
+        try:
+            return int(trimmed)
+        except ValueError:
+            return trimmed
+    if re.fullmatch(r"[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?", trimmed):
+        try:
+            return float(trimmed)
+        except ValueError:
+            return trimmed
+    return text
+
+
+def _strip_trailing_nulls(data: bytes) -> bytes:
+    end = len(data)
+    while end > 0 and data[end - 1] == 0:
+        end -= 1
+    return data[:end]
+
+
+def _looks_like_text(data: bytes) -> bool:
+    for byte in data:
+        if byte in (0x09, 0x0A, 0x0D):
+            continue
+        if byte < 0x20 or byte > 0x7E:
+            return False
+    return True
 
 
 def _encode_length_prefixed(data: bytes) -> bytes:

@@ -32,8 +32,12 @@ pub struct Client {
     attachment_id: [u8; 16],
     txn_id: u64,
     sequence: u32,
+    last_query_sequence: u32,
     authed: bool,
     parameters: HashMap<String, String>,
+    notification_handlers: Vec<Box<dyn Fn(&protocol::Notification) + Send + Sync>>,
+    last_plan: Option<protocol::QueryPlan>,
+    last_sblr: Option<protocol::SblrCompiled>,
 }
 
 pub struct QueryResult {
@@ -52,6 +56,22 @@ pub struct QueryStream<'a> {
     page_size: u32,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TxnBeginOptions {
+    pub isolation_level: Option<u8>,
+    pub access_mode: Option<u8>,
+    pub deferrable: Option<bool>,
+    pub wait: Option<bool>,
+    pub timeout_ms: Option<u32>,
+    pub autocommit_mode: Option<u8>,
+    pub conflict_action: u8,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TxnEndOptions {
+    pub flags: u8,
+}
+
 trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -64,8 +84,12 @@ impl Client {
             attachment_id: [0u8; 16],
             txn_id: 0,
             sequence: 0,
+            last_query_sequence: 0,
             authed: false,
             parameters: HashMap::new(),
+            notification_handlers: Vec::new(),
+            last_plan: None,
+            last_sblr: None,
         }
     }
 
@@ -156,10 +180,207 @@ impl Client {
         })
     }
 
+    pub async fn begin(&mut self, options: Option<TxnBeginOptions>) -> Result<()> {
+        self.begin_transaction(options).await
+    }
+
+    pub async fn commit(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
+        self.commit_transaction(options).await
+    }
+
+    pub async fn rollback(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
+        self.rollback_transaction(options).await
+    }
+
+    pub async fn begin_transaction(&mut self, options: Option<TxnBeginOptions>) -> Result<()> {
+        self.ensure_connected()?;
+        let opts = options.unwrap_or_default();
+        let mut flags = 0u16;
+        let isolation = opts.isolation_level.unwrap_or(protocol::ISOLATION_READ_COMMITTED);
+        if opts.isolation_level.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_ISOLATION;
+        }
+        if opts.access_mode.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_ACCESS;
+        }
+        if opts.deferrable.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_DEFERRABLE;
+        }
+        if opts.wait.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_WAIT;
+        }
+        if opts.timeout_ms.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_TIMEOUT;
+        }
+        if opts.autocommit_mode.is_some() {
+            flags |= protocol::TXN_FLAG_HAS_AUTOCOMMIT;
+        }
+        let payload = protocol::build_txn_begin_payload(
+            flags,
+            opts.conflict_action,
+            opts.autocommit_mode.unwrap_or(0),
+            isolation,
+            opts.access_mode.unwrap_or(0),
+            if opts.deferrable.unwrap_or(false) { 1 } else { 0 },
+            if opts.wait.unwrap_or(false) { 1 } else { 0 },
+            opts.timeout_ms.unwrap_or(0),
+        );
+        self.send_message(protocol::MSG_TXN_BEGIN, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn commit_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
+        self.ensure_connected()?;
+        let flags = options.map(|opt| opt.flags).unwrap_or(0);
+        let payload = protocol::build_txn_commit_payload(flags);
+        self.send_message(protocol::MSG_TXN_COMMIT, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn rollback_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
+        self.ensure_connected()?;
+        let flags = options.map(|opt| opt.flags).unwrap_or(0);
+        let payload = protocol::build_txn_rollback_payload(flags);
+        self.send_message(protocol::MSG_TXN_ROLLBACK, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn savepoint(&mut self, name: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_txn_savepoint_payload(name);
+        self.send_message(protocol::MSG_TXN_SAVEPOINT, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn release_savepoint(&mut self, name: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_txn_release_payload(name);
+        self.send_message(protocol::MSG_TXN_RELEASE, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn rollback_to_savepoint(&mut self, name: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_txn_rollback_to_payload(name);
+        self.send_message(protocol::MSG_TXN_ROLLBACK_TO, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn set_option(&mut self, name: &str, value: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_set_option_payload(name, value);
+        self.send_message(protocol::MSG_SET_OPTION, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn ping(&mut self) -> Result<()> {
+        self.ensure_connected()?;
+        self.send_message(protocol::MSG_PING, &[], 0, false).await?;
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            if msg.header.msg_type == protocol::MSG_PONG || msg.header.msg_type == protocol::MSG_READY {
+                if msg.header.msg_type == protocol::MSG_READY {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                }
+                return Ok(());
+            }
+            if msg.header.msg_type == protocol::MSG_ERROR {
+                return self.raise_protocol_error(&msg.payload);
+            }
+        }
+    }
+
+    pub async fn terminate(&mut self) -> Result<()> {
+        if !self.connected {
+            self.close().await;
+            return Ok(());
+        }
+        self.send_message(protocol::MSG_TERMINATE, &[], 0, false).await?;
+        self.close().await;
+        Ok(())
+    }
+
+    pub async fn subscribe(&mut self, subscribe_type: u8, channel: &str, filter_expr: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_subscribe_payload(subscribe_type, channel, filter_expr);
+        self.send_message(protocol::MSG_SUBSCRIBE, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn unsubscribe(&mut self, channel: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_unsubscribe_payload(channel);
+        self.send_message(protocol::MSG_UNSUBSCRIBE, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn execute_sblr(&mut self, sblr_hash: u64, sblr_bytecode: &[u8], params: &[Param]) -> Result<QueryResult> {
+        self.ensure_connected()?;
+        let mut encoded = Vec::with_capacity(params.len());
+        for param in params {
+            let (value, _oid) = encode_param(param)?;
+            encoded.push(value);
+        }
+        let payload = protocol::build_sblr_execute_payload(sblr_hash, sblr_bytecode, &encoded);
+        self.last_plan = None;
+        self.last_sblr = None;
+        let sequence = self.send_message(protocol::MSG_SBLR_EXECUTE, &payload, 0, false).await?;
+        self.last_query_sequence = sequence;
+        self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
+        self.collect_results().await
+    }
+
+    pub async fn stream_control(&mut self, control_type: u8, window_size: u32, timeout_ms: u32) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_stream_control_payload(control_type, window_size, timeout_ms);
+        self.send_message(protocol::MSG_STREAM_CONTROL, &payload, 0, false).await?;
+        Ok(())
+    }
+
+    pub async fn attach_create(&mut self, emulation_mode: &str, db_name: &str) -> Result<()> {
+        self.ensure_connected()?;
+        let payload = protocol::build_attach_create_payload(emulation_mode, db_name);
+        self.send_message(protocol::MSG_ATTACH_CREATE, &payload, 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn attach_detach(&mut self) -> Result<()> {
+        self.ensure_connected()?;
+        self.send_message(protocol::MSG_ATTACH_DETACH, &[], 0, false).await?;
+        self.drain_until_ready().await
+    }
+
+    pub async fn attach_list(&mut self) -> Result<QueryResult> {
+        self.ensure_connected()?;
+        self.send_message(protocol::MSG_ATTACH_LIST, &[], 0, false).await?;
+        self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
+        self.collect_results().await
+    }
+
+    pub fn on_notification<F>(&mut self, handler: F)
+    where
+        F: Fn(&protocol::Notification) + Send + Sync + 'static,
+    {
+        self.notification_handlers.push(Box::new(handler));
+    }
+
+    pub fn last_query_plan(&self) -> Option<&protocol::QueryPlan> {
+        self.last_plan.as_ref()
+    }
+
+    pub fn last_sblr_compiled(&self) -> Option<&protocol::SblrCompiled> {
+        self.last_sblr.as_ref()
+    }
+
     pub async fn cancel(&mut self) -> Result<()> {
-        let payload = protocol::build_cancel_payload(0, 0);
+        let payload = protocol::build_cancel_payload(0, self.last_query_sequence);
         self.send_message(protocol::MSG_CANCEL, &payload, protocol::MSG_FLAG_URGENT, false)
             .await
+            .map(|_| ())
     }
 
     async fn handshake(&mut self) -> Result<()> {
@@ -226,7 +447,7 @@ impl Client {
                 }
                 protocol::MSG_PARAMETER_STATUS => {
                     let (name, value) = protocol::parse_parameter_status(&msg.payload)?;
-                    self.parameters.insert(name, value);
+                    self.handle_parameter_status(name, value);
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
@@ -261,6 +482,9 @@ impl Client {
 
         loop {
             let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
             match msg.header.msg_type {
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_ROW_DESCRIPTION => {
@@ -274,10 +498,6 @@ impl Client {
                     let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
                     command_tag = tag;
                     row_count = rows_affected as i64;
-                }
-                protocol::MSG_PARAMETER_STATUS => {
-                    let (name, value) = protocol::parse_parameter_status(&msg.payload)?;
-                    self.parameters.insert(name, value);
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
@@ -302,10 +522,72 @@ impl Client {
         }
     }
 
+    async fn drain_until_ready(&mut self) -> Result<()> {
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                    return Ok(());
+                }
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                _ => continue,
+            }
+        }
+    }
+
+    fn handle_parameter_status(&mut self, name: String, value: String) {
+        if name == "attachment_id" {
+            if let Some(parsed) = parse_uuid_bytes(&value) {
+                self.attachment_id = parsed;
+            }
+        }
+        if name == "current_txn_id" {
+            if let Ok(parsed) = value.trim().parse::<u64>() {
+                self.txn_id = parsed;
+            }
+        }
+        self.parameters.insert(name, value);
+    }
+
+    fn handle_async_message(&mut self, msg: &protocol::Message) -> Result<bool> {
+        match msg.header.msg_type {
+            protocol::MSG_PARAMETER_STATUS => {
+                let (name, value) = protocol::parse_parameter_status(&msg.payload)?;
+                self.handle_parameter_status(name, value);
+                Ok(true)
+            }
+            protocol::MSG_NOTIFICATION => {
+                let notice = protocol::parse_notification(&msg.payload)?;
+                for handler in &self.notification_handlers {
+                    handler(&notice);
+                }
+                Ok(true)
+            }
+            protocol::MSG_QUERY_PLAN => {
+                self.last_plan = Some(protocol::parse_query_plan(&msg.payload)?);
+                Ok(true)
+            }
+            protocol::MSG_SBLR_COMPILED => {
+                self.last_sblr = Some(protocol::parse_sblr_compiled(&msg.payload)?);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     async fn send_simple_query(&mut self, sql: &str, max_rows: u32, timeout_ms: u32) -> Result<()> {
         let flags = if self.config.binary_transfer { QUERY_FLAG_BINARY_RESULT } else { 0 };
         let payload = protocol::build_query_payload(sql, flags, max_rows, timeout_ms);
-        self.send_message(protocol::MSG_QUERY, &payload, 0, false).await
+        self.last_plan = None;
+        self.last_sblr = None;
+        let sequence = self.send_message(protocol::MSG_QUERY, &payload, 0, false).await?;
+        self.last_query_sequence = sequence;
+        Ok(())
     }
 
     async fn send_extended_query(&mut self, sql: &str, params: &[Param], max_rows: u32) -> Result<()> {
@@ -334,8 +616,14 @@ impl Client {
         self.send_message(protocol::MSG_BIND, &bind_payload, 0, false).await?;
 
         let exec_payload = protocol::build_execute_payload("", max_rows);
-        self.send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false).await?;
-        self.send_message(protocol::MSG_SYNC, &[], 0, false).await
+        self.last_plan = None;
+        self.last_sblr = None;
+        let sequence = self.send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false).await?;
+        self.last_query_sequence = sequence;
+        if max_rows == 0 {
+            self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
+        }
+        Ok(())
     }
 
     async fn describe_statement(&mut self, statement_name: &str) -> Result<usize> {
@@ -344,19 +632,18 @@ impl Client {
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
         let mut param_count = 0usize;
         loop {
-            let msg = self.receive().await?;
-            match msg.header.typ {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
                 protocol::MSG_PARAMETER_DESCRIPTION => {
-                    let types = protocol::parse_parameter_description(&msg.body)?;
+                    let types = protocol::parse_parameter_description(&msg.payload)?;
                     param_count = types.len();
                 }
-                protocol::MSG_PARAMETER_STATUS => {
-                    let (name, value) = protocol::parse_parameter_status(&msg.body)?;
-                    self.parameters.insert(name, value);
-                }
-                protocol::MSG_ERROR => return Err(protocol_error(&msg.body)),
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_READY => {
-                    let (_, txn_id, _) = protocol::parse_ready(&msg.body)?;
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
                     self.txn_id = txn_id;
                     return Ok(param_count);
                 }
@@ -443,7 +730,7 @@ impl Client {
         Ok(tls)
     }
 
-    async fn send_message(&mut self, msg_type: u8, payload: &[u8], flags: u8, force_zero: bool) -> Result<()> {
+    async fn send_message(&mut self, msg_type: u8, payload: &[u8], flags: u8, force_zero: bool) -> Result<u32> {
         let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
         let sequence = self.sequence;
         self.sequence = self.sequence.wrapping_add(1);
@@ -463,7 +750,7 @@ impl Client {
         } else {
             stream.write_all(&data).await?;
         }
-        Ok(())
+        Ok(sequence)
     }
 
     async fn recv_message(&mut self) -> Result<protocol::Message> {
@@ -542,6 +829,9 @@ impl<'a> QueryStream<'a> {
         }
         loop {
             let msg = self.client.recv_message().await?;
+            if self.client.handle_async_message(&msg)? {
+                continue;
+            }
             match msg.header.msg_type {
                 protocol::MSG_ERROR => return self.client.raise_protocol_error(&msg.payload),
                 protocol::MSG_ROW_DESCRIPTION => {
@@ -560,7 +850,6 @@ impl<'a> QueryStream<'a> {
                 protocol::MSG_PORTAL_SUSPENDED => {
                     let payload = protocol::build_execute_payload("", self.page_size);
                     self.client.send_message(protocol::MSG_EXECUTE, &payload, 0, false).await?;
-                    self.client.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
@@ -624,4 +913,22 @@ fn build_schema_statement(schema: &str) -> String {
 
 fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn parse_uuid_bytes(value: &str) -> Option<[u8; 16]> {
+    let hex: String = value.chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = [0u8; 16];
+    for i in 0..16 {
+        let start = i * 2;
+        let part = &hex[start..start + 2];
+        if let Ok(byte) = u8::from_str_radix(part, 16) {
+            bytes[i] = byte;
+        } else {
+            return None;
+        }
+    }
+    Some(bytes)
 }

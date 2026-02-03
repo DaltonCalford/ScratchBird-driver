@@ -30,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.time.Period;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -285,6 +286,12 @@ public final class SBTypeCodec {
         if (data == null) {
             return null;
         }
+        if (typeOid == 0) {
+            if (format == FORMAT_TEXT) {
+                return parseUnknownText(new String(data, StandardCharsets.UTF_8));
+            }
+            return decodeUnknownBinary(data);
+        }
         if (format == FORMAT_TEXT) {
             return parseTextValue(new String(data, StandardCharsets.UTF_8), typeOid);
         }
@@ -366,6 +373,84 @@ public final class SBTypeCodec {
                 }
                 return data;
         }
+    }
+
+    private static Object decodeUnknownBinary(byte[] data) {
+        byte[] trimmed = stripTrailingNulls(data);
+        if (trimmed.length > 0 && looksLikeText(trimmed)) {
+            return parseUnknownText(new String(trimmed, StandardCharsets.UTF_8));
+        }
+        ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+        switch (data.length) {
+            case 1:
+                return (int) data[0];
+            case 2:
+                return buf.getShort();
+            case 4:
+                return buf.getInt();
+            case 8:
+                return buf.getLong();
+            case 16:
+                return bytesToUuid(data);
+            default:
+                return data;
+        }
+    }
+
+    private static Object parseUnknownText(String text) {
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) {
+            return text;
+        }
+        String lowered = trimmed.toLowerCase();
+        if (lowered.equals("true")) {
+            return Boolean.TRUE;
+        }
+        if (lowered.equals("false")) {
+            return Boolean.FALSE;
+        }
+        if (trimmed.matches("[+-]?\\d+")) {
+            try {
+                long value = Long.parseLong(trimmed);
+                if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
+                    return (int) value;
+                }
+                return value;
+            } catch (NumberFormatException ex) {
+                return text;
+            }
+        }
+        if (trimmed.matches("[+-]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][+-]?\\d+)?")) {
+            try {
+                return Double.parseDouble(trimmed);
+            } catch (NumberFormatException ex) {
+                return text;
+            }
+        }
+        return text;
+    }
+
+    private static byte[] stripTrailingNulls(byte[] data) {
+        int end = data.length;
+        while (end > 0 && data[end - 1] == 0) {
+            end -= 1;
+        }
+        if (end == data.length) {
+            return data;
+        }
+        return Arrays.copyOf(data, end);
+    }
+
+    private static boolean looksLikeText(byte[] data) {
+        for (byte b : data) {
+            if (b == 0x09 || b == 0x0a || b == 0x0d) {
+                continue;
+            }
+            if ((b & 0xFF) < 0x20 || (b & 0xFF) > 0x7e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Object parseTextValue(String text, int oid) throws SQLException {

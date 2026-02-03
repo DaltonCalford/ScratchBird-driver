@@ -49,6 +49,10 @@ internal static class SqlHelpers
             {
                 continue;
             }
+            if (ch == ':' && ((i + 1 < sql.Length && sql[i + 1] == ':') || (i > 0 && sql[i - 1] == ':')))
+            {
+                continue;
+            }
             if ((ch == ':' || ch == '@') && IsIdentStart(sql[i + 1]))
             {
                 return true;
@@ -78,6 +82,12 @@ internal static class SqlHelpers
             if (ch == '\'')
             {
                 inString = !inString;
+                sb.Append(ch);
+                i++;
+                continue;
+            }
+            if (!inString && ch == ':' && ((i + 1 < sql.Length && sql[i + 1] == ':') || (i > 0 && sql[i - 1] == ':')))
+            {
                 sb.Append(ch);
                 i++;
                 continue;

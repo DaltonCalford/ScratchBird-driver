@@ -46,6 +46,9 @@ final class ResultStream
         }
         while (true) {
             [$type, , $payload] = $this->connection->receive();
+            if ($this->connection->handleAsyncMessage($type, $payload)) {
+                continue;
+            }
             switch ($type) {
                 case Protocol::MSG_ERROR:
                     throw $this->connection->buildQueryException($payload);

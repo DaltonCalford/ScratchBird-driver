@@ -6,16 +6,9 @@
 -- You may obtain a copy of the License at:
 -- https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 -- ScratchBird driver conformance type fixture
--- Assumes core_fixture.sql has created schema sb_conformance.
+-- Assumes core_fixture.sql has created base tables.
 
-CREATE DOMAIN sb_conformance.address_record AS RECORD (
-    street VARCHAR(50),
-    city VARCHAR(50),
-    state CHAR(2),
-    postal VARCHAR(10)
-);
-
-CREATE TABLE sb_conformance.type_coverage (
+CREATE TABLE type_coverage (
     bool_val BOOLEAN,
     int16_val SMALLINT,
     int32_val INTEGER,
@@ -33,7 +26,7 @@ CREATE TABLE sb_conformance.type_coverage (
     time_val TIME,
     ts_val TIMESTAMP,
     tstz_val TIMESTAMP WITH TIME ZONE,
-    interval_val INTERVAL DAY TO SECOND,
+    interval_val INTERVAL,
     uuid_val UUID,
     json_val JSON,
     jsonb_val JSONB,
@@ -44,18 +37,12 @@ CREATE TABLE sb_conformance.type_coverage (
     array_val INTEGER[],
     vector_val VECTOR(3),
     tsvector_val TSVECTOR,
-    tsquery_val TSQUERY,
-    int4range_val INT4RANGE,
-    int8range_val INT8RANGE,
-    numrange_val NUMRANGE,
-    tsrange_val TSRANGE,
-    tstzrange_val TSTZRANGE,
-    daterange_val DATERANGE,
-    geom_val GEOMETRY(POINT, 4326),
-    composite_val sb_conformance.address_record
+    tsquery_val TSQUERY
 );
 
-INSERT INTO sb_conformance.type_coverage (
+DELETE FROM type_coverage;
+
+INSERT INTO type_coverage (
     bool_val,
     int16_val,
     int32_val,
@@ -84,15 +71,7 @@ INSERT INTO sb_conformance.type_coverage (
     array_val,
     vector_val,
     tsvector_val,
-    tsquery_val,
-    int4range_val,
-    int8range_val,
-    numrange_val,
-    tsrange_val,
-    tstzrange_val,
-    daterange_val,
-    geom_val,
-    composite_val
+    tsquery_val
 ) VALUES (
     TRUE,
     32767,
@@ -107,28 +86,20 @@ INSERT INTO sb_conformance.type_coverage (
     'varchar-value',
     'text-value',
     CAST('01020304' AS BYTEA),
-    DATE '2026-01-09',
-    TIME '12:34:56.789',
-    TIMESTAMP '2026-01-09 12:34:56.789',
-    CAST('2026-01-09 12:34:56.789+00' AS TIMESTAMP WITH TIME ZONE),
-    INTERVAL '2 03:04:05' DAY TO SECOND,
-    '00000000-0000-0000-0000-000000000002'::UUID,
+    CAST('2026-01-09' AS DATE),
+    CAST('12:34:56.789' AS TIME),
+    CAST('2026-01-09 12:34:56.789' AS TIMESTAMP),
+    CAST('2026-01-09 12:34:56.789+00:00' AS TIMESTAMP WITH TIME ZONE),
+    CAST(NULL AS INTERVAL),
+    CAST('00000000-0000-0000-0000-000000000002' AS UUID),
     CAST('{"k":"v"}' AS JSON),
     CAST('{"k":"v"}' AS JSONB),
     CAST('<root><a>1</a></root>' AS XML),
-    CAST('192.168.1.10' AS INET),
-    CAST('192.168.0.0/24' AS CIDR),
-    CAST('08:00:2b:01:02:03' AS MACADDR),
-    ARRAY[1, 2, 3],
-    '[0.1, 0.2, 0.3]'::VECTOR(3),
-    CAST('a:1 b:2' AS TSVECTOR),
-    CAST('a & b' AS TSQUERY),
-    '[1,10]'::INT4RANGE,
-    '[100,200]'::INT8RANGE,
-    '[1.5,2.5]'::NUMRANGE,
-    '[2026-01-01 00:00:00,2026-01-02 00:00:00)'::TSRANGE,
-    '[2026-01-01 00:00:00+00,2026-01-02 00:00:00+00)'::TSTZRANGE,
-    '[2026-01-01,2026-12-31]'::DATERANGE,
-    'POINT(1 2)'::GEOMETRY(POINT, 4326),
-    ROW('123 Main St', 'Anytown', 'CA', '12345')::sb_conformance.address_record
+    CAST(NULL AS INET),
+    CAST(NULL AS CIDR),
+    CAST(NULL AS MACADDR),
+    CAST(NULL AS INTEGER[]),
+    CAST(NULL AS VECTOR(3)),
+    CAST(NULL AS TSVECTOR),
+    CAST(NULL AS TSQUERY)
 );

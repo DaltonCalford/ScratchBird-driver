@@ -201,6 +201,10 @@ module Scratchbird
 
     def self.decode(type_oid, data, format)
       return nil if data.nil?
+      if type_oid.to_i == 0
+        return parse_unknown_text(decode_text_value(data)) if format == FORMAT_TEXT
+        return decode_unknown_binary(data)
+      end
       return decode_text_value(data) if format == FORMAT_TEXT
       decode_binary_value(type_oid, data)
     end
@@ -301,6 +305,60 @@ module Scratchbird
         return data.byteslice(4, length).to_s if length <= data.bytesize - 4
       end
       data
+    end
+
+    def self.decode_unknown_binary(data)
+      trimmed = strip_trailing_nulls(data)
+      if trimmed.bytesize.positive? && looks_like_text(trimmed)
+        return parse_unknown_text(trimmed.force_encoding("UTF-8"))
+      end
+      case data.bytesize
+      when 1 then data.getbyte(0)
+      when 2 then data.unpack1("s<")
+      when 4 then data.unpack1("l<")
+      when 8 then data.unpack1("q<")
+      when 16 then bytes_to_uuid(data)
+      else data
+      end
+    end
+
+    def self.parse_unknown_text(text)
+      trimmed = text.strip
+      return text if trimmed.empty?
+      lowered = trimmed.downcase
+      return true if lowered == "true"
+      return false if lowered == "false"
+      if trimmed.match?(/\A[+-]?\d+\z/)
+        begin
+          return Integer(trimmed, 10)
+        rescue ArgumentError
+          return trimmed
+        end
+      end
+      if trimmed.match?(/\A[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?\z/)
+        begin
+          return Float(trimmed)
+        rescue ArgumentError
+          return trimmed
+        end
+      end
+      text
+    end
+
+    def self.strip_trailing_nulls(data)
+      end_idx = data.bytesize
+      while end_idx.positive? && data.getbyte(end_idx - 1) == 0
+        end_idx -= 1
+      end
+      data.byteslice(0, end_idx)
+    end
+
+    def self.looks_like_text(data)
+      data.each_byte do |byte|
+        next if byte == 9 || byte == 10 || byte == 13
+        return false if byte < 0x20 || byte > 0x7e
+      end
+      true
     end
 
     def self.encode_length_prefixed(data)

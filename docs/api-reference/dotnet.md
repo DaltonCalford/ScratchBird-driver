@@ -26,6 +26,23 @@
   `ScratchBirdMoney`
 - `ScratchBirdRaw`
 
+## SBWP v1.1 Extensions
+
+Advanced protocol operations are exposed on the internal `ProtocolClient`
+owned by `ScratchBirdConnection`:
+
+- `Begin()`, `Commit()`, `Rollback()`
+- `Savepoint(name)`, `ReleaseSavepoint(name)`, `RollbackToSavepoint(name)`
+- `SetOption(name, value)`
+- `Ping()`
+- `Subscribe(type, channel, filterExpr)`, `Unsubscribe(channel)`
+- `ExecuteSblr(hash, bytecode, parameters, timeoutMs, maxRows)`
+- `StreamControl(controlType, windowSize, timeoutMs)`
+- `AttachCreate(emulationMode, dbName)`, `AttachDetach()`, `AttachList()`
+- `OnNotification(handler)`
+- `LastPlan`, `LastSblr`
+- `Cancel()`
+
 ## Errors
 
 Errors map to SQLSTATE codes per

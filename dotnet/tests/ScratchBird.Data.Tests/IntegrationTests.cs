@@ -66,7 +66,7 @@ public class IntegrationTests
         conn.Open();
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT * FROM sb_conformance.type_coverage";
+        cmd.CommandText = "SELECT * FROM type_coverage";
         using var reader = cmd.ExecuteReader();
 
         Assert.True(reader.Read());

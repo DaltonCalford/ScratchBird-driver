@@ -11,19 +11,18 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-)
-
-const (
-	queryFlagBinaryResult = 0x04
 )
 
 const (
@@ -42,6 +41,9 @@ type Conn struct {
 	authed       bool
 	pending      []protocolMessage
 	params       map[string]string
+	notificationHandlers []func(notificationMessage)
+	lastPlan     *queryPlan
+	lastSblr     *sblrCompiled
 }
 
 func (c *Conn) connect(ctx context.Context) error {
@@ -197,6 +199,9 @@ func (c *Conn) handshake(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
 		switch msg.header.typ {
 		case msgNegotiateVersion:
 			continue
@@ -230,12 +235,6 @@ func (c *Conn) handshake(ctx context.Context) error {
 				_ = scram.verifyServerFinal(string(info))
 			}
 			_ = sessionID
-		case msgParameterStatus:
-			name, value, err := parseParameterStatus(msg.body)
-			if err != nil {
-				return err
-			}
-			c.params[name] = value
 		case msgReady:
 			_, txnID, _, err := parseReady(msg.body)
 			if err != nil {
@@ -328,6 +327,9 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		if err != nil {
 			return nil, err
 		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
 		switch msg.header.typ {
 		case msgParameterDescription:
 			types, err := parseParameterDescription(msg.body)
@@ -335,12 +337,6 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 				return nil, err
 			}
 			paramCount = len(types)
-		case msgParameterStatus:
-			name, value, err := parseParameterStatus(msg.body)
-			if err != nil {
-				return nil, err
-			}
-			c.params[name] = value
 		case msgError:
 			return nil, buildProtocolError(msg.body)
 		case msgReady:
@@ -364,8 +360,33 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
-	// ScratchBird uses implicit transactions; explicit begin is a no-op for now.
-	_ = opts
+	flags := uint16(0)
+	isolation := isolationReadCommitted
+	if opts.Isolation != 0 {
+		flags |= txnFlagHasIsolation
+		switch opts.Isolation {
+		case driver.IsolationLevel(sql.LevelReadUncommitted):
+			isolation = isolationReadUncommitted
+		case driver.IsolationLevel(sql.LevelReadCommitted):
+			isolation = isolationReadCommitted
+		case driver.IsolationLevel(sql.LevelRepeatableRead):
+			isolation = isolationRepeatableRead
+		case driver.IsolationLevel(sql.LevelSerializable):
+			isolation = isolationSerializable
+		}
+	}
+	accessMode := byte(0)
+	if opts.ReadOnly {
+		flags |= txnFlagHasAccess
+		accessMode = 1
+	}
+	payload := buildTxnBeginPayload(flags, 0, 0, isolation, accessMode, 0, 0, 0)
+	if err := c.sendMessage(msgTxnBegin, payload, 0, false); err != nil {
+		return nil, err
+	}
+	if _, _, _, err := c.drainUntilReady(ctx); err != nil {
+		return nil, err
+	}
 	return &Tx{conn: c}, nil
 }
 
@@ -463,6 +484,9 @@ func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx conte
 		if err != nil {
 			return err
 		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
 		switch msg.header.typ {
 		case msgParameterDescription:
 			types, err := parseParameterDescription(msg.body)
@@ -470,12 +494,6 @@ func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx conte
 				return err
 			}
 			paramCount = len(types)
-		case msgParameterStatus:
-			name, value, err := parseParameterStatus(msg.body)
-			if err != nil {
-				return err
-			}
-			c.params[name] = value
 		case msgError:
 			return buildProtocolError(msg.body)
 		case msgReady:
@@ -491,7 +509,7 @@ func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx conte
 	}
 described:
 	if paramCount >= 0 && paramCount != len(args) {
-		return &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
+		return &Error{Kind: ErrSyntax, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	resultFormats := []uint16{}
 	if c.config.BinaryTransfer {
@@ -506,6 +524,9 @@ described:
 	if err := c.sendMessage(msgExecute, execPayload, 0, false); err != nil {
 		return err
 	}
+	if maxRows > 0 {
+		return nil
+	}
 	return c.sendMessage(msgSync, nil, 0, false)
 }
 
@@ -513,16 +534,187 @@ func (c *Conn) Ping(ctx context.Context) error {
 	if err := c.ensureOpen(ctx); err != nil {
 		return err
 	}
-	if err := c.sendSimpleQuery("SELECT 1", ctx); err != nil {
+	if err := c.sendMessage(msgPing, nil, 0, false); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		msg, err := c.receive()
+		if err != nil {
+			return err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgPong:
+			return nil
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err == nil {
+				c.txnID = txnID
+			}
+			return nil
+		case msgError:
+			return buildProtocolError(msg.body)
+		default:
+			continue
+		}
+	}
+}
+
+func (c *Conn) ResetSession(ctx context.Context) error {
+	_ = ctx
+	return nil
+}
+
+func (c *Conn) SetOption(ctx context.Context, name, value string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	payload := buildSetOptionPayload(name, value)
+	if err := c.sendMessage(msgSetOption, payload, 0, false); err != nil {
 		return err
 	}
 	_, _, _, err := c.drainUntilReady(ctx)
 	return err
 }
 
-func (c *Conn) ResetSession(ctx context.Context) error {
-	_ = ctx
-	return nil
+func (c *Conn) Subscribe(ctx context.Context, subType byte, channel, filter string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	payload := buildSubscribePayload(subType, channel, filter)
+	if err := c.sendMessage(msgSubscribe, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) Unsubscribe(ctx context.Context, channel string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	payload := buildUnsubscribePayload(channel)
+	if err := c.sendMessage(msgUnsubscribe, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) OnNotification(handler func(notificationMessage)) {
+	if handler == nil {
+		return
+	}
+	c.notificationHandlers = append(c.notificationHandlers, handler)
+}
+
+func (c *Conn) LastPlan() *queryPlan {
+	return c.lastPlan
+}
+
+func (c *Conn) LastSblr() *sblrCompiled {
+	return c.lastSblr
+}
+
+func (c *Conn) QuerySblr(ctx context.Context, hash uint64, bytecode []byte, params []driver.NamedValue) (driver.Rows, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	paramValues := make([]paramValue, 0, len(params))
+	for _, arg := range params {
+		value, _, err := encodeParam(arg.Value)
+		if err != nil {
+			return nil, err
+		}
+		value.format = formatBinary
+		paramValues = append(paramValues, value)
+	}
+	payload := buildSblrExecutePayload(hash, bytecode, paramValues)
+	if err := c.sendMessage(msgSblrExecute, payload, 0, false); err != nil {
+		return nil, err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	return newRows(c, ctx), nil
+}
+
+func (c *Conn) ExecSblr(ctx context.Context, hash uint64, bytecode []byte, params []driver.NamedValue) (driver.Result, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	paramValues := make([]paramValue, 0, len(params))
+	for _, arg := range params {
+		value, _, err := encodeParam(arg.Value)
+		if err != nil {
+			return nil, err
+		}
+		value.format = formatBinary
+		paramValues = append(paramValues, value)
+	}
+	payload := buildSblrExecutePayload(hash, bytecode, paramValues)
+	if err := c.sendMessage(msgSblrExecute, payload, 0, false); err != nil {
+		return nil, err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	tag, affected, lastID, err := c.drainUntilReady(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{tag: tag, rowsAffected: int64(affected), lastInsertID: int64(lastID)}, nil
+}
+
+func (c *Conn) StreamControl(ctx context.Context, controlType byte, windowSize, timeoutMs uint32) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	payload := buildStreamControlPayload(controlType, windowSize, timeoutMs)
+	return c.sendMessage(msgStreamControl, payload, 0, false)
+}
+
+func (c *Conn) AttachCreate(ctx context.Context, emulationMode, dbName string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	payload := buildAttachCreatePayload(emulationMode, dbName)
+	if err := c.sendMessage(msgAttachCreate, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) AttachDetach(ctx context.Context) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	if err := c.sendMessage(msgAttachDetach, nil, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) AttachList(ctx context.Context) (driver.Rows, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.sendMessage(msgAttachList, nil, 0, false); err != nil {
+		return nil, err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		return nil, err
+	}
+	return newRows(c, ctx), nil
 }
 
 func (c *Conn) Close() error {
@@ -639,6 +831,49 @@ func (c *Conn) applySchema(ctx context.Context) error {
 	return err
 }
 
+func (c *Conn) handleAsyncMessage(msg protocolMessage) bool {
+	switch msg.header.typ {
+	case msgParameterStatus:
+		name, value, err := parseParameterStatus(msg.body)
+		if err == nil {
+			c.params[name] = value
+			switch name {
+			case "attachment_id":
+				if parsed, ok := parseUUIDHex(value); ok {
+					c.attachmentID = parsed
+				}
+			case "current_txn_id":
+				if parsed, err := parseUint64String(value); err == nil {
+					c.txnID = parsed
+				}
+			}
+		}
+		return true
+	case msgNotification:
+		notice, err := parseNotification(msg.body)
+		if err == nil {
+			for _, handler := range c.notificationHandlers {
+				handler(notice)
+			}
+		}
+		return true
+	case msgQueryPlan:
+		plan, err := parseQueryPlan(msg.body)
+		if err == nil {
+			c.lastPlan = &plan
+		}
+		return true
+	case msgSblrCompiled:
+		compiled, err := parseSblrCompiled(msg.body)
+		if err == nil {
+			c.lastSblr = &compiled
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 func buildSchemaStatement(schema string) string {
 	schema = strings.TrimSpace(schema)
 	if schema == "" {
@@ -666,6 +901,25 @@ func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
+func parseUUIDHex(value string) ([16]byte, bool) {
+	var out [16]byte
+	trimmed := strings.TrimSpace(strings.ReplaceAll(value, "-", ""))
+	if len(trimmed) != 32 {
+		return out, false
+	}
+	bytes, err := hex.DecodeString(trimmed)
+	if err != nil || len(bytes) != 16 {
+		return out, false
+	}
+	copy(out[:], bytes)
+	return out, true
+}
+
+func parseUint64String(value string) (uint64, error) {
+	trimmed := strings.TrimSpace(value)
+	return strconv.ParseUint(trimmed, 10, 64)
+}
+
 func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, error) {
 	var tag string
 	var rows uint64
@@ -680,6 +934,9 @@ func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, err
 		msg, err := c.receive()
 		if err != nil {
 			return "", 0, 0, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
 		}
 		switch msg.header.typ {
 		case msgError:
@@ -754,7 +1011,7 @@ func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 		return nil, err
 	}
 	if s.paramCount >= 0 && s.paramCount != len(args) {
-		return nil, &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
+		return nil, &Error{Kind: ErrSyntax, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {
@@ -792,7 +1049,7 @@ func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 		return nil, err
 	}
 	if s.paramCount >= 0 && s.paramCount != len(args) {
-		return nil, &Error{Kind: ErrProtocol, Message: "parameter count mismatch", SQLState: "07001"}
+		return nil, &Error{Kind: ErrSyntax, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {
@@ -826,9 +1083,23 @@ type Tx struct {
 }
 
 func (t *Tx) Commit() error {
-	return nil
+	if t.conn == nil {
+		return nil
+	}
+	if err := t.conn.sendMessage(msgTxnCommit, buildTxnCommitPayload(0), 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := t.conn.drainUntilReady(context.Background())
+	return err
 }
 
 func (t *Tx) Rollback() error {
-	return nil
+	if t.conn == nil {
+		return nil
+	}
+	if err := t.conn.sendMessage(msgTxnRollback, buildTxnRollbackPayload(0), 0, false); err != nil {
+		return err
+	}
+	_, _, _, err := t.conn.drainUntilReady(context.Background())
+	return err
 }

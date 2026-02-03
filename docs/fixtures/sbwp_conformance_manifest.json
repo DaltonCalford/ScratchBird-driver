@@ -35,20 +35,20 @@
     {
       "id": "types_one_way",
       "kind": "query",
-      "sql": "SELECT * FROM sb_conformance.type_coverage",
+      "sql": "SELECT * FROM type_coverage",
       "expect_rows": 1
     },
     {
       "id": "paging_basic_table",
       "kind": "query",
-      "sql": "SELECT id FROM sb_conformance.basic_table ORDER BY id",
+      "sql": "SELECT id FROM basic_table ORDER BY id",
       "expect_rows": 6,
       "dsn_append": "fetch_size=1"
     },
     {
       "id": "cancel_stream",
       "kind": "cancel",
-      "sql": "SELECT id FROM sb_conformance.basic_table ORDER BY id",
+      "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
       "cancel_after_rows": 1,
       "expect_sqlstate": "57014",
       "dsn_append": "fetch_size=1",

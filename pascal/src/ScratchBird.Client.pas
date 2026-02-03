@@ -35,6 +35,31 @@ type
     property CommandTag: string read FCommandTag;
   end;
 
+  TNotification = record
+    ProcessId: Cardinal;
+    Channel: string;
+    Payload: TBytes;
+    ChangeType: string;
+    RowId: UInt64;
+    HasRowId: Boolean;
+  end;
+
+  TNotificationHandler = procedure(const Notice: TNotification) of object;
+
+  TQueryPlan = record
+    Format: Cardinal;
+    PlanningTimeUs: UInt64;
+    EstimatedRows: UInt64;
+    EstimatedCost: UInt64;
+    Plan: TBytes;
+  end;
+
+  TSblrCompiled = record
+    Hash: UInt64;
+    Version: Cardinal;
+    Bytecode: TBytes;
+  end;
+
   TScratchBirdClient = class
   private
     FConfig: TScratchBirdConfig;
@@ -47,31 +72,60 @@ type
     FLastQuerySequence: Cardinal;
     FLastMaxRows: Cardinal;
     FParameters: TStringList;
+    FOnNotification: TNotificationHandler;
+    FLastPlan: TQueryPlan;
+    FHasLastPlan: Boolean;
+    FLastSblr: TSblrCompiled;
+    FHasLastSblr: Boolean;
     function ReadExact(Length: Integer): TBytes;
     procedure SendBytes(const Data: TBytes);
     function ReceiveMessage: TScratchBirdMessage;
     procedure HandshakeAndAuth;
     procedure ApplySchema;
     function BuildQueryError(const Payload: TBytes): EScratchBirdError;
+    procedure HandleParameterStatus(const Name, Value: string);
+    function HandleAsyncMessage(const Msg: TScratchBirdMessage): Boolean;
     procedure DrainUntilReady;
     function DescribeStatement(const StatementName: string): Integer;
     function SendMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte; ForceZero: Boolean): Cardinal;
     procedure SendSimpleQuery(const Sql: string; MaxRows: Cardinal);
     procedure SendExtendedQuery(const Sql: string; const Params: array of TScratchBirdParamInput; MaxRows: Cardinal);
     function CurrentMaxRows: Cardinal;
+    procedure ParseNotification(const Payload: TBytes; out Notice: TNotification);
+    procedure ParseQueryPlan(const Payload: TBytes; out Plan: TQueryPlan);
+    procedure ParseSblrCompiled(const Payload: TBytes; out Compiled: TSblrCompiled);
+    function ParseUuidBytes(const Value: string): TBytes;
   public
     constructor Create;
     destructor Destroy; override;
     procedure Connect(const Dsn: string);
     procedure Disconnect;
     procedure BeginTransaction;
-    procedure Commit;
-    procedure Rollback;
+    procedure BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+      TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte);
+    procedure Commit(Flags: Byte = 0);
+    procedure Rollback(Flags: Byte = 0);
+    procedure Savepoint(const Name: string);
+    procedure ReleaseSavepoint(const Name: string);
+    procedure RollbackToSavepoint(const Name: string);
+    procedure SetOption(const Name, Value: string);
+    procedure Ping;
+    procedure Terminate;
+    procedure Subscribe(SubscribeType: Byte; const Channel, FilterExpr: string);
+    procedure Unsubscribe(const Channel: string);
+    function ExecuteSblr(SblrHash: UInt64; const Bytecode: TBytes; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+    procedure StreamControl(ControlType: Byte; WindowSize, TimeoutMs: Cardinal);
+    procedure AttachCreate(const EmulationMode, DbName: string);
+    procedure AttachDetach;
+    function AttachList: TScratchBirdResultStream;
     procedure ExecSQL(const Sql: string);
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
     function ExecuteQuery(const Sql: string): TScratchBirdResultStream;
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
     procedure Cancel;
+    function GetLastPlan(out Plan: TQueryPlan): Boolean;
+    function GetLastSblr(out Compiled: TSblrCompiled): Boolean;
+    property OnNotification: TNotificationHandler read FOnNotification write FOnNotification;
     property Connected: Boolean read FConnected;
     property Config: TScratchBirdConfig read FConfig;
   end;
@@ -152,6 +206,8 @@ begin
   while True do
   begin
     Msg := Client.ReceiveMessage;
+    if Client.HandleAsyncMessage(Msg) then
+      Continue;
     case Msg.MsgType of
       MSG_ERROR:
         raise Client.BuildQueryError(Msg.Payload);
@@ -180,7 +236,6 @@ begin
       MSG_PORTAL_SUSPENDED:
       begin
         Client.SendMessage(MSG_EXECUTE, BuildExecutePayload('', Client.CurrentMaxRows), 0, False);
-        Client.SendMessage(MSG_SYNC, nil, 0, False);
       end;
       MSG_READY:
       begin
@@ -205,6 +260,9 @@ begin
   FTxnId := 0;
   FLastMaxRows := 0;
   FParameters := TStringList.Create;
+  FHasLastPlan := False;
+  FHasLastSblr := False;
+  FOnNotification := nil;
 end;
 
 destructor TScratchBirdClient.Destroy;
@@ -279,16 +337,163 @@ end;
 
 procedure TScratchBirdClient.BeginTransaction;
 begin
+  BeginTransactionEx(ISOLATION_READ_COMMITTED, 0, False, False, 0, 0, 0);
 end;
 
-procedure TScratchBirdClient.Commit;
+procedure TScratchBirdClient.BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+  TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte);
+var
+  Flags: Word;
+  Payload: TBytes;
 begin
-  ExecSQL('COMMIT');
+  Flags := TXN_FLAG_HAS_ISOLATION;
+  if AccessMode <> 0 then
+    Flags := Flags or TXN_FLAG_HAS_ACCESS;
+  if Deferrable then
+    Flags := Flags or TXN_FLAG_HAS_DEFERRABLE;
+  if WaitMode then
+    Flags := Flags or TXN_FLAG_HAS_WAIT;
+  if TimeoutMs > 0 then
+    Flags := Flags or TXN_FLAG_HAS_TIMEOUT;
+  if AutocommitMode <> 0 then
+    Flags := Flags or TXN_FLAG_HAS_AUTOCOMMIT;
+  Payload := BuildTxnBeginPayload(Flags, ConflictAction, AutocommitMode, IsolationLevel, AccessMode,
+    Ord(Deferrable), Ord(WaitMode), TimeoutMs);
+  SendMessage(MSG_TXN_BEGIN, Payload, 0, False);
+  DrainUntilReady;
 end;
 
-procedure TScratchBirdClient.Rollback;
+procedure TScratchBirdClient.Commit(Flags: Byte = 0);
+var
+  Payload: TBytes;
 begin
-  ExecSQL('ROLLBACK');
+  Payload := BuildTxnCommitPayload(Flags);
+  SendMessage(MSG_TXN_COMMIT, Payload, 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.Rollback(Flags: Byte = 0);
+var
+  Payload: TBytes;
+begin
+  Payload := BuildTxnRollbackPayload(Flags);
+  SendMessage(MSG_TXN_ROLLBACK, Payload, 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.Savepoint(const Name: string);
+begin
+  SendMessage(MSG_TXN_SAVEPOINT, BuildTxnSavepointPayload(Name), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.ReleaseSavepoint(const Name: string);
+begin
+  SendMessage(MSG_TXN_RELEASE, BuildTxnReleasePayload(Name), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.RollbackToSavepoint(const Name: string);
+begin
+  SendMessage(MSG_TXN_ROLLBACK_TO, BuildTxnRollbackToPayload(Name), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.SetOption(const Name, Value: string);
+begin
+  SendMessage(MSG_SET_OPTION, BuildSetOptionPayload(Name, Value), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.Ping;
+var
+  Msg: TScratchBirdMessage;
+  Status: Byte;
+  TxnId, Visibility: UInt64;
+begin
+  SendMessage(MSG_PING, nil, 0, False);
+  while True do
+  begin
+    Msg := ReceiveMessage;
+    if HandleAsyncMessage(Msg) then
+      Continue;
+    case Msg.MsgType of
+      MSG_PONG:
+        Exit;
+      MSG_READY:
+        begin
+          ParseReady(Msg.Payload, Status, TxnId, Visibility);
+          FTxnId := TxnId;
+          Exit;
+        end;
+      MSG_ERROR:
+        raise BuildQueryError(Msg.Payload);
+    end;
+  end;
+end;
+
+procedure TScratchBirdClient.Terminate;
+begin
+  SendMessage(MSG_TERMINATE, nil, 0, False);
+  Disconnect;
+end;
+
+procedure TScratchBirdClient.Subscribe(SubscribeType: Byte; const Channel, FilterExpr: string);
+begin
+  SendMessage(MSG_SUBSCRIBE, BuildSubscribePayload(SubscribeType, Channel, FilterExpr), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.Unsubscribe(const Channel: string);
+begin
+  SendMessage(MSG_UNSUBSCRIBE, BuildUnsubscribePayload(Channel), 0, False);
+  DrainUntilReady;
+end;
+
+function TScratchBirdClient.ExecuteSblr(SblrHash: UInt64; const Bytecode: TBytes; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+var
+  ParamValues: TArray<TParamValue>;
+  Param: TParamValue;
+  Oid: Cardinal;
+  I: Integer;
+  Payload: TBytes;
+begin
+  SetLength(ParamValues, Length(Params));
+  for I := 0 to High(Params) do
+  begin
+    EncodeParam(Params[I].Value, Params[I].Obj, Param, Oid);
+    ParamValues[I] := Param;
+  end;
+  FHasLastPlan := False;
+  FHasLastSblr := False;
+  Payload := BuildSblrExecutePayload(SblrHash, Bytecode, ParamValues);
+  FLastQuerySequence := SendMessage(MSG_SBLR_EXECUTE, Payload, 0, False);
+  SendMessage(MSG_SYNC, nil, 0, False);
+  Result := TScratchBirdResultStream.Create(Self);
+end;
+
+procedure TScratchBirdClient.StreamControl(ControlType: Byte; WindowSize, TimeoutMs: Cardinal);
+begin
+  SendMessage(MSG_STREAM_CONTROL, BuildStreamControlPayload(ControlType, WindowSize, TimeoutMs), 0, False);
+end;
+
+procedure TScratchBirdClient.AttachCreate(const EmulationMode, DbName: string);
+begin
+  SendMessage(MSG_ATTACH_CREATE, BuildAttachCreatePayload(EmulationMode, DbName), 0, False);
+  DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.AttachDetach;
+begin
+  SendMessage(MSG_ATTACH_DETACH, nil, 0, False);
+  DrainUntilReady;
+end;
+
+function TScratchBirdClient.AttachList: TScratchBirdResultStream;
+begin
+  SendMessage(MSG_ATTACH_LIST, nil, 0, False);
+  SendMessage(MSG_SYNC, nil, 0, False);
+  Result := TScratchBirdResultStream.Create(Self);
 end;
 
 procedure TScratchBirdClient.ExecSQL(const Sql: string);
@@ -326,6 +531,20 @@ end;
 procedure TScratchBirdClient.Cancel;
 begin
   SendMessage(MSG_CANCEL, BuildCancelPayload(0, FLastQuerySequence), MSG_FLAG_URGENT, False);
+end;
+
+function TScratchBirdClient.GetLastPlan(out Plan: TQueryPlan): Boolean;
+begin
+  Result := FHasLastPlan;
+  if Result then
+    Plan := FLastPlan;
+end;
+
+function TScratchBirdClient.GetLastSblr(out Compiled: TSblrCompiled): Boolean;
+begin
+  Result := FHasLastSblr;
+  if Result then
+    Compiled := FLastSblr;
 end;
 
 procedure TScratchBirdClient.SendBytes(const Data: TBytes);
@@ -466,7 +685,7 @@ begin
         MSG_PARAMETER_STATUS:
           begin
             ParseParameterStatus(Msg.Payload, Name, Value);
-            FParameters.Values[Name] := Value;
+            HandleParameterStatus(Name, Value);
             Continue;
           end;
         MSG_READY:
@@ -492,24 +711,217 @@ begin
   Result := MapSqlState(SqlState, Msg, Detail, Hint);
 end;
 
+procedure TScratchBirdClient.HandleParameterStatus(const Name, Value: string);
+var
+  Bytes: TBytes;
+  Parsed: UInt64;
+begin
+  FParameters.Values[Name] := Value;
+  if SameText(Name, 'attachment_id') then
+  begin
+    Bytes := ParseUuidBytes(Value);
+    if Length(Bytes) = 16 then
+      FAttachmentId := Bytes;
+  end;
+  if SameText(Name, 'current_txn_id') then
+  begin
+    if TryStrToUInt64(Value, Parsed) then
+      FTxnId := Parsed;
+  end;
+end;
+
+function TScratchBirdClient.HandleAsyncMessage(const Msg: TScratchBirdMessage): Boolean;
+var
+  Name, Value: string;
+  Notice: TNotification;
+  Plan: TQueryPlan;
+  Compiled: TSblrCompiled;
+begin
+  Result := True;
+  case Msg.MsgType of
+    MSG_PARAMETER_STATUS:
+      begin
+        ParseParameterStatus(Msg.Payload, Name, Value);
+        HandleParameterStatus(Name, Value);
+      end;
+    MSG_NOTIFICATION:
+      begin
+        ParseNotification(Msg.Payload, Notice);
+        if Assigned(FOnNotification) then
+          FOnNotification(Notice);
+      end;
+    MSG_QUERY_PLAN:
+      begin
+        ParseQueryPlan(Msg.Payload, Plan);
+        FLastPlan := Plan;
+        FHasLastPlan := True;
+      end;
+    MSG_SBLR_COMPILED:
+      begin
+        ParseSblrCompiled(Msg.Payload, Compiled);
+        FLastSblr := Compiled;
+        FHasLastSblr := True;
+      end;
+  else
+    Result := False;
+  end;
+end;
+
+procedure TScratchBirdClient.ParseNotification(const Payload: TBytes; out Notice: TNotification);
+var
+  Offset: Integer;
+  ChannelLen, PayloadLen: Cardinal;
+  function ReadUInt32LE(const Buffer: TBytes; Index: Integer): Cardinal;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+  function ReadUInt64LE(const Buffer: TBytes; Index: Integer): UInt64;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+begin
+  FillChar(Notice, SizeOf(Notice), 0);
+  Offset := 0;
+  if Length(Payload) < 12 then
+    Exit;
+  Notice.ProcessId := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  ChannelLen := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  if Offset + Integer(ChannelLen) + 4 > Length(Payload) then
+    Exit;
+  Notice.Channel := TEncoding.UTF8.GetString(Copy(Payload, Offset, ChannelLen));
+  Inc(Offset, ChannelLen);
+  PayloadLen := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  if Offset + Integer(PayloadLen) > Length(Payload) then
+    Exit;
+  Notice.Payload := Copy(Payload, Offset, PayloadLen);
+  Inc(Offset, PayloadLen);
+  Notice.ChangeType := '';
+  Notice.HasRowId := False;
+  if Offset < Length(Payload) then
+  begin
+    Notice.ChangeType := Char(Payload[Offset]);
+    Inc(Offset);
+    if Offset + SizeOf(UInt64) <= Length(Payload) then
+    begin
+      Notice.RowId := ReadUInt64LE(Payload, Offset);
+      Notice.HasRowId := True;
+    end;
+  end;
+end;
+
+procedure TScratchBirdClient.ParseQueryPlan(const Payload: TBytes; out Plan: TQueryPlan);
+var
+  Offset: Integer;
+  PlanLen: Cardinal;
+  function ReadUInt32LE(const Buffer: TBytes; Index: Integer): Cardinal;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+  function ReadUInt64LE(const Buffer: TBytes; Index: Integer): UInt64;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+begin
+  FillChar(Plan, SizeOf(Plan), 0);
+  if Length(Payload) < 32 then
+    Exit;
+  Offset := 0;
+  Plan.Format := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  PlanLen := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  Plan.PlanningTimeUs := ReadUInt64LE(Payload, Offset);
+  Inc(Offset, 8);
+  Plan.EstimatedRows := ReadUInt64LE(Payload, Offset);
+  Inc(Offset, 8);
+  Plan.EstimatedCost := ReadUInt64LE(Payload, Offset);
+  Inc(Offset, 8);
+  if Offset + Integer(PlanLen) > Length(Payload) then
+    Exit;
+  Plan.Plan := Copy(Payload, Offset, PlanLen);
+end;
+
+procedure TScratchBirdClient.ParseSblrCompiled(const Payload: TBytes; out Compiled: TSblrCompiled);
+var
+  Offset: Integer;
+  Len: Cardinal;
+  function ReadUInt32LE(const Buffer: TBytes; Index: Integer): Cardinal;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+  function ReadUInt64LE(const Buffer: TBytes; Index: Integer): UInt64;
+  begin
+    Result := 0;
+    if Index + SizeOf(Result) <= Length(Buffer) then
+      Move(Buffer[Index], Result, SizeOf(Result));
+  end;
+begin
+  FillChar(Compiled, SizeOf(Compiled), 0);
+  if Length(Payload) < 16 then
+    Exit;
+  Offset := 0;
+  Compiled.Hash := ReadUInt64LE(Payload, Offset);
+  Inc(Offset, 8);
+  Compiled.Version := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  Len := ReadUInt32LE(Payload, Offset);
+  Inc(Offset, 4);
+  if Offset + Integer(Len) > Length(Payload) then
+    Exit;
+  Compiled.Bytecode := Copy(Payload, Offset, Len);
+end;
+
+function TScratchBirdClient.ParseUuidBytes(const Value: string): TBytes;
+var
+  Hex: string;
+  I: Integer;
+  ByteVal: Integer;
+begin
+  Hex := StringReplace(Value, '-', '', [rfReplaceAll]);
+  if Length(Hex) <> 32 then
+  begin
+    SetLength(Result, 0);
+    Exit;
+  end;
+  SetLength(Result, 16);
+  for I := 0 to 15 do
+  begin
+    if not TryStrToInt('$' + Copy(Hex, I * 2 + 1, 2), ByteVal) then
+    begin
+      SetLength(Result, 0);
+      Exit;
+    end;
+    Result[I] := Byte(ByteVal);
+  end;
+end;
+
 procedure TScratchBirdClient.DrainUntilReady;
 var
   Msg: TScratchBirdMessage;
   Status: Byte;
   TxnId, Visibility: UInt64;
-  Name, Value: string;
 begin
   while True do
   begin
     Msg := ReceiveMessage;
+    if HandleAsyncMessage(Msg) then
+      Continue;
     case Msg.MsgType of
       MSG_ERROR:
         raise BuildQueryError(Msg.Payload);
-      MSG_PARAMETER_STATUS:
-        begin
-          ParseParameterStatus(Msg.Payload, Name, Value);
-          FParameters.Values[Name] := Value;
-        end;
       MSG_READY:
         begin
           ParseReady(Msg.Payload, Status, TxnId, Visibility);
@@ -526,7 +938,6 @@ var
   Msg: TScratchBirdMessage;
   Status: Byte;
   TxnId, Visibility: UInt64;
-  Name, Value: string;
   Types: TArray<Cardinal>;
 begin
   Payload := BuildDescribePayload(Ord('S'), StatementName);
@@ -536,16 +947,13 @@ begin
   while True do
   begin
     Msg := ReceiveMessage;
+    if HandleAsyncMessage(Msg) then
+      Continue;
     case Msg.MsgType of
       MSG_PARAMETER_DESCRIPTION:
         begin
           Types := ParseParameterDescription(Msg.Payload);
           Result := Length(Types);
-        end;
-      MSG_PARAMETER_STATUS:
-        begin
-          ParseParameterStatus(Msg.Payload, Name, Value);
-          FParameters.Values[Name] := Value;
         end;
       MSG_ERROR:
         raise BuildQueryError(Msg.Payload);
@@ -569,6 +977,8 @@ begin
     Flags := Flags or $04;
   FLastMaxRows := MaxRows;
   Payload := BuildQueryPayload(Sql, Flags, MaxRows, 0);
+  FHasLastPlan := False;
+  FHasLastSblr := False;
   FLastQuerySequence := SendMessage(MSG_QUERY, Payload, 0, False);
 end;
 
@@ -607,8 +1017,11 @@ begin
   SendMessage(MSG_BIND, BindPayload, 0, False);
   FLastMaxRows := MaxRows;
   ExecPayload := BuildExecutePayload('', MaxRows);
+  FHasLastPlan := False;
+  FHasLastSblr := False;
   FLastQuerySequence := SendMessage(MSG_EXECUTE, ExecPayload, 0, False);
-  SendMessage(MSG_SYNC, nil, 0, False);
+  if MaxRows = 0 then
+    SendMessage(MSG_SYNC, nil, 0, False);
 end;
 
 function TScratchBirdClient.CurrentMaxRows: Cardinal;

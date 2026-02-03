@@ -19,6 +19,21 @@
 - `ReadRow()` -> array of Variant
 - `Columns`, `RowsAffected`, `CommandTag`
 
+## SBWP v1.1 Extensions
+
+`TScratchBirdClient` helpers:
+
+- `BeginTransactionEx(...)`
+- `Savepoint(Name)`, `ReleaseSavepoint(Name)`, `RollbackToSavepoint(Name)`
+- `SetOption(Name, Value)`
+- `Ping`, `Terminate`, `Cancel`
+- `Subscribe(SubscribeType, Channel, FilterExpr)`, `Unsubscribe(Channel)`
+- `ExecuteSblr(SblrHash, Bytecode, Params)`
+- `StreamControl(ControlType, WindowSize, TimeoutMs)`
+- `AttachCreate(EmulationMode, DbName)`, `AttachDetach`, `AttachList`
+- `OnNotification` event handler
+- `GetLastPlan(out Plan)`, `GetLastSblr(out Compiled)`
+
 ## Wrapper Types
 
 - `TScratchBirdJsonb` (`IScratchBirdJsonb`)

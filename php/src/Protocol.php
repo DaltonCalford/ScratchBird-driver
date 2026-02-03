@@ -13,7 +13,7 @@ namespace ScratchBird\PDO;
 
 final class Protocol
 {
-    public const MAGIC = 0x53425750; // SBWP
+    private const MAGIC_BYTES = "SBWP";
     public const VERSION_MAJOR = 1;
     public const VERSION_MINOR = 1;
     public const VERSION = (self::VERSION_MAJOR << 8) | self::VERSION_MINOR;
@@ -31,9 +31,27 @@ final class Protocol
     public const MSG_SYNC = 0x09;
     public const MSG_FLUSH = 0x0A;
     public const MSG_CANCEL = 0x0B;
+    public const MSG_TERMINATE = 0x0C;
     public const MSG_COPY_DATA = 0x0D;
     public const MSG_COPY_DONE = 0x0E;
     public const MSG_COPY_FAIL = 0x0F;
+    public const MSG_SBLR_EXECUTE = 0x10;
+    public const MSG_SUBSCRIBE = 0x11;
+    public const MSG_UNSUBSCRIBE = 0x12;
+    public const MSG_FEDERATED_QUERY = 0x13;
+    public const MSG_STREAM_CONTROL = 0x14;
+    public const MSG_TXN_BEGIN = 0x15;
+    public const MSG_TXN_COMMIT = 0x16;
+    public const MSG_TXN_ROLLBACK = 0x17;
+    public const MSG_TXN_SAVEPOINT = 0x18;
+    public const MSG_TXN_RELEASE = 0x19;
+    public const MSG_TXN_ROLLBACK_TO = 0x1A;
+    public const MSG_PING = 0x1B;
+    public const MSG_SET_OPTION = 0x1C;
+    public const MSG_CLUSTER_AUTH = 0x1D;
+    public const MSG_ATTACH_CREATE = 0x1E;
+    public const MSG_ATTACH_DETACH = 0x1F;
+    public const MSG_ATTACH_LIST = 0x20;
 
     public const MSG_AUTH_REQUEST = 0x40;
     public const MSG_AUTH_OK = 0x41;
@@ -56,12 +74,19 @@ final class Protocol
     public const MSG_COPY_OUT_RESPONSE = 0x52;
     public const MSG_COPY_BOTH_RESPONSE = 0x53;
     public const MSG_NOTIFICATION = 0x54;
+    public const MSG_FUNCTION_RESULT = 0x55;
     public const MSG_NEGOTIATE_VERSION = 0x56;
+    public const MSG_SBLR_COMPILED = 0x57;
+    public const MSG_QUERY_PLAN = 0x58;
     public const MSG_STREAM_READY = 0x59;
     public const MSG_STREAM_DATA = 0x5A;
     public const MSG_STREAM_END = 0x5B;
     public const MSG_TXN_STATUS = 0x5C;
     public const MSG_PONG = 0x5D;
+    public const MSG_CLUSTER_AUTH_OK = 0x5E;
+    public const MSG_FEDERATED_RESULT = 0x5F;
+    public const MSG_HEARTBEAT = 0x80;
+    public const MSG_EXTENSION = 0x81;
 
     public const AUTH_OK = 0;
     public const AUTH_PASSWORD = 1;
@@ -96,9 +121,39 @@ final class Protocol
     public const FEATURE_2PC = 1024;
     public const FEATURE_CHECKSUMS = 2048;
 
+    public const QUERY_FLAG_DESCRIBE_ONLY = 0x01;
+    public const QUERY_FLAG_NO_PORTAL = 0x02;
+    public const QUERY_FLAG_BINARY_RESULT = 0x04;
+    public const QUERY_FLAG_INCLUDE_PLAN = 0x08;
+    public const QUERY_FLAG_RETURN_SBLR = 0x10;
+    public const QUERY_FLAG_NO_CACHE = 0x20;
+
+    public const ISOLATION_READ_UNCOMMITTED = 0;
+    public const ISOLATION_READ_COMMITTED = 1;
+    public const ISOLATION_REPEATABLE_READ = 2;
+    public const ISOLATION_SERIALIZABLE = 3;
+
+    public const TXN_FLAG_HAS_ISOLATION = 0x0001;
+    public const TXN_FLAG_HAS_ACCESS = 0x0002;
+    public const TXN_FLAG_HAS_DEFERRABLE = 0x0004;
+    public const TXN_FLAG_HAS_WAIT = 0x0008;
+    public const TXN_FLAG_HAS_TIMEOUT = 0x0010;
+    public const TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
+
+    public const STREAM_START = 0;
+    public const STREAM_PAUSE = 1;
+    public const STREAM_RESUME = 2;
+    public const STREAM_CANCEL = 3;
+    public const STREAM_ACK = 4;
+
+    public const SUB_TYPE_CHANNEL = 0;
+    public const SUB_TYPE_TABLE = 1;
+    public const SUB_TYPE_QUERY = 2;
+    public const SUB_TYPE_EVENT = 3;
+
     public static function encodeMessage(int $type, string $payload, int $flags, int $sequence, string $attachmentId, int $txnId): string
     {
-        $header = self::writeUInt32LE(self::MAGIC)
+        $header = self::MAGIC_BYTES
             . chr(self::VERSION_MAJOR)
             . chr(self::VERSION_MINOR)
             . chr($type)
@@ -115,8 +170,7 @@ final class Protocol
         if (strlen($header) !== self::HEADER_SIZE) {
             throw new \RuntimeException('Invalid header length');
         }
-        $magic = self::readUInt32LE(substr($header, 0, 4));
-        if ($magic !== self::MAGIC) {
+        if (substr($header, 0, 4) !== self::MAGIC_BYTES) {
             throw new \RuntimeException('Invalid protocol magic');
         }
         $major = ord($header[4]);
@@ -267,6 +321,106 @@ final class Protocol
     public static function buildCancelPayload(int $cancelType, int $targetSequence): string
     {
         return self::writeUInt32LE($cancelType) . self::writeUInt32LE($targetSequence);
+    }
+
+    public static function buildSblrExecutePayload(int $sblrHash, ?string $sblrBytecode, array $params): string
+    {
+        $bytecode = $sblrBytecode ?? '';
+        $payload = self::writeUInt64LE($sblrHash);
+        $payload .= self::writeUInt32LE(strlen($bytecode));
+        $payload .= self::writeUInt16LE(count($params));
+        $payload .= self::writeUInt16LE(0);
+        $payload .= $bytecode;
+        foreach ($params as $param) {
+            if ($param['is_null'] ?? false) {
+                $payload .= self::writeInt32LE(-1);
+            } else {
+                $data = $param['data'] ?? '';
+                $payload .= self::writeInt32LE(strlen($data));
+                $payload .= $data;
+            }
+        }
+        return $payload;
+    }
+
+    public static function buildSubscribePayload(int $subscribeType, string $channel, string $filterExpr = ''): string
+    {
+        $payload = chr($subscribeType) . "\0\0\0";
+        $payload .= self::writeUInt32LE(strlen($channel)) . $channel;
+        $payload .= self::writeUInt32LE(strlen($filterExpr)) . $filterExpr;
+        return $payload;
+    }
+
+    public static function buildUnsubscribePayload(string $channel): string
+    {
+        return self::writeUInt32LE(strlen($channel)) . $channel;
+    }
+
+    public static function buildTxnBeginPayload(
+        int $flags,
+        int $conflictAction,
+        int $autocommitMode,
+        int $isolationLevel,
+        int $accessMode,
+        int $deferrable,
+        int $waitMode,
+        int $timeoutMs
+    ): string {
+        $payload = self::writeUInt16LE($flags);
+        $payload .= chr($conflictAction)
+            . chr($autocommitMode)
+            . chr($isolationLevel)
+            . chr($accessMode)
+            . chr($deferrable)
+            . chr($waitMode);
+        $payload .= self::writeUInt32LE($timeoutMs);
+        return $payload;
+    }
+
+    public static function buildTxnCommitPayload(int $flags): string
+    {
+        return chr($flags) . "\0\0\0";
+    }
+
+    public static function buildTxnRollbackPayload(int $flags): string
+    {
+        return chr($flags) . "\0\0\0";
+    }
+
+    public static function buildTxnSavepointPayload(string $name): string
+    {
+        return self::writeUInt32LE(strlen($name)) . $name;
+    }
+
+    public static function buildTxnReleasePayload(string $name): string
+    {
+        return self::buildTxnSavepointPayload($name);
+    }
+
+    public static function buildTxnRollbackToPayload(string $name): string
+    {
+        return self::buildTxnSavepointPayload($name);
+    }
+
+    public static function buildSetOptionPayload(string $name, string $value): string
+    {
+        $payload = self::writeUInt32LE(strlen($name)) . $name;
+        $payload .= self::writeUInt32LE(strlen($value)) . $value;
+        return $payload;
+    }
+
+    public static function buildStreamControlPayload(int $controlType, int $windowSize, int $timeoutMs): string
+    {
+        return chr($controlType) . "\0\0\0"
+            . self::writeUInt32LE($windowSize)
+            . self::writeUInt32LE($timeoutMs);
+    }
+
+    public static function buildAttachCreatePayload(string $emulationMode, string $dbName): string
+    {
+        $payload = self::writeUInt32LE(strlen($emulationMode)) . $emulationMode;
+        $payload .= self::writeUInt32LE(strlen($dbName)) . $dbName;
+        return $payload;
     }
 
     public static function parseReady(string $payload): array

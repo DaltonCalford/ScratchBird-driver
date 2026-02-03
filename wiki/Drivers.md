@@ -1,6 +1,25 @@
 # Drivers
 
-Complete installation and usage guide for each ScratchBird driver.
+Complete installation and usage guide for each ScratchBird native SBWP driver.
+
+Note: Package names and registries are still being finalized for first release.
+If a package is not published yet, build the driver from this repository.
+
+---
+
+## C/C++ (libscratchbird_client) + ODBC
+
+### Build
+
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
+### Notes
+
+- `cpp/` provides the C/C++ client library (SBWP v1.1).
+- `odbc/` provides the ODBC 3.8 driver (SBWP v1.1).
 
 ---
 
@@ -329,29 +348,29 @@ props.setProperty("sslmode", "require");
 
 ---
 
-## Elixir (Ecto) - Planned (P1)
+## Elixir (Ecto) - Preview
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md
 
 Notes:
-- Native SBWP v1.1 driver with `ecto_sql` + `db_connection` integration.
+- SBWP v1.1 client + `ecto_sql`/`db_connection` adapter.
 - Binary-only transfer with server-side prepare/bind.
 
 ---
 
-## Swift Async/Await - Planned (P1)
+## Swift Async/Await - Preview
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md
 
 Notes:
 - Swift Concurrency API with async/await.
-- Targets iOS/macOS and server-side Swift.
+- TCP transport in place; TLS wiring pending.
 
 ---
 
-## Dart - Planned (P2)
+## Dart - Preview
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_DART_DATABASE_API.md
@@ -362,14 +381,14 @@ Notes:
 
 ---
 
-## Mojo - Planned (P2)
+## Mojo - Preview
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_MOJO_NATIVE_API.md
 
 Notes:
-- Native Mojo driver for AI/ML infrastructure workloads.
-- Binary-only SBWP v1.1 with minimal transport abstraction.
+- SBWP v1.1 API surface available via Mojo-Python interop.
+- Python bridge can be swapped for native Mojo TCP/TLS later.
 
 ---
 
@@ -382,4 +401,4 @@ For Metabase and Superset integration, see:
 
 ---
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-02-02

@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,10 +86,7 @@ func Run(ctx context.Context, dsn, fixtureDir string, manifest *Manifest) (*Summ
 	if dsn == "" {
 		return nil, errors.New("dsn is required")
 	}
-	if err := applyFixtures(ctx, dsn, fixtureDir, manifest.Fixtures); err != nil {
-		return nil, err
-	}
-	results, err := runTests(ctx, dsn, manifest.Tests)
+	results, err := runTests(ctx, dsn, fixtureDir, manifest.Fixtures, manifest.Tests)
 	if err != nil {
 		return nil, err
 	}
@@ -100,15 +98,10 @@ func Run(ctx context.Context, dsn, fixtureDir string, manifest *Manifest) (*Summ
 	}, nil
 }
 
-func applyFixtures(ctx context.Context, dsn, fixtureDir string, fixtures []string) error {
+func applyFixtures(ctx context.Context, db *sql.DB, fixtureDir string, fixtures []string) error {
 	if len(fixtures) == 0 {
 		return nil
 	}
-	db, err := sql.Open("scratchbird", dsn)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
 	for _, fixture := range fixtures {
 		path := filepath.Join(fixtureDir, fixture)
 		data, err := os.ReadFile(path)
@@ -118,6 +111,9 @@ func applyFixtures(ctx context.Context, dsn, fixtureDir string, fixtures []strin
 		statements := splitSQLStatements(string(data))
 		for _, statement := range statements {
 			if _, err := db.ExecContext(ctx, statement); err != nil {
+				if isAlreadyExistsError(err) {
+					continue
+				}
 				return err
 			}
 		}
@@ -125,8 +121,18 @@ func applyFixtures(ctx context.Context, dsn, fixtureDir string, fixtures []strin
 	return nil
 }
 
-func runTests(ctx context.Context, dsn string, tests []TestSpec) ([]TestResult, error) {
+func runTests(ctx context.Context, dsn, fixtureDir string, fixtures []string, tests []TestSpec) ([]TestResult, error) {
 	results := make([]TestResult, 0, len(tests))
+	baseDB, err := sql.Open("scratchbird", dsn)
+	if err != nil {
+		return nil, err
+	}
+	configureDB(baseDB)
+	if err := applyFixtures(ctx, baseDB, fixtureDir, fixtures); err != nil {
+		baseDB.Close()
+		return nil, err
+	}
+	baseDB.Close()
 	for _, test := range tests {
 		result := TestResult{TestID: test.ID}
 		if !requirementsSatisfied(test.Requires) {
@@ -139,6 +145,7 @@ func runTests(ctx context.Context, dsn string, tests []TestSpec) ([]TestResult, 
 		if err != nil {
 			return nil, err
 		}
+		configureDB(db)
 		switch test.Kind {
 		case "auth":
 			err = db.PingContext(ctx)
@@ -394,4 +401,27 @@ func extractSQLState(err error) string {
 		return carrier.SQLState()
 	}
 	return ""
+}
+
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "already exists")
+}
+
+func tableExists(ctx context.Context, db *sql.DB, qualifiedName string) bool {
+	query := fmt.Sprintf("SELECT 1 FROM %s", qualifiedName)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return false
+	}
+	rows.Close()
+	return true
+}
+
+func configureDB(db *sql.DB) {
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 }

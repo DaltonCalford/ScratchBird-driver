@@ -7,7 +7,7 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 module Scratchbird
   module Protocol
-    MAGIC = 0x53425750
+    MAGIC_BYTES = "SBWP".b
     VERSION_MAJOR = 1
     VERSION_MINOR = 1
     HEADER_SIZE = 40
@@ -24,9 +24,27 @@ module Scratchbird
     MSG_SYNC = 0x09
     MSG_FLUSH = 0x0A
     MSG_CANCEL = 0x0B
+    MSG_TERMINATE = 0x0C
     MSG_COPY_DATA = 0x0D
     MSG_COPY_DONE = 0x0E
     MSG_COPY_FAIL = 0x0F
+    MSG_SBLR_EXECUTE = 0x10
+    MSG_SUBSCRIBE = 0x11
+    MSG_UNSUBSCRIBE = 0x12
+    MSG_FEDERATED_QUERY = 0x13
+    MSG_STREAM_CONTROL = 0x14
+    MSG_TXN_BEGIN = 0x15
+    MSG_TXN_COMMIT = 0x16
+    MSG_TXN_ROLLBACK = 0x17
+    MSG_TXN_SAVEPOINT = 0x18
+    MSG_TXN_RELEASE = 0x19
+    MSG_TXN_ROLLBACK_TO = 0x1A
+    MSG_PING = 0x1B
+    MSG_SET_OPTION = 0x1C
+    MSG_CLUSTER_AUTH = 0x1D
+    MSG_ATTACH_CREATE = 0x1E
+    MSG_ATTACH_DETACH = 0x1F
+    MSG_ATTACH_LIST = 0x20
 
     MSG_AUTH_REQUEST = 0x40
     MSG_AUTH_OK = 0x41
@@ -49,12 +67,19 @@ module Scratchbird
     MSG_COPY_OUT_RESPONSE = 0x52
     MSG_COPY_BOTH_RESPONSE = 0x53
     MSG_NOTIFICATION = 0x54
+    MSG_FUNCTION_RESULT = 0x55
     MSG_NEGOTIATE_VERSION = 0x56
+    MSG_SBLR_COMPILED = 0x57
+    MSG_QUERY_PLAN = 0x58
     MSG_STREAM_READY = 0x59
     MSG_STREAM_DATA = 0x5A
     MSG_STREAM_END = 0x5B
     MSG_TXN_STATUS = 0x5C
     MSG_PONG = 0x5D
+    MSG_CLUSTER_AUTH_OK = 0x5E
+    MSG_FEDERATED_RESULT = 0x5F
+    MSG_HEARTBEAT = 0x80
+    MSG_EXTENSION = 0x81
 
     AUTH_OK = 0
     AUTH_PASSWORD = 1
@@ -89,8 +114,41 @@ module Scratchbird
     FEATURE_2PC = 1024
     FEATURE_CHECKSUMS = 2048
 
+    QUERY_FLAG_DESCRIBE_ONLY = 0x01
+    QUERY_FLAG_NO_PORTAL = 0x02
+    QUERY_FLAG_BINARY_RESULT = 0x04
+    QUERY_FLAG_INCLUDE_PLAN = 0x08
+    QUERY_FLAG_RETURN_SBLR = 0x10
+    QUERY_FLAG_NO_CACHE = 0x20
+
+    ISOLATION_READ_UNCOMMITTED = 0
+    ISOLATION_READ_COMMITTED = 1
+    ISOLATION_REPEATABLE_READ = 2
+    ISOLATION_SERIALIZABLE = 3
+
+    TXN_FLAG_HAS_ISOLATION = 0x0001
+    TXN_FLAG_HAS_ACCESS = 0x0002
+    TXN_FLAG_HAS_DEFERRABLE = 0x0004
+    TXN_FLAG_HAS_WAIT = 0x0008
+    TXN_FLAG_HAS_TIMEOUT = 0x0010
+    TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
+
+    STREAM_START = 0
+    STREAM_PAUSE = 1
+    STREAM_RESUME = 2
+    STREAM_CANCEL = 3
+    STREAM_ACK = 4
+
+    SUB_TYPE_CHANNEL = 0
+    SUB_TYPE_TABLE = 1
+    SUB_TYPE_QUERY = 2
+    SUB_TYPE_EVENT = 3
+
     def self.encode_message(type, payload, flags, sequence, attachment_id, txn_id)
-      header = [MAGIC, VERSION_MAJOR, VERSION_MINOR, type, flags, payload.bytesize, sequence].pack("VCCCCVV")
+      header = +""
+      header << MAGIC_BYTES
+      header << [VERSION_MAJOR, VERSION_MINOR, type, flags].pack("C4")
+      header << [payload.bytesize, sequence].pack("V2")
       header << pad_bytes(attachment_id, 16)
       header << [txn_id].pack("Q<")
       header + payload
@@ -98,8 +156,9 @@ module Scratchbird
 
     def self.decode_header(data)
       raise "Invalid header length" unless data.bytesize == HEADER_SIZE
-      magic, major, minor, type, flags, length, sequence = data.unpack("VCCCCVV")
-      raise "Invalid protocol magic" unless magic == MAGIC
+      magic = data.byteslice(0, 4)
+      raise "Invalid protocol magic" unless magic == MAGIC_BYTES
+      major, minor, type, flags, length, sequence = data.byteslice(4, 12).unpack("CCCCVV")
       raise "Unsupported protocol version" unless major == VERSION_MAJOR && minor == VERSION_MINOR
       raise "Payload too large" if length > MAX_MESSAGE_SIZE
       attachment_id = data.byteslice(16, 16)
@@ -202,6 +261,85 @@ module Scratchbird
 
     def self.build_cancel_payload(cancel_type, target_sequence)
       [cancel_type, target_sequence].pack("VV")
+    end
+
+    def self.build_sblr_execute_payload(sblr_hash, sblr_bytecode, params)
+      bytecode = sblr_bytecode || +""
+      payload = [sblr_hash].pack("Q<")
+      payload << [bytecode.bytesize].pack("V")
+      payload << [params.length].pack("v")
+      payload << [0].pack("v")
+      payload << bytecode
+      params.each do |param|
+        if param[:is_null]
+          payload << [-1].pack("l<")
+        else
+          data = param[:data] || ""
+          payload << [data.bytesize].pack("l<")
+          payload << data
+        end
+      end
+      payload
+    end
+
+    def self.build_subscribe_payload(subscribe_type, channel, filter_expr = "")
+      channel_bytes = channel.to_s
+      filter_bytes = filter_expr.to_s
+      payload = [subscribe_type].pack("C")
+      payload << "\0\0\0"
+      payload << [channel_bytes.bytesize].pack("V") + channel_bytes
+      payload << [filter_bytes.bytesize].pack("V") + filter_bytes
+      payload
+    end
+
+    def self.build_unsubscribe_payload(channel)
+      channel_bytes = channel.to_s
+      [channel_bytes.bytesize].pack("V") + channel_bytes
+    end
+
+    def self.build_txn_begin_payload(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms)
+      [flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms].pack("vCCCCCCV")
+    end
+
+    def self.build_txn_commit_payload(flags)
+      [flags].pack("C") + "\0\0\0"
+    end
+
+    def self.build_txn_rollback_payload(flags)
+      [flags].pack("C") + "\0\0\0"
+    end
+
+    def self.build_txn_savepoint_payload(name)
+      name_bytes = name.to_s
+      [name_bytes.bytesize].pack("V") + name_bytes
+    end
+
+    def self.build_txn_release_payload(name)
+      build_txn_savepoint_payload(name)
+    end
+
+    def self.build_txn_rollback_to_payload(name)
+      build_txn_savepoint_payload(name)
+    end
+
+    def self.build_set_option_payload(name, value)
+      name_bytes = name.to_s
+      value_bytes = value.to_s
+      payload = [name_bytes.bytesize].pack("V") + name_bytes
+      payload << [value_bytes.bytesize].pack("V") + value_bytes
+      payload
+    end
+
+    def self.build_stream_control_payload(control_type, window_size, timeout_ms)
+      [control_type, window_size, timeout_ms].pack("C3xVV")
+    end
+
+    def self.build_attach_create_payload(emulation_mode, db_name)
+      mode_bytes = emulation_mode.to_s
+      db_bytes = db_name.to_s
+      payload = [mode_bytes.bytesize].pack("V") + mode_bytes
+      payload << [db_bytes.bytesize].pack("V") + db_bytes
+      payload
     end
 
     def self.parse_ready(payload)
@@ -309,6 +447,55 @@ module Scratchbird
       tag_bytes = payload.byteslice(20, payload.bytesize - 20)
       tag = tag_bytes ? tag_bytes.split("\0", 2).first.to_s : ""
       [command_type, rows, last_id, tag]
+    end
+
+    def self.parse_notification(payload)
+      raise "Notification truncated" if payload.bytesize < 12
+      offset = 0
+      process_id = payload.byteslice(offset, 4).unpack1("V")
+      offset += 4
+      channel_len = payload.byteslice(offset, 4).unpack1("V")
+      offset += 4
+      raise "Notification truncated" if offset + channel_len + 4 > payload.bytesize
+      channel = payload.byteslice(offset, channel_len).to_s
+      offset += channel_len
+      payload_len = payload.byteslice(offset, 4).unpack1("V")
+      offset += 4
+      raise "Notification truncated" if offset + payload_len > payload.bytesize
+      data = payload.byteslice(offset, payload_len) || ""
+      offset += payload_len
+      change_type = nil
+      row_id = nil
+      if offset < payload.bytesize
+        change_type = payload.getbyte(offset).chr
+        offset += 1
+        if offset + 8 <= payload.bytesize
+          row_id = payload.byteslice(offset, 8).unpack1("Q<")
+        end
+      end
+      [process_id, channel, data, change_type, row_id]
+    end
+
+    def self.parse_query_plan(payload)
+      raise "Query plan truncated" if payload.bytesize < 32
+      format = payload.byteslice(0, 4).unpack1("V")
+      plan_len = payload.byteslice(4, 4).unpack1("V")
+      planning = payload.byteslice(8, 8).unpack1("Q<")
+      estimated_rows = payload.byteslice(16, 8).unpack1("Q<")
+      estimated_cost = payload.byteslice(24, 8).unpack1("Q<")
+      raise "Query plan truncated" if 32 + plan_len > payload.bytesize
+      plan = payload.byteslice(32, plan_len) || ""
+      [format, planning, estimated_rows, estimated_cost, plan]
+    end
+
+    def self.parse_sblr_compiled(payload)
+      raise "SBLR compiled truncated" if payload.bytesize < 16
+      hash = payload.byteslice(0, 8).unpack1("Q<")
+      version = payload.byteslice(8, 4).unpack1("V")
+      length = payload.byteslice(12, 4).unpack1("V")
+      raise "SBLR compiled truncated" if 16 + length > payload.bytesize
+      bytecode = payload.byteslice(16, length) || ""
+      [hash, version, bytecode]
     end
 
     def self.parse_error_message(payload)

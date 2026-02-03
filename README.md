@@ -2,7 +2,7 @@
 
 Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
 
-**Status:** Active Development (SBWP v1.1 drivers feature-complete for current server capabilities)
+**Status:** Release prep (SBWP v1.1 baseline across drivers + CLI; conformance in progress)
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 
 ---
@@ -14,20 +14,26 @@ These drivers target the ScratchBird native protocol (SBWP v1.1) and provide idi
 each supported language. Emulated protocols (PostgreSQL/MySQL/Firebird) are handled by their
 own native client drivers against ScratchBird's emulation listeners.
 
-### Supported Languages (Native SBWP v1.1)
+### Supported Drivers (Native SBWP v1.1)
 
-| Language | Directory | Status | Package Manager |
-|----------|-----------|--------|-----------------|
-| **Go** | `go/` | Development | `go get` |
-| **Python** | `python/` | Development | pip/pyproject.toml |
-| **Node.js** | `node/` | Development | npm |
-| **Ruby** | `ruby/` | Development | gem |
-| **Rust** | `rust/` | Development | cargo |
-| **PHP** | `php/` | Development | composer |
-| **R** | `r/` | Development | CRAN-style |
-| **Pascal** | `pascal/` | Development | - |
-| **.NET** | `dotnet/` | Development | NuGet |
-| **Java/JDBC** | `jdbc/` | Development | Maven/Gradle |
+| Driver | Directory | Status | Packaging |
+|--------|-----------|--------|-----------|
+| **C/C++ (libscratchbird_client)** | `cpp/` | Implemented (SBWP v1.1 baseline) | CMake |
+| **ODBC 3.8** | `odbc/` | Implemented (SBWP v1.1 baseline) | CMake |
+| **Go** | `go/` | Implemented (SBWP v1.1 baseline) | `go get` |
+| **Python** | `python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
+| **Node.js** | `node/` | Implemented (SBWP v1.1 baseline) | npm |
+| **Ruby** | `ruby/` | Implemented (SBWP v1.1 baseline) | gem |
+| **Rust** | `rust/` | Implemented (SBWP v1.1 baseline) | cargo |
+| **PHP** | `php/` | Implemented (SBWP v1.1 baseline) | composer |
+| **R** | `r/` | Implemented (SBWP v1.1 baseline) | CRAN-style |
+| **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
+| **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
+| **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
+| **Elixir (Ecto)** | `elixir/` | Preview | Hex |
+| **Swift (Async/Await)** | `swift/` | Preview (TCP only) | SwiftPM |
+| **Dart** | `dart/` | Preview | pub.dev |
+| **Mojo** | `mojo/` | Preview (Python transport bridge) | - |
 
 ---
 
@@ -112,7 +118,7 @@ These are the required capabilities for all drivers in this repo:
 
 ### Current Implementation Notes
 
-- SBWP v1.1 conformance is implemented across all native drivers.
+- SBWP v1.1 baseline is implemented across native drivers; conformance is tracked in `docs/planning/`.
 - Binary-only mode is enforced; `binary_transfer=false` is rejected.
 - `compression=zstd` is intentionally disabled until server support exists.
 - Streaming/paging via `fetch_size` is supported where applicable.
@@ -130,6 +136,20 @@ Application-specific drivers (early):
 - Superset: `scratchbird-superset-driver/`
 - Metabase: `scratchbird-metabase-driver/`
 
+### CLI Tools
+
+| Tool | Purpose | Status |
+|------|---------|--------|
+| **sb_isql** | Native ScratchBird interactive shell | Implemented (baseline) |
+| **sb_fb_isql** | Firebird protocol script runner | Implemented (baseline) |
+| **sb_pg_isql** | PostgreSQL protocol script runner | Implemented (baseline) |
+| **sb_my_isql** | MySQL protocol script runner | Implemented (baseline) |
+| **sb_admin** | Server administration CLI | Implemented (baseline) |
+| **sb_backup** | Backup/restore CLI | Implemented (baseline) |
+| **sb_security** | User/role management CLI | Implemented (baseline) |
+| **sb_verify** | Database verification CLI | Implemented (baseline) |
+| **sbdriver-conformance** | SBWP conformance adapter | Implemented (baseline) |
+
 ---
 
 ## Project Structure
@@ -144,6 +164,9 @@ ScratchBird-driver/
 │   ├── audit/              Audit reports and gap analysis
 │   └── planning/           Remediation plans
 ├── wiki/                   GitHub wiki pages (source)
+├── cli/                    CLI tools (native + emulated protocol runners)
+├── cpp/                    C/C++ client library (SBWP)
+├── odbc/                   ODBC 3.8 driver (SBWP)
 ├── go/                     Go driver
 ├── python/                 Python driver
 ├── node/                   Node.js driver
@@ -173,64 +196,15 @@ ScratchBird-driver/
 
 ## Development
 
-### Building All Drivers
-
-Each driver has its own build process. See individual driver READMEs for details.
-
-```bash
-# Go
-cd go && go build ./...
-
-# Python
-cd python && pip install -e .
-
-# Node.js
-cd node && npm install && npm run build
-
-# Rust
-cd rust && cargo build
-
-# .NET
-cd dotnet && dotnet build
-
-# JDBC
-cd jdbc && ./gradlew build
-```
-
-### Running Tests
-
-```bash
-# Go
-cd go && go test ./...
-
-# Python
-cd python && pytest
-
-# Node.js
-cd node && npm test
-
-# Rust
-cd rust && cargo test
-
-# .NET
-cd dotnet && dotnet test
-
-# JDBC
-cd jdbc && ./gradlew test
-```
+- **[Development notes](docs/development/development-notes.md)** - Build workflows and contributor expectations
+- **[Build and test matrix](docs/development/build-and-test.md)** - Per-driver build/test commands and env vars
+- **[Development index](docs/development/README.md)** - Full development documentation list
 
 ---
 
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Requirements
-
-1. Follow the coding style of each language
-2. Include tests for new features
-3. Update documentation
-4. Ensure CI passes before submitting PR
 
 ---
 
@@ -255,4 +229,4 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-02-01

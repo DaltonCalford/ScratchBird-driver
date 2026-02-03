@@ -24,6 +24,19 @@
 Supports positional `?` and named `:name` or `@name` placeholders. Parameters
 are bound server-side.
 
+## SBWP v1.1 Extensions
+
+Advanced protocol operations are available on `*scratchbird.Conn` (driver.Conn):
+
+- `SetOption(ctx, name, value)`
+- `Ping(ctx)`
+- `Subscribe(ctx, subType, channel, filter)`, `Unsubscribe(ctx, channel)`
+- `OnNotification(handler)`
+- `LastPlan()`, `LastSblr()`
+- `QuerySblr(ctx, hash, bytecode, params)`, `ExecSblr(ctx, hash, bytecode, params)`
+- `StreamControl(ctx, controlType, windowSize, timeoutMs)`
+- `AttachCreate(ctx, emulationMode, dbName)`, `AttachDetach(ctx)`, `AttachList(ctx)`
+
 ## Wrapper Types
 
 Use these types for complex values:

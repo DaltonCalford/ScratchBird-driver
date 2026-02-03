@@ -479,6 +479,12 @@ pub fn decode_value(type_oid: u32, data: Option<Vec<u8>>, format: u16) -> Result
     let Some(data) = data else {
         return Ok(Value::Null);
     };
+    if type_oid == 0 {
+        if format == FORMAT_TEXT {
+            return Ok(parse_unknown_text(&decode_text_value(&data)));
+        }
+        return Ok(decode_unknown_binary(&data));
+    }
     if format == FORMAT_TEXT {
         return Ok(Value::String(decode_text_value(&data)));
     }
@@ -538,6 +544,65 @@ fn decode_text_value(data: &[u8]) -> String {
         }
     }
     String::from_utf8_lossy(data).to_string()
+}
+
+fn decode_unknown_binary(data: &[u8]) -> Value {
+    let trimmed = strip_trailing_nulls(data);
+    if !trimmed.is_empty() && looks_like_text(trimmed) {
+        return parse_unknown_text(&String::from_utf8_lossy(trimmed));
+    }
+    match data.len() {
+        1 => Value::Int16(i16::from_le_bytes(read_fixed::<2>(&[data[0], 0]))),
+        2 => Value::Int16(i16::from_le_bytes(read_fixed::<2>(data))),
+        4 => Value::Int32(i32::from_le_bytes(read_fixed::<4>(data))),
+        8 => Value::Int64(i64::from_le_bytes(read_fixed::<8>(data))),
+        16 => Value::Uuid(bytes_to_uuid(data)),
+        _ => Value::Bytes(data.to_vec()),
+    }
+}
+
+fn parse_unknown_text(text: &str) -> Value {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Value::String(text.to_string());
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered == "true" {
+        return Value::Bool(true);
+    }
+    if lowered == "false" {
+        return Value::Bool(false);
+    }
+    if let Ok(value) = trimmed.parse::<i64>() {
+        if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
+            return Value::Int32(value as i32);
+        }
+        return Value::Int64(value);
+    }
+    if let Ok(value) = trimmed.parse::<f64>() {
+        return Value::Float64(value);
+    }
+    Value::String(text.to_string())
+}
+
+fn strip_trailing_nulls(data: &[u8]) -> &[u8] {
+    let mut end = data.len();
+    while end > 0 && data[end - 1] == 0 {
+        end -= 1;
+    }
+    &data[..end]
+}
+
+fn looks_like_text(data: &[u8]) -> bool {
+    for &byte in data {
+        if byte == 0x09 || byte == 0x0a || byte == 0x0d {
+            continue;
+        }
+        if byte < 0x20 || byte > 0x7e {
+            return false;
+        }
+    }
+    true
 }
 
 fn encode_composite(value: &Composite) -> Result<(Vec<u8>, u32)> {

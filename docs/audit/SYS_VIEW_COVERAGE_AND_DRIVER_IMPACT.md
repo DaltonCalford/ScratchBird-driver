@@ -45,8 +45,8 @@ Verified against `ScratchBird/src/catalog/sys_catalog.cpp`:
 
 ## Driver Status Snapshot
 
-- JDBC DatabaseMetaData is stubbed (getTables/getSchemas/getColumns return empty). This blocks
-  all sys.* view discovery via metadata APIs.
+- JDBC DatabaseMetaData queries sys.tables/sys.views and includes SYSTEM VIEW entries; keep
+  sys.* monitoring views in the metadata path for tools.
 - SQLAlchemy dialects (Superset) can query sys.* directly but do not yet join sys.types for
   full type names.
 - Other language drivers allow raw SQL; no helper APIs yet.
@@ -56,4 +56,3 @@ Verified against `ScratchBird/src/catalog/sys_catalog.cpp`:
 1. JDBC/ODBC metadata: include sys.* views as `SYSTEM VIEW` and expose columns.
 2. Optional helper APIs for monitoring queries (sessions/locks/statements/jobs).
 3. Update driver docs to reflect sys.* monitoring availability and read-only nature.
-

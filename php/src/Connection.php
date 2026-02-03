@@ -27,6 +27,9 @@ final class Connection
     private array $attributes = [];
     private array $parameters = [];
     private array $lastError = ['00000', 0, null];
+    private array $notificationHandlers = [];
+    private ?array $lastPlan = null;
+    private ?array $lastSblr = null;
 
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, array $options = [])
     {
@@ -67,17 +70,143 @@ final class Connection
 
     public function beginTransaction(): bool
     {
+        $payload = Protocol::buildTxnBeginPayload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0);
+        $this->sendMessage(Protocol::MSG_TXN_BEGIN, $payload, 0, false);
+        $this->drainUntilReady();
         return true;
     }
 
     public function commit(): bool
     {
-        return $this->executeSimple('COMMIT');
+        $payload = Protocol::buildTxnCommitPayload(0);
+        $this->sendMessage(Protocol::MSG_TXN_COMMIT, $payload, 0, false);
+        $this->drainUntilReady();
+        return true;
     }
 
     public function rollBack(): bool
     {
-        return $this->executeSimple('ROLLBACK');
+        $payload = Protocol::buildTxnRollbackPayload(0);
+        $this->sendMessage(Protocol::MSG_TXN_ROLLBACK, $payload, 0, false);
+        $this->drainUntilReady();
+        return true;
+    }
+
+    public function savepoint(string $name): void
+    {
+        $payload = Protocol::buildTxnSavepointPayload($name);
+        $this->sendMessage(Protocol::MSG_TXN_SAVEPOINT, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function releaseSavepoint(string $name): void
+    {
+        $payload = Protocol::buildTxnReleasePayload($name);
+        $this->sendMessage(Protocol::MSG_TXN_RELEASE, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function rollbackToSavepoint(string $name): void
+    {
+        $payload = Protocol::buildTxnRollbackToPayload($name);
+        $this->sendMessage(Protocol::MSG_TXN_ROLLBACK_TO, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function setOption(string $name, string $value): void
+    {
+        $payload = Protocol::buildSetOptionPayload($name, $value);
+        $this->sendMessage(Protocol::MSG_SET_OPTION, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function ping(): void
+    {
+        $this->sendMessage(Protocol::MSG_PING, '', 0, false);
+        while (true) {
+            [$type, , $payload] = $this->receive();
+            if ($this->handleAsyncMessage($type, $payload)) {
+                continue;
+            }
+            if ($type === Protocol::MSG_PONG || $type === Protocol::MSG_READY) {
+                if ($type === Protocol::MSG_READY) {
+                    [, $txnId] = Protocol::parseReady($payload);
+                    $this->txnId = $txnId;
+                }
+                return;
+            }
+            if ($type === Protocol::MSG_ERROR) {
+                throw $this->buildQueryException($payload);
+            }
+        }
+    }
+
+    public function subscribe(string $channel, int $subType = Protocol::SUB_TYPE_CHANNEL, string $filterExpr = ''): void
+    {
+        $payload = Protocol::buildSubscribePayload($subType, $channel, $filterExpr);
+        $this->sendMessage(Protocol::MSG_SUBSCRIBE, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function unsubscribe(string $channel): void
+    {
+        $payload = Protocol::buildUnsubscribePayload($channel);
+        $this->sendMessage(Protocol::MSG_UNSUBSCRIBE, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function executeSblr(int $hash, ?string $bytecode = null, array $params = []): ResultStream
+    {
+        $paramValues = [];
+        foreach ($params as $param) {
+            $encoded = TypeCodec::encodeParam($param);
+            $paramValues[] = $encoded['param'];
+        }
+        $payload = Protocol::buildSblrExecutePayload($hash, $bytecode, $paramValues);
+        $this->sendMessage(Protocol::MSG_SBLR_EXECUTE, $payload, 0, false);
+        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+        return new ResultStream($this);
+    }
+
+    public function streamControl(int $controlType, int $windowSize, int $timeoutMs): void
+    {
+        $payload = Protocol::buildStreamControlPayload($controlType, $windowSize, $timeoutMs);
+        $this->sendMessage(Protocol::MSG_STREAM_CONTROL, $payload, 0, false);
+    }
+
+    public function attachCreate(string $emulationMode, string $dbName): void
+    {
+        $payload = Protocol::buildAttachCreatePayload($emulationMode, $dbName);
+        $this->sendMessage(Protocol::MSG_ATTACH_CREATE, $payload, 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function attachDetach(): void
+    {
+        $this->sendMessage(Protocol::MSG_ATTACH_DETACH, '', 0, false);
+        $this->drainUntilReady();
+    }
+
+    public function attachList(): ResultStream
+    {
+        $this->sendMessage(Protocol::MSG_ATTACH_LIST, '', 0, false);
+        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+        return new ResultStream($this);
+    }
+
+    public function onNotification(callable $handler): void
+    {
+        $this->notificationHandlers[] = $handler;
+    }
+
+    public function lastPlan(): ?array
+    {
+        return $this->lastPlan;
+    }
+
+    public function lastSblr(): ?array
+    {
+        return $this->lastSblr;
     }
 
     public function lastInsertId(?string $name = null): string|false
@@ -131,7 +260,6 @@ final class Connection
     {
         $execPayload = Protocol::buildExecutePayload('', $this->lastMaxRows);
         $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
-        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
     }
 
     public function cancel(): void
@@ -178,10 +306,50 @@ final class Connection
         return [$type, $flags, $payload, $sequence, $attachmentId, $txnId];
     }
 
+    public function handleAsyncMessage(int $type, string $payload): bool
+    {
+        if ($type === Protocol::MSG_PARAMETER_STATUS) {
+            [$name, $value] = Protocol::parseParameterStatus($payload);
+            $this->parameters[$name] = $value;
+            if ($name === 'attachment_id') {
+                $parsed = $this->parseUuidBytes($value);
+                if ($parsed !== null) {
+                    $this->attachmentId = $parsed;
+                }
+            }
+            if ($name === 'current_txn_id') {
+                $parsed = $this->parseUint64($value);
+                if ($parsed !== null) {
+                    $this->txnId = $parsed;
+                }
+            }
+            return true;
+        }
+        if ($type === Protocol::MSG_NOTIFICATION) {
+            $notice = Protocol::parseNotification($payload);
+            foreach ($this->notificationHandlers as $handler) {
+                $handler($notice);
+            }
+            return true;
+        }
+        if ($type === Protocol::MSG_QUERY_PLAN) {
+            $this->lastPlan = Protocol::parseQueryPlan($payload);
+            return true;
+        }
+        if ($type === Protocol::MSG_SBLR_COMPILED) {
+            $this->lastSblr = Protocol::parseSblrCompiled($payload);
+            return true;
+        }
+        return false;
+    }
+
     public function drainUntilReady(): void
     {
         while (true) {
             [$type, , $payload] = $this->receive();
+            if ($this->handleAsyncMessage($type, $payload)) {
+                continue;
+            }
             if ($type === Protocol::MSG_ERROR) {
                 throw $this->buildQueryException($payload);
             }
@@ -393,7 +561,9 @@ final class Connection
         $execPayload = Protocol::buildExecutePayload('', $maxRows);
         $this->lastMaxRows = max(0, $maxRows);
         $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
-        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+        if ($maxRows === 0) {
+            $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+        }
     }
 
     private function describeStatement(string $name): int
@@ -434,6 +604,31 @@ final class Connection
             $this->recordError($ex);
             return false;
         }
+    }
+
+    private function parseUuidBytes(string $value): ?string
+    {
+        $hex = strtolower(str_replace('-', '', trim($value)));
+        if (!preg_match('/^[0-9a-f]{32}$/', $hex)) {
+            return null;
+        }
+        $bin = @hex2bin($hex);
+        if ($bin === false || strlen($bin) !== 16) {
+            return null;
+        }
+        return $bin;
+    }
+
+    private function parseUint64(string $value): ?int
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (!ctype_digit($trimmed)) {
+            return null;
+        }
+        return (int) $trimmed;
     }
 
     private function readExact(int $length): string

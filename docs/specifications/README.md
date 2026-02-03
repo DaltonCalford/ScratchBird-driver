@@ -1,8 +1,8 @@
 # ScratchBird Driver Specifications
 
-This directory contains implementation requirements for the native ScratchBird drivers.
-The authoritative protocol reference lives in the main ScratchBird repo and is linked
-from each spec below.
+This directory contains implementation requirements for the native ScratchBird drivers
+and CLI tooling. The authoritative protocol reference lives in the main ScratchBird repo
+and is linked from each spec below.
 
 ## Specifications
 
@@ -26,6 +26,22 @@ from each spec below.
 - [DRIVER_SWIFT_ASYNC_ADAPTER.md](DRIVER_SWIFT_ASYNC_ADAPTER.md) - Swift async/await driver requirements
 - [DRIVER_DART_DATABASE_API.md](DRIVER_DART_DATABASE_API.md) - Dart database API requirements
 - [DRIVER_MOJO_NATIVE_API.md](DRIVER_MOJO_NATIVE_API.md) - Mojo native driver requirements
+
+## Migrated Driver Specs (from ScratchBird)
+
+- [drivers/README.md](drivers/README.md)
+- [drivers/ALPHA_DRIVER_BOOTSTRAP.md](drivers/ALPHA_DRIVER_BOOTSTRAP.md)
+- [drivers/DRIVER_METADATA_QUERY_CONTRACT.md](drivers/DRIVER_METADATA_QUERY_CONTRACT.md)
+- [drivers/NATIVE_DRIVER_CONFORMANCE.md](drivers/NATIVE_DRIVER_CONFORMANCE.md)
+- [drivers/JDBC_DRIVER_SPECIFICATION.md](drivers/JDBC_DRIVER_SPECIFICATION.md)
+- [drivers/ODBC_DRIVER_SPECIFICATION.md](drivers/ODBC_DRIVER_SPECIFICATION.md)
+- [drivers/odbc_generic_spec.md](drivers/odbc_generic_spec.md)
+- [drivers/jdbc_jni_spec.md](drivers/jdbc_jni_spec.md)
+- [api/CLIENT_LIBRARY_API_SPECIFICATION.md](api/CLIENT_LIBRARY_API_SPECIFICATION.md)
+
+## CLI Tool References
+
+- [docs/user-documentation/tools/README.md](../user-documentation/tools/README.md) - CLI tool index and usage
 
 ## Related Specs (ScratchBird)
 

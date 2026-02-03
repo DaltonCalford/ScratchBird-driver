@@ -15,6 +15,16 @@
 - `execute(name, params?, options?)`
 - `begin()`, `commit()`, `rollback()`
 - `end()`
+- `terminate()`
+- `savepoint(name)`, `releaseSavepoint(name)`, `rollbackToSavepoint(name)`
+- `setOption(name, value)`
+- `ping()`
+- `subscribe(channel, options?)`, `unsubscribe(channel)`
+- `executeSblr(hash, bytecode?, params?, options?)`
+- `streamControl(controlType, windowSize?, timeoutMs?)`
+- `attachCreate(emulationMode, dbName)`, `attachDetach()`, `attachList()`
+- `onNotification(handler)`
+- `lastQueryPlan()`, `lastSblrCompiled()`
 
 ### Query Options
 

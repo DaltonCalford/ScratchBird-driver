@@ -16,6 +16,7 @@ namespace ScratchBird.Data;
 internal sealed class ProtocolClient
 {
     private const uint QueryFlagBinaryResult = 0x04;
+    private sealed record NotificationMessage(uint ProcessId, string Channel, byte[] Payload, char? ChangeType, ulong? RowId);
 
     private TcpClient? _client;
     private Stream? _stream;
@@ -25,6 +26,9 @@ internal sealed class ProtocolClient
     private uint _lastQuerySequence;
     private bool _connected;
     private readonly Dictionary<string, string> _parameters = new();
+    private readonly List<Action<NotificationMessage>> _notificationHandlers = new();
+    private (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan)? _lastPlan;
+    private (ulong Hash, uint Version, byte[] Bytecode)? _lastSblr;
     private ScratchBirdConfig? _config;
 
     public bool Connected => _connected;
@@ -88,15 +92,155 @@ internal sealed class ProtocolClient
 
     public void Begin()
     {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnBeginPayload(0, 0, 0, ProtocolConstants.IsolationReadCommitted, 0, 0, 0, 0);
+        SendMessage(MessageType.TXN_BEGIN, payload, 0, false);
+        DrainUntilReady();
     }
 
     public void Commit()
     {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnCommitPayload(0);
+        SendMessage(MessageType.TXN_COMMIT, payload, 0, false);
+        DrainUntilReady();
     }
 
     public void Rollback()
     {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnRollbackPayload(0);
+        SendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
+        DrainUntilReady();
     }
+
+    public void Savepoint(string name)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnSavepointPayload(name);
+        SendMessage(MessageType.TXN_SAVEPOINT, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void ReleaseSavepoint(string name)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnReleasePayload(name);
+        SendMessage(MessageType.TXN_RELEASE, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void RollbackToSavepoint(string name)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildTxnRollbackToPayload(name);
+        SendMessage(MessageType.TXN_ROLLBACK_TO, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void SetOption(string name, string value)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildSetOptionPayload(name, value);
+        SendMessage(MessageType.SET_OPTION, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void Ping()
+    {
+        EnsureConnected();
+        SendMessage(MessageType.PING, Array.Empty<byte>(), 0, false);
+        while (true)
+        {
+            var msg = Receive();
+            if (HandleAsyncMessage(msg))
+            {
+                continue;
+            }
+            switch ((MessageType)msg.Header.Type)
+            {
+                case MessageType.PONG:
+                    return;
+                case MessageType.READY:
+                {
+                    var ready = ProtocolCodec.ParseReady(msg.Payload);
+                    _txnId = ready.TxnId;
+                    return;
+                }
+                case MessageType.ERROR:
+                    throw BuildQueryException(msg.Payload);
+            }
+        }
+    }
+
+    public void Subscribe(byte subscribeType, string channel, string filterExpr = "")
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildSubscribePayload(subscribeType, channel, filterExpr);
+        SendMessage(MessageType.SUBSCRIBE, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void Unsubscribe(string channel)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildUnsubscribePayload(channel);
+        SendMessage(MessageType.UNSUBSCRIBE, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public QueryStream ExecuteSblr(ulong hash, byte[]? bytecode, IReadOnlyList<ScratchBirdParameter> parameters, int timeoutMs, int maxRows)
+    {
+        EnsureConnected();
+        var paramValues = new List<ParamValue>();
+        foreach (var parameter in parameters)
+        {
+            var encoded = TypeDecoder.EncodeParameter(parameter);
+            paramValues.Add(encoded.Param);
+        }
+        var payload = ProtocolCodec.BuildSblrExecutePayload(hash, bytecode, paramValues);
+        SendMessage(MessageType.SBLR_EXECUTE, payload, 0, false);
+        SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+        return new QueryStream(this, timeoutMs, maxRows);
+    }
+
+    public void StreamControl(byte controlType, uint windowSize, uint timeoutMs)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildStreamControlPayload(controlType, windowSize, timeoutMs);
+        SendMessage(MessageType.STREAM_CONTROL, payload, 0, false);
+    }
+
+    public void AttachCreate(string emulationMode, string dbName)
+    {
+        EnsureConnected();
+        var payload = ProtocolCodec.BuildAttachCreatePayload(emulationMode, dbName);
+        SendMessage(MessageType.ATTACH_CREATE, payload, 0, false);
+        DrainUntilReady();
+    }
+
+    public void AttachDetach()
+    {
+        EnsureConnected();
+        SendMessage(MessageType.ATTACH_DETACH, Array.Empty<byte>(), 0, false);
+        DrainUntilReady();
+    }
+
+    public QueryStream AttachList()
+    {
+        EnsureConnected();
+        SendMessage(MessageType.ATTACH_LIST, Array.Empty<byte>(), 0, false);
+        SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+        return new QueryStream(this, 0, 0);
+    }
+
+    public void OnNotification(Action<uint, string, byte[], char?, ulong?> handler)
+    {
+        _notificationHandlers.Add(msg => handler(msg.ProcessId, msg.Channel, msg.Payload, msg.ChangeType, msg.RowId));
+    }
+
+    public (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan)? LastPlan => _lastPlan;
+    public (ulong Hash, uint Version, byte[] Bytecode)? LastSblr => _lastSblr;
 
     public void Cancel()
     {
@@ -156,6 +300,10 @@ internal sealed class ProtocolClient
         while (true)
         {
             var msg = Receive();
+            if (HandleAsyncMessage(msg))
+            {
+                continue;
+            }
             switch ((MessageType)msg.Header.Type)
             {
                 case MessageType.NEGOTIATE_VERSION:
@@ -259,7 +407,10 @@ internal sealed class ProtocolClient
 
         var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)Math.Max(0, maxRows));
         _lastQuerySequence = SendMessage(MessageType.EXECUTE, execPayload, 0, false);
-        SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+        if (maxRows <= 0)
+        {
+            SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
+        }
     }
 
     private int DescribeStatement(string name)
@@ -271,14 +422,14 @@ internal sealed class ProtocolClient
         while (true)
         {
             var msg = Receive();
+            if (HandleAsyncMessage(msg))
+            {
+                continue;
+            }
             switch ((MessageType)msg.Header.Type)
             {
                 case MessageType.PARAMETER_DESCRIPTION:
                     paramCount = ProtocolCodec.ParseParameterDescription(msg.Payload).Count;
-                    continue;
-                case MessageType.PARAMETER_STATUS:
-                    var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
-                    _parameters[status.Name] = status.Value;
                     continue;
                 case MessageType.ERROR:
                     throw BuildQueryException(msg.Payload);
@@ -295,6 +446,95 @@ internal sealed class ProtocolClient
     private bool ConfigBinaryTransfer()
     {
         return _config?.BinaryTransfer ?? true;
+    }
+
+    private bool HandleAsyncMessage(ProtocolMessage msg)
+    {
+        switch ((MessageType)msg.Header.Type)
+        {
+            case MessageType.PARAMETER_STATUS:
+            {
+                var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
+                _parameters[status.Name] = status.Value;
+                if (status.Name == "attachment_id" && TryParseUuidBytes(status.Value, out var attachment))
+                {
+                    _attachmentId = attachment;
+                }
+                if (status.Name == "current_txn_id" && TryParseUInt64(status.Value, out var txnId))
+                {
+                    _txnId = txnId;
+                }
+                return true;
+            }
+            case MessageType.NOTIFICATION:
+            {
+                var notice = ProtocolCodec.ParseNotification(msg.Payload);
+                foreach (var handler in _notificationHandlers)
+                {
+                    handler(new NotificationMessage(notice.ProcessId, notice.Channel, notice.Payload, notice.ChangeType, notice.RowId));
+                }
+                return true;
+            }
+            case MessageType.QUERY_PLAN:
+            {
+                _lastPlan = ProtocolCodec.ParseQueryPlan(msg.Payload);
+                return true;
+            }
+            case MessageType.SBLR_COMPILED:
+            {
+                _lastSblr = ProtocolCodec.ParseSblrCompiled(msg.Payload);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private void DrainUntilReady()
+    {
+        while (true)
+        {
+            var msg = Receive();
+            if (HandleAsyncMessage(msg))
+            {
+                continue;
+            }
+            switch ((MessageType)msg.Header.Type)
+            {
+                case MessageType.READY:
+                {
+                    var ready = ProtocolCodec.ParseReady(msg.Payload);
+                    _txnId = ready.TxnId;
+                    return;
+                }
+                case MessageType.ERROR:
+                    throw BuildQueryException(msg.Payload);
+            }
+        }
+    }
+
+    private static bool TryParseUuidBytes(string value, out byte[] bytes)
+    {
+        bytes = Array.Empty<byte>();
+        var hex = value.Replace("-", string.Empty).Trim();
+        if (hex.Length != 32)
+        {
+            return false;
+        }
+        try
+        {
+            bytes = Convert.FromHexString(hex);
+            return bytes.Length == 16;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseUInt64(string value, out ulong parsed)
+    {
+        return ulong.TryParse(value.Trim(), out parsed);
     }
 
     private ProtocolMessage Receive()
@@ -462,6 +702,10 @@ internal sealed class ProtocolClient
             while (true)
             {
                 var msg = _client.Receive();
+                if (_client.HandleAsyncMessage(msg))
+                {
+                    continue;
+                }
                 switch ((MessageType)msg.Header.Type)
                 {
                     case MessageType.ERROR:
@@ -492,13 +736,6 @@ internal sealed class ProtocolClient
                     {
                         var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
                         _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
-                        _client.SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
-                        break;
-                    }
-                    case MessageType.PARAMETER_STATUS:
-                    {
-                        var status = ProtocolCodec.ParseParameterStatus(msg.Payload);
-                        _client._parameters[status.Name] = status.Value;
                         break;
                     }
                     case MessageType.READY:

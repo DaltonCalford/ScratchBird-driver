@@ -34,6 +34,9 @@ module Scratchbird
       @prepared = {}
       @socket_timeout = config.socket_timeout_ms.to_i
       @last_max_rows = 0
+      @notification_handlers = []
+      @last_plan = nil
+      @last_sblr = nil
     end
 
     def connect
@@ -69,16 +72,134 @@ module Scratchbird
 
     def begin_transaction
       ensure_connected
+      payload = Protocol.build_txn_begin_payload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0)
+      send_message(Protocol::MSG_TXN_BEGIN, payload, 0, false)
+      drain_until_ready
     end
 
     def commit
       ensure_connected
-      execute_simple("COMMIT")
+      payload = Protocol.build_txn_commit_payload(0)
+      send_message(Protocol::MSG_TXN_COMMIT, payload, 0, false)
+      drain_until_ready
     end
 
     def rollback
       ensure_connected
-      execute_simple("ROLLBACK")
+      payload = Protocol.build_txn_rollback_payload(0)
+      send_message(Protocol::MSG_TXN_ROLLBACK, payload, 0, false)
+      drain_until_ready
+    end
+
+    def savepoint(name)
+      ensure_connected
+      payload = Protocol.build_txn_savepoint_payload(name)
+      send_message(Protocol::MSG_TXN_SAVEPOINT, payload, 0, false)
+      drain_until_ready
+    end
+
+    def release_savepoint(name)
+      ensure_connected
+      payload = Protocol.build_txn_release_payload(name)
+      send_message(Protocol::MSG_TXN_RELEASE, payload, 0, false)
+      drain_until_ready
+    end
+
+    def rollback_to_savepoint(name)
+      ensure_connected
+      payload = Protocol.build_txn_rollback_to_payload(name)
+      send_message(Protocol::MSG_TXN_ROLLBACK_TO, payload, 0, false)
+      drain_until_ready
+    end
+
+    def set_option(name, value)
+      ensure_connected
+      payload = Protocol.build_set_option_payload(name, value)
+      send_message(Protocol::MSG_SET_OPTION, payload, 0, false)
+      drain_until_ready
+    end
+
+    def ping
+      ensure_connected
+      send_message(Protocol::MSG_PING, +"", 0, false)
+      loop do
+        type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
+        next if handle_async_message(type, payload)
+        case type
+        when Protocol::MSG_PONG
+          return true
+        when Protocol::MSG_READY
+          _status, txn_id = Protocol.parse_ready(payload)
+          @txn_id = txn_id
+          return true
+        when Protocol::MSG_ERROR
+          handle_query_error(payload)
+        end
+      end
+    end
+
+    def subscribe(channel, sub_type = Protocol::SUB_TYPE_CHANNEL, filter_expr = "")
+      ensure_connected
+      payload = Protocol.build_subscribe_payload(sub_type, channel, filter_expr)
+      send_message(Protocol::MSG_SUBSCRIBE, payload, 0, false)
+      drain_until_ready
+    end
+
+    def unsubscribe(channel)
+      ensure_connected
+      payload = Protocol.build_unsubscribe_payload(channel)
+      send_message(Protocol::MSG_UNSUBSCRIBE, payload, 0, false)
+      drain_until_ready
+    end
+
+    def execute_sblr(hash, bytecode = nil, params = [])
+      ensure_connected
+      values = params.map do |param|
+        encoded = Types.encode_param(param)
+        encoded[:param]
+      end
+      payload = Protocol.build_sblr_execute_payload(hash, bytecode, values)
+      send_message(Protocol::MSG_SBLR_EXECUTE, payload, 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      ResultStream.new(self)
+    end
+
+    def stream_control(control_type, window_size, timeout_ms)
+      ensure_connected
+      payload = Protocol.build_stream_control_payload(control_type, window_size, timeout_ms)
+      send_message(Protocol::MSG_STREAM_CONTROL, payload, 0, false)
+    end
+
+    def attach_create(emulation_mode, db_name)
+      ensure_connected
+      payload = Protocol.build_attach_create_payload(emulation_mode, db_name)
+      send_message(Protocol::MSG_ATTACH_CREATE, payload, 0, false)
+      drain_until_ready
+    end
+
+    def attach_detach
+      ensure_connected
+      send_message(Protocol::MSG_ATTACH_DETACH, +"", 0, false)
+      drain_until_ready
+    end
+
+    def attach_list
+      ensure_connected
+      send_message(Protocol::MSG_ATTACH_LIST, +"", 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      ResultStream.new(self)
+    end
+
+    def on_notification(&block)
+      @notification_handlers << block if block
+    end
+
+    def last_plan
+      @last_plan
+    end
+
+    def last_sblr
+      @last_sblr
     end
 
     def query(sql, params = nil, options = nil)
@@ -168,6 +289,9 @@ module Scratchbird
     def drain_until_ready
       loop do
         type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
+        if handle_async_message(type, payload)
+          next
+        end
         if type == Protocol::MSG_ERROR
           handle_query_error(payload)
         end
@@ -180,6 +304,44 @@ module Scratchbird
     end
 
     private
+
+    def handle_async_message(type, payload)
+      case type
+      when Protocol::MSG_PARAMETER_STATUS
+        name, value = Protocol.parse_parameter_status(payload)
+        @parameters[name] = value
+        update_attachment_from_param(name, value)
+        true
+      when Protocol::MSG_NOTIFICATION
+        notice = Protocol.parse_notification(payload)
+        @notification_handlers.each { |handler| handler.call(notice) }
+        true
+      when Protocol::MSG_QUERY_PLAN
+        @last_plan = Protocol.parse_query_plan(payload)
+        true
+      when Protocol::MSG_SBLR_COMPILED
+        @last_sblr = Protocol.parse_sblr_compiled(payload)
+        true
+      else
+        false
+      end
+    end
+
+    def update_attachment_from_param(name, value)
+      case name
+      when "attachment_id"
+        parsed = parse_uuid_bytes(value)
+        @attachment_id = parsed if parsed
+      when "current_txn_id"
+        @txn_id = value.to_i
+      end
+    end
+
+    def parse_uuid_bytes(value)
+      hex = value.to_s.delete("-").strip
+      return nil unless hex.match?(/\A[0-9a-fA-F]{32}\z/)
+      [hex].pack("H*")
+    end
 
     def connect_tcp
       timeout = @config.connect_timeout_ms.to_i / 1000.0
@@ -231,6 +393,9 @@ module Scratchbird
 
       loop do
         type, _flags, payload, _sequence, attachment_id, txn_id = recv_message
+        if handle_async_message(type, payload)
+          next
+        end
         case type
         when Protocol::MSG_NEGOTIATE_VERSION
           next
@@ -367,6 +532,9 @@ module Scratchbird
 
       loop do
         type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
+        if handle_async_message(type, payload)
+          next
+        end
         case type
         when Protocol::MSG_ERROR
           handle_query_error(payload)
@@ -379,9 +547,6 @@ module Scratchbird
           _command_type, rows_count, _last_id, tag = Protocol.parse_command_complete(payload)
           command_tag = tag
           rowcount = rows_count
-        when Protocol::MSG_PARAMETER_STATUS
-          name, value = Protocol.parse_parameter_status(payload)
-          @parameters[name] = value
         when Protocol::MSG_PORTAL_SUSPENDED
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
@@ -399,6 +564,12 @@ module Scratchbird
 
     def send_simple_query(sql, options)
       flags = @config.binary_transfer ? QUERY_FLAG_BINARY_RESULT : 0
+      if options
+        flags |= Protocol::QUERY_FLAG_INCLUDE_PLAN if options[:include_plan]
+        flags |= Protocol::QUERY_FLAG_RETURN_SBLR if options[:return_sblr]
+        flags |= Protocol::QUERY_FLAG_DESCRIBE_ONLY if options[:describe_only]
+        flags |= Protocol::QUERY_FLAG_NO_CACHE if options[:no_cache]
+      end
       max_rows = options && options[:max_rows] ? options[:max_rows].to_i : 0
       @last_max_rows = max_rows
       timeout_ms = options && options[:timeout_ms] ? options[:timeout_ms].to_i : 0
@@ -429,7 +600,7 @@ module Scratchbird
       @last_max_rows = max_rows
       exec_payload = Protocol.build_execute_payload("", max_rows)
       @last_query_sequence = send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
-      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false) if max_rows == 0
     end
 
     def send_bind_execute(statement_name, params, options)
@@ -446,13 +617,12 @@ module Scratchbird
       @last_max_rows = max_rows
       exec_payload = Protocol.build_execute_payload("", max_rows)
       @last_query_sequence = send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
-      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false) if max_rows == 0
     end
 
     def resume_portal
       exec_payload = Protocol.build_execute_payload("", @last_max_rows.to_i)
       send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
-      send_message(Protocol::MSG_SYNC, +"", 0, false)
     end
 
     def describe_statement(statement_name)
@@ -462,12 +632,12 @@ module Scratchbird
       param_count = -1
       loop do
         type, _flags, payload, _sequence, _attachment_id, txn_id = recv_message
+        if handle_async_message(type, payload)
+          next
+        end
         case type
         when Protocol::MSG_PARAMETER_DESCRIPTION
           param_count = Protocol.parse_parameter_description(payload).length
-        when Protocol::MSG_PARAMETER_STATUS
-          name, value = Protocol.parse_parameter_status(payload)
-          @parameters[name] = value
         when Protocol::MSG_ERROR
           handle_query_error(payload)
         when Protocol::MSG_READY
@@ -524,6 +694,7 @@ module Scratchbird
 
       loop do
         type, _flags, payload, _sequence, _attachment_id, _txn_id = @client.recv_message
+        next if @client.send(:handle_async_message, type, payload)
         case type
         when Protocol::MSG_ERROR
           @client.handle_query_error(payload)
@@ -537,9 +708,6 @@ module Scratchbird
           _command_type, rows_count, _last_id, tag = Protocol.parse_command_complete(payload)
           @command_tag = tag
           @rowcount = rows_count
-        when Protocol::MSG_PARAMETER_STATUS
-          name, value = Protocol.parse_parameter_status(payload)
-          @client.parameters[name] = value
         when Protocol::MSG_PORTAL_SUSPENDED
           @client.resume_portal if @client.instance_variable_get(:@last_max_rows).to_i > 0
         when Protocol::MSG_READY

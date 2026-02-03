@@ -7,7 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 import { Buffer } from "node:buffer";
 
-export const PROTOCOL_MAGIC = 0x53425750;
+export const PROTOCOL_MAGIC_BYTES = Buffer.from("SBWP");
 export const PROTOCOL_VERSION_MAJOR = 1;
 export const PROTOCOL_VERSION_MINOR = 1;
 export const PROTOCOL_VERSION = (PROTOCOL_VERSION_MAJOR << 8) | PROTOCOL_VERSION_MINOR;
@@ -26,9 +26,27 @@ export enum MessageType {
   SYNC = 0x09,
   FLUSH = 0x0a,
   CANCEL = 0x0b,
+  TERMINATE = 0x0c,
   COPY_DATA = 0x0d,
   COPY_DONE = 0x0e,
   COPY_FAIL = 0x0f,
+  SBLR_EXECUTE = 0x10,
+  SUBSCRIBE = 0x11,
+  UNSUBSCRIBE = 0x12,
+  FEDERATED_QUERY = 0x13,
+  STREAM_CONTROL = 0x14,
+  TXN_BEGIN = 0x15,
+  TXN_COMMIT = 0x16,
+  TXN_ROLLBACK = 0x17,
+  TXN_SAVEPOINT = 0x18,
+  TXN_RELEASE = 0x19,
+  TXN_ROLLBACK_TO = 0x1a,
+  PING = 0x1b,
+  SET_OPTION = 0x1c,
+  CLUSTER_AUTH = 0x1d,
+  ATTACH_CREATE = 0x1e,
+  ATTACH_DETACH = 0x1f,
+  ATTACH_LIST = 0x20,
 
   AUTH_REQUEST = 0x40,
   AUTH_OK = 0x41,
@@ -51,12 +69,19 @@ export enum MessageType {
   COPY_OUT_RESPONSE = 0x52,
   COPY_BOTH_RESPONSE = 0x53,
   NOTIFICATION = 0x54,
+  FUNCTION_RESULT = 0x55,
   NEGOTIATE_VERSION = 0x56,
+  SBLR_COMPILED = 0x57,
+  QUERY_PLAN = 0x58,
   STREAM_READY = 0x59,
   STREAM_DATA = 0x5a,
   STREAM_END = 0x5b,
   TXN_STATUS = 0x5c,
   PONG = 0x5d,
+  CLUSTER_AUTH_OK = 0x5e,
+  FEDERATED_RESULT = 0x5f,
+  HEARTBEAT = 0x80,
+  EXTENSION = 0x81,
 }
 
 export enum AuthMethod {
@@ -94,6 +119,36 @@ export const FEATURE_SAVEPOINTS = 1n << 9n;
 export const FEATURE_2PC = 1n << 10n;
 export const FEATURE_CHECKSUMS = 1n << 11n;
 
+export const QUERY_FLAG_DESCRIBE_ONLY = 0x01;
+export const QUERY_FLAG_NO_PORTAL = 0x02;
+export const QUERY_FLAG_BINARY_RESULT = 0x04;
+export const QUERY_FLAG_INCLUDE_PLAN = 0x08;
+export const QUERY_FLAG_RETURN_SBLR = 0x10;
+export const QUERY_FLAG_NO_CACHE = 0x20;
+
+export const ISOLATION_READ_UNCOMMITTED = 0;
+export const ISOLATION_READ_COMMITTED = 1;
+export const ISOLATION_REPEATABLE_READ = 2;
+export const ISOLATION_SERIALIZABLE = 3;
+
+export const TXN_FLAG_HAS_ISOLATION = 0x0001;
+export const TXN_FLAG_HAS_ACCESS = 0x0002;
+export const TXN_FLAG_HAS_DEFERRABLE = 0x0004;
+export const TXN_FLAG_HAS_WAIT = 0x0008;
+export const TXN_FLAG_HAS_TIMEOUT = 0x0010;
+export const TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
+
+export const STREAM_START = 0;
+export const STREAM_PAUSE = 1;
+export const STREAM_RESUME = 2;
+export const STREAM_CANCEL = 3;
+export const STREAM_ACK = 4;
+
+export const SUB_TYPE_CHANNEL = 0;
+export const SUB_TYPE_TABLE = 1;
+export const SUB_TYPE_QUERY = 2;
+export const SUB_TYPE_EVENT = 3;
+
 export interface MessageHeader {
   type: number;
   flags: number;
@@ -123,9 +178,31 @@ export interface ColumnValue {
   data: Buffer | null;
 }
 
+export interface NotificationMessage {
+  processId: number;
+  channel: string;
+  payload: Buffer;
+  changeType?: string;
+  rowId?: bigint;
+}
+
+export interface QueryPlanMessage {
+  format: number;
+  planningTimeUs: bigint;
+  estimatedRows: bigint;
+  estimatedCost: bigint;
+  plan: Buffer;
+}
+
+export interface SblrCompiledMessage {
+  hash: bigint;
+  version: number;
+  bytecode: Buffer;
+}
+
 export function encodeMessage(header: MessageHeader, payload: Buffer): Buffer {
   const out = Buffer.alloc(HEADER_SIZE + payload.length);
-  out.writeUInt32LE(PROTOCOL_MAGIC, 0);
+  PROTOCOL_MAGIC_BYTES.copy(out, 0);
   out.writeUInt8(PROTOCOL_VERSION_MAJOR, 4);
   out.writeUInt8(PROTOCOL_VERSION_MINOR, 5);
   out.writeUInt8(header.type, 6);
@@ -142,8 +219,7 @@ export function decodeHeader(data: Buffer): MessageHeader {
   if (data.length !== HEADER_SIZE) {
     throw new Error("Invalid header length");
   }
-  const magic = data.readUInt32LE(0);
-  if (magic !== PROTOCOL_MAGIC) {
+  if (!data.subarray(0, 4).equals(PROTOCOL_MAGIC_BYTES)) {
     throw new Error("Invalid protocol magic");
   }
   const major = data.readUInt8(4);
@@ -341,6 +417,147 @@ export function buildCancelPayload(cancelType: number, targetSequence: number): 
   return payload;
 }
 
+export function buildSblrExecutePayload(sblrHash: bigint, bytecode: Buffer, params: ParamValue[]): Buffer {
+  let payloadLen = 8 + 4 + 2 + 2 + bytecode.length;
+  for (const param of params) {
+    payloadLen += 4;
+    if (!param.isNull && param.data) {
+      payloadLen += param.data.length;
+    }
+  }
+  const payload = Buffer.alloc(payloadLen);
+  let offset = 0;
+  payload.writeBigUInt64LE(sblrHash, offset);
+  offset += 8;
+  payload.writeUInt32LE(bytecode.length, offset);
+  offset += 4;
+  payload.writeUInt16LE(params.length, offset);
+  offset += 2;
+  payload.writeUInt16LE(0, offset);
+  offset += 2;
+  bytecode.copy(payload, offset);
+  offset += bytecode.length;
+  for (const param of params) {
+    if (param.isNull) {
+      payload.writeUInt32LE(0xffffffff, offset);
+      offset += 4;
+      continue;
+    }
+    const data = param.data ?? Buffer.alloc(0);
+    payload.writeUInt32LE(data.length, offset);
+    offset += 4;
+    data.copy(payload, offset);
+    offset += data.length;
+  }
+  return payload;
+}
+
+export function buildSubscribePayload(subscribeType: number, channel: string, filter: string): Buffer {
+  const channelBytes = Buffer.from(channel, "utf8");
+  const filterBytes = Buffer.from(filter, "utf8");
+  const payload = Buffer.alloc(4 + 4 + channelBytes.length + 4 + filterBytes.length);
+  payload.writeUInt8(subscribeType, 0);
+  let offset = 4;
+  payload.writeUInt32LE(channelBytes.length, offset);
+  offset += 4;
+  channelBytes.copy(payload, offset);
+  offset += channelBytes.length;
+  payload.writeUInt32LE(filterBytes.length, offset);
+  offset += 4;
+  filterBytes.copy(payload, offset);
+  return payload;
+}
+
+export function buildUnsubscribePayload(channel: string): Buffer {
+  const channelBytes = Buffer.from(channel, "utf8");
+  const payload = Buffer.alloc(4 + channelBytes.length);
+  payload.writeUInt32LE(channelBytes.length, 0);
+  channelBytes.copy(payload, 4);
+  return payload;
+}
+
+export function buildTxnBeginPayload(
+  flags: number,
+  conflictAction: number,
+  autocommitMode: number,
+  isolationLevel: number,
+  accessMode: number,
+  deferrable: number,
+  waitMode: number,
+  timeoutMs: number,
+): Buffer {
+  const payload = Buffer.alloc(12);
+  payload.writeUInt16LE(flags, 0);
+  payload.writeUInt8(conflictAction, 2);
+  payload.writeUInt8(autocommitMode, 3);
+  payload.writeUInt8(isolationLevel, 4);
+  payload.writeUInt8(accessMode, 5);
+  payload.writeUInt8(deferrable, 6);
+  payload.writeUInt8(waitMode, 7);
+  payload.writeUInt32LE(timeoutMs, 8);
+  return payload;
+}
+
+export function buildTxnCommitPayload(flags: number): Buffer {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt8(flags, 0);
+  return payload;
+}
+
+export function buildTxnRollbackPayload(flags: number): Buffer {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt8(flags, 0);
+  return payload;
+}
+
+export function buildTxnSavepointPayload(name: string): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const payload = Buffer.alloc(4 + nameBytes.length);
+  payload.writeUInt32LE(nameBytes.length, 0);
+  nameBytes.copy(payload, 4);
+  return payload;
+}
+
+export function buildTxnReleasePayload(name: string): Buffer {
+  return buildTxnSavepointPayload(name);
+}
+
+export function buildTxnRollbackToPayload(name: string): Buffer {
+  return buildTxnSavepointPayload(name);
+}
+
+export function buildSetOptionPayload(name: string, value: string): Buffer {
+  const nameBytes = Buffer.from(name, "utf8");
+  const valueBytes = Buffer.from(value, "utf8");
+  const payload = Buffer.alloc(4 + nameBytes.length + 4 + valueBytes.length);
+  payload.writeUInt32LE(nameBytes.length, 0);
+  nameBytes.copy(payload, 4);
+  const offset = 4 + nameBytes.length;
+  payload.writeUInt32LE(valueBytes.length, offset);
+  valueBytes.copy(payload, offset + 4);
+  return payload;
+}
+
+export function buildStreamControlPayload(controlType: number, windowSize: number, timeoutMs: number): Buffer {
+  const payload = Buffer.alloc(12);
+  payload.writeUInt8(controlType, 0);
+  payload.writeUInt32LE(windowSize, 4);
+  payload.writeUInt32LE(timeoutMs, 8);
+  return payload;
+}
+
+export function buildAttachCreatePayload(mode: string, dbName: string): Buffer {
+  const modeBytes = Buffer.from(mode, "utf8");
+  const dbBytes = Buffer.from(dbName, "utf8");
+  const payload = Buffer.alloc(4 + modeBytes.length + 4 + dbBytes.length);
+  payload.writeUInt32LE(modeBytes.length, 0);
+  modeBytes.copy(payload, 4);
+  const offset = 4 + modeBytes.length;
+  payload.writeUInt32LE(dbBytes.length, offset);
+  dbBytes.copy(payload, offset + 4);
+  return payload;
+}
+
 export function parseReady(payload: Buffer): { status: number; txnId: bigint; visibility: bigint } {
   if (payload.length < 20) throw new Error("Ready truncated");
   const status = payload.readUInt8(0);
@@ -448,6 +665,56 @@ export function parseCommandComplete(payload: Buffer): { commandType: number; ro
   const nullIdx = tagBytes.indexOf(0);
   const tag = (nullIdx >= 0 ? tagBytes.subarray(0, nullIdx) : tagBytes).toString("utf8");
   return { commandType, rows, lastId, tag };
+}
+
+export function parseNotification(payload: Buffer): NotificationMessage {
+  if (payload.length < 12) throw new Error("Notification truncated");
+  let offset = 0;
+  const processId = payload.readUInt32LE(offset);
+  offset += 4;
+  const channelLen = payload.readUInt32LE(offset);
+  offset += 4;
+  if (offset + channelLen + 4 > payload.length) throw new Error("Notification truncated");
+  const channel = payload.subarray(offset, offset + channelLen).toString("utf8");
+  offset += channelLen;
+  const payloadLen = payload.readUInt32LE(offset);
+  offset += 4;
+  if (offset + payloadLen > payload.length) throw new Error("Notification truncated");
+  const data = payload.subarray(offset, offset + payloadLen);
+  offset += payloadLen;
+  let changeType: string | undefined;
+  let rowId: bigint | undefined;
+  if (offset + 1 <= payload.length) {
+    changeType = String.fromCharCode(payload[offset]);
+    offset += 1;
+    if (offset + 8 <= payload.length) {
+      rowId = payload.readBigUInt64LE(offset);
+    }
+  }
+  return { processId, channel, payload: data, changeType, rowId };
+}
+
+export function parseQueryPlan(payload: Buffer): QueryPlanMessage {
+  if (payload.length < 32) throw new Error("Query plan truncated");
+  const format = payload.readUInt32LE(0);
+  const planLength = payload.readUInt32LE(4);
+  const planningTimeUs = payload.readBigUInt64LE(8);
+  const estimatedRows = payload.readBigUInt64LE(16);
+  const estimatedCost = payload.readBigUInt64LE(24);
+  const planStart = 32;
+  if (planStart + planLength > payload.length) throw new Error("Query plan truncated");
+  const plan = payload.subarray(planStart, planStart + planLength);
+  return { format, planningTimeUs, estimatedRows, estimatedCost, plan };
+}
+
+export function parseSblrCompiled(payload: Buffer): SblrCompiledMessage {
+  if (payload.length < 16) throw new Error("SBLR compiled truncated");
+  const hash = payload.readBigUInt64LE(0);
+  const version = payload.readUInt32LE(8);
+  const length = payload.readUInt32LE(12);
+  if (16 + length > payload.length) throw new Error("SBLR compiled truncated");
+  const bytecode = payload.subarray(16, 16 + length);
+  return { hash, version, bytecode };
 }
 
 export function parseErrorMessage(payload: Buffer): { severity: string; sqlState: string; message: string; detail: string; hint: string } {

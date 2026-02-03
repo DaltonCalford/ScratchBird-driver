@@ -92,6 +92,9 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 		if err != nil {
 			return nil, err
 		}
+		if r.conn.handleAsyncMessage(msg) {
+			continue
+		}
 		switch msg.header.typ {
 		case msgError:
 			return nil, buildProtocolError(msg.body)
@@ -130,15 +133,12 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 			}
 			r.commandTag = tag
 			r.rowsAffected = int64(rows)
-		case msgPortalSuspended:
-			execPayload := buildExecutePayload("", r.pageSize)
-			if err := r.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
-				return nil, err
-			}
-			if err := r.conn.sendMessage(msgSync, nil, 0, false); err != nil {
-				return nil, err
-			}
-		case msgReady:
+	case msgPortalSuspended:
+		execPayload := buildExecutePayload("", r.pageSize)
+		if err := r.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+			return nil, err
+		}
+	case msgReady:
 			_, txnID, _, err := parseReady(msg.body)
 			if err == nil {
 				r.conn.txnID = txnID

@@ -33,8 +33,8 @@ A JSON manifest defines the test suite and required capabilities:
     {"id": "auth", "kind": "auth"},
     {"id": "prepare_bind", "kind": "prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
     {"id": "describe_mismatch", "kind": "prepare_bind", "sql": "SELECT $1, $2", "params": [1], "expect_sqlstate": "07001"},
-    {"id": "paging_basic", "kind": "query", "sql": "SELECT id FROM sb_conformance.basic_table", "dsn_append": "fetch_size=1"},
-    {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT id FROM sb_conformance.basic_table", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]}
+    {"id": "paging_basic", "kind": "query", "sql": "SELECT id FROM basic_table", "dsn_append": "fetch_size=1"},
+    {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]}
   ]
 }
 ```

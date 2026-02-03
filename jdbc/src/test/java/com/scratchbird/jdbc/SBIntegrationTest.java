@@ -68,7 +68,7 @@ public class SBIntegrationTest {
     public void typesFixtureQuery() throws Exception {
         try (Connection conn = openConnection();
              Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT * FROM sb_conformance.type_coverage")) {
+             ResultSet rs = stmt.executeQuery("SELECT * FROM type_coverage")) {
             assertEquals(true, rs.next());
         }
     }

@@ -24,9 +24,27 @@ internal enum MessageType : byte
     SYNC = 0x09,
     FLUSH = 0x0A,
     CANCEL = 0x0B,
+    TERMINATE = 0x0C,
     COPY_DATA = 0x0D,
     COPY_DONE = 0x0E,
     COPY_FAIL = 0x0F,
+    SBLR_EXECUTE = 0x10,
+    SUBSCRIBE = 0x11,
+    UNSUBSCRIBE = 0x12,
+    FEDERATED_QUERY = 0x13,
+    STREAM_CONTROL = 0x14,
+    TXN_BEGIN = 0x15,
+    TXN_COMMIT = 0x16,
+    TXN_ROLLBACK = 0x17,
+    TXN_SAVEPOINT = 0x18,
+    TXN_RELEASE = 0x19,
+    TXN_ROLLBACK_TO = 0x1A,
+    PING = 0x1B,
+    SET_OPTION = 0x1C,
+    CLUSTER_AUTH = 0x1D,
+    ATTACH_CREATE = 0x1E,
+    ATTACH_DETACH = 0x1F,
+    ATTACH_LIST = 0x20,
 
     AUTH_REQUEST = 0x40,
     AUTH_OK = 0x41,
@@ -49,12 +67,19 @@ internal enum MessageType : byte
     COPY_OUT_RESPONSE = 0x52,
     COPY_BOTH_RESPONSE = 0x53,
     NOTIFICATION = 0x54,
+    FUNCTION_RESULT = 0x55,
     NEGOTIATE_VERSION = 0x56,
+    SBLR_COMPILED = 0x57,
+    QUERY_PLAN = 0x58,
     STREAM_READY = 0x59,
     STREAM_DATA = 0x5A,
     STREAM_END = 0x5B,
     TXN_STATUS = 0x5C,
-    PONG = 0x5D
+    PONG = 0x5D,
+    CLUSTER_AUTH_OK = 0x5E,
+    FEDERATED_RESULT = 0x5F,
+    HEARTBEAT = 0x80,
+    EXTENSION = 0x81
 }
 
 internal enum AuthMethod : byte
@@ -75,7 +100,7 @@ internal enum AuthMethod : byte
 
 internal static class ProtocolConstants
 {
-    public const uint Magic = 0x53425750; // "SBWP"
+    public const uint Magic = 0x50574253; // "SBWP" (little-endian bytes)
     public const byte VersionMajor = 1;
     public const byte VersionMinor = 1;
     public const ushort Version = (ushort)((VersionMajor << 8) | VersionMinor);
@@ -101,6 +126,36 @@ internal static class ProtocolConstants
     public const ulong FeatureSavepoints = 1UL << 9;
     public const ulong Feature2Pc = 1UL << 10;
     public const ulong FeatureChecksums = 1UL << 11;
+
+    public const uint QueryFlagDescribeOnly = 0x01;
+    public const uint QueryFlagNoPortal = 0x02;
+    public const uint QueryFlagBinaryResult = 0x04;
+    public const uint QueryFlagIncludePlan = 0x08;
+    public const uint QueryFlagReturnSblr = 0x10;
+    public const uint QueryFlagNoCache = 0x20;
+
+    public const byte IsolationReadUncommitted = 0;
+    public const byte IsolationReadCommitted = 1;
+    public const byte IsolationRepeatableRead = 2;
+    public const byte IsolationSerializable = 3;
+
+    public const ushort TxnFlagHasIsolation = 0x0001;
+    public const ushort TxnFlagHasAccess = 0x0002;
+    public const ushort TxnFlagHasDeferrable = 0x0004;
+    public const ushort TxnFlagHasWait = 0x0008;
+    public const ushort TxnFlagHasTimeout = 0x0010;
+    public const ushort TxnFlagHasAutocommit = 0x0020;
+
+    public const byte StreamStart = 0;
+    public const byte StreamPause = 1;
+    public const byte StreamResume = 2;
+    public const byte StreamCancel = 3;
+    public const byte StreamAck = 4;
+
+    public const byte SubscribeTypeChannel = 0;
+    public const byte SubscribeTypeTable = 1;
+    public const byte SubscribeTypeQuery = 2;
+    public const byte SubscribeTypeEvent = 3;
 }
 
 internal sealed class MessageHeader
@@ -428,6 +483,166 @@ internal static class ProtocolCodec
         return payload;
     }
 
+    public static byte[] BuildSblrExecutePayload(ulong sblrHash, byte[]? sblrBytecode, IReadOnlyList<ParamValue> parameters)
+    {
+        var bytecode = sblrBytecode ?? Array.Empty<byte>();
+        var paramBytes = BuildParamValues(parameters);
+        var payload = new byte[8 + 4 + 2 + 2 + bytecode.Length + paramBytes.Length];
+        var offset = 0;
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(offset, 8), sblrHash);
+        offset += 8;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset, 4), (uint)bytecode.Length);
+        offset += 4;
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset, 2), (ushort)parameters.Count);
+        offset += 2;
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset, 2), 0);
+        offset += 2;
+        if (bytecode.Length > 0)
+        {
+            Buffer.BlockCopy(bytecode, 0, payload, offset, bytecode.Length);
+            offset += bytecode.Length;
+        }
+        Buffer.BlockCopy(paramBytes, 0, payload, offset, paramBytes.Length);
+        return payload;
+    }
+
+    public static byte[] BuildSubscribePayload(byte subscribeType, string channel, string filterExpr)
+    {
+        var channelBytes = Encoding.UTF8.GetBytes(channel);
+        var filterBytes = Encoding.UTF8.GetBytes(filterExpr ?? string.Empty);
+        var payload = new byte[4 + 4 + channelBytes.Length + 4 + filterBytes.Length];
+        payload[0] = subscribeType;
+        var offset = 4;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset, 4), (uint)channelBytes.Length);
+        offset += 4;
+        Buffer.BlockCopy(channelBytes, 0, payload, offset, channelBytes.Length);
+        offset += channelBytes.Length;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset, 4), (uint)filterBytes.Length);
+        offset += 4;
+        Buffer.BlockCopy(filterBytes, 0, payload, offset, filterBytes.Length);
+        return payload;
+    }
+
+    public static byte[] BuildUnsubscribePayload(string channel)
+    {
+        var channelBytes = Encoding.UTF8.GetBytes(channel);
+        var payload = new byte[4 + channelBytes.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)channelBytes.Length);
+        Buffer.BlockCopy(channelBytes, 0, payload, 4, channelBytes.Length);
+        return payload;
+    }
+
+    public static byte[] BuildTxnBeginPayload(
+        ushort flags,
+        byte conflictAction,
+        byte autocommitMode,
+        byte isolationLevel,
+        byte accessMode,
+        byte deferrable,
+        byte waitMode,
+        uint timeoutMs
+    )
+    {
+        var payload = new byte[12];
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), flags);
+        payload[2] = conflictAction;
+        payload[3] = autocommitMode;
+        payload[4] = isolationLevel;
+        payload[5] = accessMode;
+        payload[6] = deferrable;
+        payload[7] = waitMode;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), timeoutMs);
+        return payload;
+    }
+
+    public static byte[] BuildTxnCommitPayload(byte flags)
+    {
+        return new[] { flags, (byte)0, (byte)0, (byte)0 };
+    }
+
+    public static byte[] BuildTxnRollbackPayload(byte flags)
+    {
+        return new[] { flags, (byte)0, (byte)0, (byte)0 };
+    }
+
+    public static byte[] BuildTxnSavepointPayload(string name)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        var payload = new byte[4 + nameBytes.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)nameBytes.Length);
+        Buffer.BlockCopy(nameBytes, 0, payload, 4, nameBytes.Length);
+        return payload;
+    }
+
+    public static byte[] BuildTxnReleasePayload(string name) => BuildTxnSavepointPayload(name);
+
+    public static byte[] BuildTxnRollbackToPayload(string name) => BuildTxnSavepointPayload(name);
+
+    public static byte[] BuildSetOptionPayload(string name, string value)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        var valueBytes = Encoding.UTF8.GetBytes(value);
+        var payload = new byte[8 + nameBytes.Length + valueBytes.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)nameBytes.Length);
+        Buffer.BlockCopy(nameBytes, 0, payload, 4, nameBytes.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4 + nameBytes.Length, 4), (uint)valueBytes.Length);
+        Buffer.BlockCopy(valueBytes, 0, payload, 8 + nameBytes.Length, valueBytes.Length);
+        return payload;
+    }
+
+    public static byte[] BuildStreamControlPayload(byte controlType, uint windowSize, uint timeoutMs)
+    {
+        var payload = new byte[12];
+        payload[0] = controlType;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4, 4), windowSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), timeoutMs);
+        return payload;
+    }
+
+    public static byte[] BuildAttachCreatePayload(string emulationMode, string dbName)
+    {
+        var modeBytes = Encoding.UTF8.GetBytes(emulationMode);
+        var dbBytes = Encoding.UTF8.GetBytes(dbName);
+        var payload = new byte[8 + modeBytes.Length + dbBytes.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)modeBytes.Length);
+        Buffer.BlockCopy(modeBytes, 0, payload, 4, modeBytes.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4 + modeBytes.Length, 4), (uint)dbBytes.Length);
+        Buffer.BlockCopy(dbBytes, 0, payload, 8 + modeBytes.Length, dbBytes.Length);
+        return payload;
+    }
+
+    private static byte[] BuildParamValues(IReadOnlyList<ParamValue> parameters)
+    {
+        var len = 0;
+        foreach (var param in parameters)
+        {
+            len += 4;
+            if (!param.IsNull && param.Data.Length > 0)
+            {
+                len += param.Data.Length;
+            }
+        }
+        var payload = new byte[len];
+        var offset = 0;
+        foreach (var param in parameters)
+        {
+            if (param.IsNull)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(offset, 4), -1);
+                offset += 4;
+                continue;
+            }
+            BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(offset, 4), param.Data.Length);
+            offset += 4;
+            if (param.Data.Length > 0)
+            {
+                Buffer.BlockCopy(param.Data, 0, payload, offset, param.Data.Length);
+                offset += param.Data.Length;
+            }
+        }
+        return payload;
+    }
+
     public static (byte Status, ulong TxnId, ulong Visibility) ParseReady(byte[] payload)
     {
         if (payload.Length < 20)
@@ -575,6 +790,81 @@ internal static class ProtocolCodec
         var nullIdx = tagBytes.IndexOf((byte)0);
         var tag = Encoding.UTF8.GetString(nullIdx >= 0 ? tagBytes.Slice(0, nullIdx) : tagBytes);
         return (commandType, rows, lastId, tag);
+    }
+
+    public static (uint ProcessId, string Channel, byte[] Payload, char? ChangeType, ulong? RowId) ParseNotification(byte[] payload)
+    {
+        if (payload.Length < 12)
+        {
+            throw new InvalidOperationException("Notification truncated");
+        }
+        var offset = 0;
+        var processId = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4));
+        offset += 4;
+        var channelLen = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4));
+        offset += 4;
+        if (offset + channelLen + 4 > payload.Length)
+        {
+            throw new InvalidOperationException("Notification truncated");
+        }
+        var channel = Encoding.UTF8.GetString(payload, offset, (int)channelLen);
+        offset += (int)channelLen;
+        var payloadLen = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(offset, 4));
+        offset += 4;
+        if (offset + payloadLen > payload.Length)
+        {
+            throw new InvalidOperationException("Notification truncated");
+        }
+        var data = payload.AsSpan(offset, (int)payloadLen).ToArray();
+        offset += (int)payloadLen;
+        char? changeType = null;
+        ulong? rowId = null;
+        if (offset < payload.Length)
+        {
+            changeType = (char)payload[offset];
+            offset += 1;
+            if (offset + 8 <= payload.Length)
+            {
+                rowId = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(offset, 8));
+            }
+        }
+        return (processId, channel, data, changeType, rowId);
+    }
+
+    public static (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan) ParseQueryPlan(byte[] payload)
+    {
+        if (payload.Length < 32)
+        {
+            throw new InvalidOperationException("Query plan truncated");
+        }
+        var format = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4));
+        var planLength = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(4, 4));
+        var planning = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(8, 8));
+        var estimatedRows = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(16, 8));
+        var estimatedCost = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(24, 8));
+        if (32 + planLength > payload.Length)
+        {
+            throw new InvalidOperationException("Query plan truncated");
+        }
+        var plan = payload.AsSpan(32, (int)planLength).ToArray();
+        return (format, planning, estimatedRows, estimatedCost, plan);
+    }
+
+    public static (ulong Hash, uint Version, byte[] Bytecode) ParseSblrCompiled(byte[] payload)
+    {
+        if (payload.Length < 16)
+        {
+            throw new InvalidOperationException("SBLR compiled truncated");
+        }
+        var hash = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(0, 8));
+        var version = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4));
+        var length = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(12, 4));
+        if (16 + length > payload.Length)
+        {
+            throw new InvalidOperationException("SBLR compiled truncated");
+        }
+        var bytecode = payload.AsSpan(16, (int)length).ToArray();
+        return (hash, version, bytecode);
     }
 
     public static (string Severity, string SqlState, string Message, string Detail, string Hint) ParseErrorMessage(byte[] payload)

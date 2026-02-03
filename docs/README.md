@@ -13,6 +13,7 @@ This directory contains documentation for the ScratchBird database drivers.
 | **audit/** | Implementation audits and gap analysis |
 | **planning/** | Remediation plans and implementation checklists |
 | **fixtures/** | Shared SQL fixtures for conformance tests |
+| **user-documentation/** | CLI tool and connectivity guides |
 
 ## Driver Documentation
 
@@ -31,6 +32,8 @@ Each driver has two documentation layers:
 - [Pascal Driver](../pascal/README.md)
 - [.NET Driver](../dotnet/) - See solution file
 - [JDBC Driver](../jdbc/) - Java/Gradle project
+- [C/C++ Client](../cpp/) - CMake-based client library
+- [ODBC Driver](../odbc/) - ODBC 3.8 driver (CMake)
 - [Superset Driver](../scratchbird-superset-driver/README.md)
 - [Metabase Driver](../scratchbird-metabase-driver/README.md)
 - [Elixir (Ecto) Driver (planned)](specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md)
@@ -42,6 +45,8 @@ Quick links:
 
 - [Getting Started Index](getting-started/README.md)
 - [API Reference Index](api-reference/README.md)
+- [CLI Tools](user-documentation/tools/README.md)
+- [User Documentation](user-documentation/README.md)
 - [Development Guides](development/README.md)
 
 ## Quick Links

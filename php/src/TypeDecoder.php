@@ -216,6 +216,12 @@ final class TypeDecoder
         if ($data === null) {
             return null;
         }
+        if ($typeOid === 0) {
+            if ($format === self::FORMAT_TEXT) {
+                return self::parseUnknownText(self::decodeTextValue($data));
+            }
+            return self::decodeUnknownBinary($data);
+        }
         if ($format === self::FORMAT_TEXT) {
             return self::decodeTextValue($data);
         }
@@ -322,6 +328,69 @@ final class TypeDecoder
             }
         }
         return $data;
+    }
+
+    private static function decodeUnknownBinary(string $data): mixed
+    {
+        $trimmed = self::stripTrailingNulls($data);
+        if ($trimmed !== '' && self::looksLikeText($trimmed)) {
+            return self::parseUnknownText($trimmed);
+        }
+        $len = strlen($data);
+        return match ($len) {
+            1 => ord($data[0]),
+            2 => self::readInt16LE($data),
+            4 => self::readInt32LE($data),
+            8 => self::readInt64LE($data),
+            16 => self::decodeUuid($data),
+            default => $data,
+        };
+    }
+
+    private static function parseUnknownText(string $text): mixed
+    {
+        $trimmed = trim($text);
+        if ($trimmed === '') {
+            return $text;
+        }
+        $lowered = strtolower($trimmed);
+        if ($lowered === 'true') {
+            return true;
+        }
+        if ($lowered === 'false') {
+            return false;
+        }
+        if (preg_match('/^[+-]?\d+$/', $trimmed)) {
+            return (int)$trimmed;
+        }
+        if (preg_match('/^[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?$/', $trimmed)) {
+            return (float)$trimmed;
+        }
+        return $text;
+    }
+
+    private static function stripTrailingNulls(string $data): string
+    {
+        $end = strlen($data);
+        while ($end > 0 && ord($data[$end - 1]) === 0) {
+            $end -= 1;
+        }
+        return substr($data, 0, $end);
+    }
+
+    private static function looksLikeText(string $data): bool
+    {
+        $len = strlen($data);
+        for ($i = 0; $i < $len; $i++) {
+            $byte = ord($data[$i]);
+            if ($byte === 0x09 || $byte === 0x0a || $byte === 0x0d) {
+                continue;
+            }
+            if ($byte < 0x20 || $byte > 0x7e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static function encodeLengthPrefixed(string $data): string

@@ -24,6 +24,17 @@ from .protocol import (
     MSG_FLAG_URGENT,
     FEATURE_COMPRESSION,
     FEATURE_STREAMING,
+    QUERY_FLAG_DESCRIBE_ONLY,
+    QUERY_FLAG_INCLUDE_PLAN,
+    QUERY_FLAG_RETURN_SBLR,
+    QUERY_FLAG_NO_CACHE,
+    ISOLATION_READ_COMMITTED,
+    TXN_FLAG_HAS_ACCESS,
+    TXN_FLAG_HAS_AUTOCOMMIT,
+    TXN_FLAG_HAS_DEFERRABLE,
+    TXN_FLAG_HAS_ISOLATION,
+    TXN_FLAG_HAS_TIMEOUT,
+    TXN_FLAG_HAS_WAIT,
     HEADER_SIZE,
     MessageHeader,
     build_bind_payload,
@@ -32,6 +43,18 @@ from .protocol import (
     build_execute_payload,
     build_parse_payload,
     build_query_payload,
+    build_sblr_execute_payload,
+    build_subscribe_payload,
+    build_unsubscribe_payload,
+    build_txn_begin_payload,
+    build_txn_commit_payload,
+    build_txn_rollback_payload,
+    build_txn_savepoint_payload,
+    build_txn_release_payload,
+    build_txn_rollback_to_payload,
+    build_set_option_payload,
+    build_stream_control_payload,
+    build_attach_create_payload,
     build_startup_payload,
     decode_header,
     encode_message,
@@ -41,6 +64,9 @@ from .protocol import (
     parse_command_complete,
     parse_data_row,
     parse_error_message,
+    parse_notification,
+    parse_query_plan,
+    parse_sblr_compiled,
     parse_parameter_description,
     parse_parameter_status,
     parse_ready,
@@ -156,6 +182,9 @@ class Connection:
         self._txn_id = 0
         self._authed = False
         self._parameters: Dict[str, str] = {}
+        self._notification_handlers = []
+        self._last_plan = None
+        self._last_sblr = None
         self._connect()
 
     def _connect(self) -> None:
@@ -181,11 +210,11 @@ class Connection:
         ctx.minimum_version = ssl.TLSVersion.TLSv1_3
         ctx.maximum_version = ssl.TLSVersion.TLSv1_3
         if sslmode in ("verify-ca", "verify-full"):
-            ctx.verify_mode = ssl.CERT_REQUIRED
             ctx.check_hostname = sslmode == "verify-full"
+            ctx.verify_mode = ssl.CERT_REQUIRED
         else:
-            ctx.verify_mode = ssl.CERT_NONE
             ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
         if self._config.sslrootcert:
             ctx.load_verify_locations(self._config.sslrootcert)
         if self._config.sslcert and self._config.sslkey:
@@ -214,11 +243,139 @@ class Connection:
 
     def commit(self) -> None:
         self._ensure_open()
-        self._execute_command("COMMIT")
+        payload = build_txn_commit_payload(0)
+        self._send_message(MessageType.TXN_COMMIT, payload)
+        self._drain_until_ready()
 
     def rollback(self) -> None:
         self._ensure_open()
-        self._execute_command("ROLLBACK")
+        payload = build_txn_rollback_payload(0)
+        self._send_message(MessageType.TXN_ROLLBACK, payload)
+        self._drain_until_ready()
+
+    def begin(self, **kwargs) -> None:
+        self._ensure_open()
+        flags = 0
+        isolation = kwargs.get("isolation_level", ISOLATION_READ_COMMITTED)
+        if "isolation_level" in kwargs:
+            flags |= TXN_FLAG_HAS_ISOLATION
+        if "access_mode" in kwargs:
+            flags |= TXN_FLAG_HAS_ACCESS
+        if "deferrable" in kwargs:
+            flags |= TXN_FLAG_HAS_DEFERRABLE
+        if "wait" in kwargs:
+            flags |= TXN_FLAG_HAS_WAIT
+        if "timeout_ms" in kwargs:
+            flags |= TXN_FLAG_HAS_TIMEOUT
+        if "autocommit_mode" in kwargs:
+            flags |= TXN_FLAG_HAS_AUTOCOMMIT
+        payload = build_txn_begin_payload(
+            flags,
+            kwargs.get("conflict_action", 0),
+            kwargs.get("autocommit_mode", 0),
+            isolation,
+            kwargs.get("access_mode", 0),
+            1 if kwargs.get("deferrable") else 0,
+            1 if kwargs.get("wait") else 0,
+            kwargs.get("timeout_ms", 0),
+        )
+        self._send_message(MessageType.TXN_BEGIN, payload)
+        self._drain_until_ready()
+
+    def savepoint(self, name: str) -> None:
+        self._ensure_open()
+        payload = build_txn_savepoint_payload(name)
+        self._send_message(MessageType.TXN_SAVEPOINT, payload)
+        self._drain_until_ready()
+
+    def release_savepoint(self, name: str) -> None:
+        self._ensure_open()
+        payload = build_txn_release_payload(name)
+        self._send_message(MessageType.TXN_RELEASE, payload)
+        self._drain_until_ready()
+
+    def rollback_to_savepoint(self, name: str) -> None:
+        self._ensure_open()
+        payload = build_txn_rollback_to_payload(name)
+        self._send_message(MessageType.TXN_ROLLBACK_TO, payload)
+        self._drain_until_ready()
+
+    def set_option(self, name: str, value: str) -> None:
+        self._ensure_open()
+        payload = build_set_option_payload(name, value)
+        self._send_message(MessageType.SET_OPTION, payload)
+        self._drain_until_ready()
+
+    def ping(self) -> None:
+        self._ensure_open()
+        self._send_message(MessageType.PING, b"")
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.PONG:
+                return
+            if header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._txn_id = txn_id
+                return
+            if header.msg_type == MessageType.ERROR:
+                self._raise_protocol_error(payload)
+
+    def subscribe(self, channel: str, sub_type: int = 0, filter_expr: str = "") -> None:
+        self._ensure_open()
+        payload = build_subscribe_payload(sub_type, channel, filter_expr)
+        self._send_message(MessageType.SUBSCRIBE, payload)
+        self._drain_until_ready()
+
+    def unsubscribe(self, channel: str) -> None:
+        self._ensure_open()
+        payload = build_unsubscribe_payload(channel)
+        self._send_message(MessageType.UNSUBSCRIBE, payload)
+        self._drain_until_ready()
+
+    def execute_sblr(self, sblr_hash: int, sblr_bytecode: Optional[bytes] = None, params=None):
+        self._ensure_open()
+        param_values = []
+        if params:
+            for param in params:
+                value, _ = encode_param(param)
+                param_values.append(value)
+        payload = build_sblr_execute_payload(sblr_hash, sblr_bytecode, param_values)
+        self._send_message(MessageType.SBLR_EXECUTE, payload)
+        self._send_message(MessageType.SYNC, b"")
+        return ResultStream(self, 0)
+
+    def stream_control(self, control_type: int, window_size: int, timeout_ms: int) -> None:
+        self._ensure_open()
+        payload = build_stream_control_payload(control_type, window_size, timeout_ms)
+        self._send_message(MessageType.STREAM_CONTROL, payload)
+
+    def attach_create(self, emulation_mode: str, db_name: str) -> None:
+        self._ensure_open()
+        payload = build_attach_create_payload(emulation_mode, db_name)
+        self._send_message(MessageType.ATTACH_CREATE, payload)
+        self._drain_until_ready()
+
+    def attach_detach(self) -> None:
+        self._ensure_open()
+        self._send_message(MessageType.ATTACH_DETACH, b"")
+        self._drain_until_ready()
+
+    def attach_list(self):
+        self._ensure_open()
+        self._send_message(MessageType.ATTACH_LIST, b"")
+        self._send_message(MessageType.SYNC, b"")
+        return ResultStream(self, 0)
+
+    def on_notification(self, handler) -> None:
+        self._notification_handlers.append(handler)
+
+    def last_plan(self):
+        return self._last_plan
+
+    def last_sblr(self):
+        return self._last_sblr
 
     def cursor(self) -> Cursor:
         self._ensure_open()
@@ -245,6 +402,32 @@ class Connection:
     def _ensure_open(self) -> None:
         if self._closed:
             raise errors.InterfaceError("connection is closed")
+
+    def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
+        if header.msg_type == MessageType.PARAMETER_STATUS:
+            name, value = parse_parameter_status(payload)
+            self._parameters[name] = value
+            if name == "attachment_id":
+                parsed = _parse_uuid_bytes(value)
+                if parsed is not None:
+                    self._attachment_id = parsed
+            if name == "current_txn_id":
+                parsed = _parse_uint64(value)
+                if parsed is not None:
+                    self._txn_id = parsed
+            return True
+        if header.msg_type == MessageType.NOTIFICATION:
+            notice = parse_notification(payload)
+            for handler in self._notification_handlers:
+                handler(notice)
+            return True
+        if header.msg_type == MessageType.QUERY_PLAN:
+            self._last_plan = parse_query_plan(payload)
+            return True
+        if header.msg_type == MessageType.SBLR_COMPILED:
+            self._last_sblr = parse_sblr_compiled(payload)
+            return True
+        return False
 
     @property
     def closed(self) -> bool:
@@ -287,6 +470,8 @@ class Connection:
 
         while True:
             header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
             if header.msg_type == MessageType.NEGOTIATE_VERSION:
                 continue
             if header.msg_type == MessageType.AUTH_REQUEST:
@@ -404,7 +589,8 @@ class Connection:
         self._send_message(MessageType.BIND, bind_payload)
         exec_payload = build_execute_payload("", max_rows)
         self._send_message(MessageType.EXECUTE, exec_payload)
-        self._send_message(MessageType.SYNC, b"")
+        if max_rows == 0:
+            self._send_message(MessageType.SYNC, b"")
 
     def _execute_query(self, sql: str, params=None, max_rows: int = 0):
         normalized_sql, ordered = normalize_query(sql, params)
@@ -421,13 +607,12 @@ class Connection:
         param_count = -1
         while True:
             header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
             if header.msg_type == MessageType.PARAMETER_DESCRIPTION:
                 param_count = len(parse_parameter_description(payload))
-            elif header.msg_type == MessageType.PARAMETER_STATUS:
-                name, value = parse_parameter_status(payload)
-                self._parameters[name] = value
             elif header.msg_type == MessageType.READY:
                 _, txn_id, _ = parse_ready(payload)
                 self._txn_id = txn_id
@@ -436,6 +621,8 @@ class Connection:
     def _drain_until_ready(self) -> None:
         while True:
             header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
             if header.msg_type == MessageType.READY:
@@ -515,6 +702,8 @@ class ResultStream:
             return None
         while True:
             header, payload = self._connection._recv_message()
+            if self._connection._handle_async(header, payload):
+                continue
             if header.msg_type == MessageType.ERROR:
                 self._connection._raise_protocol_error(payload)
             if header.msg_type == MessageType.ROW_DESCRIPTION:
@@ -532,15 +721,28 @@ class ResultStream:
             elif header.msg_type == MessageType.COMMAND_COMPLETE:
                 _, rows_affected, _, _ = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
-            elif header.msg_type == MessageType.PARAMETER_STATUS:
-                name, value = parse_parameter_status(payload)
-                self._connection._parameters[name] = value
             elif header.msg_type == MessageType.PORTAL_SUSPENDED:
                 exec_payload = build_execute_payload("", self._page_size)
                 self._connection._send_message(MessageType.EXECUTE, exec_payload)
-                self._connection._send_message(MessageType.SYNC, b"")
             elif header.msg_type == MessageType.READY:
                 _, txn_id, _ = parse_ready(payload)
                 self._connection._txn_id = txn_id
                 self._done = True
                 return None
+
+
+def _parse_uuid_bytes(value: str) -> Optional[bytes]:
+    hex_value = value.replace("-", "").strip()
+    if len(hex_value) != 32:
+        return None
+    try:
+        return bytes.fromhex(hex_value)
+    except ValueError:
+        return None
+
+
+def _parse_uint64(value: str) -> Optional[int]:
+    try:
+        return int(value.strip())
+    except (ValueError, TypeError):
+        return None

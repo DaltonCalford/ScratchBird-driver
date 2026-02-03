@@ -58,7 +58,7 @@ async fn types_fixture_query() {
     let config = Config::from_dsn(&dsn).unwrap();
     let mut client = Client::new(config);
     client.connect().await.unwrap();
-    let result = client.query("SELECT * FROM sb_conformance.type_coverage").await.unwrap();
+    let result = client.query("SELECT * FROM type_coverage").await.unwrap();
     client.close().await;
     assert!(!result.rows.is_empty());
 }
