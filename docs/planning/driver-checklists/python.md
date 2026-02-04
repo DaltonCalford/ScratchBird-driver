@@ -1,5 +1,7 @@
 # Python Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -12,9 +14,6 @@
 - [ ] Constraint: Dialect reflection must support schema-qualified inspection. (Sources: `docs/specifications/integrations/orm/sqlalchemy/SPECIFICATION.md`)
 - [ ] Test: Validate reflection metadata keys (name/type/nullable/default). (Sources: `docs/specifications/integrations/orm/sqlalchemy/SPECIFICATION.md`)
 - [ ] Test: Verify schema-qualified inspection. (Sources: `docs/specifications/integrations/orm/sqlalchemy/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py`. Issue: TBD
-
-
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -39,8 +38,7 @@
 - [ ] Constraint: The backend adapter must implement Django Database Backend APIs (operations, features, introspection). (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
 - [ ] Test: Validate `inspectdb` output matches metadata contract. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
 - [ ] Test: Confirm Django migration operations for indexes and constraints. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `python/tests/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `python/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

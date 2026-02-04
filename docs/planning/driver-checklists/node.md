@@ -1,5 +1,7 @@
 # Node.js Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -12,9 +14,6 @@
 - [ ] Constraint: DataTypes support varies by dialect; JSON/JSONB have differing support. (Sources: `docs/specifications/integrations/orm/sequelize/SPECIFICATION.md`)
 - [ ] Test: Validate DataTypes mapping for JSON/JSONB and string types. (Sources: `docs/specifications/integrations/orm/sequelize/SPECIFICATION.md`)
 - [ ] Test: Verify nullability defaults. (Sources: `docs/specifications/integrations/orm/sequelize/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `node/src/errors.ts`. Issue: TBD
-
-
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -29,6 +28,5 @@
 - [ ] Constraint: Avoid relying on TypeORM `synchronize` for production migrations. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
 - [ ] Test: Validate entity metadata discovery for `@Entity` with custom schema. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
 - [ ] Test: Verify parameterized queries use positional `$1` or named bindings as expected by the driver. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `node/test/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `node/test/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

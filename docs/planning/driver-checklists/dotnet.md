@@ -1,5 +1,7 @@
 # .NET Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -12,9 +14,6 @@
 - [ ] Constraint: Provider versions must align with EF Core major versions. (Sources: `docs/specifications/integrations/orm/entity-framework-core/SPECIFICATION.md`)
 - [ ] Test: Validate LINQ translation for common filters. (Sources: `docs/specifications/integrations/orm/entity-framework-core/SPECIFICATION.md`)
 - [ ] Test: Verify provider version compatibility and migrations. (Sources: `docs/specifications/integrations/orm/entity-framework-core/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `dotnet/src/ScratchBird.Data/Errors.cs`. Issue: TBD
-
-
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -24,6 +23,5 @@
 - [ ] Constraint: Ensure parameter binding supports anonymous objects and `DynamicParameters`. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
 - [ ] Test: Validate Dapper multi-mapping (`splitOn`) with joined queries. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
 - [ ] Test: Ensure `QueryMultiple` works with multiple result sets. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `dotnet/tests/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `dotnet/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

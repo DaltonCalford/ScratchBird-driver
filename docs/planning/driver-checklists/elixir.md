@@ -1,5 +1,7 @@
 # Elixir Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P0 (Blocking)
 
 - [x] Enforce TLS required (reject `sslmode=disable`) in `elixir/lib/scratchbird/connection.ex`. Issue: TBD

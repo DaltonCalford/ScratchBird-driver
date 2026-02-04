@@ -1,5 +1,7 @@
 # Rust Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 - [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `rust/src/errors.rs`. Issue: TBD
 
@@ -13,6 +15,5 @@
 - [ ] Constraint: Support typed row mapping akin to `query_as` conventions. (Sources: `docs/specifications/integrations/drivers/rust/SPECIFICATION.md`)
 - [ ] Test: Verify pool reconnects after transient network failures. (Sources: `docs/specifications/integrations/drivers/rust/SPECIFICATION.md`)
 - [ ] Test: Ensure error types include SQLSTATE and implement `std::error::Error`. (Sources: `docs/specifications/integrations/drivers/rust/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `rust/tests/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `rust/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

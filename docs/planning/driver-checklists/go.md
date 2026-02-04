@@ -1,5 +1,7 @@
 # Go Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -8,9 +10,6 @@
 - [ ] Constraint: Context-aware methods required for cancellation. (Sources: `docs/specifications/integrations/drivers/golang/SPECIFICATION.md`)
 - [ ] Test: Verify ErrNoRows behavior. (Sources: `docs/specifications/integrations/drivers/golang/SPECIFICATION.md`)
 - [ ] Test: Validate context cancellation. (Sources: `docs/specifications/integrations/drivers/golang/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `go/errors.go`. Issue: TBD
-
-
 ## P2 (Follow-ups)
 - [ ] Add conformance tests for full type matrix in `go/conformance/`. Issue: TBD
 

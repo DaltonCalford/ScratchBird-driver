@@ -1,5 +1,7 @@
 # CLI Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -9,10 +11,8 @@
 - [ ] Constraint: Volume mounts are required for persistent data. (Sources: `docs/specifications/integrations/cloud/docker/SPECIFICATION.md`)
 - [ ] Test: Validate container starts with read-only root filesystem. (Sources: `docs/specifications/integrations/cloud/docker/SPECIFICATION.md`)
 - [ ] Test: Confirm upgrade path via image tag changes. (Sources: `docs/specifications/integrations/cloud/docker/SPECIFICATION.md`)
-- [ ] Validate `sb_isql` against SBWP v1.1 conformance harness in `cli/sb_isql.cpp`. Issue: TBD
-- [ ] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md`. Issue: TBD
-
-
+- [ ] Validate `sb_isql` against SBWP v1.1 conformance harness in `cli/sb_isql.cpp`. Issue: TBD (Sources: ``)
+- [ ] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md`. Issue: TBD (Sources: ``)
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks

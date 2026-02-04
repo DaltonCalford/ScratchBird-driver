@@ -1,5 +1,7 @@
 # C/C++ Client Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 - [x] Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `cpp/include/scratchbird/client/scratchbird_client.h`. Issue: TBD
 - [x] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/`. Issue: TBD

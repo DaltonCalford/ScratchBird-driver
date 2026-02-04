@@ -1,5 +1,7 @@
 # Driver Checklist Index
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 Per-driver remediation checklists generated from audits and spec gaps.
 
 - `docs/planning/driver-checklists/go.md`

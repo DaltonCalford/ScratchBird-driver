@@ -1,5 +1,7 @@
 # JDBC Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -24,9 +26,6 @@
 - [ ] Constraint: Schema and table naming must align with annotations. (Sources: `docs/specifications/integrations/orm/hibernate-jpa/SPECIFICATION.md`)
 - [ ] Test: Validate schema generation via annotations. (Sources: `docs/specifications/integrations/orm/hibernate-jpa/SPECIFICATION.md`)
 - [ ] Test: Confirm identifier mapping and primary key handling. (Sources: `docs/specifications/integrations/orm/hibernate-jpa/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping). Issue: TBD
-
-
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -66,8 +65,7 @@
 - [ ] Constraint: Result sets must preserve graph element structure (nodes, relationships, paths). (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
 - [ ] Test: Validate parameter binding for lists and nested maps. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
 - [ ] Test: Ensure path result shapes are preserved in metadata helpers. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `jdbc/src/test/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `jdbc/src/test/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

@@ -1,5 +1,7 @@
 # Ruby Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 - [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb`. Issue: TBD
 
@@ -18,6 +20,5 @@
 - [ ] Constraint: Adapter must implement the ActiveRecord adapter interface (quoting, schema, type map). (Sources: `docs/specifications/integrations/orm/rails-activerecord/SPECIFICATION.md`)
 - [ ] Test: Validate schema dumping and reload (`schema.rb`) for all core types. (Sources: `docs/specifications/integrations/orm/rails-activerecord/SPECIFICATION.md`)
 - [ ] Test: Confirm `rails db:migrate` applies and rolls back without metadata drift. (Sources: `docs/specifications/integrations/orm/rails-activerecord/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `ruby/test/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `ruby/test/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

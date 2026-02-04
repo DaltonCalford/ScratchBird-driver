@@ -1,5 +1,7 @@
 # PHP Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -8,9 +10,6 @@
 - [ ] Constraint: Statement errorInfo is separate from connection errorInfo. (Sources: `docs/specifications/integrations/drivers/php/SPECIFICATION.md`)
 - [ ] Test: Validate PDO::errorInfo and PDOStatement::errorInfo SQLSTATE values. (Sources: `docs/specifications/integrations/drivers/php/SPECIFICATION.md`)
 - [ ] Test: Verify fetch modes and error mode behavior. (Sources: `docs/specifications/integrations/drivers/php/SPECIFICATION.md`)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `php/src/Errors.php`. Issue: TBD
-
-
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -35,8 +34,7 @@
 - [ ] Constraint: Ensure migration commands (`php artisan migrate`) and schema builder operations are supported. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`)
 - [ ] Test: Validate schema builder support for indexes and foreign keys. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`)
 - [ ] Test: Confirm Eloquent casts (date, json, array) match ScratchBird types. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `php/tests/`. Issue: TBD
-
+- [ ] Add conformance tests for full type matrix in `php/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

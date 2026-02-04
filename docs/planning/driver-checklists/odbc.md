@@ -1,5 +1,7 @@
 # ODBC Driver Checklist
 
+Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
+
 ## P1 (Core)
 
 ### Integration Appendix Tasks
@@ -8,9 +10,7 @@
 - [ ] Constraint: Result set metadata is retrieved via SQLNumResultCols and SQLDescribeCol/SQLColAttribute. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
 - [ ] Test: Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.). (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
 - [ ] Test: Validate SQLDescribeCol and SQLNumResultCols behavior. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
-- [ ] Expand type mapping to cover complex SBWP types where applicable in `odbc/src/odbc_client_bridge.cpp`. Issue: TBD
-
-
+- [ ] Expand type mapping to cover complex SBWP types where applicable in `odbc/src/odbc_client_bridge.cpp`. Issue: TBD (Sources: ``)
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -40,9 +40,7 @@
 - [ ] Constraint: The driver must tolerate long-running introspection queries. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
 - [ ] Test: Validate Workbench migration wizard completes schema introspection. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
 - [ ] Test: Confirm data copy works for large tables with paging. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
-- [x] Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns in `odbc/src/odbc_handles.cpp`. Issue: N/A
-- [ ] Add conformance tests for metadata + type coverage in `odbc/tests/`. Issue: TBD
-
+- [ ] Add conformance tests for metadata + type coverage in `odbc/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks
