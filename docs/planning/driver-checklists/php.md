@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/php/src/Errors.php`. Issue: DONE (2026-02-04)
+
 ### Integration Appendix Tasks
 
 - [x] Constraint: PDO errorInfo arrays include SQLSTATE as element 0. (Sources: `docs/specifications/integrations/drivers/php/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)

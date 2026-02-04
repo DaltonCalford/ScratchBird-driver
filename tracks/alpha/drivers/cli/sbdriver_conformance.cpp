@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <iostream>
 #include <sstream>
@@ -23,6 +24,18 @@
 using json = nlohmann::json;
 
 namespace {
+constexpr uint32_t kOidBoolArray = 1000;
+constexpr uint32_t kOidInt2Array = 1005;
+constexpr uint32_t kOidInt4Array = 1007;
+constexpr uint32_t kOidInt8Array = 1016;
+constexpr uint32_t kOidFloat4Array = 1021;
+constexpr uint32_t kOidFloat8Array = 1022;
+constexpr uint32_t kOidTextArray = 1009;
+constexpr uint32_t kOidVarcharArray = 1015;
+constexpr uint32_t kOidBpcharArray = 1014;
+constexpr uint32_t kOidUuidArray = 2951;
+
+bool g_binary_params = false;
 std::string readAllStdin() {
     std::ostringstream buffer;
     buffer << std::cin.rdbuf();
@@ -38,6 +51,62 @@ std::string toHex(const uint8_t* data, size_t len) {
     return out.str();
 }
 
+bool readU8(const std::vector<uint8_t>& data, size_t& offset, uint8_t& out) {
+    if (offset + 1 > data.size()) {
+        return false;
+    }
+    out = data[offset];
+    offset += 1;
+    return true;
+}
+
+bool readU16(const std::vector<uint8_t>& data, size_t& offset, uint16_t& out) {
+    if (offset + 2 > data.size()) {
+        return false;
+    }
+    out = static_cast<uint16_t>(data[offset]) |
+          (static_cast<uint16_t>(data[offset + 1]) << 8);
+    offset += 2;
+    return true;
+}
+
+bool readU32(const std::vector<uint8_t>& data, size_t& offset, uint32_t& out) {
+    if (offset + 4 > data.size()) {
+        return false;
+    }
+    out = static_cast<uint32_t>(data[offset]) |
+          (static_cast<uint32_t>(data[offset + 1]) << 8) |
+          (static_cast<uint32_t>(data[offset + 2]) << 16) |
+          (static_cast<uint32_t>(data[offset + 3]) << 24);
+    offset += 4;
+    return true;
+}
+
+bool readU64(const std::vector<uint8_t>& data, size_t& offset, uint64_t& out) {
+    if (offset + 8 > data.size()) {
+        return false;
+    }
+    out = 0;
+    for (size_t i = 0; i < 8; ++i) {
+        out |= static_cast<uint64_t>(data[offset + i]) << (8 * i);
+    }
+    offset += 8;
+    return true;
+}
+
+bool readBytes(const std::vector<uint8_t>& data,
+               size_t& offset,
+               size_t len,
+               std::vector<uint8_t>& out) {
+    if (offset + len > data.size()) {
+        return false;
+    }
+    out.assign(data.begin() + static_cast<long>(offset),
+               data.begin() + static_cast<long>(offset + len));
+    offset += len;
+    return true;
+}
+
 std::string sha256Hex(const std::vector<uint8_t>& data) {
     unsigned char digest[SHA256_DIGEST_LENGTH];
     SHA256_CTX ctx;
@@ -47,6 +116,342 @@ std::string sha256Hex(const std::vector<uint8_t>& data) {
     }
     SHA256_Final(digest, &ctx);
     return toHex(digest, SHA256_DIGEST_LENGTH);
+}
+
+json buildNestedArray(const std::vector<json>& values,
+                      const std::vector<size_t>& dims,
+                      size_t dim_index,
+                      size_t& cursor) {
+    if (dim_index >= dims.size()) {
+        if (cursor >= values.size()) {
+            return nullptr;
+        }
+        return values[cursor++];
+    }
+    json arr = json::array();
+    for (size_t i = 0; i < dims[dim_index]; ++i) {
+        arr.push_back(buildNestedArray(values, dims, dim_index + 1, cursor));
+    }
+    return arr;
+}
+
+bool decodeArrayBinary(const std::vector<uint8_t>& data, json& out) {
+    if (data.size() < 2) {
+        return false;
+    }
+    size_t offset = 0;
+    uint8_t elem_type = data[offset++];
+    uint8_t rank = data[offset++];
+    if (data.size() < 2 + rank * 4) {
+        return false;
+    }
+    std::vector<size_t> dims;
+    dims.reserve(rank);
+    for (uint8_t i = 0; i < rank; ++i) {
+        uint32_t dim = 0;
+        if (!readU32(data, offset, dim)) {
+            return false;
+        }
+        dims.push_back(dim);
+    }
+    size_t total = 1;
+    for (auto dim : dims) {
+        if (dim == 0) {
+            total = 0;
+            break;
+        }
+        total *= dim;
+    }
+
+    std::vector<json> values;
+    values.reserve(total);
+    switch (elem_type) {
+        case 0: {
+            for (size_t i = 0; i < total; ++i) {
+                uint32_t bits = 0;
+                if (!readU32(data, offset, bits)) {
+                    return false;
+                }
+                values.emplace_back(static_cast<int32_t>(bits));
+            }
+            break;
+        }
+        case 1: {
+            for (size_t i = 0; i < total; ++i) {
+                uint64_t bits = 0;
+                if (!readU64(data, offset, bits)) {
+                    return false;
+                }
+                values.emplace_back(static_cast<int64_t>(bits));
+            }
+            break;
+        }
+        case 2: {
+            for (size_t i = 0; i < total; ++i) {
+                uint32_t bits = 0;
+                if (!readU32(data, offset, bits)) {
+                    return false;
+                }
+                float val = 0.0f;
+                std::memcpy(&val, &bits, sizeof(float));
+                values.emplace_back(val);
+            }
+            break;
+        }
+        case 3: {
+            for (size_t i = 0; i < total; ++i) {
+                uint64_t bits = 0;
+                if (!readU64(data, offset, bits)) {
+                    return false;
+                }
+                double val = 0.0;
+                std::memcpy(&val, &bits, sizeof(double));
+                values.emplace_back(val);
+            }
+            break;
+        }
+        case 4: {
+            for (size_t i = 0; i < total; ++i) {
+                uint32_t len = 0;
+                if (!readU32(data, offset, len)) {
+                    return false;
+                }
+                std::vector<uint8_t> bytes;
+                if (!readBytes(data, offset, len, bytes)) {
+                    return false;
+                }
+                values.emplace_back(std::string(bytes.begin(), bytes.end()));
+            }
+            break;
+        }
+        case 5: {
+            for (size_t i = 0; i < total; ++i) {
+                uint8_t val = 0;
+                if (!readU8(data, offset, val)) {
+                    return false;
+                }
+                values.emplace_back(val != 0);
+            }
+            break;
+        }
+        default:
+            return false;
+    }
+
+    if (offset != data.size()) {
+        return false;
+    }
+    size_t cursor = 0;
+    out = buildNestedArray(values, dims, 0, cursor);
+    return true;
+}
+
+bool decodeVectorBinary(const std::vector<uint8_t>& data, json& out) {
+    if (data.size() < 5) {
+        return false;
+    }
+    size_t offset = 0;
+    uint8_t type = data[offset++];
+    uint32_t dims = 0;
+    if (!readU32(data, offset, dims)) {
+        return false;
+    }
+    json arr = json::array();
+    if (type == 0) {
+        for (uint32_t i = 0; i < dims; ++i) {
+            uint32_t bits = 0;
+            if (!readU32(data, offset, bits)) {
+                return false;
+            }
+            float val = 0.0f;
+            std::memcpy(&val, &bits, sizeof(float));
+            arr.push_back(val);
+        }
+    } else if (type == 1) {
+        for (uint32_t i = 0; i < dims; ++i) {
+            uint64_t bits = 0;
+            if (!readU64(data, offset, bits)) {
+                return false;
+            }
+            double val = 0.0;
+            std::memcpy(&val, &bits, sizeof(double));
+            arr.push_back(val);
+        }
+    } else {
+        return false;
+    }
+
+    if (offset != data.size()) {
+        return false;
+    }
+    out = std::move(arr);
+    return true;
+}
+
+bool decodeRangeBinary(const std::vector<uint8_t>& data, uint32_t type_oid, json& out) {
+    if (data.empty()) {
+        return false;
+    }
+    size_t offset = 0;
+    uint8_t flags = 0;
+    if (!readU8(data, offset, flags)) {
+        return false;
+    }
+
+    bool is_empty = (flags & 0x01) != 0;
+    bool has_lower = (flags & 0x02) != 0;
+    bool has_upper = (flags & 0x04) != 0;
+    bool lower_inc = (flags & 0x08) != 0;
+    bool upper_inc = (flags & 0x10) != 0;
+
+    json lower = nullptr;
+    json upper = nullptr;
+
+    auto readInt32 = [&](json& target) -> bool {
+        uint32_t bits = 0;
+        if (!readU32(data, offset, bits)) {
+            return false;
+        }
+        target = static_cast<int32_t>(bits);
+        return true;
+    };
+
+    auto readInt64 = [&](json& target) -> bool {
+        uint64_t bits = 0;
+        if (!readU64(data, offset, bits)) {
+            return false;
+        }
+        target = static_cast<int64_t>(bits);
+        return true;
+    };
+
+    auto readDouble = [&](json& target) -> bool {
+        uint64_t bits = 0;
+        if (!readU64(data, offset, bits)) {
+            return false;
+        }
+        double val = 0.0;
+        std::memcpy(&val, &bits, sizeof(double));
+        target = val;
+        return true;
+    };
+
+    if (is_empty) {
+        out = json{
+            {"empty", true},
+            {"lower", nullptr},
+            {"upper", nullptr},
+            {"lower_inclusive", false},
+            {"upper_inclusive", false},
+            {"lower_infinite", true},
+            {"upper_infinite", true}
+        };
+        return true;
+    }
+
+    if (type_oid == scratchbird::protocol::kOidInt4Range) {
+        if (has_lower && !readInt32(lower)) {
+            return false;
+        }
+        if (has_upper && !readInt32(upper)) {
+            return false;
+        }
+    } else if (type_oid == scratchbird::protocol::kOidNumRange) {
+        if (has_lower && !readDouble(lower)) {
+            return false;
+        }
+        if (has_upper && !readDouble(upper)) {
+            return false;
+        }
+    } else {
+        if (has_lower && !readInt64(lower)) {
+            return false;
+        }
+        if (has_upper && !readInt64(upper)) {
+            return false;
+        }
+    }
+
+    if (offset != data.size()) {
+        return false;
+    }
+
+    out = json{
+        {"empty", false},
+        {"lower", lower},
+        {"upper", upper},
+        {"lower_inclusive", lower_inc},
+        {"upper_inclusive", upper_inc},
+        {"lower_infinite", !has_lower},
+        {"upper_infinite", !has_upper}
+    };
+    return true;
+}
+
+std::string formatIpv4(const uint8_t* data) {
+    std::ostringstream out;
+    out << static_cast<int>(data[0]) << "."
+        << static_cast<int>(data[1]) << "."
+        << static_cast<int>(data[2]) << "."
+        << static_cast<int>(data[3]);
+    return out.str();
+}
+
+std::string formatIpv6(const uint8_t* data) {
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (int i = 0; i < 16; i += 2) {
+        if (i > 0) {
+            out << ":";
+        }
+        uint16_t part = static_cast<uint16_t>(data[i]) |
+                        (static_cast<uint16_t>(data[i + 1]) << 8);
+        out << std::setw(4) << part;
+    }
+    return out.str();
+}
+
+bool decodeInetLike(const std::vector<uint8_t>& data,
+                    uint32_t type_oid,
+                    json& out) {
+    if (data.size() < 2) {
+        return false;
+    }
+    uint8_t family = data[0];
+    uint8_t netmask = data[1];
+    if (family == 4 && data.size() >= 6) {
+        std::string ip = formatIpv4(data.data() + 2);
+        if (type_oid == scratchbird::protocol::kOidCidr) {
+            ip += "/" + std::to_string(netmask);
+        }
+        out = ip;
+        return true;
+    }
+    if (family == 6 && data.size() >= 18) {
+        std::string ip = formatIpv6(data.data() + 2);
+        if (type_oid == scratchbird::protocol::kOidCidr) {
+            ip += "/" + std::to_string(netmask);
+        }
+        out = ip;
+        return true;
+    }
+    return false;
+}
+
+bool decodeMacaddr(const std::vector<uint8_t>& data, json& out) {
+    if (data.size() != 6 && data.size() != 8) {
+        return false;
+    }
+    std::ostringstream buf;
+    buf << std::hex << std::setfill('0');
+    for (size_t i = 0; i < data.size(); ++i) {
+        if (i > 0) {
+            buf << ":";
+        }
+        buf << std::setw(2) << static_cast<int>(data[i]);
+    }
+    out = buf.str();
+    return true;
 }
 
 json columnValueToJson(const scratchbird::protocol::ColumnValue& val,
@@ -118,11 +523,64 @@ json columnValueToJson(const scratchbird::protocol::ColumnValue& val,
             break;
         case scratchbird::protocol::kOidBytea:
             return "0x" + toHex(data.data(), data.size());
+        case scratchbird::protocol::kOidSbVector: {
+            json vec_out;
+            if (decodeVectorBinary(data, vec_out)) {
+                return vec_out;
+            }
+            break;
+        }
+        case scratchbird::protocol::kOidInet:
+        case scratchbird::protocol::kOidCidr: {
+            json inet_out;
+            if (decodeInetLike(data, type_oid, inet_out)) {
+                return inet_out;
+            }
+            break;
+        }
+        case scratchbird::protocol::kOidMacaddr:
+        case scratchbird::protocol::kOidMacaddr8: {
+            json mac_out;
+            if (decodeMacaddr(data, mac_out)) {
+                return mac_out;
+            }
+            break;
+        }
+        case scratchbird::protocol::kOidInt4Range:
+        case scratchbird::protocol::kOidInt8Range:
+        case scratchbird::protocol::kOidNumRange:
+        case scratchbird::protocol::kOidTsRange:
+        case scratchbird::protocol::kOidTstzRange:
+        case scratchbird::protocol::kOidDateRange: {
+            json range_out;
+            if (decodeRangeBinary(data, type_oid, range_out)) {
+                return range_out;
+            }
+            break;
+        }
         default:
             break;
     }
+    if (type_oid == scratchbird::protocol::kOidRecord ||
+        type_oid == kOidBoolArray ||
+        type_oid == kOidInt2Array ||
+        type_oid == kOidInt4Array ||
+        type_oid == kOidInt8Array ||
+        type_oid == kOidFloat4Array ||
+        type_oid == kOidFloat8Array ||
+        type_oid == kOidTextArray ||
+        type_oid == kOidVarcharArray ||
+        type_oid == kOidBpcharArray ||
+        type_oid == kOidUuidArray) {
+        json array_out;
+        if (decodeArrayBinary(data, array_out)) {
+            return array_out;
+        }
+    }
     return std::string(data.begin(), data.end());
 }
+
+std::string jsonParamToString(const json& value);
 
 scratchbird::protocol::ParamValue jsonParamToParamValue(const json& value) {
     scratchbird::protocol::ParamValue param;
@@ -130,9 +588,39 @@ scratchbird::protocol::ParamValue jsonParamToParamValue(const json& value) {
         param.is_null = true;
         return param;
     }
-    std::string text = jsonParamToString(value);
-    param.format = scratchbird::protocol::kFormatText;
-    param.data.assign(text.begin(), text.end());
+    if (!g_binary_params) {
+        std::string text = jsonParamToString(value);
+        param.format = scratchbird::protocol::kFormatText;
+        param.data.assign(text.begin(), text.end());
+        return param;
+    }
+
+    param.format = scratchbird::protocol::kFormatBinary;
+    if (value.is_boolean()) {
+        param.data = {static_cast<uint8_t>(value.get<bool>() ? 1 : 0)};
+    } else if (value.is_number_integer()) {
+        int64_t num = value.get<int64_t>();
+        if (num >= std::numeric_limits<int32_t>::min() &&
+            num <= std::numeric_limits<int32_t>::max()) {
+            int32_t v32 = static_cast<int32_t>(num);
+            param.data.resize(sizeof(int32_t));
+            std::memcpy(param.data.data(), &v32, sizeof(int32_t));
+        } else {
+            int64_t v64 = static_cast<int64_t>(num);
+            param.data.resize(sizeof(int64_t));
+            std::memcpy(param.data.data(), &v64, sizeof(int64_t));
+        }
+    } else if (value.is_number_float()) {
+        double v = value.get<double>();
+        param.data.resize(sizeof(double));
+        std::memcpy(param.data.data(), &v, sizeof(double));
+    } else if (value.is_string()) {
+        std::string text = value.get<std::string>();
+        param.data.assign(text.begin(), text.end());
+    } else {
+        std::string text = jsonParamToString(value);
+        param.data.assign(text.begin(), text.end());
+    }
     return param;
 }
 
@@ -247,7 +735,18 @@ void seedConformanceFixtures(const scratchbird::client::NetworkClientConfig& con
 }
 }
 
-int main() {
+int main(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--binary-params") {
+            g_binary_params = true;
+        } else if (arg == "--text-params") {
+            g_binary_params = false;
+        } else if (arg == "--help" || arg == "-h") {
+            std::cout << "Usage: sbdriver-conformance [--binary-params|--text-params]\n";
+            return 0;
+        }
+    }
     const char* dsn_env = std::getenv("SB_CONFORMANCE_DSN");
     std::string base_dsn = dsn_env ? dsn_env : "";
     if (base_dsn.empty()) {

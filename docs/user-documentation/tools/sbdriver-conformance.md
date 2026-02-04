@@ -9,7 +9,7 @@ Baseline implementation available; conformance suite continues to expand.
 ## Synopsis
 
 ```
-sbdriver-conformance [--dsn <dsn>] [--manifest <file>] [--dsn-append <kv>]
+sbdriver-conformance [--dsn <dsn>] [--manifest <file>] [--dsn-append <kv>] [--binary-params|--text-params]
 ```
 
 ## Purpose
@@ -22,3 +22,4 @@ sbdriver-conformance [--dsn <dsn>] [--manifest <file>] [--dsn-append <kv>]
 
 - Use with `docs/fixtures/sbwp_conformance_manifest.json`.
 - Harness scripts are in `scripts/` for automation.
+- Use `--binary-params` to send binary-encoded parameters (default is text).

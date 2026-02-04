@@ -36,7 +36,7 @@ Core drivers: Go, Node, Python, Ruby, Rust, PHP, R, Pascal, .NET, JDBC, ODBC.
 - [x] Server-side prepare/bind + DESCRIBE integration
 - [x] Portal paging support
 - [x] sys.* metadata helpers (language drivers) and JDBC/ODBC mappings
-- [ ] Replace SQLSTATE class-prefix error mapping with full SQLSTATE mapping (all core drivers)
+- [x] Replace SQLSTATE class-prefix error mapping with full SQLSTATE mapping (all core drivers)
 
 ### Phase 2 - New Drivers (Dart/Swift/Elixir/Mojo)
 

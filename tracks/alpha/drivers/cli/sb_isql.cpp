@@ -758,9 +758,35 @@ bool handleSetCommand(const std::string& sql) {
         if (value.empty()) {
             out << "NAMES is '" << g_config.names << "'\n";
         } else {
-            g_config.names = value;
+            if (!g_connection || !g_connection->isConnected()) {
+                std::cerr << "Error: Not connected to database\n";
+                return true;
+            }
+            std::string trimmed = value;
+            while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front()))) {
+                trimmed.erase(trimmed.begin());
+            }
+            while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back()))) {
+                trimmed.pop_back();
+            }
+            if (trimmed.empty()) {
+                std::cerr << "Error: SET NAMES requires a character set\n";
+                return true;
+            }
+            bool quoted = (trimmed.size() >= 2) &&
+                          ((trimmed.front() == '\'' && trimmed.back() == '\'') ||
+                           (trimmed.front() == '"' && trimmed.back() == '"'));
+            std::string charset_value = quoted ? trimmed.substr(1, trimmed.size() - 2) : trimmed;
+            std::string charset = quoted ? trimmed : ("'" + trimmed + "'");
+            std::string sql = "SET NAMES " + charset;
+            core::ErrorContext ctx;
+            core::Status status = g_connection->execute(sql, nullptr, &ctx);
+            if (status != core::Status::OK) {
+                std::cerr << "Error: " << ctx.message << "\n";
+                return true;
+            }
+            g_config.names = charset_value;
             out << "NAMES set to '" << g_config.names << "'\n";
-            // TODO: Actually set connection charset when supported
         }
         return true;
     }
@@ -1303,16 +1329,14 @@ bool executeSQL(const std::string& sql) {
                 std::cerr << "Error: Not connected to database\n";
                 return false;
             }
-            // For now, just start a basic transaction
-            // TODO: Parse transaction parameters (READ ONLY, READ WRITE, isolation levels, etc.)
             core::ErrorContext ctx;
-            core::Status status = g_connection->beginTransaction(&ctx);
+            core::Status status = g_connection->execute(trimmed, nullptr, &ctx);
             if (status != core::Status::OK) {
                 std::cerr << "Error: " << ctx.message << "\n";
                 return false;
             }
             auto& out = getOutput();
-            out << "Transaction started.\n";
+            out << "Transaction configured.\n";
             return true;
         }
 

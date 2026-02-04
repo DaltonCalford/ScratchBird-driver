@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/pascal/src/ScratchBird.Errors.pas`. Issue: DONE (2026-02-04)
+
 ### Integration Appendix Tasks
 
 - [x] Constraint: SQLDB uses TSQLConnector + TSQLTransaction + TSQLQuery flow. (Sources: `docs/specifications/integrations/drivers/pascal-delphi/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)

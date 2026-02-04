@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Errors.cs`. Issue: DONE (2026-02-04)
+
 ### Integration Appendix Tasks
 
 - [x] Constraint: ADO.NET patterns rely on DbConnection, DbCommand, DbDataReader. (Sources: `docs/specifications/integrations/drivers/dotnet/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)

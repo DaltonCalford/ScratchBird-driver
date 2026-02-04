@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py`. Issue: DONE (2026-02-04)
+
 ### Integration Appendix Tasks
 
 - [x] Constraint: PEP 249 defines standard exceptions and `cursor.description` structure. (Sources: `docs/specifications/integrations/drivers/python/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
