@@ -6,7 +6,7 @@ Map checklist items to issue IDs once created.
 - [cli.md] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md` -> TBD
 - [cpp.md] Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `cpp/include/scratchbird/client/scratchbird_client.h` -> DONE (2026-02-04)
 - [cpp.md] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/` -> DONE (2026-02-04)
-- [cpp.md] Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp` -> TBD
+- [cpp.md] Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp` -> DONE (2026-02-04)
 - [cpp.md] Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/` -> DONE (2026-02-04)
 - [cpp.md] Add conformance tests for type mapping and paging in `cpp/tests/` -> TBD
 - [dart.md] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart` -> DONE (2026-02-04)

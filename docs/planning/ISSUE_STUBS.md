@@ -56,6 +56,7 @@ Files:
 
 Checklist: `cpp.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp`

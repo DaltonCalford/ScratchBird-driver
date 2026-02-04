@@ -165,6 +165,11 @@ public:
                              NetworkResultSet& results,
                              core::ErrorContext* ctx = nullptr);
 
+    core::Status setOption(const std::string& name,
+                           const std::string& value,
+                           core::ErrorContext* ctx = nullptr);
+    core::Status ping(core::ErrorContext* ctx = nullptr);
+
     struct QueryProgressSnapshot {
         uint64_t rows_processed = 0;
         uint64_t bytes_processed = 0;

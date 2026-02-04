@@ -1329,6 +1329,56 @@ core::Status NetworkClient::attachList(NetworkResultSet& results,
     }
 }
 
+core::Status NetworkClient::setOption(const std::string& name,
+                                      const std::string& value,
+                                      core::ErrorContext* ctx) {
+    auto payload = protocol::buildSetOptionPayload(name, value);
+    auto status = sendMessage(protocol::MessageType::SetOption, payload, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::ping(core::ErrorContext* ctx) {
+    auto status = sendMessage(protocol::MessageType::Ping, {}, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    while (true) {
+        protocol::ProtocolMessage msg;
+        status = receiveMessage(msg, ctx);
+        if (status != core::Status::OK) {
+            return status;
+        }
+        if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
+            (msg.header.type == protocol::MessageType::ParameterStatus ||
+             msg.header.type == protocol::MessageType::Notification ||
+             msg.header.type == protocol::MessageType::QueryPlan ||
+             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            continue;
+        }
+        switch (msg.header.type) {
+            case protocol::MessageType::Pong:
+                return core::Status::OK;
+            case protocol::MessageType::Ready: {
+                uint8_t status_byte = 0;
+                uint64_t txn_id = 0;
+                uint64_t epoch = 0;
+                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
+                if (status == core::Status::OK) {
+                    in_transaction_ = status_byte != 0;
+                }
+                return status;
+            }
+            case protocol::MessageType::Error:
+                return mapProtocolError(msg, ctx);
+            default:
+                break;
+        }
+    }
+}
+
 core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
                                         const std::vector<uint8_t>& bytecode,
                                         const std::vector<protocol::ParamValue>& params,

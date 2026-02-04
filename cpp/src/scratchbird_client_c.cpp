@@ -1051,6 +1051,28 @@ int sb_cancel(sb_connection* conn, sb_error* err) {
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
 }
 
+int sb_set_option(sb_connection* conn, const char* name, const char* value, sb_error* err) {
+    if (!conn || !name || !value) {
+        set_error(err, SB_ERR_NULL_POINTER, "Connection, name, and value required");
+        return SB_ERR_NULL_POINTER;
+    }
+    scratchbird::core::ErrorContext ctx;
+    auto status = conn->client.setOption(name, value, &ctx);
+    set_error(err, map_status(status), ctx.message);
+    return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_ping(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    scratchbird::core::ErrorContext ctx;
+    auto status = conn->client.ping(&ctx);
+    set_error(err, map_status(status), ctx.message);
+    return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
 int sb_subscribe(sb_connection* conn, uint8_t subscribe_type,
                  const char* channel, const char* filter, sb_error* err) {
     if (!conn || !channel) {
