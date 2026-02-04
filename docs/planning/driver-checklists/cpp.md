@@ -7,6 +7,15 @@
 - [x] Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp`. Issue: TBD
 - [x] Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/`. Issue: TBD
 
+### Integration Appendix Tasks
+
+- [ ] Constraint: Provide a stable C API façade for language bindings where ABI stability is required. (Source: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+- [ ] Constraint: Support both static and shared builds with explicit linkage flags. (Source: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+- [ ] Constraint: Document ownership of buffers returned to callers. (Source: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+- [ ] Test: Verify both static and shared builds link successfully. (Source: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+- [ ] Test: Validate row buffers remain valid until the next fetch call. (Source: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+
+
 ## P2 (Follow-ups)
 
 - [x] Add conformance tests for type mapping and paging in `cpp/tests/`. Issue: TBD
