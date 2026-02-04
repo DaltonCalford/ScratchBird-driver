@@ -77,7 +77,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('node/package-lock.json', 'node/npm-shrinkwrap.json', 'node/yarn.lock') }}
+          key: ${{ runner.os }}-npm-${{ hashFiles('tracks/alpha/drivers/node/package-lock.json', 'tracks/alpha/drivers/node/npm-shrinkwrap.json', 'tracks/alpha/drivers/node/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
@@ -94,7 +94,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('python/pyproject.toml', 'python/setup.cfg', 'python/setup.py') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('tracks/alpha/drivers/python/pyproject.toml', 'tracks/alpha/drivers/python/setup.cfg', 'tracks/alpha/drivers/python/setup.py') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
@@ -115,8 +115,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+            tracks/alpha/drivers/rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tracks/alpha/drivers/rust/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -135,7 +135,7 @@ jobs:
             ~/.cache/composer
             ~/.composer/cache
             ~\AppData\Local\Composer\cache
-          key: ${{ runner.os }}-composer-${{ hashFiles('php/composer.lock', 'php/composer.json') }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('tracks/alpha/drivers/php/composer.lock', 'tracks/alpha/drivers/php/composer.json') }}
           restore-keys: |
             ${{ runner.os }}-composer-
 
@@ -149,7 +149,7 @@ jobs:
         if: matrix.language == 'r'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: r
+          working-directory: tracks/beta/drivers/r
 
       - name: Setup .NET
         if: matrix.language == 'dotnet'
@@ -165,7 +165,7 @@ jobs:
             ~/.nuget/packages
             ~/.nuget/v3-cache
             ~\AppData\Local\NuGet\v3-cache
-          key: ${{ runner.os }}-nuget-${{ hashFiles('dotnet/**/*.csproj', 'dotnet/**/*.sln', 'dotnet/**/packages.lock.json', 'dotnet/global.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tracks/alpha/drivers/dotnet/**/*.csproj', 'tracks/alpha/drivers/dotnet/**/*.sln', 'tracks/alpha/drivers/dotnet/**/packages.lock.json', 'tracks/alpha/drivers/dotnet/global.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -183,7 +183,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('jdbc/**/*.gradle*', 'jdbc/gradle.properties', 'jdbc/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('tracks/alpha/drivers/jdbc/**/*.gradle*', 'tracks/alpha/drivers/jdbc/gradle.properties', 'tracks/alpha/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -201,74 +201,74 @@ jobs:
 
       - name: Go tests
         if: matrix.language == 'go'
-        working-directory: go
+        working-directory: tracks/alpha/drivers/go
         run: go test ./...
 
       - name: Node tests
         if: matrix.language == 'node'
-        working-directory: node
+        working-directory: tracks/alpha/drivers/node
         run: |
           npm install
           npm test
 
       - name: Python tests
         if: matrix.language == 'python'
-        working-directory: python
+        working-directory: tracks/alpha/drivers/python
         run: |
           python -m pip install -e ".[test]"
           python -m pytest
 
       - name: Ruby tests
         if: matrix.language == 'ruby'
-        working-directory: ruby
+        working-directory: tracks/alpha/drivers/ruby
         run: ruby -Ilib test/*.rb
 
       - name: Rust tests
         if: matrix.language == 'rust'
-        working-directory: rust
+        working-directory: tracks/alpha/drivers/rust
         run: cargo test
 
       - name: PHP tests
         if: matrix.language == 'php'
-        working-directory: php
+        working-directory: tracks/alpha/drivers/php
         run: |
           composer install
           vendor/bin/phpunit tests
 
       - name: R checks
         if: matrix.language == 'r'
-        working-directory: r
+        working-directory: tracks/beta/drivers/r
         run: |
           R CMD build .
           R CMD check scratchbird_*.tar.gz --no-manual
 
       - name: .NET tests
         if: matrix.language == 'dotnet'
-        working-directory: dotnet
+        working-directory: tracks/alpha/drivers/dotnet
         run: dotnet test
 
       - name: JDBC tests (Linux)
         if: matrix.language == 'jdbc' && runner.os == 'Linux'
-        working-directory: jdbc
+        working-directory: tracks/alpha/drivers/jdbc
         run: ./gradlew test
 
       - name: JDBC tests (Windows)
         if: matrix.language == 'jdbc' && runner.os == 'Windows'
-        working-directory: jdbc
+        working-directory: tracks/alpha/drivers/jdbc
         shell: cmd
         run: gradlew.bat test
 
       - name: Pascal build (Linux)
         if: matrix.language == 'pascal' && runner.os == 'Linux'
         run: |
-          fpc -Fu./pascal/src pascal/tests/ConfigTests.pas
-          fpc -Fu./pascal/src pascal/tests/SqlTests.pas
-          fpc -Fu./pascal/src pascal/tests/IntegrationTest.pas
+          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/ConfigTests.pas
+          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/SqlTests.pas
+          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/IntegrationTest.pas
 
       - name: Pascal build (Windows)
         if: matrix.language == 'pascal' && runner.os == 'Windows'
         shell: cmd
         run: |
-          fpc -Fu.\pascal\src pascal\tests\ConfigTests.pas
-          fpc -Fu.\pascal\src pascal\tests\SqlTests.pas
-          fpc -Fu.\pascal\src pascal\tests\IntegrationTest.pas
+          fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\ConfigTests.pas
+          fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\SqlTests.pas
+          fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\IntegrationTest.pas
