@@ -2,7 +2,7 @@
 
 Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
 
-**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo remain partial. C++ type coverage expanded; tests pending.
+**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo remain partial. C++ type coverage expanded with initial conformance tests.
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 
 ---
@@ -18,7 +18,7 @@ own native client drivers against ScratchBird's emulation listeners.
 
 | Driver | Directory | Status | Packaging |
 |--------|-----------|--------|-----------|
-| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage expanded (tests pending) | CMake |
+| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage expanded (initial conformance tests) | CMake |
 | **ODBC 3.8** | `odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
 | **Go** | `go/` | Implemented (SBWP v1.1 baseline) | `go get` |
 | **Python** | `python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
@@ -30,10 +30,10 @@ own native client drivers against ScratchBird's emulation listeners.
 | **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
 | **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
 | **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage expanded, tests pending) | Hex |
-| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage expanded, tests pending) | SwiftPM |
-| **Dart** | `dart/` | Partial (TLS required, type coverage expanded, tests pending) | pub.dev |
-| **Mojo** | `mojo/` | Bridge (TLS required, type coverage incomplete) | - |
+| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage expanded, initial tests) | Hex |
+| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage expanded, initial tests) | SwiftPM |
+| **Dart** | `dart/` | Partial (TLS required, type coverage expanded, initial tests) | pub.dev |
+| **Mojo** | `mojo/` | Partial (native SBWP transport; type coverage incomplete) | - |
 
 ---
 
@@ -120,8 +120,8 @@ These are the required capabilities for all drivers in this repo:
 
 - Core language drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC/ODBC) implement SBWP v1.1 baseline; conformance is tracked in `docs/planning/`.
 - Binary-only mode and `compression=zstd` rejection are enforced in core drivers and Dart/Swift/Elixir/Mojo.
-- C++ type matrix coverage is expanded; conformance tests still pending.
-- Dart/Swift/Elixir type coverage expanded (arrays/composite/range/vector/inet/cidr/macaddr) and metadata helpers added; conformance tests still pending.
+- C++ type matrix coverage is expanded; initial conformance tests added.
+- Dart/Swift/Elixir type coverage expanded (arrays/composite/range/vector/inet/cidr/macaddr) and metadata helpers added; initial conformance tests added.
 - Streaming/paging via `fetch_size` is supported where applicable in core drivers.
 - ODBC metadata is aligned to sys.* and information_schema; Superset/Metabase still need updates to match finalized sys.columns/sys.index_columns schemas.
 
@@ -136,6 +136,9 @@ use the standard drivers for those engines against ScratchBird's emulation liste
 Application-specific drivers (early):
 - Superset: `scratchbird-superset-driver/`
 - Metabase: `scratchbird-metabase-driver/`
+
+Integration templates (Alpha/Beta ecosystem targets) live in:
+`docs/specifications/integrations/` (drivers, ORMs, tools, apps, cloud).
 
 ### CLI Tools
 
@@ -164,6 +167,7 @@ ScratchBird-driver/
 │   └── specifications/     Wire protocol specs
 │   ├── audit/              Audit reports and gap analysis
 │   └── planning/           Remediation plans
+│   └── specifications/     Protocol and driver specs (plus integration templates)
 ├── wiki/                   GitHub wiki pages (source)
 ├── cli/                    CLI tools (native + emulated protocol runners)
 ├── cpp/                    C/C++ client library (SBWP)
