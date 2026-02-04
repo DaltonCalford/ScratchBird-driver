@@ -60,8 +60,18 @@ public final class ScratchBirdConnection {
 
     public static func connect(_ config: ScratchBirdConfig) async throws -> ScratchBirdConnection {
         return try await Task.detached { () -> ScratchBirdConnection in
+            let sslmode = config.sslmode.lowercased()
+            if sslmode == "disable" {
+                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
+            }
+            if !config.binaryTransfer {
+                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "binary_transfer=false is not supported"])
+            }
+            if config.compression.lowercased() == "zstd" {
+                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "compression=zstd is not supported"])
+            }
             let socket = ScratchBirdSocket()
-            try socket.connect(host: config.host, port: config.port)
+            try socket.connect(host: config.host, port: config.port, useTls: true)
             let conn = ScratchBirdConnection(config: config, socket: socket)
             try conn.handshake()
             return conn
@@ -199,7 +209,7 @@ public final class ScratchBirdConnection {
         }.value
     }
 
-    public func subscribe(_ channel: String, subscribeType: UInt8 = subscribeTypeChannel, filterExpr: String = "") async throws {
+    public func subscribe(_ channel: String, subscribeType: UInt8 = 0, filterExpr: String = "") async throws {
         try await Task.detached {
             _ = try self.sendMessage(type: .subscribe, payload: buildSubscribePayload(subscribeType: subscribeType, channel: channel, filterExpr: filterExpr))
             _ = try self.drainUntilReady()

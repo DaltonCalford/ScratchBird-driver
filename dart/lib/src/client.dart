@@ -84,15 +84,21 @@ class ScratchBirdClient {
   Future<void> _connect() async {
     final host = config.host;
     final port = config.port;
-    final useTls = config.sslmode != 'disable';
-
-    if (useTls) {
-      _socket = await SecureSocket.connect(host, port,
-          supportedProtocols: ['tlsv1.3'],
-          onBadCertificate: (_) => true);
-    } else {
-      _socket = await Socket.connect(host, port);
+    final sslmode = config.sslmode.toLowerCase();
+    if (sslmode == 'disable') {
+      throw Exception('TLS is required for ScratchBird connections');
     }
+    if (!config.binaryTransfer) {
+      throw Exception('binary_transfer=false is not supported');
+    }
+    if (config.compression.toLowerCase() == 'zstd') {
+      throw Exception('compression=zstd is not supported');
+    }
+    final useTls = true;
+
+    _socket = await SecureSocket.connect(host, port,
+        supportedProtocols: ['tlsv1.3'],
+        onBadCertificate: (_) => true);
     _iter = StreamIterator(_socket!);
     _reader = _SocketReader(_iter);
     await _handshake();

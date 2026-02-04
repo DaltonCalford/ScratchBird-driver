@@ -30,10 +30,10 @@ own native client drivers against ScratchBird's emulation listeners.
 | **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
 | **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
 | **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `elixir/` | Partial (TLS optional, type coverage incomplete) | Hex |
-| **Swift (Async/Await)** | `swift/` | Partial (TCP only, type coverage incomplete) | SwiftPM |
-| **Dart** | `dart/` | Partial (TLS optional, type coverage incomplete) | pub.dev |
-| **Mojo** | `mojo/` | Bridge (Python driver) | - |
+| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage incomplete) | Hex |
+| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage incomplete) | SwiftPM |
+| **Dart** | `dart/` | Partial (TLS required, type coverage incomplete) | pub.dev |
+| **Mojo** | `mojo/` | Bridge (TLS required, type coverage incomplete) | - |
 
 ---
 
@@ -102,7 +102,7 @@ See individual driver directories for complete documentation and examples.
 ## Build Matrix (Windows/Linux)
 
 Cross-platform build and test commands are captured in:
-- `docs/BUILD_MATRIX.md`
+- `docs/BUILD_MATRIX.md` (required tools + build/test matrix)
 
 ---
 
@@ -119,7 +119,7 @@ These are the required capabilities for all drivers in this repo:
 ### Current Implementation Notes
 
 - Core language drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC/ODBC) implement SBWP v1.1 baseline; conformance is tracked in `docs/planning/`.
-- Binary-only mode and `compression=zstd` rejection are enforced in core drivers, but not yet in Dart/Swift/Elixir/Mojo.
+- Binary-only mode and `compression=zstd` rejection are enforced in core drivers and Dart/Swift/Elixir/Mojo.
 - Streaming/paging via `fetch_size` is supported where applicable in core drivers.
 - ODBC metadata is aligned to sys.* and information_schema; Superset/Metabase still need updates to match finalized sys.columns/sys.index_columns schemas.
 
@@ -234,4 +234,4 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Last Updated:** 2026-02-01
+**Last Updated:** 2026-02-04

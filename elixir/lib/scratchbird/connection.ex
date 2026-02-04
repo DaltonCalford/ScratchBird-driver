@@ -29,7 +29,8 @@ defmodule ScratchBird.Connection do
 
   def connect(opts) do
     config = Config.from_opts(opts)
-    with {:ok, socket, transport} <- open_socket(config),
+    with :ok <- validate_config(config),
+         {:ok, socket, transport} <- open_socket(config),
          {:ok, state} <- handshake(%__MODULE__{socket: socket, transport: transport, config: config}) do
       {:ok, state}
     end
@@ -37,6 +38,20 @@ defmodule ScratchBird.Connection do
 
   def close(%__MODULE__{transport: :ssl, socket: socket}), do: :ssl.close(socket)
   def close(%__MODULE__{transport: :tcp, socket: socket}), do: :gen_tcp.close(socket)
+
+  defp validate_config(config) do
+    sslmode = (config[:sslmode] || "require") |> String.downcase()
+    cond do
+      sslmode == "disable" ->
+        {:error, "TLS is required for ScratchBird connections"}
+      config[:binary_transfer] == false ->
+        {:error, "binary_transfer=false is not supported"}
+      config[:compression] == "zstd" ->
+        {:error, "compression=zstd is not supported"}
+      true ->
+        :ok
+    end
+  end
 
   def query(state, sql, params) when is_list(params) do
     if params == [] do
@@ -209,10 +224,7 @@ defmodule ScratchBird.Connection do
     ]
 
     if sslmode == "disable" do
-      case :gen_tcp.connect(host, port, opts, 5000) do
-        {:ok, socket} -> {:ok, socket, :tcp}
-        err -> err
-      end
+      {:error, "TLS is required for ScratchBird connections"}
     else
       ssl_opts = [
         verify: :verify_none,

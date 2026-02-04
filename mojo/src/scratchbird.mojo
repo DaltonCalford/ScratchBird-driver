@@ -207,6 +207,10 @@ class ScratchBirdConnection:
             return
         if not self.config.binary_transfer:
             raise RuntimeError("binary_transfer=false is not supported")
+        if self.config.compression == "zstd":
+            raise RuntimeError("compression=zstd is not supported")
+        if self.config.sslmode == "disable":
+            raise RuntimeError("TLS is required for ScratchBird connections")
         self._conn = _sb.connect(self.config.to_dsn())
         self._conn.on_notification(self._handle_notification)
 
