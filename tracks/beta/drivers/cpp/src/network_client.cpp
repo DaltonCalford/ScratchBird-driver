@@ -341,19 +341,6 @@ core::Status mapProtocolError(const protocol::ProtocolMessage& msg,
     return mapped;
 }
 
-std::vector<uint8_t> encodeLengthPrefixed(const std::vector<uint8_t>& data) {
-    std::vector<uint8_t> out(4 + data.size());
-    uint32_t len = static_cast<uint32_t>(data.size());
-    out[0] = static_cast<uint8_t>(len & 0xFF);
-    out[1] = static_cast<uint8_t>((len >> 8) & 0xFF);
-    out[2] = static_cast<uint8_t>((len >> 16) & 0xFF);
-    out[3] = static_cast<uint8_t>((len >> 24) & 0xFF);
-    if (!data.empty()) {
-        std::memcpy(out.data() + 4, data.data(), data.size());
-    }
-    return out;
-}
-
 std::vector<uint8_t> parseUuidHex(const std::string& value) {
     std::string trimmed;
     trimmed.reserve(32);
@@ -558,7 +545,7 @@ void NetworkPreparedStatement::setString(size_t index, const std::string& value,
     params_[index - 1].is_null = false;
     params_[index - 1].format = protocol::kFormatBinary;
     params_[index - 1].type_oid = type_oid;
-    params_[index - 1].data = encodeLengthPrefixed(data);
+    params_[index - 1].data = std::move(data);
     param_type_oids_[index - 1] = type_oid;
 }
 
@@ -581,11 +568,12 @@ void NetworkPreparedStatement::setBytes(size_t index, const uint8_t* data, size_
     params_[index - 1].is_null = false;
     params_[index - 1].format = protocol::kFormatBinary;
     params_[index - 1].type_oid = protocol::kOidBytea;
-    params_[index - 1].data = encodeLengthPrefixed(bytes);
+    params_[index - 1].data = std::move(bytes);
     param_type_oids_[index - 1] = protocol::kOidBytea;
 }
 
 void NetworkPreparedStatement::setBinary(size_t index, const uint8_t* data, size_t length, uint32_t type_oid, bool length_prefixed) {
+    (void)length_prefixed;
     if (index == 0) {
         return;
     }
@@ -600,7 +588,7 @@ void NetworkPreparedStatement::setBinary(size_t index, const uint8_t* data, size
     params_[index - 1].is_null = false;
     params_[index - 1].format = protocol::kFormatBinary;
     params_[index - 1].type_oid = type_oid;
-    params_[index - 1].data = length_prefixed ? encodeLengthPrefixed(bytes) : bytes;
+    params_[index - 1].data = std::move(bytes);
     param_type_oids_[index - 1] = type_oid;
 }
 

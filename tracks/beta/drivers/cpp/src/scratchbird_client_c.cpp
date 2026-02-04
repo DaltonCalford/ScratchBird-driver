@@ -329,21 +329,33 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
         case SB_TYPE_XML:
         case SB_TYPE_TSVECTOR:
         case SB_TYPE_TSQUERY:
-        case SB_TYPE_ARRAY:
-        case SB_TYPE_VECTOR:
-        case SB_TYPE_INET:
-        case SB_TYPE_CIDR:
-        case SB_TYPE_MACADDR:
         case SB_TYPE_DECIMAL:
             stmt.setString(index,
                            std::string(value->data.string_val.data, value->data.string_val.length),
                            resolve_type_oid(value));
             return SB_OK;
+        case SB_TYPE_ARRAY:
+        case SB_TYPE_VECTOR:
+        case SB_TYPE_INET:
+        case SB_TYPE_CIDR:
+        case SB_TYPE_MACADDR:
+            if (value->type == SB_TYPE_ARRAY && resolve_type_oid(value) == 0) {
+                return SB_ERR_INVALID_PARAM;
+            }
+            if (!value->data.binary_val.data && value->data.binary_val.length > 0) {
+                return SB_ERR_NULL_POINTER;
+            }
+            stmt.setBinary(index,
+                           value->data.binary_val.data,
+                           value->data.binary_val.length,
+                           resolve_type_oid(value),
+                           false);
+            return SB_OK;
         case SB_TYPE_COMPOSITE:
         case SB_TYPE_RANGE:
         case SB_TYPE_UNKNOWN: {
             uint32_t type_oid = resolve_type_oid(value);
-            if (value->type == SB_TYPE_RANGE && type_oid == 0) {
+            if ((value->type == SB_TYPE_RANGE || value->type == SB_TYPE_ARRAY) && type_oid == 0) {
                 return SB_ERR_INVALID_PARAM;
             }
             stmt.setBinary(index,
@@ -358,7 +370,7 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
                            value->data.binary_val.data,
                            value->data.binary_val.length,
                            resolve_type_oid(value),
-                           true);
+                           false);
             return SB_OK;
         case SB_TYPE_BLOB:
             stmt.setBytes(index,
@@ -417,19 +429,6 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
     }
 }
 
-std::vector<uint8_t> encode_length_prefixed(const uint8_t* data, size_t length) {
-    std::vector<uint8_t> out(4 + length);
-    uint32_t len = static_cast<uint32_t>(length);
-    out[0] = static_cast<uint8_t>(len & 0xFF);
-    out[1] = static_cast<uint8_t>((len >> 8) & 0xFF);
-    out[2] = static_cast<uint8_t>((len >> 16) & 0xFF);
-    out[3] = static_cast<uint8_t>((len >> 24) & 0xFF);
-    if (data && length > 0) {
-        std::memcpy(out.data() + 4, data, length);
-    }
-    return out;
-}
-
 int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& out) {
     if (!value) {
         return SB_ERR_NULL_POINTER;
@@ -441,7 +440,7 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
         out.is_null = true;
         return SB_OK;
     }
-    if (value->type == SB_TYPE_RANGE && out.type_oid == 0) {
+    if ((value->type == SB_TYPE_RANGE || value->type == SB_TYPE_ARRAY) && out.type_oid == 0) {
         return SB_ERR_INVALID_PARAM;
     }
     switch (value->type) {
@@ -499,14 +498,23 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
         case SB_TYPE_XML:
         case SB_TYPE_TSVECTOR:
         case SB_TYPE_TSQUERY:
+        case SB_TYPE_DECIMAL: {
+            auto bytes = reinterpret_cast<const uint8_t*>(value->data.string_val.data);
+            out.data.assign(bytes, bytes + value->data.string_val.length);
+            return SB_OK;
+        }
         case SB_TYPE_ARRAY:
         case SB_TYPE_VECTOR:
         case SB_TYPE_INET:
         case SB_TYPE_CIDR:
-        case SB_TYPE_MACADDR:
-        case SB_TYPE_DECIMAL: {
-            auto bytes = reinterpret_cast<const uint8_t*>(value->data.string_val.data);
-            out.data = encode_length_prefixed(bytes, value->data.string_val.length);
+        case SB_TYPE_MACADDR: {
+            if (!value->data.binary_val.data && value->data.binary_val.length > 0) {
+                return SB_ERR_NULL_POINTER;
+            }
+            if (value->data.binary_val.data && value->data.binary_val.length > 0) {
+                out.data.assign(value->data.binary_val.data,
+                                value->data.binary_val.data + value->data.binary_val.length);
+            }
             return SB_OK;
         }
         case SB_TYPE_COMPOSITE:
@@ -519,13 +527,17 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
             return SB_OK;
         }
         case SB_TYPE_GEOMETRY: {
-            auto bytes = reinterpret_cast<const uint8_t*>(value->data.binary_val.data);
-            out.data = encode_length_prefixed(bytes, value->data.binary_val.length);
+            if (value->data.binary_val.data && value->data.binary_val.length > 0) {
+                out.data.assign(value->data.binary_val.data,
+                                value->data.binary_val.data + value->data.binary_val.length);
+            }
             return SB_OK;
         }
         case SB_TYPE_BLOB: {
-            auto bytes = reinterpret_cast<const uint8_t*>(value->data.binary_val.data);
-            out.data = encode_length_prefixed(bytes, value->data.binary_val.length);
+            if (value->data.binary_val.data && value->data.binary_val.length > 0) {
+                out.data.assign(value->data.binary_val.data,
+                                value->data.binary_val.data + value->data.binary_val.length);
+            }
             return SB_OK;
         }
         case SB_TYPE_MONEY: {
@@ -706,28 +718,6 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
         return SB_OK;
     }
     const auto& data = value.data;
-    auto stripLengthPrefix = [](const std::vector<uint8_t>& input,
-                                const uint8_t** out_ptr,
-                                size_t* out_len) {
-        const uint8_t* ptr = input.empty() ? nullptr : input.data();
-        size_t len = input.size();
-        if (input.size() >= 4) {
-            uint32_t payload_len = static_cast<uint32_t>(input[0]) |
-                (static_cast<uint32_t>(input[1]) << 8) |
-                (static_cast<uint32_t>(input[2]) << 16) |
-                (static_cast<uint32_t>(input[3]) << 24);
-            if (payload_len <= input.size() - 4) {
-                ptr = input.data() + 4;
-                len = payload_len;
-            }
-        }
-        if (out_ptr) {
-            *out_ptr = ptr;
-        }
-        if (out_len) {
-            *out_len = len;
-        }
-    };
     switch (out->type) {
         case SB_TYPE_BOOLEAN:
             out->data.boolean_val = (!data.empty() && data[0]) ? 1 : 0;
@@ -830,14 +820,15 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
             }
             break;
         }
-        case SB_TYPE_GEOMETRY: {
-            const uint8_t* raw_ptr = nullptr;
-            size_t raw_len = 0;
-            stripLengthPrefix(data, &raw_ptr, &raw_len);
-            out->data.binary_val.data = raw_ptr;
-            out->data.binary_val.length = raw_len;
+        case SB_TYPE_GEOMETRY:
+        case SB_TYPE_ARRAY:
+        case SB_TYPE_VECTOR:
+        case SB_TYPE_INET:
+        case SB_TYPE_CIDR:
+        case SB_TYPE_MACADDR:
+            out->data.binary_val.data = data.data();
+            out->data.binary_val.length = data.size();
             break;
-        }
         case SB_TYPE_COMPOSITE:
         case SB_TYPE_RANGE:
         case SB_TYPE_UNKNOWN:
@@ -852,29 +843,18 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
         case SB_TYPE_XML:
         case SB_TYPE_TSVECTOR:
         case SB_TYPE_TSQUERY:
-        case SB_TYPE_ARRAY:
-        case SB_TYPE_VECTOR:
-        case SB_TYPE_INET:
-        case SB_TYPE_CIDR:
-        case SB_TYPE_MACADDR:
         case SB_TYPE_DECIMAL: {
-            const uint8_t* raw_ptr = nullptr;
-            size_t raw_len = 0;
-            stripLengthPrefix(data, &raw_ptr, &raw_len);
-            out->data.string_val.data = raw_ptr ? reinterpret_cast<const char*>(raw_ptr) : "";
-            out->data.string_val.length = raw_len;
+            out->data.string_val.data = data.empty() ? "" : reinterpret_cast<const char*>(data.data());
+            out->data.string_val.length = data.size();
             break;
         }
         default:
-            const uint8_t* raw_ptr = nullptr;
-            size_t raw_len = 0;
-            stripLengthPrefix(data, &raw_ptr, &raw_len);
             if (out->type == SB_TYPE_BLOB) {
-                out->data.binary_val.data = raw_ptr;
-                out->data.binary_val.length = raw_len;
+                out->data.binary_val.data = data.data();
+                out->data.binary_val.length = data.size();
             } else {
-                out->data.string_val.data = raw_ptr ? reinterpret_cast<const char*>(raw_ptr) : "";
-                out->data.string_val.length = raw_len;
+                out->data.string_val.data = data.empty() ? "" : reinterpret_cast<const char*>(data.data());
+                out->data.string_val.length = data.size();
             }
             break;
     }
