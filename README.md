@@ -140,6 +140,17 @@ Application-specific drivers (early):
 Integration templates (Alpha/Beta ecosystem targets) live in:
 `docs/specifications/integrations/` (drivers, ORMs, tools, apps, cloud).
 
+### Integration Targets (Templates)
+
+The integrations catalog includes templates for the full ecosystem scope:
+
+- **ORMs & Frameworks:** SQLAlchemy, Sequelize, Hibernate/JPA, Entity Framework Core, TypeORM, Prisma, Rails ActiveRecord, Laravel Eloquent, Dapper, Django ORM, Cypher/OpenCypher, Gremlin/TinkerPop
+- **Big Data & Streaming:** Apache Spark, Apache Flink, Apache Kafka, Hadoop (Hive/Pig/HBase), Talend, Pentaho, Informatica
+- **AI/ML:** Vector APIs, LangChain, Haystack
+- **Database Tools:** DBeaver, pgAdmin, MySQL Workbench, DataGrip, Tableau, Power BI, Qlik, Grafana, Metabase, Prometheus, Excel (ODBC)
+- **Applications:** WordPress, Drupal, Joomla, Magento, WooCommerce, QGIS, GeoServer, Mattermost, Odoo
+- **Cloud & Container:** Docker, Kubernetes, Terraform, AWS, GCP, Azure
+
 ### CLI Tools
 
 | Tool | Purpose | Status |
