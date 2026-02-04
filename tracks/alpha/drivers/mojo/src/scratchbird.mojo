@@ -130,6 +130,14 @@ class ScratchBirdComposite:
         self.raw = raw
         self.type_oid = type_oid
 
+
+class ScratchBirdError(Exception):
+    def __init__(self, message: str, sqlstate: str = "", detail: str = "", hint: str = ""):
+        super().__init__(message)
+        self.sqlstate = sqlstate
+        self.detail = detail
+        self.hint = hint
+
 def _decode_int16(data: bytes) -> int:
     return struct.unpack_from("<h", data, 0)[0]
 
@@ -150,6 +158,17 @@ def _decode_uuid(data: bytes) -> str:
         return data.hex()
     hex_str = data.hex()
     return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+
+def _encode_length_prefixed(data: bytes) -> bytes:
+    return struct.pack("<I", len(data)) + data
+
+def _strip_length_prefix(data: bytes) -> bytes:
+    if len(data) < 4:
+        return data
+    length = struct.unpack_from("<I", data, 0)[0]
+    if length <= len(data) - 4:
+        return data[4 : 4 + length]
+    return data
 
 def _decode_date(data: bytes):
     if len(data) < 4:
@@ -289,23 +308,25 @@ def decode_value(type_oid: int, data: bytes):
     if type_oid == OID_FLOAT8:
         return _decode_float64(data)
     if type_oid == OID_NUMERIC:
-        return ScratchBirdDecimal(data.decode("utf-8", errors="replace"))
+        raw = _strip_length_prefix(data)
+        return ScratchBirdDecimal(raw.decode("utf-8", errors="replace"))
     if type_oid == OID_MONEY:
         return ScratchBirdMoney(_decode_int64(data))
     if type_oid in (OID_TEXT, OID_VARCHAR, OID_CHAR, OID_BPCHAR, OID_JSON, OID_XML,
                     OID_TSVECTOR, OID_TSQUERY, OID_INET, OID_CIDR, OID_MACADDR, OID_MACADDR8,
                     OID_RECORD, OID_INT4RANGE, OID_INT8RANGE, OID_NUMRANGE, OID_TSRANGE,
                     OID_TSTZRANGE, OID_DATERANGE):
-        text = data.decode("utf-8", errors="replace")
+        raw = _strip_length_prefix(data)
+        text = raw.decode("utf-8", errors="replace")
         if type_oid in (OID_INT4RANGE, OID_INT8RANGE, OID_NUMRANGE, OID_TSRANGE, OID_TSTZRANGE, OID_DATERANGE):
             return _parse_range_literal(text)
         if _looks_like_array(text):
             return _parse_array_literal(text)
         return text
     if type_oid == OID_JSONB:
-        return ScratchBirdJsonb(data)
+        return ScratchBirdJsonb(_strip_length_prefix(data))
     if type_oid == OID_BYTEA:
-        return data
+        return _strip_length_prefix(data)
     if type_oid == OID_DATE:
         return _decode_date(data)
     if type_oid == OID_TIME:
@@ -319,10 +340,11 @@ def decode_value(type_oid: int, data: bytes):
     if type_oid == OID_UUID:
         return _decode_uuid(data)
     if type_oid == OID_SB_VECTOR:
-        text = data.decode("utf-8", errors="replace")
+        raw = _strip_length_prefix(data)
+        text = raw.decode("utf-8", errors="replace")
         return _parse_vector_literal(text)
     if type_oid in (OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE):
-        return ScratchBirdGeometry(data)
+        return ScratchBirdGeometry(_strip_length_prefix(data))
     return ScratchBirdRaw(type_oid, data)
 
 def _format_array_item(value) -> str:
@@ -344,18 +366,18 @@ def encode_value(value):
     if isinstance(value, ScratchBirdRaw):
         return value.oid, value.data
     if isinstance(value, ScratchBirdJsonb):
-        return OID_JSONB, value.raw
+        return OID_JSONB, _encode_length_prefixed(value.raw)
     if isinstance(value, ScratchBirdJson):
-        return OID_JSON, value.raw
+        return OID_JSON, _encode_length_prefixed(value.raw)
     if isinstance(value, ScratchBirdGeometry):
-        return OID_POINT, value.wkb
+        return OID_POINT, _encode_length_prefixed(value.wkb)
     if isinstance(value, ScratchBirdRange):
         lower = "" if value.lower is None else str(value.lower)
         upper = "" if value.upper is None else str(value.upper)
         prefix = "[" if value.lower_inclusive else "("
         suffix = "]" if value.upper_inclusive else ")"
         literal = f"{prefix}{lower},{upper}{suffix}"
-        return OID_NUMRANGE, literal.encode("utf-8")
+        return OID_NUMRANGE, _encode_length_prefixed(literal.encode("utf-8"))
     if isinstance(value, ScratchBirdInterval):
         out = bytearray(16)
         struct.pack_into("<q", out, 0, value.micros)
@@ -385,13 +407,13 @@ def encode_value(value):
         micros = int(delta.total_seconds() * 1000000)
         return OID_TIMESTAMPTZ, struct.pack("<q", micros)
     if isinstance(value, ScratchBirdDecimal):
-        return OID_NUMERIC, value.value.encode("utf-8")
+        return OID_NUMERIC, _encode_length_prefixed(value.value.encode("utf-8"))
     if isinstance(value, ScratchBirdMoney):
         return OID_MONEY, struct.pack("<q", value.cents)
     if isinstance(value, str):
-        return OID_TEXT, value.encode("utf-8")
+        return OID_TEXT, _encode_length_prefixed(value.encode("utf-8"))
     if isinstance(value, bytes):
-        return OID_BYTEA, value
+        return OID_BYTEA, _encode_length_prefixed(value)
     if isinstance(value, bool):
         return OID_BOOL, b"\x01" if value else b"\x00"
     if isinstance(value, int):
@@ -399,9 +421,12 @@ def encode_value(value):
     if isinstance(value, float):
         return OID_FLOAT8, struct.pack("<d", value)
     if isinstance(value, list):
+        if len(value) > 0 and all(isinstance(item, (int, float)) for item in value):
+            literal = "[" + ", ".join([str(item) for item in value]) + "]"
+            return OID_SB_VECTOR, _encode_length_prefixed(literal.encode("utf-8"))
         literal = _format_array_literal(value)
-        return 0, literal.encode("utf-8")
-    return OID_TEXT, str(value).encode("utf-8")
+        return 0, _encode_length_prefixed(literal.encode("utf-8"))
+    return OID_TEXT, _encode_length_prefixed(str(value).encode("utf-8"))
 
 PROTOCOL_MAGIC = b"SBWP"
 PROTOCOL_MAJOR = 1
@@ -412,6 +437,15 @@ class MessageType:
     STARTUP = 0x01
     AUTH_RESPONSE = 0x02
     QUERY = 0x03
+    PARSE = 0x04
+    BIND = 0x05
+    DESCRIBE = 0x06
+    EXECUTE = 0x07
+    CLOSE = 0x08
+    SYNC = 0x09
+    FLUSH = 0x0A
+    CANCEL = 0x0B
+    TERMINATE = 0x0C
     PING = 0x1B
     SET_OPTION = 0x1C
 
@@ -424,7 +458,15 @@ class MessageType:
     COMMAND_COMPLETE = 0x46
     ERROR = 0x48
     PARAMETER_STATUS = 0x4F
+    PARAMETER_DESCRIPTION = 0x50
+    PARSE_COMPLETE = 0x4A
+    BIND_COMPLETE = 0x4B
+    CLOSE_COMPLETE = 0x4C
+    NO_DATA = 0x4E
+    PORTAL_SUSPENDED = 0x4D
     PONG = 0x5D
+
+MSG_FLAG_URGENT = 0x08
 
 class AuthMethod:
     OK = 0
@@ -594,6 +636,40 @@ class ScratchBirdResult:
         self.rowcount = rowcount
 
 
+class ScratchBirdStream:
+    def __init__(self, connection, sql: str, params=None, fetch_size: int = 1):
+        self._connection = connection
+        self._columns = []
+        self._buffer = []
+        self._done = False
+        self._fetch_size = fetch_size if fetch_size > 0 else 1
+
+        if params is None:
+            params = []
+        self._result = connection._extended_query(sql, params, self._fetch_size)
+        self._columns = self._result.columns
+        self._buffer = list(self._result.rows)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._buffer:
+            return self._buffer.pop(0)
+        if self._done:
+            raise StopIteration
+        self._result = self._connection._fetch_more(self._fetch_size, self._columns)
+        self._buffer = list(self._result.rows)
+        self._columns = self._result.columns
+        if not self._buffer:
+            self._done = True
+            raise StopIteration
+        return self._buffer.pop(0)
+
+    def close(self):
+        self._done = True
+
+
 class QueryPlanMessage:
     def __init__(self, plan_tuple):
         self.format = plan_tuple[0]
@@ -738,6 +814,79 @@ def build_query_payload(sql: str, flags: int, max_rows: int, timeout_ms: int) ->
     return bytes(out)
 
 
+def build_parse_payload(statement_name: str, query: str, param_types) -> bytes:
+    name_bytes = statement_name.encode("utf-8")
+    query_bytes = query.encode("utf-8")
+    param_types = param_types if param_types is not None else []
+    out = bytearray()
+    out += struct.pack("<I", len(name_bytes))
+    out += name_bytes
+    out += struct.pack("<I", len(query_bytes))
+    out += query_bytes
+    out += struct.pack("<H", len(param_types))
+    out += struct.pack("<H", 0)
+    for oid in param_types:
+        out += struct.pack("<I", int(oid))
+    return bytes(out)
+
+
+def build_describe_payload(describe_type: int, name: str) -> bytes:
+    name_bytes = name.encode("utf-8")
+    out = bytearray()
+    out += struct.pack("<B3x", describe_type)
+    out += struct.pack("<I", len(name_bytes))
+    out += name_bytes
+    return bytes(out)
+
+
+def build_bind_payload(portal_name: str, statement_name: str, params, result_formats) -> bytes:
+    portal_bytes = portal_name.encode("utf-8")
+    stmt_bytes = statement_name.encode("utf-8")
+    params = params if params is not None else []
+    result_formats = result_formats if result_formats is not None else []
+    param_formats = []
+    for param in params:
+        param_formats.append(param["format"])
+
+    out = bytearray()
+    out += struct.pack("<I", len(portal_bytes))
+    out += portal_bytes
+    out += struct.pack("<I", len(stmt_bytes))
+    out += stmt_bytes
+    out += struct.pack("<H", len(param_formats))
+    for fmt_code in param_formats:
+        out += struct.pack("<H", int(fmt_code))
+    out += struct.pack("<H", len(params))
+    out += struct.pack("<H", 0)
+    for param in params:
+        if param["null"]:
+            out += struct.pack("<I", 0xFFFFFFFF)
+        else:
+            data = param["data"]
+            out += struct.pack("<I", len(data))
+            out += data
+    out += struct.pack("<H", len(result_formats))
+    for fmt_code in result_formats:
+        out += struct.pack("<H", int(fmt_code))
+    return bytes(out)
+
+
+def build_execute_payload(portal_name: str, max_rows: int) -> bytes:
+    portal_bytes = portal_name.encode("utf-8")
+    out = bytearray()
+    out += struct.pack("<I", len(portal_bytes))
+    out += portal_bytes
+    out += struct.pack("<I", max_rows)
+    return bytes(out)
+
+
+def build_cancel_payload(cancel_type: int, target_seq: int) -> bytes:
+    out = bytearray()
+    out += struct.pack("<I", cancel_type)
+    out += struct.pack("<I", target_seq)
+    return bytes(out)
+
+
 def build_set_option_payload(name: str, value: str) -> bytes:
     name_bytes = name.encode("utf-8")
     value_bytes = value.encode("utf-8")
@@ -847,6 +996,66 @@ def parse_parameter_status(payload: bytes):
     name = payload[name_start:name_end].decode("utf-8", errors="replace")
     value = payload[value_start:value_end].decode("utf-8", errors="replace")
     return name, value
+
+
+def parse_parameter_description(payload: bytes):
+    if len(payload) < 4:
+        raise RuntimeError("parameter description truncated")
+    count = struct.unpack_from("<H", payload, 0)[0]
+    offset = 4
+    types = []
+    for _ in range(count):
+        if offset + 4 > len(payload):
+            raise RuntimeError("parameter description truncated")
+        types.append(struct.unpack_from("<I", payload, offset)[0])
+        offset += 4
+    return types
+
+
+def parse_error_message(payload: bytes):
+    offset = 0
+    severity = ""
+    sqlstate = ""
+    message = ""
+    detail = ""
+    hint = ""
+    while offset < len(payload):
+        field = payload[offset]
+        offset += 1
+        if field == 0:
+            break
+        start = offset
+        while offset < len(payload) and payload[offset] != 0:
+            offset += 1
+        if offset >= len(payload):
+            break
+        value = payload[start:offset].decode("utf-8", errors="replace")
+        offset += 1
+        if field == ord("S"):
+            severity = value
+        elif field == ord("C"):
+            sqlstate = value
+        elif field == ord("M"):
+            message = value
+        elif field == ord("D"):
+            detail = value
+        elif field == ord("H"):
+            hint = value
+    return severity, sqlstate, message, detail, hint
+
+
+def parse_command_complete(payload: bytes):
+    if len(payload) < 20:
+        raise RuntimeError("command complete truncated")
+    command_type = payload[0]
+    rows = struct.unpack_from("<Q", payload, 4)[0]
+    last_id = struct.unpack_from("<Q", payload, 12)[0]
+    tag_bytes = payload[20:]
+    tag = tag_bytes.decode("utf-8", errors="replace")
+    null_idx = tag.find("\\x00")
+    if null_idx >= 0:
+        tag = tag[:null_idx]
+    return command_type, rows, last_id, tag
 
 
 def parse_row_description(payload: bytes):
@@ -1065,10 +1274,61 @@ class ScratchBirdConnection:
 
     def query(self, sql: str, params=None) -> ScratchBirdResult:
         if params:
-            raise RuntimeError("parameterized queries not yet supported in Mojo native client")
+            return self._extended_query(sql, params)
         payload = build_query_payload(sql, 0, 0, 0)
         self._send_message(MessageType.QUERY, payload)
-        columns = []
+        return self._read_resultset()
+
+    def stream(self, sql: str, params=None, fetch_size: int = 1) -> ScratchBirdStream:
+        return ScratchBirdStream(self, sql, params, fetch_size)
+
+    def _extended_query(self, sql: str, params, max_rows: int = 0) -> ScratchBirdResult:
+        if params is None:
+            params = []
+        param_values = []
+        param_types = []
+        for value in params:
+            oid, data = encode_value(value)
+            param_values.append({"format": 1, "data": data, "null": value is None})
+            param_types.append(oid)
+
+        parse_payload = build_parse_payload("", sql, param_types)
+        self._send_message(MessageType.PARSE, parse_payload)
+        describe_payload = build_describe_payload(ord("S"), "")
+        self._send_message(MessageType.DESCRIBE, describe_payload)
+        self._send_message(MessageType.SYNC, b"")
+
+        param_count = -1
+        while True:
+            msg_type, payload = self._recv_message()
+            if msg_type == MessageType.PARAMETER_DESCRIPTION:
+                param_count = len(parse_parameter_description(payload))
+            elif msg_type == MessageType.ERROR:
+                self._raise_error(payload)
+            elif msg_type == MessageType.READY:
+                break
+            else:
+                continue
+
+        if param_count >= 0 and param_count != len(params):
+            raise ScratchBirdError("parameter count mismatch", "07001")
+
+        result_formats = [1] if self.config.binary_transfer else []
+        bind_payload = build_bind_payload("", "", param_values, result_formats)
+        self._send_message(MessageType.BIND, bind_payload)
+        exec_payload = build_execute_payload("", max_rows)
+        self._send_message(MessageType.EXECUTE, exec_payload)
+        self._send_message(MessageType.SYNC, b"")
+        return self._read_resultset(max_rows > 0, [])
+
+    def _fetch_more(self, max_rows: int, existing_columns) -> ScratchBirdResult:
+        exec_payload = build_execute_payload("", max_rows)
+        self._send_message(MessageType.EXECUTE, exec_payload)
+        self._send_message(MessageType.SYNC, b"")
+        return self._read_resultset(max_rows > 0, existing_columns)
+
+    def _read_resultset(self, streaming: bool = False, existing_columns=None) -> ScratchBirdResult:
+        columns = existing_columns if existing_columns is not None else []
         rows = []
         rowcount = 0
         while True:
@@ -1087,11 +1347,27 @@ class ScratchBirdConnection:
                         decoded.append(value)
                 rows.append(decoded)
             elif msg_type == MessageType.COMMAND_COMPLETE:
+                try:
+                    _, rows_affected, _, _ = parse_command_complete(payload)
+                    rowcount = rows_affected
+                except Exception:
+                    rowcount = len(rows)
+            elif msg_type == MessageType.NO_DATA:
                 rowcount = len(rows)
+            elif msg_type == MessageType.PORTAL_SUSPENDED:
+                if streaming:
+                    return ScratchBirdResult(rows, columns, rowcount)
             elif msg_type == MessageType.READY:
                 return ScratchBirdResult(rows, columns, rowcount)
             elif msg_type == MessageType.ERROR:
-                raise RuntimeError("query error")
+                self._raise_error(payload)
+            else:
+                continue
+
+    def _raise_error(self, payload: bytes):
+        _, sqlstate, message, detail, hint = parse_error_message(payload)
+        text = message if message else "query error"
+        raise ScratchBirdError(text, sqlstate, detail, hint)
 
     def prepare(self, sql: str) -> ScratchBirdStatement:
         return ScratchBirdStatement(self, sql)
@@ -1125,6 +1401,10 @@ class ScratchBirdConnection:
                 return
             if msg_type == MessageType.ERROR:
                 raise RuntimeError("ping failed")
+
+    def cancel(self):
+        payload = build_cancel_payload(0, 0)
+        self._send_message(MessageType.CANCEL, payload, flags=MSG_FLAG_URGENT)
 
     def _drain_until_ready(self):
         while True:

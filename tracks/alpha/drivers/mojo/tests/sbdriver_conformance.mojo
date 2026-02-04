@@ -194,7 +194,19 @@ def _run_query_tests(tests, dsn: str):
                 if not hasattr(conn, "cancel"):
                     results.append(_render_result(spec.test_id, "failed", ["cancel not implemented"]))
                     continue
-                results.append(_render_result(spec.test_id, "skipped", ["cancel requires streaming support"]))
+                if not spec.sql:
+                    results.append(_render_result(spec.test_id, "skipped", ["missing sql"]))
+                    continue
+                try:
+                    stream = conn.stream(spec.sql, None, 1)
+                    try:
+                        stream.__next__()
+                    except Exception:
+                        pass
+                    conn.cancel()
+                    results.append(_render_result(spec.test_id, "ok", []))
+                except Exception as exc:
+                    results.append(_render_result(spec.test_id, "failed", [str(exc)]))
                 continue
             results.append(_render_result(spec.test_id, "skipped", ["unsupported kind"]))
     finally:
