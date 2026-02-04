@@ -4,6 +4,8 @@ Status: Draft
 Priority: P2
 Category: Big Data & Streaming
 
+
+Checklist: `docs/planning/driver-checklists/jdbc.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for pentaho.

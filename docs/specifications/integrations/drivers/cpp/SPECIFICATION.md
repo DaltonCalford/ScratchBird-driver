@@ -4,6 +4,8 @@ Status: Draft
 Priority: P2
 Category: Language Driver
 
+
+Checklist: `docs/planning/driver-checklists/cpp.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for C/C++.

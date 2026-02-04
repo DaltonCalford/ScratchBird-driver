@@ -4,6 +4,8 @@ Status: Draft
 Priority: P0
 Category: Language Driver
 
+
+Checklist: `docs/planning/driver-checklists/node.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for Node.js typescript.

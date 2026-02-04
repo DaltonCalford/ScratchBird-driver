@@ -4,6 +4,8 @@ Status: Draft
 Priority: P0
 Category: Cloud & Container
 
+
+Checklist: `docs/planning/driver-checklists/cli.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for docker.

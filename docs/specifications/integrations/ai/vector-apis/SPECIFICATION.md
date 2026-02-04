@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: AI & Machine Learning
 
+
+Checklist: `docs/planning/driver-checklists/python.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for vector apis.

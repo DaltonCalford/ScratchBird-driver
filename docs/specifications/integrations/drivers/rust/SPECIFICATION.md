@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: Language Driver
 
+
+Checklist: `docs/planning/driver-checklists/rust.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for rust.

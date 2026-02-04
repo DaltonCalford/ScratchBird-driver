@@ -4,6 +4,8 @@ Status: Draft
 Priority: P0
 Category: Standard Protocol
 
+
+Checklist: `docs/planning/driver-checklists/jdbc.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for JDBC 4.2.

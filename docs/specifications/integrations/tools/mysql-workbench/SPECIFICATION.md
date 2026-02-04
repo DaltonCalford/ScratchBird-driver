@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: Database Tool
 
+
+Checklist: `docs/planning/driver-checklists/odbc.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for MySQL Workbench.

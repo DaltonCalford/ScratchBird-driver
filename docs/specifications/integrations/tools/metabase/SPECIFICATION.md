@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: BI Tool
 
+
+Checklist: `docs/planning/driver-checklists/metabase.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for metabase.

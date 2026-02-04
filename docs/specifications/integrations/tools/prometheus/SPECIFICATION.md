@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: Monitoring
 
+
+Checklist: `docs/planning/driver-checklists/cli.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for prometheus.

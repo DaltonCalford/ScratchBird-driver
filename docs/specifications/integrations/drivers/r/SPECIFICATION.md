@@ -4,6 +4,8 @@ Status: Draft
 Priority: P2
 Category: Language Driver
 
+
+Checklist: `docs/planning/driver-checklists/r.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for r.

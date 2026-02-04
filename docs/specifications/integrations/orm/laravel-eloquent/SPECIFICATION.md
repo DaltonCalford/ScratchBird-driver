@@ -4,6 +4,8 @@ Status: Draft
 Priority: P1
 Category: ORM/Framework
 
+
+Checklist: `docs/planning/driver-checklists/php.md` (see Integration Appendix Tasks)
 ## 1. Goals
 
 - Define compatibility requirements for Laravel Eloquent.
