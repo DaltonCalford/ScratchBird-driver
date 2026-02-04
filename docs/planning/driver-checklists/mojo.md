@@ -10,12 +10,12 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [ ] Implement SBWP type encoding/decoding wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: TBD
-- [ ] Add array, composite, range, geometry, vector, inet/cidr/macaddr support. Issue: TBD
+- [x] Implement SBWP type encoding/decoding wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: DONE (2026-02-04)
+- [x] Add array, composite, range, geometry, vector, inet/cidr/macaddr support. Issue: DONE (2026-02-04)
 - [x] Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: TBD
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests. Issue: TBD
+- [x] Add conformance/integration tests. Issue: DONE (2026-02-04)
 
 ## P3 (Future)

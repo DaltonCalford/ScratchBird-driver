@@ -167,6 +167,25 @@ The integrations catalog includes templates for the full ecosystem scope:
 
 ---
 
+### Mojo Conformance Quick Run
+
+Use the Make/Just targets to run the Mojo conformance adapter with the default
+manifest:
+
+```bash
+make mojo-conformance
+```
+
+```bash
+just mojo-conformance
+```
+
+Set `SCRATCHBIRD_MOJO_URL` to point at a running server to execute `query`
+tests. Prepare/bind and cancel are gated by `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`
+and `SCRATCHBIRD_MOJO_ENABLE_CANCEL` when those features land.
+
+---
+
 ## Project Structure
 
 ```

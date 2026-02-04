@@ -14,6 +14,394 @@ import hashlib
 import hmac
 import secrets
 import urllib.parse
+import datetime
+
+OID_BOOL = 16
+OID_BYTEA = 17
+OID_CHAR = 18
+OID_INT8 = 20
+OID_INT2 = 21
+OID_INT4 = 23
+OID_TEXT = 25
+OID_JSON = 114
+OID_XML = 142
+OID_POINT = 600
+OID_LSEG = 601
+OID_PATH = 602
+OID_BOX = 603
+OID_POLYGON = 604
+OID_LINE = 628
+OID_FLOAT4 = 700
+OID_FLOAT8 = 701
+OID_CIRCLE = 718
+OID_MONEY = 790
+OID_MACADDR = 829
+OID_CIDR = 650
+OID_INET = 869
+OID_MACADDR8 = 774
+OID_BPCHAR = 1042
+OID_VARCHAR = 1043
+OID_DATE = 1082
+OID_TIME = 1083
+OID_TIMESTAMP = 1114
+OID_TIMESTAMPTZ = 1184
+OID_INTERVAL = 1186
+OID_TIMETZ = 1266
+OID_NUMERIC = 1700
+OID_UUID = 2950
+OID_JSONB = 3802
+OID_RECORD = 2249
+OID_INT4RANGE = 3904
+OID_NUMRANGE = 3906
+OID_TSRANGE = 3908
+OID_TSTZRANGE = 3910
+OID_DATERANGE = 3912
+OID_INT8RANGE = 3926
+OID_TSVECTOR = 3614
+OID_TSQUERY = 3615
+OID_SB_VECTOR = 16386
+
+BASE_DATE = datetime.datetime(2000, 1, 1, 0, 0, 0)
+
+class ScratchBirdJsonb:
+    def __init__(self, raw: bytes, value=None):
+        self.raw = raw
+        self.value = value
+
+class ScratchBirdJson:
+    def __init__(self, raw: bytes, value=None):
+        self.raw = raw
+        self.value = value
+
+class ScratchBirdGeometry:
+    def __init__(self, wkb: bytes, srid=None, wkt: str = ""):
+        self.wkb = wkb
+        self.srid = srid
+        self.wkt = wkt
+
+class ScratchBirdRange:
+    def __init__(self, lower=None, upper=None, lower_inclusive=False, upper_inclusive=False,
+                 lower_infinite=False, upper_infinite=False, empty=False):
+        self.lower = lower
+        self.upper = upper
+        self.lower_inclusive = lower_inclusive
+        self.upper_inclusive = upper_inclusive
+        self.lower_infinite = lower_infinite
+        self.upper_infinite = upper_infinite
+        self.empty = empty
+
+class ScratchBirdInterval:
+    def __init__(self, micros: int, days: int = 0, months: int = 0):
+        self.micros = micros
+        self.days = days
+        self.months = months
+
+class ScratchBirdDate:
+    def __init__(self, value):
+        self.value = value
+
+class ScratchBirdTime:
+    def __init__(self, value):
+        self.value = value
+
+class ScratchBirdTimestamp:
+    def __init__(self, value):
+        self.value = value
+
+class ScratchBirdTimestampTZ:
+    def __init__(self, value):
+        self.value = value
+
+class ScratchBirdDecimal:
+    def __init__(self, value: str):
+        self.value = value
+
+class ScratchBirdMoney:
+    def __init__(self, cents: int):
+        self.cents = cents
+
+class ScratchBirdRaw:
+    def __init__(self, oid: int, data: bytes):
+        self.oid = oid
+        self.data = data
+
+class ScratchBirdComposite:
+    def __init__(self, raw: bytes, type_oid: int = OID_RECORD):
+        self.raw = raw
+        self.type_oid = type_oid
+
+def _decode_int16(data: bytes) -> int:
+    return struct.unpack_from("<h", data, 0)[0]
+
+def _decode_int32(data: bytes) -> int:
+    return struct.unpack_from("<i", data, 0)[0]
+
+def _decode_int64(data: bytes) -> int:
+    return struct.unpack_from("<q", data, 0)[0]
+
+def _decode_float32(data: bytes) -> float:
+    return struct.unpack_from("<f", data, 0)[0]
+
+def _decode_float64(data: bytes) -> float:
+    return struct.unpack_from("<d", data, 0)[0]
+
+def _decode_uuid(data: bytes) -> str:
+    if len(data) != 16:
+        return data.hex()
+    hex_str = data.hex()
+    return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+
+def _decode_date(data: bytes):
+    if len(data) < 4:
+        return ScratchBirdDate(None)
+    days = _decode_int32(data)
+    value = (BASE_DATE + datetime.timedelta(days=days)).date()
+    return ScratchBirdDate(value)
+
+def _decode_time(data: bytes):
+    if len(data) < 8:
+        return ScratchBirdTime(None)
+    micros = _decode_int64(data)
+    seconds, micros = divmod(micros, 1000000)
+    hours, rem = divmod(seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    value = datetime.time(int(hours % 24), int(minutes), int(seconds), int(micros))
+    return ScratchBirdTime(value)
+
+def _decode_timestamp(data: bytes):
+    if len(data) < 8:
+        return ScratchBirdTimestamp(None)
+    micros = _decode_int64(data)
+    value = BASE_DATE + datetime.timedelta(microseconds=micros)
+    return ScratchBirdTimestamp(value)
+
+def _decode_timestamptz(data: bytes):
+    if len(data) < 8:
+        return ScratchBirdTimestampTZ(None)
+    micros = _decode_int64(data)
+    value = BASE_DATE + datetime.timedelta(microseconds=micros)
+    return ScratchBirdTimestampTZ(value)
+
+def _decode_interval(data: bytes):
+    if len(data) < 16:
+        return ScratchBirdInterval(0, 0, 0)
+    micros = _decode_int64(data[0:8])
+    days = _decode_int32(data[8:12])
+    months = _decode_int32(data[12:16])
+    return ScratchBirdInterval(micros, days, months)
+
+def _looks_like_array(text: str) -> bool:
+    stripped = text.strip()
+    return stripped.startswith("{") and stripped.endswith("}")
+
+def _split_array_items(text: str):
+    items = []
+    depth = 0
+    buf = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '{':
+            depth += 1
+            buf += ch
+        elif ch == '}':
+            depth = max(0, depth - 1)
+            buf += ch
+        elif ch == ',' and depth == 0:
+            items.append(buf)
+            buf = ""
+        else:
+            buf += ch
+        i += 1
+    if buf:
+        items.append(buf)
+    return items
+
+def _parse_array_literal(text: str):
+    trimmed = text.strip()
+    if trimmed == "" or trimmed == "{}":
+        return []
+    if trimmed.startswith("{") and trimmed.endswith("}"):
+        trimmed = trimmed[1:-1]
+    items = _split_array_items(trimmed)
+    out = []
+    for item in items:
+        item = item.strip()
+        if item == "NULL":
+            out.append(None)
+        elif _looks_like_array(item):
+            out.append(_parse_array_literal(item))
+        else:
+            out.append(item)
+    return out
+
+def _parse_vector_literal(text: str):
+    trimmed = text.strip()
+    if trimmed.startswith("[") and trimmed.endswith("]"):
+        trimmed = trimmed[1:-1]
+    if trimmed.strip() == "":
+        return []
+    out = []
+    for part in trimmed.split(','):
+        val = part.strip()
+        if val == "":
+            continue
+        try:
+            out.append(float(val))
+        except Exception:
+            pass
+    return out
+
+def _parse_range_literal(text: str):
+    trimmed = text.strip()
+    if trimmed == "empty":
+        return ScratchBirdRange(empty=True)
+    if len(trimmed) < 2:
+        return ScratchBirdRange()
+    lower_inc = trimmed.startswith("[")
+    upper_inc = trimmed.endswith("]")
+    inner = trimmed[1:-1]
+    if "," in inner:
+        lower_text, upper_text = inner.split(",", 1)
+    else:
+        lower_text, upper_text = inner, ""
+    lower_text = lower_text.strip()
+    upper_text = upper_text.strip()
+    lower_inf = lower_text == ""
+    upper_inf = upper_text == ""
+    lower = None if lower_inf else lower_text
+    upper = None if upper_inf else upper_text
+    return ScratchBirdRange(lower, upper, lower_inc, upper_inc, lower_inf, upper_inf, False)
+
+def decode_value(type_oid: int, data: bytes):
+    if data is None:
+        return None
+    if type_oid == OID_BOOL:
+        return len(data) > 0 and data[0] == 1
+    if type_oid == OID_INT2:
+        return _decode_int16(data)
+    if type_oid == OID_INT4:
+        return _decode_int32(data)
+    if type_oid == OID_INT8:
+        return _decode_int64(data)
+    if type_oid == OID_FLOAT4:
+        return _decode_float32(data)
+    if type_oid == OID_FLOAT8:
+        return _decode_float64(data)
+    if type_oid == OID_NUMERIC:
+        return ScratchBirdDecimal(data.decode("utf-8", errors="replace"))
+    if type_oid == OID_MONEY:
+        return ScratchBirdMoney(_decode_int64(data))
+    if type_oid in (OID_TEXT, OID_VARCHAR, OID_CHAR, OID_BPCHAR, OID_JSON, OID_XML,
+                    OID_TSVECTOR, OID_TSQUERY, OID_INET, OID_CIDR, OID_MACADDR, OID_MACADDR8,
+                    OID_RECORD, OID_INT4RANGE, OID_INT8RANGE, OID_NUMRANGE, OID_TSRANGE,
+                    OID_TSTZRANGE, OID_DATERANGE):
+        text = data.decode("utf-8", errors="replace")
+        if type_oid in (OID_INT4RANGE, OID_INT8RANGE, OID_NUMRANGE, OID_TSRANGE, OID_TSTZRANGE, OID_DATERANGE):
+            return _parse_range_literal(text)
+        if _looks_like_array(text):
+            return _parse_array_literal(text)
+        return text
+    if type_oid == OID_JSONB:
+        return ScratchBirdJsonb(data)
+    if type_oid == OID_BYTEA:
+        return data
+    if type_oid == OID_DATE:
+        return _decode_date(data)
+    if type_oid == OID_TIME:
+        return _decode_time(data)
+    if type_oid == OID_TIMESTAMP:
+        return _decode_timestamp(data)
+    if type_oid == OID_TIMESTAMPTZ:
+        return _decode_timestamptz(data)
+    if type_oid == OID_INTERVAL:
+        return _decode_interval(data)
+    if type_oid == OID_UUID:
+        return _decode_uuid(data)
+    if type_oid == OID_SB_VECTOR:
+        text = data.decode("utf-8", errors="replace")
+        return _parse_vector_literal(text)
+    if type_oid in (OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE):
+        return ScratchBirdGeometry(data)
+    return ScratchBirdRaw(type_oid, data)
+
+def _format_array_item(value) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, list):
+        return _format_array_literal(value)
+    return str(value)
+
+def _format_array_literal(values: list) -> str:
+    items = []
+    for value in values:
+        items.append(_format_array_item(value))
+    return "{" + ",".join(items) + "}"
+
+def encode_value(value):
+    if value is None:
+        return 0, b""
+    if isinstance(value, ScratchBirdRaw):
+        return value.oid, value.data
+    if isinstance(value, ScratchBirdJsonb):
+        return OID_JSONB, value.raw
+    if isinstance(value, ScratchBirdJson):
+        return OID_JSON, value.raw
+    if isinstance(value, ScratchBirdGeometry):
+        return OID_POINT, value.wkb
+    if isinstance(value, ScratchBirdRange):
+        lower = "" if value.lower is None else str(value.lower)
+        upper = "" if value.upper is None else str(value.upper)
+        prefix = "[" if value.lower_inclusive else "("
+        suffix = "]" if value.upper_inclusive else ")"
+        literal = f"{prefix}{lower},{upper}{suffix}"
+        return OID_NUMRANGE, literal.encode("utf-8")
+    if isinstance(value, ScratchBirdInterval):
+        out = bytearray(16)
+        struct.pack_into("<q", out, 0, value.micros)
+        struct.pack_into("<i", out, 8, value.days)
+        struct.pack_into("<i", out, 12, value.months)
+        return OID_INTERVAL, bytes(out)
+    if isinstance(value, ScratchBirdDate):
+        if value.value is None:
+            return OID_DATE, b""
+        days = (datetime.datetime.combine(value.value, datetime.time.min) - BASE_DATE).days
+        return OID_DATE, struct.pack("<i", days)
+    if isinstance(value, ScratchBirdTime):
+        if value.value is None:
+            return OID_TIME, b""
+        micros = (value.value.hour * 3600 + value.value.minute * 60 + value.value.second) * 1000000 + value.value.microsecond
+        return OID_TIME, struct.pack("<q", micros)
+    if isinstance(value, ScratchBirdTimestamp):
+        if value.value is None:
+            return OID_TIMESTAMP, b""
+        delta = value.value - BASE_DATE
+        micros = int(delta.total_seconds() * 1000000)
+        return OID_TIMESTAMP, struct.pack("<q", micros)
+    if isinstance(value, ScratchBirdTimestampTZ):
+        if value.value is None:
+            return OID_TIMESTAMPTZ, b""
+        delta = value.value - BASE_DATE
+        micros = int(delta.total_seconds() * 1000000)
+        return OID_TIMESTAMPTZ, struct.pack("<q", micros)
+    if isinstance(value, ScratchBirdDecimal):
+        return OID_NUMERIC, value.value.encode("utf-8")
+    if isinstance(value, ScratchBirdMoney):
+        return OID_MONEY, struct.pack("<q", value.cents)
+    if isinstance(value, str):
+        return OID_TEXT, value.encode("utf-8")
+    if isinstance(value, bytes):
+        return OID_BYTEA, value
+    if isinstance(value, bool):
+        return OID_BOOL, b"\x01" if value else b"\x00"
+    if isinstance(value, int):
+        return OID_INT8, struct.pack("<q", value)
+    if isinstance(value, float):
+        return OID_FLOAT8, struct.pack("<d", value)
+    if isinstance(value, list):
+        literal = _format_array_literal(value)
+        return 0, literal.encode("utf-8")
+    return OID_TEXT, str(value).encode("utf-8")
 
 PROTOCOL_MAGIC = b"SBWP"
 PROTOCOL_MAJOR = 1
@@ -690,7 +1078,14 @@ class ScratchBirdConnection:
                 columns = [ScratchBirdColumn(name, oid, fmt) for name, oid, fmt in cols]
             elif msg_type == MessageType.DATA_ROW:
                 values = parse_data_row(payload, len(columns))
-                rows.append(values)
+                decoded = []
+                for idx in range(len(values)):
+                    value = values[idx]
+                    if idx < len(columns) and value is not None:
+                        decoded.append(decode_value(columns[idx].type_oid, value))
+                    else:
+                        decoded.append(value)
+                rows.append(decoded)
             elif msg_type == MessageType.COMMAND_COMPLETE:
                 rowcount = len(rows)
             elif msg_type == MessageType.READY:

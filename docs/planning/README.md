@@ -9,3 +9,11 @@ This directory tracks implementation plans for driver remediation work.
 - [GO_SBWP_MIGRATION_BREAKDOWN.md](GO_SBWP_MIGRATION_BREAKDOWN.md)
 - [DRIVER_SERVER_FEATURE_BACKLOG.md](DRIVER_SERVER_FEATURE_BACKLOG.md)
 - [MOJO_DRIVER_COMPLETION_CHECKLIST.md](MOJO_DRIVER_COMPLETION_CHECKLIST.md)
+
+## Mojo Conformance Flags
+
+The Mojo conformance adapter is gated by feature flags so we can enable new
+capabilities as they land:
+
+- `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND=1` to enable prepare/bind tests.
+- `SCRATCHBIRD_MOJO_ENABLE_CANCEL=1` to enable cancel tests.

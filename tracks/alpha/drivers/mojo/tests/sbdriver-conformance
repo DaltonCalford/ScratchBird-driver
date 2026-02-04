@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANIFEST=""
+
+if [[ "${1:-}" == "--manifest" && -n "${2:-}" ]]; then
+  MANIFEST="$2"
+  shift 2
+fi
+
+if [[ -z "$MANIFEST" && -n "${SCRATCHBIRD_CONFORMANCE_MANIFEST:-}" ]]; then
+  MANIFEST="$SCRATCHBIRD_CONFORMANCE_MANIFEST"
+fi
+
+if [[ -z "$MANIFEST" ]]; then
+  mojo "$SCRIPT_DIR/sbdriver_conformance.mojo" "$@"
+else
+  mojo "$SCRIPT_DIR/sbdriver_conformance.mojo" --manifest "$MANIFEST" "$@"
+fi

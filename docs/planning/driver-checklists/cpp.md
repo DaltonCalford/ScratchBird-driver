@@ -16,8 +16,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ### Integration Appendix Tasks
 
-- [ ] Constraint: Provide a stable C API façade for language bindings where ABI stability is required. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
-- [ ] Constraint: Support both static and shared builds with explicit linkage flags. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
-- [ ] Constraint: Document ownership of buffers returned to callers. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
-- [ ] Test: Verify both static and shared builds link successfully. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
-- [ ] Test: Validate row buffers remain valid until the next fetch call. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`)
+- [x] Constraint: Provide a stable C API façade for language bindings where ABI stability is required. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
+- [x] Constraint: Support both static and shared builds with explicit linkage flags. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
+- [x] Constraint: Document ownership of buffers returned to callers. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
+- [x] Test: Verify both static and shared builds link successfully. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
+- [x] Test: Validate row buffers remain valid until the next fetch call. (Sources: `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
