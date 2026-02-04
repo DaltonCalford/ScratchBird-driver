@@ -49,6 +49,40 @@ non-native protocols are out of scope for these drivers.
 8. Feature gating
    - Drivers must not attempt emulated wire protocols (PostgreSQL/MySQL/Firebird).
 
+## Clarifications (Client Behavior)
+
+These items are required for full SBWP v1.1 client parity and to remove
+ambiguity across drivers and tooling.
+
+### SET_OPTION / SHOW OPTION
+
+- Drivers must expose a client API to send `SET_OPTION` to the server.
+- CLI tooling must surface `SET OPTION <key>=<value>` and `SHOW OPTION <key>`.
+- The client should send `SET_OPTION` as a direct SBWP message (not SQL text),
+  and should surface server errors as standard SQLSTATE mappings.
+
+### PING / PONG (Keepalive)
+
+- Drivers may send `PING` to verify a live connection when idle or before
+  long-running streaming operations.
+- Clients must accept `PONG` and treat it as a no-op success response.
+- If `PING` is not implemented in a driver, it must still tolerate server-side
+  `PONG` messages without error.
+
+### Notifications (SUBSCRIBE/UNSUBSCRIBE)
+
+- Drivers that provide async notifications must implement `SUBSCRIBE` and
+  `UNSUBSCRIBE` and surface a callback/event API.
+- Clients must buffer and dispatch notification frames without interrupting
+  query/stream flows.
+
+### Query Plan + SBLR Compiled
+
+- If the server sends `QUERY_PLAN` or `SBLR_COMPILED`, drivers must parse the
+  payload and make the last received plan/compiled payload retrievable.
+- CLI tooling should include `\\plan` and `\\sblr` commands to display these
+  payloads when present.
+
 ## Legacy Protocol Deprecation
 
 The legacy SBDB 12-byte header and message set used by the existing drivers is
@@ -60,4 +94,3 @@ not compatible with SBWP v1.1. All drivers must be migrated to SBWP.
 - Simple QUERY
 - PARSE/BIND/EXECUTE for each parameter type
 - CANCEL behavior for long-running queries
-

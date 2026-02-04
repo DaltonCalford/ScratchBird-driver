@@ -1,13 +1,13 @@
 # ScratchBird Driver Remediation Plan
 
 Status: In Progress
-Last Updated: 2026-01-30
+Last Updated: 2026-02-04
 
 ## Goal
 
-Bring all drivers to native ScratchBird parity using SBWP v1.1, server-side
-prepare/bind, binary-only transfer, streaming/paging, and consistent metadata
-behavior.
+Bring all drivers and adapters to full SBWP v1.1 conformance with server-side
+prepare/bind, binary-only transfer, complete type coverage, and consistent
+metadata behavior.
 
 ## Inputs
 
@@ -17,196 +17,76 @@ behavior.
 - `docs/specifications/DRIVER_STREAMING_AND_PAGING.md`
 - `docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md`
 - `docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md`
+- ScratchBird server source: `ScratchBird/src/catalog/sys_catalog.cpp`
 
 ## Phased Work
 
-### Phase 0 - Baseline Alignment (Complete)
+### Phase 0 - Audit + Status Alignment
 
-- [x] Publish driver specs in `docs/specifications/`
-- [x] Align README claims with actual status
-- [x] Define a conformance test matrix (handshake, auth, prepare/bind, types)
-- [x] Implement Go in-language harness helper
+- [x] Refresh driver implementation audit
+- [ ] Update README claims to reflect current state
+- [ ] Update per-driver checklists for all drivers (including Dart/Swift/Elixir/Mojo/C++)
 
-### Phase 1 - Binary-Only Enforcement + DSN Coverage
+### Phase 1 - Core Drivers Hardening
 
-- [x] Reject `binary_transfer=false` with SQLSTATE 0A000 in all drivers
-- [x] Add DSN key support for `role` + `sslpassword` (per spec)
-- [x] Ensure Superset/Metabase pass through binary-only defaults
+Core drivers: Go, Node, Python, Ruby, Rust, PHP, R, Pascal, .NET, JDBC, ODBC.
 
-### Phase 2 - Compression (zstd)
+- [x] Binary-only enforcement (reject `binary_transfer=false`)
+- [x] Compression rejection (`compression=zstd`)
+- [x] Server-side prepare/bind + DESCRIBE integration
+- [x] Portal paging support
+- [x] sys.* metadata helpers (language drivers) and JDBC/ODBC mappings
+- [ ] Replace SQLSTATE class-prefix error mapping with full SQLSTATE mapping (all core drivers)
 
-- [x] Disable compression negotiation until server support is ready (reject zstd)
+### Phase 2 - New Drivers (Dart/Swift/Elixir/Mojo)
 
-Note: zstd compression + integration tests are deferred until server-side
-compression is implemented.
+- [ ] Enforce TLS required (reject `sslmode=disable`)
+- [ ] Enforce binary-only (reject `binary_transfer=false`)
+- [ ] Reject compression=zstd until server support exists
+- [ ] Complete type matrix (arrays, composites, vector, inet/cidr/macaddr, range/composite wrappers)
+- [ ] Add sys.* metadata helper APIs
+- [ ] Add conformance/integration tests
 
-### Phase 3 - Streaming + Portal Paging
+Driver-specific blockers:
+- Swift: implement TLS transport (currently TCP only)
+- Mojo: remove Python bridge; implement native SBWP client
 
-- [x] Handle `MSG_PORTAL_SUSPENDED` and resume via EXECUTE max_rows
-- [x] Add paging support to streaming APIs (fetch size, maxRows)
-- [x] Update Python/R/JDBC to avoid full buffering; support incremental fetch
-- [x] Add paging tests to the conformance harness
+### Phase 3 - C/C++ Client Coverage
 
-### Phase 4 - DESCRIBE + Metadata Fidelity
+- [ ] Expand C API type coverage to full SBWP matrix
+- [ ] Expose SET_OPTION and PING helpers in C API
+- [ ] Add sys.* metadata helper queries or bindings
 
-- [x] Send DESCRIBE after PARSE to populate parameter/result metadata
-- [x] Use DESCRIBE results to validate parameter counts/types
-- [x] Add tests for DESCRIBE flows
+### Phase 4 - BI Drivers (Superset/Metabase)
 
-### Phase 5 - Timeout + Cancel Enforcement
+- [ ] Superset: use `sys.columns.data_type_name` directly (remove numeric fallback)
+- [ ] Metabase: revalidate feature flags against JDBC metadata and adjust
 
-- [x] .NET: wire CommandTimeout to timeoutMs/CANCEL
-- [x] JDBC: enforce query timeout with CANCEL and surface 57014
-- [x] Add tests for timeout-triggered CANCEL
+### Phase 5 - CLI Conformance
 
-### Phase 6 - Metadata Completeness (JDBC/Superset/Metabase)
+- [ ] Audit `sb_isql` and conformance runner against SBWP v1.1 harness
 
-- [x] JDBC: implement getPrimaryKeys/getImportedKeys/getTypeInfo from sys.*
-- [x] Superset dialect: implement get_pk_constraint/get_foreign_keys/get_indexes
-- [x] Superset: resolve type mapping via sys.types instead of raw ids
-- [x] Metabase: align feature flags with actual JDBC metadata, or add missing
-      metadata support first
+## Audit Gaps (2026-02-04)
 
-### Phase 7 - New Drivers (In Progress)
+### Type Mapping Audit (TYPE_MAPPING_MATRIX.md)
 
-- [x] Elixir Ecto adapter (P1) - initial SBWP v1.1 client + `ecto_sql` adapter scaffolding
-- [x] Swift async/await driver (P1) - initial SBWP client (TCP transport; TLS pending)
-- [x] Dart database driver (P2) - initial SBWP client + SCRAM
-- [x] Mojo native driver (P2) - SBWP v1.1 via Python transport bridge
+- [ ] C++: expand type mapping beyond core primitives
+- [ ] Dart: add arrays, composite, vector, inet/cidr/macaddr, range wrappers
+- [ ] Swift: add arrays, composite, range, inet/cidr/macaddr, vector
+- [ ] Elixir: add arrays, composite, vector, inet/cidr/macaddr
+- [ ] Mojo: native type wrappers and binary decoding
+
+### Error Mapping Audit (DRIVER_ERROR_MAPPING.md)
+
+- [ ] All drivers: replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
+
+### Metadata Contract Audit (METADATA_SCHEMA_CONTRACT.md, DRIVER_METADATA_JDBC_ODBC_MAPPING.md)
+
+- [ ] Dart: add sys.* metadata helpers
+- [ ] Swift: add sys.* metadata helpers
+- [ ] Elixir: add sys.* metadata helpers
+- [ ] Mojo: add sys.* metadata helpers (native)
 
 ## Driver Checklists
 
-### Go
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Portal paging (MSG_PORTAL_SUSPENDED)
-
-### Node.js
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Portal paging in queryStream + non-streamed queries
-
-### Python
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Incremental fetch (avoid buffering in Cursor)
-- [x] Portal paging for large results
-
-### Ruby
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Portal paging in ResultStream
-
-### Rust
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Parameterized streaming queries
-- [x] Portal paging
-
-### PHP
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Portal paging in ResultStream
-
-### R
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Incremental fetch API (avoid buffering)
-- [x] Portal paging
-
-### Pascal
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Portal paging in ResultStream
-
-### .NET
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role/sslpassword DSN keys
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] CommandTimeout -> timeoutMs/CANCEL
-- [x] Portal paging
-
-### JDBC
-
-- [x] SBWP v1.1 + PARSE/BIND/EXECUTE
-- [x] Enforce binary-only (reject binary_transfer=false)
-- [x] Add role DSN key
-- [x] Implement zstd or disable compression negotiation
-- [x] DESCRIBE integration
-- [x] Streaming via fetchSize (avoid full buffering)
-- [x] Portal paging
-- [x] Metadata: PK/FK/TypeInfo from sys.*
-
-### Superset
-
-- [x] Implement get_pk_constraint/get_foreign_keys/get_indexes
-- [x] Resolve type names via sys.types rather than raw data_type_id
-- [x] Align connection param names to DSN spec
-
-### Metabase
-
-- [x] Align feature flags with actual JDBC metadata coverage
-- [x] Enforce binaryTransfer=true in connection details
-
-### Elixir (Ecto) - Planned (P1)
-
-- [x] Implement SBWP v1.1 client (binary-only, prepare/bind)
-- [x] Ecto adapter (`Ecto.Adapters.SQL` + `DBConnection`)
-- [x] Type wrappers: Jsonb/Range/Geometry
-- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
-
-### Swift Async/Await - Planned (P1)
-
-- [x] SBWP client + TCP transport
-- [ ] TLS transport integration (required for production)
-- [x] Async/await API surface + streaming
-- [x] Type wrappers: Jsonb/Range/Geometry
-- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
-
-### Dart - Planned (P2)
-
-- [x] Pure Dart SBWP client + async API
-- [x] Type wrappers: Jsonb/Range/Geometry
-- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
-
-### Mojo - Planned (P2)
-
-- [x] SBWP protocol + transport abstraction complete
-- [ ] Real TCP/TLS transport implementation
-- [ ] Type wrappers: Jsonb/Range/Geometry
-- [ ] Conformance + integration tests (`SCRATCHBIRD_TEST_DSN`)
+Per-driver checklists live in `docs/planning/driver-checklists/`.

@@ -15,6 +15,7 @@ require "scratchbird/sql"
 require "scratchbird/statement"
 require "scratchbird/types"
 require "scratchbird/config"
+require "scratchbird/metadata"
 
 module Scratchbird
   def self.connect(uri_or_opts)

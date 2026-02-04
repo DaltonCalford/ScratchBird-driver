@@ -1,7 +1,7 @@
 # Driver Migration Tracker (ScratchBird -> ScratchBird-driver)
 
 Status: In Progress
-Last Updated: 2026-01-30
+Last Updated: 2026-02-03
 
 ## Scope
 
@@ -12,13 +12,13 @@ ScratchBird-driver, then bring the migrated drivers to full SBWP v1.1 parity.
 
 ### Code Moves
 
-- [ ] Move C/C++ client library (`libscratchbird_client`) into `cpp/` (sources + headers)
-- [ ] Move C API wrapper (`scratchbird_client_c.*`) into `cpp/` and expose shared lib build
-- [ ] Move ODBC driver (`scratchbird_odbc`) into `odbc/` (sources + headers)
-- [ ] Move CLI clients (`sb_isql`, `sb_fb_isql`, `sb_pg_isql`, `sb_my_isql`, `sbdriver-conformance`) into `cli/`
-- [ ] Move ODBC test suite into `odbc/tests/` (unit + integration)
-- [ ] Add build system for C/ODBC/CLI (CMake + install targets)
-- [ ] Remove moved code from ScratchBird and update its build references
+- [x] Move C/C++ client library (`libscratchbird_client`) into `cpp/` (sources + headers)
+- [x] Move C API wrapper (`scratchbird_client_c.*`) into `cpp/` and expose shared lib build
+- [x] Move ODBC driver (`scratchbird_odbc`) into `odbc/` (sources + headers)
+- [x] Move CLI clients (`sb_isql`, `sb_fb_isql`, `sb_pg_isql`, `sb_my_isql`, `sbdriver-conformance`) into `cli/`
+- [x] Move ODBC test suite into `odbc/tests/` (unit + integration)
+- [x] Add build system for C/ODBC/CLI (CMake + install targets)
+- [ ] Remove moved code from ScratchBird and update its build references (needs ScratchBird repo audit)
 
 ### Documentation Moves
 
@@ -32,15 +32,16 @@ ScratchBird-driver, then bring the migrated drivers to full SBWP v1.1 parity.
 
 ### C/C++ Client Library
 
-- [ ] Support PARAMETER_STATUS for `attachment_id`/`current_txn_id`
-- [ ] Track `last_query_sequence` for CANCEL
-- [ ] Implement SET_OPTION wire call
+- [x] Support PARAMETER_STATUS for `attachment_id`
+- [ ] Support PARAMETER_STATUS for `current_txn_id` (not observed in client state)
+- [x] Track `last_query_sequence` for CANCEL
+- [ ] Implement SET_OPTION wire call (payload builder exists; send path not observed)
 - [ ] Implement PING/PONG handling
-- [ ] Implement SUBSCRIBE/UNSUBSCRIBE for notifications
-- [ ] Implement QUERY_PLAN and SBLR_COMPILED handlers
-- [ ] Implement SBLR_EXECUTE (bytecode path + hash-only path)
-- [ ] Implement STREAM_CONTROL for server-driven streams
-- [ ] Implement ATTACH_CREATE/DETACH/LIST (emulation)
+- [x] Implement SUBSCRIBE/UNSUBSCRIBE for notifications
+- [x] Implement QUERY_PLAN and SBLR_COMPILED handlers
+- [x] Implement SBLR_EXECUTE (bytecode path + hash-only path)
+- [x] Implement STREAM_CONTROL for server-driven streams
+- [x] Implement ATTACH_CREATE/DETACH/LIST (emulation)
 
 ### ODBC Driver
 
@@ -49,13 +50,13 @@ ScratchBird-driver, then bring the migrated drivers to full SBWP v1.1 parity.
 - [ ] Expose SUBSCRIBE/UNSUBSCRIBE via driver extensions
 - [ ] Support SBLR_EXECUTE for prepared statements (optional extension)
 - [ ] Honor server QUERY_PLAN/SBLR_COMPILED for diagnostics
-- [ ] Ensure CANCEL uses query sequence id
+- [x] Ensure CANCEL uses query sequence id
 
 ### CLI Clients
 
 - [ ] Expose SET OPTION / SHOW OPTION commands (native)
 - [ ] Add `\subscribe` / `\unsubscribe` meta-commands
-- [ ] Add `\plan` hooks to display QUERY_PLAN payloads
+- [ ] Add `\plan` hooks to display QUERY_PLAN payloads (current plan uses SQL EXPLAIN)
 - [ ] Add `\sblr` hooks to display SBLR_COMPILED payloads
 
 ## Open Questions

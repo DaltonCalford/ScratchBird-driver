@@ -590,9 +590,23 @@ function decodeTextValue(data: Buffer): string {
 }
 
 function decodeUnknownBinary(data: Buffer): any {
+  if (data.length >= 4) {
+    const length = data.readUInt32LE(0);
+    if (length === data.length - 4) {
+      const text = data.subarray(4).toString("utf8");
+      if (looksLikeArrayLiteral(text)) {
+        return parseArrayLiteral(text);
+      }
+      return parseUnknownText(text);
+    }
+  }
   const trimmed = stripTrailingNulls(data);
   if (trimmed.length > 0 && looksLikeText(trimmed)) {
-    return parseUnknownText(trimmed.toString("utf8"));
+    const text = trimmed.toString("utf8");
+    if (looksLikeArrayLiteral(text)) {
+      return parseArrayLiteral(text);
+    }
+    return parseUnknownText(text);
   }
   switch (data.length) {
     case 1:
@@ -614,6 +628,9 @@ function parseUnknownText(text: string): any {
   const trimmed = text.trim();
   if (trimmed === "") {
     return text;
+  }
+  if (looksLikeArrayLiteral(trimmed)) {
+    return parseArrayLiteral(trimmed);
   }
   if (/^(true|false)$/i.test(trimmed)) {
     return trimmed.toLowerCase() === "true";
@@ -656,6 +673,10 @@ function looksLikeText(data: Buffer): boolean {
     }
   }
   return true;
+}
+
+function looksLikeArrayLiteral(text: string): boolean {
+  return text.startsWith("{") && text.endsWith("}");
 }
 
 function encodeLengthPrefixed(data: Buffer): Buffer {

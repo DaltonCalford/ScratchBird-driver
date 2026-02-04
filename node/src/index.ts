@@ -61,4 +61,5 @@ export {
 } from "./types";
 export { parseDsn } from "./dsn";
 export { normalizeQuery } from "./sql";
+export * from "./metadata";
 export * from "./errors";

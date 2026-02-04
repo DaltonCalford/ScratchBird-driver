@@ -28,19 +28,23 @@ These views may map to internal catalog tables as needed.
    - table_id, schema_id, table_name, table_type, owner_id, is_valid
 
 3. sys.columns
-   - column_id, table_id, column_name, data_type_id, ordinal_position,
-     is_nullable, default_value, is_valid
+   - column_id, table_id, column_name, data_type_id, data_type_name,
+     ordinal_position, is_nullable, default_value, domain_id, collation_id,
+     charset_id, is_identity, is_generated, generation_expression, is_valid
 
-4. sys.indexes
+4. sys.index_columns
+   - index_id, column_id, column_name, ordinal_position, is_included
+
+5. sys.indexes
    - index_id, table_id, index_name, index_type, is_unique, is_valid
 
-5. sys.constraints
+6. sys.constraints
    - constraint_id, table_id, constraint_name, constraint_type, is_valid
 
-6. sys.procedures
+7. sys.procedures
    - procedure_id, schema_id, procedure_name, routine_type, is_valid
 
-7. sys.functions
+8. sys.functions
    - function_id, schema_id, function_name, is_valid
 
 ## Schema/Search Path Behavior
@@ -53,4 +57,3 @@ These views may map to internal catalog tables as needed.
 The server must allow drivers to map sys.* views into standard metadata
 schemas (DatabaseMetaData, INFORMATION_SCHEMA) without requiring emulation
 ports or protocol translation.
-

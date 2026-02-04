@@ -169,3 +169,23 @@ binary_transfer=false it must reject the connection with NotSupported.
   defaultRowFetchSize (or fetch_size), prepareThreshold, binaryTransfer,
   compression,
   rewriteBatchedInserts.
+
+### ODBC (Connection String Mapping)
+
+ODBC connection strings must map to the canonical keys above:
+- `Server`/`Host` -> host
+- `Port` -> port
+- `Database`/`DB` -> database
+- `UID`/`User` -> user
+- `PWD`/`Password` -> password
+- `SSL`/`SSLMode` -> sslmode
+- `SSLCert` -> sslcert
+- `SSLKey` -> sslkey
+- `SSLRootCert` -> sslrootcert
+- `SSLPassword` -> sslpassword
+- `ApplicationName`/`App` -> application_name
+- `Schema`/`CurrentSchema` -> search_path
+- `Role` -> role
+- `BinaryTransfer` -> binary_transfer (must be true)
+- `Compression` -> compression (off|zstd)
+- `FetchSize`/`DefaultRowFetchSize` -> fetch_size

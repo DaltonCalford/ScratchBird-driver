@@ -280,6 +280,16 @@ func encodeParam(value any) (paramValue, uint32, error) {
 		return paramValue{data: buf}, oidMoney, nil
 	case []any:
 		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(v)))}, 0, nil
+	case []string:
+		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(toAnySlice(v))))}, 0, nil
+	case []int:
+		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(toAnySlice(v))))}, 0, nil
+	case []int32:
+		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(toAnySlice(v))))}, 0, nil
+	case []int64:
+		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(toAnySlice(v))))}, 0, nil
+	case []bool:
+		return paramValue{data: encodeLengthPrefixed([]byte(formatArrayLiteral(toAnySlice(v))))}, 0, nil
 	default:
 		if stringer, ok := value.(fmt.Stringer); ok {
 			return paramValue{data: encodeLengthPrefixed([]byte(stringer.String()))}, oidText, nil
@@ -364,6 +374,12 @@ func decodeTextValue(data []byte) string {
 }
 
 func decodeUnknownBinary(data []byte) any {
+	if len(data) >= 4 {
+		stripped := stripLengthPrefix(data)
+		if len(stripped) > 0 && looksLikeText(stripped) {
+			return parseUnknownText(string(stripped))
+		}
+	}
 	trimmed := stripTrailingNulls(data)
 	if len(trimmed) > 0 && looksLikeText(trimmed) {
 		return parseUnknownText(string(trimmed))
@@ -388,6 +404,9 @@ func parseUnknownText(text string) any {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return text
+	}
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		return parseArrayLiteral(trimmed)
 	}
 	lowered := strings.ToLower(trimmed)
 	if lowered == "true" {
@@ -414,6 +433,14 @@ func stripTrailingNulls(data []byte) []byte {
 		end--
 	}
 	return data[:end]
+}
+
+func toAnySlice[T any](values []T) []any {
+	out := make([]any, 0, len(values))
+	for _, v := range values {
+		out = append(out, v)
+	}
+	return out
 }
 
 func looksLikeText(data []byte) bool {

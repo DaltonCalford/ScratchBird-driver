@@ -402,6 +402,20 @@ bool matchPattern(const std::string& value, const std::string& pattern, bool met
     }
 }
 
+bool parseInt64(const std::string& value, int64_t& out);
+
+bool parseBoolValue(const std::string& value, bool default_value = false) {
+    if (value.empty()) {
+        return default_value;
+    }
+    int64_t numeric = 0;
+    if (parseInt64(value, numeric)) {
+        return numeric != 0;
+    }
+    std::string upper = toUpper(trimString(value));
+    return upper == "YES" || upper == "Y" || upper == "TRUE" || upper == "T";
+}
+
 bool isBinarySqlType(SQLSMALLINT type) {
     switch (type) {
         case SQL_BINARY:
@@ -441,6 +455,8 @@ constexpr SQLSMALLINT kOdbcFkSetNull = 2;
 constexpr SQLSMALLINT kOdbcFkNoAction = 3;
 constexpr SQLSMALLINT kOdbcFkSetDefault = 4;
 constexpr SQLSMALLINT kOdbcNotDeferrable = 7;
+constexpr SQLSMALLINT kOdbcInitiallyDeferred = 5;
+constexpr SQLSMALLINT kOdbcInitiallyImmediate = 6;
 
 bool parseInt64(const std::string& value, int64_t& out) {
     std::string trimmed = trimString(value);
@@ -532,6 +548,20 @@ SQLSMALLINT mapFkRuleToOdbc(const std::string& value) {
     if (upper == "SET DEFAULT" || upper == "SET_DEFAULT") return kOdbcFkSetDefault;
     if (upper == "NO ACTION" || upper == "NO_ACTION") return kOdbcFkNoAction;
     return kOdbcFkNoAction;
+}
+
+SQLSMALLINT mapDeferrabilityToOdbc(const std::string& value) {
+    std::string upper = toUpper(trimString(value));
+    if (upper == "INITIALLY DEFERRED" || upper == "DEFERRED") {
+        return kOdbcInitiallyDeferred;
+    }
+    if (upper == "INITIALLY IMMEDIATE" || upper == "IMMEDIATE") {
+        return kOdbcInitiallyImmediate;
+    }
+    if (upper == "NOT DEFERRABLE" || upper == "NOT_DEFERRABLE") {
+        return kOdbcNotDeferrable;
+    }
+    return kOdbcNotDeferrable;
 }
 
 bool parseDateYMD(const std::string& value, SQL_DATE_STRUCT& out) {
@@ -3339,17 +3369,21 @@ SQLRETURN OdbcStatement::tables(const SQLCHAR* catalog, SQLSMALLINT catalog_len,
     cols.push_back(makeCatalogColumn("REMARKS", SQL_VARCHAR, 255));
 
     const std::string& current_catalog = conn_->getCurrentDatabase();
-    const std::string& current_schema = conn_->getCurrentSchema();
 
-    if (!matchPattern(current_catalog, catalog_pattern, metadata_id) ||
-        !matchPattern(current_schema, schema_pattern, metadata_id)) {
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
         setCatalogResult(std::move(cols), {});
         return SQL_SUCCESS;
     }
 
     bool allow_table = true;
+    bool allow_view = true;
+    bool allow_system_table = true;
+    bool allow_system_view = true;
     if (!table_type_pattern.empty()) {
         allow_table = false;
+        allow_view = false;
+        allow_system_table = false;
+        allow_system_view = false;
         std::string upper = toUpper(table_type_pattern);
         std::stringstream ss(upper);
         std::string token;
@@ -3360,39 +3394,78 @@ SQLRETURN OdbcStatement::tables(const SQLCHAR* catalog, SQLSMALLINT catalog_len,
             }
             if (token == "TABLE") {
                 allow_table = true;
-                break;
+            } else if (token == "VIEW") {
+                allow_view = true;
+            } else if (token == "SYSTEM VIEW") {
+                allow_system_view = true;
+            } else if (token == "SYSTEM TABLE") {
+                allow_system_table = true;
+            } else if (token == "SYSTEM") {
+                allow_system_table = true;
+                allow_system_view = true;
             }
         }
     }
 
-    if (!allow_table) {
+    if (!allow_table && !allow_view && !allow_system_table && !allow_system_view) {
         setCatalogResult(std::move(cols), {});
         return SQL_SUCCESS;
     }
 
-    std::vector<std::vector<std::string>> show_rows;
-    std::vector<ColumnMetadata> show_cols;
+    std::vector<std::vector<std::string>> table_rows;
+    std::vector<ColumnMetadata> table_cols;
     SQLLEN rows_affected = 0;
-    auto status = conn_->executeSQL("SHOW TABLES", show_rows, show_cols, rows_affected);
+    auto status = conn_->executeSQL(
+        "SELECT t.table_name, s.schema_name, t.table_type "
+        "FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE t.is_valid = 1 AND s.is_valid = 1",
+        table_rows, table_cols, rows_affected);
     if (status != SQL_SUCCESS) {
         setError("HY000", 0, "Failed to query tables");
         return status;
     }
 
     std::vector<std::vector<std::string>> rows;
-    for (const auto& row : show_rows) {
-        if (row.empty()) {
+    for (const auto& row : table_rows) {
+        if (row.size() < 3) {
             continue;
         }
         const std::string& table_name = row[0];
-        if (!matchPattern(table_name, table_pattern, metadata_id)) {
+        const std::string& schema_name = row[1];
+        std::string table_type_value = toUpper(trimString(row[2]));
+        if (table_type_value.empty()) {
+            table_type_value = "TABLE";
+        }
+        if (table_type_value == "VIEW" && toUpper(schema_name) == "SYS") {
+            table_type_value = "SYSTEM VIEW";
+        }
+
+        if (!matchPattern(schema_name, schema_pattern, metadata_id) ||
+            !matchPattern(table_name, table_pattern, metadata_id)) {
             continue;
         }
+
+        bool allowed = false;
+        if (table_type_value == "TABLE") {
+            allowed = allow_table;
+        } else if (table_type_value == "VIEW") {
+            allowed = allow_view;
+        } else if (table_type_value == "SYSTEM TABLE") {
+            allowed = allow_system_table;
+        } else if (table_type_value == "SYSTEM VIEW") {
+            allowed = allow_system_view;
+        } else {
+            allowed = allow_table;
+        }
+        if (!allowed) {
+            continue;
+        }
+
         rows.push_back({
             current_catalog,
-            current_schema,
+            schema_name,
             table_name,
-            "TABLE",
+            table_type_value,
             ""
         });
     }
@@ -3439,87 +3512,84 @@ SQLRETURN OdbcStatement::columns(const SQLCHAR* catalog, SQLSMALLINT catalog_len
     cols.push_back(makeCatalogColumn("IS_NULLABLE", SQL_VARCHAR, 3));
 
     const std::string& current_catalog = conn_->getCurrentDatabase();
-    const std::string& current_schema = conn_->getCurrentSchema();
 
-    if (!matchPattern(current_catalog, catalog_pattern, metadata_id) ||
-        !matchPattern(current_schema, schema_pattern, metadata_id)) {
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
         setCatalogResult(std::move(cols), {});
         return SQL_SUCCESS;
     }
 
-    std::vector<std::vector<std::string>> show_tables;
-    std::vector<ColumnMetadata> show_table_cols;
+    std::vector<std::vector<std::string>> column_rows;
+    std::vector<ColumnMetadata> column_cols;
     SQLLEN rows_affected = 0;
-    auto status = conn_->executeSQL("SHOW TABLES", show_tables, show_table_cols, rows_affected);
+    auto status = conn_->executeSQL(
+        "SELECT c.column_name, t.table_name, s.schema_name, c.data_type_name, "
+        "c.ordinal_position, c.is_nullable, c.default_value "
+        "FROM sys.columns c "
+        "JOIN sys.tables t ON t.table_id = c.table_id "
+        "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE c.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1",
+        column_rows, column_cols, rows_affected);
     if (status != SQL_SUCCESS) {
-        setError("HY000", 0, "Failed to query tables");
+        setError("HY000", 0, "Failed to query columns");
         return status;
     }
 
     std::vector<std::vector<std::string>> rows;
-    for (const auto& table_row : show_tables) {
-        if (table_row.empty()) {
-            continue;
-        }
-        const std::string& table_name = table_row[0];
-        if (!matchPattern(table_name, table_pattern, metadata_id)) {
+    for (const auto& col_row : column_rows) {
+        if (col_row.size() < 7) {
             continue;
         }
 
-        std::vector<std::vector<std::string>> show_columns;
-        std::vector<ColumnMetadata> show_column_cols;
-        status = conn_->executeSQL("SHOW COLUMNS FROM " + table_name, show_columns,
-                                   show_column_cols, rows_affected);
-        if (status != SQL_SUCCESS) {
-            setError("HY000", 0, "Failed to query columns");
-            return status;
+        const std::string& column_name = col_row[0];
+        const std::string& table_name = col_row[1];
+        const std::string& schema_name = col_row[2];
+        std::string ordinal_text = col_row[4];
+        std::string nullable_text = col_row[5];
+        std::string default_value = col_row[6];
+
+        if (!matchPattern(schema_name, schema_pattern, metadata_id) ||
+            !matchPattern(table_name, table_pattern, metadata_id) ||
+            !matchPattern(column_name, column_pattern, metadata_id)) {
+            continue;
         }
 
-        SQLINTEGER ordinal = 1;
-        for (const auto& col_row : show_columns) {
-            if (col_row.size() < 6) {
-                continue;
-            }
-            const std::string& column_name = col_row[0];
-            if (!matchPattern(column_name, column_pattern, metadata_id)) {
-                ordinal++;
-                continue;
-            }
-
-            ParsedTypeInfo type_info = parseTypeString(col_row[1]);
-            std::string null_str = toUpper(trimString(col_row[2]));
-            bool nullable = (null_str == "YES");
-            std::string default_value = col_row[4];
-
-            std::string column_size = type_info.column_size > 0 ? std::to_string(type_info.column_size) : "";
-            std::string decimal_digits = type_info.decimal_digits > 0 ? std::to_string(type_info.decimal_digits) : "";
-            std::string radix = type_info.num_prec_radix > 0 ? std::to_string(type_info.num_prec_radix) : "";
-            std::string nullable_val = nullable ? std::to_string(SQL_NULLABLE) : std::to_string(SQL_NO_NULLS);
-            std::string char_octet = (isCharacterSqlType(type_info.sql_type) || isBinarySqlType(type_info.sql_type))
-                ? column_size : "";
-
-            rows.push_back({
-                current_catalog,
-                current_schema,
-                table_name,
-                column_name,
-                std::to_string(type_info.sql_type),
-                type_info.type_name,
-                column_size,
-                column_size,
-                decimal_digits,
-                radix,
-                nullable_val,
-                "",
-                default_value,
-                std::to_string(type_info.sql_type),
-                "",
-                char_octet,
-                std::to_string(ordinal),
-                nullable ? "YES" : "NO"
-            });
-            ordinal++;
+        std::string base_type = trimString(col_row[3]);
+        if (base_type.empty()) {
+            base_type = "UNKNOWN";
         }
+        std::string upper_base = toUpper(base_type);
+
+        ParsedTypeInfo type_info = parseTypeString(upper_base);
+        type_info.type_name = upper_base;
+
+        std::string column_size = type_info.column_size > 0 ? std::to_string(type_info.column_size) : "";
+        std::string decimal_digits = type_info.decimal_digits > 0 ? std::to_string(type_info.decimal_digits) : "";
+        std::string radix = type_info.num_prec_radix > 0 ? std::to_string(type_info.num_prec_radix) : "";
+        bool nullable = parseBoolValue(nullable_text, true);
+        std::string nullable_val = nullable ? std::to_string(SQL_NULLABLE) : std::to_string(SQL_NO_NULLS);
+        std::string char_octet = (isCharacterSqlType(type_info.sql_type) || isBinarySqlType(type_info.sql_type))
+            ? column_size : "";
+
+        rows.push_back({
+            current_catalog,
+            schema_name,
+            table_name,
+            column_name,
+            std::to_string(type_info.sql_type),
+            type_info.type_name,
+            column_size,
+            column_size,
+            decimal_digits,
+            radix,
+            nullable_val,
+            "",
+            default_value,
+            std::to_string(type_info.sql_type),
+            "",
+            char_octet,
+            ordinal_text,
+            nullable ? "YES" : "NO"
+        });
     }
 
     setCatalogResult(std::move(cols), std::move(rows));
@@ -3550,61 +3620,57 @@ SQLRETURN OdbcStatement::primaryKeys(const SQLCHAR* catalog, SQLSMALLINT catalog
     cols.push_back(makeCatalogColumn("PK_NAME", SQL_VARCHAR, 64));
 
     const std::string& current_catalog = conn_->getCurrentDatabase();
-    const std::string& current_schema = conn_->getCurrentSchema();
 
-    if (!matchPattern(current_catalog, catalog_pattern, metadata_id) ||
-        !matchPattern(current_schema, schema_pattern, metadata_id)) {
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
         setCatalogResult(std::move(cols), {});
         return SQL_SUCCESS;
     }
 
-    std::vector<std::vector<std::string>> show_tables;
-    std::vector<ColumnMetadata> show_table_cols;
+    std::vector<std::vector<std::string>> pk_rows;
+    std::vector<ColumnMetadata> pk_cols;
     SQLLEN rows_affected = 0;
-    auto status = conn_->executeSQL("SHOW TABLES", show_tables, show_table_cols, rows_affected);
+    auto status = conn_->executeSQL(
+        "SELECT tc.table_schema, tc.table_name, kcu.column_name, "
+        "kcu.ordinal_position, tc.constraint_name "
+        "FROM information_schema.table_constraints tc "
+        "JOIN information_schema.key_column_usage kcu "
+        "  ON tc.constraint_name = kcu.constraint_name "
+        " AND tc.table_schema = kcu.table_schema "
+        " AND tc.table_name = kcu.table_name "
+        "WHERE tc.constraint_type = 'PRIMARY KEY'",
+        pk_rows, pk_cols, rows_affected);
     if (status != SQL_SUCCESS) {
-        setError("HY000", 0, "Failed to query tables");
+        setError("HY000", 0, "Failed to query primary keys");
         return status;
     }
 
     std::vector<std::vector<std::string>> rows;
-    for (const auto& table_row : show_tables) {
-        if (table_row.empty()) {
+    for (const auto& row : pk_rows) {
+        if (row.size() < 5) {
             continue;
         }
-        const std::string& table_name = table_row[0];
-        if (!matchPattern(table_name, table_pattern, metadata_id)) {
+        const std::string& schema_name = row[0];
+        const std::string& table_name = row[1];
+        const std::string& column_name = row[2];
+        const std::string& key_seq = row[3];
+        std::string pk_name = row[4];
+
+        if (!matchPattern(schema_name, schema_pattern, metadata_id) ||
+            !matchPattern(table_name, table_pattern, metadata_id)) {
             continue;
         }
 
-        std::vector<std::vector<std::string>> show_columns;
-        std::vector<ColumnMetadata> show_column_cols;
-        status = conn_->executeSQL("SHOW COLUMNS FROM " + table_name, show_columns,
-                                   show_column_cols, rows_affected);
-        if (status != SQL_SUCCESS) {
-            setError("HY000", 0, "Failed to query columns");
-            return status;
+        if (pk_name.empty()) {
+            pk_name = "PRIMARY";
         }
-
-        SQLSMALLINT key_seq = 1;
-        for (const auto& col_row : show_columns) {
-            if (col_row.size() < 4) {
-                continue;
-            }
-            std::string key_flag = toUpper(trimString(col_row[3]));
-            if (key_flag != "PRI") {
-                continue;
-            }
-            rows.push_back({
-                current_catalog,
-                current_schema,
-                table_name,
-                col_row[0],
-                std::to_string(key_seq),
-                "PRIMARY"
-            });
-            key_seq++;
-        }
+        rows.push_back({
+            current_catalog,
+            schema_name,
+            table_name,
+            column_name,
+            key_seq,
+            pk_name
+        });
     }
 
     setCatalogResult(std::move(cols), std::move(rows));
@@ -3649,7 +3715,6 @@ SQLRETURN OdbcStatement::foreignKeys(const SQLCHAR* pk_catalog, SQLSMALLINT pk_c
     cols.push_back(makeCatalogColumn("DEFERRABILITY", SQL_SMALLINT));
 
     const std::string& current_catalog = conn_->getCurrentDatabase();
-    const std::string& current_schema = conn_->getCurrentSchema();
 
     if (!matchPattern(current_catalog, pk_catalog_pattern, metadata_id) ||
         !matchPattern(current_catalog, fk_catalog_pattern, metadata_id)) {
@@ -3657,108 +3722,53 @@ SQLRETURN OdbcStatement::foreignKeys(const SQLCHAR* pk_catalog, SQLSMALLINT pk_c
         return SQL_SUCCESS;
     }
 
-    std::vector<std::vector<std::string>> schema_rows;
-    std::vector<ColumnMetadata> schema_cols;
-    std::vector<std::vector<std::string>> table_rows;
-    std::vector<ColumnMetadata> table_cols;
     std::vector<std::vector<std::string>> fk_rows;
     std::vector<ColumnMetadata> fk_cols;
     SQLLEN rows_affected = 0;
 
-    SQLRETURN status = executeCatalogQuery(conn_, {
-        "SELECT schema_id, schema_name FROM sb_catalog.sb_schemas",
-        "SELECT schema_id, name FROM sb_catalog.sb_schemas",
-        "SELECT schema_id, schema_name FROM sb_schemas",
-        "SELECT schema_id, name FROM sb_schemas"
-    }, schema_rows, schema_cols, rows_affected);
-    if (status != SQL_SUCCESS) {
-        setError("HY000", 0, "Failed to query schemas");
-        return status;
-    }
-
-    status = executeCatalogQuery(conn_, {
-        "SELECT table_id, schema_id, table_name FROM sb_catalog.sb_tables",
-        "SELECT table_id, schema_id, name FROM sb_catalog.sb_tables",
-        "SELECT table_id, schema_id, table_name FROM sb_tables",
-        "SELECT table_id, schema_id, name FROM sb_tables"
-    }, table_rows, table_cols, rows_affected);
-    if (status != SQL_SUCCESS) {
-        setError("HY000", 0, "Failed to query tables");
-        return status;
-    }
-
-    status = executeCatalogQuery(conn_, {
-        "SELECT fk_name, child_table_id, parent_table_id, child_columns, parent_columns, on_update, on_delete, match_type, is_enabled "
-        "FROM sb_catalog.sb_foreign_keys",
-        "SELECT name, child_table_id, parent_table_id, child_columns, parent_columns, on_update, on_delete, match_type, is_enabled "
-        "FROM sb_catalog.sb_foreign_keys",
-        "SELECT fk_name, child_table_id, parent_table_id, child_columns, parent_columns, on_update, on_delete, match_type, is_enabled "
-        "FROM sb_foreign_keys",
-        "SELECT name, child_table_id, parent_table_id, child_columns, parent_columns, on_update, on_delete, match_type, is_enabled "
-        "FROM sb_foreign_keys"
-    }, fk_rows, fk_cols, rows_affected);
+    SQLRETURN status = conn_->executeSQL(
+        "SELECT tc.table_schema AS fk_schema, tc.table_name AS fk_table, "
+        "kcu.column_name AS fk_column, ccu.table_schema AS pk_schema, "
+        "ccu.table_name AS pk_table, ccu.column_name AS pk_column, "
+        "kcu.ordinal_position AS key_seq, rc.update_rule, rc.delete_rule, "
+        "tc.constraint_name AS fk_name, rc.unique_constraint_name AS pk_name, "
+        "rc.deferrable AS deferrable "
+        "FROM information_schema.table_constraints tc "
+        "JOIN information_schema.key_column_usage kcu "
+        "  ON tc.constraint_name = kcu.constraint_name "
+        " AND tc.table_schema = kcu.table_schema "
+        " AND tc.table_name = kcu.table_name "
+        "JOIN information_schema.constraint_column_usage ccu "
+        "  ON ccu.constraint_name = tc.constraint_name "
+        " AND ccu.constraint_schema = tc.table_schema "
+        "LEFT JOIN information_schema.referential_constraints rc "
+        "  ON rc.constraint_name = tc.constraint_name "
+        " AND rc.constraint_schema = tc.table_schema "
+        "WHERE tc.constraint_type = 'FOREIGN KEY'",
+        fk_rows, fk_cols, rows_affected);
     if (status != SQL_SUCCESS) {
         setError("HY000", 0, "Failed to query foreign keys");
         return status;
     }
 
-    struct TableLookup {
-        std::string name;
-        std::string schema_id;
-    };
-
-    std::unordered_map<std::string, std::string> schema_by_id;
-    schema_by_id.reserve(schema_rows.size());
-    for (const auto& row : schema_rows) {
-        if (row.size() < 2) {
-            continue;
-        }
-        schema_by_id[row[0]] = row[1];
-    }
-
-    std::unordered_map<std::string, TableLookup> table_by_id;
-    table_by_id.reserve(table_rows.size());
-    for (const auto& row : table_rows) {
-        if (row.size() < 3) {
-            continue;
-        }
-        table_by_id[row[0]] = {row[2], row[1]};
-    }
-
     std::vector<std::vector<std::string>> rows;
     for (const auto& fk_row : fk_rows) {
-        if (fk_row.size() < 9) {
+        if (fk_row.size() < 12) {
             continue;
         }
 
-        const std::string& fk_name = fk_row[0];
-        const std::string& child_table_id = fk_row[1];
-        const std::string& parent_table_id = fk_row[2];
-        const std::string& child_columns = fk_row[3];
-        const std::string& parent_columns = fk_row[4];
-        const std::string& on_update = fk_row[5];
-        const std::string& on_delete = fk_row[6];
-
-        auto child_it = table_by_id.find(child_table_id);
-        auto parent_it = table_by_id.find(parent_table_id);
-        if (child_it == table_by_id.end() || parent_it == table_by_id.end()) {
-            continue;
-        }
-
-        const std::string& fk_table_name = child_it->second.name;
-        const std::string& pk_table_name = parent_it->second.name;
-        std::string fk_schema_name = current_schema;
-        std::string pk_schema_name = current_schema;
-
-        auto fk_schema_it = schema_by_id.find(child_it->second.schema_id);
-        if (fk_schema_it != schema_by_id.end()) {
-            fk_schema_name = fk_schema_it->second;
-        }
-
-        auto pk_schema_it = schema_by_id.find(parent_it->second.schema_id);
-        if (pk_schema_it != schema_by_id.end()) {
-            pk_schema_name = pk_schema_it->second;
-        }
+        const std::string& fk_schema_name = fk_row[0];
+        const std::string& fk_table_name = fk_row[1];
+        const std::string& fk_column_name = fk_row[2];
+        const std::string& pk_schema_name = fk_row[3];
+        const std::string& pk_table_name = fk_row[4];
+        const std::string& pk_column_name = fk_row[5];
+        const std::string& key_seq = fk_row[6];
+        const std::string& on_update = fk_row[7];
+        const std::string& on_delete = fk_row[8];
+        const std::string& fk_name = fk_row[9];
+        const std::string& pk_name = fk_row[10];
+        const std::string& deferrable = fk_row[11];
 
         if (!matchPattern(pk_schema_name, pk_schema_pattern, metadata_id) ||
             !matchPattern(fk_schema_name, fk_schema_pattern, metadata_id)) {
@@ -3769,30 +3779,26 @@ SQLRETURN OdbcStatement::foreignKeys(const SQLCHAR* pk_catalog, SQLSMALLINT pk_c
             continue;
         }
 
-        std::vector<std::string> fk_column_names = splitCsvColumns(child_columns);
-        std::vector<std::string> pk_column_names = splitCsvColumns(parent_columns);
-        size_t count = std::min(fk_column_names.size(), pk_column_names.size());
         SQLSMALLINT update_rule = mapFkRuleToOdbc(on_update);
         SQLSMALLINT delete_rule = mapFkRuleToOdbc(on_delete);
+        SQLSMALLINT deferrability = mapDeferrabilityToOdbc(deferrable);
 
-        for (size_t i = 0; i < count; ++i) {
-            rows.push_back({
-                current_catalog,
-                pk_schema_name,
-                pk_table_name,
-                pk_column_names[i],
-                current_catalog,
-                fk_schema_name,
-                fk_table_name,
-                fk_column_names[i],
-                std::to_string(static_cast<int>(i + 1)),
-                std::to_string(update_rule),
-                std::to_string(delete_rule),
-                fk_name,
-                "PRIMARY",
-                std::to_string(kOdbcNotDeferrable)
-            });
-        }
+        rows.push_back({
+            current_catalog,
+            pk_schema_name,
+            pk_table_name,
+            pk_column_name,
+            current_catalog,
+            fk_schema_name,
+            fk_table_name,
+            fk_column_name,
+            key_seq,
+            std::to_string(update_rule),
+            std::to_string(delete_rule),
+            fk_name,
+            pk_name,
+            std::to_string(deferrability)
+        });
     }
 
     setCatalogResult(std::move(cols), std::move(rows));
@@ -3831,72 +3837,86 @@ SQLRETURN OdbcStatement::statistics(const SQLCHAR* catalog, SQLSMALLINT catalog_
     cols.push_back(makeCatalogColumn("FILTER_CONDITION", SQL_VARCHAR, 255));
 
     const std::string& current_catalog = conn_->getCurrentDatabase();
-    const std::string& current_schema = conn_->getCurrentSchema();
 
-    if (!matchPattern(current_catalog, catalog_pattern, metadata_id) ||
-        !matchPattern(current_schema, schema_pattern, metadata_id)) {
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
         setCatalogResult(std::move(cols), {});
         return SQL_SUCCESS;
     }
 
-    std::vector<std::vector<std::string>> show_tables;
-    std::vector<ColumnMetadata> show_table_cols;
+    std::vector<std::vector<std::string>> index_rows;
+    std::vector<ColumnMetadata> index_cols;
     SQLLEN rows_affected = 0;
-    auto status = conn_->executeSQL("SHOW TABLES", show_tables, show_table_cols, rows_affected);
+    auto status = conn_->executeSQL(
+        "SELECT s.schema_name, t.table_name, i.index_name, i.is_unique, "
+        "ic.ordinal_position, ic.column_name, ic.is_included "
+        "FROM sys.indexes i "
+        "JOIN sys.index_columns ic ON ic.index_id = i.index_id "
+        "JOIN sys.tables t ON t.table_id = i.table_id "
+        "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1",
+        index_rows, index_cols, rows_affected);
     if (status != SQL_SUCCESS) {
-        setError("HY000", 0, "Failed to query tables");
+        setError("HY000", 0, "Failed to query indexes");
         return status;
     }
 
+    bool require_unique = (unique == SQL_INDEX_UNIQUE);
+    std::unordered_map<std::string, SQLSMALLINT> ordinal_map;
+
     std::vector<std::vector<std::string>> rows;
-    for (const auto& table_row : show_tables) {
-        if (table_row.empty()) {
-            continue;
-        }
-        const std::string& table_name = table_row[0];
-        if (!matchPattern(table_name, table_pattern, metadata_id)) {
+    for (const auto& idx_row : index_rows) {
+        if (idx_row.size() < 7) {
             continue;
         }
 
-        std::vector<std::vector<std::string>> show_indexes;
-        std::vector<ColumnMetadata> show_index_cols;
-        status = conn_->executeSQL("SHOW INDEXES FROM " + table_name, show_indexes,
-                                   show_index_cols, rows_affected);
-        if (status != SQL_SUCCESS) {
-            setError("HY000", 0, "Failed to query indexes");
-            return status;
+        const std::string& schema_name = idx_row[0];
+        const std::string& table_name = idx_row[1];
+        const std::string& index_name = idx_row[2];
+        bool is_unique = parseBoolValue(idx_row[3]);
+        std::string ordinal_text = idx_row[4];
+        std::string column_name = idx_row[5];
+        bool is_included = parseBoolValue(idx_row[6]);
+
+        if (!matchPattern(schema_name, schema_pattern, metadata_id) ||
+            !matchPattern(table_name, table_pattern, metadata_id)) {
+            continue;
         }
 
-        std::unordered_map<std::string, SQLSMALLINT> ordinal_map;
-        for (const auto& idx_row : show_indexes) {
-            if (idx_row.size() < 4) {
-                continue;
+        if (require_unique && !is_unique) {
+            continue;
+        }
+        if (is_included) {
+            continue;
+        }
+
+        SQLSMALLINT ordinal = 0;
+        if (!ordinal_text.empty()) {
+            int64_t parsed = 0;
+            if (parseInt64(ordinal_text, parsed) && parsed > 0) {
+                ordinal = static_cast<SQLSMALLINT>(parsed);
             }
-
-            const std::string& non_unique = idx_row[1];
-            const std::string& index_name = idx_row[2];
-            const std::string& column_name = idx_row[3];
-
-            (void)unique;
-            (void)reserved;
-
-            SQLSMALLINT ordinal = ++ordinal_map[index_name];
-            rows.push_back({
-                current_catalog,
-                current_schema,
-                table_name,
-                non_unique,
-                "",
-                index_name,
-                "3",
-                std::to_string(ordinal),
-                column_name,
-                "",
-                "",
-                "",
-                ""
-            });
         }
+        if (ordinal == 0) {
+            ordinal = ++ordinal_map[index_name];
+        }
+
+        (void)reserved;
+
+        rows.push_back({
+            current_catalog,
+            schema_name,
+            table_name,
+            is_unique ? "0" : "1",
+            current_catalog,
+            index_name,
+            std::to_string(SQL_INDEX_OTHER),
+            std::to_string(ordinal),
+            column_name,
+            "",
+            "",
+            "",
+            ""
+        });
     }
 
     setCatalogResult(std::move(cols), std::move(rows));

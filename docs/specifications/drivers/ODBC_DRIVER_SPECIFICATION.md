@@ -10,6 +10,21 @@ The ScratchBird ODBC driver provides standard ODBC connectivity for:
 
 **Scope Note:** MSSQL external connectivity is post-gold; MSSQL examples are forward-looking.
 
+### 1.1.1 ScratchBird-driver Alignment (SBWP v1.1)
+
+The ODBC driver in this repository is a native SBWP v1.1 client. The following
+requirements supersede generic ODBC guidance where they conflict:
+
+- **Native SBWP only** (no PostgreSQL/MySQL/Firebird protocol modes).
+- **TLS 1.3 required**; `SSLMode=disable` must be rejected.
+- **Binary-only**: `BinaryTransfer=false` must be rejected (SQLSTATE 0A000).
+- **Compression**: `Compression=zstd` must be rejected until server support is enabled.
+- **SET_OPTION**: if the client exposes driver attributes for server options, they must
+  be forwarded via the SBWP `SET_OPTION` message.
+- **Notifications**: if exposed, must map to SBWP SUBSCRIBE/UNSUBSCRIBE.
+- **Query plan/SBLR compiled**: if server sends these frames, the driver should
+  retain last payload for diagnostics.
+
 ### 1.2 ODBC Version
 
 - **ODBC 3.8** compliance (with ODBC 3.52 backwards compatibility)
@@ -28,7 +43,7 @@ The ScratchBird ODBC driver provides standard ODBC connectivity for:
 
 - Core/Basic ODBC only (API Level 1, SQL Core, SQL-92 Entry).
 - SQLBrowseConnect is not supported (returns HYC00).
-- SQLCancel is not supported (returns HYC00).
+- SQLCancel is supported in native SBWP mode (CANCEL message).
 - Multiple result sets are not supported (SQLMoreResults returns SQL_NO_DATA).
 - Positioned updates and bulk operations are not supported (SQLSetPos/SQLBulkOperations return HYC00).
 - Descriptor handles are not exposed (SQL_ATTR_IMP_ROW_DESC / SQL_ATTR_IMP_PARAM_DESC return NULL).

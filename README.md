@@ -2,7 +2,7 @@
 
 Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
 
-**Status:** Release prep (SBWP v1.1 baseline across drivers + CLI; conformance in progress)
+**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo and C++ type coverage remain partial.
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 
 ---
@@ -18,8 +18,8 @@ own native client drivers against ScratchBird's emulation listeners.
 
 | Driver | Directory | Status | Packaging |
 |--------|-----------|--------|-----------|
-| **C/C++ (libscratchbird_client)** | `cpp/` | Implemented (SBWP v1.1 baseline) | CMake |
-| **ODBC 3.8** | `odbc/` | Implemented (SBWP v1.1 baseline) | CMake |
+| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage partial | CMake |
+| **ODBC 3.8** | `odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
 | **Go** | `go/` | Implemented (SBWP v1.1 baseline) | `go get` |
 | **Python** | `python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
 | **Node.js** | `node/` | Implemented (SBWP v1.1 baseline) | npm |
@@ -30,10 +30,10 @@ own native client drivers against ScratchBird's emulation listeners.
 | **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
 | **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
 | **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `elixir/` | Preview | Hex |
-| **Swift (Async/Await)** | `swift/` | Preview (TCP only) | SwiftPM |
-| **Dart** | `dart/` | Preview | pub.dev |
-| **Mojo** | `mojo/` | Preview (Python transport bridge) | - |
+| **Elixir (Ecto)** | `elixir/` | Partial (TLS optional, type coverage incomplete) | Hex |
+| **Swift (Async/Await)** | `swift/` | Partial (TCP only, type coverage incomplete) | SwiftPM |
+| **Dart** | `dart/` | Partial (TLS optional, type coverage incomplete) | pub.dev |
+| **Mojo** | `mojo/` | Bridge (Python driver) | - |
 
 ---
 
@@ -118,11 +118,10 @@ These are the required capabilities for all drivers in this repo:
 
 ### Current Implementation Notes
 
-- SBWP v1.1 baseline is implemented across native drivers; conformance is tracked in `docs/planning/`.
-- Binary-only mode is enforced; `binary_transfer=false` is rejected.
-- `compression=zstd` is intentionally disabled until server support exists.
-- Streaming/paging via `fetch_size` is supported where applicable.
-- JDBC/Superset/Metabase metadata uses `sys.*` views with safe fallbacks.
+- Core language drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC/ODBC) implement SBWP v1.1 baseline; conformance is tracked in `docs/planning/`.
+- Binary-only mode and `compression=zstd` rejection are enforced in core drivers, but not yet in Dart/Swift/Elixir/Mojo.
+- Streaming/paging via `fetch_size` is supported where applicable in core drivers.
+- ODBC metadata is aligned to sys.* and information_schema; Superset/Metabase still need updates to match finalized sys.columns/sys.index_columns schemas.
 
 Server-side feature backlog that unlocks optional driver capabilities:
 `docs/planning/DRIVER_SERVER_FEATURE_BACKLOG.md`.
@@ -177,6 +176,12 @@ ScratchBird-driver/
 ├── pascal/                 Pascal driver
 ├── dotnet/                 .NET driver
 ├── jdbc/                   JDBC driver (Java)
+├── dart/                   Dart driver
+├── swift/                  Swift driver
+├── elixir/                 Elixir Ecto adapter
+├── mojo/                   Mojo adapter
+├── scratchbird-superset-driver/   Superset dialect
+├── scratchbird-metabase-driver/   Metabase driver
 ├── CONTRIBUTING.md         Contribution guidelines
 ├── CHANGELOG.md            Version history
 └── LICENSE                 IDPL License

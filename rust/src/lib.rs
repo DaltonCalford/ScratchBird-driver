@@ -8,6 +8,7 @@
 mod client;
 mod config;
 mod errors;
+pub mod metadata;
 mod protocol;
 mod scram;
 pub mod sql;

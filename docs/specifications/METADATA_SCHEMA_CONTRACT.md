@@ -36,19 +36,24 @@ The queries below are the minimum baseline and should be treated as stable.
      FROM sys.tables WHERE is_valid = 1
 
 3. Columns
-   - SELECT column_id, table_id, column_name, data_type_id, ordinal_position,
-     is_nullable, default_value
+   - SELECT column_id, table_id, column_name, data_type_id, data_type_name,
+     ordinal_position, is_nullable, default_value, domain_id, collation_id,
+     charset_id, is_identity, is_generated, generation_expression
      FROM sys.columns WHERE is_valid = 1
 
 4. Indexes
    - SELECT index_id, table_id, index_name, index_type, is_unique
      FROM sys.indexes WHERE is_valid = 1
 
-5. Constraints
+5. Index Columns
+   - SELECT index_id, column_id, column_name, ordinal_position, is_included
+     FROM sys.index_columns
+
+6. Constraints
    - SELECT constraint_id, table_id, constraint_name, constraint_type
      FROM sys.constraints WHERE is_valid = 1
 
-6. Routines
+7. Routines
    - SELECT procedure_id, schema_id, procedure_name, routine_type
      FROM sys.procedures WHERE is_valid = 1
    - SELECT function_id, schema_id, function_name

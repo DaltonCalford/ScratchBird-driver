@@ -6,13 +6,13 @@ and the shared SBWP conformance fixtures.
 ## 1) Goal + Constraints (Spec: Goal, Constraints)
 
 - [ ] Confirm Mojo package layout: `scratchbird_mojo` with `scratchbird`, `scratchbird/protocol`, `scratchbird/transport`.
-- [ ] Document transport isolation boundaries for swapping TCP/TLS implementation later.
+- [x] Document transport isolation boundaries for swapping TCP/TLS implementation later (see `mojo/README.md`).
 - [ ] Remove Python transport dependency in runtime path.
 
 ## 2) Configuration + DSN (Spec: Configuration)
 
-- [ ] Implement DSN parser conforming to `DRIVER_DSN_AND_CONFIG_STANDARD.md`.
-- [ ] Enforce `binary_transfer=true`; reject `binary_transfer=false`.
+- [x] Implement DSN parser conforming to `DRIVER_DSN_AND_CONFIG_STANDARD.md` (delegates to Python driver parser).
+- [x] Enforce `binary_transfer=true`; reject `binary_transfer=false`.
 - [ ] Enforce TLS requirement; reject `sslmode=disable`.
 - [ ] Map config keys: host, port, database, user, password, sslmode, sslrootcert, sslcert, sslkey, sslpassword,
       connect_timeout_ms, socket_timeout_ms, application_name, search_path, role, compression, fetch_size.
@@ -27,8 +27,8 @@ and the shared SBWP conformance fixtures.
 
 ## 4) Transactions (Spec: Transactions)
 
-- [ ] Support BEGIN/COMMIT/ROLLBACK.
-- [ ] Support savepoints (savepoint/release/rollback-to).
+- [x] Support BEGIN/COMMIT/ROLLBACK (delegated to Python bridge).
+- [x] Support savepoints (savepoint/release/rollback-to) (delegated to Python bridge).
 - [ ] Support read-only and isolation options where provided.
 
 ## 5) Types + Wrappers (Spec: Type Mapping)
@@ -66,4 +66,3 @@ Use `docs/fixtures/sbwp_conformance_manifest.json` and fixtures:
 - [ ] `scratchbird_mojo` package with examples.
 - [ ] Integration tests gated by `SCRATCHBIRD_TEST_DSN`.
 - [ ] Update `mojo/README.md` to reflect native transport completion.
-
