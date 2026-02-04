@@ -7,3 +7,5 @@
 ## P2 (Follow-ups)
 
 - [x] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py`. Issue: TBD
+
+## P3 (Future)
