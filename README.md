@@ -2,7 +2,7 @@
 
 Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
 
-**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo and C++ type coverage remain partial.
+**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo remain partial. C++ type coverage expanded; tests pending.
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 
 ---
@@ -18,7 +18,7 @@ own native client drivers against ScratchBird's emulation listeners.
 
 | Driver | Directory | Status | Packaging |
 |--------|-----------|--------|-----------|
-| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage partial | CMake |
+| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage expanded (tests pending) | CMake |
 | **ODBC 3.8** | `odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
 | **Go** | `go/` | Implemented (SBWP v1.1 baseline) | `go get` |
 | **Python** | `python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
@@ -30,9 +30,9 @@ own native client drivers against ScratchBird's emulation listeners.
 | **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
 | **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
 | **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage incomplete) | Hex |
-| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage incomplete) | SwiftPM |
-| **Dart** | `dart/` | Partial (TLS required, type coverage incomplete) | pub.dev |
+| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage expanded, tests pending) | Hex |
+| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage expanded, tests pending) | SwiftPM |
+| **Dart** | `dart/` | Partial (TLS required, type coverage expanded, tests pending) | pub.dev |
 | **Mojo** | `mojo/` | Bridge (TLS required, type coverage incomplete) | - |
 
 ---
@@ -102,7 +102,7 @@ See individual driver directories for complete documentation and examples.
 ## Build Matrix (Windows/Linux)
 
 Cross-platform build and test commands are captured in:
-- `docs/BUILD_MATRIX.md` (required tools + build/test matrix)
+- `docs/BUILD_MATRIX.md` (required tools + build/test matrix, Ubuntu 24.04 quick-install)
 
 ---
 
@@ -120,6 +120,8 @@ These are the required capabilities for all drivers in this repo:
 
 - Core language drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC/ODBC) implement SBWP v1.1 baseline; conformance is tracked in `docs/planning/`.
 - Binary-only mode and `compression=zstd` rejection are enforced in core drivers and Dart/Swift/Elixir/Mojo.
+- C++ type matrix coverage is expanded; conformance tests still pending.
+- Dart/Swift/Elixir type coverage expanded (arrays/composite/range/vector/inet/cidr/macaddr) and metadata helpers added; conformance tests still pending.
 - Streaming/paging via `fetch_size` is supported where applicable in core drivers.
 - ODBC metadata is aligned to sys.* and information_schema; Superset/Metabase still need updates to match finalized sys.columns/sys.index_columns schemas.
 

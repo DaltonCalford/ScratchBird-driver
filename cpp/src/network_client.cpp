@@ -585,6 +585,25 @@ void NetworkPreparedStatement::setBytes(size_t index, const uint8_t* data, size_
     param_type_oids_[index - 1] = protocol::kOidBytea;
 }
 
+void NetworkPreparedStatement::setBinary(size_t index, const uint8_t* data, size_t length, uint32_t type_oid, bool length_prefixed) {
+    if (index == 0) {
+        return;
+    }
+    if (params_.size() < index) {
+        params_.resize(index);
+        param_type_oids_.resize(index);
+    }
+    std::vector<uint8_t> bytes;
+    if (data && length > 0) {
+        bytes.assign(data, data + length);
+    }
+    params_[index - 1].is_null = false;
+    params_[index - 1].format = protocol::kFormatBinary;
+    params_[index - 1].type_oid = type_oid;
+    params_[index - 1].data = length_prefixed ? encodeLengthPrefixed(bytes) : bytes;
+    param_type_oids_[index - 1] = type_oid;
+}
+
 void NetworkPreparedStatement::setTimestamp(size_t index, int64_t microseconds) {
     if (index == 0) {
         return;

@@ -11,3 +11,4 @@ library scratchbird;
 export 'src/client.dart';
 export 'src/config.dart';
 export 'src/types.dart';
+export 'src/metadata.dart';

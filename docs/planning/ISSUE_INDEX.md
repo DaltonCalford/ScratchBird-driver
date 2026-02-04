@@ -4,31 +4,31 @@ Map checklist items to issue IDs once created.
 
 - [cli.md] Validate `sb_isql` against SBWP v1.1 conformance harness in `cli/sb_isql.cpp` -> TBD
 - [cli.md] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md` -> TBD
-- [cpp.md] Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `cpp/include/scratchbird/client/scratchbird_client.h` -> TBD
-- [cpp.md] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/` -> TBD
+- [cpp.md] Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `cpp/include/scratchbird/client/scratchbird_client.h` -> DONE (2026-02-04)
+- [cpp.md] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/` -> DONE (2026-02-04)
 - [cpp.md] Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp` -> TBD
-- [cpp.md] Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/` -> TBD
+- [cpp.md] Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/` -> DONE (2026-02-04)
 - [cpp.md] Add conformance tests for type mapping and paging in `cpp/tests/` -> TBD
-- [dart.md] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart` -> TBD
-- [dart.md] Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart` -> TBD
-- [dart.md] Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart` -> TBD
-- [dart.md] Add array encoding/decoding in `dart/lib/src/types.dart` -> TBD
-- [dart.md] Add composite encoding/decoding in `dart/lib/src/types.dart` -> TBD
-- [dart.md] Add vector literal encode/decode in `dart/lib/src/types.dart` -> TBD
-- [dart.md] Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart` -> TBD
-- [dart.md] Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart` -> TBD
+- [dart.md] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart` -> DONE (2026-02-04)
+- [dart.md] Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart` -> DONE (2026-02-04)
+- [dart.md] Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart` -> DONE (2026-02-04)
+- [dart.md] Add array encoding/decoding in `dart/lib/src/types.dart` -> DONE (2026-02-04)
+- [dart.md] Add composite encoding/decoding in `dart/lib/src/types.dart` -> DONE (2026-02-04)
+- [dart.md] Add vector literal encode/decode in `dart/lib/src/types.dart` -> DONE (2026-02-04)
+- [dart.md] Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart` -> DONE (2026-02-04)
+- [dart.md] Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart` -> DONE (2026-02-04)
 - [dart.md] Add conformance/integration tests in `dart/test/` -> TBD
 - [dotnet.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `dotnet/src/ScratchBird.Data/Errors.cs` -> TBD
 - [dotnet.md] Add conformance tests for full type matrix in `dotnet/tests/` -> TBD
-- [elixir.md] Enforce TLS required (reject `sslmode=disable`) in `elixir/lib/scratchbird/connection.ex` -> TBD
-- [elixir.md] Enforce binary-only (reject `binary_transfer=false`) in `elixir/lib/scratchbird/connection.ex` -> TBD
-- [elixir.md] Reject `compression=zstd` until server support exists in `elixir/lib/scratchbird/connection.ex` -> TBD
-- [elixir.md] Add array encoding/decoding in `elixir/lib/scratchbird/types.ex` -> TBD
-- [elixir.md] Add composite encoding/decoding in `elixir/lib/scratchbird/types.ex` -> TBD
-- [elixir.md] Add vector literal encode/decode in `elixir/lib/scratchbird/types.ex` -> TBD
-- [elixir.md] Add inet/cidr/macaddr encode/decode in `elixir/lib/scratchbird/types.ex` -> TBD
-- [elixir.md] Add sys.* metadata helpers in `elixir/lib/scratchbird/metadata.ex` and export from `elixir/lib/scratchbird.ex` -> TBD
-- [elixir.md] Add SQLSTATE class-prefix mapping in `elixir/lib/scratchbird/errors.ex` -> TBD
+- [elixir.md] Enforce TLS required (reject `sslmode=disable`) in `elixir/lib/scratchbird/connection.ex` -> DONE (2026-02-04)
+- [elixir.md] Enforce binary-only (reject `binary_transfer=false`) in `elixir/lib/scratchbird/connection.ex` -> DONE (2026-02-04)
+- [elixir.md] Reject `compression=zstd` until server support exists in `elixir/lib/scratchbird/connection.ex` -> DONE (2026-02-04)
+- [elixir.md] Add array encoding/decoding in `elixir/lib/scratchbird/types.ex` -> DONE (2026-02-04)
+- [elixir.md] Add composite encoding/decoding in `elixir/lib/scratchbird/types.ex` -> DONE (2026-02-04)
+- [elixir.md] Add vector literal encode/decode in `elixir/lib/scratchbird/types.ex` -> DONE (2026-02-04)
+- [elixir.md] Add inet/cidr/macaddr encode/decode in `elixir/lib/scratchbird/types.ex` -> DONE (2026-02-04)
+- [elixir.md] Add sys.* metadata helpers in `elixir/lib/scratchbird/metadata.ex` and export from `elixir/lib/scratchbird.ex` -> DONE (2026-02-04)
+- [elixir.md] Add SQLSTATE class-prefix mapping in `elixir/lib/scratchbird/errors.ex` -> DONE (2026-02-04)
 - [elixir.md] Add conformance/integration tests in `elixir/test/` -> TBD
 - [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `go/errors.go` -> TBD
 - [go.md] Add conformance tests for full type matrix in `go/conformance/` -> TBD
@@ -41,7 +41,7 @@ Map checklist items to issue IDs once created.
 - [mojo.md] Reject `compression=zstd` until server support exists -> TBD
 - [mojo.md] Implement SBWP type encoding/decoding wrappers in `mojo/src/scratchbird.mojo` -> TBD
 - [mojo.md] Add array, composite, range, geometry, vector, inet/cidr/macaddr support -> TBD
-- [mojo.md] Add sys.* metadata helpers in `mojo/src/scratchbird.mojo` -> TBD
+- [mojo.md] Add sys.* metadata helpers in `mojo/src/scratchbird.mojo` -> DONE (2026-02-04)
 - [mojo.md] Add conformance/integration tests -> TBD
 - [node.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `node/src/errors.ts` -> TBD
 - [node.md] Add conformance tests for full type matrix in `node/test/` -> TBD
@@ -62,13 +62,13 @@ Map checklist items to issue IDs once created.
 - [rust.md] Add conformance tests for full type matrix in `rust/tests/` -> TBD
 - [superset.md] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> TBD
 - [superset.md] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> TBD
-- [swift.md] Implement TLS transport in `swift/Sources/ScratchBird/Socket.swift` -> TBD
-- [swift.md] Enforce binary-only (reject `binary_transfer=false`) in `swift/Sources/ScratchBird/Connection.swift` -> TBD
-- [swift.md] Reject `compression=zstd` until server support exists in `swift/Sources/ScratchBird/Connection.swift` -> TBD
-- [swift.md] Add array encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> TBD
-- [swift.md] Add composite encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> TBD
-- [swift.md] Add range encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> TBD
-- [swift.md] Add inet/cidr/macaddr encode/decode in `swift/Sources/ScratchBird/Types.swift` -> TBD
-- [swift.md] Add vector literal encode/decode in `swift/Sources/ScratchBird/Types.swift` -> TBD
-- [swift.md] Add sys.* metadata helpers in `swift/Sources/ScratchBird/Metadata.swift` -> TBD
+- [swift.md] Implement TLS transport in `swift/Sources/ScratchBird/Socket.swift` -> DONE (2026-02-04)
+- [swift.md] Enforce binary-only (reject `binary_transfer=false`) in `swift/Sources/ScratchBird/Connection.swift` -> DONE (2026-02-04)
+- [swift.md] Reject `compression=zstd` until server support exists in `swift/Sources/ScratchBird/Connection.swift` -> DONE (2026-02-04)
+- [swift.md] Add array encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
+- [swift.md] Add composite encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
+- [swift.md] Add range encoding/decoding in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
+- [swift.md] Add inet/cidr/macaddr encode/decode in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
+- [swift.md] Add vector literal encode/decode in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
+- [swift.md] Add sys.* metadata helpers in `swift/Sources/ScratchBird/Metadata.swift` -> DONE (2026-02-04)
 - [swift.md] Add conformance/integration tests in `swift/Tests/` -> TBD

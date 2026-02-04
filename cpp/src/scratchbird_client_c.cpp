@@ -109,14 +109,25 @@ sb_type map_type_oid(uint32_t type_oid) {
             return SB_TYPE_DOUBLE;
         case kOidNumeric:
             return SB_TYPE_DECIMAL;
+        case kOidJsonb:
+            return SB_TYPE_JSONB;
         case kOidChar:
         case kOidBpChar:
             return SB_TYPE_CHAR;
         case kOidVarchar:
-        case kOidText:
             return SB_TYPE_VARCHAR;
+        case kOidText:
+            return SB_TYPE_TEXT;
+        case kOidXml:
+            return SB_TYPE_XML;
+        case kOidTsVector:
+            return SB_TYPE_TSVECTOR;
+        case kOidTsQuery:
+            return SB_TYPE_TSQUERY;
         case kOidBytea:
             return SB_TYPE_BLOB;
+        case kOidMoney:
+            return SB_TYPE_MONEY;
         case kOidDate:
             return SB_TYPE_DATE;
         case kOidTime:
@@ -130,8 +141,15 @@ sb_type map_type_oid(uint32_t type_oid) {
         case kOidUuid:
             return SB_TYPE_UUID;
         case kOidJson:
-        case kOidJsonb:
             return SB_TYPE_JSON;
+        case kOidPoint:
+        case kOidLseg:
+        case kOidPath:
+        case kOidBox:
+        case kOidPolygon:
+        case kOidLine:
+        case kOidCircle:
+            return SB_TYPE_GEOMETRY;
         case kOidInet:
             return SB_TYPE_INET;
         case kOidCidr:
@@ -139,10 +157,19 @@ sb_type map_type_oid(uint32_t type_oid) {
         case kOidMacaddr:
         case kOidMacaddr8:
             return SB_TYPE_MACADDR;
+        case kOidSbVector:
+            return SB_TYPE_VECTOR;
         case kOidRecord:
-            return SB_TYPE_ARRAY;
+            return SB_TYPE_COMPOSITE;
+        case kOidInt4Range:
+        case kOidInt8Range:
+        case kOidNumRange:
+        case kOidTsRange:
+        case kOidTstzRange:
+        case kOidDateRange:
+            return SB_TYPE_RANGE;
         default:
-            return SB_TYPE_TEXT;
+            return SB_TYPE_UNKNOWN;
     }
 }
 
@@ -163,13 +190,23 @@ uint32_t map_sb_type_to_oid(sb_type type) {
             return kOidFloat8;
         case SB_TYPE_DECIMAL:
             return kOidNumeric;
+        case SB_TYPE_JSONB:
+            return kOidJsonb;
         case SB_TYPE_CHAR:
             return kOidBpChar;
         case SB_TYPE_VARCHAR:
         case SB_TYPE_TEXT:
             return kOidText;
+        case SB_TYPE_XML:
+            return kOidXml;
+        case SB_TYPE_TSVECTOR:
+            return kOidTsVector;
+        case SB_TYPE_TSQUERY:
+            return kOidTsQuery;
         case SB_TYPE_BLOB:
             return kOidBytea;
+        case SB_TYPE_MONEY:
+            return kOidMoney;
         case SB_TYPE_DATE:
             return kOidDate;
         case SB_TYPE_TIME:
@@ -184,8 +221,16 @@ uint32_t map_sb_type_to_oid(sb_type type) {
             return kOidUuid;
         case SB_TYPE_JSON:
             return kOidJson;
+        case SB_TYPE_GEOMETRY:
+            return kOidPoint;
         case SB_TYPE_ARRAY:
+            return 0;
+        case SB_TYPE_COMPOSITE:
             return kOidRecord;
+        case SB_TYPE_RANGE:
+            return 0;
+        case SB_TYPE_VECTOR:
+            return kOidSbVector;
         case SB_TYPE_INET:
             return kOidInet;
         case SB_TYPE_CIDR:
@@ -195,6 +240,16 @@ uint32_t map_sb_type_to_oid(sb_type type) {
         default:
             return 0;
     }
+}
+
+uint32_t resolve_type_oid(const sb_value* value) {
+    if (!value) {
+        return 0;
+    }
+    if (value->type_oid != 0) {
+        return value->type_oid;
+    }
+    return map_sb_type_to_oid(value->type);
 }
 
 void decode_date(int32_t days_since_2000, sb_value* value) {
@@ -244,7 +299,7 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
         return SB_ERR_NULL_POINTER;
     }
     if (value->is_null) {
-        stmt.setNull(index, map_sb_type_to_oid(value->type));
+        stmt.setNull(index, resolve_type_oid(value));
         return SB_OK;
     }
     switch (value->type) {
@@ -270,20 +325,55 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
         case SB_TYPE_VARCHAR:
         case SB_TYPE_TEXT:
         case SB_TYPE_JSON:
+        case SB_TYPE_JSONB:
+        case SB_TYPE_XML:
+        case SB_TYPE_TSVECTOR:
+        case SB_TYPE_TSQUERY:
         case SB_TYPE_ARRAY:
+        case SB_TYPE_VECTOR:
         case SB_TYPE_INET:
         case SB_TYPE_CIDR:
         case SB_TYPE_MACADDR:
         case SB_TYPE_DECIMAL:
             stmt.setString(index,
                            std::string(value->data.string_val.data, value->data.string_val.length),
-                           map_sb_type_to_oid(value->type));
+                           resolve_type_oid(value));
+            return SB_OK;
+        case SB_TYPE_COMPOSITE:
+        case SB_TYPE_RANGE:
+        case SB_TYPE_UNKNOWN: {
+            uint32_t type_oid = resolve_type_oid(value);
+            if (value->type == SB_TYPE_RANGE && type_oid == 0) {
+                return SB_ERR_INVALID_PARAM;
+            }
+            stmt.setBinary(index,
+                           value->data.binary_val.data,
+                           value->data.binary_val.length,
+                           type_oid,
+                           false);
+            return SB_OK;
+        }
+        case SB_TYPE_GEOMETRY:
+            stmt.setBinary(index,
+                           value->data.binary_val.data,
+                           value->data.binary_val.length,
+                           resolve_type_oid(value),
+                           true);
             return SB_OK;
         case SB_TYPE_BLOB:
             stmt.setBytes(index,
                           reinterpret_cast<const uint8_t*>(value->data.binary_val.data),
                           value->data.binary_val.length);
             return SB_OK;
+        case SB_TYPE_MONEY: {
+            int64_t cents = value->data.money_val;
+            stmt.setBinary(index,
+                           reinterpret_cast<const uint8_t*>(&cents),
+                           sizeof(cents),
+                           resolve_type_oid(value),
+                           false);
+            return SB_OK;
+        }
         case SB_TYPE_DATE: {
             int32_t days = scratchbird::core::TypeExtractor::ymdToDays(
                 value->data.date_val.year,
@@ -299,6 +389,17 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
                               static_cast<int64_t>(value->data.time_val.second)) * 1000000LL +
                              value->data.time_val.microsecond;
             stmt.setTime(index, micros);
+            return SB_OK;
+        }
+        case SB_TYPE_INTERVAL: {
+            int64_t micros = value->data.interval_val.micros;
+            int32_t days = value->data.interval_val.days;
+            int32_t months = value->data.interval_val.months;
+            uint8_t buf[16];
+            std::memcpy(buf, &micros, sizeof(micros));
+            std::memcpy(buf + 8, &days, sizeof(days));
+            std::memcpy(buf + 12, &months, sizeof(months));
+            stmt.setBinary(index, buf, sizeof(buf), resolve_type_oid(value), false);
             return SB_OK;
         }
         case SB_TYPE_TIMESTAMP:
@@ -335,10 +436,13 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
     }
     out = scratchbird::protocol::ParamValue{};
     out.format = scratchbird::protocol::kFormatBinary;
-    out.type_oid = map_sb_type_to_oid(value->type);
+    out.type_oid = resolve_type_oid(value);
     if (value->is_null || value->type == SB_TYPE_NULL) {
         out.is_null = true;
         return SB_OK;
+    }
+    if (value->type == SB_TYPE_RANGE && out.type_oid == 0) {
+        return SB_ERR_INVALID_PARAM;
     }
     switch (value->type) {
         case SB_TYPE_BOOLEAN:
@@ -391,7 +495,12 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
         case SB_TYPE_VARCHAR:
         case SB_TYPE_TEXT:
         case SB_TYPE_JSON:
+        case SB_TYPE_JSONB:
+        case SB_TYPE_XML:
+        case SB_TYPE_TSVECTOR:
+        case SB_TYPE_TSQUERY:
         case SB_TYPE_ARRAY:
+        case SB_TYPE_VECTOR:
         case SB_TYPE_INET:
         case SB_TYPE_CIDR:
         case SB_TYPE_MACADDR:
@@ -400,9 +509,29 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
             out.data = encode_length_prefixed(bytes, value->data.string_val.length);
             return SB_OK;
         }
+        case SB_TYPE_COMPOSITE:
+        case SB_TYPE_RANGE:
+        case SB_TYPE_UNKNOWN: {
+            if (value->data.binary_val.data && value->data.binary_val.length > 0) {
+                out.data.assign(value->data.binary_val.data,
+                                value->data.binary_val.data + value->data.binary_val.length);
+            }
+            return SB_OK;
+        }
+        case SB_TYPE_GEOMETRY: {
+            auto bytes = reinterpret_cast<const uint8_t*>(value->data.binary_val.data);
+            out.data = encode_length_prefixed(bytes, value->data.binary_val.length);
+            return SB_OK;
+        }
         case SB_TYPE_BLOB: {
             auto bytes = reinterpret_cast<const uint8_t*>(value->data.binary_val.data);
             out.data = encode_length_prefixed(bytes, value->data.binary_val.length);
+            return SB_OK;
+        }
+        case SB_TYPE_MONEY: {
+            int64_t cents = value->data.money_val;
+            out.data.resize(8);
+            std::memcpy(out.data.data(), &cents, sizeof(cents));
             return SB_OK;
         }
         case SB_TYPE_DATE: {
@@ -427,6 +556,13 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
             for (size_t i = 0; i < 8; ++i) {
                 out.data[i] = static_cast<uint8_t>((static_cast<uint64_t>(micros) >> (8 * i)) & 0xFF);
             }
+            return SB_OK;
+        }
+        case SB_TYPE_INTERVAL: {
+            out.data.resize(16);
+            std::memcpy(out.data.data(), &value->data.interval_val.micros, sizeof(int64_t));
+            std::memcpy(out.data.data() + 8, &value->data.interval_val.days, sizeof(int32_t));
+            std::memcpy(out.data.data() + 12, &value->data.interval_val.months, sizeof(int32_t));
             return SB_OK;
         }
         case SB_TYPE_TIMESTAMP:
@@ -564,6 +700,7 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
         type_oid = results.columns[static_cast<size_t>(column)].type_oid;
     }
     out->type = map_type_oid(type_oid);
+    out->type_oid = type_oid;
     out->is_null = value.is_null ? 1 : 0;
     if (value.is_null) {
         return SB_OK;
@@ -639,6 +776,14 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
             out->data.binary_val.data = data.data();
             out->data.binary_val.length = data.size();
             break;
+        case SB_TYPE_MONEY: {
+            int64_t cents = 0;
+            if (data.size() >= sizeof(cents)) {
+                std::memcpy(&cents, data.data(), sizeof(cents));
+            }
+            out->data.money_val = cents;
+            break;
+        }
         case SB_TYPE_DATE: {
             int32_t days = 0;
             if (data.size() >= sizeof(days)) {
@@ -655,6 +800,20 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
             decode_time(micros, out);
             break;
         }
+        case SB_TYPE_INTERVAL: {
+            int64_t micros = 0;
+            int32_t days = 0;
+            int32_t months = 0;
+            if (data.size() >= 16) {
+                std::memcpy(&micros, data.data(), sizeof(micros));
+                std::memcpy(&days, data.data() + 8, sizeof(days));
+                std::memcpy(&months, data.data() + 12, sizeof(months));
+            }
+            out->data.interval_val.micros = micros;
+            out->data.interval_val.days = days;
+            out->data.interval_val.months = months;
+            break;
+        }
         case SB_TYPE_TIMESTAMP:
         case SB_TYPE_TIMESTAMP_TZ: {
             int64_t micros = 0;
@@ -669,6 +828,41 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
             if (data.size() >= 16) {
                 std::memcpy(out->data.uuid_val.bytes, data.data(), 16);
             }
+            break;
+        }
+        case SB_TYPE_GEOMETRY: {
+            const uint8_t* raw_ptr = nullptr;
+            size_t raw_len = 0;
+            stripLengthPrefix(data, &raw_ptr, &raw_len);
+            out->data.binary_val.data = raw_ptr;
+            out->data.binary_val.length = raw_len;
+            break;
+        }
+        case SB_TYPE_COMPOSITE:
+        case SB_TYPE_RANGE:
+        case SB_TYPE_UNKNOWN:
+            out->data.binary_val.data = data.data();
+            out->data.binary_val.length = data.size();
+            break;
+        case SB_TYPE_CHAR:
+        case SB_TYPE_VARCHAR:
+        case SB_TYPE_TEXT:
+        case SB_TYPE_JSON:
+        case SB_TYPE_JSONB:
+        case SB_TYPE_XML:
+        case SB_TYPE_TSVECTOR:
+        case SB_TYPE_TSQUERY:
+        case SB_TYPE_ARRAY:
+        case SB_TYPE_VECTOR:
+        case SB_TYPE_INET:
+        case SB_TYPE_CIDR:
+        case SB_TYPE_MACADDR:
+        case SB_TYPE_DECIMAL: {
+            const uint8_t* raw_ptr = nullptr;
+            size_t raw_len = 0;
+            stripLengthPrefix(data, &raw_ptr, &raw_len);
+            out->data.string_val.data = raw_ptr ? reinterpret_cast<const char*>(raw_ptr) : "";
+            out->data.string_val.length = raw_len;
             break;
         }
         default:

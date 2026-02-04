@@ -10,7 +10,12 @@ namespace ScratchBird.Data;
 
 public static class ScratchBirdMetadata
 {
-    public const string SchemasQuery = "SELECT schema_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
-    public const string TablesQuery = "SELECT t.table_name, s.schema_name, t.table_type FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_valid = 1 ORDER BY t.table_name";
-    public const string ColumnsQuery = "SELECT c.column_name, t.table_name, s.schema_name, c.data_type_id, c.ordinal_position, c.is_nullable, c.default_value FROM sys.columns c JOIN sys.tables t ON t.table_id = c.table_id JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.ordinal_position";
+    public const string SchemasQuery = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+    public const string TablesQuery = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
+    public const string ColumnsQuery = "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+    public const string IndexesQuery = "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name";
+    public const string IndexColumnsQuery = "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position";
+    public const string ConstraintsQuery = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
+    public const string ProceduresQuery = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
+    public const string FunctionsQuery = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
 }

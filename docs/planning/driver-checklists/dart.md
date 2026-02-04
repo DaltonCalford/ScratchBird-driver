@@ -2,17 +2,17 @@
 
 ## P0 (Blocking)
 
-- [ ] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart`. Issue: TBD
-- [ ] Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart`. Issue: TBD
-- [ ] Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart`. Issue: TBD
+- [x] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart`. Issue: TBD
+- [x] Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart`. Issue: TBD
+- [x] Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart`. Issue: TBD
 
 ## P1 (Core)
 
-- [ ] Add array encoding/decoding in `dart/lib/src/types.dart`. Issue: TBD
-- [ ] Add composite encoding/decoding in `dart/lib/src/types.dart`. Issue: TBD
-- [ ] Add vector literal encode/decode in `dart/lib/src/types.dart`. Issue: TBD
-- [ ] Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart`. Issue: TBD
-- [ ] Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart`. Issue: TBD
+- [x] Add array encoding/decoding in `dart/lib/src/types.dart`. Issue: TBD
+- [x] Add composite encoding/decoding in `dart/lib/src/types.dart`. Issue: TBD
+- [x] Add vector literal encode/decode in `dart/lib/src/types.dart`. Issue: TBD
+- [x] Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart`. Issue: TBD
+- [x] Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart`. Issue: TBD
 
 ## P2 (Follow-ups)
 

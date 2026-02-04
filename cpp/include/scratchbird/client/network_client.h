@@ -88,6 +88,7 @@ public:
     void setString(size_t index, const std::string& value, uint32_t type_oid);
     void setBytes(size_t index, const std::vector<uint8_t>& value);
     void setBytes(size_t index, const uint8_t* data, size_t length);
+    void setBinary(size_t index, const uint8_t* data, size_t length, uint32_t type_oid, bool length_prefixed);
     void setTimestamp(size_t index, int64_t microseconds);
     void setDate(size_t index, int32_t days);
     void setTime(size_t index, int64_t microseconds);

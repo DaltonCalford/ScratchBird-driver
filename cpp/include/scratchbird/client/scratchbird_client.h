@@ -62,10 +62,15 @@ typedef enum sb_type {
     SB_TYPE_REAL = 5,
     SB_TYPE_DOUBLE = 6,
     SB_TYPE_DECIMAL = 7,
+    SB_TYPE_JSONB = 8,
     SB_TYPE_CHAR = 10,
     SB_TYPE_VARCHAR = 11,
     SB_TYPE_TEXT = 12,
+    SB_TYPE_XML = 13,
+    SB_TYPE_TSVECTOR = 14,
+    SB_TYPE_TSQUERY = 15,
     SB_TYPE_BLOB = 20,
+    SB_TYPE_MONEY = 21,
     SB_TYPE_DATE = 30,
     SB_TYPE_TIME = 31,
     SB_TYPE_TIMESTAMP = 32,
@@ -73,15 +78,21 @@ typedef enum sb_type {
     SB_TYPE_INTERVAL = 34,
     SB_TYPE_UUID = 40,
     SB_TYPE_JSON = 41,
+    SB_TYPE_GEOMETRY = 42,
     SB_TYPE_ARRAY = 50,
+    SB_TYPE_COMPOSITE = 51,
+    SB_TYPE_RANGE = 52,
+    SB_TYPE_VECTOR = 53,
     SB_TYPE_INET = 60,
     SB_TYPE_CIDR = 61,
-    SB_TYPE_MACADDR = 62
+    SB_TYPE_MACADDR = 62,
+    SB_TYPE_UNKNOWN = 99
 } sb_type;
 
 typedef struct sb_value {
     sb_type type;
     int is_null;
+    uint32_t type_oid;
     union {
         int8_t boolean_val;
         int16_t smallint_val;
@@ -89,6 +100,7 @@ typedef struct sb_value {
         int64_t bigint_val;
         float real_val;
         double double_val;
+        int64_t money_val;
         struct {
             const char* data;
             size_t length;
@@ -97,6 +109,11 @@ typedef struct sb_value {
             const uint8_t* data;
             size_t length;
         } binary_val;
+        struct {
+            int64_t micros;
+            int32_t days;
+            int32_t months;
+        } interval_val;
         struct {
             int32_t year;
             int32_t month;
@@ -124,6 +141,38 @@ typedef struct sb_column_meta {
     int32_t type_modifier;
     int nullable;
 } sb_column_meta;
+
+static inline const char* sb_metadata_schemas_query(void) {
+    return "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+}
+
+static inline const char* sb_metadata_tables_query(void) {
+    return "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
+}
+
+static inline const char* sb_metadata_columns_query(void) {
+    return "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+}
+
+static inline const char* sb_metadata_indexes_query(void) {
+    return "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name";
+}
+
+static inline const char* sb_metadata_index_columns_query(void) {
+    return "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position";
+}
+
+static inline const char* sb_metadata_constraints_query(void) {
+    return "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
+}
+
+static inline const char* sb_metadata_procedures_query(void) {
+    return "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
+}
+
+static inline const char* sb_metadata_functions_query(void) {
+    return "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
+}
 
 sb_connection* sb_connect(const char* conn_str, sb_error* err);
 void sb_disconnect(sb_connection* conn);

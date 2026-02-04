@@ -30,6 +30,7 @@ Files:
 
 Checklist: `cpp.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `cpp/include/scratchbird/client/scratchbird_client.h`
@@ -43,6 +44,7 @@ Files:
 
 Checklist: `cpp.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/`
@@ -66,6 +68,7 @@ Files:
 
 Checklist: `cpp.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/`
@@ -88,6 +91,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart`
@@ -100,6 +104,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart`
@@ -113,6 +118,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart`
@@ -125,6 +131,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add array encoding/decoding in `dart/lib/src/types.dart`
@@ -136,6 +143,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add composite encoding/decoding in `dart/lib/src/types.dart`
@@ -147,6 +155,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add vector literal encode/decode in `dart/lib/src/types.dart`
@@ -158,6 +167,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart`
@@ -169,6 +179,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart`
@@ -214,6 +225,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce TLS required (reject `sslmode=disable`) in `elixir/lib/scratchbird/connection.ex`
@@ -226,6 +238,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce binary-only (reject `binary_transfer=false`) in `elixir/lib/scratchbird/connection.ex`
@@ -238,6 +251,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Reject `compression=zstd` until server support exists in `elixir/lib/scratchbird/connection.ex`
@@ -250,6 +264,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add array encoding/decoding in `elixir/lib/scratchbird/types.ex`
@@ -261,6 +276,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add composite encoding/decoding in `elixir/lib/scratchbird/types.ex`
@@ -272,6 +288,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add vector literal encode/decode in `elixir/lib/scratchbird/types.ex`
@@ -283,6 +300,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add inet/cidr/macaddr encode/decode in `elixir/lib/scratchbird/types.ex`
@@ -294,6 +312,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add sys.* metadata helpers in `elixir/lib/scratchbird/metadata.ex` and export from `elixir/lib/scratchbird.ex`
@@ -306,6 +325,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add SQLSTATE class-prefix mapping in `elixir/lib/scratchbird/errors.ex`
@@ -444,6 +464,7 @@ Add array, composite, range, geometry, vector, inet/cidr/macaddr support
 
 Checklist: `mojo.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add sys.* metadata helpers in `mojo/src/scratchbird.mojo`
@@ -676,6 +697,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Implement TLS transport in `swift/Sources/ScratchBird/Socket.swift`
@@ -687,6 +709,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce binary-only (reject `binary_transfer=false`) in `swift/Sources/ScratchBird/Connection.swift`
@@ -699,6 +722,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Reject `compression=zstd` until server support exists in `swift/Sources/ScratchBird/Connection.swift`
@@ -711,6 +735,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add array encoding/decoding in `swift/Sources/ScratchBird/Types.swift`
@@ -722,6 +747,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add composite encoding/decoding in `swift/Sources/ScratchBird/Types.swift`
@@ -733,6 +759,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add range encoding/decoding in `swift/Sources/ScratchBird/Types.swift`
@@ -744,6 +771,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add inet/cidr/macaddr encode/decode in `swift/Sources/ScratchBird/Types.swift`
@@ -755,6 +783,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add vector literal encode/decode in `swift/Sources/ScratchBird/Types.swift`
@@ -766,6 +795,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Add sys.* metadata helpers in `swift/Sources/ScratchBird/Metadata.swift`
@@ -783,4 +813,3 @@ Add conformance/integration tests in `swift/Tests/`
 
 Files:
 - `swift/Tests/`
-

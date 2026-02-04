@@ -21,7 +21,16 @@ from .errors import (
     NotSupportedError,
 )
 from .types import Geometry, Json, Jsonb, Range, RawValue
-from .metadata import schemas_query, tables_query, columns_query
+from .metadata import (
+    schemas_query,
+    tables_query,
+    columns_query,
+    indexes_query,
+    index_columns_query,
+    constraints_query,
+    procedures_query,
+    functions_query,
+)
 
 apilevel = "2.0"
 threadsafety = 2
@@ -48,4 +57,9 @@ __all__ = [
     "schemas_query",
     "tables_query",
     "columns_query",
+    "indexes_query",
+    "index_columns_query",
+    "constraints_query",
+    "procedures_query",
+    "functions_query",
 ]

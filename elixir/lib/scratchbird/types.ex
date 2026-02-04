@@ -71,6 +71,26 @@ defmodule ScratchBird.Types do
     defstruct [:wkb, :srid, :wkt]
   end
 
+  defmodule Inet do
+    defstruct [:value]
+  end
+
+  defmodule Cidr do
+    defstruct [:value]
+  end
+
+  defmodule Macaddr do
+    defstruct [:value]
+  end
+
+  defmodule CompositeField do
+    defstruct [:oid, :value, :raw]
+  end
+
+  defmodule Composite do
+    defstruct fields: [], type_oid: @oid_record
+  end
+
   defmodule Range do
     defstruct [
       :lower,
@@ -115,6 +135,28 @@ defmodule ScratchBird.Types do
   def encode_param(%Interval{micros: micros, days: days, months: months}) do
     data = <<micros::little-64, days::little-32, months::little-32>>
     {%{format: @format_binary, data: data, is_null: false}, @oid_interval}
+  end
+
+  def encode_param(%Composite{} = comp) do
+    {data, oid} = encode_composite(comp)
+    {%{format: @format_binary, data: data, is_null: false}, oid}
+  end
+
+  def encode_param(%Range{} = range) do
+    {data, oid} = encode_range(range)
+    {%{format: @format_binary, data: data, is_null: false}, oid}
+  end
+
+  def encode_param(%Inet{value: value}) do
+    {%{format: @format_binary, data: encode_length_prefixed(value), is_null: false}, @oid_inet}
+  end
+
+  def encode_param(%Cidr{value: value}) do
+    {%{format: @format_binary, data: encode_length_prefixed(value), is_null: false}, @oid_cidr}
+  end
+
+  def encode_param(%Macaddr{value: value}) do
+    {%{format: @format_binary, data: encode_length_prefixed(value), is_null: false}, @oid_macaddr}
   end
 
   def encode_param(%Decimal{} = dec) do
@@ -175,6 +217,16 @@ defmodule ScratchBird.Types do
     end
   end
 
+  def encode_param(value) when is_list(value) do
+    if Enum.all?(value, &is_number/1) do
+      data = format_vector_literal(value)
+      {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_sb_vector}
+    else
+      data = format_array_literal(value)
+      {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, 0}
+    end
+  end
+
   def encode_param(value) when is_map(value) do
     data = encode_json(value)
     {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_json}
@@ -215,6 +267,12 @@ defmodule ScratchBird.Types do
   defp decode_binary(@oid_interval, <<micros::little-64, days::little-32, months::little-32>>) do
     %Interval{micros: micros, days: days, months: months}
   end
+
+  defp decode_binary(@oid_inet, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_cidr, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_macaddr, data), do: strip_length_prefix(data)
+  defp decode_binary(@oid_sb_vector, data), do: parse_vector_literal(strip_length_prefix(data))
+  defp decode_binary(@oid_record, data), do: decode_composite(data)
 
   defp decode_binary(@oid_int4range, data), do: decode_range(@oid_int4range, data)
   defp decode_binary(@oid_int8range, data), do: decode_range(@oid_int8range, data)
@@ -282,7 +340,7 @@ defmodule ScratchBird.Types do
     Enum.join([a, b, c, d, e], "-")
   end
 
-  defp decode_range(range_oid, <<flags::8, rest::binary>>) do
+  defp decode_range(range_oid, <<flags::8, _pad::binary-size(3), rest::binary>>) do
     range = %Range{
       empty: (flags &&& @range_empty) != 0,
       lower_inclusive: (flags &&& @range_lb_inc) != 0,
@@ -311,4 +369,216 @@ defmodule ScratchBird.Types do
   defp decode_range_value(@oid_tsrange, raw), do: decode_binary(@oid_timestamp, raw)
   defp decode_range_value(@oid_tstzrange, raw), do: decode_binary(@oid_timestamptz, raw)
   defp decode_range_value(_oid, raw), do: raw
+
+  defp encode_composite(%Composite{fields: fields, type_oid: type_oid}) do
+    oid = if type_oid == 0, do: @oid_record, else: type_oid
+    header = <<length(fields)::little-32>>
+    payload =
+      Enum.reduce(fields, header, fn field, acc ->
+        field_oid = field.oid || 0
+        {field_oid, data} =
+          cond do
+            is_binary(field.raw) ->
+              {field_oid, field.raw}
+
+            field.value != nil ->
+              {encoded, inferred_oid} = encode_param(field.value)
+              resolved_oid = if field_oid == 0, do: inferred_oid, else: field_oid
+              if resolved_oid == 0, do: raise("composite field OID is required")
+              payload = if encoded.is_null, do: nil, else: encoded.data
+              {resolved_oid, payload}
+
+            true ->
+              {field_oid, nil}
+          end
+
+        if field_oid == 0 do
+          raise "composite field OID is required"
+        end
+
+        case data do
+          nil ->
+            acc <> <<field_oid::little-32, -1::little-32>>
+
+          _ ->
+            acc <> <<field_oid::little-32, byte_size(data)::little-32, data::binary>>
+        end
+      end)
+
+    {payload, oid}
+  end
+
+  defp decode_composite(data) when is_binary(data) do
+    if byte_size(data) < 4 do
+      %Composite{fields: []}
+    else
+      <<count::little-32, rest::binary>> = data
+      {fields, _} = decode_composite_fields(rest, count, [])
+      %Composite{fields: fields}
+    end
+  end
+
+  defp decode_composite_fields(rest, count, fields) when count <= 0 do
+    {Enum.reverse(fields), rest}
+  end
+
+  defp decode_composite_fields(<<oid::little-32, -1::little-32, rest::binary>>, count, fields) do
+    decode_composite_fields(rest, count - 1, [%CompositeField{oid: oid, value: nil, raw: nil} | fields])
+  end
+
+  defp decode_composite_fields(<<oid::little-32, len::little-32, rest::binary>>, count, fields) do
+    <<raw::binary-size(len), rest2::binary>> = rest
+    value = decode_binary(oid, raw)
+    decode_composite_fields(rest2, count - 1, [%CompositeField{oid: oid, value: value, raw: raw} | fields])
+  end
+
+  defp encode_range(%Range{} = range) do
+    oid = resolve_range_oid(range)
+    flags = 0
+    flags = if range.empty, do: flags ||| @range_empty, else: flags
+    flags = if range.lower_inclusive, do: flags ||| @range_lb_inc, else: flags
+    flags = if range.upper_inclusive, do: flags ||| @range_ub_inc, else: flags
+    flags = if range.lower_infinite, do: flags ||| @range_lb_inf, else: flags
+    flags = if range.upper_infinite, do: flags ||| @range_ub_inf, else: flags
+
+    base = <<flags::8, 0::24>>
+    lower =
+      if range.empty or range.lower_infinite do
+        <<>>
+      else
+        bound = encode_range_bound(oid, range.lower)
+        <<byte_size(bound)::little-32, bound::binary>>
+      end
+    upper =
+      if range.empty or range.upper_infinite do
+        <<>>
+      else
+        bound = encode_range_bound(oid, range.upper)
+        <<byte_size(bound)::little-32, bound::binary>>
+      end
+    {base <> lower <> upper, oid}
+  end
+
+  defp resolve_range_oid(%Range{range_oid: oid}) when is_integer(oid) and oid > 0, do: oid
+
+  defp resolve_range_oid(%Range{lower: lower, upper: upper}) do
+    sample = lower || upper
+    cond do
+      is_integer(sample) ->
+        if sample >= -2_147_483_648 and sample <= 2_147_483_647, do: @oid_int4range, else: @oid_int8range
+      is_float(sample) or match?(%Decimal{}, sample) ->
+        @oid_numrange
+      match?(%Date{}, sample) ->
+        @oid_daterange
+      match?(%NaiveDateTime{}, sample) ->
+        @oid_tsrange
+      match?(%DateTime{}, sample) ->
+        @oid_tstzrange
+      true ->
+        raise "unsupported range bound type"
+    end
+  end
+
+  defp encode_range_bound(@oid_int4range, value) when is_integer(value), do: <<value::little-32>>
+  defp encode_range_bound(@oid_int8range, value) when is_integer(value), do: <<value::little-64>>
+  defp encode_range_bound(@oid_numrange, %Decimal{} = value), do: encode_length_prefixed(Decimal.to_string(value))
+  defp encode_range_bound(@oid_numrange, value), do: encode_length_prefixed(to_string(value))
+
+  defp encode_range_bound(@oid_daterange, %Date{} = date) do
+    base = ~D[2000-01-01]
+    days = Date.diff(date, base)
+    <<days::little-32>>
+  end
+
+  defp encode_range_bound(@oid_tsrange, %NaiveDateTime{} = ts), do: encode_timestamp(ts)
+  defp encode_range_bound(@oid_tstzrange, %DateTime{} = ts), do: encode_timestamp(ts)
+
+  defp encode_range_bound(_oid, _value), do: raise("unsupported range type")
+
+  defp parse_array_literal(text) do
+    trimmed = String.trim(text)
+    cond do
+      trimmed == "" or trimmed == "{}" -> []
+      String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}") ->
+        trimmed |> String.slice(1..-2//1) |> split_array_items()
+      true -> split_array_items(trimmed)
+    end
+  end
+
+  defp split_array_items(text) do
+    {items, buffer, depth} =
+      String.graphemes(text)
+      |> Enum.reduce({[], "", 0}, fn ch, {items, buffer, depth} ->
+        cond do
+          ch == "{" -> {items, buffer <> ch, depth + 1}
+          ch == "}" -> {items, buffer <> ch, max(depth - 1, 0)}
+          ch == "," and depth == 0 -> {[parse_array_item(buffer) | items], "", depth}
+          true -> {items, buffer <> ch, depth}
+        end
+      end)
+
+    items = if buffer != "" or text != "", do: [parse_array_item(buffer) | items], else: items
+    Enum.reverse(items)
+  end
+
+  defp parse_array_item(raw) do
+    token = String.trim(raw)
+    cond do
+      token == "" -> ""
+      String.upcase(token) == "NULL" -> nil
+      String.starts_with?(token, "{") and String.ends_with?(token, "}") -> parse_array_literal(token)
+      String.starts_with?(token, "[") and String.ends_with?(token, "]") -> parse_vector_literal(token)
+      token == "true" -> true
+      token == "false" -> false
+      true ->
+        case Integer.parse(token) do
+          {int, ""} -> int
+          _ ->
+            case Float.parse(token) do
+              {float, ""} -> float
+              _ -> token
+            end
+        end
+    end
+  end
+
+  defp format_array_literal(values) do
+    parts = Enum.map(values, &format_array_item/1)
+    "{" <> Enum.join(parts, ",") <> "}"
+  end
+
+  defp format_array_item(nil), do: "NULL"
+  defp format_array_item(value) when is_binary(value), do: "\"" <> String.replace(value, "\"", "\\\"") <> "\""
+  defp format_array_item(value) when is_list(value), do: format_array_literal(value)
+  defp format_array_item(value), do: to_string(value)
+
+  defp parse_vector_literal(text) do
+    trimmed = String.trim(text)
+    trimmed =
+      if String.starts_with?(trimmed, "[") and String.ends_with?(trimmed, "]") do
+        trimmed |> String.slice(1..-2//1)
+      else
+        trimmed
+      end
+    if trimmed == "" do
+      []
+    else
+      trimmed
+      |> String.split(",", trim: true)
+      |> Enum.map(fn part ->
+        case Float.parse(String.trim(part)) do
+          {val, _} -> val
+          _ -> 0.0
+        end
+      end)
+    end
+  end
+
+  defp format_vector_literal(values) do
+    parts =
+      Enum.map(values, fn v ->
+        if is_number(v), do: to_string(v), else: "0"
+      end)
+    "[" <> Enum.join(parts, ",") <> "]"
+  end
 end
