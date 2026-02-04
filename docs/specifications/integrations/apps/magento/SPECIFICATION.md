@@ -55,7 +55,33 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Magento stores DB configuration in `app/etc/env.php` and expects MySQL-compatible behavior.
+- Large catalog schemas require long-running migrations and indexed queries.
+- UTF-8 and JSON column types must be stable.
+
+## 11. Code Examples
+
+```php
+'connection' => [
+  'default' => [
+    'host' => 'localhost',
+    'dbname' => 'db',
+    'username' => 'user',
+    'password' => 'pass',
+    'port' => '3092',
+  ],
+],
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Magento setup:upgrade completes.
+- Confirm catalog search and checkout workflows.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

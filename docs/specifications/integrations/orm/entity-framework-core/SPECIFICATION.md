@@ -55,7 +55,25 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- EF Core uses LINQ and database providers to translate queries.
+- Provider versions must align with EF Core major versions.
+
+## 11. Code Examples
+
+```csharp
+using var context = new AppDbContext();
+var items = await context.Items.ToListAsync();
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate LINQ translation for common filters.
+- Verify provider version compatibility and migrations.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

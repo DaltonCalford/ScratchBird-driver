@@ -55,7 +55,26 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- WooCommerce relies on WordPress database behavior and uses the same `wp-config.php` settings.
+- High-concurrency order updates require stable transactions and row-level locking.
+- UTF-8 and JSON metadata must be preserved.
+
+## 11. Code Examples
+
+```php
+// wp-config.php shared with WooCommerce
+define('DB_HOST', 'localhost:3092');
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate WooCommerce install and product CRUD.
+- Confirm order creation, payment, and refund flows.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

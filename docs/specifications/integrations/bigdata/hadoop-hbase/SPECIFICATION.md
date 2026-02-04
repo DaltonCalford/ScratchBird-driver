@@ -55,7 +55,25 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- HBase SQL access commonly uses Apache Phoenix with JDBC connectivity.
+- The driver must handle Phoenix metadata queries and schema discovery.
+- Upserts and bulk loads require batch-friendly behavior.
+
+## 11. Code Examples
+
+```java
+DriverManager.getConnection("jdbc:phoenix:localhost")
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Phoenix JDBC metadata reads.
+- Confirm batch upsert performance with large datasets.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

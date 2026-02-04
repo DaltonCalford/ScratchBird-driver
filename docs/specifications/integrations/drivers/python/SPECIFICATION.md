@@ -55,7 +55,27 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- PEP 249 defines standard exceptions and `cursor.description` structure.
+- Autocommit should default off; rollback/commit must be exposed.
+
+## 11. Code Examples
+
+```python
+import scratchbird
+conn = scratchbird.connect(host='localhost', port=3092, database='db')
+cur = conn.cursor()
+cur.execute('SELECT 1')
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate PEP 249 compliance (apilevel, threadsafety, paramstyle).
+- Confirm SQLSTATE mapping and error class raising.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

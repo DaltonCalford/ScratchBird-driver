@@ -55,7 +55,26 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Dapper uses extension methods like `Query`/`QueryAsync` and `Execute`/`ExecuteAsync` on IDbConnection.
+- Drivers must implement `IDbConnection`, `IDbCommand`, and `IDataReader` correctly for row streaming.
+- Ensure parameter binding supports anonymous objects and `DynamicParameters`.
+
+## 11. Code Examples
+
+```csharp
+using var conn = new ScratchBirdConnection(connString);
+var rows = conn.Query<(int Id, string Name)>("select id, name from users");
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Dapper multi-mapping (`splitOn`) with joined queries.
+- Ensure `QueryMultiple` works with multiple result sets.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

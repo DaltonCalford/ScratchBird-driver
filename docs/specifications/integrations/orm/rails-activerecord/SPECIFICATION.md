@@ -55,7 +55,32 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Rails uses `config/database.yml` for connection configuration and `ActiveRecord::Base.establish_connection` semantics.
+- Migrations must work via `rails db:migrate` and schema dumps must be stable.
+- Adapter must implement the ActiveRecord adapter interface (quoting, schema, type map).
+
+## 11. Code Examples
+
+```yaml
+# config/database.yml
+production:
+  adapter: scratchbird
+  host: localhost
+  port: 3092
+  database: db
+  username: user
+  password: pass
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate schema dumping and reload (`schema.rb`) for all core types.
+- Confirm `rails db:migrate` applies and rolls back without metadata drift.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

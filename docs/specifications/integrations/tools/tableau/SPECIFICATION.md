@@ -55,7 +55,29 @@ Category: BI Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Tableau uses ODBC or JDBC drivers depending on the connector.
+- The driver must expose accurate metadata for Tableau's data model.
+- Large result sets must support paging and cancellation.
+
+## 11. Code Examples
+
+```ini
+# ODBC connection
+Driver=ScratchBird ODBC
+Server=localhost
+Port=3092
+Database=db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Tableau can publish and refresh extracts.
+- Confirm custom SQL uses parameter binding without errors.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

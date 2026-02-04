@@ -55,7 +55,27 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Sequelize requires explicit DataTypes for model attributes.
+- DataTypes support varies by dialect; JSON/JSONB have differing support.
+
+## 11. Code Examples
+
+```ts
+const User = sequelize.define('User', {
+  username: DataTypes.STRING,
+  data: DataTypes.JSON,
+});
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate DataTypes mapping for JSON/JSONB and string types.
+- Verify nullability defaults.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

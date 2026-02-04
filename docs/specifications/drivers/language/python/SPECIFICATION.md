@@ -71,7 +71,29 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- Python DB-API 2.0 requires `connect(...)` to return a Connection object and defines standard exception classes like `OperationalError`, `IntegrityError`, and `ProgrammingError`. 
+- Drivers must expose `apilevel`, `threadsafety`, and `paramstyle` per PEP 249.
+
+## 13. Code Examples
+
+```python
+import scratchbird
+
+conn = scratchbird.connect(host='localhost', port=3092, database='db')
+cur = conn.cursor()
+cur.execute('SELECT 1')
+row = cur.fetchone()
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate PEP 249 `cursor.description` structure and `rowcount` behavior.
+- Ensure exception classes map correctly to SQLSTATE categories.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

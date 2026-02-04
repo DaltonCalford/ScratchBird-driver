@@ -55,7 +55,25 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Spark JDBC data sources require a JDBC URL, table or query, and driver class.
+- Partitioning options should be supported for parallel read.
+- Large writes should use batch inserts and prepared statements.
+
+## 11. Code Examples
+
+```python
+spark.read.format("jdbc")   .option("url", "jdbc:scratchbird://localhost:3092/db")   .option("dbtable", "public.users")   .load()
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Spark parallel read with partition column + bounds.
+- Confirm DataFrame writes via JDBC with batch size tuning.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

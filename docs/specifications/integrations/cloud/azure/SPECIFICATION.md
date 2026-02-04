@@ -55,7 +55,27 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Azure deployments commonly use VNet integration and NSGs for port access.
+- TLS certificates must be compatible with Azure Load Balancers and App Gateways.
+- Managed service deployments should support Azure backup/restore patterns.
+
+## 11. Code Examples
+
+```hcl
+resource "azurerm_network_security_group" "scratchbird" {
+  security_rule { destination_port_range = "3092" }
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate connectivity through Azure App Gateway.
+- Confirm backup/restore procedures.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

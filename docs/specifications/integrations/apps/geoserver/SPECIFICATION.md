@@ -55,7 +55,29 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- GeoServer PostGIS datastore expects host, port, database, schema, and credentials.
+- Geometry columns must expose spatial reference metadata.
+- Large feature layers should be streamed with paging.
+
+## 11. Code Examples
+
+```ini
+# GeoServer PostGIS store
+host=localhost
+port=3092
+database=db
+schema=public
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate datastore creation and layer publishing.
+- Confirm WMS/WFS requests return expected features.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

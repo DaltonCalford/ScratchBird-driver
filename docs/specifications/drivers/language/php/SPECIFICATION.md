@@ -71,7 +71,27 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- PDO errorInfo returns an array with SQLSTATE in element 0 and driver-specific fields following.
+- PDO supports statement-level errorInfo distinct from connection-level errorInfo.
+
+## 13. Code Examples
+
+```php
+$pdo = new PDO($dsn, $user, $pass);
+$stmt = $pdo->prepare('SELECT 1');
+$stmt->execute();
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate PDO::errorInfo / PDOStatement::errorInfo SQLSTATE values.
+- Verify fetch modes and default fetch behavior.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

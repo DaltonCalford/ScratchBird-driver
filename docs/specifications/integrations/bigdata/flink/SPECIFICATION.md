@@ -55,7 +55,32 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Flink JDBC connector requires JDBC URL, driver class, and table schema mapping.
+- Upserts and batch modes should be supported for sinks.
+- Exactly-once semantics depend on transaction and checkpoint support.
+
+## 11. Code Examples
+
+```sql
+CREATE TABLE sink (
+  id BIGINT,
+  name STRING
+) WITH (
+  'connector' = 'jdbc',
+  'url' = 'jdbc:scratchbird://localhost:3092/db',
+  'table-name' = 'users'
+);
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Flink sink upserts under checkpointing.
+- Confirm JDBC source reads with projection and filters.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

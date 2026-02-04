@@ -71,7 +71,31 @@ Priority: P2
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- Avoid exposing STL types across shared-library boundaries unless the driver and host use the same C++ ABI.
+- Prefer UTF-8 `std::string` for text and document ownership for any `string_view` returns.
+- Represent NULL values via `std::optional<T>` instead of sentinels.
+- Use `std::chrono` time points/durations for timestamp and interval values.
+
+## 13. Code Examples
+
+```cpp
+#include <scratchbird/sb.hpp>
+
+auto conn = sb::connect({ .host = "localhost", .port = 3092, .database = "db" });
+auto stmt = conn.prepare("SELECT 1");
+auto row = stmt.execute_one();
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- ABI test: build with both libstdc++ and libc++ in CI.
+- Validate `std::string_view` lifetime guarantees in result accessors.
+- Validate NULL handling via `std::optional` across all primitive types.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

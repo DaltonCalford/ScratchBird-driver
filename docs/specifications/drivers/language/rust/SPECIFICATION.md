@@ -71,7 +71,30 @@ Priority: P1
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- The driver must support async execution with a common runtime (Tokio) and pool types.
+- Provide `query`/`query_as` style APIs for row mapping and typed decoding.
+- Ensure errors include SQLSTATE and are `Send + Sync` to work across async tasks.
+
+## 13. Code Examples
+
+```rust
+use scratchbird::Pool;
+
+let pool = Pool::connect("sb://user:pass@localhost:3092/db").await?;
+let row: (i64,) = sqlx::query_as("SELECT 1")
+    .fetch_one(&pool)
+    .await?;
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate async cancellation and timeout propagation.
+- Ensure pool checkout + statement execution is `Send + Sync` safe.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

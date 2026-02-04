@@ -55,7 +55,29 @@ Category: BI Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Power BI connects via ODBC data sources for custom databases.
+- The driver must expose schema metadata and stable column types.
+- Query folding should be supported where possible.
+
+## 11. Code Examples
+
+```ini
+# ODBC DSN
+Driver=ScratchBird ODBC
+Server=localhost
+Port=3092
+Database=db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Power BI can import and refresh datasets.
+- Confirm DirectQuery mode works with paging and timeouts.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

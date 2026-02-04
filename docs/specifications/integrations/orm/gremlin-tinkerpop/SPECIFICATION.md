@@ -55,7 +55,25 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Gremlin uses traversal steps (`g.V()`, `has`, `out`, `values`) and expects streaming results.
+- Parameterized bindings are common in Gremlin to avoid string interpolation.
+- Result types include vertices, edges, and property maps.
+
+## 11. Code Examples
+
+```groovy
+g.V().has('User','id',param).out('friend').values('name')
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate traversal step ordering and pagination semantics.
+- Ensure vertex/edge property maps are decoded consistently.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

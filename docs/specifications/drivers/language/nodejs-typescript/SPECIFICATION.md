@@ -71,7 +71,26 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- Node drivers should support parameterized queries using positional placeholders and value arrays.
+- Prepared statements are commonly exposed via a named query config object.
+
+## 13. Code Examples
+
+```ts
+const client = new Client({ host: 'localhost', port: 3092, database: 'db' });
+await client.connect();
+const res = await client.query('SELECT $1::int as value', [1]);
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Verify parameterized query handling with array values and nulls.
+- Validate row mode behavior (object vs array) where supported.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

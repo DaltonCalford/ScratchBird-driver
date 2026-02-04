@@ -55,7 +55,32 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Drupal uses `settings.php` and a `databases` array for connection configuration.
+- PDO support is required for database backends.
+- Schema management relies on Drupal's database API.
+
+## 11. Code Examples
+
+```php
+$databases['default']['default'] = [
+  'driver' => 'scratchbird',
+  'database' => 'db',
+  'username' => 'user',
+  'password' => 'pass',
+  'host' => 'localhost',
+  'port' => '3092',
+];
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Drupal installation and module enablement.
+- Confirm `drush sql:query` runs with parameters.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

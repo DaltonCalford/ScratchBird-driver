@@ -55,7 +55,29 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Conform to Ruby DBI expectations for prepared statements and fetch loops.
+- Ensure exceptions expose SQLSTATE and map to DBI error subclasses.
+- Use UTF-8 encoding for all textual fields.
+
+## 11. Code Examples
+
+```ruby
+require "dbi"
+
+dbh = DBI.connect("DBI:ScratchBird:db", "user", "pass")
+sth = dbh.execute("SELECT 1")
+row = sth.fetch
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate `DBI::StatementHandle#fetch` and `#finish` behavior under errors.
+- Confirm `DBI::Database#ping` returns appropriate errors on dropped connections.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

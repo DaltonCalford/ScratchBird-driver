@@ -55,7 +55,28 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Kubernetes deployments require ConfigMaps and Secrets for configuration.
+- StatefulSets with persistent volumes are required for durable storage.
+- Readiness and liveness probes must be supported.
+
+## 11. Code Examples
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scratchbird
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate rolling upgrade with zero data loss.
+- Confirm liveness probes detect hung connections.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

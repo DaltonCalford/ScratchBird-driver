@@ -55,7 +55,25 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- DatabaseMetaData.getTables/getColumns return standard ResultSet columns.
+- getTableTypes should list TABLE/VIEW types.
+
+## 11. Code Examples
+
+```java
+DatabaseMetaData meta = conn.getMetaData();
+ResultSet rs = meta.getColumns(null, null, "%", "%");
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate JDBC metadata column ordering and presence.
+- Ensure SQLSTATE present on SQLException.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

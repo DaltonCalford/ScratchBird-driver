@@ -55,7 +55,28 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Conform to R DBI generics and return data frames with stable column classes.
+- Support `dbListTables` and `dbColumnInfo` for metadata introspection.
+- Treat `NA` and `NULL` per DBI expectations.
+
+## 11. Code Examples
+
+```r
+library(DBI)
+con <- dbConnect(ScratchBird(), host = "localhost", port = 3092, dbname = "db")
+res <- dbGetQuery(con, "SELECT 1")
+dbDisconnect(con)
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate `dbGetQuery` returns consistent `data.frame` column types.
+- Ensure `dbBind` supports positional and named parameters.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

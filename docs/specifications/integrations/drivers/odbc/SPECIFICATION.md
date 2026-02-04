@@ -55,7 +55,24 @@ Category: Standard Protocol
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- SQLColumns must return a column list result set and includes ORDINAL_POSITION.
+- Result set metadata is retrieved via SQLNumResultCols and SQLDescribeCol/SQLColAttribute.
+
+## 11. Code Examples
+
+```c
+SQLColumns(hstmt, NULL, 0, NULL, 0, (SQLCHAR*)"table", SQL_NTS, NULL, 0);
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.).
+- Validate SQLDescribeCol and SQLNumResultCols behavior.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

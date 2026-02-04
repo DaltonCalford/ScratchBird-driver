@@ -55,7 +55,26 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Pentaho Data Integration uses JDBC for database steps and requires driver JARs.
+- Metadata queries must be fast for schema browsers.
+- Batch insert steps should use prepared statements.
+
+## 11. Code Examples
+
+```ini
+# Pentaho JDBC connection
+jdbc:scratchbird://localhost:3092/db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate PDI transformations with Table Input/Output steps.
+- Confirm metadata browsing for tables and columns.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

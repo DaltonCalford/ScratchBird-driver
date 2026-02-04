@@ -55,7 +55,32 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Prisma expects a `datasource` and `generator` in `schema.prisma` with a connection URL.
+- Support introspection flows (similar to `prisma db pull`) and migrations (similar to `prisma migrate`).
+- Ensure scalar types map cleanly to Prisma field types and `@db` native types.
+
+## 11. Code Examples
+
+```prisma
+datasource db {
+  provider = "scratchbird"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate introspection against a schema with enums, arrays, and JSON.
+- Ensure Prisma Client queries return correct nullability and enum mappings.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

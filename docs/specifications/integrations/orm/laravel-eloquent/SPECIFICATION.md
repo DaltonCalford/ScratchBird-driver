@@ -55,7 +55,33 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Laravel uses `config/database.php` and `.env` variables for connection configuration.
+- Eloquent expects PDO-based drivers and supports prepared statements by default.
+- Ensure migration commands (`php artisan migrate`) and schema builder operations are supported.
+
+## 11. Code Examples
+
+```php
+// config/database.php
+'scratchbird' => [
+  'driver' => 'scratchbird',
+  'host' => env('DB_HOST', 'localhost'),
+  'port' => env('DB_PORT', 3092),
+  'database' => env('DB_DATABASE', 'db'),
+  'username' => env('DB_USERNAME', 'user'),
+  'password' => env('DB_PASSWORD', 'pass'),
+],
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate schema builder support for indexes and foreign keys.
+- Confirm Eloquent casts (date, json, array) match ScratchBird types.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

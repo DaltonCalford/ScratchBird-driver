@@ -55,7 +55,26 @@ Category: Database Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- DataGrip uses JDBC drivers and requires driver JARs to be configured per data source.
+- It expects DatabaseMetaData compatibility for schemas, tables, and columns.
+- SQL dialect quirks must be declared to avoid incorrect SQL generation.
+
+## 11. Code Examples
+
+```properties
+# DataGrip JDBC URL
+jdbc:scratchbird://localhost:3092/db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate database introspection for schemas and routines.
+- Confirm parameterized query execution in the query console.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

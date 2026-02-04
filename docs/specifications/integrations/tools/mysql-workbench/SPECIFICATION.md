@@ -55,7 +55,30 @@ Category: Database Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- MySQL Workbench migrations use ODBC drivers for source/target connectivity.
+- Metadata discovery must support `SQLTables`, `SQLColumns`, and `SQLPrimaryKeys` equivalents.
+- The driver must tolerate long-running introspection queries.
+
+## 11. Code Examples
+
+```ini
+# ODBC DSN
+[ScratchBird]
+Driver=ScratchBird ODBC
+Server=localhost
+Port=3092
+Database=db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Workbench migration wizard completes schema introspection.
+- Confirm data copy works for large tables with paging.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

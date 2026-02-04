@@ -55,7 +55,35 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Support TypeORM `DataSource` configuration and `DataSourceOptions` fields (host, port, database, username, password, ssl).
+- Ensure metadata helpers provide table/column info for entity synchronization.
+- Avoid relying on TypeORM `synchronize` for production migrations.
+
+## 11. Code Examples
+
+```ts
+import { DataSource } from "typeorm";
+
+const dataSource = new DataSource({
+  type: "scratchbird",
+  host: "localhost",
+  port: 3092,
+  database: "db",
+  username: "user",
+  password: "pass",
+});
+await dataSource.initialize();
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate entity metadata discovery for `@Entity` with custom schema.
+- Verify parameterized queries use positional `$1` or named bindings as expected by the driver.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

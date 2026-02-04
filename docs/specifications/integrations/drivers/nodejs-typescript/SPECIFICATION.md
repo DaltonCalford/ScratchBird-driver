@@ -55,7 +55,24 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Parameterized queries use positional placeholders and value arrays.
+- Prepared statements are often represented by named query configs.
+
+## 11. Code Examples
+
+```ts
+const res = await client.query('SELECT $1::int as value', [1]);
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate parameter binding conversion rules for arrays and objects.
+- Confirm prepared statement name reuse behavior.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

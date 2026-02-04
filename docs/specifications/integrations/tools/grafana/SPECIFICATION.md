@@ -55,7 +55,26 @@ Category: BI Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Grafana SQL data sources expect query macros and time-series formatting.
+- The driver must return correct time column types and ordering.
+- Connection pooling and query timeouts should be configurable.
+
+## 11. Code Examples
+
+```ini
+# Grafana datasource URL
+scratchbird://localhost:3092/db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate time-series queries return consistent time/value columns.
+- Confirm dashboard refreshes do not leak connections.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

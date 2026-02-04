@@ -55,7 +55,27 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- AWS deployments typically use VPC networking, security groups, and IAM roles.
+- Managed deployments should align with RDS-style parameter groups and backups.
+- TLS certificates must be compatible with AWS load balancers.
+
+## 11. Code Examples
+
+```hcl
+resource "aws_security_group" "scratchbird" {
+  ingress { from_port = 3092, to_port = 3092, protocol = "tcp" }
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate connectivity through AWS load balancers.
+- Confirm backups and restore procedures.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,26 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Cypher is a property-graph query language using `MATCH`, `WHERE`, and `RETURN` clauses.
+- Parameters are referenced with `$name` and are expected to support list/array binding.
+- Result sets must preserve graph element structure (nodes, relationships, paths).
+
+## 11. Code Examples
+
+```cypher
+MATCH (u:User {id: $id})-[:FRIEND]->(f)
+RETURN f
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate parameter binding for lists and nested maps.
+- Ensure path result shapes are preserved in metadata helpers.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

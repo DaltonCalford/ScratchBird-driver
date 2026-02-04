@@ -71,7 +71,32 @@ Priority: P1
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- Follow Ruby DBI semantics for `DBI.connect`, prepared statements, and `fetch` iteration.
+- Ensure exceptions map to DBI error classes and include SQLSTATE codes.
+- Use UTF-8 strings and freeze/dup as needed to avoid accidental mutation.
+
+## 13. Code Examples
+
+```ruby
+require "dbi"
+
+dbh = DBI.connect("DBI:ScratchBird:db", "user", "pass", "host=localhost;port=3092")
+sth = dbh.prepare("SELECT 1")
+sth.execute
+row = sth.fetch
+sth.finish
+dbh.disconnect
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate `DBI::Database#prepare` + `#execute` lifecycle and `#finish` cleanup.
+- Confirm UTF-8 encoding on text columns and error messages.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,34 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Django uses `DATABASES` settings for connection configuration.
+- Migrations are driven by `manage.py migrate`, and schema introspection expects backend features.
+- The backend adapter must implement Django Database Backend APIs (operations, features, introspection).
+
+## 11. Code Examples
+
+```python
+DATABASES = {
+  "default": {
+    "ENGINE": "scratchbird",
+    "NAME": "db",
+    "HOST": "localhost",
+    "PORT": "3092",
+    "USER": "user",
+    "PASSWORD": "pass",
+  }
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate `inspectdb` output matches metadata contract.
+- Confirm Django migration operations for indexes and constraints.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

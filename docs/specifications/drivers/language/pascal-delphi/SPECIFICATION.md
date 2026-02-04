@@ -71,7 +71,32 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- SQLDB uses TSQLConnector/TSQLConnection with TSQLTransaction to manage transactions.
+- TSQLQuery is the primary dataset for executing queries and reading results.
+
+## 13. Code Examples
+
+```pascal
+Conn := TSQLConnector.Create(nil);
+Conn.ConnectorType := 'scratchbird';
+Txn := TSQLTransaction.Create(nil);
+Txn.DataBase := Conn;
+Query := TSQLQuery.Create(nil);
+Query.Database := Conn;
+Query.Transaction := Txn;
+Query.SQL.Text := 'SELECT 1';
+Query.Open;
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate transaction handling via TSQLTransaction.
+- Ensure schema retrieval APIs return expected metadata.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,28 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- SQLDB uses TSQLConnector + TSQLTransaction + TSQLQuery flow.
+- ConnectorType selects backend driver at runtime.
+
+## 11. Code Examples
+
+```pascal
+Conn := TSQLConnector.Create(nil);
+Conn.ConnectorType := 'scratchbird';
+Query := TSQLQuery.Create(nil);
+Query.SQL.Text := 'SELECT 1';
+Query.Open;
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate transaction behavior via TSQLTransaction.
+- Confirm schema retrieval APIs (SQLDB) return expected shapes.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

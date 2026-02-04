@@ -55,7 +55,26 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- QueryRow errors are deferred to Scan; no rows returns ErrNoRows.
+- Context-aware methods required for cancellation.
+
+## 11. Code Examples
+
+```go
+row := db.QueryRowContext(ctx, "SELECT 1")
+var v int
+_ = row.Scan(&v)
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Verify ErrNoRows behavior.
+- Validate context cancellation.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

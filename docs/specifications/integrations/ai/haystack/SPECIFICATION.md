@@ -55,7 +55,27 @@ Category: AI & Machine Learning
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Haystack document stores expect consistent schema and efficient filter predicates.
+- SQL-backed document stores require parameterized queries and transaction safety.
+- Embedding/vector fields must preserve dimensionality and order.
+
+## 11. Code Examples
+
+```python
+from haystack.document_stores import SQLDocumentStore
+
+doc_store = SQLDocumentStore(url="scratchbird://user:pass@localhost:3092/db")
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate insert/update/delete for documents with metadata filters.
+- Confirm vector similarity queries return stable ordering.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

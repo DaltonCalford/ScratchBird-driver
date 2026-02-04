@@ -71,7 +71,26 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- `QueryRow` defers errors until `Scan`, and returns `ErrNoRows` if no rows are found.
+- Drivers must implement context-aware query and exec paths.
+
+## 13. Code Examples
+
+```go
+row := db.QueryRowContext(ctx, "SELECT 1")
+var v int
+if err := row.Scan(&v); err != nil { /* handle */ }
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Verify `QueryRow` error behavior (ErrNoRows).
+- Validate context cancellation behavior for long-running queries.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

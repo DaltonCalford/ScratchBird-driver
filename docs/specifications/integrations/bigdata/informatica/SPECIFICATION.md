@@ -55,7 +55,26 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Informatica PowerCenter supports JDBC for relational sources/targets.
+- Driver class loading must be compatible with PowerCenter runtime.
+- Large batch loads require stable transaction behavior.
+
+## 11. Code Examples
+
+```ini
+# Informatica JDBC connection
+jdbc:scratchbird://localhost:3092/db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate PowerCenter session runs with source/target mappings.
+- Confirm error row handling and retry behavior.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,26 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Provide a stable C API façade for language bindings where ABI stability is required.
+- Support both static and shared builds with explicit linkage flags.
+- Document ownership of buffers returned to callers.
+
+## 11. Code Examples
+
+```cpp
+sb::Connection conn{"sb://user:pass@localhost:3092/db"};
+auto rows = conn.query("SELECT 1");
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Verify both static and shared builds link successfully.
+- Validate row buffers remain valid until the next fetch call.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

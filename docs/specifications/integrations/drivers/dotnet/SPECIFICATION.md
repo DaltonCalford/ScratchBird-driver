@@ -55,7 +55,26 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- ADO.NET patterns rely on DbConnection, DbCommand, DbDataReader.
+- Providers should support DbProviderFactory usage.
+
+## 11. Code Examples
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT 1";
+using var reader = cmd.ExecuteReader();
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate DbDataReader schema metadata.
+- Confirm DbException SQLSTATE mapping.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

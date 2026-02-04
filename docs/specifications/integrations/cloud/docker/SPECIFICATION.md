@@ -55,7 +55,25 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Docker images must expose standard ports and support env-based configuration.
+- Non-root container execution should be supported.
+- Volume mounts are required for persistent data.
+
+## 11. Code Examples
+
+```bash
+docker run -e SB_LISTEN=0.0.0.0:3092 -p 3092:3092 scratchbird/server
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate container starts with read-only root filesystem.
+- Confirm upgrade path via image tag changes.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

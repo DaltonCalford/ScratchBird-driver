@@ -55,7 +55,23 @@ Category: Standard Protocol
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- DatabaseMetaData.getTables/getColumns return standard ResultSet columns.
+- getSchemas and getTableTypes should return ordered results.
+
+## 11. Code Examples
+
+```java
+ResultSet rs = meta.getTables(null, null, "%", new String[] {"TABLE", "VIEW"});
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate metadata result sets (tables/columns) and SQLSTATE.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

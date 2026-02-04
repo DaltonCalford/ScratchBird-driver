@@ -55,7 +55,27 @@ Category: ORM/Framework
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- SQLAlchemy Inspector.get_columns returns dicts with keys like name, type, nullable, default, and autoincrement.
+- Dialect reflection must support schema-qualified inspection.
+
+## 11. Code Examples
+
+```python
+from sqlalchemy import create_engine, inspect
+engine = create_engine("scratchbird://localhost:3092/db")
+inspector = inspect(engine)
+cols = inspector.get_columns('table')
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate reflection metadata keys (name/type/nullable/default).
+- Verify schema-qualified inspection.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

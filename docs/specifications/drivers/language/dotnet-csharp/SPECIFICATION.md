@@ -71,7 +71,28 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- ADO.NET providers rely on DbConnection/DbCommand/DbDataReader patterns.
+- Providers must support DbProviderFactory-style usage.
+
+## 13. Code Examples
+
+```csharp
+using var conn = new ScratchBirdConnection(connString);
+conn.Open();
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT 1";
+using var reader = cmd.ExecuteReader();
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate DbDataReader schema metadata (column names/types).
+- Ensure DbException contains SQLSTATE and detail information.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

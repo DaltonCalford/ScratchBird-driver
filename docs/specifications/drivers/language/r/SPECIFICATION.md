@@ -71,7 +71,30 @@ Priority: P2
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- The driver must implement the DBI contract: `dbConnect`, `dbDisconnect`, `dbGetQuery`, `dbSendQuery`, `dbFetch`, `dbBind`, and `dbClearResult`.
+- NULLs must round-trip as `NA` for atomic vectors and `NULL` in list columns.
+- Parameter binding must accept named parameters and positional parameters consistent with DBI.
+
+## 13. Code Examples
+
+```r
+library(DBI)
+con <- dbConnect(ScratchBird(), host = "localhost", port = 3092, dbname = "db")
+rs <- dbSendQuery(con, "SELECT 1")
+res <- dbFetch(rs)
+dbClearResult(rs)
+dbDisconnect(con)
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate DBI `dbListTables`, `dbListFields`, and `dbColumnInfo` behavior.
+- Confirm `dbGetQuery` returns data frames with stable column types.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

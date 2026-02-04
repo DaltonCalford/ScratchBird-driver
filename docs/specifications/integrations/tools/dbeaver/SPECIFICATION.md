@@ -55,7 +55,26 @@ Category: Database Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- DBeaver relies on JDBC drivers and expects a JDBC URL for connections.
+- Driver registration and classpath loading must work with custom driver jars.
+- Metadata queries must be efficient to avoid UI timeouts.
+
+## 11. Code Examples
+
+```properties
+# DBeaver JDBC URL
+jdbc:scratchbird://localhost:3092/db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate schema browser loads tables, columns, and indexes.
+- Confirm DBeaver can generate and execute `SELECT` previews.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,29 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Odoo requires PostgreSQL and manages databases via a dedicated DB user.
+- Connection configuration is typically via `odoo.conf`.
+- Odoo uses large schemas and relies on sequences and constraints.
+
+## 11. Code Examples
+
+```ini
+[options]
+db_host = localhost
+db_port = 3092
+db_user = user
+db_password = pass
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Odoo database creation and module installation.
+- Confirm ORM migrations on upgrade.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

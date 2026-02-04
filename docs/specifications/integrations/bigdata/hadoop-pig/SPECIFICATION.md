@@ -55,7 +55,26 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Pig DBStorage supports storing data to JDBC targets and requires driver jars.
+- Schema mapping must preserve column ordering and nullability.
+- Large batch writes should be chunked to avoid memory spikes.
+
+## 11. Code Examples
+
+```pig
+STORE data INTO 'jdbc:scratchbird://localhost:3092/db' 
+USING org.apache.pig.piggybank.storage.DBStorage('com.scratchbird.Driver');
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate DBStorage write path with large datasets.
+- Confirm NULL handling for optional fields.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

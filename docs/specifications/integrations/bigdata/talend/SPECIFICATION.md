@@ -55,7 +55,27 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Talend JDBC components (tJDBCConnection, tJDBCInput, tJDBCOutput) expect standard JDBC metadata.
+- Batch size and commit intervals should be configurable.
+- Driver class loading must work in Talend Studio and runtime.
+
+## 11. Code Examples
+
+```ini
+# Talend tJDBCConnection
+jdbcUrl=jdbc:scratchbird://localhost:3092/db
+jdbcDriver=com.scratchbird.Driver
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Talend job execution with input/output components.
+- Confirm batch inserts use prepared statements.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

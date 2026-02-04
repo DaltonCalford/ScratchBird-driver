@@ -55,7 +55,26 @@ Category: Language Driver
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Use async-first APIs compatible with Tokio and futures.
+- Provide pool configuration for max connections, timeouts, and idle cleanup.
+- Support typed row mapping akin to `query_as` conventions.
+
+## 11. Code Examples
+
+```rust
+let pool = scratchbird::Pool::connect("sb://user:pass@localhost:3092/db").await?;
+let row: (i64,) = scratchbird::query_as("SELECT 1").fetch_one(&pool).await?;
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Verify pool reconnects after transient network failures.
+- Ensure error types include SQLSTATE and implement `std::error::Error`.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

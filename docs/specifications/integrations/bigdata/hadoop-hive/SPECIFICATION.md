@@ -55,7 +55,31 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Hive JDBC storage handlers require JDBC URL and driver class configuration.
+- Hive expects column types to map to SQL types for external tables.
+- Queries should support predicate pushdown where possible.
+
+## 11. Code Examples
+
+```sql
+CREATE EXTERNAL TABLE sb_table (...) 
+STORED BY 'org.apache.hive.storage.jdbc.JdbcStorageHandler'
+TBLPROPERTIES (
+  'hive.sql.database.type'='scratchbird',
+  'hive.sql.jdbc.driver'='com.scratchbird.Driver',
+  'hive.sql.jdbc.url'='jdbc:scratchbird://localhost:3092/db'
+);
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Hive external table read/write against ScratchBird.
+- Confirm predicate pushdown reduces row counts.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

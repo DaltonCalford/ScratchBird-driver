@@ -55,7 +55,28 @@ Category: Big Data & Streaming
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Kafka Connect JDBC sink uses connector configs like `connection.url` and `table.name.format`.
+- The driver must support auto-commit behavior expected by the sink.
+- Batch inserts and retries must be stable under load.
+
+## 11. Code Examples
+
+```json
+{
+  "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+  "connection.url": "jdbc:scratchbird://localhost:3092/db"
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate sink retries on transient errors.
+- Confirm schema evolution for added columns.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

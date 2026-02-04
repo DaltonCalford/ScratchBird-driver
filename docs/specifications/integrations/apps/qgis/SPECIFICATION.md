@@ -55,7 +55,28 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- QGIS connects to PostGIS via the Data Source Manager and expects spatial metadata tables.
+- Geometry column and SRID metadata must be consistent.
+- Large spatial datasets require cursor-based fetching.
+
+## 11. Code Examples
+
+```ini
+# QGIS connection
+host=localhost
+port=3092
+dbname=db
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate adding a PostGIS layer and rendering features.
+- Confirm spatial indexes are recognized.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

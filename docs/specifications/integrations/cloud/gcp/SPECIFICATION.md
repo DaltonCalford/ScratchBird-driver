@@ -55,7 +55,27 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- GCP deployments use service accounts and firewall rules for connectivity.
+- Cloud SQL-style deployments require TLS and IAM-aware connection policies.
+- Health checks must be compatible with Google Load Balancers.
+
+## 11. Code Examples
+
+```hcl
+resource "google_compute_firewall" "scratchbird" {
+  allow { protocol = "tcp", ports = ["3092"] }
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate connectivity through GCP load balancers.
+- Confirm automated backups and point-in-time restore.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

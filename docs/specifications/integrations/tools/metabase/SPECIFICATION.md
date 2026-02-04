@@ -55,7 +55,25 @@ Category: BI Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Metabase connects via JDBC drivers and expects a driver JAR registered with Metabase.
+- Metadata APIs must return stable results for schema sync.
+- SQL dialect hints are required for Metabase query generation.
+
+## 11. Code Examples
+
+```json
+{"mb-jdbc-url": "jdbc:scratchbird://localhost:3092/db"}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Metabase schema sync and field fingerprinting.
+- Confirm native query mode executes parameterized SQL.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

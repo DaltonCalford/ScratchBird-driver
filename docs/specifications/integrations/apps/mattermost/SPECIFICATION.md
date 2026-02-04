@@ -55,7 +55,25 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Mattermost uses PostgreSQL for production deployments.
+- DB connection config is in `config.json` with DSN-like fields.
+- Online migrations are common during upgrades.
+
+## 11. Code Examples
+
+```json
+{"SqlSettings": {"DataSource": "postgres://user:pass@localhost:3092/db?sslmode=require"}}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Mattermost startup migrations complete.
+- Confirm message, channel, and user CRUD flows.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,30 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Joomla stores DB config in `configuration.php` and expects a PDO or MySQLi-style driver.
+- Table prefixes and schema initialization must be supported.
+- UTF-8 charset support is required for multilingual content.
+
+## 11. Code Examples
+
+```php
+public $dbtype = 'scratchbird';
+public $host = 'localhost';
+public $user = 'user';
+public $password = 'pass';
+public $db = 'db';
+public $dbprefix = 'jos_';
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate Joomla installation and administrator login.
+- Confirm extension install and upgrade path.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

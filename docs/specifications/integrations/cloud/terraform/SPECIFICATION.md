@@ -55,7 +55,28 @@ Category: Cloud & Container
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- Terraform modules should expose variables for ports, storage, and credentials.
+- State changes must be idempotent across applies.
+- Outputs should include connection strings for downstream tooling.
+
+## 11. Code Examples
+
+```hcl
+module "scratchbird" {
+  source = "./modules/scratchbird"
+  port   = 3092
+}
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate plan/apply on clean and existing environments.
+- Confirm destroy cleans up all resources.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -55,7 +55,29 @@ Category: Database Tool
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- pgAdmin expects server registration fields (host, port, maintenance DB, user).
+- Introspection queries should be fast to populate the tree view.
+- SSL modes must be supported for secure connections.
+
+## 11. Code Examples
+
+```ini
+# pgAdmin server registration
+Host=localhost
+Port=3092
+MaintenanceDB=db
+Username=user
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate schema tree expansion for tables, indexes, and functions.
+- Confirm query tool can run parameterized statements.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

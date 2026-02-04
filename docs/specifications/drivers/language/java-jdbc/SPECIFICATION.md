@@ -71,7 +71,31 @@ Priority: P0
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 12. References
+
+## 12. System Constraints & Vendor Quirks
+
+- JDBC DatabaseMetaData must return standard column sets for `getTables` and `getColumns`.
+- Table types are expected to include values like TABLE and VIEW.
+
+## 13. Code Examples
+
+```java
+try (Connection conn = DriverManager.getConnection(url, props)) {
+    DatabaseMetaData meta = conn.getMetaData();
+    try (ResultSet rs = meta.getColumns(null, null, "%", "%")) {
+        while (rs.next()) {
+            String name = rs.getString("COLUMN_NAME");
+        }
+    }
+}
+```
+
+## 14. Vendor-Specific Test Criteria
+
+- Validate DatabaseMetaData result columns for tables and columns.
+- Ensure SQLSTATE codes are surfaced in SQLException.
+
+## 15. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

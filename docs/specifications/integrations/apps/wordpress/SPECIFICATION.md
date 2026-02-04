@@ -55,7 +55,29 @@ Category: Application
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
 
-## 9. References
+
+## 10. System Constraints & Vendor Quirks
+
+- WordPress expects MySQL/MariaDB-compatible behavior and config in `wp-config.php`.
+- PHP extensions must provide `mysqli`/PDO-style behavior.
+- Collation and charset must be stable for UTF-8 content.
+
+## 11. Code Examples
+
+```php
+// wp-config.php
+define('DB_NAME', 'db');
+define('DB_USER', 'user');
+define('DB_PASSWORD', 'pass');
+define('DB_HOST', 'localhost:3092');
+```
+
+## 12. Vendor-Specific Test Criteria
+
+- Validate WordPress install and admin login with ScratchBird.
+- Confirm basic CRUD for posts, users, and taxonomy.
+
+## 13. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md
