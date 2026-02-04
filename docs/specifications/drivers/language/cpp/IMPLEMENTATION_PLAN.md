@@ -1,24 +1,25 @@
-# C/C++ Driver Implementation Plan (Template)
+# C/C++ Driver Implementation Plan
 
-Status: Draft (Template)
+Status: Draft
+Priority: P2
 
 ## Phase 1 - Core Connectivity
 
-- Connection config + DSN parsing
-- TLS enforcement + binary-only
-- Basic query execution
+- DSN parsing per DRIVER_DSN_AND_CONFIG_STANDARD.md.
+- TLS enforcement and binary-only mode.
+- Basic query execution and result decoding.
 
 ## Phase 2 - Type Mapping
 
-- Encode/decode all SBWP types
-- Array/composite/range support
+- Implement TYPE_MAPPING_MATRIX.md for encode/decode.
+- Array/composite/range/vector/geometry coverage.
 
 ## Phase 3 - Metadata
 
-- sys.* helpers per metadata contract
-- JDBC/ODBC mapping alignment
+- Implement sys.* metadata helpers.
+- Align JDBC/ODBC metadata mappings.
 
-## Phase 4 - Conformance
+## Phase 4 - Conformance & Tooling
 
-- Conformance tests
-- Performance validation
+- Run conformance harness and publish reports.
+- Add performance regression tests.

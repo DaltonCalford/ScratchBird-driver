@@ -1,20 +1,20 @@
-# .NET/C# Driver Integration API Reference (Template)
+# .NET/C# Integration API Reference
 
-Status: Draft (Template)
+Status: Draft
 Priority: P0
+Category: Language Driver
 
 ## Connection
 
-- Connection string/DSN
-- TLS options
+- Connection string/DSN requirements.
+- TLS configuration settings.
 
-## Queries
+## Query Support
 
-- Read/Write support
-- Prepared statements
+- Prepared statement support required.
+- Parameter binding must be binary-only.
 
 ## Metadata
 
-- Schema discovery
-- Column/index metadata
-
+- Schema discovery.
+- Column and index metadata.

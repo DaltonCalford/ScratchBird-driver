@@ -1,12 +1,18 @@
-# pgAdmin Integration Testing Criteria (Template)
+# pgadmin Integration Testing Criteria
 
-Status: Draft (Template)
+Status: Draft
 Priority: P0
+Category: Database Tool
 
 ## Required Coverage
 
-- Connectivity
-- CRUD operations
-- Metadata discovery
-- Error handling
+- Unit tests for encode/decode of all wire types.
+- Integration tests against live ScratchBird server.
+- Conformance harness integration where applicable.
+- Metadata contract validation tests for sys.* queries.
 
+## Integration Validation
+
+- Connectivity tests.
+- Metadata discovery.
+- Error mapping behavior.

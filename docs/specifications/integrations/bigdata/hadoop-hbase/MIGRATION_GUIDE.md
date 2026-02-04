@@ -1,14 +1,21 @@
-# Hadoop HBase Integration Migration Guide (Template)
+# hadoop hbase Integration Migration Guide
 
-Status: Draft (Template)
+Status: Draft
 Priority: P2
+Category: Big Data & Streaming
 
 ## Scope
 
-Guidance for migrating existing Hadoop HBase configurations to ScratchBird.
+Guidance for migrating existing hadoop hbase configurations to ScratchBird.
 
 ## Key Differences
 
-- Native SBWP wire protocol
-- Binary-only parameter binding
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
 
+## Migration Checklist
+
+- Update connection configuration.
+- Validate metadata queries.
+- Verify SQLSTATE mapping.

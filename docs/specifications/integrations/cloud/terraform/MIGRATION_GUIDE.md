@@ -1,14 +1,21 @@
-# Terraform Integration Migration Guide (Template)
+# terraform Integration Migration Guide
 
-Status: Draft (Template)
+Status: Draft
 Priority: P1
+Category: Cloud & Container
 
 ## Scope
 
-Guidance for migrating existing Terraform configurations to ScratchBird.
+Guidance for migrating existing terraform configurations to ScratchBird.
 
 ## Key Differences
 
-- Native SBWP wire protocol
-- Binary-only parameter binding
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
 
+## Migration Checklist
+
+- Update connection configuration.
+- Validate metadata queries.
+- Verify SQLSTATE mapping.

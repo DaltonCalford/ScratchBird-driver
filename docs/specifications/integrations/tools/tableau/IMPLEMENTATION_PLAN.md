@@ -1,20 +1,20 @@
-# Tableau Integration Implementation Plan (Template)
+# tableau Integration Implementation Plan
 
-Status: Draft (Template)
+Status: Draft
 Priority: P1
+Category: BI Tool
 
 ## Phase 1 - Baseline Compatibility
 
-- Connection verification
-- Basic query execution
+- Validate connection and authentication.
+- Execute basic CRUD queries.
 
-## Phase 2 - Metadata
+## Phase 2 - Metadata Coverage
 
-- Schema and table discovery
-- Index/constraint metadata
+- Schema and table discovery.
+- Index and constraint metadata.
 
 ## Phase 3 - Validation
 
-- Integration tests
-- Conformance checks
-
+- Integration tests.
+- Conformance checks.

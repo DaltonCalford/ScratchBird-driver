@@ -1,14 +1,21 @@
-# Node.js/TypeScript Driver Integration Migration Guide (Template)
+# Node.js typescript Integration Migration Guide
 
-Status: Draft (Template)
+Status: Draft
 Priority: P0
+Category: Language Driver
 
 ## Scope
 
-Guidance for migrating existing Node.js/TypeScript Driver configurations to ScratchBird.
+Guidance for migrating existing Node.js typescript configurations to ScratchBird.
 
 ## Key Differences
 
-- Native SBWP wire protocol
-- Binary-only parameter binding
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
 
+## Migration Checklist
+
+- Update connection configuration.
+- Validate metadata queries.
+- Verify SQLSTATE mapping.

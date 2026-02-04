@@ -1,14 +1,21 @@
-# Prometheus Integration Migration Guide (Template)
+# prometheus Integration Migration Guide
 
-Status: Draft (Template)
+Status: Draft
 Priority: P1
+Category: Monitoring
 
 ## Scope
 
-Guidance for migrating existing Prometheus configurations to ScratchBird.
+Guidance for migrating existing prometheus configurations to ScratchBird.
 
 ## Key Differences
 
-- Native SBWP wire protocol
-- Binary-only parameter binding
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
 
+## Migration Checklist
+
+- Update connection configuration.
+- Validate metadata queries.
+- Verify SQLSTATE mapping.

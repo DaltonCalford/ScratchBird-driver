@@ -1,10 +1,17 @@
-# Java JDBC Driver Testing Criteria (Template)
+# Java JDBC Driver Testing Criteria
 
-Status: Draft (Template)
+Status: Draft
+Priority: P0
 
-## Required Test Coverage
+## Required Coverage
 
-- Unit tests for encoding/decoding
-- Integration tests against SBWP server
-- Conformance harness execution
-- Metadata queries validation
+- Unit tests for encode/decode of all wire types.
+- Integration tests against live ScratchBird server.
+- Conformance harness integration where applicable.
+- Metadata contract validation tests for sys.* queries.
+
+## Performance Tests
+
+- Batch fetch with `fetch_size`.
+- Large result set streaming.
+- Prepared statement reuse.

@@ -1,31 +1,36 @@
-# C/C++ Driver API Reference (Template)
+# C/C++ Driver API Reference
 
-Status: Draft (Template)
+Status: Draft
+Priority: P2
 
-## Connection
+## Core API Surface
 
 - `connect(options)`
 - `close()`
-
-## Queries
-
 - `query(sql, params)`
 - `execute(sql, params)`
 - `prepare(sql)`
-
-## Transactions
-
 - `begin()`
 - `commit()`
 - `rollback()`
-
-## Metadata
-
 - `schemas()`
 - `tables(schema)`
 - `columns(schema, table)`
 - `indexes(schema, table)`
 
+## Connection Options
+
+- `host`, `port`, `database`, `user`, `password`
+- `sslmode`, `sslrootcert`, `sslcert`, `sslkey`
+- `connectTimeout`, `socketTimeout`, `application_name`
+- `binaryTransfer` (must remain true)
+
+## Result Handling
+
+- Column metadata (name, type_oid, format).
+- Row decoding per DRIVER_RESULT_DECODING.md.
+
 ## Errors
 
-All errors must include message + SQLSTATE + detail + hint when available.
+- Errors include SQLSTATE, message, detail, hint.
+- Map to native exception types per DRIVER_ERROR_MAPPING.md.

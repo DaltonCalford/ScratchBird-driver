@@ -1,15 +1,19 @@
-# Python Driver (Template)
+# Python Driver
 
-Status: Draft (Template)
-Target: Alpha/Beta (per ScratchBird specs)
+Status: Draft
+Priority: P0
+Category: Language Driver
+
+## Planning Links
+
+- `docs/planning/ISSUE_STUBS.md`
+- `docs/planning/ISSUE_INDEX.md`
 
 ## Purpose
 
-Provide a per-language driver specification and implementation guide for the
-Python driver. This template aligns with the ScratchBird native wire protocol
-(SBWP) and the shared driver requirements in this repository.
+Provide full driver requirements, design notes, and implementation guidance for Python.
 
-## Core References
+## References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md
@@ -23,16 +27,9 @@ Python driver. This template aligns with the ScratchBird native wire protocol
 - docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
 - docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
 
-## Driver-Specific References
+## Scope
 
-- PEP 249 DB-API 2.0
-- SQLAlchemy integration
-
-## Source Layout
-
-- python/
-
-## Notes
-
-This is a template specification. Fill in language-idiomatic API details,
-compatibility constraints, and integration notes before implementation.
+- Native SBWP connectivity
+- Metadata helpers
+- Error mapping
+- Type mapping

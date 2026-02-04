@@ -1,13 +1,21 @@
-# R Driver Migration Guide (Template)
+# R Driver Migration Guide
 
-Status: Draft (Template)
+Status: Draft
+Priority: P2
 
 ## Scope
 
-Guidance for migrating existing applications to the ScratchBird driver.
+Guidance for migrating existing applications to the ScratchBird R driver.
 
 ## Key Differences
 
-- SBWP native wire protocol (not PostgreSQL protocol).
-- Binary-only parameter binding enforced.
-- SQLSTATE error mapping differs from some drivers.
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
+
+## Migration Checklist
+
+- Update DSN/connection config keys.
+- Validate binary-only parameter binding.
+- Verify SQLSTATE mapping behavior.
+- Re-run integration tests against ScratchBird.

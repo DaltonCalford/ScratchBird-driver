@@ -1,14 +1,21 @@
-# Sequelize Integration Migration Guide (Template)
+# sequelize Integration Migration Guide
 
-Status: Draft (Template)
+Status: Draft
 Priority: P0
+Category: ORM/Framework
 
 ## Scope
 
-Guidance for migrating existing Sequelize configurations to ScratchBird.
+Guidance for migrating existing sequelize configurations to ScratchBird.
 
 ## Key Differences
 
-- Native SBWP wire protocol
-- Binary-only parameter binding
+- SBWP native protocol, not PostgreSQL/MySQL wire protocol.
+- Binary-only parameters; text-only drivers must be upgraded.
+- SQLSTATE mapping may differ from existing driver defaults.
 
+## Migration Checklist
+
+- Update connection configuration.
+- Validate metadata queries.
+- Verify SQLSTATE mapping.

@@ -1,15 +1,19 @@
-# Ruby Driver (Template)
+# Ruby Driver
 
-Status: Draft (Template)
-Target: Alpha/Beta (per ScratchBird specs)
+Status: Draft
+Priority: P1
+Category: Language Driver
+
+## Planning Links
+
+- `docs/planning/ISSUE_STUBS.md`
+- `docs/planning/ISSUE_INDEX.md`
 
 ## Purpose
 
-Provide a per-language driver specification and implementation guide for the
-Ruby driver. This template aligns with the ScratchBird native wire protocol
-(SBWP) and the shared driver requirements in this repository.
+Provide full driver requirements, design notes, and implementation guidance for Ruby.
 
-## Core References
+## References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md
@@ -23,16 +27,9 @@ Ruby driver. This template aligns with the ScratchBird native wire protocol
 - docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
 - docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
 
-## Driver-Specific References
+## Scope
 
-- DBI/ActiveRecord
-- Rails integration
-
-## Source Layout
-
-- ruby/
-
-## Notes
-
-This is a template specification. Fill in language-idiomatic API details,
-compatibility constraints, and integration notes before implementation.
+- Native SBWP connectivity
+- Metadata helpers
+- Error mapping
+- Type mapping
