@@ -2,8 +2,8 @@
 
 # Mojo Driver Guide
 
-**Status:** Preview (Python transport bridge)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -28,7 +28,7 @@ See the Getting Started link below for setup steps.
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/mojo.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/mojo.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/mojo/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/mojo/README.md)
 - [Driver spec](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_MOJO_NATIVE_API.md)
 
 ## Configuration

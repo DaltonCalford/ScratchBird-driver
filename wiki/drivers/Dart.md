@@ -2,8 +2,8 @@
 
 # Dart Driver Guide
 
-**Status:** Preview (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Beta track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,7 +14,7 @@ Native Dart/Flutter driver for ScratchBird using SBWP v1.1.
 ## Install
 
 ```bash
-cd dart
+cd tracks/beta/drivers/dart
 flutter pub get
 ```
 
@@ -36,7 +36,7 @@ await client.close();
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/dart.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/dart.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/dart/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/dart/README.md)
 
 ## Configuration
 
@@ -45,4 +45,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 Integration tests use `SCRATCHBIRD_TEST_DSN`.
-

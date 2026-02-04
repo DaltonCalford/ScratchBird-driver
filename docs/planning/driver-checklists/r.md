@@ -3,11 +3,11 @@
 Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
 
 ## P1 (Core)
-- [x] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`. Issue: TBD Status: DEFERRED (2026-02-04)
+- [x] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`. Issue: Deferred Status: DEFERRED (2026-02-04)
 
 
 ## P2 (Follow-ups)
-- [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: TBD Status: DEFERRED (2026-02-04)
+- [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: Deferred Status: DEFERRED (2026-02-04)
 
 ## P3 (Future)
 

@@ -2,8 +2,8 @@
 
 # Ruby Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -33,7 +33,7 @@ conn.close
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/ruby.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/ruby.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/ruby/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/ruby/README.md)
 
 ## Configuration
 

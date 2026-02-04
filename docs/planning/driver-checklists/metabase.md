@@ -3,7 +3,7 @@
 Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
 
 ## P1 (Core)
-- [x] Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `tracks/alpha/integrations/scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj`. Issue: TBD
+- [x] Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `tracks/alpha/integrations/scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj`. Issue: Complete
 
 
 ## P2 (Follow-ups)

@@ -887,7 +887,7 @@ Drivers declare capabilities via `database-supports?`:
 | `:expressions/text` | Value to text casting | SUPPORTED |
 | `:split-part` | `SPLIT_PART` function | SUPPORTED |
 | `:regex` | Basic regex support | SUPPORTED |
-| `:regex/lookaheads-and-lookbehinds` | Advanced regex | TBD |
+| `:regex/lookaheads-and-lookbehinds` | Advanced regex | Pending |
 | `:collate` | Collation support | SUPPORTED |
 
 ### 8.4 Window Function Flags
@@ -905,14 +905,14 @@ Drivers declare capabilities via `database-supports?`:
 | `:describe-fields` | Custom field metadata | SUPPORTED |
 | `:describe-indexes` | Index information | SUPPORTED |
 | `:table-privileges` | Privilege sync | SUPPORTED |
-| `:nested-field-columns` | JSON column unfolding | TBD |
+| `:nested-field-columns` | JSON column unfolding | Pending |
 
 ### 8.6 Upload Feature Flags
 
 | Feature Flag | Description | ScratchBird Status |
 |--------------|-------------|-------------------|
-| `:uploads` | CSV upload to tables | TBD |
-| `:upload-with-auto-pk` | Auto-increment PK on upload | TBD |
+| `:uploads` | CSV upload to tables | Pending |
+| `:upload-with-auto-pk` | Auto-increment PK on upload | Pending |
 
 ### 8.7 Connection Feature Flags
 
@@ -1369,12 +1369,12 @@ public class ScratchBirdResultSetMetaData implements ResultSetMetaData {
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Build plugin skeleton (manifest, deps, namespace) | P0 | TODO |
-| Implement connection properties schema | P0 | TODO |
-| Implement `connection-details->spec` (JDBC URL + props) | P0 | TODO |
-| Validate TLS requirement (reject sslmode=disable) | P0 | TODO |
-| Basic `can-connect?` + `display-name` | P0 | TODO |
-| Basic metadata via JDBC `DatabaseMetaData` | P1 | TODO |
+| Build plugin skeleton (manifest, deps, namespace) | P0 | Pending |
+| Implement connection properties schema | P0 | Pending |
+| Implement `connection-details->spec` (JDBC URL + props) | P0 | Pending |
+| Validate TLS requirement (reject sslmode=disable) | P0 | Pending |
+| Basic `can-connect?` + `display-name` | P0 | Pending |
+| Basic metadata via JDBC `DatabaseMetaData` | P1 | Pending |
 
 **Acceptance Criteria:**
 - [ ] Metabase lists "ScratchBird" as a database option
@@ -1389,10 +1389,10 @@ public class ScratchBirdResultSetMetaData implements ResultSetMetaData {
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Implement or override `describe-database` and `describe-table` | P0 | TODO |
-| Verify `DatabaseMetaData` maps to Metabase base types | P0 | TODO |
-| Validate fingerprinting queries (scan) | P1 | TODO |
-| Add FK and index metadata if available | P1 | TODO |
+| Implement or override `describe-database` and `describe-table` | P0 | Pending |
+| Verify `DatabaseMetaData` maps to Metabase base types | P0 | Pending |
+| Validate fingerprinting queries (scan) | P1 | Pending |
+| Add FK and index metadata if available | P1 | Pending |
 
 **Acceptance Criteria:**
 - [ ] Metabase data model shows correct base types
@@ -1406,13 +1406,13 @@ public class ScratchBirdResultSetMetaData implements ResultSetMetaData {
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Verify basic SELECT works | P0 | TODO |
-| Verify GROUP BY + aggregations | P0 | TODO |
-| Verify JOINs | P0 | TODO |
-| Verify date functions | P1 | TODO |
-| Verify string functions | P1 | TODO |
-| Verify window functions | P2 | TODO |
-| Test LIMIT/OFFSET pagination | P0 | TODO |
+| Verify basic SELECT works | P0 | Pending |
+| Verify GROUP BY + aggregations | P0 | Pending |
+| Verify JOINs | P0 | Pending |
+| Verify date functions | P1 | Pending |
+| Verify string functions | P1 | Pending |
+| Verify window functions | P2 | Pending |
+| Test LIMIT/OFFSET pagination | P0 | Pending |
 
 **Acceptance Criteria:**
 - [ ] Query builder can construct all basic queries
@@ -1428,12 +1428,12 @@ public class ScratchBirdResultSetMetaData implements ResultSetMetaData {
 
 | Task | Priority | Status |
 |------|----------|--------|
-| JSON column unfolding | P2 | TODO |
-| Native query support | P0 | TODO |
-| Saved questions | P0 | TODO |
-| Dashboard creation | P0 | TODO |
-| Alert configuration | P2 | TODO |
-| User permissions sync | P3 | TODO |
+| JSON column unfolding | P2 | Pending |
+| Native query support | P0 | Pending |
+| Saved questions | P0 | Pending |
+| Dashboard creation | P0 | Pending |
+| Alert configuration | P2 | Pending |
+| User permissions sync | P3 | Pending |
 
 ### 13.5 Verification Queries
 

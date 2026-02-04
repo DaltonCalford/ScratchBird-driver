@@ -2,8 +2,8 @@
 
 # Java/JDBC Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,7 +14,7 @@ ScratchBird JDBC driver using SBWP v1.1.
 ## Install
 
 ```bash
-cd jdbc
+cd tracks/alpha/drivers/jdbc
 ./gradlew build
 ```
 
@@ -35,7 +35,7 @@ Connection conn = DriverManager.getConnection(
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/jdbc.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/jdbc.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/jdbc/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/jdbc/README.md)
 
 ## Configuration
 
@@ -44,4 +44,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 Integration tests use `SCRATCHBIRD_JDBC_URL`, `SCRATCHBIRD_JDBC_USER`, and `SCRATCHBIRD_JDBC_PASSWORD`.
-

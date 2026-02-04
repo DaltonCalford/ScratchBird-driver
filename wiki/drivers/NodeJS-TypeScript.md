@@ -2,8 +2,8 @@
 
 # Node.js / TypeScript Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -40,7 +40,7 @@ await client.end();
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/node.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/node.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/node/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/node/README.md)
 
 ## Configuration
 

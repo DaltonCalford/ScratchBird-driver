@@ -12,14 +12,15 @@ If a package is not published yet, build the driver from this repository.
 ### Build
 
 ```bash
+cd tracks/beta/drivers/cpp
 cmake -S . -B build
 cmake --build build
 ```
 
 ### Notes
 
-- `cpp/` provides the C/C++ client library (SBWP v1.1).
-- `odbc/` provides the ODBC 3.8 driver (SBWP v1.1).
+- `tracks/beta/drivers/cpp` provides the C/C++ client library (SBWP v1.1).
+- `tracks/alpha/drivers/odbc` provides the ODBC 3.8 driver (SBWP v1.1).
 
 ---
 

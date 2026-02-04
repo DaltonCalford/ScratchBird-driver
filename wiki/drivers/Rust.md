@@ -2,8 +2,8 @@
 
 # Rust Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/rust.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/rust.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/rust/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/rust/README.md)
 
 ## Configuration
 

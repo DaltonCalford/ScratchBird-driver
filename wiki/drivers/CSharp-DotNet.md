@@ -2,8 +2,8 @@
 
 # .NET Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -34,7 +34,7 @@ conn.Close();
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/dotnet.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/dotnet.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/dotnet/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/dotnet/README.md)
 
 ## Configuration
 

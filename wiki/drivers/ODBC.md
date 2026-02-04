@@ -2,8 +2,8 @@
 
 # ODBC Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Alpha track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,6 +14,7 @@ Native ScratchBird ODBC 3.8 driver using SBWP v1.1 on port 3092.
 ## Install
 
 ```bash
+cd tracks/alpha/drivers/odbc
 cmake -S . -B build
 cmake --build build
 ```
@@ -36,4 +37,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 See `docs/development/build-and-test.md` for ODBC build and test steps.
-

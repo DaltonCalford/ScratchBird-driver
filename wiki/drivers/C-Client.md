@@ -2,8 +2,8 @@
 
 # C/C++ Client Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Beta track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,6 +14,7 @@ Native C/C++ client library (libscratchbird_client) for SBWP v1.1.
 ## Install
 
 ```bash
+cd tracks/beta/drivers/cpp
 cmake -S . -B build
 cmake --build build
 ```
@@ -48,7 +49,7 @@ int main(void) {
 ## Documentation
 
 - [Client API specification](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/api/CLIENT_LIBRARY_API_SPECIFICATION.md)
-- [Header reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/cpp/include/scratchbird/client/scratchbird_client.h)
+- [Header reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h)
 
 ## Configuration
 
@@ -57,4 +58,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 See `docs/development/build-and-test.md` for C/C++ build and test steps.
-

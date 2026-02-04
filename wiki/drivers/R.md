@@ -2,8 +2,8 @@
 
 # R Driver Guide
 
-**Status:** Implemented (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Beta track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -33,7 +33,7 @@ dbDisconnect(con)
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/r.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/r.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/r/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/r/README.md)
 
 ## Configuration
 

@@ -1,12 +1,12 @@
 # GeoServer Compatibility Matrix (Template)
 
-Status: Draft (Template)
+Status: Updated (2026-02-04)
 Priority: P2
 
 | Feature | Required | Status | Notes |
-| --- | --- | --- | --- |
-| TLS required | Yes | TBD | |
-| Binary-only params | Yes | TBD | |
-| Prepared statements | Yes | TBD | |
-| Metadata helpers | Yes | TBD | |
-| SQLSTATE mapping | Yes | TBD | |
+| --- | --- | Deferred | --- |
+| TLS required | Yes | Deferred | Not yet implemented/audited. |
+| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
+| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
+| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
+| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |

@@ -1,6 +1,6 @@
 # Issue Stubs (Generated)
 
-Use these stubs to create tracker issues. Replace `TBD` with real issue IDs in `docs/planning/ISSUE_INDEX.md`.
+Use these stubs to create tracker issues. Replace `Pending` with real issue IDs in `docs/planning/ISSUE_INDEX.md`.
 
 ## 1. Validate `sb_isql` against SBWP v1.1 conformance harness
 

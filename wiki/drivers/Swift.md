@@ -2,8 +2,8 @@
 
 # Swift Driver Guide
 
-**Status:** Preview (SBWP v1.1 baseline, TCP transport)
-**Last Updated:** 2026-02-02
+**Status:** Beta track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,7 +14,7 @@ Native ScratchBird driver using Swift Concurrency (async/await).
 ## Install
 
 ```bash
-cd swift
+cd tracks/beta/drivers/swift
 swift build
 ```
 
@@ -34,7 +34,7 @@ try await conn.close()
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/swift.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/swift.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/swift/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/swift/README.md)
 
 ## Configuration
 
@@ -43,4 +43,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 Integration tests use `SCRATCHBIRD_TEST_DSN`.
-

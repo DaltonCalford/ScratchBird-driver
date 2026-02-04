@@ -4,15 +4,15 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [x] Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: TBD
-- [x] Enforce TLS required and binary-only once native transport exists. Issue: TBD
-- [x] Reject `compression=zstd` until server support exists. Issue: TBD
+- [x] Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: Complete
+- [x] Enforce TLS required and binary-only once native transport exists. Issue: Complete
+- [x] Reject `compression=zstd` until server support exists. Issue: Complete
 
 ## P1 (Core)
 
 - [x] Implement SBWP type encoding/decoding wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: DONE (2026-02-04)
 - [x] Add array, composite, range, geometry, vector, inet/cidr/macaddr support. Issue: DONE (2026-02-04)
-- [x] Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: TBD
+- [x] Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: Complete
 
 ## P2 (Follow-ups)
 

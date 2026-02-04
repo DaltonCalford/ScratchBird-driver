@@ -2,8 +2,8 @@
 
 # Elixir (Ecto) Driver Guide
 
-**Status:** Preview (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-02
+**Status:** Post-gold (P3) track (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-04
 
 ---
 
@@ -14,7 +14,7 @@ Native ScratchBird driver with Ecto adapter (SBWP v1.1).
 ## Install
 
 ```bash
-cd elixir
+cd tracks/p3/drivers/elixir
 mix deps.get
 ```
 
@@ -32,7 +32,7 @@ IO.inspect(result.rows)
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/elixir.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/elixir.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/elixir/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/elixir/README.md)
 
 ## Configuration
 
@@ -41,4 +41,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 Integration tests use `SCRATCHBIRD_TEST_DSN`.
-
