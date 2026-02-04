@@ -4,9 +4,8 @@ Status: Updated (2026-02-04)
 Priority: P0
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| EF Core uses LINQ and database providers to translate queries. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Provider versions must align with EF Core major versions. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate LINQ translation for common filters. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Verify provider version compatibility and migrations. | Yes | Deferred | Test criteria from SPECIFICATION.md |

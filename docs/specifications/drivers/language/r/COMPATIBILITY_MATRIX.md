@@ -4,10 +4,10 @@ Status: Updated (2026-02-04)
 
 | Feature | Required | Status | Notes |
 | --- | --- | --- | --- |
-| TLS required | Yes | Pending | Not yet audited in R driver. |
-| Binary-only params | Yes | Pending | Not yet audited in R driver. |
-| Prepared statements | Yes | Pending | Not yet audited in R driver. |
-| Streaming/paging | Yes | Pending | Not yet audited in R driver. |
-| Full type matrix | Yes | Pending | Not yet audited in R driver. |
-| Metadata helpers | Yes | Pending | Not yet audited in R driver. |
-| SQLSTATE mapping | Yes | Partial | Class-prefix mapping implemented. |
+| TLS required | Yes | Implemented | TLS enforced; uses openssl::ssl_connect. |
+| Binary-only params | Yes | Implemented | binary_transfer=false rejected in client. |
+| Prepared statements | Yes | Implemented | PARSE/BIND/EXECUTE baseline. |
+| Streaming/paging | Yes | Implemented | Portal suspension handled; fetch_size paging supported. |
+| Full type matrix | Yes | Implemented | Verified encoder/decoder coverage for all TYPE_MAPPING_MATRIX.md wire types. |
+| Metadata helpers | Yes | Implemented | sys.* helper queries match METADATA_SCHEMA_CONTRACT.md. |
+| SQLSTATE mapping | Yes | Partial | SQLSTATE surfaced; class-prefix mapping pending. |

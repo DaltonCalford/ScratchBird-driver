@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Django uses `DATABASES` settings for connection configuration. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Migrations are driven by `manage.py migrate`, and schema introspection expects backend features. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| The backend adapter must implement Django Database Backend APIs (operations, features, introspection). | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate `inspectdb` output matches metadata contract. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm Django migration operations for indexes and constraints. | Yes | Deferred | Test criteria from SPECIFICATION.md |

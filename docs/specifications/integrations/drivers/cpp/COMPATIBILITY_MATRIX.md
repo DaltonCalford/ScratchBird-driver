@@ -4,9 +4,11 @@ Status: Updated (2026-02-04)
 Priority: P2
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| TLS required | Yes | Implemented | TLS transport supported; required by protocol. |
+| Binary-only params | Yes | Implemented | Binary encoding path implemented. |
+| Prepared statements | Yes | Implemented | PARSE/BIND/EXECUTE baseline. |
+| Streaming/paging | Yes | Implemented | Portal paging supported. |
+| Full type matrix | Yes | Implemented | sb_type/sb_value coverage expanded. |
+| Metadata helpers | Yes | Implemented | sys.* helper API provided. |
+| SQLSTATE mapping | Yes | Implemented | SQLSTATE surfaced in error context. |

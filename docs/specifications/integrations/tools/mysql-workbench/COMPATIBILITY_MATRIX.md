@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| MySQL Workbench migrations use ODBC drivers for source/target connectivity. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Metadata discovery must support `SQLTables`, `SQLColumns`, and `SQLPrimaryKeys` equivalents. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| The driver must tolerate long-running introspection queries. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate Workbench migration wizard completes schema introspection. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm data copy works for large tables with paging. | Yes | Deferred | Test criteria from SPECIFICATION.md |

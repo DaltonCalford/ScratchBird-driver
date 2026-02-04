@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Laravel uses `config/database.php` and `.env` variables for connection configuration. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Eloquent expects PDO-based drivers and supports prepared statements by default. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Ensure migration commands (`php artisan migrate`) and schema builder operations are supported. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate schema builder support for indexes and foreign keys. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm Eloquent casts (date, json, array) match ScratchBird types. | Yes | Deferred | Test criteria from SPECIFICATION.md |

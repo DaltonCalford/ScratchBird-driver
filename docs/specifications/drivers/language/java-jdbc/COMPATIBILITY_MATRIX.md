@@ -7,7 +7,7 @@ Status: Updated (2026-02-04)
 | TLS required | Yes | Implemented | SBWP requires TLS (server-enforced). |
 | Binary-only params | Yes | Implemented | SBWP binary-only; server rejects text. |
 | Prepared statements | Yes | Implemented | PARSE/BIND/EXECUTE baseline. |
-| Streaming/paging | Yes | Partial | Fetch-size paging not fully audited. |
-| Full type matrix | Yes | Partial | Type coverage expanded; remaining gaps tracked. |
-| Metadata helpers | Yes | Partial | sys.* helpers present but not fully audited. |
+| Streaming/paging | Yes | Implemented | Portal suspension handled; fetch_size paging supported. |
+| Full type matrix | Yes | Implemented | Verified encoder/decoder coverage for all TYPE_MAPPING_MATRIX.md wire types. |
+| Metadata helpers | Yes | Implemented | DatabaseMetaData maps sys.* joins; information_schema used where JDBC requires. |
 | SQLSTATE mapping | Yes | Implemented | Spec-complete mapping implemented. |

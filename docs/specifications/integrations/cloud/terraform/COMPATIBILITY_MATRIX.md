@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Terraform modules should expose variables for ports, storage, and credentials. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| State changes must be idempotent across applies. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Outputs should include connection strings for downstream tooling. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate plan/apply on clean and existing environments. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm destroy cleans up all resources. | Yes | Deferred | Test criteria from SPECIFICATION.md |

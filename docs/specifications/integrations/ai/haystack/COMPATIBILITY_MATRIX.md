@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Haystack document stores expect consistent schema and efficient filter predicates. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| SQL-backed document stores require parameterized queries and transaction safety. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Embedding/vector fields must preserve dimensionality and order. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate insert/update/delete for documents with metadata filters. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm vector similarity queries return stable ordering. | Yes | Deferred | Test criteria from SPECIFICATION.md |

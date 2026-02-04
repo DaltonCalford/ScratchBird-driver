@@ -4,9 +4,11 @@ Status: Updated (2026-02-04)
 Priority: P0
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | SBWP requires TLS (server-enforced). |
-| Binary-only params | Yes | Deferred | SBWP binary-only; server rejects text. |
-| Prepared statements | Yes | Deferred | SQLPrepare/SQLExecute supported. |
-| Metadata helpers | Yes | Deferred | sys.* metadata contract implemented. |
-| SQLSTATE mapping | Yes | Deferred | ODBC SQLSTATE mapping in driver. |
+| --- | --- | --- | --- |
+| TLS required | Yes | Implemented | TLS transport supported; required by protocol. |
+| Binary-only params | Yes | Implemented | Binary encoding path implemented. |
+| Prepared statements | Yes | Implemented | PARSE/BIND/EXECUTE baseline. |
+| Streaming/paging | Yes | Implemented | Portal paging supported. |
+| Full type matrix | Yes | Implemented | sb_type/sb_value coverage expanded. |
+| Metadata helpers | Yes | Implemented | sys.* helper API provided. |
+| SQLSTATE mapping | Yes | Implemented | SQLSTATE surfaced in error context. |

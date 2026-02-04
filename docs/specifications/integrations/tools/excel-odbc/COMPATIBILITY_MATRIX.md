@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Excel uses ODBC data sources and expects DSN configuration via the OS ODBC manager. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| The driver must expose stable column types for import. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Result sets should avoid server-side cursor timeouts. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate Excel data import and refresh workflows. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm wide tables and large row counts import correctly. | Yes | Deferred | Test criteria from SPECIFICATION.md |

@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P2
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Odoo requires PostgreSQL and manages databases via a dedicated DB user. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Connection configuration is typically via `odoo.conf`. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Odoo uses large schemas and relies on sequences and constraints. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate Odoo database creation and module installation. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm ORM migrations on upgrade. | Yes | Deferred | Test criteria from SPECIFICATION.md |

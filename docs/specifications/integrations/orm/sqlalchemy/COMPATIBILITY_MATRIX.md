@@ -4,9 +4,8 @@ Status: Updated (2026-02-04)
 Priority: P0
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| SQLAlchemy Inspector.get_columns returns dicts with keys like name, type, nullable, default, and autoincrement. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Dialect reflection must support schema-qualified inspection. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate reflection metadata keys (name/type/nullable/default). | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Verify schema-qualified inspection. | Yes | Deferred | Test criteria from SPECIFICATION.md |

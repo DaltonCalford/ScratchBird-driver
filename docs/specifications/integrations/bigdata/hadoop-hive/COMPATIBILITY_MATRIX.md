@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P2
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Hive JDBC storage handlers require JDBC URL and driver class configuration. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Hive expects column types to map to SQL types for external tables. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Queries should support predicate pushdown where possible. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate Hive external table read/write against ScratchBird. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm predicate pushdown reduces row counts. | Yes | Deferred | Test criteria from SPECIFICATION.md |

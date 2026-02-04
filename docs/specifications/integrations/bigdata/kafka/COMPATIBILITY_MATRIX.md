@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P1
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Kafka Connect JDBC sink uses connector configs like `connection.url` and `table.name.format`. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| The driver must support auto-commit behavior expected by the sink. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Batch inserts and retries must be stable under load. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate sink retries on transient errors. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm schema evolution for added columns. | Yes | Deferred | Test criteria from SPECIFICATION.md |

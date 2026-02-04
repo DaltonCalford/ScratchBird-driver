@@ -4,9 +4,9 @@ Status: Updated (2026-02-04)
 Priority: P0
 
 | Feature | Required | Status | Notes |
-| --- | --- | Deferred | --- |
-| TLS required | Yes | Deferred | Not yet implemented/audited. |
-| Binary-only params | Yes | Deferred | Not yet implemented/audited. |
-| Prepared statements | Yes | Deferred | Not yet implemented/audited. |
-| Metadata helpers | Yes | Deferred | Not yet implemented/audited. |
-| SQLSTATE mapping | Yes | Deferred | Not yet implemented/audited. |
+| --- | --- | --- | --- |
+| Docker images must expose standard ports and support env-based configuration. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Non-root container execution should be supported. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Volume mounts are required for persistent data. | Yes | Deferred | Constraint from SPECIFICATION.md |
+| Validate container starts with read-only root filesystem. | Yes | Deferred | Test criteria from SPECIFICATION.md |
+| Confirm upgrade path via image tag changes. | Yes | Deferred | Test criteria from SPECIFICATION.md |
