@@ -73,7 +73,16 @@ Category: BI Tool
 - Validate Metabase schema sync and field fingerprinting.
 - Confirm native query mode executes parameterized SQL.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/metabase.md`
+- [ ] Constraint: Metabase connects via JDBC drivers and expects a driver JAR registered with Metabase. (Driver task: `docs/planning/driver-checklists/metabase.md`)
+- [ ] Constraint: Metadata APIs must return stable results for schema sync. (Driver task: `docs/planning/driver-checklists/metabase.md`)
+- [ ] Constraint: SQL dialect hints are required for Metabase query generation. (Driver task: `docs/planning/driver-checklists/metabase.md`)
+- [ ] Test: Validate Metabase schema sync and field fingerprinting. (Driver task: `docs/planning/driver-checklists/metabase.md`)
+- [ ] Test: Confirm native query mode executes parameterized SQL. (Driver task: `docs/planning/driver-checklists/metabase.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

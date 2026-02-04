@@ -75,7 +75,16 @@ db = SQLDatabase.from_uri("scratchbird://user:pass@localhost:3092/db")
 - Validate schema introspection and sample query execution.
 - Confirm long-running queries can be cancelled by the chain.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: LangChain SQL integrations expect SQLAlchemy-style connection URIs. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Query results are consumed by chains that expect consistent column naming. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Parameter binding must be compatible with SQLAlchemy engine conventions. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate schema introspection and sample query execution. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm long-running queries can be cancelled by the chain. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

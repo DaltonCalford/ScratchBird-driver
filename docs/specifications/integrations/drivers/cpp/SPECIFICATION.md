@@ -74,7 +74,16 @@ auto rows = conn.query("SELECT 1");
 - Verify both static and shared builds link successfully.
 - Validate row buffers remain valid until the next fetch call.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cpp.md`
+- [ ] Constraint: Provide a stable C API façade for language bindings where ABI stability is required. (Driver task: `docs/planning/driver-checklists/cpp.md`)
+- [ ] Constraint: Support both static and shared builds with explicit linkage flags. (Driver task: `docs/planning/driver-checklists/cpp.md`)
+- [ ] Constraint: Document ownership of buffers returned to callers. (Driver task: `docs/planning/driver-checklists/cpp.md`)
+- [ ] Test: Verify both static and shared builds link successfully. (Driver task: `docs/planning/driver-checklists/cpp.md`)
+- [ ] Test: Validate row buffers remain valid until the next fetch call. (Driver task: `docs/planning/driver-checklists/cpp.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

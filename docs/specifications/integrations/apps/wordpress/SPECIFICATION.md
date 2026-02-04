@@ -77,7 +77,16 @@ define('DB_HOST', 'localhost:3092');
 - Validate WordPress install and admin login with ScratchBird.
 - Confirm basic CRUD for posts, users, and taxonomy.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: WordPress expects MySQL/MariaDB-compatible behavior and config in `wp-config.php`. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: PHP extensions must provide `mysqli`/PDO-style behavior. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Collation and charset must be stable for UTF-8 content. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate WordPress install and admin login with ScratchBird. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm basic CRUD for posts, users, and taxonomy. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

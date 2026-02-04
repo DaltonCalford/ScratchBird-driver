@@ -74,7 +74,16 @@ USING org.apache.pig.piggybank.storage.DBStorage('com.scratchbird.Driver');
 - Validate DBStorage write path with large datasets.
 - Confirm NULL handling for optional fields.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Pig DBStorage supports storing data to JDBC targets and requires driver jars. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Schema mapping must preserve column ordering and nullability. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Large batch writes should be chunked to avoid memory spikes. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate DBStorage write path with large datasets. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm NULL handling for optional fields. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -75,7 +75,15 @@ cur.execute('SELECT 1')
 - Validate PEP 249 compliance (apilevel, threadsafety, paramstyle).
 - Confirm SQLSTATE mapping and error class raising.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: PEP 249 defines standard exceptions and `cursor.description` structure. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Autocommit should default off; rollback/commit must be exposed. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate PEP 249 compliance (apilevel, threadsafety, paramstyle). (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm SQLSTATE mapping and error class raising. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

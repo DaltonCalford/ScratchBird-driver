@@ -76,7 +76,16 @@ Category: Big Data & Streaming
 - Validate sink retries on transient errors.
 - Confirm schema evolution for added columns.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Kafka Connect JDBC sink uses connector configs like `connection.url` and `table.name.format`. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: The driver must support auto-commit behavior expected by the sink. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Batch inserts and retries must be stable under load. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate sink retries on transient errors. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm schema evolution for added columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

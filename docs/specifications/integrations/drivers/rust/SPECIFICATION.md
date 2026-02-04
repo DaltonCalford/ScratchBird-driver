@@ -74,7 +74,16 @@ let row: (i64,) = scratchbird::query_as("SELECT 1").fetch_one(&pool).await?;
 - Verify pool reconnects after transient network failures.
 - Ensure error types include SQLSTATE and implement `std::error::Error`.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/rust.md`
+- [ ] Constraint: Use async-first APIs compatible with Tokio and futures. (Driver task: `docs/planning/driver-checklists/rust.md`)
+- [ ] Constraint: Provide pool configuration for max connections, timeouts, and idle cleanup. (Driver task: `docs/planning/driver-checklists/rust.md`)
+- [ ] Constraint: Support typed row mapping akin to `query_as` conventions. (Driver task: `docs/planning/driver-checklists/rust.md`)
+- [ ] Test: Verify pool reconnects after transient network failures. (Driver task: `docs/planning/driver-checklists/rust.md`)
+- [ ] Test: Ensure error types include SQLSTATE and implement `std::error::Error`. (Driver task: `docs/planning/driver-checklists/rust.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

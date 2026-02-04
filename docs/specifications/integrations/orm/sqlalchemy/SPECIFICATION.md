@@ -75,7 +75,15 @@ cols = inspector.get_columns('table')
 - Validate reflection metadata keys (name/type/nullable/default).
 - Verify schema-qualified inspection.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: SQLAlchemy Inspector.get_columns returns dicts with keys like name, type, nullable, default, and autoincrement. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Dialect reflection must support schema-qualified inspection. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate reflection metadata keys (name/type/nullable/default). (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Verify schema-qualified inspection. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

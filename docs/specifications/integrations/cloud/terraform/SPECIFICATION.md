@@ -76,7 +76,16 @@ module "scratchbird" {
 - Validate plan/apply on clean and existing environments.
 - Confirm destroy cleans up all resources.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: Terraform modules should expose variables for ports, storage, and credentials. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: State changes must be idempotent across applies. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Outputs should include connection strings for downstream tooling. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate plan/apply on clean and existing environments. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm destroy cleans up all resources. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

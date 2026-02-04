@@ -77,7 +77,16 @@ Database=db
 - Validate Qlik load script `SELECT` executions.
 - Confirm reloads handle large tables with paging.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: Qlik Sense uses ODBC connectors and expects DSN-based configuration. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Metadata queries must be performant for script reloads. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Unicode handling must preserve UTF-8 text. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate Qlik load script `SELECT` executions. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm reloads handle large tables with paging. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

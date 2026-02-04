@@ -73,7 +73,15 @@ ResultSet rs = meta.getColumns(null, null, "%", "%");
 - Validate JDBC metadata column ordering and presence.
 - Ensure SQLSTATE present on SQLException.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: DatabaseMetaData.getTables/getColumns return standard ResultSet columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: getTableTypes should list TABLE/VIEW types. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate JDBC metadata column ordering and presence. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Ensure SQLSTATE present on SQLException. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

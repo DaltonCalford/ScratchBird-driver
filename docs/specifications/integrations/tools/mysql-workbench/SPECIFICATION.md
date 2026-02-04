@@ -78,7 +78,16 @@ Database=db
 - Validate Workbench migration wizard completes schema introspection.
 - Confirm data copy works for large tables with paging.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: MySQL Workbench migrations use ODBC drivers for source/target connectivity. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Metadata discovery must support `SQLTables`, `SQLColumns`, and `SQLPrimaryKeys` equivalents. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: The driver must tolerate long-running introspection queries. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate Workbench migration wizard completes schema introspection. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm data copy works for large tables with paging. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

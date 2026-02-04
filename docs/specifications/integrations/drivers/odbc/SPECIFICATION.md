@@ -72,7 +72,15 @@ SQLColumns(hstmt, NULL, 0, NULL, 0, (SQLCHAR*)"table", SQL_NTS, NULL, 0);
 - Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.).
 - Validate SQLDescribeCol and SQLNumResultCols behavior.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: SQLColumns must return a column list result set and includes ORDINAL_POSITION. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Result set metadata is retrieved via SQLNumResultCols and SQLDescribeCol/SQLColAttribute. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.). (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate SQLDescribeCol and SQLNumResultCols behavior. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

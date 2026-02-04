@@ -72,7 +72,15 @@ const res = await client.query('SELECT $1::int as value', [1]);
 - Validate parameter binding conversion rules for arrays and objects.
 - Confirm prepared statement name reuse behavior.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/node.md`
+- [ ] Constraint: Parameterized queries use positional placeholders and value arrays. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: Prepared statements are often represented by named query configs. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Validate parameter binding conversion rules for arrays and objects. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Confirm prepared statement name reuse behavior. (Driver task: `docs/planning/driver-checklists/node.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

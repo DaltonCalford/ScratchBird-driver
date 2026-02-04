@@ -75,7 +75,16 @@ jdbcDriver=com.scratchbird.Driver
 - Validate Talend job execution with input/output components.
 - Confirm batch inserts use prepared statements.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Talend JDBC components (tJDBCConnection, tJDBCInput, tJDBCOutput) expect standard JDBC metadata. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Batch size and commit intervals should be configurable. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Driver class loading must work in Talend Studio and runtime. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate Talend job execution with input/output components. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm batch inserts use prepared statements. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

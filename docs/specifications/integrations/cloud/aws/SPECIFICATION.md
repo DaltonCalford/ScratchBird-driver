@@ -75,7 +75,16 @@ resource "aws_security_group" "scratchbird" {
 - Validate connectivity through AWS load balancers.
 - Confirm backups and restore procedures.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: AWS deployments typically use VPC networking, security groups, and IAM roles. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Managed deployments should align with RDS-style parameter groups and backups. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: TLS certificates must be compatible with AWS load balancers. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate connectivity through AWS load balancers. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm backups and restore procedures. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

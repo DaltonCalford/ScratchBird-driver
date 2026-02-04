@@ -77,7 +77,16 @@ row = sth.fetch
 - Validate `DBI::StatementHandle#fetch` and `#finish` behavior under errors.
 - Confirm `DBI::Database#ping` returns appropriate errors on dropped connections.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/ruby.md`
+- [ ] Constraint: Conform to Ruby DBI expectations for prepared statements and fetch loops. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Constraint: Ensure exceptions expose SQLSTATE and map to DBI error subclasses. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Constraint: Use UTF-8 encoding for all textual fields. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Test: Validate `DBI::StatementHandle#fetch` and `#finish` behavior under errors. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Test: Confirm `DBI::Database#ping` returns appropriate errors on dropped connections. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

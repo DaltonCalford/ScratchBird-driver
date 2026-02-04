@@ -74,7 +74,16 @@ jdbc:scratchbird://localhost:3092/db
 - Validate schema browser loads tables, columns, and indexes.
 - Confirm DBeaver can generate and execute `SELECT` previews.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: DBeaver relies on JDBC drivers and expects a JDBC URL for connections. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Driver registration and classpath loading must work with custom driver jars. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Metadata queries must be efficient to avoid UI timeouts. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate schema browser loads tables, columns, and indexes. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm DBeaver can generate and execute `SELECT` previews. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

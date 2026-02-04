@@ -77,7 +77,16 @@ Username=user
 - Validate schema tree expansion for tables, indexes, and functions.
 - Confirm query tool can run parameterized statements.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: pgAdmin expects server registration fields (host, port, maintenance DB, user). (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Introspection queries should be fast to populate the tree view. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: SSL modes must be supported for secure connections. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate schema tree expansion for tables, indexes, and functions. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm query tool can run parameterized statements. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

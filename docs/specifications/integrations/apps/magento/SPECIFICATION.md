@@ -81,7 +81,16 @@ Category: Application
 - Validate Magento setup:upgrade completes.
 - Confirm catalog search and checkout workflows.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: Magento stores DB configuration in `app/etc/env.php` and expects MySQL-compatible behavior. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Large catalog schemas require long-running migrations and indexed queries. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: UTF-8 and JSON column types must be stable. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate Magento setup:upgrade completes. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm catalog search and checkout workflows. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

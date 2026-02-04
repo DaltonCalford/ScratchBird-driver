@@ -74,7 +74,16 @@ scratchbird_exporter --listen :9187
 - Validate scrape performance at 15s intervals with minimal allocation.
 - Ensure metrics include connection pool, query latency, and error counts.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: Prometheus scrapes HTTP endpoints (`/metrics`) and expects stable label sets. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Database integration typically relies on exporters; the driver should not require interactive auth. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Metrics must be safe for high-frequency scraping. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate scrape performance at 15s intervals with minimal allocation. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Ensure metrics include connection pool, query latency, and error counts. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

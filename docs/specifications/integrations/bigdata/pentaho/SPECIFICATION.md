@@ -74,7 +74,16 @@ jdbc:scratchbird://localhost:3092/db
 - Validate PDI transformations with Table Input/Output steps.
 - Confirm metadata browsing for tables and columns.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Pentaho Data Integration uses JDBC for database steps and requires driver JARs. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Metadata queries must be fast for schema browsers. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Batch insert steps should use prepared statements. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate PDI transformations with Table Input/Output steps. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm metadata browsing for tables and columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

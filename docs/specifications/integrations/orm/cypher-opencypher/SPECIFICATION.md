@@ -74,7 +74,16 @@ RETURN f
 - Validate parameter binding for lists and nested maps.
 - Ensure path result shapes are preserved in metadata helpers.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Cypher is a property-graph query language using `MATCH`, `WHERE`, and `RETURN` clauses. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Parameters are referenced with `$name` and are expected to support list/array binding. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Result sets must preserve graph element structure (nodes, relationships, paths). (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate parameter binding for lists and nested maps. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Ensure path result shapes are preserved in metadata helpers. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

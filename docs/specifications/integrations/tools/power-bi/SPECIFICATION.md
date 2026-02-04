@@ -77,7 +77,16 @@ Database=db
 - Validate Power BI can import and refresh datasets.
 - Confirm DirectQuery mode works with paging and timeouts.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: Power BI connects via ODBC data sources for custom databases. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: The driver must expose schema metadata and stable column types. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Query folding should be supported where possible. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate Power BI can import and refresh datasets. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm DirectQuery mode works with paging and timeouts. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

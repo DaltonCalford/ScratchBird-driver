@@ -80,7 +80,16 @@ production:
 - Validate schema dumping and reload (`schema.rb`) for all core types.
 - Confirm `rails db:migrate` applies and rolls back without metadata drift.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/ruby.md`
+- [ ] Constraint: Rails uses `config/database.yml` for connection configuration and `ActiveRecord::Base.establish_connection` semantics. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Constraint: Migrations must work via `rails db:migrate` and schema dumps must be stable. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Constraint: Adapter must implement the ActiveRecord adapter interface (quoting, schema, type map). (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Test: Validate schema dumping and reload (`schema.rb`) for all core types. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+- [ ] Test: Confirm `rails db:migrate` applies and rolls back without metadata drift. (Driver task: `docs/planning/driver-checklists/ruby.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

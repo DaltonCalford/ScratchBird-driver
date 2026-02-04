@@ -78,7 +78,16 @@ public $dbprefix = 'jos_';
 - Validate Joomla installation and administrator login.
 - Confirm extension install and upgrade path.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: Joomla stores DB config in `configuration.php` and expects a PDO or MySQLi-style driver. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Table prefixes and schema initialization must be supported. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: UTF-8 charset support is required for multilingual content. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate Joomla installation and administrator login. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm extension install and upgrade path. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

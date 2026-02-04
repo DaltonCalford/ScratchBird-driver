@@ -76,7 +76,15 @@ Query.Open;
 - Validate transaction behavior via TSQLTransaction.
 - Confirm schema retrieval APIs (SQLDB) return expected shapes.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/pascal.md`
+- [ ] Constraint: SQLDB uses TSQLConnector + TSQLTransaction + TSQLQuery flow. (Driver task: `docs/planning/driver-checklists/pascal.md`)
+- [ ] Constraint: ConnectorType selects backend driver at runtime. (Driver task: `docs/planning/driver-checklists/pascal.md`)
+- [ ] Test: Validate transaction behavior via TSQLTransaction. (Driver task: `docs/planning/driver-checklists/pascal.md`)
+- [ ] Test: Confirm schema retrieval APIs (SQLDB) return expected shapes. (Driver task: `docs/planning/driver-checklists/pascal.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

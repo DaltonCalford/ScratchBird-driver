@@ -73,7 +73,16 @@ DriverManager.getConnection("jdbc:phoenix:localhost")
 - Validate Phoenix JDBC metadata reads.
 - Confirm batch upsert performance with large datasets.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: HBase SQL access commonly uses Apache Phoenix with JDBC connectivity. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: The driver must handle Phoenix metadata queries and schema discovery. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Upserts and bulk loads require batch-friendly behavior. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate Phoenix JDBC metadata reads. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm batch upsert performance with large datasets. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

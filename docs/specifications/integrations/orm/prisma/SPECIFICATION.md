@@ -80,7 +80,16 @@ generator client {
 - Validate introspection against a schema with enums, arrays, and JSON.
 - Ensure Prisma Client queries return correct nullability and enum mappings.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/node.md`
+- [ ] Constraint: Prisma expects a `datasource` and `generator` in `schema.prisma` with a connection URL. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: Support introspection flows (similar to `prisma db pull`) and migrations (similar to `prisma migrate`). (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: Ensure scalar types map cleanly to Prisma field types and `@db` native types. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Validate introspection against a schema with enums, arrays, and JSON. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Ensure Prisma Client queries return correct nullability and enum mappings. (Driver task: `docs/planning/driver-checklists/node.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

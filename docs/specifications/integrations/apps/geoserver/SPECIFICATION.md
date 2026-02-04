@@ -77,7 +77,16 @@ schema=public
 - Validate datastore creation and layer publishing.
 - Confirm WMS/WFS requests return expected features.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: GeoServer PostGIS datastore expects host, port, database, schema, and credentials. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Geometry columns must expose spatial reference metadata. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Large feature layers should be streamed with paging. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate datastore creation and layer publishing. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm WMS/WFS requests return expected features. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

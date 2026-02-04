@@ -83,7 +83,16 @@ await dataSource.initialize();
 - Validate entity metadata discovery for `@Entity` with custom schema.
 - Verify parameterized queries use positional `$1` or named bindings as expected by the driver.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/node.md`
+- [ ] Constraint: Support TypeORM `DataSource` configuration and `DataSourceOptions` fields (host, port, database, username, password, ssl). (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: Ensure metadata helpers provide table/column info for entity synchronization. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: Avoid relying on TypeORM `synchronize` for production migrations. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Validate entity metadata discovery for `@Entity` with custom schema. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Verify parameterized queries use positional `$1` or named bindings as expected by the driver. (Driver task: `docs/planning/driver-checklists/node.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

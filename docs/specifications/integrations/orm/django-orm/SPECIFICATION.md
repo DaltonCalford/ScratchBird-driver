@@ -82,7 +82,16 @@ DATABASES = {
 - Validate `inspectdb` output matches metadata contract.
 - Confirm Django migration operations for indexes and constraints.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: Django uses `DATABASES` settings for connection configuration. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Migrations are driven by `manage.py migrate`, and schema introspection expects backend features. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: The backend adapter must implement Django Database Backend APIs (operations, features, introspection). (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate `inspectdb` output matches metadata contract. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm Django migration operations for indexes and constraints. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

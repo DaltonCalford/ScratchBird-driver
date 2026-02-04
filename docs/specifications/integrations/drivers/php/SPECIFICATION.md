@@ -74,7 +74,15 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC);
 - Validate PDO::errorInfo and PDOStatement::errorInfo SQLSTATE values.
 - Verify fetch modes and error mode behavior.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: PDO errorInfo arrays include SQLSTATE as element 0. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Statement errorInfo is separate from connection errorInfo. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate PDO::errorInfo and PDOStatement::errorInfo SQLSTATE values. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Verify fetch modes and error mode behavior. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

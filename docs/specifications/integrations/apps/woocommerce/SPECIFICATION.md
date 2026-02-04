@@ -74,7 +74,16 @@ define('DB_HOST', 'localhost:3092');
 - Validate WooCommerce install and product CRUD.
 - Confirm order creation, payment, and refund flows.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: WooCommerce relies on WordPress database behavior and uses the same `wp-config.php` settings. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: High-concurrency order updates require stable transactions and row-level locking. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: UTF-8 and JSON metadata must be preserved. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate WooCommerce install and product CRUD. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm order creation, payment, and refund flows. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

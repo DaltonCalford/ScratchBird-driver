@@ -74,7 +74,15 @@ _ = row.Scan(&v)
 - Verify ErrNoRows behavior.
 - Validate context cancellation.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/go.md`
+- [ ] Constraint: QueryRow errors are deferred to Scan; no rows returns ErrNoRows. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Constraint: Context-aware methods required for cancellation. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Test: Verify ErrNoRows behavior. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Test: Validate context cancellation. (Driver task: `docs/planning/driver-checklists/go.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -81,7 +81,16 @@ Category: ORM/Framework
 - Validate schema builder support for indexes and foreign keys.
 - Confirm Eloquent casts (date, json, array) match ScratchBird types.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: Laravel uses `config/database.php` and `.env` variables for connection configuration. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Eloquent expects PDO-based drivers and supports prepared statements by default. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Ensure migration commands (`php artisan migrate`) and schema builder operations are supported. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate schema builder support for indexes and foreign keys. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm Eloquent casts (date, json, array) match ScratchBird types. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

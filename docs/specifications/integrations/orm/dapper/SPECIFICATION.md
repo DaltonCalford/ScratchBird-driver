@@ -74,7 +74,16 @@ var rows = conn.Query<(int Id, string Name)>("select id, name from users");
 - Validate Dapper multi-mapping (`splitOn`) with joined queries.
 - Ensure `QueryMultiple` works with multiple result sets.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/dotnet.md`
+- [ ] Constraint: Dapper uses extension methods like `Query`/`QueryAsync` and `Execute`/`ExecuteAsync` on IDbConnection. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Constraint: Drivers must implement `IDbConnection`, `IDbCommand`, and `IDataReader` correctly for row streaming. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Constraint: Ensure parameter binding supports anonymous objects and `DynamicParameters`. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Validate Dapper multi-mapping (`splitOn`) with joined queries. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Ensure `QueryMultiple` works with multiple result sets. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

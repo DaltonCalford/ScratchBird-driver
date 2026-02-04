@@ -74,7 +74,16 @@ jdbc:scratchbird://localhost:3092/db
 - Validate PowerCenter session runs with source/target mappings.
 - Confirm error row handling and retry behavior.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Informatica PowerCenter supports JDBC for relational sources/targets. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Driver class loading must be compatible with PowerCenter runtime. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Large batch loads require stable transaction behavior. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate PowerCenter session runs with source/target mappings. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm error row handling and retry behavior. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

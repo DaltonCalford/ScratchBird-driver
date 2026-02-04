@@ -75,7 +75,16 @@ resource "google_compute_firewall" "scratchbird" {
 - Validate connectivity through GCP load balancers.
 - Confirm automated backups and point-in-time restore.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: GCP deployments use service accounts and firewall rules for connectivity. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Cloud SQL-style deployments require TLS and IAM-aware connection policies. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Health checks must be compatible with Google Load Balancers. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate connectivity through GCP load balancers. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm automated backups and point-in-time restore. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

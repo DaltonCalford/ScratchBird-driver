@@ -77,7 +77,16 @@ Database=db
 - Validate Excel data import and refresh workflows.
 - Confirm wide tables and large row counts import correctly.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: Excel uses ODBC data sources and expects DSN configuration via the OS ODBC manager. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: The driver must expose stable column types for import. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Result sets should avoid server-side cursor timeouts. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate Excel data import and refresh workflows. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm wide tables and large row counts import correctly. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

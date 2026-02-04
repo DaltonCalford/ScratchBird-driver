@@ -80,7 +80,16 @@ $databases['default']['default'] = [
 - Validate Drupal installation and module enablement.
 - Confirm `drush sql:query` runs with parameters.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/php.md`
+- [ ] Constraint: Drupal uses `settings.php` and a `databases` array for connection configuration. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: PDO support is required for database backends. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Constraint: Schema management relies on Drupal's database API. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Validate Drupal installation and module enablement. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [ ] Test: Confirm `drush sql:query` runs with parameters. (Driver task: `docs/planning/driver-checklists/php.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

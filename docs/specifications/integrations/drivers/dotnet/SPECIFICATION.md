@@ -74,7 +74,15 @@ using var reader = cmd.ExecuteReader();
 - Validate DbDataReader schema metadata.
 - Confirm DbException SQLSTATE mapping.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/dotnet.md`
+- [ ] Constraint: ADO.NET patterns rely on DbConnection, DbCommand, DbDataReader. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Constraint: Providers should support DbProviderFactory usage. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Validate DbDataReader schema metadata. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Confirm DbException SQLSTATE mapping. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

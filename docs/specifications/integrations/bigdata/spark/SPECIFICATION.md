@@ -73,7 +73,16 @@ spark.read.format("jdbc")   .option("url", "jdbc:scratchbird://localhost:3092/db
 - Validate Spark parallel read with partition column + bounds.
 - Confirm DataFrame writes via JDBC with batch size tuning.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Spark JDBC data sources require a JDBC URL, table or query, and driver class. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Partitioning options should be supported for parallel read. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Large writes should use batch inserts and prepared statements. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate Spark parallel read with partition column + bounds. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm DataFrame writes via JDBC with batch size tuning. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

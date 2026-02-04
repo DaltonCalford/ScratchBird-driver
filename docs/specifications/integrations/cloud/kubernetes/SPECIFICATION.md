@@ -76,7 +76,16 @@ metadata:
 - Validate rolling upgrade with zero data loss.
 - Confirm liveness probes detect hung connections.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: Kubernetes deployments require ConfigMaps and Secrets for configuration. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: StatefulSets with persistent volumes are required for durable storage. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Readiness and liveness probes must be supported. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate rolling upgrade with zero data loss. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm liveness probes detect hung connections. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

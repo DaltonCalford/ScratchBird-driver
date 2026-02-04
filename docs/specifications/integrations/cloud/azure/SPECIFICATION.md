@@ -75,7 +75,16 @@ resource "azurerm_network_security_group" "scratchbird" {
 - Validate connectivity through Azure App Gateway.
 - Confirm backup/restore procedures.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: Azure deployments commonly use VNet integration and NSGs for port access. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: TLS certificates must be compatible with Azure Load Balancers and App Gateways. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Managed service deployments should support Azure backup/restore patterns. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate connectivity through Azure App Gateway. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm backup/restore procedures. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

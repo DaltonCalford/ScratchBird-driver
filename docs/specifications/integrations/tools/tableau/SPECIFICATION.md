@@ -77,7 +77,16 @@ Database=db
 - Validate Tableau can publish and refresh extracts.
 - Confirm custom SQL uses parameter binding without errors.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/odbc.md`
+- [ ] Constraint: Tableau uses ODBC or JDBC drivers depending on the connector. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: The driver must expose accurate metadata for Tableau's data model. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Constraint: Large result sets must support paging and cancellation. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Validate Tableau can publish and refresh extracts. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+- [ ] Test: Confirm custom SQL uses parameter binding without errors. (Driver task: `docs/planning/driver-checklists/odbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

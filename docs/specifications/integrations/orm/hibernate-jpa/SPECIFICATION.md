@@ -74,7 +74,15 @@ public class User { @Id public Long id; }
 - Validate schema generation via annotations.
 - Confirm identifier mapping and primary key handling.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Hibernate/JPA expects entity mappings via @Entity and @Table, with @Id for primary keys. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Schema and table naming must align with annotations. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate schema generation via annotations. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm identifier mapping and primary key handling. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

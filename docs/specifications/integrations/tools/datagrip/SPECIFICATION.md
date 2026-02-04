@@ -74,7 +74,16 @@ jdbc:scratchbird://localhost:3092/db
 - Validate database introspection for schemas and routines.
 - Confirm parameterized query execution in the query console.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: DataGrip uses JDBC drivers and requires driver JARs to be configured per data source. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: It expects DatabaseMetaData compatibility for schemas, tables, and columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: SQL dialect quirks must be declared to avoid incorrect SQL generation. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate database introspection for schemas and routines. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm parameterized query execution in the query console. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

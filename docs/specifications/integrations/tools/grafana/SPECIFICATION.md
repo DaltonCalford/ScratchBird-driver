@@ -74,7 +74,16 @@ scratchbird://localhost:3092/db
 - Validate time-series queries return consistent time/value columns.
 - Confirm dashboard refreshes do not leak connections.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Grafana SQL data sources expect query macros and time-series formatting. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: The driver must return correct time column types and ordering. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Connection pooling and query timeouts should be configurable. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate time-series queries return consistent time/value columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm dashboard refreshes do not leak connections. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

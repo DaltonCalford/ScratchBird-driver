@@ -73,7 +73,15 @@ var items = await context.Items.ToListAsync();
 - Validate LINQ translation for common filters.
 - Verify provider version compatibility and migrations.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/dotnet.md`
+- [ ] Constraint: EF Core uses LINQ and database providers to translate queries. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Constraint: Provider versions must align with EF Core major versions. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Validate LINQ translation for common filters. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+- [ ] Test: Verify provider version compatibility and migrations. (Driver task: `docs/planning/driver-checklists/dotnet.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -76,7 +76,16 @@ dbDisconnect(con)
 - Validate `dbGetQuery` returns consistent `data.frame` column types.
 - Ensure `dbBind` supports positional and named parameters.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/r.md`
+- [ ] Constraint: Conform to R DBI generics and return data frames with stable column classes. (Driver task: `docs/planning/driver-checklists/r.md`)
+- [ ] Constraint: Support `dbListTables` and `dbColumnInfo` for metadata introspection. (Driver task: `docs/planning/driver-checklists/r.md`)
+- [ ] Constraint: Treat `NA` and `NULL` per DBI expectations. (Driver task: `docs/planning/driver-checklists/r.md`)
+- [ ] Test: Validate `dbGetQuery` returns consistent `data.frame` column types. (Driver task: `docs/planning/driver-checklists/r.md`)
+- [ ] Test: Ensure `dbBind` supports positional and named parameters. (Driver task: `docs/planning/driver-checklists/r.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

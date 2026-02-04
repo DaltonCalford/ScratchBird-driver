@@ -79,7 +79,16 @@ TBLPROPERTIES (
 - Validate Hive external table read/write against ScratchBird.
 - Confirm predicate pushdown reduces row counts.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Hive JDBC storage handlers require JDBC URL and driver class configuration. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Hive expects column types to map to SQL types for external tables. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Queries should support predicate pushdown where possible. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate Hive external table read/write against ScratchBird. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm predicate pushdown reduces row counts. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

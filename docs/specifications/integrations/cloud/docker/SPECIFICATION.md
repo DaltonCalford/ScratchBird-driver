@@ -73,7 +73,16 @@ docker run -e SB_LISTEN=0.0.0.0:3092 -p 3092:3092 scratchbird/server
 - Validate container starts with read-only root filesystem.
 - Confirm upgrade path via image tag changes.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/cli.md`
+- [ ] Constraint: Docker images must expose standard ports and support env-based configuration. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Non-root container execution should be supported. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Constraint: Volume mounts are required for persistent data. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Validate container starts with read-only root filesystem. (Driver task: `docs/planning/driver-checklists/cli.md`)
+- [ ] Test: Confirm upgrade path via image tag changes. (Driver task: `docs/planning/driver-checklists/cli.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

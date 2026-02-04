@@ -75,7 +75,15 @@ const User = sequelize.define('User', {
 - Validate DataTypes mapping for JSON/JSONB and string types.
 - Verify nullability defaults.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/node.md`
+- [ ] Constraint: Sequelize requires explicit DataTypes for model attributes. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Constraint: DataTypes support varies by dialect; JSON/JSONB have differing support. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Validate DataTypes mapping for JSON/JSONB and string types. (Driver task: `docs/planning/driver-checklists/node.md`)
+- [ ] Test: Verify nullability defaults. (Driver task: `docs/planning/driver-checklists/node.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

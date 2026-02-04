@@ -77,7 +77,16 @@ db_password = pass
 - Validate Odoo database creation and module installation.
 - Confirm ORM migrations on upgrade.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: Odoo requires PostgreSQL and manages databases via a dedicated DB user. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Connection configuration is typically via `odoo.conf`. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Odoo uses large schemas and relies on sequences and constraints. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate Odoo database creation and module installation. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm ORM migrations on upgrade. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

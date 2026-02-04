@@ -80,7 +80,16 @@ CREATE TABLE sink (
 - Validate Flink sink upserts under checkpointing.
 - Confirm JDBC source reads with projection and filters.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Flink JDBC connector requires JDBC URL, driver class, and table schema mapping. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Upserts and batch modes should be supported for sinks. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Exactly-once semantics depend on transaction and checkpoint support. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate Flink sink upserts under checkpointing. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Confirm JDBC source reads with projection and filters. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

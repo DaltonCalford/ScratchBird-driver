@@ -73,7 +73,16 @@ SELECT id FROM embeddings ORDER BY embedding <-> $1 LIMIT 10;
 - Validate vector insert/update and top-k similarity queries.
 - Confirm index build time and recall thresholds.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: Vector APIs expect fixed-dimension vector columns and similarity operators. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Index choices (HNSW/IVF) can affect performance and accuracy tradeoffs. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Distance functions must be deterministic and numeric-safe. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate vector insert/update and top-k similarity queries. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm index build time and recall thresholds. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -71,7 +71,14 @@ ResultSet rs = meta.getTables(null, null, "%", new String[] {"TABLE", "VIEW"});
 
 - Validate metadata result sets (tables/columns) and SQLSTATE.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: DatabaseMetaData.getTables/getColumns return standard ResultSet columns. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: getSchemas and getTableTypes should return ordered results. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate metadata result sets (tables/columns) and SQLSTATE. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

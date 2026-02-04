@@ -73,7 +73,16 @@ Category: Application
 - Validate Mattermost startup migrations complete.
 - Confirm message, channel, and user CRUD flows.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/go.md`
+- [ ] Constraint: Mattermost uses PostgreSQL for production deployments. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Constraint: DB connection config is in `config.json` with DSN-like fields. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Constraint: Online migrations are common during upgrades. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Test: Validate Mattermost startup migrations complete. (Driver task: `docs/planning/driver-checklists/go.md`)
+- [ ] Test: Confirm message, channel, and user CRUD flows. (Driver task: `docs/planning/driver-checklists/go.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

@@ -75,7 +75,16 @@ doc_store = SQLDocumentStore(url="scratchbird://user:pass@localhost:3092/db")
 - Validate insert/update/delete for documents with metadata filters.
 - Confirm vector similarity queries return stable ordering.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/python.md`
+- [ ] Constraint: Haystack document stores expect consistent schema and efficient filter predicates. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: SQL-backed document stores require parameterized queries and transaction safety. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Constraint: Embedding/vector fields must preserve dimensionality and order. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Validate insert/update/delete for documents with metadata filters. (Driver task: `docs/planning/driver-checklists/python.md`)
+- [ ] Test: Confirm vector similarity queries return stable ordering. (Driver task: `docs/planning/driver-checklists/python.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md

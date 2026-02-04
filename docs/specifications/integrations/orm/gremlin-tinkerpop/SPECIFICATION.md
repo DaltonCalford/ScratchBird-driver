@@ -73,7 +73,16 @@ g.V().has('User','id',param).out('friend').values('name')
 - Validate traversal step ordering and pagination semantics.
 - Ensure vertex/edge property maps are decoded consistently.
 
-## 13. References
+## 13. Implementation Checklist Appendix
+
+- Driver checklist: `docs/planning/driver-checklists/jdbc.md`
+- [ ] Constraint: Gremlin uses traversal steps (`g.V()`, `has`, `out`, `values`) and expects streaming results. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Parameterized bindings are common in Gremlin to avoid string interpolation. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Constraint: Result types include vertices, edges, and property maps. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Validate traversal step ordering and pagination semantics. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+- [ ] Test: Ensure vertex/edge property maps are decoded consistently. (Driver task: `docs/planning/driver-checklists/jdbc.md`)
+
+## 14. References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
 - docs/specifications/TYPE_MAPPING_MATRIX.md
