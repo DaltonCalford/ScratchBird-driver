@@ -30,7 +30,7 @@ languages.
 ## Phase 1: Protocol Framing and TLS
 
 1. Replace 12-byte SBDB header with 40-byte SBWP header
-   - Update `go/protocol.go` encode/decode logic
+   - Update `tracks/alpha/drivers/go/protocol.go` encode/decode logic
    - Add attachment_id and txn_id fields to message handling
 
 2. Enforce TLS 1.3 (no plaintext fallback)
@@ -63,7 +63,7 @@ languages.
 
 4. Add EXECUTE + SYNC
 
-5. Remove client-side SQL substitution in `go/query.go`
+5. Remove client-side SQL substitution in `tracks/alpha/drivers/go/query.go`
 
 ## Phase 4: Types and Serialization
 

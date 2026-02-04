@@ -15,7 +15,7 @@ See [DRIVER_CONFORMANCE_TEST_HARNESS.md](../specifications/DRIVER_CONFORMANCE_TE
 The Go driver includes a harness runner:
 
 ```bash
-cd go
+cd tracks/alpha/drivers/go
 SCRATCHBIRD_GO_URL="scratchbird://user:pass@localhost:3092/db" \
 SCRATCHBIRD_CONFORMANCE_MANIFEST="../docs/fixtures/sbwp_conformance_manifest.json" \
 go test ./conformance

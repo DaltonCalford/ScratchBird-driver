@@ -5,7 +5,7 @@
 From the repo:
 
 ```bash
-dotnet build dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj
+dotnet build tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj
 ```
 
 ## Quick Start

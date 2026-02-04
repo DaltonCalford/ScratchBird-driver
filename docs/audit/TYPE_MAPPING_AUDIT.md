@@ -12,21 +12,21 @@ explicit mappings but does not validate binary encoding correctness.
 
 ## Evidence Sources
 
-- `cpp/include/scratchbird/client/scratchbird_client.h`
-- `go/types.go`
-- `node/src/types.ts`
-- `python/src/scratchbird/types.py`
-- `ruby/lib/scratchbird/types.rb`
-- `rust/src/types.rs`
-- `php/src/TypeDecoder.php`
-- `r/R/types.R`
-- `pascal/src/ScratchBird.Types.pas`
-- `dotnet/src/ScratchBird.Data/TypeDecoder.cs`
-- `jdbc/src/main/java/com/scratchbird/jdbc/SBTypeCodec.java`
-- `dart/lib/src/types.dart`
-- `swift/Sources/ScratchBird/Types.swift`
-- `elixir/lib/scratchbird/types.ex`
-- `mojo/src/scratchbird.mojo`
+- `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+- `tracks/alpha/drivers/go/types.go`
+- `tracks/alpha/drivers/node/src/types.ts`
+- `tracks/alpha/drivers/python/src/scratchbird/types.py`
+- `tracks/alpha/drivers/ruby/lib/scratchbird/types.rb`
+- `tracks/alpha/drivers/rust/src/types.rs`
+- `tracks/alpha/drivers/php/src/TypeDecoder.php`
+- `tracks/beta/drivers/r/R/types.R`
+- `tracks/alpha/drivers/pascal/src/ScratchBird.Types.pas`
+- `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/TypeDecoder.cs`
+- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBTypeCodec.java`
+- `tracks/beta/drivers/dart/lib/src/types.dart`
+- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`
+- `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
 
 ## Summary
 
@@ -41,7 +41,7 @@ explicit mappings but does not validate binary encoding correctness.
 
 ### C/C++
 
-- `sb_type` in `cpp/include/scratchbird/client/scratchbird_client.h` only
+- `sb_type` in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h` only
   covers primitives plus JSON/UUID/ARRAY/INET/CIDR/MACADDR. Missing RANGE,
   COMPOSITE, GEOMETRY, VECTOR, TSVECTOR/TSQUERY, XML, MONEY wrappers.
 

@@ -11,6 +11,6 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Test: Validate transaction behavior via TSQLTransaction. (Sources: `docs/specifications/integrations/drivers/pascal-delphi/SPECIFICATION.md`)
 - [ ] Test: Confirm schema retrieval APIs (SQLDB) return expected shapes. (Sources: `docs/specifications/integrations/drivers/pascal-delphi/SPECIFICATION.md`)
 ## P2 (Follow-ups)
-- [ ] Add conformance tests for full type matrix in `pascal/tests/`. Issue: TBD
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/pascal/tests/`. Issue: TBD
 
 ## P3 (Future)

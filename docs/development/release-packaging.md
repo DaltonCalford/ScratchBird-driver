@@ -11,7 +11,7 @@ packaging tools below.
 ## Python
 
 ```bash
-cd python
+cd tracks/alpha/drivers/python
 python -m pip install build
 twine upload dist/*
 ```
@@ -19,7 +19,7 @@ twine upload dist/*
 ## Node.js
 
 ```bash
-cd node
+cd tracks/alpha/drivers/node
 npm run build
 npm publish
 ```
@@ -27,7 +27,7 @@ npm publish
 ## Ruby
 
 ```bash
-cd ruby
+cd tracks/alpha/drivers/ruby
 gem build scratchbird.gemspec
 gem push scratchbird-0.1.0.gem
 ```
@@ -35,7 +35,7 @@ gem push scratchbird-0.1.0.gem
 ## Rust
 
 ```bash
-cd rust
+cd tracks/alpha/drivers/rust
 cargo publish
 ```
 
@@ -50,18 +50,18 @@ Use `R CMD build` and `R CMD check`, then publish to the target repository.
 ## .NET
 
 ```bash
-cd dotnet
+cd tracks/alpha/drivers/dotnet
 dotnet pack
 ```
 
 ## JDBC
 
 ```bash
-cd jdbc
+cd tracks/alpha/drivers/jdbc
 ./gradlew publish
 ```
 
 ## Metabase Plugin
 
-Build the plugin JAR in `scratchbird-metabase-driver` and distribute the JAR
+Build the plugin JAR in `tracks/alpha/integrations/scratchbird-metabase-driver` and distribute the JAR
 with `metabase-plugin.yaml` embedded.

@@ -3,11 +3,11 @@
 Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
 
 ## P1 (Core)
-- [ ] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `r/R/client.R`. Issue: TBD
+- [ ] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`. Issue: TBD
 
 
 ## P2 (Follow-ups)
-- [ ] Add conformance tests for full type matrix in `r/tests/`. Issue: TBD
+- [ ] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: TBD
 
 ## P3 (Future)
 

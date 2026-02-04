@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-cd elixir
+cd tracks/p3/drivers/elixir
 mix deps.get
 ```
 

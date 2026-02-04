@@ -2,7 +2,7 @@
 
 ## Install
 
-The Mojo driver lives in `mojo/` and uses the ScratchBird Python driver as a
+The Mojo driver lives in `tracks/alpha/drivers/mojo/` and uses the ScratchBird Python driver as a
 transport bridge until Mojo networking APIs stabilize.
 
 Required:

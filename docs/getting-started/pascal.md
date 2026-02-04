@@ -2,7 +2,7 @@
 
 ## Install
 
-Add the `pascal/src` directory to your project search path.
+Add the `tracks/alpha/drivers/pascal/src` directory to your project search path.
 
 ## Quick Start
 

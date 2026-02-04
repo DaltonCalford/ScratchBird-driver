@@ -6,7 +6,7 @@ repo root. Integration tests require a running ScratchBird server.
 ## Go
 
 ```bash
-cd go
+cd tracks/alpha/drivers/go
 
 go test ./...
 ```
@@ -19,7 +19,7 @@ Integration env:
 ## Python
 
 ```bash
-cd python
+cd tracks/alpha/drivers/python
 python -m pip install -e ".."
 python -m pip install -e ".[test]"
 pytest
@@ -33,7 +33,7 @@ Integration env:
 ## Node.js
 
 ```bash
-cd node
+cd tracks/alpha/drivers/node
 npm install
 npm test
 ```
@@ -46,7 +46,7 @@ Integration env:
 ## Ruby
 
 ```bash
-cd ruby
+cd tracks/alpha/drivers/ruby
 ruby -Ilib -e 'require "scratchbird"'
 ```
 
@@ -58,7 +58,7 @@ Integration env:
 ## Rust
 
 ```bash
-cd rust
+cd tracks/alpha/drivers/rust
 cargo test
 ```
 
@@ -70,7 +70,7 @@ Integration env:
 ## PHP
 
 ```bash
-cd php
+cd tracks/alpha/drivers/php
 composer install
 vendor/bin/phpunit
 ```
@@ -83,7 +83,7 @@ Integration env:
 ## R
 
 ```bash
-cd r
+cd tracks/beta/drivers/r
 R -q -e 'devtools::test()'
 ```
 
@@ -94,7 +94,7 @@ Integration env:
 
 ## Pascal/Delphi
 
-Run the test projects under `pascal/tests/` with:
+Run the test projects under `tracks/alpha/drivers/pascal/tests/` with:
 
 - `SCRATCHBIRD_PASCAL_URL`
 - `SCRATCHBIRD_PASCAL_CANCEL_SQL`
@@ -102,7 +102,7 @@ Run the test projects under `pascal/tests/` with:
 ## .NET
 
 ```bash
-cd dotnet
+cd tracks/alpha/drivers/dotnet
 dotnet test
 ```
 
@@ -114,7 +114,7 @@ Integration env:
 ## JDBC
 
 ```bash
-cd jdbc
+cd tracks/alpha/drivers/jdbc
 ./gradlew test
 ```
 

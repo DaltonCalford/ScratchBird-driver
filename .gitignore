@@ -173,6 +173,7 @@ swift/.build/
 swift/.swiftpm/
 swift/Packages/
 swift/Package.resolved
+tracks/**/Package.resolved
 
 # ===================
 # Dart
@@ -191,6 +192,7 @@ mojo/.build/
 # ===================
 # Build artifacts
 # ===================
+tracks/**/.build/
 build/
 dist/
 out/

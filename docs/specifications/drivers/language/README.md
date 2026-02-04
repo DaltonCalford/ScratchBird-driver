@@ -7,17 +7,17 @@ Alpha/Beta target drivers referenced in the ScratchBird specifications.
 
 ## Target Drivers (Alpha/Beta)
 
-- `cpp/` - C/C++
+- `tracks/beta/drivers/cpp/` - C/C++
 - `dotnet-csharp/` - .NET/C#
 - `golang/` - Go
 - `java-jdbc/` - Java JDBC
 - `nodejs-typescript/` - Node.js/TypeScript
 - `pascal-delphi/` - Pascal/Delphi/FreePascal
-- `php/` - PHP
-- `python/` - Python
-- `r/` - R
-- `ruby/` - Ruby
-- `rust/` - Rust
+- `tracks/alpha/drivers/php/` - PHP
+- `tracks/alpha/drivers/python/` - Python
+- `tracks/beta/drivers/r/` - R
+- `tracks/alpha/drivers/ruby/` - Ruby
+- `tracks/alpha/drivers/rust/` - Rust
 
 ## Source List
 

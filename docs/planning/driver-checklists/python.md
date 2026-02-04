@@ -38,7 +38,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: The backend adapter must implement Django Database Backend APIs (operations, features, introspection). (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
 - [ ] Test: Validate `inspectdb` output matches metadata contract. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
 - [ ] Test: Confirm Django migration operations for indexes and constraints. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `python/tests/`. Issue: TBD (Sources: ``)
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

@@ -177,7 +177,7 @@ ScratchBird JDBC driver (SBWP v1.1) for connectivity.
 
 **Plugin layout (minimum):**
 ```
-scratchbird-metabase-driver/
+tracks/alpha/integrations/scratchbird-metabase-driver/
 ├── metabase-plugin.yaml
 ├── deps.edn
 └── src/
@@ -1112,7 +1112,7 @@ FROM sb_objects;
 | oid | oid | Object OID |
 | relname | name | Object name |
 | relnamespace | oid | Schema OID |
-| relkind | char | Object type (r/v/i/S/m/f/p) |
+| relkind | char | Object type (tracks/beta/drivers/r/v/i/S/m/f/p) |
 | relowner | oid | Owner OID |
 | reltuples | float4 | Estimated row count |
 | relpages | int4 | Page count |

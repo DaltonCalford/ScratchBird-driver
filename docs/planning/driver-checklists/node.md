@@ -28,5 +28,5 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: Avoid relying on TypeORM `synchronize` for production migrations. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
 - [ ] Test: Validate entity metadata discovery for `@Entity` with custom schema. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
 - [ ] Test: Verify parameterized queries use positional `$1` or named bindings as expected by the driver. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `node/test/`. Issue: TBD (Sources: ``)
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/node/test/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

@@ -4,10 +4,10 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `scratchbird-superset-driver/scratchbird_superset/dialect.py`. Issue: TBD
+- [x] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/dialect.py`. Issue: TBD
 
 ## P2 (Follow-ups)
 
-- [x] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py`. Issue: TBD
+- [x] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/dialect.py`. Issue: TBD
 
 ## P3 (Future)

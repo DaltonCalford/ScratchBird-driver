@@ -3,7 +3,7 @@
 ## Build
 
 ```bash
-cd swift
+cd tracks/beta/drivers/swift
 swift build
 ```
 

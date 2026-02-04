@@ -11,5 +11,5 @@ for ScratchBird integrations.
 
 ## Scaffolds
 
-- `scratchbird-metabase-driver/README.md`
-- `scratchbird-superset-driver/README.md`
+- `tracks/alpha/integrations/scratchbird-metabase-driver/README.md`
+- `tracks/beta/integrations/scratchbird-superset-driver/README.md`

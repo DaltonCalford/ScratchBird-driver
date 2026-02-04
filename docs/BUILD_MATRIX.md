@@ -31,12 +31,12 @@ Notes:
 - Dart, Swift, and Mojo are not available via Ubuntu apt; install via their official channels.
 - Ubuntu repos may not include Node 20+ or Rust 1.76+; use NodeSource/rustup when needed.
 
-## Go (`go/`)
+## Go (`tracks/alpha/drivers/go/`)
 - Required tools: Go 1.22+.
 - Ubuntu 24.04 packages: `sudo apt install -y golang-go`
 - Build/test: `go test ./...`
 
-## Node.js (`node/`)
+## Node.js (`tracks/alpha/drivers/node/`)
 - Required tools: Node.js 20+ and npm.
 - Ubuntu 24.04 packages: `sudo apt install -y nodejs npm`
   - Note: Ubuntu repo may ship Node 18; use NodeSource if you need 20+.
@@ -45,14 +45,14 @@ Notes:
   - `npm run build`
   - `npm test`
 
-## Python (`python/`)
+## Python (`tracks/alpha/drivers/python/`)
 - Required tools: Python 3.11+ and pip.
 - Ubuntu 24.04 packages: `sudo apt install -y python3.11 python3.11-venv python3-pip`
 - Install/test:
   - `python -m pip install -e ".[test]"`
   - `python -m pytest`
 
-## Ruby (`ruby/`)
+## Ruby (`tracks/alpha/drivers/ruby/`)
 - Required tools: Ruby 3.2+ and RubyGems.
 - Ubuntu 24.04 packages: `sudo apt install -y ruby-full`
 - Build/install:
@@ -60,7 +60,7 @@ Notes:
   - `gem install scratchbird-*.gem`
 - Test: `ruby -Ilib test/*.rb`
 
-## Rust (`rust/`)
+## Rust (`tracks/alpha/drivers/rust/`)
 - Required tools: Rust 1.76+ (cargo).
 - Ubuntu 24.04 packages: `sudo apt install -y rustc cargo`
   - Note: apt Rust may lag; use `rustup` if you need 1.76+.
@@ -68,21 +68,21 @@ Notes:
   - `cargo build`
   - `cargo test`
 
-## PHP (`php/`)
+## PHP (`tracks/alpha/drivers/php/`)
 - Required tools: PHP 8.2+ and Composer.
 - Ubuntu 24.04 packages: `sudo apt install -y php8.2 php8.2-cli php8.2-mbstring php8.2-xml php8.2-curl php8.2-zip composer`
 - Install/test:
   - `composer install`
   - `vendor/bin/phpunit tests`
 
-## R (`r/`)
+## R (`tracks/beta/drivers/r/`)
 - Required tools: R 4.3+.
 - Ubuntu 24.04 packages: `sudo apt install -y r-base r-base-dev`
 - Build/check:
   - `R CMD build .`
   - `R CMD check scratchbird_*.tar.gz`
 
-## Pascal (`pascal/`)
+## Pascal (`tracks/alpha/drivers/pascal/`)
 - Required tools:
   - FreePascal 3.2+ or Delphi 11+.
 - Ubuntu 24.04 packages (FreePascal): `sudo apt install -y fp-compiler`
@@ -90,20 +90,20 @@ Notes:
 - Delphi: add units in `src/` to the project.
 - No automated test runner yet.
 
-## .NET (`dotnet/`)
+## .NET (`tracks/alpha/drivers/dotnet/`)
 - Required tools: .NET SDK 8.0+.
 - Ubuntu 24.04 packages: `sudo apt install -y dotnet-sdk-8.0`
 - Build/test:
   - `dotnet build src/ScratchBird.Data/ScratchBird.Data.csproj`
   - `dotnet test`
 
-## Java/JDBC (`jdbc/`)
+## Java/JDBC (`tracks/alpha/drivers/jdbc/`)
 - Required tools: JDK 17+ and Gradle.
 - Ubuntu 24.04 packages: `sudo apt install -y openjdk-17-jdk gradle`
 - Linux/macOS: `./gradlew build`
 - Windows: `gradlew.bat build`
 
-## ODBC (`odbc/`)
+## ODBC (`tracks/alpha/drivers/odbc/`)
 - Required tools:
   - CMake 3.22+, C/C++ compiler.
   - ODBC headers (e.g., unixODBC-dev on Linux).
@@ -112,41 +112,41 @@ Notes:
   - `cmake -S . -B build`
   - `cmake --build build`
 
-## C/C++ (`cpp/`)
+## C/C++ (`tracks/beta/drivers/cpp/`)
 - Required tools: CMake 3.22+, C/C++ compiler.
 - Ubuntu 24.04 packages: `sudo apt install -y build-essential cmake`
 - Build:
   - `cmake -S . -B build`
   - `cmake --build build`
 
-## Dart (`dart/`)
+## Dart (`tracks/beta/drivers/dart/`)
 - Required tools: Dart 3.3+ (Flutter SDK also works).
 - Ubuntu 24.04 packages: `dart` (from the Dart apt repo), or install via Flutter SDK.
 - Build/test:
   - `dart pub get`
   - `dart test`
 
-## Swift (`swift/`)
+## Swift (`tracks/beta/drivers/swift/`)
 - Required tools: Swift 5.10+ (SwiftPM), plus a C toolchain for dependencies.
 - Ubuntu 24.04 packages: not available via apt; install Swift from swift.org or use `swiftly`.
 - Build/test:
   - `swift build`
   - `swift test`
 
-## Elixir (`elixir/`)
+## Elixir (`tracks/p3/drivers/elixir/`)
 - Required tools: Elixir 1.15+ and Erlang/OTP 26+.
 - Ubuntu 24.04 packages: `sudo apt install -y elixir erlang`
 - Build/test:
   - `mix deps.get`
   - `mix test`
 
-## Mojo (`mojo/`)
+## Mojo (`tracks/alpha/drivers/mojo/`)
 - Required tools: Mojo 24.4+ (Python is used for the bridge).
 - Ubuntu 24.04 packages: not available via apt; install from Modular (Mojo).
 - Build/test:
   - `mojo test -I src tests`
 
-## CLI Tools (`cli/`)
+## CLI Tools (`tracks/alpha/drivers/cli/`)
 - Required tools: Go 1.22+ (for the native/equivalent protocol runners).
 - Ubuntu 24.04 packages: `sudo apt install -y golang-go`
 - Build/test:

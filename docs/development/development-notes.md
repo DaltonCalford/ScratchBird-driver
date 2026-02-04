@@ -13,22 +13,22 @@ cmake -S . -B build
 cmake --build build
 
 # Go
-cd go && go build ./...
+cd tracks/alpha/drivers/go && go build ./...
 
 # Python
-cd python && pip install -e .
+cd tracks/alpha/drivers/python && pip install -e .
 
 # Node.js
-cd node && npm install && npm run build
+cd tracks/alpha/drivers/node && npm install && npm run build
 
 # Rust
-cd rust && cargo build
+cd tracks/alpha/drivers/rust && cargo build
 
 # .NET
-cd dotnet && dotnet build
+cd tracks/alpha/drivers/dotnet && dotnet build
 
 # JDBC
-cd jdbc && ./gradlew build
+cd tracks/alpha/drivers/jdbc && ./gradlew build
 ```
 
 ## Development Requirements

@@ -11,13 +11,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (SB_BUILD_CPP)
-    add_subdirectory(cpp)
+    add_subdirectory(tracks/beta/drivers/cpp)
 endif()
 
 if (SB_BUILD_ODBC)
-    add_subdirectory(odbc)
+    add_subdirectory(tracks/alpha/drivers/odbc)
 endif()
 
 if (SB_BUILD_CLI)
-    add_subdirectory(cli)
+    add_subdirectory(tracks/alpha/drivers/cli)
 endif()

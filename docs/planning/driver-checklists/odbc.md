@@ -10,7 +10,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: Result set metadata is retrieved via SQLNumResultCols and SQLDescribeCol/SQLColAttribute. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
 - [ ] Test: Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.). (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
 - [ ] Test: Validate SQLDescribeCol and SQLNumResultCols behavior. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`)
-- [ ] Expand type mapping to cover complex SBWP types where applicable in `odbc/src/odbc_client_bridge.cpp`. Issue: TBD (Sources: ``)
+- [ ] Expand type mapping to cover complex SBWP types where applicable in `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp`. Issue: TBD (Sources: ``)
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -40,7 +40,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: The driver must tolerate long-running introspection queries. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
 - [ ] Test: Validate Workbench migration wizard completes schema introspection. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
 - [ ] Test: Confirm data copy works for large tables with paging. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`)
-- [ ] Add conformance tests for metadata + type coverage in `odbc/tests/`. Issue: TBD (Sources: ``)
+- [ ] Add conformance tests for metadata + type coverage in `tracks/alpha/drivers/odbc/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

@@ -14,5 +14,5 @@ queries required by Metabase.
 - Capabilities are gated via `driver/database-supports?`.
 - Metadata uses the SQL JDBC sync utilities.
 
-See `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` for the
+See `tracks/alpha/integrations/scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` for the
 full adapter behavior.

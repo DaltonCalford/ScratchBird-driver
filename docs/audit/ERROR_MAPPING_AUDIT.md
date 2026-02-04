@@ -19,47 +19,47 @@ per `docs/specifications/DRIVER_ERROR_MAPPING.md`.
 ## Evidence (Selected)
 
 ### Go
-- `go/errors.go`: `mapSQLState` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/go/errors.go`: `mapSQLState` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### Node.js/TypeScript
-- `node/src/errors.ts`: `mapSqlState` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/node/src/errors.ts`: `mapSqlState` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### Python
-- `python/src/scratchbird/connection.py`: `_map_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/python/src/scratchbird/connection.py`: `_map_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### Ruby
-- `ruby/lib/scratchbird/errors.rb`: `ErrorMapper.from_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb`: `ErrorMapper.from_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### Rust
-- `rust/src/errors.rs`: `error_from_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/rust/src/errors.rs`: `error_from_sqlstate` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### PHP
-- `php/src/Errors.php`: `ErrorMapper::map` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
+- `tracks/alpha/drivers/php/src/Errors.php`: `ErrorMapper::map` maps 01/02/08/0A/22/23/28/40/42/53/54/57/58/XX.
 
 ### R
-- `r/R/protocol.R`: parses sqlstate fields.
-- `r/R/client.R`: prefixes errors with `[SQLSTATE]`.
+- `tracks/beta/drivers/r/R/protocol.R`: parses sqlstate fields.
+- `tracks/beta/drivers/r/R/client.R`: prefixes errors with `[SQLSTATE]`.
 
 ### Pascal/Delphi
-- `pascal/src/ScratchBird.Errors.pas`: `MapSqlState` class-prefix mapping.
+- `tracks/alpha/drivers/pascal/src/ScratchBird.Errors.pas`: `MapSqlState` class-prefix mapping.
 
 ### .NET
-- `dotnet/src/ScratchBird.Data/Errors.cs`: `ScratchBirdSqlStateMapper` class-prefix mapping.
+- `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Errors.cs`: `ScratchBirdSqlStateMapper` class-prefix mapping.
 
 ### JDBC
-- `jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`: parses sqlstate; mapped to `SQLException`.
+- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`: parses sqlstate; mapped to `SQLException`.
 
 ### C/C++
-- `cpp/src/core/sqlstate.cpp`: internal Status -> SQLSTATE mapping.
+- `tracks/beta/drivers/cpp/src/core/sqlstate.cpp`: internal Status -> SQLSTATE mapping.
 
 ### Dart
-- No SQLSTATE parsing or mapping found in `dart/lib/`.
+- No SQLSTATE parsing or mapping found in `tracks/beta/drivers/dart/lib/`.
 
 ### Swift
-- No SQLSTATE parsing or mapping found in `swift/Sources/`.
+- No SQLSTATE parsing or mapping found in `tracks/beta/drivers/swift/Sources/`.
 
 ### Elixir
-- SQLSTATE parsing in `elixir/lib/scratchbird/protocol.ex`; mapping not observed.
+- SQLSTATE parsing in `tracks/p3/drivers/elixir/lib/scratchbird/protocol.ex`; mapping not observed.
 
 ## Open Gaps
 

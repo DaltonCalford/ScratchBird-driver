@@ -18,22 +18,22 @@ own native client drivers against ScratchBird's emulation listeners.
 
 | Driver | Directory | Status | Packaging |
 |--------|-----------|--------|-----------|
-| **C/C++ (libscratchbird_client)** | `cpp/` | SBWP core; type coverage expanded (initial conformance tests) | CMake |
-| **ODBC 3.8** | `odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
-| **Go** | `go/` | Implemented (SBWP v1.1 baseline) | `go get` |
-| **Python** | `python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
-| **Node.js** | `node/` | Implemented (SBWP v1.1 baseline) | npm |
-| **Ruby** | `ruby/` | Implemented (SBWP v1.1 baseline) | gem |
-| **Rust** | `rust/` | Implemented (SBWP v1.1 baseline) | cargo |
-| **PHP** | `php/` | Implemented (SBWP v1.1 baseline) | composer |
-| **R** | `r/` | Implemented (SBWP v1.1 baseline) | CRAN-style |
-| **Pascal** | `pascal/` | Implemented (SBWP v1.1 baseline) | - |
-| **.NET** | `dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
-| **Java/JDBC** | `jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `elixir/` | Partial (TLS required, type coverage expanded, initial tests) | Hex |
-| **Swift (Async/Await)** | `swift/` | Partial (TLS required, type coverage expanded, initial tests) | SwiftPM |
-| **Dart** | `dart/` | Partial (TLS required, type coverage expanded, initial tests) | pub.dev |
-| **Mojo** | `mojo/` | Partial (native SBWP transport; type coverage incomplete) | - |
+| **C/C++ (libscratchbird_client)** | `tracks/beta/drivers/cpp/` | SBWP core; type coverage expanded (initial conformance tests) | CMake |
+| **ODBC 3.8** | `tracks/alpha/drivers/odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
+| **Go** | `tracks/alpha/drivers/go/` | Implemented (SBWP v1.1 baseline) | `go get` |
+| **Python** | `tracks/alpha/drivers/python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
+| **Node.js** | `tracks/alpha/drivers/node/` | Implemented (SBWP v1.1 baseline) | npm |
+| **Ruby** | `tracks/alpha/drivers/ruby/` | Implemented (SBWP v1.1 baseline) | gem |
+| **Rust** | `tracks/alpha/drivers/rust/` | Implemented (SBWP v1.1 baseline) | cargo |
+| **PHP** | `tracks/alpha/drivers/php/` | Implemented (SBWP v1.1 baseline) | composer |
+| **R** | `tracks/beta/drivers/r/` | Implemented (SBWP v1.1 baseline) | CRAN-style |
+| **Pascal** | `tracks/alpha/drivers/pascal/` | Implemented (SBWP v1.1 baseline) | - |
+| **.NET** | `tracks/alpha/drivers/dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
+| **Java/JDBC** | `tracks/alpha/drivers/jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
+| **Elixir (Ecto)** | `tracks/p3/drivers/elixir/` | Partial (TLS required, type coverage expanded, initial tests) | Hex |
+| **Swift (Async/Await)** | `tracks/beta/drivers/swift/` | Partial (TLS required, type coverage expanded, initial tests) | SwiftPM |
+| **Dart** | `tracks/beta/drivers/dart/` | Partial (TLS required, type coverage expanded, initial tests) | pub.dev |
+| **Mojo** | `tracks/alpha/drivers/mojo/` | Partial (native SBWP transport; type coverage incomplete) | - |
 
 ---
 
@@ -134,8 +134,8 @@ These drivers are native-only. For emulated protocol access (PostgreSQL/MySQL/Fi
 use the standard drivers for those engines against ScratchBird's emulation listeners.
 
 Application-specific drivers (early):
-- Superset: `scratchbird-superset-driver/`
-- Metabase: `scratchbird-metabase-driver/`
+- Superset: `tracks/beta/integrations/scratchbird-superset-driver/`
+- Metabase: `tracks/alpha/integrations/scratchbird-metabase-driver/`
 
 Integration templates (Alpha/Beta ecosystem targets) live in:
 `docs/specifications/integrations/` (drivers, ORMs, tools, apps, cloud).
@@ -180,25 +180,25 @@ ScratchBird-driver/
 │   └── planning/           Remediation plans
 │   └── specifications/     Protocol and driver specs (plus integration templates)
 ├── wiki/                   GitHub wiki pages (source)
-├── cli/                    CLI tools (native + emulated protocol runners)
-├── cpp/                    C/C++ client library (SBWP)
-├── odbc/                   ODBC 3.8 driver (SBWP)
-├── go/                     Go driver
-├── python/                 Python driver
-├── node/                   Node.js driver
-├── ruby/                   Ruby driver
-├── rust/                   Rust driver
-├── php/                    PHP driver
-├── r/                      R driver
-├── pascal/                 Pascal driver
-├── dotnet/                 .NET driver
-├── jdbc/                   JDBC driver (Java)
-├── dart/                   Dart driver
-├── swift/                  Swift driver
-├── elixir/                 Elixir Ecto adapter
-├── mojo/                   Mojo adapter
-├── scratchbird-superset-driver/   Superset dialect
-├── scratchbird-metabase-driver/   Metabase driver
+├── tracks/alpha/drivers/cli/                    CLI tools (native + emulated protocol runners)
+├── tracks/beta/drivers/cpp/                    C/C++ client library (SBWP)
+├── tracks/alpha/drivers/odbc/                   ODBC 3.8 driver (SBWP)
+├── tracks/alpha/drivers/go/                     Go driver
+├── tracks/alpha/drivers/python/                 Python driver
+├── tracks/alpha/drivers/node/                   Node.js driver
+├── tracks/alpha/drivers/ruby/                   Ruby driver
+├── tracks/alpha/drivers/rust/                   Rust driver
+├── tracks/alpha/drivers/php/                    PHP driver
+├── tracks/beta/drivers/r/                      R driver
+├── tracks/alpha/drivers/pascal/                 Pascal driver
+├── tracks/alpha/drivers/dotnet/                 .NET driver
+├── tracks/alpha/drivers/jdbc/                   JDBC driver (Java)
+├── tracks/beta/drivers/dart/                   Dart driver
+├── tracks/beta/drivers/swift/                  Swift driver
+├── tracks/p3/drivers/elixir/                 Elixir Ecto adapter
+├── tracks/alpha/drivers/mojo/                   Mojo adapter
+├── tracks/beta/integrations/scratchbird-superset-driver/   Superset dialect
+├── tracks/alpha/integrations/scratchbird-metabase-driver/   Metabase driver
 ├── CONTRIBUTING.md         Contribution guidelines
 ├── CHANGELOG.md            Version history
 └── LICENSE                 IDPL License

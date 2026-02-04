@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-cd dart
+cd tracks/beta/drivers/dart
 flutter pub get
 ```
 

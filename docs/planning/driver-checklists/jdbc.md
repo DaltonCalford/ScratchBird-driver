@@ -65,7 +65,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: Result sets must preserve graph element structure (nodes, relationships, paths). (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
 - [ ] Test: Validate parameter binding for lists and nested maps. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
 - [ ] Test: Ensure path result shapes are preserved in metadata helpers. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `jdbc/src/test/`. Issue: TBD (Sources: ``)
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/jdbc/src/test/`. Issue: TBD (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

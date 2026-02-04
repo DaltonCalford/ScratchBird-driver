@@ -16,5 +16,5 @@ using `sys.*` catalog views.
 The EngineSpec exposes ScratchBird capabilities, time grain expressions, and
 metadata for Superset.
 
-See `scratchbird-superset-driver/scratchbird_superset/engine_spec.py` for the
+See `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/engine_spec.py` for the
 canonical implementation.

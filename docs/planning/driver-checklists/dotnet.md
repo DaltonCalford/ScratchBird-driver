@@ -23,5 +23,5 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Constraint: Ensure parameter binding supports anonymous objects and `DynamicParameters`. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
 - [ ] Test: Validate Dapper multi-mapping (`splitOn`) with joined queries. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
 - [ ] Test: Ensure `QueryMultiple` works with multiple result sets. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`)
-- [ ] Add conformance tests for full type matrix in `dotnet/tests/`. Issue: TBD (Sources: ``)
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/dotnet/tests/`. Issue: TBD (Sources: ``)
 ## P3 (Future)

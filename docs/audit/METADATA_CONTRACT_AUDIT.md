@@ -19,17 +19,17 @@ Audited metadata behavior against:
 
 ## Evidence (Selected)
 
-- Go: `go/metadata.go`
-- Node: `node/src/metadata.ts`
-- Python: `python/src/scratchbird/metadata.py`
-- Ruby: `ruby/lib/scratchbird/metadata.rb`
-- Rust: `rust/src/metadata.rs`
-- PHP: `php/src/Metadata.php`
-- R: `r/R/metadata.R`
-- Pascal: `pascal/src/ScratchBird.Metadata.pas`
-- .NET: `dotnet/src/ScratchBird.Data/Metadata.cs`
-- JDBC: `jdbc/src/main/java/com/scratchbird/jdbc/SBDatabaseMetaData.java`
-- ODBC: `odbc/src/odbc_handles.cpp`
+- Go: `tracks/alpha/drivers/go/metadata.go`
+- Node: `tracks/alpha/drivers/node/src/metadata.ts`
+- Python: `tracks/alpha/drivers/python/src/scratchbird/metadata.py`
+- Ruby: `tracks/alpha/drivers/ruby/lib/scratchbird/metadata.rb`
+- Rust: `tracks/alpha/drivers/rust/src/metadata.rs`
+- PHP: `tracks/alpha/drivers/php/src/Metadata.php`
+- R: `tracks/beta/drivers/r/R/metadata.R`
+- Pascal: `tracks/alpha/drivers/pascal/src/ScratchBird.Metadata.pas`
+- .NET: `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Metadata.cs`
+- JDBC: `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBDatabaseMetaData.java`
+- ODBC: `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
 
 ## Open Gaps
 

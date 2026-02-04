@@ -31,4 +31,4 @@ If the dialect does not load, confirm the package entry points:
 - `sqlalchemy.dialects`: `scratchbird`
 - `superset.db_engine_specs`: `scratchbird`
 
-See `scratchbird-superset-driver/README.md` for scaffold details.
+See `tracks/beta/integrations/scratchbird-superset-driver/README.md` for scaffold details.

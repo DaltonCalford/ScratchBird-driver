@@ -11,7 +11,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [ ] Test: Verify ErrNoRows behavior. (Sources: `docs/specifications/integrations/drivers/golang/SPECIFICATION.md`)
 - [ ] Test: Validate context cancellation. (Sources: `docs/specifications/integrations/drivers/golang/SPECIFICATION.md`)
 ## P2 (Follow-ups)
-- [ ] Add conformance tests for full type matrix in `go/conformance/`. Issue: TBD
+- [ ] Add conformance tests for full type matrix in `tracks/alpha/drivers/go/conformance/`. Issue: TBD
 
 ## P3 (Future)
 

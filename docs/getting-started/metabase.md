@@ -4,7 +4,7 @@ This driver integrates ScratchBird into Metabase using the ScratchBird JDBC driv
 
 ## Build
 
-From `scratchbird-metabase-driver/`:
+From `tracks/alpha/integrations/scratchbird-metabase-driver/`:
 
 ```bash
 clj -T:build jar
@@ -21,4 +21,4 @@ clj -T:build jar
 - The plugin bundles `metabase-plugin.yaml` and the driver namespace.
 - JDBC URL format: `jdbc:scratchbird://host:3092/database`.
 
-See `scratchbird-metabase-driver/README.md` for the scaffold details.
+See `tracks/alpha/integrations/scratchbird-metabase-driver/README.md` for the scaffold details.

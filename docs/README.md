@@ -22,20 +22,20 @@ Each driver has two documentation layers:
 - Per-driver guides in `docs/getting-started/` and `docs/api-reference/`
 - Language READMEs in the driver directories
 
-- [Go Driver](../go/README.md)
-- [Python Driver](../python/README.md)
-- [Node.js Driver](../node/README.md)
-- [Ruby Driver](../ruby/README.md)
-- [Rust Driver](../rust/README.md)
-- [PHP Driver](../php/README.md)
-- [R Driver](../r/README.md)
-- [Pascal Driver](../pascal/README.md)
-- [.NET Driver](../dotnet/) - See solution file
-- [JDBC Driver](../jdbc/) - Java/Gradle project
-- [C/C++ Client](../cpp/) - CMake-based client library
-- [ODBC Driver](../odbc/) - ODBC 3.8 driver (CMake)
-- [Superset Driver](../scratchbird-superset-driver/README.md)
-- [Metabase Driver](../scratchbird-metabase-driver/README.md)
+- [Go Driver](../tracks/alpha/drivers/go/README.md)
+- [Python Driver](../tracks/alpha/drivers/python/README.md)
+- [Node.js Driver](../tracks/alpha/drivers/node/README.md)
+- [Ruby Driver](../tracks/alpha/drivers/ruby/README.md)
+- [Rust Driver](../tracks/alpha/drivers/rust/README.md)
+- [PHP Driver](../tracks/alpha/drivers/php/README.md)
+- [R Driver](../tracks/beta/drivers/r/README.md)
+- [Pascal Driver](../tracks/alpha/drivers/pascal/README.md)
+- [.NET Driver](../tracks/alpha/drivers/dotnet/) - See solution file
+- [JDBC Driver](../tracks/alpha/drivers/jdbc/) - Java/Gradle project
+- [C/C++ Client](../tracks/beta/drivers/cpp/) - CMake-based client library
+- [ODBC Driver](../tracks/alpha/drivers/odbc/) - ODBC 3.8 driver (CMake)
+- [Superset Driver](../tracks/beta/integrations/scratchbird-superset-driver/README.md)
+- [Metabase Driver](../tracks/alpha/integrations/scratchbird-metabase-driver/README.md)
 - [Elixir (Ecto) Driver (planned)](specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md)
 - [Swift Async Driver (planned)](specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md)
 - [Dart Driver (planned)](specifications/DRIVER_DART_DATABASE_API.md)
