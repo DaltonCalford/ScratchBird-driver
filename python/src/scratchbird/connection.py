@@ -667,6 +667,54 @@ def _quote_identifier(name: str) -> str:
 
 
 def _map_sqlstate(sqlstate: str):
+    if len(sqlstate) == 5:
+        full_map = {
+            "01000": errors.Warning,
+            "02000": errors.DatabaseError,
+            "08001": errors.OperationalError,
+            "08003": errors.OperationalError,
+            "08004": errors.OperationalError,
+            "08006": errors.OperationalError,
+            "08P01": errors.OperationalError,
+            "0A000": errors.NotSupportedError,
+            "22001": errors.DataError,
+            "22003": errors.DataError,
+            "22007": errors.DataError,
+            "22012": errors.DataError,
+            "22023": errors.DataError,
+            "22P02": errors.DataError,
+            "22P03": errors.DataError,
+            "23000": errors.IntegrityError,
+            "23502": errors.IntegrityError,
+            "23503": errors.IntegrityError,
+            "23505": errors.IntegrityError,
+            "23514": errors.IntegrityError,
+            "28000": errors.OperationalError,
+            "28P01": errors.OperationalError,
+            "40001": errors.DatabaseError,
+            "40P01": errors.DatabaseError,
+            "42501": errors.ProgrammingError,
+            "42601": errors.ProgrammingError,
+            "42703": errors.ProgrammingError,
+            "42704": errors.ProgrammingError,
+            "42710": errors.ProgrammingError,
+            "42883": errors.ProgrammingError,
+            "42P01": errors.ProgrammingError,
+            "42P07": errors.ProgrammingError,
+            "53P00": errors.OperationalError,
+            "53100": errors.OperationalError,
+            "53200": errors.OperationalError,
+            "53300": errors.OperationalError,
+            "54000": errors.OperationalError,
+            "57014": errors.OperationalError,
+            "57P01": errors.OperationalError,
+            "57P03": errors.OperationalError,
+            "58000": errors.InternalError,
+            "XX000": errors.InternalError,
+        }
+        mapped = full_map.get(sqlstate)
+        if mapped:
+            return mapped
     prefix = sqlstate[:2]
     return {
         "01": errors.Warning,

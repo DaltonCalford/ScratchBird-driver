@@ -34,7 +34,32 @@ module Scratchbird
 
   module ErrorMapper
     def self.from_sqlstate(sqlstate, message, detail = "", hint = "")
-      prefix = sqlstate.to_s[0, 2] || ""
+      sqlstate = sqlstate.to_s
+      if sqlstate.length == 5
+        case sqlstate
+        when "01000" then return Warning.new(message, sqlstate, detail, hint)
+        when "02000" then return NoDataError.new(message, sqlstate, detail, hint)
+        when "08001", "08003", "08004", "08006", "08P01"
+          return ConnectionError.new(message, sqlstate, detail, hint)
+        when "0A000" then return NotSupportedError.new(message, sqlstate, detail, hint)
+        when "22001", "22003", "22007", "22012", "22023", "22P02", "22P03"
+          return DataError.new(message, sqlstate, detail, hint)
+        when "23000", "23502", "23503", "23505", "23514"
+          return IntegrityError.new(message, sqlstate, detail, hint)
+        when "28000", "28P01" then return AuthError.new(message, sqlstate, detail, hint)
+        when "40001", "40P01" then return TransactionError.new(message, sqlstate, detail, hint)
+        when "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07"
+          return SyntaxError.new(message, sqlstate, detail, hint)
+        when "53P00", "53100", "53200", "53300"
+          return ResourceError.new(message, sqlstate, detail, hint)
+        when "54000" then return LimitError.new(message, sqlstate, detail, hint)
+        when "57014", "57P01", "57P03"
+          return OperatorInterventionError.new(message, sqlstate, detail, hint)
+        when "58000" then return SystemError.new(message, sqlstate, detail, hint)
+        when "XX000" then return InternalError.new(message, sqlstate, detail, hint)
+        end
+      end
+      prefix = sqlstate[0, 2] || ""
       case prefix
       when "01" then Warning.new(message, sqlstate, detail, hint)
       when "02" then NoDataError.new(message, sqlstate, detail, hint)

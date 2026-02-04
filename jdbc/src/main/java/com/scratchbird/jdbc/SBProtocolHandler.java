@@ -26,7 +26,20 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLDataException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLIntegrityConstraintViolationException;
+import java.sql.SQLInvalidAuthorizationSpecException;
+import java.sql.SQLNoDataException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLNonTransientException;
 import java.sql.SQLException;
+import java.sql.SQLSyntaxErrorException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLTransactionRollbackException;
+import java.sql.SQLTransientConnectionException;
+import java.sql.SQLTransientException;
+import java.sql.SQLWarning;
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -264,7 +277,7 @@ public class SBProtocolHandler {
                 sslMode = "require";
             }
             if ("disable".equalsIgnoreCase(sslMode)) {
-                throw new SQLException("TLS is required for ScratchBird connections", "08001");
+                throw createSQLException("TLS is required for ScratchBird connections", "08001");
             }
             upgradeToSSL(sslMode);
 
@@ -274,7 +287,7 @@ public class SBProtocolHandler {
 
         } catch (IOException e) {
             close();
-            throw new SQLException("Failed to connect: " + e.getMessage(), "08001", e);
+            throw createSQLException("Failed to connect: " + e.getMessage(), "08001", e);
         }
     }
 
@@ -297,7 +310,7 @@ public class SBProtocolHandler {
             }
             return readQueryResult();
         } catch (IOException e) {
-            throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
+            throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
         } finally {
             if (cancelTask != null) {
                 cancelTask.cancel(false);
@@ -325,7 +338,7 @@ public class SBProtocolHandler {
             if (cancelTask != null) {
                 cancelTask.cancel(false);
             }
-            throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
+            throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -347,7 +360,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_BEGIN, payload, (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to begin transaction: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to begin transaction: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -356,7 +369,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_COMMIT, buildTxnCommitPayload(flags), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to commit transaction: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to commit transaction: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -365,7 +378,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_ROLLBACK, buildTxnRollbackPayload(flags), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to rollback transaction: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to rollback transaction: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -374,7 +387,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_SAVEPOINT, buildTxnSavepointPayload(name), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to create savepoint: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to create savepoint: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -383,7 +396,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_RELEASE, buildTxnReleasePayload(name), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to release savepoint: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to release savepoint: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -392,7 +405,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_TXN_ROLLBACK_TO, buildTxnRollbackToPayload(name), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to rollback savepoint: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to rollback savepoint: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -401,7 +414,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_SET_OPTION, buildSetOptionPayload(name, value), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to set option: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to set option: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -423,12 +436,12 @@ public class SBProtocolHandler {
                 }
                 if (msg.type == MSG_ERROR) {
                     ProtocolError error = parseErrorMessage(msg.payload);
-                    throw new SQLException(buildErrorMessage(error),
+                    throw createSQLException(buildErrorMessage(error),
                         error.sqlState != null ? error.sqlState : "42000");
                 }
             }
         } catch (IOException e) {
-            throw new SQLException("Failed to ping server: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to ping server: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -437,7 +450,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_SUBSCRIBE, buildSubscribePayload(subscribeType, channel, filterExpr), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to subscribe: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to subscribe: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -446,7 +459,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_UNSUBSCRIBE, buildUnsubscribePayload(channel), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to unsubscribe: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to unsubscribe: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -465,7 +478,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
             return readQueryResult();
         } catch (IOException e) {
-            throw new SQLException("SBLR execution failed: " + e.getMessage(), "08006", e);
+            throw createSQLException("SBLR execution failed: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -473,7 +486,7 @@ public class SBProtocolHandler {
         try {
             sendMessage(MSG_STREAM_CONTROL, buildStreamControlPayload(controlType, windowSize, timeoutMs), (byte) 0, false);
         } catch (IOException e) {
-            throw new SQLException("Failed to send stream control: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to send stream control: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -482,7 +495,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_ATTACH_CREATE, buildAttachCreatePayload(emulationMode, dbName), (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to create attachment: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to create attachment: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -491,7 +504,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_ATTACH_DETACH, new byte[0], (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
-            throw new SQLException("Failed to detach attachment: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to detach attachment: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -501,7 +514,7 @@ public class SBProtocolHandler {
             sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
             return readQueryResult();
         } catch (IOException e) {
-            throw new SQLException("Failed to list attachments: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to list attachments: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -510,7 +523,7 @@ public class SBProtocolHandler {
         try {
             sendMessage(MSG_CANCEL, buildCancelPayload(0, lastQuerySequence), MSG_FLAG_URGENT, false);
         } catch (IOException e) {
-            throw new SQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
+            throw createSQLException("Failed to cancel query: " + e.getMessage(), "08006", e);
         }
     }
 
@@ -648,12 +661,12 @@ public class SBProtocolHandler {
                         sendMessage(MSG_AUTH_RESPONSE, clientFirst.getBytes(StandardCharsets.UTF_8), (byte) 0, true);
                         continue;
                     }
-                    throw new SQLException("Unsupported authentication method", "28000");
+                    throw createSQLException("Unsupported authentication method", "28000");
                 }
                 case MSG_AUTH_CONTINUE: {
                     AuthContinue cont = parseAuthContinue(msg.payload);
                     if (cont.method != AUTH_SCRAM_SHA_256 || scramClient == null) {
-                        throw new SQLException("Unsupported SCRAM continuation", "28000");
+                        throw createSQLException("Unsupported SCRAM continuation", "28000");
                     }
                     String clientFinal = scramClient.handleServerFirst(
                         new String(cont.data, StandardCharsets.UTF_8), props.getPassword());
@@ -684,7 +697,7 @@ public class SBProtocolHandler {
                 }
                 case MSG_ERROR: {
                     ProtocolError error = parseErrorMessage(msg.payload);
-                    throw new SQLException(buildErrorMessage(error), error.sqlState != null ? error.sqlState : "28000");
+                    throw createSQLException(buildErrorMessage(error), error.sqlState != null ? error.sqlState : "28000");
                 }
                 default:
                     continue;
@@ -775,7 +788,7 @@ public class SBProtocolHandler {
                 }
                 case MSG_ERROR: {
                     ProtocolError error = parseErrorMessage(msg.payload);
-                    throw new SQLException(buildErrorMessage(error),
+                    throw createSQLException(buildErrorMessage(error),
                         error.sqlState != null ? error.sqlState : "42000");
                 }
                 case MSG_NOTICE:
@@ -808,7 +821,7 @@ public class SBProtocolHandler {
                 }
                 case MSG_ERROR: {
                     ProtocolError error = parseErrorMessage(msg.payload);
-                    throw new SQLException(buildErrorMessage(error),
+                    throw createSQLException(buildErrorMessage(error),
                         error.sqlState != null ? error.sqlState : "42000");
                 }
                 default:
@@ -841,7 +854,7 @@ public class SBProtocolHandler {
         sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
         int described = describeStatement("");
         if (described >= 0 && described != params.size()) {
-            throw new SQLException("parameter count mismatch", "07001");
+            throw createSQLException("parameter count mismatch", "07001");
         }
 
         int[] resultFormats = props.isBinaryTransfer() ? new int[]{SBTypeCodec.FORMAT_BINARY} : new int[0];
@@ -1256,19 +1269,19 @@ public class SBProtocolHandler {
 
     private NotificationMessage parseNotification(byte[] payload) throws SQLException {
         if (payload.length < 12) {
-            throw new SQLException("Notification truncated", "08P01");
+            throw createSQLException("Notification truncated", "08P01");
         }
         ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         int processId = buf.getInt();
         int channelLen = buf.getInt();
         if (channelLen < 0 || channelLen > buf.remaining() - 4) {
-            throw new SQLException("Notification truncated", "08P01");
+            throw createSQLException("Notification truncated", "08P01");
         }
         byte[] channelBytes = new byte[channelLen];
         buf.get(channelBytes);
         int payloadLen = buf.getInt();
         if (payloadLen < 0 || payloadLen > buf.remaining()) {
-            throw new SQLException("Notification truncated", "08P01");
+            throw createSQLException("Notification truncated", "08P01");
         }
         byte[] noticePayload = new byte[payloadLen];
         buf.get(noticePayload);
@@ -1285,7 +1298,7 @@ public class SBProtocolHandler {
 
     private QueryPlanMessage parseQueryPlan(byte[] payload) throws SQLException {
         if (payload.length < 32) {
-            throw new SQLException("Query plan truncated", "08P01");
+            throw createSQLException("Query plan truncated", "08P01");
         }
         ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         int format = buf.getInt();
@@ -1294,7 +1307,7 @@ public class SBProtocolHandler {
         long estimatedRows = buf.getLong();
         long estimatedCost = buf.getLong();
         if (planLen < 0 || planLen > buf.remaining()) {
-            throw new SQLException("Query plan truncated", "08P01");
+            throw createSQLException("Query plan truncated", "08P01");
         }
         byte[] plan = new byte[planLen];
         buf.get(plan);
@@ -1303,14 +1316,14 @@ public class SBProtocolHandler {
 
     private SblrCompiledMessage parseSblrCompiled(byte[] payload) throws SQLException {
         if (payload.length < 16) {
-            throw new SQLException("SBLR compiled truncated", "08P01");
+            throw createSQLException("SBLR compiled truncated", "08P01");
         }
         ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         long hash = buf.getLong();
         int version = buf.getInt();
         int length = buf.getInt();
         if (length < 0 || length > buf.remaining()) {
-            throw new SQLException("SBLR compiled truncated", "08P01");
+            throw createSQLException("SBLR compiled truncated", "08P01");
         }
         byte[] bytecode = new byte[length];
         buf.get(bytecode);
@@ -1445,7 +1458,7 @@ public class SBProtocolHandler {
 
     private List<Integer> parseParameterDescription(byte[] payload) throws SQLException {
         if (payload.length < 4) {
-            throw new SQLException("Parameter description truncated", "08P01");
+            throw createSQLException("Parameter description truncated", "08P01");
         }
         ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         int count = buf.getShort() & 0xffff;
@@ -1453,7 +1466,7 @@ public class SBProtocolHandler {
         List<Integer> types = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             if (buf.remaining() < 4) {
-                throw new SQLException("Parameter description truncated", "08P01");
+                throw createSQLException("Parameter description truncated", "08P01");
             }
             types.add(buf.getInt());
         }
@@ -1476,7 +1489,7 @@ public class SBProtocolHandler {
                     break;
                 case MSG_ERROR:
                     ProtocolError error = parseErrorMessage(msg.payload);
-                    throw new SQLException(buildErrorMessage(error),
+                    throw createSQLException(buildErrorMessage(error),
                         error.sqlState != null ? error.sqlState : "42000");
                 case MSG_READY:
                     ReadyStatus ready = parseReady(msg.payload);
@@ -1535,7 +1548,7 @@ public class SBProtocolHandler {
             context.init(keyManagers, trustManagers, null);
             return context;
         } catch (Exception e) {
-            throw new SQLException("Failed to initialize SSL context: " + e.getMessage(), "08001", e);
+            throw createSQLException("Failed to initialize SSL context: " + e.getMessage(), "08001", e);
         }
     }
 
@@ -1615,7 +1628,7 @@ public class SBProtocolHandler {
                 try {
                     msg = protocol.readMessage();
                 } catch (IOException e) {
-                    throw new SQLException("Query execution failed: " + e.getMessage(), "08006", e);
+                    throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
                 }
                 if (protocol.handleAsyncMessage(msg)) {
                     continue;
@@ -1637,7 +1650,7 @@ public class SBProtocolHandler {
                         try {
                             protocol.sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
                         } catch (IOException e) {
-                            throw new SQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
+                            throw createSQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
                         }
                         break;
                     }
@@ -1655,7 +1668,7 @@ public class SBProtocolHandler {
                         if (cancelTask != null) {
                             cancelTask.cancel(false);
                         }
-                        throw new SQLException(protocol.buildErrorMessage(error),
+                        throw createSQLException(protocol.buildErrorMessage(error),
                             error.sqlState != null ? error.sqlState : "42000");
                     }
                     default:
@@ -1725,6 +1738,66 @@ public class SBProtocolHandler {
             this.name = name;
             this.value = value;
         }
+    }
+
+    private SQLException createSQLException(String message, String sqlState) {
+        return createSQLException(message, sqlState, null);
+    }
+
+    private SQLException createSQLException(String message, String sqlState, Throwable cause) {
+        String state = (sqlState == null || sqlState.isEmpty()) ? "42000" : sqlState;
+        SQLException ex;
+        if (state.length() == 5) {
+            ex = switch (state) {
+                case "01000" -> new SQLWarning(message, state);
+                case "02000" -> new SQLNoDataException(message, state);
+                case "08001", "08003", "08006" -> new SQLTransientConnectionException(message, state);
+                case "08004", "08P01" -> new SQLNonTransientConnectionException(message, state);
+                case "0A000" -> new SQLFeatureNotSupportedException(message, state);
+                case "22001", "22003", "22007", "22012", "22023", "22P02", "22P03" ->
+                    new SQLDataException(message, state);
+                case "23000", "23502", "23503", "23505", "23514" ->
+                    new SQLIntegrityConstraintViolationException(message, state);
+                case "28000", "28P01" -> new SQLInvalidAuthorizationSpecException(message, state);
+                case "40001", "40P01" -> new SQLTransactionRollbackException(message, state);
+                case "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07" ->
+                    new SQLSyntaxErrorException(message, state);
+                case "53P00", "53100", "53200", "53300" -> new SQLTransientException(message, state);
+                case "54000" -> new SQLNonTransientException(message, state);
+                case "57014" -> new SQLTimeoutException(message, state);
+                case "57P03" -> new SQLTransientConnectionException(message, state);
+                case "57P01" -> new SQLNonTransientConnectionException(message, state);
+                case "58000", "XX000" -> new SQLNonTransientException(message, state);
+                default -> null;
+            };
+        } else {
+            ex = null;
+        }
+        if (ex == null && state.length() >= 2) {
+            String cls = state.substring(0, 2);
+            ex = switch (cls) {
+                case "01" -> new SQLWarning(message, state);
+                case "02" -> new SQLNoDataException(message, state);
+                case "08" -> new SQLNonTransientConnectionException(message, state);
+                case "0A" -> new SQLFeatureNotSupportedException(message, state);
+                case "22" -> new SQLDataException(message, state);
+                case "23" -> new SQLIntegrityConstraintViolationException(message, state);
+                case "28" -> new SQLInvalidAuthorizationSpecException(message, state);
+                case "40" -> new SQLTransactionRollbackException(message, state);
+                case "42" -> new SQLSyntaxErrorException(message, state);
+                case "53", "54" -> new SQLNonTransientException(message, state);
+                case "57" -> new SQLTransientException(message, state);
+                case "58", "XX" -> new SQLNonTransientException(message, state);
+                default -> new SQLException(message, state);
+            };
+        }
+        if (ex == null) {
+            ex = new SQLException(message, state);
+        }
+        if (cause != null) {
+            ex.initCause(cause);
+        }
+        return ex;
     }
 
     private static final class ReadyStatus {

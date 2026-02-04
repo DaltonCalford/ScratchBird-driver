@@ -2,7 +2,7 @@
 
 ## P1 (Core)
 
-- [ ] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py`. Issue: TBD
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py`. Issue: TBD
 
 ## P2 (Follow-ups)
 

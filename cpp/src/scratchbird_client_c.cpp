@@ -1204,3 +1204,13 @@ sb_result* sb_execute_sblr(sb_connection* conn,
     set_error(err, SB_OK, "");
     return result;
 }
+
+#ifdef SCRATCHBIRD_TEST_HOOKS
+sb_type sb_test_map_type_oid(uint32_t oid) {
+    return map_type_oid(oid);
+}
+
+uint32_t sb_test_map_sb_type_to_oid(sb_type type) {
+    return map_sb_type_to_oid(type);
+}
+#endif

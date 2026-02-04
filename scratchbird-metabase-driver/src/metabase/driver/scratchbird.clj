@@ -52,6 +52,8 @@
    "VECTOR"                    :type/Array
    "GEOMETRY"                  :type/*
    "GEOGRAPHY"                 :type/*
+   "COMPOSITE"                 :type/Structured
+   "RANGE"                     :type/Structured
    "RECORD"                    :type/Structured
    "ROW"                       :type/Structured
    "VARIANT"                   :type/JSON
@@ -63,6 +65,9 @@
    "XML"                       :type/Text
    "INTERVAL"                  :type/*
    "MONEY"                     :type/Decimal
+   "TSVECTOR"                  :type/Text
+   "TSQUERY"                   :type/Text
+   "UNKNOWN"                   :type/*
    "SERIAL"                    :type/Integer
    "BIGSERIAL"                 :type/BigInteger})
 
@@ -89,7 +94,7 @@
    :metadata/key-constraints      true
    :describe-fields               true
    :describe-indexes              true
-   :table-privileges              true
+   :table-privileges              false
    :nested-field-columns          false
    :uploads                       false
    :upload-with-auto-pk           false
@@ -193,6 +198,7 @@
   (let [normalized (normalize-db-type database-type)
         mapped (get scratchbird-type->base-type normalized)]
     (or mapped
+        (when (str/ends-with? normalized "[]") :type/Array)
         (sql-jdbc.sync/pattern-based-database-type->base-type driver database-type))))
 
 (defmethod sql-jdbc.sync/column->semantic-type :scratchbird

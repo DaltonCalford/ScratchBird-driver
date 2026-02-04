@@ -81,6 +81,7 @@ Files:
 
 Checklist: `cpp.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Add conformance tests for type mapping and paging in `cpp/tests/`
@@ -193,6 +194,7 @@ Files:
 
 Checklist: `dart.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Add conformance/integration tests in `dart/test/`
@@ -204,6 +206,7 @@ Files:
 
 Checklist: `dotnet.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `dotnet/src/ScratchBird.Data/Errors.cs`
@@ -338,6 +341,7 @@ Files:
 
 Checklist: `elixir.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Add conformance/integration tests in `elixir/test/`
@@ -349,6 +353,7 @@ Files:
 
 Checklist: `go.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `go/errors.go`
@@ -371,6 +376,7 @@ Files:
 
 Checklist: `jdbc.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping)
@@ -393,6 +399,7 @@ Files:
 
 Checklist: `metabase.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj`
@@ -405,6 +412,7 @@ Files:
 
 Checklist: `metabase.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Improve type mapping for complex SBWP types in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj`
@@ -416,6 +424,7 @@ Files:
 
 Checklist: `mojo.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Replace Python bridge with native SBWP client in `mojo/src/scratchbird.mojo`
@@ -427,6 +436,7 @@ Files:
 
 Checklist: `mojo.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Enforce TLS required and binary-only once native transport exists
@@ -435,6 +445,7 @@ Enforce TLS required and binary-only once native transport exists
 
 Checklist: `mojo.md`
 Priority: P0 (Blocking)
+Status: Done (2026-02-04)
 
 Description:
 Reject `compression=zstd` until server support exists
@@ -485,6 +496,7 @@ Add conformance/integration tests
 
 Checklist: `node.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `node/src/errors.ts`
@@ -542,6 +554,7 @@ Files:
 
 Checklist: `pascal.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `pascal/src/ScratchBird.Errors.pas`
@@ -564,6 +577,7 @@ Files:
 
 Checklist: `php.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `php/src/Errors.php`
@@ -586,6 +600,7 @@ Files:
 
 Checklist: `python.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py`
@@ -630,6 +645,7 @@ Files:
 
 Checklist: `ruby.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb`
@@ -652,6 +668,7 @@ Files:
 
 Checklist: `rust.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `rust/src/errors.rs`
@@ -674,6 +691,7 @@ Files:
 
 Checklist: `superset.md`
 Priority: P1 (Core)
+Status: Done (2026-02-04)
 
 Description:
 Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `scratchbird-superset-driver/scratchbird_superset/dialect.py`
@@ -687,6 +705,7 @@ Files:
 
 Checklist: `superset.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py`
@@ -808,6 +827,7 @@ Files:
 
 Checklist: `swift.md`
 Priority: P2 (Follow-ups)
+Status: Done (2026-02-04)
 
 Description:
 Add conformance/integration tests in `swift/Tests/`

@@ -16,4 +16,4 @@
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests in `dart/test/`. Issue: TBD
+- [x] Add conformance/integration tests in `dart/test/`. Issue: TBD

@@ -2,9 +2,9 @@
 
 ## P0 (Blocking)
 
-- [ ] Replace Python bridge with native SBWP client in `mojo/src/scratchbird.mojo`. Issue: TBD
-- [ ] Enforce TLS required and binary-only once native transport exists. Issue: TBD
-- [ ] Reject `compression=zstd` until server support exists. Issue: TBD
+- [x] Replace Python bridge with native SBWP client in `mojo/src/scratchbird.mojo`. Issue: TBD
+- [x] Enforce TLS required and binary-only once native transport exists. Issue: TBD
+- [x] Reject `compression=zstd` until server support exists. Issue: TBD
 
 ## P1 (Core)
 

@@ -37,6 +37,8 @@ and is linked from each spec below.
 - [drivers/ODBC_DRIVER_SPECIFICATION.md](drivers/ODBC_DRIVER_SPECIFICATION.md)
 - [drivers/odbc_generic_spec.md](drivers/odbc_generic_spec.md)
 - [drivers/jdbc_jni_spec.md](drivers/jdbc_jni_spec.md)
+- [drivers/language/README.md](drivers/language/README.md)
+- [integrations/README.md](integrations/README.md)
 - [api/CLIENT_LIBRARY_API_SPECIFICATION.md](api/CLIENT_LIBRARY_API_SPECIFICATION.md)
 
 ## CLI Tool References

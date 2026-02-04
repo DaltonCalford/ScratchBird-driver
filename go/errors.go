@@ -49,6 +49,38 @@ func (e *Error) Error() string {
 }
 
 func mapSQLState(sqlState string) ErrorKind {
+	if len(sqlState) == 5 {
+		switch sqlState {
+		case "01000":
+			return ErrWarning
+		case "02000":
+			return ErrNoData
+		case "08001", "08003", "08004", "08006", "08P01":
+			return ErrConnection
+		case "0A000":
+			return ErrNotSupported
+		case "22001", "22003", "22007", "22012", "22023", "22P02", "22P03":
+			return ErrData
+		case "23000", "23502", "23503", "23505", "23514":
+			return ErrIntegrity
+		case "28000", "28P01":
+			return ErrAuth
+		case "40001", "40P01":
+			return ErrTransaction
+		case "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07":
+			return ErrSyntax
+		case "53P00", "53100", "53200", "53300":
+			return ErrResource
+		case "54000":
+			return ErrLimit
+		case "57014", "57P01", "57P03":
+			return ErrOperator
+		case "58000":
+			return ErrSystem
+		case "XX000":
+			return ErrInternal
+		}
+	}
 	if len(sqlState) < 2 {
 		return ErrUnknown
 	}

@@ -24,3 +24,24 @@ target_link_libraries(scratchbird_client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 if (WIN32)
     target_link_libraries(scratchbird_client PRIVATE ws2_32)
 endif()
+
+include(CTest)
+if (BUILD_TESTING)
+    find_package(GTest)
+    if (GTest_FOUND)
+        add_executable(scratchbird_client_tests
+            tests/test_driver_connectivity.cpp
+            tests/test_driver_defaults.cpp
+            tests/test_type_mapping.cpp
+            tests/test_paging_payload.cpp
+        )
+        target_compile_definitions(scratchbird_client_tests PRIVATE SCRATCHBIRD_TEST_HOOKS)
+        target_link_libraries(scratchbird_client_tests
+            PRIVATE
+                scratchbird_client
+                GTest::gtest
+                GTest::gtest_main
+        )
+        add_test(NAME scratchbird_client_tests COMMAND scratchbird_client_tests)
+    endif()
+endif()

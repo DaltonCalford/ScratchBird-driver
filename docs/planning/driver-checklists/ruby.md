@@ -2,7 +2,7 @@
 
 ## P1 (Core)
 
-- [ ] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb`. Issue: TBD
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb`. Issue: TBD
 
 ## P2 (Follow-ups)
 

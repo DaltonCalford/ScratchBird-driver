@@ -9,4 +9,4 @@
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance tests for type mapping and paging in `cpp/tests/`. Issue: TBD
+- [x] Add conformance tests for type mapping and paging in `cpp/tests/`. Issue: TBD

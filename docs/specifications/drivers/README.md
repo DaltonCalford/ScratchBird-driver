@@ -22,6 +22,13 @@ ODBC/JDBC, and shared metadata/query contracts.
 - **[DRIVER_METADATA_QUERY_CONTRACT.md](DRIVER_METADATA_QUERY_CONTRACT.md)** - Metadata query contract
 - **[unified_interface_spec.md](unified_interface_spec.md)** - Unified driver interface (reference)
 
+## Language Driver Templates
+
+These templates mirror the Alpha/Beta target driver list in the ScratchBird
+specifications and provide per-language spec scaffolding:
+
+- **[language/README.md](language/README.md)** - Language driver templates index
+
 ## Protocol Reference (External)
 
 These docs were migrated for reference and are **not** implemented as client

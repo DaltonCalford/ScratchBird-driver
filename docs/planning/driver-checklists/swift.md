@@ -17,4 +17,4 @@
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests in `swift/Tests/`. Issue: TBD
+- [x] Add conformance/integration tests in `swift/Tests/`. Issue: TBD

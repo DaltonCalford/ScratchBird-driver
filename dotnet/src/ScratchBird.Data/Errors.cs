@@ -117,6 +117,28 @@ public static class ScratchBirdSqlStateMapper
             return new ScratchBirdException(message, sqlState, detail, hint);
         }
 
+        if (sqlState.Length == 5)
+        {
+            return sqlState switch
+            {
+                "01000" => new ScratchBirdWarning(message, sqlState, detail, hint),
+                "02000" => new ScratchBirdNoDataException(message, sqlState, detail, hint),
+                "08001" or "08003" or "08004" or "08006" or "08P01" => new ScratchBirdConnectionException(message, sqlState, detail, hint),
+                "0A000" => new ScratchBirdNotSupportedException(message, sqlState, detail, hint),
+                "22001" or "22003" or "22007" or "22012" or "22023" or "22P02" or "22P03" => new ScratchBirdDataException(message, sqlState, detail, hint),
+                "23000" or "23502" or "23503" or "23505" or "23514" => new ScratchBirdIntegrityException(message, sqlState, detail, hint),
+                "28000" or "28P01" => new ScratchBirdAuthException(message, sqlState, detail, hint),
+                "40001" or "40P01" => new ScratchBirdTransactionException(message, sqlState, detail, hint),
+                "42501" or "42601" or "42703" or "42704" or "42710" or "42883" or "42P01" or "42P07" => new ScratchBirdSyntaxException(message, sqlState, detail, hint),
+                "53P00" or "53100" or "53200" or "53300" => new ScratchBirdResourceException(message, sqlState, detail, hint),
+                "54000" => new ScratchBirdLimitException(message, sqlState, detail, hint),
+                "57014" or "57P01" or "57P03" => new ScratchBirdOperatorInterventionException(message, sqlState, detail, hint),
+                "58000" => new ScratchBirdSystemException(message, sqlState, detail, hint),
+                "XX000" => new ScratchBirdInternalException(message, sqlState, detail, hint),
+                _ => new ScratchBirdException(message, sqlState, detail, hint)
+            };
+        }
+
         var cls = sqlState.Substring(0, 2);
         return cls switch
         {

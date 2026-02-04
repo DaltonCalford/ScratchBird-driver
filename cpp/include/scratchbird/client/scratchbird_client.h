@@ -221,6 +221,11 @@ sb_result* sb_execute_sblr(sb_connection* conn,
                            size_t param_count,
                            sb_error* err);
 
+#ifdef SCRATCHBIRD_TEST_HOOKS
+sb_type sb_test_map_type_oid(uint32_t oid);
+uint32_t sb_test_map_sb_type_to_oid(sb_type type);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

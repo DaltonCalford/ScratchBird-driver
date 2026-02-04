@@ -89,23 +89,45 @@ pub fn error_from_sqlstate(
     detail: Option<String>,
     hint: Option<String>,
 ) -> Error {
-    let prefix = sqlstate.get(0..2).unwrap_or("");
-    let kind = match prefix {
-        "01" => ErrorKind::Warning,
-        "02" => ErrorKind::NoData,
-        "08" => ErrorKind::Connection,
-        "0A" => ErrorKind::NotSupported,
-        "22" => ErrorKind::Data,
-        "23" => ErrorKind::Integrity,
-        "28" => ErrorKind::Auth,
-        "40" => ErrorKind::Transaction,
-        "42" => ErrorKind::Syntax,
-        "53" => ErrorKind::Resource,
-        "54" => ErrorKind::Limit,
-        "57" => ErrorKind::OperatorIntervention,
-        "58" => ErrorKind::System,
-        "XX" => ErrorKind::Internal,
-        _ => ErrorKind::Unknown,
+    let kind = if sqlstate.len() == 5 {
+        match sqlstate {
+            "01000" => ErrorKind::Warning,
+            "02000" => ErrorKind::NoData,
+            "08001" | "08003" | "08004" | "08006" | "08P01" => ErrorKind::Connection,
+            "0A000" => ErrorKind::NotSupported,
+            "22001" | "22003" | "22007" | "22012" | "22023" | "22P02" | "22P03" => ErrorKind::Data,
+            "23000" | "23502" | "23503" | "23505" | "23514" => ErrorKind::Integrity,
+            "28000" | "28P01" => ErrorKind::Auth,
+            "40001" | "40P01" => ErrorKind::Transaction,
+            "42501" | "42601" | "42703" | "42704" | "42710" | "42883" | "42P01" | "42P07" => {
+                ErrorKind::Syntax
+            }
+            "53P00" | "53100" | "53200" | "53300" => ErrorKind::Resource,
+            "54000" => ErrorKind::Limit,
+            "57014" | "57P01" | "57P03" => ErrorKind::OperatorIntervention,
+            "58000" => ErrorKind::System,
+            "XX000" => ErrorKind::Internal,
+            _ => ErrorKind::Unknown,
+        }
+    } else {
+        let prefix = sqlstate.get(0..2).unwrap_or("");
+        match prefix {
+            "01" => ErrorKind::Warning,
+            "02" => ErrorKind::NoData,
+            "08" => ErrorKind::Connection,
+            "0A" => ErrorKind::NotSupported,
+            "22" => ErrorKind::Data,
+            "23" => ErrorKind::Integrity,
+            "28" => ErrorKind::Auth,
+            "40" => ErrorKind::Transaction,
+            "42" => ErrorKind::Syntax,
+            "53" => ErrorKind::Resource,
+            "54" => ErrorKind::Limit,
+            "57" => ErrorKind::OperatorIntervention,
+            "58" => ErrorKind::System,
+            "XX" => ErrorKind::Internal,
+            _ => ErrorKind::Unknown,
+        }
     };
     Error::with_sqlstate(kind, message, Some(sqlstate.to_string()), detail, hint)
 }

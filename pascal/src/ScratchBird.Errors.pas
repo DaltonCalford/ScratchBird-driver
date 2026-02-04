@@ -53,6 +53,44 @@ function MapSqlState(const SQLState: string; const Msg, Detail, Hint: string): E
 var
   Prefix: string;
 begin
+  if Length(SQLState) = 5 then
+  begin
+    if SQLState = '01000' then
+      Exit(EScratchbirdWarning.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if SQLState = '02000' then
+      Exit(EScratchbirdNoData.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '08001') or (SQLState = '08003') or (SQLState = '08004') or
+            (SQLState = '08006') or (SQLState = '08P01') then
+      Exit(EScratchbirdConnectionError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if SQLState = '0A000' then
+      Exit(EScratchbirdNotSupported.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '22001') or (SQLState = '22003') or (SQLState = '22007') or
+            (SQLState = '22012') or (SQLState = '22023') or (SQLState = '22P02') or
+            (SQLState = '22P03') then
+      Exit(EScratchbirdDataError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '23000') or (SQLState = '23502') or (SQLState = '23503') or
+            (SQLState = '23505') or (SQLState = '23514') then
+      Exit(EScratchbirdIntegrityError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '28000') or (SQLState = '28P01') then
+      Exit(EScratchbirdAuthError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '40001') or (SQLState = '40P01') then
+      Exit(EScratchbirdTransactionError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '42501') or (SQLState = '42601') or (SQLState = '42703') or
+            (SQLState = '42704') or (SQLState = '42710') or (SQLState = '42883') or
+            (SQLState = '42P01') or (SQLState = '42P07') then
+      Exit(EScratchbirdSyntaxError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '53P00') or (SQLState = '53100') or (SQLState = '53200') or
+            (SQLState = '53300') then
+      Exit(EScratchbirdResourceError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if SQLState = '54000' then
+      Exit(EScratchbirdLimitError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if (SQLState = '57014') or (SQLState = '57P01') or (SQLState = '57P03') then
+      Exit(EScratchbirdOperatorInterventionError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if SQLState = '58000' then
+      Exit(EScratchbirdSystemError.CreateWithInfo(Msg, SQLState, Detail, Hint))
+    else if SQLState = 'XX000' then
+      Exit(EScratchbirdInternalError.CreateWithInfo(Msg, SQLState, Detail, Hint));
+  end;
   if Length(SQLState) >= 2 then
     Prefix := Copy(SQLState, 1, 2)
   else

@@ -45,6 +45,25 @@ final class ErrorMapper
 {
     public static function map(string $sqlState, string $message, string $detail = '', string $hint = ''): ScratchBirdException
     {
+        if (strlen($sqlState) === 5) {
+            return match ($sqlState) {
+                '01000' => new ScratchBirdWarning($message, $sqlState, $detail, $hint),
+                '02000' => new ScratchBirdNoDataException($message, $sqlState, $detail, $hint),
+                '08001', '08003', '08004', '08006', '08P01' => new ScratchBirdConnectionException($message, $sqlState, $detail, $hint),
+                '0A000' => new ScratchBirdNotSupportedException($message, $sqlState, $detail, $hint),
+                '22001', '22003', '22007', '22012', '22023', '22P02', '22P03' => new ScratchBirdDataException($message, $sqlState, $detail, $hint),
+                '23000', '23502', '23503', '23505', '23514' => new ScratchBirdIntegrityException($message, $sqlState, $detail, $hint),
+                '28000', '28P01' => new ScratchBirdAuthException($message, $sqlState, $detail, $hint),
+                '40001', '40P01' => new ScratchBirdTransactionException($message, $sqlState, $detail, $hint),
+                '42501', '42601', '42703', '42704', '42710', '42883', '42P01', '42P07' => new ScratchBirdSyntaxException($message, $sqlState, $detail, $hint),
+                '53P00', '53100', '53200', '53300' => new ScratchBirdResourceException($message, $sqlState, $detail, $hint),
+                '54000' => new ScratchBirdLimitException($message, $sqlState, $detail, $hint),
+                '57014', '57P01', '57P03' => new ScratchBirdOperatorInterventionException($message, $sqlState, $detail, $hint),
+                '58000' => new ScratchBirdSystemException($message, $sqlState, $detail, $hint),
+                'XX000' => new ScratchBirdInternalException($message, $sqlState, $detail, $hint),
+                default => new ScratchBirdException($message, $sqlState, $detail, $hint),
+            };
+        }
         $prefix = substr($sqlState, 0, 2);
         return match ($prefix) {
             '01' => new ScratchBirdWarning($message, $sqlState, $detail, $hint),

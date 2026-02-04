@@ -46,6 +46,25 @@ _TYPE_MAP = {
     "JSONB": types.JSON(),
     "BYTEA": types.LargeBinary(),
     "BLOB": types.LargeBinary(),
+    "ARRAY": types.ARRAY(types.String()),
+    "VECTOR": types.ARRAY(types.Float()),
+    "GEOMETRY": types.LargeBinary(),
+    "GEOGRAPHY": types.LargeBinary(),
+    "COMPOSITE": types.String(),
+    "RECORD": types.String(),
+    "ROW": types.String(),
+    "RANGE": types.String(),
+    "TSVECTOR": types.Text(),
+    "TSQUERY": types.Text(),
+    "INET": types.String(),
+    "CIDR": types.String(),
+    "MACADDR": types.String(),
+    "BIT": types.LargeBinary(),
+    "BIT VARYING": types.LargeBinary(),
+    "XML": types.Text(),
+    "INTERVAL": types.String(),
+    "MONEY": types.Numeric(),
+    "UNKNOWN": types.LargeBinary(),
 }
 
 
@@ -62,6 +81,8 @@ def _normalize_type(type_name: Optional[str]) -> str:
 
 def _map_type(type_name: Optional[str]) -> types.TypeEngine:
     normalized = _normalize_type(type_name)
+    if normalized.endswith("[]"):
+        return types.ARRAY(types.String())
     mapped = _TYPE_MAP.get(normalized)
     if mapped is not None:
         return mapped
@@ -152,38 +173,24 @@ class ScratchBirdDialect(DefaultDialect):
     def get_columns(self, connection, table_name: str, schema: Optional[str] = None, **kw):
         params: Dict[str, Any] = {"table": table_name}
         sql = (
-            "SELECT c.column_name, ty.type_name, c.is_nullable, c.default_value "
+            "SELECT c.column_name, c.data_type_name, c.is_nullable, c.default_value "
             "FROM sys.columns c "
             "JOIN sys.tables t ON t.table_id = c.table_id "
             "JOIN sys.schemas s ON s.schema_id = t.schema_id "
-            "LEFT JOIN sys.types ty ON ty.type_id = c.data_type_id "
             "WHERE c.is_valid = 1 AND t.is_valid = 1 AND t.table_name = :table"
         )
         if schema:
             sql += " AND s.schema_name = :schema"
             params["schema"] = schema
         sql += " ORDER BY c.ordinal_position"
-        try:
-            rows = connection.execute(text(sql), params).fetchall()
-        except Exception:
-            sql = (
-                "SELECT c.column_name, c.data_type_id, c.is_nullable, c.default_value "
-                "FROM sys.columns c "
-                "JOIN sys.tables t ON t.table_id = c.table_id "
-                "JOIN sys.schemas s ON s.schema_id = t.schema_id "
-                "WHERE c.is_valid = 1 AND t.is_valid = 1 AND t.table_name = :table"
-            )
-            if schema:
-                sql += " AND s.schema_name = :schema"
-            sql += " ORDER BY c.ordinal_position"
-            rows = connection.execute(text(sql), params).fetchall()
+        rows = connection.execute(text(sql), params).fetchall()
         columns = []
         for row in rows:
             col_name = row[0]
-            data_type_id = row[1]
+            data_type_name = row[1]
             nullable = bool(row[2]) if row[2] is not None else True
             default_value = row[3]
-            sqltype = _map_type(str(data_type_id))
+            sqltype = _map_type(str(data_type_name))
             columns.append(
                 {
                     "name": col_name,

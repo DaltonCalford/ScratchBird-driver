@@ -8,7 +8,7 @@ Map checklist items to issue IDs once created.
 - [cpp.md] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `cpp/src/` -> DONE (2026-02-04)
 - [cpp.md] Expose SET_OPTION and PING helpers in `cpp/include/scratchbird/client/scratchbird_client.h` and `cpp/src/scratchbird_client_c.cpp` -> DONE (2026-02-04)
 - [cpp.md] Add sys.* metadata helper queries or API in `cpp/include/scratchbird/client/` -> DONE (2026-02-04)
-- [cpp.md] Add conformance tests for type mapping and paging in `cpp/tests/` -> TBD
+- [cpp.md] Add conformance tests for type mapping and paging in `cpp/tests/` -> DONE (2026-02-04)
 - [dart.md] Enforce TLS required (reject `sslmode=disable`) in `dart/lib/src/client.dart` -> DONE (2026-02-04)
 - [dart.md] Enforce binary-only (reject `binary_transfer=false`) in `dart/lib/src/client.dart` or `dart/lib/src/config.dart` -> DONE (2026-02-04)
 - [dart.md] Reject `compression=zstd` until server support exists in `dart/lib/src/client.dart` -> DONE (2026-02-04)
@@ -17,8 +17,8 @@ Map checklist items to issue IDs once created.
 - [dart.md] Add vector literal encode/decode in `dart/lib/src/types.dart` -> DONE (2026-02-04)
 - [dart.md] Add inet/cidr/macaddr encode/decode in `dart/lib/src/types.dart` -> DONE (2026-02-04)
 - [dart.md] Add sys.* metadata helpers in `dart/lib/src/metadata.dart` and export via `dart/lib/scratchbird.dart` -> DONE (2026-02-04)
-- [dart.md] Add conformance/integration tests in `dart/test/` -> TBD
-- [dotnet.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `dotnet/src/ScratchBird.Data/Errors.cs` -> TBD
+- [dart.md] Add conformance/integration tests in `dart/test/` -> DONE (2026-02-04)
+- [dotnet.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `dotnet/src/ScratchBird.Data/Errors.cs` -> DONE (2026-02-04)
 - [dotnet.md] Add conformance tests for full type matrix in `dotnet/tests/` -> TBD
 - [elixir.md] Enforce TLS required (reject `sslmode=disable`) in `elixir/lib/scratchbird/connection.ex` -> DONE (2026-02-04)
 - [elixir.md] Enforce binary-only (reject `binary_transfer=false`) in `elixir/lib/scratchbird/connection.ex` -> DONE (2026-02-04)
@@ -29,39 +29,39 @@ Map checklist items to issue IDs once created.
 - [elixir.md] Add inet/cidr/macaddr encode/decode in `elixir/lib/scratchbird/types.ex` -> DONE (2026-02-04)
 - [elixir.md] Add sys.* metadata helpers in `elixir/lib/scratchbird/metadata.ex` and export from `elixir/lib/scratchbird.ex` -> DONE (2026-02-04)
 - [elixir.md] Add SQLSTATE class-prefix mapping in `elixir/lib/scratchbird/errors.ex` -> DONE (2026-02-04)
-- [elixir.md] Add conformance/integration tests in `elixir/test/` -> TBD
-- [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `go/errors.go` -> TBD
+- [elixir.md] Add conformance/integration tests in `elixir/test/` -> DONE (2026-02-04)
+- [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `go/errors.go` -> DONE (2026-02-04)
 - [go.md] Add conformance tests for full type matrix in `go/conformance/` -> TBD
-- [jdbc.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping) -> TBD
+- [jdbc.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping) -> DONE (2026-02-04)
 - [jdbc.md] Add conformance tests for full type matrix in `jdbc/src/test/` -> TBD
-- [metabase.md] Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` -> TBD
-- [metabase.md] Improve type mapping for complex SBWP types in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` -> TBD
-- [mojo.md] Replace Python bridge with native SBWP client in `mojo/src/scratchbird.mojo` -> TBD
-- [mojo.md] Enforce TLS required and binary-only once native transport exists -> TBD
-- [mojo.md] Reject `compression=zstd` until server support exists -> TBD
+- [metabase.md] Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` -> DONE (2026-02-04)
+- [metabase.md] Improve type mapping for complex SBWP types in `scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` -> DONE (2026-02-04)
+- [mojo.md] Replace Python bridge with native SBWP client in `mojo/src/scratchbird.mojo` -> DONE (2026-02-04)
+- [mojo.md] Enforce TLS required and binary-only once native transport exists -> DONE (2026-02-04)
+- [mojo.md] Reject `compression=zstd` until server support exists -> DONE (2026-02-04)
 - [mojo.md] Implement SBWP type encoding/decoding wrappers in `mojo/src/scratchbird.mojo` -> TBD
 - [mojo.md] Add array, composite, range, geometry, vector, inet/cidr/macaddr support -> TBD
 - [mojo.md] Add sys.* metadata helpers in `mojo/src/scratchbird.mojo` -> DONE (2026-02-04)
 - [mojo.md] Add conformance/integration tests -> TBD
-- [node.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `node/src/errors.ts` -> TBD
+- [node.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `node/src/errors.ts` -> DONE (2026-02-04)
 - [node.md] Add conformance tests for full type matrix in `node/test/` -> TBD
 - [odbc.md] Expand type mapping to cover complex SBWP types where applicable in `odbc/src/odbc_client_bridge.cpp` -> TBD
 - [odbc.md] Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns in `odbc/src/odbc_handles.cpp` -> TBD
 - [odbc.md] Add conformance tests for metadata + type coverage in `odbc/tests/` -> TBD
-- [pascal.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `pascal/src/ScratchBird.Errors.pas` -> TBD
+- [pascal.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `pascal/src/ScratchBird.Errors.pas` -> DONE (2026-02-04)
 - [pascal.md] Add conformance tests for full type matrix in `pascal/tests/` -> TBD
-- [php.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `php/src/Errors.php` -> TBD
+- [php.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `php/src/Errors.php` -> DONE (2026-02-04)
 - [php.md] Add conformance tests for full type matrix in `php/tests/` -> TBD
-- [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py` -> TBD
+- [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `python/src/scratchbird/connection.py` -> DONE (2026-02-04)
 - [python.md] Add conformance tests for full type matrix in `python/tests/` -> TBD
 - [r.md] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `r/R/client.R` -> TBD
 - [r.md] Add conformance tests for full type matrix in `r/tests/` -> TBD
-- [ruby.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb` -> TBD
+- [ruby.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `ruby/lib/scratchbird/errors.rb` -> DONE (2026-02-04)
 - [ruby.md] Add conformance tests for full type matrix in `ruby/test/` -> TBD
-- [rust.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `rust/src/errors.rs` -> TBD
+- [rust.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `rust/src/errors.rs` -> DONE (2026-02-04)
 - [rust.md] Add conformance tests for full type matrix in `rust/tests/` -> TBD
-- [superset.md] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> TBD
-- [superset.md] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> TBD
+- [superset.md] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> DONE (2026-02-04)
+- [superset.md] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `scratchbird-superset-driver/scratchbird_superset/dialect.py` -> DONE (2026-02-04)
 - [swift.md] Implement TLS transport in `swift/Sources/ScratchBird/Socket.swift` -> DONE (2026-02-04)
 - [swift.md] Enforce binary-only (reject `binary_transfer=false`) in `swift/Sources/ScratchBird/Connection.swift` -> DONE (2026-02-04)
 - [swift.md] Reject `compression=zstd` until server support exists in `swift/Sources/ScratchBird/Connection.swift` -> DONE (2026-02-04)
@@ -71,4 +71,4 @@ Map checklist items to issue IDs once created.
 - [swift.md] Add inet/cidr/macaddr encode/decode in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
 - [swift.md] Add vector literal encode/decode in `swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
 - [swift.md] Add sys.* metadata helpers in `swift/Sources/ScratchBird/Metadata.swift` -> DONE (2026-02-04)
-- [swift.md] Add conformance/integration tests in `swift/Tests/` -> TBD
+- [swift.md] Add conformance/integration tests in `swift/Tests/` -> DONE (2026-02-04)
