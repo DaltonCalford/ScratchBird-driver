@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
+- [x] Implement SQLMoreResults (multi-result set support) in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`. Status: DONE (2026-02-04)
+
 ### Integration Appendix Tasks
 
 - [x] Constraint: SQLColumns must return a column list result set and includes ORDINAL_POSITION. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)

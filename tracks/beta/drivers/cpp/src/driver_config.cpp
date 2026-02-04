@@ -99,9 +99,9 @@ protocol::AuthMethod parseAuthMethod(const std::string& value, bool* ok) {
     }
     if (lower == "scram-sha-512" || lower == "scram_sha_512" || lower == "scram512") {
         if (ok) {
-            *ok = true;
+            *ok = false;
         }
-        return protocol::AuthMethod::ScramSha512;
+        return protocol::AuthMethod::ScramSha256;
     }
     if (lower == "password" || lower == "plain") {
         if (ok) {

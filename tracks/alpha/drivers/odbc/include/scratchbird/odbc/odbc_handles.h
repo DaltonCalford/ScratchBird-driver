@@ -320,6 +320,13 @@ public:
                               std::vector<ColumnMetadata>& columns,
                               SQLLEN& rows_affected);
 
+    /**
+     * @brief Build SQL text for a prepared statement with parameters applied
+     */
+    SQLRETURN buildPreparedSQL(uint64_t stmt_id,
+                               const std::vector<ParameterLiteral>& params,
+                               std::string& out_sql);
+
     // =========================================================================
     // Accessors
     // =========================================================================
@@ -624,9 +631,18 @@ public:
     SQLLEN getRowCount() const { return row_count_; }
 
 private:
+    struct ResultSet {
+        std::vector<ColumnMetadata> columns;
+        std::vector<std::vector<std::string>> rows;
+        SQLLEN row_count{0};
+    };
+
     SQLRETURN bindResultData();
     SQLRETURN convertAndStore(size_t col_index, const std::string& value);
     std::vector<ParameterLiteral> buildParameterData();
+    SQLRETURN executeSqlStatements(const std::string& sql);
+    void applyResultSet(size_t index);
+    void resetResults();
 
     OdbcConnection* conn_;
 
@@ -658,6 +674,8 @@ private:
     std::vector<std::vector<std::string>> rows_;
     size_t current_row_{0};
     SQLLEN row_count_{-1};
+    std::vector<ResultSet> result_sets_;
+    size_t current_result_index_{0};
 
     // Cursor attributes
     SQLULEN cursor_type_{SQL_CURSOR_FORWARD_ONLY};

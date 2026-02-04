@@ -1773,24 +1773,6 @@ public class SBProtocolHandler {
         } else {
             ex = null;
         }
-        if (ex == null && state.length() >= 2) {
-            String cls = state.substring(0, 2);
-            ex = switch (cls) {
-                case "01" -> new SQLWarning(message, state);
-                case "02" -> new SQLNoDataException(message, state);
-                case "08" -> new SQLNonTransientConnectionException(message, state);
-                case "0A" -> new SQLFeatureNotSupportedException(message, state);
-                case "22" -> new SQLDataException(message, state);
-                case "23" -> new SQLIntegrityConstraintViolationException(message, state);
-                case "28" -> new SQLInvalidAuthorizationSpecException(message, state);
-                case "40" -> new SQLTransactionRollbackException(message, state);
-                case "42" -> new SQLSyntaxErrorException(message, state);
-                case "53", "54" -> new SQLNonTransientException(message, state);
-                case "57" -> new SQLTransientException(message, state);
-                case "58", "XX" -> new SQLNonTransientException(message, state);
-                default -> new SQLException(message, state);
-            };
-        }
         if (ex == null) {
             ex = new SQLException(message, state);
         }

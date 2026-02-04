@@ -11,6 +11,8 @@ add_library(scratchbird_client
     src/security/tls_context.cpp
 )
 
+set_target_properties(scratchbird_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(scratchbird_client
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include

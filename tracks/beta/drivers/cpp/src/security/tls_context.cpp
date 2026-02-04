@@ -633,6 +633,7 @@ core::Status TLSContext::initServer(const TLSConfig& config, core::ErrorContext*
 
     // DH parameters
     if (!config.dh_params_file.empty()) {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
         FILE* fp = fopen(config.dh_params_file.c_str(), "r");
         if (fp) {
             DH* dh = PEM_read_DHparams(fp, nullptr, nullptr, nullptr);
@@ -642,17 +643,24 @@ core::Status TLSContext::initServer(const TLSConfig& config, core::ErrorContext*
                 DH_free(dh);
             }
         }
+#else
+        SSL_CTX_set_dh_auto(ctx_, 1);
+#endif
     }
 
     // ECDH curve
     std::string curve = config.ecdh_curve.empty() ? "prime256v1" : config.ecdh_curve;
     int nid = OBJ_sn2nid(curve.c_str());
     if (nid != NID_undef) {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
         EC_KEY* ecdh = EC_KEY_new_by_curve_name(nid);
         if (ecdh) {
             SSL_CTX_set_tmp_ecdh(ctx_, ecdh);
             EC_KEY_free(ecdh);
         }
+#else
+        SSL_CTX_set1_groups_list(ctx_, curve.c_str());
+#endif
     }
 
     // Security options

@@ -715,23 +715,7 @@ def _map_sqlstate(sqlstate: str):
         mapped = full_map.get(sqlstate)
         if mapped:
             return mapped
-    prefix = sqlstate[:2]
-    return {
-        "01": errors.Warning,
-        "02": errors.DatabaseError,
-        "08": errors.OperationalError,
-        "0A": errors.NotSupportedError,
-        "22": errors.DataError,
-        "23": errors.IntegrityError,
-        "28": errors.OperationalError,
-        "40": errors.DatabaseError,
-        "42": errors.ProgrammingError,
-        "53": errors.OperationalError,
-        "54": errors.OperationalError,
-        "57": errors.OperationalError,
-        "58": errors.InternalError,
-        "XX": errors.InternalError,
-    }.get(prefix, errors.DatabaseError)
+    return errors.DatabaseError
 
 
 QUERY_FLAG_BINARY_RESULT = 0x04

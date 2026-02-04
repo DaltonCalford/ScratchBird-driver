@@ -4,10 +4,17 @@ add_library(scratchbird_odbc SHARED
     src/odbc_handles.cpp
 )
 
+if (NOT TARGET scratchbird_client)
+    add_subdirectory(
+        ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/scratchbird_cpp
+    )
+endif()
+
 target_include_directories(scratchbird_odbc
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/cpp/include
+        ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp/include
 )
 
 find_package(ODBC)

@@ -3,7 +3,7 @@
 Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Core), P1 → P2 (Follow-ups), P2 → P3 (Future).
 
 ## P1 (Core)
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs`. Issue: TBD
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs`. Issue: DONE (2026-02-04)
 
 
 ## P2 (Follow-ups)

@@ -59,25 +59,7 @@ module Scratchbird
         when "XX000" then return InternalError.new(message, sqlstate, detail, hint)
         end
       end
-      prefix = sqlstate[0, 2] || ""
-      case prefix
-      when "01" then Warning.new(message, sqlstate, detail, hint)
-      when "02" then NoDataError.new(message, sqlstate, detail, hint)
-      when "08" then ConnectionError.new(message, sqlstate, detail, hint)
-      when "0A" then NotSupportedError.new(message, sqlstate, detail, hint)
-      when "22" then DataError.new(message, sqlstate, detail, hint)
-      when "23" then IntegrityError.new(message, sqlstate, detail, hint)
-      when "28" then AuthError.new(message, sqlstate, detail, hint)
-      when "40" then TransactionError.new(message, sqlstate, detail, hint)
-      when "42" then SyntaxError.new(message, sqlstate, detail, hint)
-      when "53" then ResourceError.new(message, sqlstate, detail, hint)
-      when "54" then LimitError.new(message, sqlstate, detail, hint)
-      when "57" then OperatorInterventionError.new(message, sqlstate, detail, hint)
-      when "58" then SystemError.new(message, sqlstate, detail, hint)
-      when "XX" then InternalError.new(message, sqlstate, detail, hint)
-      else
-        Error.new(message, sqlstate, detail, hint)
-      end
+      Error.new(message, sqlstate, detail, hint)
     end
   end
 end

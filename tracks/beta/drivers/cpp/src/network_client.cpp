@@ -108,8 +108,8 @@ std::string generateNonce() {
     return base64Encode(buf);
 }
 
-const EVP_MD* scramDigest(protocol::AuthMethod method) {
-    return (method == protocol::AuthMethod::ScramSha512) ? EVP_sha512() : EVP_sha256();
+const EVP_MD* scramDigest(protocol::AuthMethod /*method*/) {
+    return EVP_sha256();
 }
 
 bool scramSaltedPassword(const std::string& password,
@@ -118,7 +118,7 @@ bool scramSaltedPassword(const std::string& password,
                          protocol::AuthMethod method,
                          std::vector<uint8_t>& out) {
     const EVP_MD* md = scramDigest(method);
-    int hash_len = (method == protocol::AuthMethod::ScramSha512) ? 64 : 32;
+    int hash_len = 32;
     out.assign(static_cast<size_t>(hash_len), 0);
     if (PKCS5_PBKDF2_HMAC(password.c_str(),
                           static_cast<int>(password.size()),
@@ -138,7 +138,7 @@ bool scramHmac(const std::vector<uint8_t>& key,
                protocol::AuthMethod method,
                std::vector<uint8_t>& out) {
     const EVP_MD* md = scramDigest(method);
-    unsigned int out_len = (method == protocol::AuthMethod::ScramSha512) ? 64 : 32;
+    unsigned int out_len = 32;
     out.assign(out_len, 0);
     if (!HMAC(md,
               key.data(),
@@ -157,7 +157,7 @@ bool scramHash(const std::vector<uint8_t>& input,
                protocol::AuthMethod method,
                std::vector<uint8_t>& out) {
     const EVP_MD* md = scramDigest(method);
-    unsigned int out_len = (method == protocol::AuthMethod::ScramSha512) ? 64 : 32;
+    unsigned int out_len = 32;
     out.assign(out_len, 0);
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     if (!ctx) {
@@ -961,11 +961,9 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
         return status;
     }
     last_query_sequence_ = seq;
-    if (max_rows == 0) {
-        status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
-        if (status != core::Status::OK) {
-            return status;
-        }
+    status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
     }
 
     std::vector<protocol::ColumnInfo> cols;
@@ -1780,7 +1778,7 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                     }
                     continue;
                 }
-                if (method == protocol::AuthMethod::ScramSha256 || method == protocol::AuthMethod::ScramSha512) {
+                if (method == protocol::AuthMethod::ScramSha256) {
                     if (!scram) {
                         scram = std::make_unique<ScramClient>();
                         scram->method = method;
@@ -1803,7 +1801,7 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                 if (status != core::Status::OK) {
                     return status;
                 }
-                if (!scram || (method != protocol::AuthMethod::ScramSha256 && method != protocol::AuthMethod::ScramSha512)) {
+                if (!scram || method != protocol::AuthMethod::ScramSha256) {
                     return setError(ctx, core::Status::INVALID_AUTHORIZATION, "SCRAM state missing");
                 }
                 std::string client_final;

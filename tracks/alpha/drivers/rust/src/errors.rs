@@ -110,24 +110,7 @@ pub fn error_from_sqlstate(
             _ => ErrorKind::Unknown,
         }
     } else {
-        let prefix = sqlstate.get(0..2).unwrap_or("");
-        match prefix {
-            "01" => ErrorKind::Warning,
-            "02" => ErrorKind::NoData,
-            "08" => ErrorKind::Connection,
-            "0A" => ErrorKind::NotSupported,
-            "22" => ErrorKind::Data,
-            "23" => ErrorKind::Integrity,
-            "28" => ErrorKind::Auth,
-            "40" => ErrorKind::Transaction,
-            "42" => ErrorKind::Syntax,
-            "53" => ErrorKind::Resource,
-            "54" => ErrorKind::Limit,
-            "57" => ErrorKind::OperatorIntervention,
-            "58" => ErrorKind::System,
-            "XX" => ErrorKind::Internal,
-            _ => ErrorKind::Unknown,
-        }
+        ErrorKind::Unknown
     };
     Error::with_sqlstate(kind, message, Some(sqlstate.to_string()), detail, hint)
 }

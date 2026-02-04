@@ -106,6 +106,73 @@ std::string trimString(const std::string& value) {
     return value.substr(start, end - start + 1);
 }
 
+std::vector<std::string> splitSqlStatements(const std::string& sql) {
+    std::vector<std::string> statements;
+    std::string current;
+    current.reserve(sql.size());
+
+    bool in_single = false;
+    bool in_double = false;
+
+    for (size_t i = 0; i < sql.size(); ++i) {
+        char ch = sql[i];
+
+        if (in_single) {
+            current.push_back(ch);
+            if (ch == '\'') {
+                if (i + 1 < sql.size() && sql[i + 1] == '\'') {
+                    current.push_back(sql[++i]);
+                } else {
+                    in_single = false;
+                }
+            }
+            continue;
+        }
+
+        if (in_double) {
+            current.push_back(ch);
+            if (ch == '"') {
+                if (i + 1 < sql.size() && sql[i + 1] == '"') {
+                    current.push_back(sql[++i]);
+                } else {
+                    in_double = false;
+                }
+            }
+            continue;
+        }
+
+        if (ch == '\'') {
+            in_single = true;
+            current.push_back(ch);
+            continue;
+        }
+
+        if (ch == '"') {
+            in_double = true;
+            current.push_back(ch);
+            continue;
+        }
+
+        if (ch == ';') {
+            std::string trimmed = trimString(current);
+            if (!trimmed.empty()) {
+                statements.push_back(std::move(trimmed));
+            }
+            current.clear();
+            continue;
+        }
+
+        current.push_back(ch);
+    }
+
+    std::string trimmed = trimString(current);
+    if (!trimmed.empty()) {
+        statements.push_back(std::move(trimmed));
+    }
+
+    return statements;
+}
+
 std::string toUpper(std::string value) {
     for (char& ch : value) {
         ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -1286,7 +1353,24 @@ SQLRETURN OdbcConnection::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
                     std::string(reinterpret_cast<const char*>(value)) :
                     std::string(reinterpret_cast<const char*>(value), string_length);
                 if (connected_) {
-                    // TODO: Send USE database to server
+                    std::string escaped;
+                    escaped.reserve(current_database_.size() + 4);
+                    for (char ch : current_database_) {
+                        if (ch == '\'') {
+                            escaped += "''";
+                        } else {
+                            escaped.push_back(ch);
+                        }
+                    }
+                    std::string sql = "SET search_path TO '" + escaped + "'";
+                    std::vector<std::vector<std::string>> results;
+                    std::vector<ColumnMetadata> columns;
+                    SQLLEN rows_affected = 0;
+                    auto result = executeSQL(sql, results, columns, rows_affected);
+                    if (result != SQL_SUCCESS && result != SQL_SUCCESS_WITH_INFO) {
+                        return result;
+                    }
+                    current_schema_ = current_database_;
                 }
             }
             break;
@@ -2252,6 +2336,18 @@ SQLRETURN OdbcConnection::executePrepared(uint64_t stmt_id,
                                            std::vector<std::vector<std::string>>& results,
                                            std::vector<ColumnMetadata>& columns,
                                            SQLLEN& rows_affected) {
+    std::string sql;
+    auto status = buildPreparedSQL(stmt_id, params, sql);
+    if (status != SQL_SUCCESS) {
+        return status;
+    }
+
+    return executeSQL(sql, results, columns, rows_affected);
+}
+
+SQLRETURN OdbcConnection::buildPreparedSQL(uint64_t stmt_id,
+                                            const std::vector<ParameterLiteral>& params,
+                                            std::string& out_sql) {
     auto it = prepared_sql_.find(stmt_id);
     if (it == prepared_sql_.end()) {
         setError("HY000", 0, "Unknown prepared statement");
@@ -2288,7 +2384,8 @@ SQLRETURN OdbcConnection::executePrepared(uint64_t stmt_id,
         sql = std::move(out);
     }
 
-    return executeSQL(sql, results, columns, rows_affected);
+    out_sql = std::move(sql);
+    return SQL_SUCCESS;
 }
 
 // =============================================================================
@@ -2333,15 +2430,13 @@ SQLRETURN OdbcStatement::execute() {
     // Build parameter data
     auto params = buildParameterData();
 
-    // Execute
-    auto result = conn_->executePrepared(server_stmt_id_, params, rows_, columns_, row_count_);
-    if (result == SQL_SUCCESS) {
-        executed_ = true;
-        has_results_ = !columns_.empty();
-        current_row_ = 0;
+    std::string sql;
+    auto status = conn_->buildPreparedSQL(server_stmt_id_, params, sql);
+    if (status != SQL_SUCCESS) {
+        return status;
     }
 
-    return result;
+    return executeSqlStatements(sql);
 }
 
 SQLRETURN OdbcStatement::execDirect(const SQLCHAR* sql, SQLINTEGER sql_len) {
@@ -2356,11 +2451,8 @@ SQLRETURN OdbcStatement::execDirect(const SQLCHAR* sql, SQLINTEGER sql_len) {
         std::string(reinterpret_cast<const char*>(sql)) :
         std::string(reinterpret_cast<const char*>(sql), sql_len);
 
-    auto result = conn_->executeSQL(sql_, rows_, columns_, row_count_);
+    auto result = executeSqlStatements(sql_);
     if (result == SQL_SUCCESS) {
-        executed_ = true;
-        has_results_ = !columns_.empty();
-        current_row_ = 0;
         prepared_ = false;
     }
 
@@ -2384,9 +2476,7 @@ SQLRETURN OdbcStatement::closeCursor() {
         return SQL_ERROR;
     }
 
-    has_results_ = false;
-    rows_.clear();
-    current_row_ = 0;
+    resetResults();
 
     return SQL_SUCCESS;
 }
@@ -2987,8 +3077,18 @@ SQLRETURN OdbcStatement::rowCount(SQLLEN* row_count_ptr) {
 
 SQLRETURN OdbcStatement::moreResults() {
     clearDiagnostics();
-    // TODO: Implement multiple result sets
-    return SQL_NO_DATA;
+    if (result_sets_.empty()) {
+        return SQL_NO_DATA;
+    }
+
+    size_t next_index = current_result_index_ + 1;
+    if (next_index >= result_sets_.size()) {
+        return SQL_NO_DATA;
+    }
+
+    current_result_index_ = next_index;
+    applyResultSet(current_result_index_);
+    return SQL_SUCCESS;
 }
 
 SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW /*row_number*/, SQLUSMALLINT /*operation*/,
@@ -3334,13 +3434,82 @@ std::vector<ParameterLiteral> OdbcStatement::buildParameterData() {
 
 void OdbcStatement::setCatalogResult(std::vector<ColumnMetadata> columns,
                                      std::vector<std::vector<std::string>> rows) {
-    columns_ = std::move(columns);
-    rows_ = std::move(rows);
-    has_results_ = true;
+    resetResults();
+
+    ResultSet rs;
+    rs.columns = std::move(columns);
+    rs.rows = std::move(rows);
+    rs.row_count = static_cast<SQLLEN>(rs.rows.size());
+    result_sets_.push_back(std::move(rs));
+
+    current_result_index_ = 0;
+    applyResultSet(current_result_index_);
     executed_ = true;
     prepared_ = false;
+}
+
+SQLRETURN OdbcStatement::executeSqlStatements(const std::string& sql) {
+    resetResults();
+
+    if (!conn_) {
+        setError("08003", 0, "Connection not open");
+        return SQL_ERROR;
+    }
+
+    auto statements = splitSqlStatements(sql);
+    if (statements.empty()) {
+        setError("HY000", 0, "Empty SQL statement");
+        return SQL_ERROR;
+    }
+
+    result_sets_.reserve(statements.size());
+    for (const auto& statement : statements) {
+        ResultSet rs;
+        SQLLEN rows_affected = 0;
+        auto status = conn_->executeSQL(statement, rs.rows, rs.columns, rows_affected);
+        if (status != SQL_SUCCESS) {
+            return status;
+        }
+        if (!rs.columns.empty()) {
+            rs.row_count = static_cast<SQLLEN>(rs.rows.size());
+        } else {
+            rs.row_count = rows_affected;
+        }
+        result_sets_.push_back(std::move(rs));
+    }
+
+    if (result_sets_.empty()) {
+        return SQL_NO_DATA;
+    }
+
+    current_result_index_ = 0;
+    applyResultSet(current_result_index_);
+    executed_ = true;
+    return SQL_SUCCESS;
+}
+
+void OdbcStatement::applyResultSet(size_t index) {
+    if (index >= result_sets_.size()) {
+        resetResults();
+        return;
+    }
+
+    ResultSet& rs = result_sets_[index];
+    columns_ = std::move(rs.columns);
+    rows_ = std::move(rs.rows);
+    row_count_ = rs.row_count;
     current_row_ = 0;
-    row_count_ = static_cast<SQLLEN>(rows_.size());
+    has_results_ = !columns_.empty();
+}
+
+void OdbcStatement::resetResults() {
+    columns_.clear();
+    rows_.clear();
+    result_sets_.clear();
+    current_row_ = 0;
+    row_count_ = -1;
+    has_results_ = false;
+    current_result_index_ = 0;
 }
 
 // Catalog functions

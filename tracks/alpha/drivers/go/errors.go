@@ -81,39 +81,5 @@ func mapSQLState(sqlState string) ErrorKind {
 			return ErrInternal
 		}
 	}
-	if len(sqlState) < 2 {
-		return ErrUnknown
-	}
-	switch sqlState[:2] {
-	case "01":
-		return ErrWarning
-	case "02":
-		return ErrNoData
-	case "08":
-		return ErrConnection
-	case "0A":
-		return ErrNotSupported
-	case "22":
-		return ErrData
-	case "23":
-		return ErrIntegrity
-	case "28":
-		return ErrAuth
-	case "40":
-		return ErrTransaction
-	case "42":
-		return ErrSyntax
-	case "53":
-		return ErrResource
-	case "54":
-		return ErrLimit
-	case "57":
-		return ErrOperator
-	case "58":
-		return ErrSystem
-	case "XX":
-		return ErrInternal
-	default:
-		return ErrUnknown
-	}
+	return ErrUnknown
 }
