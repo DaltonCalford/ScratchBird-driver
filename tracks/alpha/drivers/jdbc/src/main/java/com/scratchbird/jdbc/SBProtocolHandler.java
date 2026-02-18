@@ -30,7 +30,6 @@ import java.sql.SQLDataException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.SQLInvalidAuthorizationSpecException;
-import java.sql.SQLNoDataException;
 import java.sql.SQLNonTransientConnectionException;
 import java.sql.SQLNonTransientException;
 import java.sql.SQLException;
@@ -1628,7 +1627,7 @@ public class SBProtocolHandler {
                 try {
                     msg = protocol.readMessage();
                 } catch (IOException e) {
-                    throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
+                    throw protocol.createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
                 }
                 if (protocol.handleAsyncMessage(msg)) {
                     continue;
@@ -1646,11 +1645,11 @@ public class SBProtocolHandler {
                         break;
                     }
                     case MSG_PORTAL_SUSPENDED: {
-                        byte[] payload = buildExecutePayload("", pageSize);
+                        byte[] payload = protocol.buildExecutePayload("", pageSize);
                         try {
                             protocol.sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
                         } catch (IOException e) {
-                            throw createSQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
+                            throw protocol.createSQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
                         }
                         break;
                     }
@@ -1668,7 +1667,7 @@ public class SBProtocolHandler {
                         if (cancelTask != null) {
                             cancelTask.cancel(false);
                         }
-                        throw createSQLException(protocol.buildErrorMessage(error),
+                        throw protocol.createSQLException(protocol.buildErrorMessage(error),
                             error.sqlState != null ? error.sqlState : "42000");
                     }
                     default:
@@ -1750,7 +1749,7 @@ public class SBProtocolHandler {
         if (state.length() == 5) {
             ex = switch (state) {
                 case "01000" -> new SQLWarning(message, state);
-                case "02000" -> new SQLNoDataException(message, state);
+                case "02000" -> new SQLDataException(message, state);
                 case "08001", "08003", "08006" -> new SQLTransientConnectionException(message, state);
                 case "08004", "08P01" -> new SQLNonTransientConnectionException(message, state);
                 case "0A000" -> new SQLFeatureNotSupportedException(message, state);

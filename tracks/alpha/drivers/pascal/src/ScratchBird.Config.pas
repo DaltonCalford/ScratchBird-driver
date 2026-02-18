@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Config;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses
@@ -17,6 +20,7 @@ type
   TScratchBirdConfig = record
     Host: string;
     Port: Integer;
+    Protocol: string;
     Database: string;
     UserName: string;
     Password: string;
@@ -44,6 +48,7 @@ function DefaultConfig: TScratchBirdConfig;
 begin
   Result.Host := 'localhost';
   Result.Port := 3092;
+  Result.Protocol := 'native';
   Result.Database := '';
   Result.UserName := '';
   Result.Password := '';
@@ -65,6 +70,7 @@ end;
 procedure ApplyParam(var Config: TScratchBirdConfig; const Key, Value: string);
 var
   KeyLower: string;
+  Normalized: string;
 begin
   KeyLower := LowerCase(Key);
   if (KeyLower = 'host') or (KeyLower = 'server') or (KeyLower = 'data source') or (KeyLower = 'datasource') then
@@ -73,6 +79,15 @@ begin
     Config.Port := StrToIntDef(Value, Config.Port)
   else if (KeyLower = 'database') or (KeyLower = 'dbname') or (KeyLower = 'initial catalog') then
     Config.Database := Value
+  else if (KeyLower = 'protocol') or (KeyLower = 'parser') or (KeyLower = 'dialect') then
+  begin
+    Normalized := LowerCase(Trim(Value));
+    if (Normalized = '') or (Normalized = 'native') or (Normalized = 'scratchbird') or
+       (Normalized = 'scratchbird-native') or (Normalized = 'scratchbird_native') then
+      Config.Protocol := 'native'
+    else
+      raise Exception.Create('Only protocol=native is supported; connect to the native parser listener/port.');
+  end
   else if (KeyLower = 'user') or (KeyLower = 'username') or (KeyLower = 'user id') or (KeyLower = 'uid') then
     Config.UserName := Value
   else if (KeyLower = 'password') or (KeyLower = 'pwd') then
@@ -222,6 +237,7 @@ var
   Separator: Char;
   Parts: TStringList;
   Pair: string;
+  Token: string;
   SepPos: Integer;
   Key, Value: string;
 begin
@@ -235,14 +251,14 @@ begin
     ExtractStrings([Separator], [], PChar(Dsn), Parts);
     for Pair in Parts do
     begin
-      Pair := Trim(Pair);
-      if Pair = '' then
+      Token := Trim(Pair);
+      if Token = '' then
         Continue;
-      SepPos := Pos('=', Pair);
+      SepPos := Pos('=', Token);
       if SepPos <= 0 then
         Continue;
-      Key := Trim(Copy(Pair, 1, SepPos - 1));
-      Value := Trim(Copy(Pair, SepPos + 1, MaxInt));
+      Key := Trim(Copy(Token, 1, SepPos - 1));
+      Value := Trim(Copy(Token, SepPos + 1, MaxInt));
       if (Length(Value) >= 2) and (Value[1] = '"') and (Value[Length(Value)] = '"') then
         Value := Copy(Value, 2, Length(Value) - 2);
       ApplyParam(Result, Key, Value);

@@ -1,7 +1,7 @@
 # ScratchBird Mojo Driver
 
 Native ScratchBird driver for Mojo (SBWP v1.1). This implementation targets
-low-latency AI/ML workflows and is designed to keep the transport layer small
+low-latency application workflows and is designed to keep the transport layer small
 and swappable as Mojo networking evolves.
 
 ## Status
@@ -10,6 +10,14 @@ and swappable as Mojo networking evolves.
   Python driver for transport/auth while Mojo networking matures).
 - API surface matches the canonical driver specs; transport is isolated so a
   native TCP/TLS implementation can replace the Python bridge later.
+
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Experimental | CI path is gated (`MOJO_ENABLED=true`) and toolchain-dependent. |
+| Windows | Not supported | No CI/toolchain path configured. |
+| macOS | Not supported | No CI/toolchain path configured. |
 
 ## Requirements
 

@@ -513,7 +513,18 @@ parse_command_complete <- function(payload) {
   rows <- read_u64(payload, 5)
   last_id <- read_u64(payload, 13)
   tag_bytes <- if (length(payload) > 20) payload[21:length(payload)] else raw()
-  tag <- if (length(tag_bytes) > 0) strsplit(rawToChar(tag_bytes), "\0", fixed = TRUE)[[1]][1] else ""
+  tag <- ""
+  if (length(tag_bytes) > 0) {
+    zero_pos <- which(tag_bytes == as.raw(0x00))
+    if (length(zero_pos) > 0 && zero_pos[1] > 1) {
+      tag_bytes <- tag_bytes[1:(zero_pos[1] - 1)]
+    } else if (length(zero_pos) > 0) {
+      tag_bytes <- raw()
+    }
+    if (length(tag_bytes) > 0) {
+      tag <- rawToChar(tag_bytes)
+    }
+  }
   list(command_type = as.integer(command_type), rows = rows, last_id = last_id, tag = tag)
 }
 

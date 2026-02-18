@@ -182,6 +182,7 @@ sb_result* sb_query(sb_connection* conn, const char* sql, sb_error* err);
 int sb_cancel(sb_connection* conn, sb_error* err);
 int sb_set_option(sb_connection* conn, const char* name, const char* value, sb_error* err);
 int sb_ping(sb_connection* conn, sb_error* err);
+int sb_is_healthy(sb_connection* conn, sb_error* err);
 
 int sb_fetch(sb_result* result, sb_row* row, sb_error* err);
 void sb_result_free(sb_result* result);

@@ -223,17 +223,23 @@ func decodeValue(oid: UInt32, data: Data, format: UInt16) -> Any {
     }
     switch oid {
     case TypeOid.bool:
-        return data.first == 1
+        guard let first = data.first else { return RawValue(oid: oid, data: data) }
+        return first == 1
     case TypeOid.int2:
-        return Int16(littleEndian: data.withUnsafeBytes { $0.load(as: Int16.self) })
+        guard data.count >= 2 else { return RawValue(oid: oid, data: data) }
+        return Int(Int16(littleEndian: data.withUnsafeBytes { $0.load(as: Int16.self) }))
     case TypeOid.int4:
-        return Int32(littleEndian: data.withUnsafeBytes { $0.load(as: Int32.self) })
+        guard data.count >= 4 else { return RawValue(oid: oid, data: data) }
+        return Int(Int32(littleEndian: data.withUnsafeBytes { $0.load(as: Int32.self) }))
     case TypeOid.int8:
+        guard data.count >= 8 else { return RawValue(oid: oid, data: data) }
         return Int64(littleEndian: data.withUnsafeBytes { $0.load(as: Int64.self) })
     case TypeOid.float4:
+        guard data.count >= 4 else { return RawValue(oid: oid, data: data) }
         let bits = UInt32(littleEndian: data.withUnsafeBytes { $0.load(as: UInt32.self) })
         return Float(bitPattern: bits)
     case TypeOid.float8:
+        guard data.count >= 8 else { return RawValue(oid: oid, data: data) }
         let bits = UInt64(littleEndian: data.withUnsafeBytes { $0.load(as: UInt64.self) })
         return Double(bitPattern: bits)
     case TypeOid.numeric:
@@ -243,20 +249,25 @@ func decodeValue(oid: UInt32, data: Data, format: UInt16) -> Any {
     case TypeOid.jsonb:
         return Jsonb(raw: stripLengthPrefix(data))
     case TypeOid.uuid:
+        guard data.count >= 16 else { return RawValue(oid: oid, data: data) }
         return uuidFromBytes(data)
     case TypeOid.inet, TypeOid.cidr, TypeOid.macaddr:
         return String(data: stripLengthPrefix(data), encoding: .utf8) ?? ""
     case TypeOid.date:
+        guard data.count >= 4 else { return RawValue(oid: oid, data: data) }
         let days = Int32(littleEndian: data.withUnsafeBytes { $0.load(as: Int32.self) })
         let base = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(secondsFromGMT: 0), year: 2000, month: 1, day: 1))!
         return Calendar(identifier: .gregorian).date(byAdding: .day, value: Int(days), to: base) ?? base
     case TypeOid.time:
+        guard data.count >= 8 else { return RawValue(oid: oid, data: data) }
         return Int64(littleEndian: data.withUnsafeBytes { $0.load(as: Int64.self) })
     case TypeOid.timestamp, TypeOid.timestamptz:
+        guard data.count >= 8 else { return RawValue(oid: oid, data: data) }
         let micros = Int64(littleEndian: data.withUnsafeBytes { $0.load(as: Int64.self) })
         let base = Calendar(identifier: .gregorian).date(from: DateComponents(timeZone: TimeZone(secondsFromGMT: 0), year: 2000, month: 1, day: 1))!
         return base.addingTimeInterval(Double(micros) / 1_000_000)
     case TypeOid.interval:
+        guard data.count >= 16 else { return RawValue(oid: oid, data: data) }
         let micros = Int64(littleEndian: data.withUnsafeBytes { $0.load(as: Int64.self) })
         let days = Int32(littleEndian: data.subdata(in: 8..<12).withUnsafeBytes { $0.load(as: Int32.self) })
         let months = Int32(littleEndian: data.subdata(in: 12..<16).withUnsafeBytes { $0.load(as: Int32.self) })
@@ -325,6 +336,58 @@ private let rangeUbInc: UInt8 = 0x04
 private let rangeLbInf: UInt8 = 0x08
 private let rangeUbInf: UInt8 = 0x10
 
+private func encodeValueForOid(_ oid: UInt32, value: Any) throws -> Data? {
+    switch oid {
+    case TypeOid.int2:
+        if let v = value as? Int16 {
+            var le = v.littleEndian
+            return Data(bytes: &le, count: 2)
+        }
+        if let v = value as? Int {
+            guard v >= Int(Int16.min) && v <= Int(Int16.max) else { return nil }
+            var le = Int16(v).littleEndian
+            return Data(bytes: &le, count: 2)
+        }
+        if let v = value as? Int32 {
+            guard v >= Int32(Int16.min) && v <= Int32(Int16.max) else { return nil }
+            var le = Int16(v).littleEndian
+            return Data(bytes: &le, count: 2)
+        }
+        if let v = value as? Int64 {
+            guard v >= Int64(Int16.min) && v <= Int64(Int16.max) else { return nil }
+            var le = Int16(v).littleEndian
+            return Data(bytes: &le, count: 2)
+        }
+    case TypeOid.int4:
+        if let v = value as? Int32 {
+            var le = v.littleEndian
+            return Data(bytes: &le, count: 4)
+        }
+        if let v = value as? Int {
+            guard v >= Int(Int32.min) && v <= Int(Int32.max) else { return nil }
+            var le = Int32(v).littleEndian
+            return Data(bytes: &le, count: 4)
+        }
+        if let v = value as? Int64 {
+            guard v >= Int64(Int32.min) && v <= Int64(Int32.max) else { return nil }
+            var le = Int32(v).littleEndian
+            return Data(bytes: &le, count: 4)
+        }
+    case TypeOid.int8:
+        if let v = value as? Int64 {
+            var le = v.littleEndian
+            return Data(bytes: &le, count: 8)
+        }
+        if let v = value as? Int {
+            var le = Int64(v).littleEndian
+            return Data(bytes: &le, count: 8)
+        }
+    default:
+        return nil
+    }
+    return nil
+}
+
 private func encodeComposite(_ comp: ScratchBirdComposite) throws -> (data: Data, oid: UInt32) {
     let typeOid = comp.typeOid == 0 ? TypeOid.record : comp.typeOid
     var out = Data()
@@ -336,12 +399,17 @@ private func encodeComposite(_ comp: ScratchBirdComposite) throws -> (data: Data
         if let raw = field.raw {
             fieldData = raw
         } else if let value = field.value {
-            let encoded = try encodeParam(value)
-            if fieldOid == 0 {
-                fieldOid = encoded.oid
+            if fieldOid != 0 {
+                fieldData = try encodeValueForOid(fieldOid, value: value)
             }
-            if !encoded.param.isNull {
-                fieldData = encoded.param.data ?? Data()
+            if fieldData == nil {
+                let encoded = try encodeParam(value)
+                if fieldOid == 0 {
+                    fieldOid = encoded.oid
+                }
+                if !encoded.param.isNull {
+                    fieldData = encoded.param.data ?? Data()
+                }
             }
         }
         if fieldOid == 0 {
@@ -537,8 +605,8 @@ private func decodeRange(_ oid: UInt32, _ data: Data) -> ScratchBirdRange {
 private func decodeRangeBound(oid: UInt32, data: Data) -> Any? {
     switch oid {
     case TypeOid.int4range:
-        if data.count < 4 { return Int32(0) }
-        return Int32(littleEndian: data.withUnsafeBytes { $0.load(as: Int32.self) })
+        if data.count < 4 { return Int(0) }
+        return Int(Int32(littleEndian: data.withUnsafeBytes { $0.load(as: Int32.self) }))
     case TypeOid.int8range:
         if data.count < 8 { return Int64(0) }
         return Int64(littleEndian: data.withUnsafeBytes { $0.load(as: Int64.self) })

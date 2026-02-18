@@ -1,11 +1,19 @@
 # Elixir (Ecto) Driver
 
+## Status
+
+Partial SBWP v1.1 implementation. TLS required, binary-only enforced, zstd rejected; metadata helpers and conformance coverage remain incomplete.
+
 ## Install
 
 ```bash
 cd tracks/p3/drivers/elixir
+mix local.hex --force
+mix local.rebar --force
 mix deps.get
 ```
+
+Requires Elixir ~> 1.15 (per `mix.exs`).
 
 ## Quick Start
 

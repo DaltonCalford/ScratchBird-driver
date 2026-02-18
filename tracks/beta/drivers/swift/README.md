@@ -3,6 +3,14 @@
 Native ScratchBird driver using Swift Concurrency (async/await). SBWP v1.1,
 binary-only transport.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Not supported | Swift target/toolchain path is not configured for this repo. |
+| macOS | Expected | SwiftPM workflow should work; not currently covered in CI. |
+
 ## Build (local dev)
 
 ```bash

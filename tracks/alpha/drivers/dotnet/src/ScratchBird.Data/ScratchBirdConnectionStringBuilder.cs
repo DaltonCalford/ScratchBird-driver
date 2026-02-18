@@ -29,6 +29,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["Database"] = value;
     }
 
+    public string Protocol
+    {
+        get => GetString("Protocol", "native");
+        set => this["Protocol"] = value;
+    }
+
     public string Username
     {
         get => GetString("Username", string.Empty);

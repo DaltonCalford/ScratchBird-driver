@@ -11,6 +11,14 @@ ScratchBird native wire protocol driver for Go (`database/sql`).
 
 See `docs/BUILD_MATRIX.md`.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Usage
 
 ```go

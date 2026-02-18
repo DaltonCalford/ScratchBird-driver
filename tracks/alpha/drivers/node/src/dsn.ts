@@ -7,6 +7,22 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 import { ClientConfig } from "./types";
 
+function normalizeNativeProtocol(value?: string): string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (
+    normalized === "" ||
+    normalized === "native" ||
+    normalized === "scratchbird" ||
+    normalized === "scratchbird-native" ||
+    normalized === "scratchbird_native"
+  ) {
+    return "native";
+  }
+  throw new Error("Only protocol=native is supported; connect to the native parser listener/port.");
+}
+
+export { normalizeNativeProtocol };
+
 export function parseDsn(dsn?: string): Partial<ClientConfig> {
   if (!dsn) {
     return {};
@@ -72,6 +88,11 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "searchpath":
     case "currentschema":
       config.schema = value;
+      break;
+    case "protocol":
+    case "parser":
+    case "dialect":
+      config.protocol = normalizeNativeProtocol(value);
       break;
     case "sslmode":
       config.sslmode = value;

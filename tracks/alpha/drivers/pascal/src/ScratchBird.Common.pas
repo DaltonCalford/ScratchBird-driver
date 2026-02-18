@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Common;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

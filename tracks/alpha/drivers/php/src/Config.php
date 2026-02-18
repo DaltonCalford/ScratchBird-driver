@@ -15,6 +15,7 @@ final class Config
 {
     public string $host = 'localhost';
     public int $port = 3092;
+    public string $protocol = 'native';
     public string $database = '';
     public string $user = '';
     public string $password = '';
@@ -108,6 +109,11 @@ final class Config
             case 'initial catalog':
                 $cfg->database = $value;
                 break;
+            case 'protocol':
+            case 'parser':
+            case 'dialect':
+                $cfg->protocol = self::normalizeNativeProtocol($value);
+                break;
             case 'user':
             case 'username':
             case 'user id':
@@ -169,5 +175,18 @@ final class Config
                 $cfg->fetchSize = max(0, (int)$value);
                 break;
         }
+    }
+
+    private static function normalizeNativeProtocol(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '' ||
+            $normalized === 'native' ||
+            $normalized === 'scratchbird' ||
+            $normalized === 'scratchbird-native' ||
+            $normalized === 'scratchbird_native') {
+            return 'native';
+        }
+        throw new \InvalidArgumentException('Only protocol=native is supported; connect to the native parser listener/port.');
     }
 }

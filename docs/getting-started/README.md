@@ -1,14 +1,15 @@
 # Getting Started
 
-This section provides installation and first-connection guidance for every
-ScratchBird driver in this repository.
+This section provides installation and first-connection guidance for ScratchBird
+drivers in this repository. Released drivers enforce full SBWP v1.1 requirements;
+in-development drivers are partial and may not enforce all requirements yet.
 
 ## Common Requirements
 
 - ScratchBird server with the native listener enabled (default port 3092)
-- TLS 1.3 is required for all drivers
+- TLS 1.3 is required for released drivers (in-development drivers may not enforce yet)
 - SBWP v1.1 protocol support
-- Binary transfer must remain enabled (`binary_transfer=true`)
+- Binary transfer must remain enabled (`binary_transfer=true`) for core drivers
 
 ## Driver Guides
 

@@ -24,8 +24,8 @@ metadata behavior.
 ### Phase 0 - Audit + Status Alignment
 
 - [x] Refresh driver implementation audit
-- [ ] Update README claims to reflect current state
-- [ ] Update per-driver checklists for all drivers (including Dart/Swift/Elixir/Mojo/C++)
+- [x] Update README claims to reflect current state
+- [x] Update per-driver checklists for all drivers (including Dart/Swift/Elixir/Mojo/C++)
 
 ### Phase 1 - Core Drivers Hardening
 
@@ -36,7 +36,7 @@ Core drivers: Go, Node, Python, Ruby, Rust, PHP, R, Pascal, .NET, JDBC, ODBC.
 - [x] Server-side prepare/bind + DESCRIBE integration
 - [x] Portal paging support
 - [x] sys.* metadata helpers (language drivers) and JDBC/ODBC mappings
-- [x] Replace SQLSTATE class-prefix error mapping with full SQLSTATE mapping (all core drivers)
+- [ ] Replace SQLSTATE class-prefix error mapping with full SQLSTATE mapping (all core drivers)
 
 ### Phase 2 - New Drivers (Dart/Swift/Elixir/Mojo)
 

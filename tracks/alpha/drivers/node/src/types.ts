@@ -10,6 +10,9 @@ import { Buffer } from "node:buffer";
 export interface ClientConfig {
   host?: string;
   port?: number;
+  protocol?: string;
+  parser?: string;
+  dialect?: string;
   user?: string;
   password?: string;
   database?: string;

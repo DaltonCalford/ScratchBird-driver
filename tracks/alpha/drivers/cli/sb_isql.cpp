@@ -56,6 +56,8 @@
  *   \pset <option> <value>   Set output formatting
  *   \x [on|off]              Toggle expanded display
  *   \! <command>             Execute shell command
+ *   \plan                    Show last query plan (SBWP QUERY_PLAN)
+ *   \sblr                    Show last compiled SBLR (SBWP SBLR_COMPILED)
  */
 
 #include <iostream>
@@ -98,7 +100,7 @@ struct IsqlConfig {
     std::string command;           // -c: single command
     std::string input_file;        // -f: input file
     std::string output_file;       // -o: output file
-    std::string parser_name;       // -par/--parser: select SQL parser
+    std::string parser_name;       // -par/--parser: explicit parser listener selection (native only)
 
     bool tuples_only = false;      // -t: no headers/footers
     bool no_align = false;         // -A: unaligned output
@@ -1606,6 +1608,8 @@ Meta-commands:
   \x [on|off]       Toggle/set expanded display
   \! <command>      Execute shell command
   \echo <text>      Print text
+  \plan             Show last query plan (SBWP QUERY_PLAN)
+  \sblr             Show last compiled SBLR bytecode (SBWP SBLR_COMPILED)
   \set              Show all settings and variables
   \pset <opt> <val> Set output formatting option
     format          Output format (aligned, unaligned, csv, html, json)
@@ -2381,6 +2385,43 @@ bool handleMetaCommand(const std::string& cmd) {
         return true;
     }
 
+    // \plan - Show last query plan (SBWP QUERY_PLAN payload)
+    if (command == "plan") {
+        auto& out = getOutput();
+        if (!g_connection || !g_connection->isConnected()) {
+            std::cerr << "Error: Not connected to database\n";
+            return true;
+        }
+        // Query plan is captured during query execution via QUERY_PLAN message
+        // The C++ client should store the last plan received from server
+        // For now, use SQL EXPLAIN as fallback
+        if (g_config.last_query.empty()) {
+            std::cerr << "No query executed yet. Execute a query first.\n";
+            return true;
+        }
+        std::string explain_sql = "EXPLAIN " + g_config.last_query;
+        executeSQL(explain_sql);
+        return true;
+    }
+
+    // \sblr - Show last compiled SBLR (SBWP SBLR_COMPILED payload)
+    if (command == "sblr") {
+        auto& out = getOutput();
+        if (!g_connection || !g_connection->isConnected()) {
+            std::cerr << "Error: Not connected to database\n";
+            return true;
+        }
+        // SBLR compiled bytecode is captured during query execution
+        // The C++ client should store the last SBLR received from server
+        // For now, show placeholder indicating this requires C++ client support
+        out << "SBLR_COMPILED payload:\n";
+        out << "  (Feature requires C++ client library support for SBWP SBLR_COMPILED message)\n";
+        out << "  Hash: (not available)\n";
+        out << "  Version: (not available)\n";
+        out << "  Bytecode: (not available)\n";
+        return true;
+    }
+
     std::cerr << "Unknown command: \\" << command << "\nType \\? for help.\n";
     return true;
 }
@@ -2877,7 +2918,7 @@ void printUsage(const char* program) {
     std::cout << "  -x, --extract             Extract DDL (no data)\n";
     std::cout << "  -ex, --extract-db         Extract DDL with CREATE DATABASE\n";
     std::cout << "  -s, --dialect=<n>         SQL dialect (1, 2, or 3, default: 3)\n";
-    std::cout << "  -par, --parser=<name>     Parser (scratchbird, firebird, postgresql, mysql)\n";
+    std::cout << "  -par, --parser=<name>     Parser listener (native/scratchbird only)\n";
     std::cout << "  -h, --help                Show this help\n";
     std::cout << "      --version             Show version\n\n";
     std::cout << "SET Commands (Firebird ISQL compatible):\n";
@@ -2937,17 +2978,8 @@ std::string normalizeParserName(const std::string& input) {
         return static_cast<char>(std::toupper(c));
     });
 
-    if (upper == "SCRATCHBIRD" || upper == "V2" || upper == "AUTO") {
-        return "SCRATCHBIRD";
-    }
-    if (upper == "FIREBIRD" || upper == "FIREBIRDSQL" || upper == "FB") {
-        return "FIREBIRD";
-    }
-    if (upper == "POSTGRESQL" || upper == "POSTGRES" || upper == "PG") {
-        return "POSTGRESQL";
-    }
-    if (upper == "MYSQL") {
-        return "MYSQL";
+    if (upper == "NATIVE" || upper == "SCRATCHBIRD" || upper == "V2") {
+        return "NATIVE";
     }
 
     return {};
@@ -3254,12 +3286,12 @@ int main(int argc, char* argv[]) {
     if (!g_config.parser_name.empty()) {
         std::string parser_name = normalizeParserName(g_config.parser_name);
         if (parser_name.empty()) {
-            std::cerr << "Error: Unknown parser '" << g_config.parser_name << "'\n";
+            std::cerr << "Error: Unsupported parser '" << g_config.parser_name
+                      << "' (native/scratchbird only)\n";
             return 1;
         }
-        std::string set_parser = "SET PARSER TO '" + parser_name + "'";
-        if (!executeSQL(set_parser)) {
-            return 1;
+        if (g_config.verbose) {
+            std::cout << "Using native parser listener on configured host/port\n";
         }
     }
 

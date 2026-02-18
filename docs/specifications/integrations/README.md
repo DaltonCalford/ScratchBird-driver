@@ -44,12 +44,6 @@ Status: Draft (Template Index)
 - `bigdata/pentaho/`
 - `bigdata/informatica/`
 
-## AI & Machine Learning
-
-- `ai/vector-apis/`
-- `ai/langchain/`
-- `ai/haystack/`
-
 ## Database Tools
 
 - `tools/dbeaver/`

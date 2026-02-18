@@ -9,6 +9,7 @@
 class ScratchBirdConfig {
   final String host;
   final int port;
+  final String protocol;
   final String database;
   final String user;
   final String? password;
@@ -29,6 +30,7 @@ class ScratchBirdConfig {
   const ScratchBirdConfig({
     required this.host,
     required this.port,
+    this.protocol = 'native',
     required this.database,
     required this.user,
     this.password,
@@ -57,6 +59,7 @@ class ScratchBirdConfig {
   ScratchBirdConfig copyWith({
     String? host,
     int? port,
+    String? protocol,
     String? database,
     String? user,
     String? password,
@@ -68,6 +71,7 @@ class ScratchBirdConfig {
     return ScratchBirdConfig(
       host: host ?? this.host,
       port: port ?? this.port,
+      protocol: protocol ?? this.protocol,
       database: database ?? this.database,
       user: user ?? this.user,
       password: password ?? this.password,
@@ -96,6 +100,7 @@ ScratchBirdConfig _fromUri(Uri uri) {
   return ScratchBirdConfig(
     host: uri.host,
     port: uri.port == 0 ? 3092 : uri.port,
+    protocol: normalizeNativeProtocol(params['protocol'] ?? params['parser'] ?? params['dialect']),
     database: uri.path.replaceFirst('/', ''),
     user: params['user'] ?? user,
     password: params['password'] ?? password,
@@ -119,6 +124,7 @@ ScratchBirdConfig _fromKv(String dsn) {
   return ScratchBirdConfig(
     host: normalized['host'] ?? 'localhost',
     port: int.tryParse(normalized['port'] ?? '3092') ?? 3092,
+    protocol: normalizeNativeProtocol(normalized['protocol'] ?? normalized['parser'] ?? normalized['dialect']),
     database: normalized['database'] ?? normalized['dbname'] ?? '',
     user: normalized['user'] ?? '',
     password: normalized['password'],
@@ -128,6 +134,21 @@ ScratchBirdConfig _fromKv(String dsn) {
     binaryTransfer: normalized['binary_transfer'] != 'false',
     compression: normalized['compression'] ?? 'off',
   );
+}
+
+String normalizeNativeProtocol(String? value) {
+  final normalized = (value ?? '').trim().toLowerCase();
+  switch (normalized) {
+    case '':
+    case 'native':
+    case 'scratchbird':
+    case 'scratchbird-native':
+    case 'scratchbird_native':
+      return 'native';
+    default:
+      throw ArgumentError(
+          'Only protocol=native is supported; connect to the native parser listener/port.');
+  }
 }
 
 Map<String, String> _normalizeParams(Map<String, String> params) {

@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Errors;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

@@ -8,12 +8,22 @@
 }
 unit ScratchBird.Client;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses
   SysUtils, Classes,
   ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Errors, ScratchBird.Scram, ScratchBird.Types, ScratchBird.Sql,
-  IdTCPClient, IdSSL, IdSSLOpenSSL
+  ScratchBird.Transport, ScratchBird.Transport.Native,
+  {$IFDEF SCRATCHBIRD_USE_INDY}
+  ScratchBird.Transport.Indy,
+  {$ENDIF}
+  SBCircuitBreaker, SBKeepalive, SBLeakDetector, SBTelemetry
+  {$IFDEF MSWINDOWS}
+  , Windows
+  {$ENDIF}
   {$IFNDEF MSWINDOWS}
   , BaseUnix
   {$ENDIF};
@@ -63,8 +73,7 @@ type
   TScratchBirdClient = class
   private
     FConfig: TScratchBirdConfig;
-    FTcp: TIdTCPClient;
-    FSSL: TIdSSLIOHandlerSocketOpenSSL;
+    FTransport: IScratchBirdTransport;
     FConnected: Boolean;
     FAttachmentId: TBytes;
     FTxnId: UInt64;
@@ -77,6 +86,11 @@ type
     FHasLastPlan: Boolean;
     FLastSblr: TSblrCompiled;
     FHasLastSblr: Boolean;
+    FCircuitBreaker: TCircuitBreaker;
+    FTelemetry: TTelemetryCollector;
+    FKeepaliveTracker: TKeepaliveTracker;
+    FLeakDetector: TLeakDetector;
+    FConnectionId: string;
     function ReadExact(Length: Integer): TBytes;
     procedure SendBytes(const Data: TBytes);
     function ReceiveMessage: TScratchBirdMessage;
@@ -95,6 +109,8 @@ type
     procedure ParseQueryPlan(const Payload: TBytes; out Plan: TQueryPlan);
     procedure ParseSblrCompiled(const Payload: TBytes; out Compiled: TSblrCompiled);
     function ParseUuidBytes(const Value: string): TBytes;
+    function BeginOperation(const Name, Sql: string): TSpanContext;
+    procedure EndOperation(Span: TSpanContext; Success: Boolean);
   public
     constructor Create;
     destructor Destroy; override;
@@ -251,9 +267,11 @@ end;
 constructor TScratchBirdClient.Create;
 begin
   inherited Create;
-  FTcp := TIdTCPClient.Create(nil);
-  FSSL := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
-  FTcp.IOHandler := FSSL;
+  {$IFDEF SCRATCHBIRD_USE_INDY}
+  FTransport := TIndyScratchBirdTransport.Create;
+  {$ELSE}
+  FTransport := TNativeScratchBirdTransport.Create;
+  {$ENDIF}
   SetLength(FAttachmentId, 16);
   FillChar(FAttachmentId[0], 16, 0);
   FSequence := 0;
@@ -263,62 +281,64 @@ begin
   FHasLastPlan := False;
   FHasLastSblr := False;
   FOnNotification := nil;
+  FConnectionId := 'conn-' + IntToStr(NativeInt(Self));
+  FCircuitBreaker := TCircuitBreaker.Create(DefaultCircuitBreakerConfig, 'pascal');
+  FTelemetry := TTelemetryCollector.Create(DefaultTelemetryConfig);
+  FKeepaliveTracker := TKeepaliveTracker.Create(DefaultKeepaliveConfig);
+  FLeakDetector := TLeakDetector.Create(DefaultLeakDetectionConfig);
+  FLeakDetector.Start;
 end;
 
 destructor TScratchBirdClient.Destroy;
 begin
   Disconnect;
+  if Assigned(FLeakDetector) then
+  begin
+    FLeakDetector.Checkin(FConnectionId);
+    FLeakDetector.Stop;
+    FLeakDetector.Free;
+  end;
+  FKeepaliveTracker.Free;
+  FTelemetry.Free;
+  FCircuitBreaker.Free;
   FParameters.Free;
-  FSSL.Free;
-  FTcp.Free;
   inherited Destroy;
 end;
 
 procedure TScratchBirdClient.Connect(const Dsn: string);
-var
-  Mode: string;
 begin
   FConfig := ParseConfig(Dsn);
+  if (Trim(FConfig.Protocol) = '') or SameText(FConfig.Protocol, 'native') or
+     SameText(FConfig.Protocol, 'scratchbird') or SameText(FConfig.Protocol, 'scratchbird-native') or
+     SameText(FConfig.Protocol, 'scratchbird_native') then
+    FConfig.Protocol := 'native'
+  else
+    raise EScratchbirdNotSupported.CreateWithInfo(
+      'Only protocol=native is supported; connect to the native parser listener/port.',
+      '0A000', '', '');
   if (FConfig.UserName = '') or (FConfig.Database = '') then
     raise EScratchbirdConnectionError.CreateWithInfo('user and database are required', '08001', '', '');
   if not FConfig.BinaryTransfer then
     raise EScratchbirdNotSupported.CreateWithInfo('binary_transfer=false is not supported', '0A000', '', '');
   if SameText(FConfig.Compression, 'zstd') then
     raise EScratchbirdNotSupported.CreateWithInfo('compression=zstd is not supported', '0A000', '', '');
-
-  Mode := LowerCase(FConfig.SSLMode);
-  if Mode = 'disable' then
-    raise EScratchbirdConnectionError.CreateWithInfo('TLS is required for ScratchBird connections', '08001', '', '');
-
-  FTcp.Host := FConfig.Host;
-  FTcp.Port := FConfig.Port;
-  FTcp.ConnectTimeout := FConfig.ConnectTimeoutMs;
-  FTcp.ReadTimeout := FConfig.SocketTimeoutMs;
-  FSSL.SSLOptions.Method := sslvTLSv1_3;
-  FSSL.SSLOptions.Mode := sslmClient;
-  if FConfig.SSLCert <> '' then
-    FSSL.SSLOptions.CertFile := FConfig.SSLCert;
-  if FConfig.SSLKey <> '' then
-    FSSL.SSLOptions.KeyFile := FConfig.SSLKey;
-  if FConfig.SSLRootCert <> '' then
-    FSSL.SSLOptions.RootCertFile := FConfig.SSLRootCert;
-  if (Mode = 'verify-full') or (Mode = 'verify-ca') or (Mode = 'require') then
-    FSSL.SSLOptions.VerifyMode := [sslvrfPeer]
-  else
-    FSSL.SSLOptions.VerifyMode := [];
-  FTcp.IOHandler := FSSL;
-  FTcp.Connect;
+  FTransport.Configure(FConfig);
+  FTransport.Connect;
   HandshakeAndAuth;
   ApplySchema;
   FConnected := True;
+  if Assigned(FLeakDetector) then
+    FLeakDetector.Checkout(FConnectionId, []);
 end;
 
 procedure TScratchBirdClient.Disconnect;
 begin
   if not FConnected then
     Exit;
-  FTcp.Disconnect;
+  FTransport.Disconnect;
   FConnected := False;
+  if Assigned(FLeakDetector) then
+    FLeakDetector.Checkin(FConnectionId);
 end;
 
 procedure TScratchBirdClient.ApplySchema;
@@ -457,19 +477,30 @@ var
   Oid: Cardinal;
   I: Integer;
   Payload: TBytes;
+  Span: TSpanContext;
 begin
-  SetLength(ParamValues, Length(Params));
-  for I := 0 to High(Params) do
-  begin
-    EncodeParam(Params[I].Value, Params[I].Obj, Param, Oid);
-    ParamValues[I] := Param;
+  Span := BeginOperation('sblr_execute', '');
+  try
+    SetLength(ParamValues, Length(Params));
+    for I := 0 to High(Params) do
+    begin
+      EncodeParam(Params[I].Value, Params[I].Obj, Param, Oid);
+      ParamValues[I] := Param;
+    end;
+    FHasLastPlan := False;
+    FHasLastSblr := False;
+    Payload := BuildSblrExecutePayload(SblrHash, Bytecode, ParamValues);
+    FLastQuerySequence := SendMessage(MSG_SBLR_EXECUTE, Payload, 0, False);
+    SendMessage(MSG_SYNC, nil, 0, False);
+    Result := TScratchBirdResultStream.Create(Self);
+    EndOperation(Span, True);
+  except
+    on E: Exception do
+    begin
+      EndOperation(Span, False);
+      raise;
+    end;
   end;
-  FHasLastPlan := False;
-  FHasLastSblr := False;
-  Payload := BuildSblrExecutePayload(SblrHash, Bytecode, ParamValues);
-  FLastQuerySequence := SendMessage(MSG_SBLR_EXECUTE, Payload, 0, False);
-  SendMessage(MSG_SYNC, nil, 0, False);
-  Result := TScratchBirdResultStream.Create(Self);
 end;
 
 procedure TScratchBirdClient.StreamControl(ControlType: Byte; WindowSize, TimeoutMs: Cardinal);
@@ -502,16 +533,28 @@ begin
 end;
 
 procedure TScratchBirdClient.ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
+var
+  Span: TSpanContext;
 begin
-  if Length(Params) = 0 then
-  begin
-    SendSimpleQuery(Sql, 0);
-  end
-  else
-  begin
-    SendExtendedQuery(Sql, Params, 0);
+  Span := BeginOperation('exec', Sql);
+  try
+    if Length(Params) = 0 then
+    begin
+      SendSimpleQuery(Sql, 0);
+    end
+    else
+    begin
+      SendExtendedQuery(Sql, Params, 0);
+    end;
+    DrainUntilReady;
+    EndOperation(Span, True);
+  except
+    on E: Exception do
+    begin
+      EndOperation(Span, False);
+      raise;
+    end;
   end;
-  DrainUntilReady;
 end;
 
 function TScratchBirdClient.ExecuteQuery(const Sql: string): TScratchBirdResultStream;
@@ -520,12 +563,24 @@ begin
 end;
 
 function TScratchBirdClient.ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+var
+  Span: TSpanContext;
 begin
-  if Length(Params) = 0 then
-    SendSimpleQuery(Sql, Cardinal(FConfig.FetchSize))
-  else
-    SendExtendedQuery(Sql, Params, Cardinal(FConfig.FetchSize));
-  Result := TScratchBirdResultStream.Create(Self);
+  Span := BeginOperation('query', Sql);
+  try
+    if Length(Params) = 0 then
+      SendSimpleQuery(Sql, Cardinal(FConfig.FetchSize))
+    else
+      SendExtendedQuery(Sql, Params, Cardinal(FConfig.FetchSize));
+    Result := TScratchBirdResultStream.Create(Self);
+    EndOperation(Span, True);
+  except
+    on E: Exception do
+    begin
+      EndOperation(Span, False);
+      raise;
+    end;
+  end;
 end;
 
 procedure TScratchBirdClient.Cancel;
@@ -551,13 +606,12 @@ procedure TScratchBirdClient.SendBytes(const Data: TBytes);
 begin
   if Length(Data) = 0 then
     Exit;
-  FTcp.IOHandler.Write(Data);
+  FTransport.Write(Data);
 end;
 
 function TScratchBirdClient.ReadExact(Length: Integer): TBytes;
 begin
-  SetLength(Result, Length);
-  FTcp.IOHandler.ReadBytes(Result, Length, False);
+  Result := FTransport.ReadExact(Length);
 end;
 
 function TScratchBirdClient.ReceiveMessage: TScratchBirdMessage;
@@ -906,6 +960,38 @@ begin
     end;
     Result[I] := Byte(ByteVal);
   end;
+end;
+
+function TScratchBirdClient.BeginOperation(const Name, Sql: string): TSpanContext;
+begin
+  if Assigned(FCircuitBreaker) and (not FCircuitBreaker.AllowRequest) then
+    raise EScratchbirdConnectionError.CreateWithInfo('Circuit breaker is OPEN', '08006', '', '');
+  if Assigned(FKeepaliveTracker) and FKeepaliveTracker.NeedsValidation then
+  begin
+    Ping;
+    FKeepaliveTracker.MarkActive;
+  end;
+  if Assigned(FTelemetry) then
+    Result := FTelemetry.StartSpan(Name)
+  else
+    Result := nil;
+  if (Result <> nil) and (Sql <> '') then
+    Result.WithAttribute('db.statement', TTelemetryCollector.SanitizeQuery(Sql));
+end;
+
+procedure TScratchBirdClient.EndOperation(Span: TSpanContext; Success: Boolean);
+begin
+  if Assigned(FCircuitBreaker) then
+  begin
+    if Success then
+      FCircuitBreaker.RecordSuccess
+    else
+      FCircuitBreaker.RecordFailure;
+  end;
+  if Assigned(FKeepaliveTracker) then
+    FKeepaliveTracker.MarkActive;
+  if Assigned(FTelemetry) then
+    FTelemetry.EndSpan(Span, Success);
 end;
 
 procedure TScratchBirdClient.DrainUntilReady;

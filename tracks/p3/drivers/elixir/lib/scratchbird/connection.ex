@@ -9,7 +9,7 @@
 defmodule ScratchBird.Connection do
   @moduledoc false
 
-  alias ScratchBird.{Config, Protocol, Scram, Types}
+  alias ScratchBird.{Config, Protocol, Scram, Types, CircuitBreaker, Keepalive, LeakDetector, Telemetry}
   use Bitwise
 
   defstruct [
@@ -24,7 +24,12 @@ defmodule ScratchBird.Connection do
     last_query_sequence: 0,
     notification_handlers: [],
     last_plan: nil,
-    last_sblr: nil
+    last_sblr: nil,
+    connection_id: nil,
+    circuit_breaker: nil,
+    telemetry: nil,
+    keepalive_tracker: nil,
+    leak_guard: nil
   ]
 
   def connect(opts) do
@@ -32,16 +37,26 @@ defmodule ScratchBird.Connection do
     with :ok <- validate_config(config),
          {:ok, socket, transport} <- open_socket(config),
          {:ok, state} <- handshake(%__MODULE__{socket: socket, transport: transport, config: config}) do
-      {:ok, state}
+      {:ok, start_resilience(state)}
     end
   end
 
-  def close(%__MODULE__{transport: :ssl, socket: socket}), do: :ssl.close(socket)
-  def close(%__MODULE__{transport: :tcp, socket: socket}), do: :gen_tcp.close(socket)
+  def close(%__MODULE__{transport: :ssl, socket: socket} = state) do
+    _ = stop_resilience(state)
+    :ssl.close(socket)
+  end
+
+  def close(%__MODULE__{transport: :tcp, socket: socket} = state) do
+    _ = stop_resilience(state)
+    :gen_tcp.close(socket)
+  end
 
   defp validate_config(config) do
     sslmode = (config[:sslmode] || "require") |> String.downcase()
+    protocol = (config[:protocol] || "native") |> to_string() |> String.trim() |> String.downcase()
     cond do
+      protocol not in ["", "native", "scratchbird", "scratchbird-native", "scratchbird_native"] ->
+        {:error, "Only protocol=native is supported; connect to the native parser listener/port."}
       sslmode == "disable" ->
         {:error, "TLS is required for ScratchBird connections"}
       config[:binary_transfer] == false ->
@@ -54,70 +69,86 @@ defmodule ScratchBird.Connection do
   end
 
   def query(state, sql, params) when is_list(params) do
-    if params == [] do
-      send_simple_query(state, sql)
-    else
-      send_extended_query(state, sql, params)
-    end
+    with_resilience(state, "query", sql, fn state ->
+      if params == [] do
+        send_simple_query(state, sql)
+      else
+        send_extended_query(state, sql, params)
+      end
+    end)
   end
 
   def begin(state, opts \\ %{}) do
-    flags = 0
-    flags = if Map.has_key?(opts, :isolation_level), do: flags ||| Protocol.txn_flag(:has_isolation), else: flags
-    flags = if Map.has_key?(opts, :access_mode), do: flags ||| Protocol.txn_flag(:has_access), else: flags
-    flags = if Map.has_key?(opts, :deferrable), do: flags ||| Protocol.txn_flag(:has_deferrable), else: flags
-    flags = if Map.has_key?(opts, :wait), do: flags ||| Protocol.txn_flag(:has_wait), else: flags
-    flags = if Map.has_key?(opts, :timeout_ms), do: flags ||| Protocol.txn_flag(:has_timeout), else: flags
-    flags = if Map.has_key?(opts, :autocommit_mode), do: flags ||| Protocol.txn_flag(:has_autocommit), else: flags
-    payload =
-      Protocol.build_txn_begin_payload(
-        flags,
-        Map.get(opts, :conflict_action, 0),
-        Map.get(opts, :autocommit_mode, 0),
-        Map.get(opts, :isolation_level, Protocol.isolation(:read_committed)),
-        Map.get(opts, :access_mode, 0),
-        if(Map.get(opts, :deferrable), do: 1, else: 0),
-        if(Map.get(opts, :wait), do: 1, else: 0),
-        Map.get(opts, :timeout_ms, 0)
-      )
-    state = send_message(state, Protocol.message_type(:txn_begin), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_begin", nil, fn state ->
+      flags = 0
+      flags = if Map.has_key?(opts, :isolation_level), do: flags ||| Protocol.txn_flag(:has_isolation), else: flags
+      flags = if Map.has_key?(opts, :access_mode), do: flags ||| Protocol.txn_flag(:has_access), else: flags
+      flags = if Map.has_key?(opts, :deferrable), do: flags ||| Protocol.txn_flag(:has_deferrable), else: flags
+      flags = if Map.has_key?(opts, :wait), do: flags ||| Protocol.txn_flag(:has_wait), else: flags
+      flags = if Map.has_key?(opts, :timeout_ms), do: flags ||| Protocol.txn_flag(:has_timeout), else: flags
+      flags = if Map.has_key?(opts, :autocommit_mode), do: flags ||| Protocol.txn_flag(:has_autocommit), else: flags
+      payload =
+        Protocol.build_txn_begin_payload(
+          flags,
+          Map.get(opts, :conflict_action, 0),
+          Map.get(opts, :autocommit_mode, 0),
+          Map.get(opts, :isolation_level, Protocol.isolation(:read_committed)),
+          Map.get(opts, :access_mode, 0),
+          if(Map.get(opts, :deferrable), do: 1, else: 0),
+          if(Map.get(opts, :wait), do: 1, else: 0),
+          Map.get(opts, :timeout_ms, 0)
+        )
+      state = send_message(state, Protocol.message_type(:txn_begin), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def commit(state, flags \\ 0) do
-    payload = Protocol.build_txn_commit_payload(flags)
-    state = send_message(state, Protocol.message_type(:txn_commit), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_commit", nil, fn state ->
+      payload = Protocol.build_txn_commit_payload(flags)
+      state = send_message(state, Protocol.message_type(:txn_commit), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def rollback(state, flags \\ 0) do
-    payload = Protocol.build_txn_rollback_payload(flags)
-    state = send_message(state, Protocol.message_type(:txn_rollback), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_rollback", nil, fn state ->
+      payload = Protocol.build_txn_rollback_payload(flags)
+      state = send_message(state, Protocol.message_type(:txn_rollback), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def savepoint(state, name) do
-    payload = Protocol.build_txn_savepoint_payload(name)
-    state = send_message(state, Protocol.message_type(:txn_savepoint), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_savepoint", nil, fn state ->
+      payload = Protocol.build_txn_savepoint_payload(name)
+      state = send_message(state, Protocol.message_type(:txn_savepoint), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def release_savepoint(state, name) do
-    payload = Protocol.build_txn_release_payload(name)
-    state = send_message(state, Protocol.message_type(:txn_release), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_release", nil, fn state ->
+      payload = Protocol.build_txn_release_payload(name)
+      state = send_message(state, Protocol.message_type(:txn_release), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def rollback_to_savepoint(state, name) do
-    payload = Protocol.build_txn_rollback_to_payload(name)
-    state = send_message(state, Protocol.message_type(:txn_rollback_to), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "txn_rollback_to", nil, fn state ->
+      payload = Protocol.build_txn_rollback_to_payload(name)
+      state = send_message(state, Protocol.message_type(:txn_rollback_to), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def set_option(state, name, value) do
-    payload = Protocol.build_set_option_payload(name, value)
-    state = send_message(state, Protocol.message_type(:set_option), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "set_option", nil, fn state ->
+      payload = Protocol.build_set_option_payload(name, value)
+      state = send_message(state, Protocol.message_type(:set_option), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def ping(state) do
@@ -162,18 +193,20 @@ defmodule ScratchBird.Connection do
   end
 
   def execute_sblr(state, sblr_hash, sblr_bytecode, params \\ []) do
-    {param_values, _param_types} =
-      params
-      |> Enum.map(&Types.encode_param/1)
-      |> Enum.map(fn {param, oid} -> {param, oid} end)
-      |> Enum.unzip()
-    payload = Protocol.build_sblr_execute_payload(sblr_hash, sblr_bytecode, param_values)
-    state = %{state | last_plan: nil, last_sblr: nil}
-    sequence = state.sequence
-    state = send_message(state, Protocol.message_type(:sblr_execute), payload, 0)
-    state = %{state | last_query_sequence: sequence}
-    state = send_message(state, Protocol.message_type(:sync), <<>>, 0)
-    collect_results(state, [])
+    with_resilience(state, "sblr_execute", nil, fn state ->
+      {param_values, _param_types} =
+        params
+        |> Enum.map(&Types.encode_param/1)
+        |> Enum.map(fn {param, oid} -> {param, oid} end)
+        |> Enum.unzip()
+      payload = Protocol.build_sblr_execute_payload(sblr_hash, sblr_bytecode, param_values)
+      state = %{state | last_plan: nil, last_sblr: nil}
+      sequence = state.sequence
+      state = send_message(state, Protocol.message_type(:sblr_execute), payload, 0)
+      state = %{state | last_query_sequence: sequence}
+      state = send_message(state, Protocol.message_type(:sync), <<>>, 0)
+      collect_results(state, [])
+    end)
   end
 
   def stream_control(state, control_type, window_size \\ 0, timeout_ms \\ 0) do
@@ -183,20 +216,26 @@ defmodule ScratchBird.Connection do
   end
 
   def attach_create(state, emulation_mode, db_name) do
-    payload = Protocol.build_attach_create_payload(emulation_mode, db_name)
-    state = send_message(state, Protocol.message_type(:attach_create), payload, 0)
-    drain_until_ready(state)
+    with_resilience(state, "attach_create", nil, fn state ->
+      payload = Protocol.build_attach_create_payload(emulation_mode, db_name)
+      state = send_message(state, Protocol.message_type(:attach_create), payload, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def attach_detach(state) do
-    state = send_message(state, Protocol.message_type(:attach_detach), <<>>, 0)
-    drain_until_ready(state)
+    with_resilience(state, "attach_detach", nil, fn state ->
+      state = send_message(state, Protocol.message_type(:attach_detach), <<>>, 0)
+      drain_until_ready(state)
+    end)
   end
 
   def attach_list(state) do
-    state = send_message(state, Protocol.message_type(:attach_list), <<>>, 0)
-    state = send_message(state, Protocol.message_type(:sync), <<>>, 0)
-    collect_results(state, [])
+    with_resilience(state, "attach_list", nil, fn state ->
+      state = send_message(state, Protocol.message_type(:attach_list), <<>>, 0)
+      state = send_message(state, Protocol.message_type(:sync), <<>>, 0)
+      collect_results(state, [])
+    end)
   end
 
   def cancel(state) do
@@ -475,6 +514,96 @@ defmodule ScratchBird.Connection do
         end
       error -> error
     end
+  end
+
+  defp start_resilience(state) do
+    connection_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    %{
+      state
+      | connection_id: connection_id,
+        circuit_breaker: CircuitBreaker.new(),
+        telemetry: Telemetry.Collector.new(),
+        keepalive_tracker: Keepalive.new_tracker(),
+        leak_guard: LeakDetector.checkout(%LeakDetector.Config{}, %{driver: "elixir"})
+    }
+  end
+
+  defp stop_resilience(state) do
+    if state.leak_guard do
+      LeakDetector.release(state.leak_guard)
+    end
+    state
+  end
+
+  defp validate_if_idle(state) do
+    tracker = state.keepalive_tracker
+    if tracker && Keepalive.Tracker.needs_validation?(tracker) do
+      case ping(state) do
+        {:ok, new_state} ->
+          tracker = Keepalive.Tracker.mark_active(tracker)
+          {:ok, %{new_state | keepalive_tracker: tracker}}
+
+        {:error, reason, new_state} ->
+          {:error, reason, new_state}
+      end
+    else
+      {:ok, state}
+    end
+  end
+
+  defp with_resilience(state, operation, sql, fun) do
+    cb = state.circuit_breaker || CircuitBreaker.new()
+    {allowed, cb} = CircuitBreaker.allow_request?(cb)
+    state = %{state | circuit_breaker: cb}
+    if not allowed do
+      {:error, "Circuit breaker is OPEN", state}
+    else
+      case validate_if_idle(state) do
+        {:error, reason, new_state} ->
+          {:error, reason, new_state}
+
+        {:ok, new_state} ->
+          telemetry = new_state.telemetry || Telemetry.Collector.new()
+          {span, telemetry} = Telemetry.Collector.start_span(telemetry, operation)
+          span =
+            if span && sql do
+              Telemetry.SpanContext.with_attribute(span, "db.statement", Telemetry.Collector.sanitize_query(sql))
+            else
+              span
+            end
+
+          case fun.(%{new_state | telemetry: telemetry}) do
+            {:ok, result, after_state} ->
+              {:ok, result, finish_operation(after_state, span, true)}
+
+            {:ok, after_state} ->
+              {:ok, finish_operation(after_state, span, true)}
+
+            {:error, reason, after_state} ->
+              {:error, reason, finish_operation(after_state, span, false)}
+          end
+      end
+    end
+  end
+
+  defp finish_operation(state, span, success) do
+    cb =
+      if success do
+        CircuitBreaker.record_success(state.circuit_breaker)
+      else
+        CircuitBreaker.record_failure(state.circuit_breaker)
+      end
+
+    tracker =
+      if success && state.keepalive_tracker do
+        Keepalive.Tracker.mark_active(state.keepalive_tracker)
+      else
+        state.keepalive_tracker
+      end
+
+    telemetry = Telemetry.Collector.end_span(state.telemetry, span, success)
+
+    %{state | circuit_breaker: cb, telemetry: telemetry, keepalive_tracker: tracker}
   end
 
   defp collect_results(state, rows) do

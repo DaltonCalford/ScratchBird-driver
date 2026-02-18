@@ -25,8 +25,8 @@ setMethod("dbDisconnect", "ScratchbirdConnection", function(conn, ...) {
   TRUE
 })
 
-setMethod("dbIsValid", "ScratchbirdConnection", function(conn, ...) {
-  sb_is_valid(conn@ptr$client)
+setMethod("dbIsValid", "ScratchbirdConnection", function(dbObj, ...) {
+  sb_is_valid(dbObj@ptr$client)
 })
 
 setMethod("dbSendQuery", "ScratchbirdConnection", function(conn, statement, ...) {

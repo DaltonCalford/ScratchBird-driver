@@ -1,4 +1,13 @@
+cmake_minimum_required(VERSION 3.20)
+project(scratchbird_client VERSION 0.1.0 LANGUAGES C CXX)
+
 add_library(scratchbird_client
+    src/connection.cpp
+    src/circuit_breaker.cpp
+    src/keepalive.cpp
+    src/leak_detector.cpp
+    src/telemetry.cpp
+    src/statement_cache.cpp
     src/driver_config.cpp
     src/network_client.cpp
     src/protocol/sbwp_protocol.cpp

@@ -2,8 +2,8 @@
 
 # ODBC Driver Guide
 
-**Status:** Alpha track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** Initial Early Beta (`0.1.0`) (SBWP v1.1 baseline; complex types limited)
+**Last Updated:** 2026-02-18
 
 ---
 

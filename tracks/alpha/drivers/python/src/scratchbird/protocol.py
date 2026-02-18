@@ -124,6 +124,10 @@ FEATURE_BATCH = 1 << 6
 FEATURE_PIPELINE = 1 << 7
 FEATURE_BINARY_COPY = 1 << 8
 FEATURE_SAVEPOINTS = 1 << 9
+
+# COPY format codes
+COPY_FORMAT_TEXT = 0
+COPY_FORMAT_BINARY = 1
 FEATURE_2PC = 1 << 10
 FEATURE_CHECKSUMS = 1 << 11
 
@@ -625,6 +629,106 @@ def parse_sblr_compiled(payload: bytes) -> Tuple[int, int, bytes]:
         raise ValueError("sblr compiled truncated")
     bytecode = payload[16 : 16 + sblr_length]
     return sblr_hash, sblr_version, bytecode
+
+
+# ============================================================================
+# COPY Message Builders (SBWP 1.1)
+# ============================================================================
+
+def build_copy_data_payload(data: bytes) -> bytes:
+    """Build a CopyData message payload."""
+    return data
+
+
+def build_copy_done_payload() -> bytes:
+    """Build a CopyDone message payload (empty)."""
+    return b""
+
+
+def build_copy_fail_payload(error_message: str) -> bytes:
+    """Build a CopyFail message payload."""
+    msg_bytes = error_message.encode("utf-8")
+    return struct.pack("<I", len(msg_bytes)) + msg_bytes
+
+
+# ============================================================================
+# COPY Message Parsers (SBWP 1.1)
+# ============================================================================
+
+@dataclass
+class CopyInResponse:
+    format: int
+    window_bytes: int
+
+
+@dataclass
+class CopyOutResponse:
+    format: int
+    column_count: int
+    column_formats: List[int]
+
+
+@dataclass
+class CopyBothResponse:
+    format: int
+    window_bytes: int
+
+
+@dataclass
+class CopyData:
+    data: bytes
+
+
+@dataclass
+class CopyFailInfo:
+    error_message: str
+
+
+def parse_copy_in_response(payload: bytes) -> CopyInResponse:
+    """Parse a CopyInResponse message from the server."""
+    if len(payload) < 5:
+        raise ValueError("copy in response truncated")
+    fmt = payload[0]
+    window = struct.unpack_from("<I", payload, 1)[0]
+    return CopyInResponse(fmt, window)
+
+
+def parse_copy_out_response(payload: bytes) -> CopyOutResponse:
+    """Parse a CopyOutResponse message from the server."""
+    if len(payload) < 3:
+        raise ValueError("copy out response truncated")
+    fmt = payload[0]
+    col_count = struct.unpack_from("<H", payload, 1)[0]
+    offset = 3
+    col_formats = []
+    for _ in range(col_count):
+        if offset + 4 > len(payload):
+            raise ValueError("copy out response truncated")
+        col_formats.append(struct.unpack_from("<I", payload, offset)[0])
+        offset += 4
+    return CopyOutResponse(fmt, col_count, col_formats)
+
+
+def parse_copy_both_response(payload: bytes) -> CopyBothResponse:
+    """Parse a CopyBothResponse message from the server."""
+    response = parse_copy_in_response(payload)
+    return CopyBothResponse(response.format, response.window_bytes)
+
+
+def parse_copy_data(payload: bytes) -> CopyData:
+    """Parse a CopyData message from the server."""
+    return CopyData(payload)
+
+
+def parse_copy_fail(payload: bytes) -> CopyFailInfo:
+    """Parse a CopyFail message from the server."""
+    if len(payload) < 4:
+        raise ValueError("copy fail truncated")
+    msg_len = struct.unpack_from("<I", payload, 0)[0]
+    if 4 + msg_len > len(payload):
+        raise ValueError("copy fail truncated")
+    msg = payload[4:4 + msg_len].decode("utf-8", errors="replace")
+    return CopyFailInfo(msg)
 
 
 def parse_error_message(payload: bytes) -> Tuple[str, str, str, str, str]:

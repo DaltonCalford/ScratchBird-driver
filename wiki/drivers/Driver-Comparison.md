@@ -1,13 +1,13 @@
 # Driver Comparison
 
-**Status:** SBWP v1.1 baseline (tracks: alpha/beta/p3)
-**Last Updated:** 2026-02-04
+**Status:** Initial early beta (`0.1.0`) for completed drivers; in-development drivers continue post-`0.1.0`
+**Last Updated:** 2026-02-18
 
 ---
 
 ## Overview
 
-All drivers in this repository speak the ScratchBird native wire protocol (SBWP v1.1)
+Core drivers in this repository speak the ScratchBird native wire protocol (SBWP v1.1)
 against the native listener on port 3092. This page compares the native drivers only
 and links to the language-specific guides.
 
@@ -15,24 +15,24 @@ and links to the language-specific guides.
 
 | Language | Driver | Status | Notes |
 |----------|--------|--------|-------|
-| C/C++ | libscratchbird_client | Beta | C API, CMake build |
-| ODBC | ScratchBird ODBC 3.8 | Alpha | BI/legacy tools |
-| Go | scratchbird-go | Alpha | database/sql driver |
-| Python | scratchbird | Alpha | DB-API 2.0 |
-| Node.js | scratchbird | Alpha | TypeScript types |
-| Ruby | scratchbird | Alpha | Native gem |
-| Rust | scratchbird | Alpha | Async runtime |
-| PHP | ScratchBird PDO | Alpha | Pure-PHP driver |
-| R | scratchbird | Beta | DBI driver |
-| Pascal/Delphi | ScratchBird.Client | Alpha | Delphi/FreePascal |
-| .NET | ScratchBird.Data | Alpha | ADO.NET provider |
-| Java | ScratchBird JDBC | Alpha | JDBC 4.x |
-| Elixir | ScratchBird.Ecto | P3 | Ecto adapter |
-| Swift | ScratchBird | Beta | Native SBWP client |
-| Dart | scratchbird | Beta | Flutter-ready |
-| Mojo | scratchbird | Alpha | Native SBWP client |
+| C/C++ | libscratchbird_client | Initial Early Beta (`0.1.0`) | C API, CMake build |
+| ODBC | ScratchBird ODBC 3.8 | Initial Early Beta (`0.1.0`) | BI/legacy tools |
+| Go | scratchbird-go | Initial Early Beta (`0.1.0`) | database/sql driver |
+| Python | scratchbird | Initial Early Beta (`0.1.0`) | DB-API 2.0 |
+| Node.js | scratchbird | Initial Early Beta (`0.1.0`) | TypeScript types |
+| Ruby | scratchbird | Initial Early Beta (`0.1.0`) | Native gem |
+| Rust | scratchbird | Initial Early Beta (`0.1.0`) | Async runtime |
+| PHP | ScratchBird PDO | Initial Early Beta (`0.1.0`) | Pure-PHP driver |
+| R | scratchbird | Initial Early Beta (`0.1.0`) | DBI driver |
+| Pascal/Delphi | ScratchBird.Client | Initial Early Beta (`0.1.0`) | Delphi/FreePascal |
+| .NET | ScratchBird.Data | Initial Early Beta (`0.1.0`) | ADO.NET provider |
+| Java | ScratchBird JDBC | Initial Early Beta (`0.1.0`) | JDBC 4.x |
+| Elixir | ScratchBird.Ecto | In development | Ecto adapter |
+| Swift | ScratchBird | In development | Partial; metadata/conformance incomplete |
+| Dart | scratchbird | In development | Partial; metadata/conformance incomplete |
+| Mojo | scratchbird | In development | Python bridge; native client pending |
 
-## Capability Baseline
+## Capability Baseline (Core Drivers)
 
 - SBWP v1.1, binary-only parameters
 - Server-side prepare/bind
@@ -42,7 +42,7 @@ and links to the language-specific guides.
 
 ## Pick the Right Driver
 
-- Use the native driver for your language to get full SBWP feature coverage.
+- Use the native driver for your language to get full SBWP feature coverage (core drivers).
 - Use ODBC for BI tools or legacy applications that only speak ODBC.
 
 ## Related

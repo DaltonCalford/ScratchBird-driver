@@ -235,6 +235,7 @@ client::NetworkClientConfig OdbcClientBridge::buildConfig(const ConnectionParams
     cfg.database = params.database;
     cfg.username = params.user;
     cfg.password = params.password;
+    cfg.protocol = params.protocol.empty() ? "native" : params.protocol;
     cfg.application_name = params.application_name.empty() ? "scratchbird_odbc" : params.application_name;
     cfg.connect_timeout_ms = params.connect_timeout * 1000;
     if (params.query_timeout > 0) {

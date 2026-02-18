@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Sql;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

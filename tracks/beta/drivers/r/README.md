@@ -11,6 +11,16 @@ R DBI-compatible driver for ScratchBird using the ScratchBird wire protocol.
 
 See `docs/BUILD_MATRIX.md`.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
+Dependencies: `DBI`, `openssl` (tests: `testthat`).
+
 ## Usage
 
 ```r

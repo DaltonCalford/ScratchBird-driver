@@ -11,6 +11,14 @@ Native ScratchBird driver for Node.js with full TypeScript types.
 
 See `docs/BUILD_MATRIX.md`.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Install
 
 ```bash
@@ -52,6 +60,7 @@ const client = new Client({
 ## Tests
 
 ```bash
+npm install
 npm test
 ```
 

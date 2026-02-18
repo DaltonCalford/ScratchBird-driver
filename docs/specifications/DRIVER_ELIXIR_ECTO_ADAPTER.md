@@ -1,7 +1,7 @@
 # Elixir Ecto Adapter Specification (ScratchBird)
 
-Status: P1
-Last Updated: 2026-01-30
+Status: In development (post-0.1.0)
+Last Updated: 2026-02-18
 
 ## Goal
 

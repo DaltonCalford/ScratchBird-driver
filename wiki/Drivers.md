@@ -2,8 +2,30 @@
 
 Complete installation and usage guide for each ScratchBird native SBWP driver.
 
-Note: Package names and registries are still being finalized for first release.
+Note: Package names and registries are being finalized for the initial early beta (`0.1.0`) release.
 If a package is not published yet, build the driver from this repository.
+
+---
+
+## Build/Test Snapshot (2026-02-07)
+
+Highlights from the latest local build/test pass:
+
+- Go: `go test ./...` pass.
+- Node: `npm test` pass; 4 integration tests skipped (`SCRATCHBIRD_NODE_URL` not set).
+- Python: `pytest` pass in venv; 4 integration tests skipped (`SCRATCHBIRD_TEST_DSN` not set).
+- Ruby: `ruby -Ilib:test test/test_types.rb` pass; integration requires `SCRATCHBIRD_RUBY_URL`.
+- Rust: `cargo test` pass (warnings: deprecated rustls, dead fields).
+- PHP: `vendor/bin/phpunit tests` pass; 4 tests skipped.
+- .NET: `dotnet test` pass (warnings: nullability/hiding).
+- Pascal: `fpc` compile passes; Indy 10 lacks TLS 1.3 (runtime connects blocked).
+- Java/JDBC: `./gradlew build` pass with JDK 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`).
+- Swift: `swift test` pass.
+- R: `R CMD check` completes with warnings/notes (missing documentation entries, replacement function arg name, generic/method consistency).
+- Elixir: `mix test` fails (Elixir 1.15 required).
+- Dart/Mojo: toolchains not installed in the current environment.
+
+See `docs/BUILD_MATRIX.md` for full build/test details and commands.
 
 ---
 
@@ -349,46 +371,51 @@ props.setProperty("sslmode", "require");
 
 ---
 
-## Elixir (Ecto) - Preview
+## Elixir (Ecto) - In Development
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md
 
 Notes:
-- SBWP v1.1 client + `ecto_sql`/`db_connection` adapter.
-- Binary-only transfer with server-side prepare/bind.
+- SBWP v1.1 client + `ecto_sql`/`db_connection` adapter (partial).
+- TLS can be disabled; binary-only transfer and zstd rejection are not enforced yet.
+- Type matrix and metadata helpers are incomplete; no conformance tests yet.
 
 ---
 
-## Swift Async/Await - Preview
+## Swift Async/Await - In Development
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md
 
 Notes:
 - Swift Concurrency API with async/await.
-- TCP transport in place; TLS wiring pending.
+- TCP transport in place; TLS not implemented yet.
+- Binary-only transfer and zstd rejection are not enforced yet.
+- Type matrix and metadata helpers are incomplete; no conformance tests yet.
 
 ---
 
-## Dart - Preview
+## Dart - In Development
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_DART_DATABASE_API.md
 
 Notes:
 - Flutter-ready Dart driver with async/await.
-- Binary-only SBWP v1.1 protocol implementation.
+- TLS can be disabled; binary-only transfer and zstd rejection are not enforced yet.
+- Type matrix and metadata helpers are incomplete; no conformance tests yet.
 
 ---
 
-## Mojo - Preview
+## Mojo - In Development
 
 Spec:
 https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/specifications/DRIVER_MOJO_NATIVE_API.md
 
 Notes:
-- SBWP v1.1 API surface available via Mojo-Python interop.
+- SBWP API surface available via Mojo-Python interop (not a native SBWP client yet).
+- No Mojo-native type wrappers or metadata helpers; no conformance tests yet.
 - Python bridge can be swapped for native Mojo TCP/TLS later.
 
 ---
@@ -402,4 +429,4 @@ For Metabase and Superset integration, see:
 
 ---
 
-**Last Updated:** 2026-02-02
+**Last Updated:** 2026-02-18

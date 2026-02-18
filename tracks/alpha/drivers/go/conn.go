@@ -31,25 +31,38 @@ const (
 )
 
 type Conn struct {
-	config       Config
-	raw          net.Conn
-	mu           sync.Mutex
-	closed       bool
-	attachmentID [16]byte
-	txnID        uint64
-	sequence     uint32
-	authed       bool
-	pending      []protocolMessage
-	params       map[string]string
+	config               Config
+	raw                  net.Conn
+	mu                   sync.Mutex
+	closed               bool
+	attachmentID         [16]byte
+	txnID                uint64
+	sequence             uint32
+	authed               bool
+	pending              []protocolMessage
+	params               map[string]string
 	notificationHandlers []func(notificationMessage)
-	lastPlan     *queryPlan
-	lastSblr     *sblrCompiled
+	lastPlan             *queryPlan
+	lastSblr             *sblrCompiled
+	connID               string
+	circuitBreaker       *CircuitBreaker
+	telemetry            *TelemetryCollector
+	keepaliveMgr         *KeepaliveManager
+	keepaliveTracker     *KeepaliveTracker
+	leakDetector         *LeakDetector
+	leakGuard            *LeakDetectionGuard
 }
 
 func (c *Conn) connect(ctx context.Context) error {
 	if c.raw != nil {
 		return nil
 	}
+	c.initResilience()
+	protocol, ok := normalizeNativeProtocol(c.config.Protocol)
+	if !ok {
+		return &Error{Kind: ErrNotSupported, Message: "only protocol=native is supported; connect to the native parser listener/port", SQLState: "0A000"}
+	}
+	c.config.Protocol = protocol
 	if !c.config.BinaryTransfer {
 		return &Error{Kind: ErrNotSupported, Message: "binary_transfer=false is not supported", SQLState: "0A000"}
 	}
@@ -75,7 +88,72 @@ func (c *Conn) connect(ctx context.Context) error {
 		_ = c.raw.Close()
 		return err
 	}
+	c.registerKeepalive()
 	return nil
+}
+
+func (c *Conn) initResilience() {
+	if c.connID == "" {
+		c.connID = fmt.Sprintf("conn-%p", c)
+	}
+	if c.circuitBreaker == nil {
+		c.circuitBreaker = NewCircuitBreaker(DefaultCircuitBreakerConfig())
+	}
+	if c.telemetry == nil {
+		c.telemetry = NewTelemetryCollector(DefaultTelemetryConfig())
+	}
+	if c.keepaliveMgr == nil {
+		c.keepaliveMgr = NewKeepaliveManager(DefaultKeepaliveConfig())
+	}
+	if c.leakDetector == nil {
+		c.leakDetector = NewLeakDetector(DefaultLeakDetectionConfig())
+	}
+	if c.leakGuard == nil && c.leakDetector != nil {
+		c.leakGuard = NewLeakDetectionGuard(c.connID, c.leakDetector, map[string]string{
+			"driver": "go",
+		})
+	}
+}
+
+func (c *Conn) registerKeepalive() {
+	if c.keepaliveMgr == nil || c.keepaliveTracker != nil {
+		return
+	}
+	c.keepaliveTracker = c.keepaliveMgr.Register(c.connID, func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return c.Ping(ctx)
+	})
+}
+
+func (c *Conn) beginOperation(op string, sql string) (*SpanContext, error) {
+	if c.circuitBreaker != nil && !c.circuitBreaker.AllowRequest() {
+		return nil, ErrCircuitOpen
+	}
+	if c.keepaliveTracker != nil {
+		c.keepaliveTracker.MarkActive()
+	}
+	var span *SpanContext
+	if c.telemetry != nil {
+		span = c.telemetry.StartSpan(op)
+		if span != nil && sql != "" {
+			span.Attributes["sql"] = SanitizeQuery(sql)
+		}
+	}
+	return span, nil
+}
+
+func (c *Conn) endOperation(span *SpanContext, success bool) {
+	if c.circuitBreaker != nil {
+		if success {
+			c.circuitBreaker.RecordSuccess()
+		} else {
+			c.circuitBreaker.RecordFailure()
+		}
+	}
+	if c.telemetry != nil {
+		c.telemetry.EndSpan(span, success)
+	}
 }
 
 func (c *Conn) applyTLS(ctx context.Context) error {
@@ -398,23 +476,33 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err != nil {
 		return nil, err
 	}
+	span, err := c.beginOperation("exec", normalized.sql)
+	if err != nil {
+		return nil, err
+	}
 	if len(normalized.args) == 0 {
 		if err := c.sendSimpleQuery(normalized.sql, ctx); err != nil {
+			c.endOperation(span, false)
 			return nil, err
 		}
 		tag, rows, lastID, err := c.drainUntilReady(ctx)
 		if err != nil {
+			c.endOperation(span, false)
 			return nil, err
 		}
+		c.endOperation(span, true)
 		return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 	}
 	if err := c.sendExtendedQuery(normalized.sql, normalized.args, ctx); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
 	tag, rows, lastID, err := c.drainUntilReady(ctx)
 	if err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
+	c.endOperation(span, true)
 	return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 }
 
@@ -426,15 +514,23 @@ func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
+	span, err := c.beginOperation("query", normalized.sql)
+	if err != nil {
+		return nil, err
+	}
 	if len(normalized.args) == 0 {
 		if err := c.sendSimpleQuery(normalized.sql, ctx); err != nil {
+			c.endOperation(span, false)
 			return nil, err
 		}
+		c.endOperation(span, true)
 		return newRows(c, ctx), nil
 	}
 	if err := c.sendExtendedQuery(normalized.sql, normalized.args, ctx); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
+	c.endOperation(span, true)
 	return newRows(c, ctx), nil
 }
 
@@ -627,10 +723,15 @@ func (c *Conn) QuerySblr(ctx context.Context, hash uint64, bytecode []byte, para
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
+	span, err := c.beginOperation("query_sblr", "")
+	if err != nil {
+		return nil, err
+	}
 	paramValues := make([]paramValue, 0, len(params))
 	for _, arg := range params {
 		value, _, err := encodeParam(arg.Value)
 		if err != nil {
+			c.endOperation(span, false)
 			return nil, err
 		}
 		value.format = formatBinary
@@ -638,11 +739,14 @@ func (c *Conn) QuerySblr(ctx context.Context, hash uint64, bytecode []byte, para
 	}
 	payload := buildSblrExecutePayload(hash, bytecode, paramValues)
 	if err := c.sendMessage(msgSblrExecute, payload, 0, false); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
 	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
+	c.endOperation(span, true)
 	return newRows(c, ctx), nil
 }
 
@@ -650,10 +754,15 @@ func (c *Conn) ExecSblr(ctx context.Context, hash uint64, bytecode []byte, param
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
+	span, err := c.beginOperation("exec_sblr", "")
+	if err != nil {
+		return nil, err
+	}
 	paramValues := make([]paramValue, 0, len(params))
 	for _, arg := range params {
 		value, _, err := encodeParam(arg.Value)
 		if err != nil {
+			c.endOperation(span, false)
 			return nil, err
 		}
 		value.format = formatBinary
@@ -661,15 +770,19 @@ func (c *Conn) ExecSblr(ctx context.Context, hash uint64, bytecode []byte, param
 	}
 	payload := buildSblrExecutePayload(hash, bytecode, paramValues)
 	if err := c.sendMessage(msgSblrExecute, payload, 0, false); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
 	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
 	tag, affected, lastID, err := c.drainUntilReady(ctx)
 	if err != nil {
+		c.endOperation(span, false)
 		return nil, err
 	}
+	c.endOperation(span, true)
 	return &Result{tag: tag, rowsAffected: int64(affected), lastInsertID: int64(lastID)}, nil
 }
 
@@ -717,6 +830,176 @@ func (c *Conn) AttachList(ctx context.Context) (driver.Rows, error) {
 	return newRows(c, ctx), nil
 }
 
+// CopyIn executes a COPY FROM operation, sending data to the server.
+// Returns the number of rows copied.
+func (c *Conn) CopyIn(ctx context.Context, sql string, data []byte, format int) (int64, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return 0, err
+	}
+	span, err := c.beginOperation("copy_in", sql)
+	if err != nil {
+		return 0, err
+	}
+
+	// Send COPY SQL as a query
+	if err := c.sendSimpleQuery(sql, ctx); err != nil {
+		c.endOperation(span, false)
+		return 0, err
+	}
+
+	// Wait for CopyInResponse
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+		}
+		msg, err := c.receive()
+		if err != nil {
+			c.endOperation(span, false)
+			return 0, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			c.endOperation(span, false)
+			return 0, buildProtocolError(msg.body)
+		case msgCopyInResponse:
+			_, err := parseCopyInResponse(msg.body)
+			if err != nil {
+				c.endOperation(span, false)
+				return 0, err
+			}
+			goto sendData
+		case msgReady:
+			c.endOperation(span, false)
+			return 0, &Error{Kind: ErrConnection, Message: "expected COPY IN response", SQLState: "08P01"}
+		}
+	}
+
+sendData:
+	// Send data in chunks
+	const chunkSize = 65536 // 64KB chunks
+	for offset := 0; offset < len(data); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk := data[offset:end]
+		payload := buildCopyDataPayload(chunk)
+		if err := c.sendMessage(msgCopyData, payload, 0, false); err != nil {
+			c.endOperation(span, false)
+			return 0, err
+		}
+	}
+
+	// Send CopyDone
+	if err := c.sendMessage(msgCopyDone, buildCopyDonePayload(), 0, false); err != nil {
+		c.endOperation(span, false)
+		return 0, err
+	}
+
+	// Wait for CommandComplete and Ready
+	tag, rows, _, err := c.drainUntilReady(ctx)
+	_ = tag
+	_ = format
+	c.endOperation(span, err == nil)
+	return int64(rows), err
+}
+
+// CopyOut executes a COPY TO operation, receiving data from the server.
+// Returns the copied data.
+func (c *Conn) CopyOut(ctx context.Context, sql string, format int) ([]byte, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	span, err := c.beginOperation("copy_out", sql)
+	if err != nil {
+		return nil, err
+	}
+
+	// Send COPY SQL as a query
+	if err := c.sendSimpleQuery(sql, ctx); err != nil {
+		c.endOperation(span, false)
+		return nil, err
+	}
+
+	// Wait for CopyOutResponse
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		msg, err := c.receive()
+		if err != nil {
+			c.endOperation(span, false)
+			return nil, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			c.endOperation(span, false)
+			return nil, buildProtocolError(msg.body)
+		case msgCopyOutResponse:
+			_, err := parseCopyOutResponse(msg.body)
+			if err != nil {
+				c.endOperation(span, false)
+				return nil, err
+			}
+			goto receiveData
+		case msgReady:
+			c.endOperation(span, false)
+			return nil, &Error{Kind: ErrConnection, Message: "expected COPY OUT response", SQLState: "08P01"}
+		}
+	}
+
+receiveData:
+	// Collect data until CopyDone
+	var chunks []byte
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		msg, err := c.receive()
+		if err != nil {
+			c.endOperation(span, false)
+			return nil, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			c.endOperation(span, false)
+			return nil, buildProtocolError(msg.body)
+		case msgCopyData:
+			chunks = append(chunks, msg.body...)
+		case msgCopyDone:
+			goto done
+		case msgCopyFail:
+			c.endOperation(span, false)
+			return nil, &Error{Kind: ErrOperator, Message: "COPY failed on server side", SQLState: "57014"}
+		case msgReady:
+			c.endOperation(span, false)
+			return nil, &Error{Kind: ErrConnection, Message: "unexpected READY during COPY", SQLState: "08P01"}
+		}
+	}
+
+done:
+	// Wait for CommandComplete and Ready
+	_, _, _, err = c.drainUntilReady(ctx)
+	_ = format
+	c.endOperation(span, err == nil)
+	return chunks, err
+}
+
 func (c *Conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -724,6 +1007,22 @@ func (c *Conn) Close() error {
 		return nil
 	}
 	c.closed = true
+	if c.keepaliveMgr != nil {
+		if c.keepaliveTracker != nil {
+			c.keepaliveMgr.Unregister(c.connID)
+			c.keepaliveTracker = nil
+		}
+		c.keepaliveMgr.Stop()
+		c.keepaliveMgr = nil
+	}
+	if c.leakGuard != nil {
+		c.leakGuard.Release()
+		c.leakGuard = nil
+	}
+	if c.leakDetector != nil {
+		c.leakDetector.Stop()
+		c.leakDetector = nil
+	}
 	if c.raw == nil {
 		return nil
 	}
@@ -958,6 +1257,161 @@ func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, err
 	}
 }
 
+// BatchInsert performs an efficient bulk insert using PARSE/BIND/EXECUTE cycles.
+// It reuses the prepared statement for all parameter sets.
+func (c *Conn) BatchInsert(ctx context.Context, sql string, paramsSlice [][]driver.Value) (int64, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return 0, err
+	}
+	span, err := c.beginOperation("batch_insert", sql)
+	if err != nil {
+		return 0, err
+	}
+	if len(paramsSlice) == 0 {
+		c.endOperation(span, true)
+		return 0, nil
+	}
+
+	// Parse the statement once
+	paramTypes := make([]uint32, 0, len(paramsSlice[0]))
+	for _, param := range paramsSlice[0] {
+		_, oid, err := encodeParam(param)
+		if err != nil {
+			c.endOperation(span, false)
+			return 0, err
+		}
+		paramTypes = append(paramTypes, oid)
+	}
+
+	parsePayload := buildParsePayload("", sql, paramTypes)
+	if err := c.sendMessage(msgParse, parsePayload, 0, false); err != nil {
+		c.endOperation(span, false)
+		return 0, err
+	}
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		c.endOperation(span, false)
+		return 0, err
+	}
+
+	// Wait for ParseComplete
+	for {
+		msg, err := c.receive()
+		if err != nil {
+			c.endOperation(span, false)
+			return 0, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			c.endOperation(span, false)
+			return 0, buildProtocolError(msg.body)
+		case msgParseComplete:
+			// Continue to bind/execute loop
+			goto executeBatch
+		case msgReady:
+			c.endOperation(span, false)
+			return 0, &Error{Kind: ErrSyntax, Message: "expected ParseComplete", SQLState: "08P01"}
+		}
+	}
+
+executeBatch:
+	var totalRows int64
+
+	// Execute BIND/EXECUTE for each parameter set
+	for _, params := range paramsSlice {
+		paramValues := make([]paramValue, 0, len(params))
+		for _, param := range params {
+			value, _, err := encodeParam(param)
+			if err != nil {
+				c.endOperation(span, false)
+				return totalRows, err
+			}
+			value.format = formatBinary
+			paramValues = append(paramValues, value)
+		}
+
+		resultFormats := []uint16{}
+		if c.config.BinaryTransfer {
+			resultFormats = []uint16{formatBinary}
+		}
+
+		bindPayload := buildBindPayload("", "", paramValues, resultFormats)
+		if err := c.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+			c.endOperation(span, false)
+			return totalRows, err
+		}
+
+		execPayload := buildExecutePayload("", 0)
+		if err := c.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+			c.endOperation(span, false)
+			return totalRows, err
+		}
+
+		// Wait for CommandComplete for this batch item
+		for {
+			msg, err := c.receive()
+			if err != nil {
+				c.endOperation(span, false)
+				return totalRows, err
+			}
+			if c.handleAsyncMessage(msg) {
+				continue
+			}
+			switch msg.header.typ {
+			case msgError:
+				c.endOperation(span, false)
+				return totalRows, buildProtocolError(msg.body)
+			case msgCommandComplete:
+				_, rows, _, _, err := parseCommandComplete(msg.body)
+				if err != nil {
+					c.endOperation(span, false)
+					return totalRows, err
+				}
+				totalRows += int64(rows)
+				goto nextBatch
+			}
+		}
+	nextBatch:
+	}
+
+	// Send SYNC to complete the batch
+	if err := c.sendMessage(msgSync, nil, 0, false); err != nil {
+		c.endOperation(span, false)
+		return totalRows, err
+	}
+
+	// Wait for Ready
+	for {
+		msg, err := c.receive()
+		if err != nil {
+			c.endOperation(span, false)
+			return totalRows, err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			c.endOperation(span, false)
+			return totalRows, buildProtocolError(msg.body)
+		case msgReady:
+			_, txnID, _, err := parseReady(msg.body)
+			if err == nil {
+				c.txnID = txnID
+			}
+			c.endOperation(span, true)
+			return totalRows, nil
+		}
+	}
+}
+
+// IsHealthy returns true if the connection is healthy.
+func (c *Conn) IsHealthy(ctx context.Context) bool {
+	return c.Ping(ctx) == nil
+}
+
 func buildProtocolError(payload []byte) error {
 	_, sqlState, msg, detail, hint, err := parseErrorMessage(payload)
 	if err != nil {
@@ -1010,13 +1464,19 @@ func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 	if err := s.conn.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
+	span, err := s.conn.beginOperation("stmt_exec", s.query)
+	if err != nil {
+		return nil, err
+	}
 	if s.paramCount >= 0 && s.paramCount != len(args) {
+		s.conn.endOperation(span, false)
 		return nil, &Error{Kind: ErrSyntax, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {
 		value, _, err := encodeParam(arg.Value)
 		if err != nil {
+			s.conn.endOperation(span, false)
 			return nil, err
 		}
 		value.format = formatBinary
@@ -1028,19 +1488,24 @@ func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (drive
 	}
 	bindPayload := buildBindPayload("", s.name, paramValues, resultFormats)
 	if err := s.conn.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
 	execPayload := buildExecutePayload("", 0)
 	if err := s.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
 	if err := s.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
 	tag, rows, lastID, err := s.conn.drainUntilReady(ctx)
 	if err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
+	s.conn.endOperation(span, true)
 	return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 }
 
@@ -1048,13 +1513,19 @@ func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	if err := s.conn.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
+	span, err := s.conn.beginOperation("stmt_query", s.query)
+	if err != nil {
+		return nil, err
+	}
 	if s.paramCount >= 0 && s.paramCount != len(args) {
+		s.conn.endOperation(span, false)
 		return nil, &Error{Kind: ErrSyntax, Message: "parameter count mismatch", SQLState: "07001"}
 	}
 	paramValues := make([]paramValue, 0, len(args))
 	for _, arg := range args {
 		value, _, err := encodeParam(arg.Value)
 		if err != nil {
+			s.conn.endOperation(span, false)
 			return nil, err
 		}
 		value.format = formatBinary
@@ -1066,15 +1537,19 @@ func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	}
 	bindPayload := buildBindPayload("", s.name, paramValues, resultFormats)
 	if err := s.conn.sendMessage(msgBind, bindPayload, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
 	execPayload := buildExecutePayload("", 0)
 	if err := s.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
 	if err := s.conn.sendMessage(msgSync, nil, 0, false); err != nil {
+		s.conn.endOperation(span, false)
 		return nil, err
 	}
+	s.conn.endOperation(span, true)
 	return newRows(s.conn, ctx), nil
 }
 

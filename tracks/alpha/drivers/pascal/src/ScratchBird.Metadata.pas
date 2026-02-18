@@ -8,6 +8,9 @@
 
 unit ScratchBird.Metadata;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 function MetadataSchemasQuery: string;

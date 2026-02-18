@@ -15,6 +15,11 @@ import hmac
 import secrets
 import urllib.parse
 import datetime
+from collections import Dict
+from scratchbird.circuit_breaker import CircuitBreaker, CircuitBreakerError
+from scratchbird.keepalive import KeepaliveTracker, KeepaliveConfig
+from scratchbird.leak_detector import LeakDetector
+from scratchbird.telemetry import TelemetryCollector
 
 OID_BOOL = 16
 OID_BYTEA = 17
@@ -478,6 +483,7 @@ class ScratchBirdConfig:
         self.dsn = dsn or ""
         self.host = "localhost"
         self.port = 3092
+        self.protocol = "native"
         self.database = ""
         self.user = ""
         self.password = ""
@@ -515,6 +521,12 @@ class ScratchBirdConfig:
             self.database = params["database"]
         if "dbname" in params and not self.database:
             self.database = params["dbname"]
+        if "protocol" in params:
+            self.protocol = normalize_native_protocol(params["protocol"])
+        elif "parser" in params:
+            self.protocol = normalize_native_protocol(params["parser"])
+        elif "dialect" in params:
+            self.protocol = normalize_native_protocol(params["dialect"])
         if "user" in params:
             self.user = params["user"]
         if "username" in params and not self.user:
@@ -604,6 +616,13 @@ class ScratchBirdConfig:
         if query:
             dsn = dsn + "?" + query
         return dsn
+
+
+def normalize_native_protocol(value) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in ("", "native", "scratchbird", "scratchbird-native", "scratchbird_native"):
+        return "native"
+    raise RuntimeError("Only protocol=native is supported; connect to the native parser listener/port.")
 
 
 def parse_dsn(dsn: str):
@@ -1140,9 +1159,17 @@ class ScratchBirdConnection:
         self._notification_handlers = []
         self._last_plan = None
         self._last_sblr = None
+        self._connection_id = "conn-" + secrets.token_hex(4)
+        self._circuit_breaker = CircuitBreaker()
+        self._telemetry = TelemetryCollector()
+        self._keepalive_tracker = KeepaliveTracker(KeepaliveConfig())
+        self._leak_detector = LeakDetector()
+        self._leak_detector.start()
+        self._leak_guard = self._leak_detector.checkout(self._connection_id, Dict[String, String]())
         self._connect()
 
     def _connect(self):
+        self.config.protocol = normalize_native_protocol(self.config.protocol)
         if not self.config.user or not self.config.database:
             raise RuntimeError("user and database are required")
         if not self.config.binary_transfer:
@@ -1271,13 +1298,44 @@ class ScratchBirdConnection:
             except Exception:
                 pass
             self._socket = None
+        if self._leak_guard:
+            self._leak_guard.release()
+        self._leak_detector.stop()
+
+    def _begin_operation(self, name: String, sql: String) -> Optional[SpanContext]:
+        if not self._circuit_breaker.allow_request():
+            raise RuntimeError("Circuit breaker is OPEN")
+        if self._keepalive_tracker.needs_validation():
+            self.ping()
+            self._keepalive_tracker.mark_active()
+        var span = self._telemetry.start_span(name)
+        if span:
+            span.value().with_attribute("db.statement", sql)
+        return span
+
+    def _end_operation(self, span: Optional[SpanContext], success: Bool):
+        if success:
+            self._circuit_breaker.record_success()
+        else:
+            self._circuit_breaker.record_failure()
+        self._keepalive_tracker.mark_active()
+        self._telemetry.end_span(span, success)
 
     def query(self, sql: str, params=None) -> ScratchBirdResult:
-        if params:
-            return self._extended_query(sql, params)
-        payload = build_query_payload(sql, 0, 0, 0)
-        self._send_message(MessageType.QUERY, payload)
-        return self._read_resultset()
+        var span = self._begin_operation("query", sql)
+        try:
+            if params:
+                var result = self._extended_query(sql, params)
+                self._end_operation(span, True)
+                return result
+            payload = build_query_payload(sql, 0, 0, 0)
+            self._send_message(MessageType.QUERY, payload)
+            var result = self._read_resultset()
+            self._end_operation(span, True)
+            return result
+        except Exception as e:
+            self._end_operation(span, False)
+            raise e
 
     def stream(self, sql: str, params=None, fetch_size: int = 1) -> ScratchBirdStream:
         return ScratchBirdStream(self, sql, params, fetch_size)

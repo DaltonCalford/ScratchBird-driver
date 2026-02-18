@@ -23,6 +23,7 @@ defmodule ScratchBird.Config do
     merged = Map.merge(base, normalize_keys(opts))
     merged
     |> Map.put_new(:port, @default_port)
+    |> Map.put_new(:protocol, "native")
     |> Map.put_new(:sslmode, "require")
     |> Map.put_new(:binary_transfer, true)
   end
@@ -84,6 +85,8 @@ defmodule ScratchBird.Config do
   defp normalize_alias("applicationname"), do: "application_name"
   defp normalize_alias("searchpath"), do: "search_path"
   defp normalize_alias("binarytransfer"), do: "binary_transfer"
+  defp normalize_alias("parser"), do: "protocol"
+  defp normalize_alias("dialect"), do: "protocol"
   defp normalize_alias("sslrootcert"), do: "sslrootcert"
   defp normalize_alias("sslcert"), do: "sslcert"
   defp normalize_alias("sslkey"), do: "sslkey"

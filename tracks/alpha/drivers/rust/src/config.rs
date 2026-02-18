@@ -14,6 +14,7 @@ use crate::errors::{Error, ErrorKind, Result};
 pub struct Config {
     pub host: String,
     pub port: u16,
+    pub protocol: String,
     pub database: String,
     pub user: String,
     pub password: String,
@@ -38,6 +39,7 @@ impl Default for Config {
         Self {
             host: "localhost".to_string(),
             port: 3092,
+            protocol: "native".to_string(),
             database: String::new(),
             user: String::new(),
             password: String::new(),
@@ -69,7 +71,7 @@ impl Config {
         if trimmed.contains("://") {
             Self::parse_uri(trimmed, &mut cfg)?;
         } else {
-            Self::parse_key_value(trimmed, &mut cfg);
+            Self::parse_key_value(trimmed, &mut cfg)?;
         }
         Ok(cfg)
     }
@@ -96,12 +98,12 @@ impl Config {
             cfg.database = path.to_string();
         }
         for (key, value) in url.query_pairs() {
-            apply_param(cfg, &key, &value);
+            apply_param(cfg, &key, &value)?;
         }
         Ok(())
     }
 
-    fn parse_key_value(dsn: &str, cfg: &mut Config) {
+    fn parse_key_value(dsn: &str, cfg: &mut Config) -> Result<()> {
         let separator = if dsn.contains(';') { ';' } else { ' ' };
         for token in dsn.split(separator) {
             let token = token.trim();
@@ -114,12 +116,20 @@ impl Config {
             if key.is_empty() {
                 continue;
             }
-            apply_param(cfg, key, value);
+            apply_param(cfg, key, value)?;
         }
+        Ok(())
     }
 }
 
-fn apply_param(cfg: &mut Config, key: &str, value: &str) {
+fn normalize_native_protocol(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => Some("native"),
+        _ => None,
+    }
+}
+
+fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
     match key.to_ascii_lowercase().as_str() {
         "host" | "server" | "data source" | "datasource" => cfg.host = value.to_string(),
         "port" => cfg.port = value.parse().unwrap_or(cfg.port),
@@ -128,6 +138,15 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) {
         "password" | "pwd" => cfg.password = value.to_string(),
         "schema" | "search_path" | "searchpath" | "currentschema" => cfg.schema = value.to_string(),
         "role" => cfg.role = value.to_string(),
+        "protocol" | "parser" | "dialect" => {
+            let normalized = normalize_native_protocol(value).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::Connection,
+                    "only protocol=native is supported; connect to the native parser listener/port",
+                )
+            })?;
+            cfg.protocol = normalized.to_string();
+        }
         "sslmode" | "ssl mode" => cfg.sslmode = value.to_string(),
         "sslrootcert" => cfg.sslrootcert = Some(value.to_string()),
         "sslcert" => cfg.sslcert = Some(value.to_string()),
@@ -163,4 +182,5 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) {
             cfg.extra.insert(other.to_string(), value.to_string());
         }
     }
+    Ok(())
 }

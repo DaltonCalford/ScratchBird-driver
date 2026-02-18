@@ -1,7 +1,7 @@
 # Driver Conformance Test Harness (Shared)
 
 Status: Draft
-Last Updated: 2026-01-09
+Last Updated: 2026-02-18
 
 ## Purpose
 
@@ -11,6 +11,7 @@ can verify SBWP v1.1 protocol compliance and full wire type coverage.
 ## Scope
 
 - SBWP v1.1 handshake, auth, and message framing
+- Native parser listener contract (single parser/dialect per configured port)
 - PARSE/BIND/EXECUTE behavior
 - Type encoding/decoding for all wire types
 - Cancellation behavior
@@ -26,26 +27,27 @@ A JSON manifest defines the test suite and required capabilities:
 {
   "schema_version": "1.0",
   "protocol_version": "sbwp-1.1",
-  "suite": "sbwp-v1.1",
-  "requires": ["tls", "auth", "prepare_bind", "types"],
+  "suite": "sbwp-v1.1-native-parser",
+  "requires": ["tls", "auth", "native_parser", "prepare_bind", "types"],
   "tests": [
-    {"id": "handshake", "kind": "query", "sql": "SELECT 1", "expect_rows": 1},
+    {"id": "handshake", "kind": "native_query", "sql": "SELECT 1", "expect_rows": 1},
     {"id": "auth", "kind": "auth"},
-    {"id": "prepare_bind", "kind": "prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
-    {"id": "describe_mismatch", "kind": "prepare_bind", "sql": "SELECT $1, $2", "params": [1], "expect_sqlstate": "07001"},
-    {"id": "paging_basic", "kind": "query", "sql": "SELECT id FROM basic_table", "dsn_append": "fetch_size=1"},
+    {"id": "prepare_bind", "kind": "native_prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
+    {"id": "describe_mismatch", "kind": "native_prepare_bind", "sql": "SELECT $1, $2", "params": [1], "expect_sqlstate": "07001"},
+    {"id": "paging_basic", "kind": "native_query", "sql": "SELECT id FROM basic_table", "dsn_append": "fetch_size=1"},
     {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]}
   ]
 }
 ```
 
 Supported test fields:
-- `kind`: auth | query | prepare_bind | cancel
-- `sql`: SQL to execute (query/prepare_bind/cancel)
-- `params`: bound parameters for prepare_bind
+- `kind`: auth | native_query | native_prepare_bind | cancel
+- `kind` compatibility aliases: `query` maps to `native_query`, `prepare_bind` maps to `native_prepare_bind`
+- `sql`: SQL to execute (`native_query`/`native_prepare_bind`/`cancel`)
+- `params`: bound parameters for `native_prepare_bind`
 - `expect_rows`: optional row count assertion
 - `expect_sqlstate`: expected SQLSTATE on failure
-- `timeout_ms`: per-test timeout in milliseconds (query/prepare_bind)
+- `timeout_ms`: per-test timeout in milliseconds (`native_query`/`native_prepare_bind`)
 - `dsn_append`: query-string or key-value suffix appended to base DSN
 - `requires`: optional list of env-gated requirements
 - `cancel_after_rows`: rows to read before issuing CANCEL (cancel kind)
@@ -55,8 +57,9 @@ Supported test fields:
 Each driver exposes a thin adapter that can:
 
 - Connect using a DSN
-- Execute a simple QUERY
-- Execute PARSE/BIND/EXECUTE with parameters
+- Enforce native parser listener usage (`protocol=native`; reject parser/protocol auto-fallback)
+- Execute a simple native parser query
+- Execute PARSE/BIND/EXECUTE with parameters through the native parser listener
 - Stream results and return row data
 - Issue CANCEL
 - Run metadata queries
@@ -98,8 +101,9 @@ Fixtures live under `docs/fixtures/` (e.g., `core_fixture.sql`,
 
 1. Handshake (TLS required)
 2. Authentication (valid credentials)
-3. Prepare/bind with nulls and binary formats
-4. One-way decode coverage for every wire type (server -> driver)
+3. Native parser query path (`protocol=native`, no parser auto-detect fallback)
+4. Prepare/bind with nulls and binary formats
+5. One-way decode coverage for every wire type (server -> driver)
 
 ## Execution Model
 

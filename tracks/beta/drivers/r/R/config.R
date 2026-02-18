@@ -9,6 +9,7 @@ sb_config <- function(dsn = "") {
   cfg <- list(
     host = "localhost",
     port = 3092L,
+    protocol = "native",
     database = "",
     user = "",
     password = "",
@@ -36,6 +37,14 @@ sb_config <- function(dsn = "") {
     cfg <- parse_kv_dsn(cfg, dsn)
   }
   cfg
+}
+
+normalize_native_protocol <- function(value) {
+  normalized <- tolower(trimws(as.character(value)))
+  if (normalized %in% c("", "native", "scratchbird", "scratchbird-native", "scratchbird_native")) {
+    return("native")
+  }
+  stop("Only protocol=native is supported; connect to the native parser listener/port.")
 }
 
 parse_uri_dsn <- function(cfg, dsn) {
@@ -97,6 +106,8 @@ apply_param <- function(cfg, key, value) {
     cfg$port <- as.integer(value)
   } else if (key %in% c("database", "dbname", "initial catalog")) {
     cfg$database <- value
+  } else if (key %in% c("protocol", "parser", "dialect")) {
+    cfg$protocol <- normalize_native_protocol(value)
   } else if (key %in% c("user", "username", "user id", "uid")) {
     cfg$user <- value
   } else if (key %in% c("password", "pwd")) {

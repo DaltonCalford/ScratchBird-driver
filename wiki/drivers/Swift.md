@@ -2,14 +2,14 @@
 
 # Swift Driver Guide
 
-**Status:** Beta track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** In development (post-`0.1.0`) (partial SBWP v1.1; TLS required; binary-only enforced; zstd rejected)
+**Last Updated:** 2026-02-18
 
 ---
 
 ## Overview
 
-Native ScratchBird driver using Swift Concurrency (async/await).
+Native ScratchBird driver using Swift Concurrency (async/await), partial SBWP support.
 
 ## Install
 

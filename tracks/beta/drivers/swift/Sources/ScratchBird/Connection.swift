@@ -52,6 +52,13 @@ public final class ScratchBirdConnection {
     private var notificationHandlers: [(NotificationMessage) -> Void] = []
     private var lastPlan: QueryPlanMessage?
     private var lastSblr: SblrCompiledMessage?
+    private let connectionId = UUID().uuidString
+    private let circuitBreaker = CircuitBreaker()
+    private let telemetry = TelemetryCollector()
+    private let keepaliveManager = KeepaliveManager()
+    private var keepaliveTracker: KeepaliveTracker?
+    private let leakDetector = LeakDetector()
+    private var leakGuard: LeakDetector.Guard?
 
     private init(config: ScratchBirdConfig, socket: ScratchBirdSocket) {
         self.config = config
@@ -60,6 +67,10 @@ public final class ScratchBirdConnection {
 
     public static func connect(_ config: ScratchBirdConfig) async throws -> ScratchBirdConnection {
         return try await Task.detached { () -> ScratchBirdConnection in
+            let protocolName = config.protocolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !["", "native", "scratchbird", "scratchbird-native", "scratchbird_native"].contains(protocolName) {
+                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Only protocol=native is supported; connect to the native parser listener/port."])
+            }
             let sslmode = config.sslmode.lowercased()
             if sslmode == "disable" {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
@@ -74,22 +85,26 @@ public final class ScratchBirdConnection {
             try socket.connect(host: config.host, port: config.port, useTls: true)
             let conn = ScratchBirdConnection(config: config, socket: socket)
             try conn.handshake()
+            conn.startResilience()
             return conn
         }.value
     }
 
     public func close() async throws {
         socket.close()
+        stopResilience()
     }
 
     public func query(_ sql: String, _ params: [Any?] = []) async throws -> ScratchBirdResult {
         return try await Task.detached { () -> ScratchBirdResult in
-            if params.isEmpty {
-                try self.sendSimpleQuery(sql, maxRows: 0, timeoutMs: 0)
-            } else {
-                try self.sendExtendedQuery(sql, params: params, maxRows: 0)
+            return try await self.withResilience(operation: "query", sql: sql) {
+                if params.isEmpty {
+                    try self.sendSimpleQuery(sql, maxRows: 0, timeoutMs: 0)
+                } else {
+                    try self.sendExtendedQuery(sql, params: params, maxRows: 0)
+                }
+                return try self.collectResults()
             }
-            return try self.collectResults()
         }.value
     }
 
@@ -115,68 +130,82 @@ public final class ScratchBirdConnection {
         conflictAction: UInt8 = 0
     ) async throws {
         try await Task.detached {
-            var flags: UInt16 = 0
-            let isolation = isolationLevel ?? isolationReadCommitted
-            if isolationLevel != nil { flags |= txnFlagHasIsolation }
-            if accessMode != nil { flags |= txnFlagHasAccess }
-            if deferrable != nil { flags |= txnFlagHasDeferrable }
-            if wait != nil { flags |= txnFlagHasWait }
-            if timeoutMs != nil { flags |= txnFlagHasTimeout }
-            if autocommitMode != nil { flags |= txnFlagHasAutocommit }
-            let payload = buildTxnBeginPayload(
-                flags: flags,
-                conflictAction: conflictAction,
-                autocommitMode: autocommitMode ?? 0,
-                isolationLevel: isolation,
-                accessMode: accessMode ?? 0,
-                deferrable: deferrable == true ? 1 : 0,
-                waitMode: wait == true ? 1 : 0,
-                timeoutMs: timeoutMs ?? 0
-            )
-            _ = try self.sendMessage(type: .txnBegin, payload: payload)
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_begin") {
+                var flags: UInt16 = 0
+                let isolation = isolationLevel ?? isolationReadCommitted
+                if isolationLevel != nil { flags |= txnFlagHasIsolation }
+                if accessMode != nil { flags |= txnFlagHasAccess }
+                if deferrable != nil { flags |= txnFlagHasDeferrable }
+                if wait != nil { flags |= txnFlagHasWait }
+                if timeoutMs != nil { flags |= txnFlagHasTimeout }
+                if autocommitMode != nil { flags |= txnFlagHasAutocommit }
+                let payload = buildTxnBeginPayload(
+                    flags: flags,
+                    conflictAction: conflictAction,
+                    autocommitMode: autocommitMode ?? 0,
+                    isolationLevel: isolation,
+                    accessMode: accessMode ?? 0,
+                    deferrable: deferrable == true ? 1 : 0,
+                    waitMode: wait == true ? 1 : 0,
+                    timeoutMs: timeoutMs ?? 0
+                )
+                _ = try self.sendMessage(type: .txnBegin, payload: payload)
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func commit(flags: UInt8 = 0) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .txnCommit, payload: buildTxnCommitPayload(flags: flags))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_commit") {
+                _ = try self.sendMessage(type: .txnCommit, payload: buildTxnCommitPayload(flags: flags))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func rollback(flags: UInt8 = 0) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .txnRollback, payload: buildTxnRollbackPayload(flags: flags))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_rollback") {
+                _ = try self.sendMessage(type: .txnRollback, payload: buildTxnRollbackPayload(flags: flags))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func savepoint(_ name: String) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .txnSavepoint, payload: buildTxnSavepointPayload(name: name))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_savepoint") {
+                _ = try self.sendMessage(type: .txnSavepoint, payload: buildTxnSavepointPayload(name: name))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func releaseSavepoint(_ name: String) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .txnRelease, payload: buildTxnReleasePayload(name: name))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_release") {
+                _ = try self.sendMessage(type: .txnRelease, payload: buildTxnReleasePayload(name: name))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func rollbackToSavepoint(_ name: String) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .txnRollbackTo, payload: buildTxnRollbackToPayload(name: name))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "txn_rollback_to") {
+                _ = try self.sendMessage(type: .txnRollbackTo, payload: buildTxnRollbackToPayload(name: name))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
     public func setOption(_ name: String, value: String) async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .setOption, payload: buildSetOptionPayload(name: name, value: value))
-            _ = try self.drainUntilReady()
+            try await self.withResilience(operation: "set_option") {
+                _ = try self.sendMessage(type: .setOption, payload: buildSetOptionPayload(name: name, value: value))
+                _ = try self.drainUntilReady()
+            }
         }.value
     }
 
@@ -403,6 +432,70 @@ public final class ScratchBirdConnection {
         default:
             return false
         }
+    }
+
+    private func startResilience() {
+        keepaliveManager.start()
+        keepaliveTracker = keepaliveManager.register(connectionId: connectionId) { [weak self] in
+            guard let self else { return false }
+            do {
+                try await self.ping()
+                return true
+            } catch {
+                return false
+            }
+        }
+        leakDetector.start()
+        leakGuard = leakDetector.checkout(connectionId: connectionId, metadata: ["driver": "swift"])
+    }
+
+    private func stopResilience() {
+        if let _ = keepaliveTracker {
+            keepaliveManager.unregister(connectionId: connectionId)
+            keepaliveTracker = nil
+        }
+        keepaliveManager.stop()
+        if let leakGuard {
+            leakGuard.release()
+            self.leakGuard = nil
+        }
+        leakDetector.stop()
+    }
+
+    private func validateIfIdle() async throws {
+        if let keepaliveTracker, keepaliveTracker.needsValidation() {
+            try await ping()
+            keepaliveTracker.markActive()
+        }
+    }
+
+    private func withResilience<T>(operation: String, sql: String? = nil, _ body: () async throws -> T) async throws -> T {
+        if !circuitBreaker.allowRequest() {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Circuit breaker is OPEN"])
+        }
+        try await validateIfIdle()
+        let span = telemetry.startSpan(operation)
+        if let span, let sql {
+            span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql))
+        }
+        do {
+            let result = try await body()
+            finishOperation(span: span, success: true)
+            return result
+        } catch {
+            finishOperation(span: span, success: false)
+            throw error
+        }
+    }
+
+    private func finishOperation(span: SpanContext?, success: Bool) {
+        if success {
+            circuitBreaker.recordSuccess()
+            keepaliveTracker?.markActive()
+        } else {
+            circuitBreaker.recordFailure()
+        }
+        telemetry.endSpan(span, success: success)
     }
 
     private func handleParameterStatus(_ payload: Data) {

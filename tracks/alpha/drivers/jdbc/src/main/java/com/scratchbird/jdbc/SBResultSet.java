@@ -1363,7 +1363,7 @@ public class SBResultSet implements ResultSet {
     private void rebuildColumnIndex() {
         columnNameIndex.clear();
         for (int i = 0; i < columns.size(); i++) {
-            columnNameIndex.put(columns.get(i).name.toLowerCase(), i + 1);
+            columnNameIndex.put(columns.get(i).getName().toLowerCase(), i + 1);
         }
     }
 

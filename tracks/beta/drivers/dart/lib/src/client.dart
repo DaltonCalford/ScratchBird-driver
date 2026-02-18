@@ -10,11 +10,16 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:math';
 
 import 'config.dart';
 import 'protocol.dart';
 import 'scram.dart';
 import 'types.dart';
+import 'circuit_breaker.dart';
+import 'keepalive.dart';
+import 'leak_detector.dart';
+import 'telemetry.dart';
 
 class ScratchBirdColumn {
   final String name;
@@ -72,6 +77,13 @@ class ScratchBirdClient {
   final List<void Function(NotificationMessage)> _notificationHandlers = [];
   QueryPlanMessage? _lastPlan;
   SblrCompiledMessage? _lastSblr;
+  final String _connectionId = '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
+  final CircuitBreaker _circuitBreaker = CircuitBreaker();
+  final TelemetryCollector _telemetry = TelemetryCollector();
+  final KeepaliveManager _keepaliveManager = KeepaliveManager();
+  KeepaliveTracker? _keepaliveTracker;
+  final LeakDetector _leakDetector = LeakDetector();
+  LeakDetectionGuard? _leakGuard;
 
   ScratchBirdClient(this.config);
 
@@ -82,6 +94,7 @@ class ScratchBirdClient {
   }
 
   Future<void> _connect() async {
+    normalizeNativeProtocol(config.protocol);
     final host = config.host;
     final port = config.port;
     final sslmode = config.sslmode.toLowerCase();
@@ -102,19 +115,23 @@ class ScratchBirdClient {
     _iter = StreamIterator(_socket!);
     _reader = _SocketReader(_iter);
     await _handshake();
+    _startResilience();
   }
 
   Future<void> close() async {
     await _socket?.close();
+    _stopResilience();
   }
 
   Future<ScratchBirdResult> query(String sql, [List<dynamic> params = const []]) async {
-    if (params.isEmpty) {
-      await _sendSimpleQuery(sql, 0, 0);
+    return _withResilience("query", sql, () async {
+      if (params.isEmpty) {
+        await _sendSimpleQuery(sql, 0, 0);
+        return _collectResults();
+      }
+      await _sendExtendedQuery(sql, params, 0);
       return _collectResults();
-    }
-    await _sendExtendedQuery(sql, params, 0);
-    return _collectResults();
+    });
   }
 
   void onNotification(void Function(NotificationMessage) handler) {
@@ -133,56 +150,70 @@ class ScratchBirdClient {
     int? autocommitMode,
     int conflictAction = 0,
   }) async {
-    var flags = 0;
-    final isolation = isolationLevel ?? isolationReadCommitted;
-    if (isolationLevel != null) flags |= txnFlagHasIsolation;
-    if (accessMode != null) flags |= txnFlagHasAccess;
-    if (deferrable != null) flags |= txnFlagHasDeferrable;
-    if (wait != null) flags |= txnFlagHasWait;
-    if (timeoutMs != null) flags |= txnFlagHasTimeout;
-    if (autocommitMode != null) flags |= txnFlagHasAutocommit;
-    final payload = buildTxnBeginPayload(
-      flags,
-      conflictAction,
-      autocommitMode ?? 0,
-      isolation,
-      accessMode ?? 0,
-      deferrable == true ? 1 : 0,
-      wait == true ? 1 : 0,
-      timeoutMs ?? 0,
-    );
-    await _sendMessage(MessageType.txnBegin, payload);
-    await _drainUntilReady();
+    await _withResilience("txn_begin", null, () async {
+      var flags = 0;
+      final isolation = isolationLevel ?? isolationReadCommitted;
+      if (isolationLevel != null) flags |= txnFlagHasIsolation;
+      if (accessMode != null) flags |= txnFlagHasAccess;
+      if (deferrable != null) flags |= txnFlagHasDeferrable;
+      if (wait != null) flags |= txnFlagHasWait;
+      if (timeoutMs != null) flags |= txnFlagHasTimeout;
+      if (autocommitMode != null) flags |= txnFlagHasAutocommit;
+      final payload = buildTxnBeginPayload(
+        flags,
+        conflictAction,
+        autocommitMode ?? 0,
+        isolation,
+        accessMode ?? 0,
+        deferrable == true ? 1 : 0,
+        wait == true ? 1 : 0,
+        timeoutMs ?? 0,
+      );
+      await _sendMessage(MessageType.txnBegin, payload);
+      await _drainUntilReady();
+    });
   }
 
   Future<void> commit([int flags = 0]) async {
-    await _sendMessage(MessageType.txnCommit, buildTxnCommitPayload(flags));
-    await _drainUntilReady();
+    await _withResilience("txn_commit", null, () async {
+      await _sendMessage(MessageType.txnCommit, buildTxnCommitPayload(flags));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> rollback([int flags = 0]) async {
-    await _sendMessage(MessageType.txnRollback, buildTxnRollbackPayload(flags));
-    await _drainUntilReady();
+    await _withResilience("txn_rollback", null, () async {
+      await _sendMessage(MessageType.txnRollback, buildTxnRollbackPayload(flags));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> savepoint(String name) async {
-    await _sendMessage(MessageType.txnSavepoint, buildTxnSavepointPayload(name));
-    await _drainUntilReady();
+    await _withResilience("txn_savepoint", null, () async {
+      await _sendMessage(MessageType.txnSavepoint, buildTxnSavepointPayload(name));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> releaseSavepoint(String name) async {
-    await _sendMessage(MessageType.txnRelease, buildTxnReleasePayload(name));
-    await _drainUntilReady();
+    await _withResilience("txn_release", null, () async {
+      await _sendMessage(MessageType.txnRelease, buildTxnReleasePayload(name));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> rollbackToSavepoint(String name) async {
-    await _sendMessage(MessageType.txnRollbackTo, buildTxnRollbackToPayload(name));
-    await _drainUntilReady();
+    await _withResilience("txn_rollback_to", null, () async {
+      await _sendMessage(MessageType.txnRollbackTo, buildTxnRollbackToPayload(name));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> setOption(String name, String value) async {
-    await _sendMessage(MessageType.setOption, buildSetOptionPayload(name, value));
-    await _drainUntilReady();
+    await _withResilience("set_option", null, () async {
+      await _sendMessage(MessageType.setOption, buildSetOptionPayload(name, value));
+      await _drainUntilReady();
+    });
   }
 
   Future<void> ping() async {
@@ -589,6 +620,67 @@ class ScratchBirdClient {
     }
     final name = utf8.decode(buffer.sublist(offset, idx));
     return _CStringResult(name, idx + 1);
+  }
+
+  void _startResilience() {
+    _keepaliveManager.start();
+    _keepaliveTracker = _keepaliveManager.register(_connectionId, () async {
+      try {
+        await ping();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    });
+    _leakDetector.start();
+    _leakGuard = _leakDetector.checkout(_connectionId, metadata: {'driver': 'dart'});
+  }
+
+  void _stopResilience() {
+    if (_keepaliveTracker != null) {
+      _keepaliveManager.unregister(_connectionId);
+      _keepaliveTracker = null;
+    }
+    _keepaliveManager.stop();
+    _leakGuard?.release();
+    _leakGuard = null;
+    _leakDetector.stop();
+  }
+
+  Future<void> _validateIfIdle() async {
+    if (_keepaliveTracker != null && _keepaliveTracker!.needsValidation()) {
+      await ping();
+      _keepaliveTracker!.markActive();
+    }
+  }
+
+  Future<T> _withResilience<T>(String operation, String? sql, Future<T> Function() body) async {
+    if (!_circuitBreaker.allowRequest()) {
+      throw Exception('Circuit breaker is OPEN');
+    }
+    await _validateIfIdle();
+    final span = _telemetry.startSpan(operation);
+    if (span != null && sql != null) {
+      span.withAttribute('db.statement', TelemetryCollector.sanitizeQuery(sql));
+    }
+    try {
+      final result = await body();
+      _finishOperation(span, true);
+      return result;
+    } catch (e) {
+      _finishOperation(span, false);
+      rethrow;
+    }
+  }
+
+  void _finishOperation(SpanContext? span, bool success) {
+    if (success) {
+      _circuitBreaker.recordSuccess();
+      _keepaliveTracker?.markActive();
+    } else {
+      _circuitBreaker.recordFailure();
+    }
+    _telemetry.endSpan(span, success);
   }
 }
 

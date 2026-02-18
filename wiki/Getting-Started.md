@@ -1,6 +1,6 @@
 # Getting Started
 
-All drivers connect to ScratchBird using SBWP v1.1 over TLS 1.3. Binary transfer mode is required.
+Released drivers connect to ScratchBird using SBWP v1.1 over TLS 1.3 and enforce binary transfer. In-development drivers are partial and may not enforce all requirements yet.
 
 ## Connection Strings
 
@@ -46,7 +46,7 @@ host=localhost port=3092 dbname=mydb user=myuser password=mypass sslmode=require
 
 ### Key Aliases
 
-These aliases are accepted by all drivers:
+These aliases are accepted by core drivers:
 
 - `database` / `dbname`
 - `user` / `username`
@@ -57,16 +57,16 @@ These aliases are accepted by all drivers:
 
 ### Binary Transfer Mode
 
-All drivers enforce binary-only transfer. Setting `binary_transfer=false` is rejected with SQLSTATE 0A000 (feature not supported).
+Released drivers enforce binary-only transfer. Setting `binary_transfer=false` is rejected with SQLSTATE 0A000 (feature not supported). In-development drivers may not yet enforce this.
 
 ### Compression
 
-zstd compression is currently disabled pending server-side implementation. Setting `compression=zstd` will be rejected.
+zstd compression is currently disabled pending server-side implementation. Released drivers reject `compression=zstd`; in-development drivers may not yet enforce this.
 
 ## TLS Requirements
 
-- TLS 1.3 is mandatory
-- `sslmode=disable` is rejected by all drivers
+- TLS 1.3 is mandatory for core drivers
+- `sslmode=disable` is rejected by released drivers (in-development drivers may still allow plaintext)
 - Minimum mode is `sslmode=require`
 
 ## Quick Examples

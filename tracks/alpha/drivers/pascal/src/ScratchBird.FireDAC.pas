@@ -8,6 +8,9 @@
 }
 unit ScratchBird.FireDAC;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

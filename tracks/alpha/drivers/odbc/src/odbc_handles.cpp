@@ -11,6 +11,7 @@
 #include "scratchbird/core/status.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cerrno>
 #include <cstdint>
@@ -33,6 +34,7 @@ namespace scratchbird {
 namespace odbc {
 
 namespace {
+std::atomic<uint64_t> kConnectionIdCounter{0};
 const char* mapStatusToSqlState(core::Status status) {
     switch (status) {
         case core::Status::OK:
@@ -185,6 +187,16 @@ std::string toLower(std::string value) {
         ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     }
     return value;
+}
+
+bool normalizeNativeProtocol(const std::string& input, std::string& out) {
+    std::string lower = toLower(trimString(input));
+    if (lower.empty() || lower == "native" || lower == "scratchbird" ||
+        lower == "scratchbird-native" || lower == "scratchbird_native") {
+        out = "native";
+        return true;
+    }
+    return false;
 }
 
 std::string formatDateStruct(const SQL_DATE_STRUCT& date) {
@@ -1034,9 +1046,14 @@ void OdbcHandle::setError(const std::string& sqlstate, SQLINTEGER native_error,
 // OdbcEnvironment Implementation
 // =============================================================================
 
-OdbcEnvironment::OdbcEnvironment() = default;
+OdbcEnvironment::OdbcEnvironment() {
+    keepalive_manager_.Start();
+    leak_detector_.Start();
+}
 
 OdbcEnvironment::~OdbcEnvironment() {
+    keepalive_manager_.Stop();
+    leak_detector_.Stop();
     std::lock_guard lock(connections_mutex_);
     connections_.clear();
 }
@@ -1154,7 +1171,9 @@ size_t OdbcEnvironment::getConnectionCount() const {
 
 OdbcConnection::OdbcConnection(OdbcEnvironment* env)
     : env_(env),
-      client_bridge_(std::make_unique<OdbcClientBridge>()) {}
+      client_bridge_(std::make_unique<OdbcClientBridge>()) {
+    connection_id_ = "conn-" + std::to_string(kConnectionIdCounter.fetch_add(1) + 1);
+}
 
 OdbcConnection::~OdbcConnection() {
     if (connected_) {
@@ -1270,6 +1289,8 @@ SQLRETURN OdbcConnection::disconnect() {
         setError("08003", 0, "Connection not open");
         return SQL_ERROR;
     }
+
+    unregisterResilience();
 
     // Close all statements
     {
@@ -1490,6 +1511,9 @@ SQLRETURN OdbcConnection::endTransaction(SQLSMALLINT completion_type) {
         setError("08003", 0, "Connection not open");
         return SQL_ERROR;
     }
+    if (!allowRequest()) {
+        return SQL_ERROR;
+    }
 
     if (auto_commit_ == SQL_AUTOCOMMIT_ON && !in_transaction_) {
         // No explicit transaction to commit/rollback
@@ -1500,26 +1524,31 @@ SQLRETURN OdbcConnection::endTransaction(SQLSMALLINT completion_type) {
         auto result = client_bridge_ ? client_bridge_->commit() : SQL_ERROR;
         if (result == SQL_SUCCESS) {
             in_transaction_ = (auto_commit_ == SQL_AUTOCOMMIT_OFF);
+            recordSuccess();
         } else if (client_bridge_) {
             auto status = client_bridge_->lastStatus();
             auto message = client_bridge_->lastError();
             setError(mapStatusToSqlState(status), static_cast<SQLINTEGER>(status),
                      message.empty() ? "Commit failed" : message);
+            recordFailure();
         }
         return result;
     } else if (completion_type == SQL_ROLLBACK) {
         auto result = client_bridge_ ? client_bridge_->rollback() : SQL_ERROR;
         if (result == SQL_SUCCESS) {
             in_transaction_ = (auto_commit_ == SQL_AUTOCOMMIT_OFF);
+            recordSuccess();
         } else if (client_bridge_) {
             auto status = client_bridge_->lastStatus();
             auto message = client_bridge_->lastError();
             setError(mapStatusToSqlState(status), static_cast<SQLINTEGER>(status),
                      message.empty() ? "Rollback failed" : message);
+            recordFailure();
         }
         return result;
     } else {
         setError("HY012", 0, "Invalid transaction operation code");
+        recordFailure();
         return SQL_ERROR;
     }
 }
@@ -1531,6 +1560,9 @@ SQLRETURN OdbcConnection::beginTransaction() {
         setError("08003", 0, "Connection not open");
         return SQL_ERROR;
     }
+    if (!allowRequest()) {
+        return SQL_ERROR;
+    }
 
     if (in_transaction_) {
         return SQL_SUCCESS;  // Already in transaction
@@ -1539,11 +1571,13 @@ SQLRETURN OdbcConnection::beginTransaction() {
     auto result = client_bridge_ ? client_bridge_->beginTransaction() : SQL_ERROR;
     if (result == SQL_SUCCESS) {
         in_transaction_ = true;
+        recordSuccess();
     } else if (client_bridge_) {
         auto status = client_bridge_->lastStatus();
         auto message = client_bridge_->lastError();
         setError(mapStatusToSqlState(status), static_cast<SQLINTEGER>(status),
                  message.empty() ? "Begin transaction failed" : message);
+        recordFailure();
     }
 
     return result;
@@ -1985,7 +2019,13 @@ SQLRETURN OdbcConnection::parseConnectionString(const std::string& conn_str) {
         } else if (key == "sslrootcert") {
             params_.ssl_root_cert = value;
         } else if (key == "protocol") {
-            params_.protocol = value;
+            std::string normalized;
+            if (!normalizeNativeProtocol(value, normalized)) {
+                setError("08001", 0,
+                         "Only protocol=native is supported; connect to a native parser listener/port.");
+                return SQL_ERROR;
+            }
+            params_.protocol = normalized;
         } else if (key == "timeout" || key == "connecttimeout") {
             try {
                 params_.connect_timeout = static_cast<uint32_t>(std::stoul(value));
@@ -2117,7 +2157,13 @@ SQLRETURN OdbcConnection::applyDsnConfig(const std::string& dsn_name) {
 
     auto protocol = getEntry("protocol");
     if (!protocol.empty()) {
-        params_.protocol = protocol;
+        std::string normalized;
+        if (!normalizeNativeProtocol(protocol, normalized)) {
+            setError("08001", 0,
+                     "Only protocol=native is supported; connect to a native parser listener/port.");
+            return SQL_ERROR;
+        }
+        params_.protocol = normalized;
     }
 
     auto timeout = getEntry("timeout");
@@ -2198,6 +2244,14 @@ SQLRETURN OdbcConnection::establishConnection() {
         return SQL_ERROR;
     }
 
+    std::string normalized_protocol;
+    if (!normalizeNativeProtocol(params_.protocol, normalized_protocol)) {
+        setError("08001", 0,
+                 "Only protocol=native is supported; connect to a native parser listener/port.");
+        return SQL_ERROR;
+    }
+    params_.protocol = normalized_protocol;
+
     std::string error;
     auto connect_result = client_bridge_->connect(params_, error);
     if (connect_result != SQL_SUCCESS) {
@@ -2235,7 +2289,44 @@ SQLRETURN OdbcConnection::establishConnection() {
         return result;
     }
 
+    registerResilience();
     return SQL_SUCCESS;
+}
+
+bool OdbcConnection::allowRequest() {
+    if (!circuit_breaker_.AllowRequest()) {
+        setError("08006", 0, "Circuit breaker is OPEN");
+        return false;
+    }
+    return true;
+}
+
+void OdbcConnection::recordSuccess() {
+    circuit_breaker_.RecordSuccess();
+    if (keepalive_tracker_) {
+        keepalive_tracker_->MarkActive();
+    }
+}
+
+void OdbcConnection::recordFailure() {
+    circuit_breaker_.RecordFailure();
+}
+
+void OdbcConnection::registerResilience() {
+    if (!env_) {
+        return;
+    }
+    keepalive_tracker_ = env_->keepaliveManager().Register(connection_id_, static_cast<SQLHDBC>(this));
+    leak_guard_ = env_->leakDetector().Checkout(connection_id_);
+}
+
+void OdbcConnection::unregisterResilience() {
+    if (!env_) {
+        return;
+    }
+    env_->keepaliveManager().Unregister(connection_id_);
+    keepalive_tracker_ = nullptr;
+    leak_guard_.reset();
 }
 
 std::string OdbcConnection::buildConnectionString() const {
@@ -2298,12 +2389,18 @@ SQLRETURN OdbcConnection::executeSQL(const std::string& sql,
         setError("08003", 0, "Connection not open");
         return SQL_ERROR;
     }
+    if (!allowRequest()) {
+        return SQL_ERROR;
+    }
     auto result = client_bridge_->executeSQL(sql, results, columns, rows_affected);
     if (result != SQL_SUCCESS) {
         auto status = client_bridge_->lastStatus();
         auto message = client_bridge_->lastError();
         setError(mapStatusToSqlState(status), static_cast<SQLINTEGER>(status),
                  message.empty() ? "Execution failed" : message);
+        recordFailure();
+    } else {
+        recordSuccess();
     }
     return result;
 }

@@ -12,3 +12,7 @@ export 'src/client.dart';
 export 'src/config.dart';
 export 'src/types.dart';
 export 'src/metadata.dart';
+export 'src/circuit_breaker.dart';
+export 'src/keepalive.dart';
+export 'src/leak_detector.dart';
+export 'src/telemetry.dart';

@@ -2,8 +2,8 @@
 
 # C/C++ Client Driver Guide
 
-**Status:** Beta track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** Initial Early Beta (`0.1.0`) (SBWP v1.1 baseline; C API type coverage expanding)
+**Last Updated:** 2026-02-18
 
 ---
 

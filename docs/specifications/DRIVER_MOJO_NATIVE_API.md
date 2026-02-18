@@ -1,12 +1,12 @@
 # Mojo Native Driver Specification (ScratchBird)
 
-Status: P2
-Last Updated: 2026-01-30
+Status: In development (post-0.1.0)
+Last Updated: 2026-02-18
 
 ## Goal
 
-Provide a native Mojo driver for ScratchBird to support AI/ML infrastructure
-workloads with low-latency binary protocol access (SBWP v1.1).
+Provide a native Mojo driver for ScratchBird to support low-latency binary
+protocol access (SBWP v1.1) for general application workloads.
 
 ## Constraints
 

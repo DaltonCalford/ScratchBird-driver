@@ -26,6 +26,9 @@ func TestParseURI(t *testing.T) {
 	if cfg.Compression != "zstd" || cfg.BinaryTransfer {
 		t.Fatalf("unexpected compression/binary")
 	}
+	if cfg.Protocol != "native" {
+		t.Fatalf("expected protocol=native, got %q", cfg.Protocol)
+	}
 }
 
 func TestParseKeyValue(t *testing.T) {
@@ -41,5 +44,15 @@ func TestParseKeyValue(t *testing.T) {
 	}
 	if cfg.ConnectTimeout.Seconds() != 5 || cfg.SocketTimeout.Seconds() != 7 {
 		t.Fatalf("unexpected timeouts: %v/%v", cfg.ConnectTimeout, cfg.SocketTimeout)
+	}
+	if cfg.Protocol != "native" {
+		t.Fatalf("expected protocol=native, got %q", cfg.Protocol)
+	}
+}
+
+func TestParseRejectsNonNativeProtocol(t *testing.T) {
+	_, err := ParseConfig("scratchbird://localhost:3092/db?protocol=postgresql")
+	if err == nil {
+		t.Fatalf("expected parse failure for non-native protocol")
 	}
 }

@@ -21,6 +21,14 @@ from .errors import (
     NotSupportedError,
 )
 from .types import Geometry, Json, Jsonb, Range, RawValue
+from .protocol import COPY_FORMAT_TEXT, COPY_FORMAT_BINARY
+from .pool import (
+    ConnectionPool,
+    PoolConfig,
+    StatementCache,
+    CachingConnection,
+    retry_with_backoff,
+)
 from .metadata import (
     schemas_query,
     tables_query,
@@ -39,6 +47,11 @@ paramstyle = "named"
 __all__ = [
     "connect",
     "Connection",
+    "ConnectionPool",
+    "PoolConfig",
+    "StatementCache",
+    "CachingConnection",
+    "retry_with_backoff",
     "Warning",
     "Error",
     "InterfaceError",
@@ -54,6 +67,8 @@ __all__ = [
     "Geometry",
     "Range",
     "RawValue",
+    "COPY_FORMAT_TEXT",
+    "COPY_FORMAT_BINARY",
     "schemas_query",
     "tables_query",
     "columns_query",

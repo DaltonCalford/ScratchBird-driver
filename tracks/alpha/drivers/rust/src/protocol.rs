@@ -146,6 +146,14 @@ pub const AUTH_OIDC: u8 = 9;
 pub const AUTH_MFA_TOTP: u8 = 10;
 pub const AUTH_CLUSTER_PKI: u8 = 11;
 
+/// Copy format constants
+pub const COPY_FORMAT_TEXT: u8 = 0;
+pub const COPY_FORMAT_BINARY: u8 = 1;
+
+/// Copy operation types for Close message
+pub const COPY_CLOSE_STATEMENT: u8 = 0;
+pub const COPY_CLOSE_PORTAL: u8 = 1;
+
 #[derive(Debug, Clone)]
 pub struct MessageHeader {
     pub msg_type: u8,
@@ -208,6 +216,40 @@ pub struct SblrCompiled {
     pub hash: u64,
     pub version: u32,
     pub bytecode: Vec<u8>,
+}
+
+/// Copy operation response information
+#[derive(Debug, Clone)]
+pub struct CopyInResponse {
+    pub format: u8,
+    pub window_bytes: u32,
+}
+
+/// Copy out response information
+#[derive(Debug, Clone)]
+pub struct CopyOutResponse {
+    pub format: u8,
+    pub column_count: u16,
+    pub column_formats: Vec<u32>,
+}
+
+/// Copy both response for bidirectional copy
+#[derive(Debug, Clone)]
+pub struct CopyBothResponse {
+    pub format: u8,
+    pub window_bytes: u32,
+}
+
+/// Copy data chunk from server
+#[derive(Debug, Clone)]
+pub struct CopyData {
+    pub data: Vec<u8>,
+}
+
+/// Copy failure information
+#[derive(Debug, Clone)]
+pub struct CopyFailInfo {
+    pub error_message: String,
 }
 
 pub fn encode_message(header: &MessageHeader, payload: &[u8]) -> Vec<u8> {
@@ -404,6 +446,16 @@ pub fn build_cancel_payload(cancel_type: u32, target_sequence: u32) -> Vec<u8> {
     out
 }
 
+pub fn build_close_payload(close_type: u8, name: &str) -> Vec<u8> {
+    let name_bytes = name.as_bytes();
+    let mut out = Vec::with_capacity(5 + name_bytes.len());
+    out.push(close_type);
+    out.extend_from_slice(&[0, 0, 0]);
+    out.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(name_bytes);
+    out
+}
+
 pub fn build_sblr_execute_payload(sblr_hash: u64, sblr_bytecode: &[u8], params: &[ParamValue]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&sblr_hash.to_le_bytes());
@@ -519,6 +571,118 @@ pub fn build_attach_create_payload(emulation_mode: &str, db_name: &str) -> Vec<u
     out.extend_from_slice(&(db_bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(db_bytes);
     out
+}
+
+// ============================================================================
+// COPY Message Builders (SBWP 1.1)
+// ============================================================================
+
+/// Build a CopyData message payload
+pub fn build_copy_data_payload(data: &[u8]) -> Vec<u8> {
+    data.to_vec()
+}
+
+/// Build a CopyDone message payload (empty payload)
+pub fn build_copy_done_payload() -> Vec<u8> {
+    Vec::new()
+}
+
+/// Build a CopyFail message payload
+pub fn build_copy_fail_payload(error_message: &str) -> Vec<u8> {
+    let msg_bytes = error_message.as_bytes();
+    let mut out = Vec::with_capacity(4 + msg_bytes.len());
+    out.extend_from_slice(&(msg_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(msg_bytes);
+    out
+}
+
+/// Build CopyInResponse payload (server->client, but used for testing)
+pub fn build_copy_in_response_payload(format: u8, window_bytes: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity(5);
+    out.push(format);
+    out.extend_from_slice(&window_bytes.to_le_bytes());
+    out
+}
+
+/// Build CopyOutResponse payload (server->client, but used for testing)
+pub fn build_copy_out_response_payload(format: u8, column_formats: &[u32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(5 + column_formats.len() * 4);
+    out.push(format);
+    out.extend_from_slice(&(column_formats.len() as u16).to_le_bytes());
+    for fmt in column_formats {
+        out.extend_from_slice(&fmt.to_le_bytes());
+    }
+    out
+}
+
+/// Build CopyBothResponse payload (server->client, but used for testing)
+pub fn build_copy_both_response_payload(format: u8, window_bytes: u32) -> Vec<u8> {
+    build_copy_in_response_payload(format, window_bytes)
+}
+
+// ============================================================================
+// COPY Message Parsers (SBWP 1.1)
+// ============================================================================
+
+/// Parse a CopyInResponse message from the server
+pub fn parse_copy_in_response(payload: &[u8]) -> Result<CopyInResponse> {
+    if payload.len() < 5 {
+        return Err(Error::new(ErrorKind::Connection, "copy in response truncated"));
+    }
+    let format = payload[0];
+    let window_bytes = u32::from_le_bytes(payload[1..5].try_into().unwrap_or([0u8; 4]));
+    Ok(CopyInResponse { format, window_bytes })
+}
+
+/// Parse a CopyOutResponse message from the server
+pub fn parse_copy_out_response(payload: &[u8]) -> Result<CopyOutResponse> {
+    if payload.len() < 3 {
+        return Err(Error::new(ErrorKind::Connection, "copy out response truncated"));
+    }
+    let format = payload[0];
+    let column_count = u16::from_le_bytes([payload[1], payload[2]]);
+    let mut offset = 3;
+    let mut column_formats = Vec::with_capacity(column_count as usize);
+    for _ in 0..column_count {
+        if offset + 4 > payload.len() {
+            return Err(Error::new(ErrorKind::Connection, "copy out response truncated"));
+        }
+        column_formats.push(u32::from_le_bytes([
+            payload[offset],
+            payload[offset + 1],
+            payload[offset + 2],
+            payload[offset + 3],
+        ]));
+        offset += 4;
+    }
+    Ok(CopyOutResponse { format, column_count, column_formats })
+}
+
+/// Parse a CopyBothResponse message from the server
+pub fn parse_copy_both_response(payload: &[u8]) -> Result<CopyBothResponse> {
+    let response = parse_copy_in_response(payload)?;
+    Ok(CopyBothResponse {
+        format: response.format,
+        window_bytes: response.window_bytes,
+    })
+}
+
+/// Parse a CopyData message from the server
+pub fn parse_copy_data(payload: &[u8]) -> Result<CopyData> {
+    Ok(CopyData { data: payload.to_vec() })
+}
+
+/// Parse a CopyFail message from the server
+pub fn parse_copy_fail(payload: &[u8]) -> Result<CopyFailInfo> {
+    if payload.len() < 4 {
+        return Err(Error::new(ErrorKind::Connection, "copy fail truncated"));
+    }
+    let msg_len = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+    if 4 + msg_len > payload.len() {
+        return Err(Error::new(ErrorKind::Connection, "copy fail truncated"));
+    }
+    let error_message = String::from_utf8_lossy(&payload[4..4 + msg_len]).to_string();
+    Ok(CopyFailInfo { error_message })
 }
 
 pub fn parse_ready(payload: &[u8]) -> Result<(u8, u64, u64)> {

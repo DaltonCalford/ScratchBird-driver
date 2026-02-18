@@ -1,5 +1,9 @@
 # Swift Driver
 
+## Status
+
+Partial SBWP v1.1 implementation. TLS required, binary-only enforced, zstd rejected; metadata helpers and conformance coverage remain incomplete.
+
 ## Build
 
 ```bash

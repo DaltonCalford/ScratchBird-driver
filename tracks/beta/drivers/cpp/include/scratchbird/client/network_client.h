@@ -25,6 +25,7 @@ namespace client {
 struct NetworkClientConfig {
     std::string host{"127.0.0.1"};
     uint16_t port{network::DEFAULT_NATIVE_PORT};
+    std::string protocol{"native"};
     std::string database;
     std::string username;
     std::string password;

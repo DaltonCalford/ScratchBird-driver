@@ -6,7 +6,16 @@ From the repo:
 
 ```r
 # Run from the repo root
-install.packages("r", repos = NULL, type = "source")
+install.packages("tracks/beta/drivers/r", repos = NULL, type = "source")
+```
+
+Dependencies:
+
+- `DBI`
+- `openssl`
+
+```r
+install.packages(c("DBI", "openssl"))
 ```
 
 ## Quick Start

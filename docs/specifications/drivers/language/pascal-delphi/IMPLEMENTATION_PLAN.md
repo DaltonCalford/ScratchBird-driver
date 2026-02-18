@@ -6,6 +6,7 @@ Priority: P0
 ## Phase 1 - Core Connectivity
 
 - DSN parsing per DRIVER_DSN_AND_CONFIG_STANDARD.md.
+- Implement `TLS_IMPLEMENTATION_SPEC.md` (native in-driver TLS stack).
 - TLS enforcement and binary-only mode.
 - Basic query execution and result decoding.
 

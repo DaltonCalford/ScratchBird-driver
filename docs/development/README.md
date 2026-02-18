@@ -6,5 +6,6 @@ This section covers build, test, and packaging workflows for the driver set.
 
 - [Development notes](development-notes.md)
 - [Build and test matrix](build-and-test.md)
+- [Toolchain setup](toolchain-setup.md)
 - [Conformance testing](conformance-testing.md)
 - [Packaging and release](release-packaging.md)

@@ -26,18 +26,8 @@ Data is rarely useful in a vacuum. These applications move data into and out of 
 
 ## 3. Automation & iPaaS
 
-With the rise of "Agentic AI" in 2026, databases are increasingly being used as "memory" for automated workflows.
+Automated workflows continue to expand in operational and business systems.
 
 - **Zapier / Make.com:** High-volume, no-code automation. If a user can't "Add a row to my DB when a Shopify order is placed," you lose the SMB market.
 
 - **MuleSoft:** Essential for high-end enterprise API orchestration.
-
----
-
-## 4. AI & Machine Learning Ecosystems
-
-In 2026, databases are expected to feed Large Language Models (LLMs) and Vector searches.
-
-- **LangChain & LlamaIndex:** These are the frameworks developers use to build AI agents. Having a "Vector Store" or "Document Store" driver here is mandatory for "AI-Ready" branding.
-
-- **Jupyter Notebooks / Deepnote:** The standard environment for data science.

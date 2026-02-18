@@ -16,14 +16,24 @@ use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
 use crate::config::Config;
+use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
 use crate::errors::{error_from_sqlstate, Error, ErrorKind, Result};
+use crate::keepalive::{KeepaliveConfig, KeepaliveTracker};
 use crate::protocol;
 use crate::protocol::MessageHeader;
 use crate::scram::ScramExchange;
 use crate::sql::{normalize, Params};
+use crate::telemetry::{SpanContext, TelemetryCollector, TelemetryConfig};
 use crate::types::{decode_value, encode_param, Column, Param, Value, FORMAT_BINARY};
 
 const QUERY_FLAG_BINARY_RESULT: u32 = 0x04;
+
+fn normalize_native_protocol(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => Some("native"),
+        _ => None,
+    }
+}
 
 pub struct Client {
     config: Config,
@@ -38,6 +48,9 @@ pub struct Client {
     notification_handlers: Vec<Box<dyn Fn(&protocol::Notification) + Send + Sync>>,
     last_plan: Option<protocol::QueryPlan>,
     last_sblr: Option<protocol::SblrCompiled>,
+    circuit_breaker: Arc<CircuitBreaker>,
+    telemetry: Arc<TelemetryCollector>,
+    keepalive_tracker: Arc<KeepaliveTracker>,
 }
 
 pub struct QueryResult {
@@ -54,6 +67,54 @@ pub struct QueryStream<'a> {
     command_tag: String,
     done: bool,
     page_size: u32,
+    telemetry: Arc<TelemetryCollector>,
+    circuit_breaker: Arc<CircuitBreaker>,
+    span: Option<SpanContext>,
+    finalized: bool,
+}
+
+/// Represents the state of a copy operation
+#[derive(Debug, Clone)]
+pub enum CopyState {
+    /// Waiting for the server to respond
+    Waiting,
+    /// Copy data can be sent to the server (COPY FROM)
+    Sending { format: u8, window_bytes: u32 },
+    /// Copy data is being received from the server (COPY TO)
+    Receiving { format: u8, column_formats: Vec<u32> },
+    /// Bidirectional copy is active
+    Both { format: u8, window_bytes: u32 },
+    /// Copy operation completed successfully
+    Complete,
+    /// Copy operation failed
+    Failed { error: String },
+}
+
+/// Options for copy operations
+#[derive(Debug, Clone)]
+pub struct CopyOptions {
+    /// Format of the copy data (text or binary)
+    pub format: u8,
+    /// Maximum number of bytes to buffer before sending
+    pub buffer_size: usize,
+}
+
+impl Default for CopyOptions {
+    fn default() -> Self {
+        Self {
+            format: protocol::COPY_FORMAT_TEXT,
+            buffer_size: 65536,
+        }
+    }
+}
+
+/// Result of a copy operation
+#[derive(Debug, Clone)]
+pub struct CopyResult {
+    /// Number of rows affected
+    pub rows_affected: u64,
+    /// Command tag from the server
+    pub command_tag: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,10 +151,23 @@ impl Client {
             notification_handlers: Vec::new(),
             last_plan: None,
             last_sblr: None,
+            circuit_breaker: Arc::new(CircuitBreaker::new(CircuitBreakerConfig::default())),
+            telemetry: Arc::new(TelemetryCollector::new(TelemetryConfig::default())),
+            keepalive_tracker: Arc::new(KeepaliveTracker::new(KeepaliveConfig::default())),
         }
     }
 
     pub async fn connect(&mut self) -> Result<()> {
+        let protocol = normalize_native_protocol(&self.config.protocol).ok_or_else(|| {
+            Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                "only protocol=native is supported; connect to the native parser listener/port",
+                Some("0A000".to_string()),
+                None,
+                None,
+            )
+        })?;
+        self.config.protocol = protocol.to_string();
         if self.config.user.is_empty() || self.config.database.is_empty() {
             return Err(Error::new(ErrorKind::Connection, "user and database are required"));
         }
@@ -138,17 +212,23 @@ impl Client {
 
     pub async fn query_params(&mut self, sql: &str, params: Params) -> Result<QueryResult> {
         self.ensure_connected()?;
+        let span = self.begin_operation("query").await?;
         let normalized = normalize(sql, params)?;
         if normalized.params.is_empty() {
             self.send_simple_query(&normalized.sql, 0, 0).await?;
         } else {
             self.send_extended_query(&normalized.sql, &normalized.params, 0).await?;
         }
-        self.collect_results().await
+        let result = self.collect_results().await;
+        self.end_operation(span, result.is_ok()).await;
+        result
     }
 
     pub async fn query_stream(&mut self, sql: &str) -> Result<QueryStream<'_>> {
         self.ensure_connected()?;
+        let span = self.begin_operation("query_stream").await?;
+        let telemetry = Arc::clone(&self.telemetry);
+        let circuit_breaker = Arc::clone(&self.circuit_breaker);
         let page_size = self.config.fetch_size;
         self.send_simple_query(sql, page_size, 0).await?;
         Ok(QueryStream {
@@ -158,11 +238,18 @@ impl Client {
             command_tag: String::new(),
             done: false,
             page_size,
+            telemetry,
+            circuit_breaker,
+            span,
+            finalized: false,
         })
     }
 
     pub async fn query_stream_params(&mut self, sql: &str, params: Params) -> Result<QueryStream<'_>> {
         self.ensure_connected()?;
+        let span = self.begin_operation("query_stream").await?;
+        let telemetry = Arc::clone(&self.telemetry);
+        let circuit_breaker = Arc::clone(&self.circuit_breaker);
         let normalized = normalize(sql, params)?;
         let page_size = self.config.fetch_size;
         if normalized.params.is_empty() {
@@ -177,6 +264,10 @@ impl Client {
             command_tag: String::new(),
             done: false,
             page_size,
+            telemetry,
+            circuit_breaker,
+            span,
+            finalized: false,
         })
     }
 
@@ -320,6 +411,7 @@ impl Client {
 
     pub async fn execute_sblr(&mut self, sblr_hash: u64, sblr_bytecode: &[u8], params: &[Param]) -> Result<QueryResult> {
         self.ensure_connected()?;
+        let span = self.begin_operation("sblr_execute").await?;
         let mut encoded = Vec::with_capacity(params.len());
         for param in params {
             let (value, _oid) = encode_param(param)?;
@@ -331,7 +423,9 @@ impl Client {
         let sequence = self.send_message(protocol::MSG_SBLR_EXECUTE, &payload, 0, false).await?;
         self.last_query_sequence = sequence;
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
-        self.collect_results().await
+        let result = self.collect_results().await;
+        self.end_operation(span, result.is_ok()).await;
+        result
     }
 
     pub async fn stream_control(&mut self, control_type: u8, window_size: u32, timeout_ms: u32) -> Result<()> {
@@ -374,6 +468,265 @@ impl Client {
 
     pub fn last_sblr_compiled(&self) -> Option<&protocol::SblrCompiled> {
         self.last_sblr.as_ref()
+    }
+
+    // ============================================================================
+    // COPY Operations (SBWP 1.1)
+    // ============================================================================
+
+    /// Execute a COPY FROM operation (client sends data to server).
+    /// 
+    /// # Arguments
+    /// * `sql` - The COPY SQL statement (e.g., "COPY table FROM STDIN")
+    /// * `data` - The data to be copied
+    /// * `options` - Optional copy options
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let data = b"1,hello\n2,world\n".to_vec();
+    /// let result = client.copy_in("COPY my_table FROM STDIN (FORMAT csv)", data, None).await?;
+    /// ```
+    pub async fn copy_in(&mut self, sql: &str, data: Vec<u8>, options: Option<CopyOptions>) -> Result<CopyResult> {
+        self.ensure_connected()?;
+        let span = self.begin_operation("copy_in").await?;
+        let opts = options.unwrap_or_default();
+        
+        // Request binary copy feature if using binary format
+        if opts.format == protocol::COPY_FORMAT_BINARY {
+            self.request_binary_copy_feature().await?;
+        }
+        
+        // Send the COPY query
+        self.send_simple_query(sql, 0, 0).await?;
+        
+        // Wait for CopyInResponse
+        let copy_response = self.wait_for_copy_in_response().await?;
+        
+        let result = match copy_response {
+            CopyState::Sending { format: _, window_bytes: _ } => {
+                // Send the copy data in chunks
+                self.send_copy_data_in_chunks(&data, opts.buffer_size).await?;
+                
+                // Send CopyDone
+                self.send_copy_done().await?;
+                
+                // Wait for CommandComplete
+                self.wait_for_copy_complete().await
+            }
+            CopyState::Failed { error } => {
+                Err(Error::new(ErrorKind::Data, format!("copy failed: {}", error)))
+            }
+            _ => Err(Error::new(ErrorKind::Connection, "unexpected copy response")),
+        };
+        self.end_operation(span, result.is_ok()).await;
+        result
+    }
+
+    /// Execute a COPY TO operation (server sends data to client).
+    /// 
+    /// # Arguments
+    /// * `sql` - The COPY SQL statement (e.g., "COPY table TO STDOUT")
+    /// * `options` - Optional copy options
+    /// 
+    /// # Returns
+    /// The data received from the server
+    pub async fn copy_out(&mut self, sql: &str, options: Option<CopyOptions>) -> Result<Vec<u8>> {
+        self.ensure_connected()?;
+        let span = self.begin_operation("copy_out").await?;
+        let opts = options.unwrap_or_default();
+        
+        // Request binary copy feature if using binary format
+        if opts.format == protocol::COPY_FORMAT_BINARY {
+            self.request_binary_copy_feature().await?;
+        }
+        
+        // Send the COPY query
+        self.send_simple_query(sql, 0, 0).await?;
+        
+        // Wait for CopyOutResponse and collect data
+        let result = self.collect_copy_out_data().await;
+        self.end_operation(span, result.is_ok()).await;
+        result
+    }
+
+    /// Send copy data in chunks to avoid memory issues with large datasets.
+    /// 
+    /// # Arguments
+    /// * `sql` - The COPY SQL statement
+    /// * `data_stream` - Async stream of data chunks
+    pub async fn copy_in_streaming<F, Fut>(&mut self, sql: &str, mut data_stream: F) -> Result<CopyResult>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<Option<Vec<u8>>>>,
+    {
+        self.ensure_connected()?;
+        let span = self.begin_operation("copy_in_stream").await?;
+        
+        // Send the COPY query
+        self.send_simple_query(sql, 0, 0).await?;
+        
+        // Wait for CopyInResponse
+        let copy_response = self.wait_for_copy_in_response().await?;
+        
+        let result = match copy_response {
+            CopyState::Sending { .. } => {
+                // Stream the data
+                loop {
+                    match data_stream().await? {
+                        Some(chunk) => {
+                            let payload = protocol::build_copy_data_payload(&chunk);
+                            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+                        }
+                        None => break,
+                    }
+                }
+                
+                // Send CopyDone
+                self.send_copy_done().await?;
+                
+                // Wait for CommandComplete
+                self.wait_for_copy_complete().await
+            }
+            CopyState::Failed { error } => {
+                Err(Error::new(ErrorKind::Data, format!("copy failed: {}", error)))
+            }
+            _ => Err(Error::new(ErrorKind::Connection, "unexpected copy response")),
+        };
+        self.end_operation(span, result.is_ok()).await;
+        result
+    }
+
+    /// Send a chunk of copy data.
+    /// This is a low-level method for advanced use cases.
+    pub async fn send_copy_data(&mut self, data: &[u8]) -> Result<()> {
+        let payload = protocol::build_copy_data_payload(data);
+        self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+        Ok(())
+    }
+
+    /// Signal that all copy data has been sent.
+    /// This is a low-level method for advanced use cases.
+    pub async fn send_copy_done(&mut self) -> Result<()> {
+        let payload = protocol::build_copy_done_payload();
+        self.send_message(protocol::MSG_COPY_DONE, &payload, 0, false).await?;
+        Ok(())
+    }
+
+    /// Signal a copy failure with an error message.
+    /// This is a low-level method for advanced use cases.
+    pub async fn send_copy_fail(&mut self, error_message: &str) -> Result<()> {
+        let payload = protocol::build_copy_fail_payload(error_message);
+        self.send_message(protocol::MSG_COPY_FAIL, &payload, 0, false).await?;
+        Ok(())
+    }
+
+    // ============================================================================
+    // Private COPY helper methods
+    // ============================================================================
+
+    async fn request_binary_copy_feature(&mut self) -> Result<()> {
+        // The binary copy feature is negotiated during handshake
+        // This method can be used to verify the feature is available
+        Ok(())
+    }
+
+    async fn wait_for_copy_in_response(&mut self) -> Result<CopyState> {
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
+                protocol::MSG_COPY_IN_RESPONSE => {
+                    let response = protocol::parse_copy_in_response(&msg.payload)?;
+                    return Ok(CopyState::Sending {
+                        format: response.format,
+                        window_bytes: response.window_bytes,
+                    });
+                }
+                protocol::MSG_ERROR => {
+                    let (_, _, message, _, _) = protocol::parse_error_message(&msg.payload)?;
+                    return Ok(CopyState::Failed { error: message });
+                }
+                protocol::MSG_READY => {
+                    return Ok(CopyState::Complete);
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    async fn send_copy_data_in_chunks(&mut self, data: &[u8], chunk_size: usize) -> Result<()> {
+        for chunk in data.chunks(chunk_size) {
+            let payload = protocol::build_copy_data_payload(chunk);
+            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+        }
+        Ok(())
+    }
+
+    async fn wait_for_copy_complete(&mut self) -> Result<CopyResult> {
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
+                protocol::MSG_COMMAND_COMPLETE => {
+                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
+                    return Ok(CopyResult {
+                        rows_affected,
+                        command_tag: tag,
+                    });
+                }
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                    return Ok(CopyResult {
+                        rows_affected: 0,
+                        command_tag: "COPY".to_string(),
+                    });
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    async fn collect_copy_out_data(&mut self) -> Result<Vec<u8>> {
+        let mut result = Vec::new();
+        
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
+                protocol::MSG_COPY_OUT_RESPONSE => {
+                    let _response = protocol::parse_copy_out_response(&msg.payload)?;
+                    // The response tells us the format, we just collect data
+                    continue;
+                }
+                protocol::MSG_COPY_DATA => {
+                    let data = protocol::parse_copy_data(&msg.payload)?;
+                    result.extend_from_slice(&data.data);
+                }
+                protocol::MSG_COPY_DONE => {
+                    // Copy operation complete, wait for CommandComplete
+                    continue;
+                }
+                protocol::MSG_COMMAND_COMPLETE => {
+                    // Copy operation fully complete
+                    continue;
+                }
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.txn_id = txn_id;
+                    return Ok(result);
+                }
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                _ => continue,
+            }
+        }
     }
 
     pub async fn cancel(&mut self) -> Result<()> {
@@ -817,8 +1170,34 @@ impl Client {
         }
         if self.config.binary_transfer {
             features |= protocol::FEATURE_STREAMING;
+            features |= protocol::FEATURE_BINARY_COPY;
         }
+        features |= protocol::FEATURE_SAVEPOINTS;
+        features |= protocol::FEATURE_BATCH;
+        features |= protocol::FEATURE_PIPELINE;
         features
+    }
+
+    async fn begin_operation(&mut self, name: &str) -> Result<Option<SpanContext>> {
+        if !self.circuit_breaker.allow_request().await {
+            return Err(Error::new(ErrorKind::Connection, "circuit breaker is OPEN"));
+        }
+        if self.keepalive_tracker.needs_validation().await {
+            self.ping().await?;
+        }
+        self.keepalive_tracker.mark_active().await;
+        Ok(self.telemetry.start_span(name).await)
+    }
+
+    async fn end_operation(&self, span: Option<SpanContext>, success: bool) {
+        if success {
+            self.circuit_breaker.record_success().await;
+        } else {
+            self.circuit_breaker.record_failure().await;
+        }
+        if let Some(span) = span {
+            self.telemetry.end_span(span, success).await;
+        }
     }
 }
 
@@ -833,7 +1212,11 @@ impl<'a> QueryStream<'a> {
                 continue;
             }
             match msg.header.msg_type {
-                protocol::MSG_ERROR => return self.client.raise_protocol_error(&msg.payload),
+                protocol::MSG_ERROR => {
+                    let err = self.client.raise_protocol_error(&msg.payload);
+                    self.finalize(false).await;
+                    return err;
+                }
                 protocol::MSG_ROW_DESCRIPTION => {
                     self.columns = protocol::parse_row_description(&msg.payload)?;
                 }
@@ -855,10 +1238,26 @@ impl<'a> QueryStream<'a> {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
                     self.client.txn_id = txn_id;
                     self.done = true;
+                    self.finalize(true).await;
                     return Ok(None);
                 }
                 _ => {}
             }
+        }
+    }
+
+    async fn finalize(&mut self, success: bool) {
+        if self.finalized {
+            return;
+        }
+        self.finalized = true;
+        if success {
+            self.circuit_breaker.record_success().await;
+        } else {
+            self.circuit_breaker.record_failure().await;
+        }
+        if let Some(span) = self.span.take() {
+            self.telemetry.end_span(span, success).await;
         }
     }
 

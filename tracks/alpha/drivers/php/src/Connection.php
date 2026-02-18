@@ -11,9 +11,17 @@
 
 namespace ScratchBird\PDO;
 
+use ScratchBird\CircuitBreaker;
+use ScratchBird\TelemetryCollector;
+use ScratchBird\KeepaliveManager;
+use ScratchBird\KeepaliveTracker;
+use ScratchBird\LeakDetector;
+use ScratchBird\LeakDetectionGuard;
+
 final class Connection
 {
     private const QUERY_FLAG_BINARY_RESULT = 0x04;
+    private static int $connectionCounter = 0;
 
     private Config $config;
     /** @var resource|null */
@@ -30,6 +38,13 @@ final class Connection
     private array $notificationHandlers = [];
     private ?array $lastPlan = null;
     private ?array $lastSblr = null;
+    private string $connectionId;
+    private CircuitBreaker $circuitBreaker;
+    private TelemetryCollector $telemetry;
+    private KeepaliveManager $keepaliveManager;
+    private ?KeepaliveTracker $keepaliveTracker = null;
+    private LeakDetector $leakDetector;
+    private ?LeakDetectionGuard $leakGuard = null;
 
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, array $options = [])
     {
@@ -41,7 +56,24 @@ final class Connection
             $this->config->password = $password;
         }
         $this->attributes = $options;
+        self::$connectionCounter++;
+        $this->connectionId = 'conn-' . self::$connectionCounter;
+        $this->circuitBreaker = new CircuitBreaker();
+        $this->telemetry = new TelemetryCollector();
+        $this->keepaliveManager = new KeepaliveManager();
+        $this->leakDetector = new LeakDetector();
+        $this->keepaliveManager->start();
+        $this->leakDetector->start();
         $this->connect();
+        $this->keepaliveTracker = $this->keepaliveManager->register(
+            $this->connectionId,
+            $this,
+            function (): bool {
+                $this->ping();
+                return true;
+            }
+        );
+        $this->leakGuard = $this->leakDetector->checkout($this->connectionId, ['driver' => 'php']);
     }
 
     public function prepare(string $statement, array $options = []): Statement
@@ -157,15 +189,17 @@ final class Connection
 
     public function executeSblr(int $hash, ?string $bytecode = null, array $params = []): ResultStream
     {
-        $paramValues = [];
-        foreach ($params as $param) {
-            $encoded = TypeCodec::encodeParam($param);
-            $paramValues[] = $encoded['param'];
-        }
-        $payload = Protocol::buildSblrExecutePayload($hash, $bytecode, $paramValues);
-        $this->sendMessage(Protocol::MSG_SBLR_EXECUTE, $payload, 0, false);
-        $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
-        return new ResultStream($this);
+        return $this->withResilience('sblr_execute', null, function () use ($hash, $bytecode, $params): ResultStream {
+            $paramValues = [];
+            foreach ($params as $param) {
+                $encoded = TypeCodec::encodeParam($param);
+                $paramValues[] = $encoded['param'];
+            }
+            $payload = Protocol::buildSblrExecutePayload($hash, $bytecode, $paramValues);
+            $this->sendMessage(Protocol::MSG_SBLR_EXECUTE, $payload, 0, false);
+            $this->sendMessage(Protocol::MSG_SYNC, '', 0, false);
+            return new ResultStream($this);
+        });
     }
 
     public function streamControl(int $controlType, int $windowSize, int $timeoutMs): void
@@ -243,17 +277,61 @@ final class Connection
         fclose($this->socket);
         $this->socket = null;
         $this->connected = false;
+        if ($this->keepaliveTracker !== null) {
+            $this->keepaliveManager->unregister($this->connectionId);
+            $this->keepaliveTracker = null;
+        }
+        if ($this->leakGuard !== null) {
+            $this->leakGuard->release();
+            $this->leakGuard = null;
+        }
+        $this->keepaliveManager->stop();
+        $this->leakDetector->stop();
+    }
+
+    private function withResilience(string $operation, ?string $sql, callable $fn): mixed
+    {
+        if (!$this->circuitBreaker->allowRequest()) {
+            throw new ScratchBirdConnectionException('Circuit breaker is OPEN', '08006');
+        }
+        if ($this->keepaliveTracker !== null && $this->keepaliveTracker->needsValidation()) {
+            $this->ping();
+            $this->keepaliveTracker->markActive();
+        }
+
+        $span = $this->telemetry->startSpan($operation);
+        if ($span && $sql) {
+            $span->withAttribute('db.statement', TelemetryCollector::sanitizeQuery($sql));
+        }
+
+        $success = false;
+        try {
+            $result = $fn();
+            $success = true;
+            $this->circuitBreaker->recordSuccess();
+            if ($this->keepaliveTracker !== null) {
+                $this->keepaliveTracker->markActive();
+            }
+            return $result;
+        } catch (\Throwable $ex) {
+            $this->circuitBreaker->recordFailure();
+            throw $ex;
+        } finally {
+            $this->telemetry->endSpan($span, $success);
+        }
     }
 
     public function executeQuery(string $sql, array $params = [], ?int $maxRows = null): ResultStream
     {
-        $pageSize = $maxRows ?? $this->config->fetchSize;
-        if (empty($params)) {
-            $this->sendSimpleQuery($sql, $pageSize);
-        } else {
-            $this->sendExtendedQuery($sql, $params, $pageSize);
-        }
-        return new ResultStream($this);
+        return $this->withResilience('query', $sql, function () use ($sql, $params, $maxRows): ResultStream {
+            $pageSize = $maxRows ?? $this->config->fetchSize;
+            if (empty($params)) {
+                $this->sendSimpleQuery($sql, $pageSize);
+            } else {
+                $this->sendExtendedQuery($sql, $params, $pageSize);
+            }
+            return new ResultStream($this);
+        });
     }
 
     public function resumePortal(): void
@@ -363,6 +441,7 @@ final class Connection
 
     private function connect(): void
     {
+        $this->config->protocol = $this->normalizeNativeProtocol($this->config->protocol ?? 'native');
         if ($this->config->user === '' || $this->config->database === '') {
             throw new ScratchBirdConnectionException('user and database are required', '08001');
         }
@@ -384,6 +463,22 @@ final class Connection
         $this->handshake();
         $this->applySchema();
         $this->connected = true;
+    }
+
+    private function normalizeNativeProtocol(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '' ||
+            $normalized === 'native' ||
+            $normalized === 'scratchbird' ||
+            $normalized === 'scratchbird-native' ||
+            $normalized === 'scratchbird_native') {
+            return 'native';
+        }
+        throw new ScratchBirdNotSupportedException(
+            'Only protocol=native is supported; connect to the native parser listener/port.',
+            '0A000'
+        );
     }
 
     private function applyTls(): void

@@ -19,7 +19,7 @@ rustls-native-certs = "0.6"
 rustls-pemfile = "1"
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["net", "io-util", "time", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["net", "io-util", "time", "rt-multi-thread", "macros", "sync"] }
 tokio-rustls = "0.24"
 url = "2"
 

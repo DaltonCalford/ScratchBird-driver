@@ -6,6 +6,10 @@ Interactive SQL shell for ScratchBird.
 
 ---
 
+## Status
+
+Baseline implementation available; conformance against the SBWP v1.1 harness has not been audited yet.
+
 ## Synopsis
 
 ```
@@ -70,7 +74,7 @@ sb_isql [OPTIONS] [DATABASE]
 | Option | Description |
 |--------|-------------|
 | `--sql-dialect N` | SQL dialect (1, 2, or 3) |
-| `-par, --parser NAME` | Parser selection (scratchbird, firebird, postgresql, mysql) |
+| `-par, --parser NAME` | Parser listener selection (native/scratchbird only) |
 | `--bail` | Exit on first error |
 | `--echo` | Echo commands before execution |
 | `--help` | Show help |

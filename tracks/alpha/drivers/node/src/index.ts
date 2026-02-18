@@ -63,3 +63,7 @@ export { parseDsn } from "./dsn";
 export { normalizeQuery } from "./sql";
 export * from "./metadata";
 export * from "./errors";
+export * from "./circuit_breaker";
+export * from "./keepalive";
+export * from "./leak_detector";
+export * from "./telemetry";

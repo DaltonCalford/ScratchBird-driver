@@ -18,13 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0] - 2026-01-30
+## [0.1.0] - 2026-02-18
 
-Initial feature-complete release targeting SBWP v1.1.
+Initial early beta release targeting native-parser-compliant SBWP v1.1 drivers.
 
 ### Added
 
-**Core Drivers**
+**Beta Drivers**
 - Go driver with database/sql compatibility
 - Python driver with DB-API 2.0 compliance
 - Node.js driver with TypeScript support
@@ -36,7 +36,7 @@ Initial feature-complete release targeting SBWP v1.1.
 - .NET driver with ADO.NET compatibility
 - JDBC driver (Type 4) for Java ecosystem
 
-**Application Drivers**
+**Application Integrations**
 - Metabase plugin using JDBC driver
 - Superset dialect with SQLAlchemy integration
 
@@ -87,5 +87,5 @@ Initial feature-complete release targeting SBWP v1.1.
 - zstd compression disabled until server-side support is implemented
 
 ### Security
-- TLS 1.3 mandatory; sslmode=disable rejected by all drivers
+- TLS 1.3 mandatory for released drivers; `sslmode=disable` rejected by released drivers
 - SCRAM-SHA-256 for authentication (no plaintext passwords over wire)

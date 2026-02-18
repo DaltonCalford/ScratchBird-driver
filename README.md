@@ -4,23 +4,9 @@ Official database drivers for the [ScratchBird Database Engine](https://github.c
 
 ## Project Status
 
-ScratchBird is in early alpha release. No binaries have been officially released at this time. The code is ready to be built and tested if you want to setup your own test environment.
+ScratchBird-driver is now in **Initial Early Beta release (`0.1.0`)**.
 
-If you are curious, clone the directories and have your friendly local AI analyse the code base (documentation is out of date except for specifications) - tell it to find out the capabilities of the project from the implemented source code, not the comments or documentation. This will give you a good understanding of what is done and what is going to be done.
-
-The drivers and management interface (ScratchBird-drivers and ScratchRobin) are getting heavy testing and updating. They are getting multiple commits per day on average.
-
-The initial preview will be a docker containing the database engine and an app-image or standalone executable so that you can test the project without any problems of getting rid of it afterward.
-
-This project has become my answer to the constant "Damn I wish I had the ability to...." issues I have encountered over 35 years of database use.
-
-I have been seeing multiple clones of my project(s) via the tracker but I have not received any feedback yet - don't be afraid, I need feedback and I don't bite.
-
-I am sure there are things others have encountered over the years and wish they had a tool to cover it.
-
-Thanks for your interest in the project.
-
-**Status:** In-progress conformance. Core language drivers are SBWP v1.1 baseline; Dart/Swift/Elixir/Mojo remain partial. C++ type coverage expanded with initial conformance tests.
+**Status:** Native-parser compliant SBWP v1.1 baseline is complete for the beta driver set. Incomplete drivers remain in active development for post-`0.1.0` milestones.
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 **Release Targets:** `docs/planning/RELEASE_TARGETS.md`
 
@@ -37,22 +23,79 @@ own native client drivers against ScratchBird's emulation listeners.
 
 | Driver | Directory | Status | Packaging |
 |--------|-----------|--------|-----------|
-| **C/C++ (libscratchbird_client)** | `tracks/beta/drivers/cpp/` | SBWP core; type coverage expanded (initial conformance tests) | CMake |
-| **ODBC 3.8** | `tracks/alpha/drivers/odbc/` | SBWP v1.1 baseline (metadata aligned) | CMake |
-| **Go** | `tracks/alpha/drivers/go/` | Implemented (SBWP v1.1 baseline) | `go get` |
-| **Python** | `tracks/alpha/drivers/python/` | Implemented (SBWP v1.1 baseline) | pip/pyproject.toml |
-| **Node.js** | `tracks/alpha/drivers/node/` | Implemented (SBWP v1.1 baseline) | npm |
-| **Ruby** | `tracks/alpha/drivers/ruby/` | Implemented (SBWP v1.1 baseline) | gem |
-| **Rust** | `tracks/alpha/drivers/rust/` | Implemented (SBWP v1.1 baseline) | cargo |
-| **PHP** | `tracks/alpha/drivers/php/` | Implemented (SBWP v1.1 baseline) | composer |
-| **R** | `tracks/beta/drivers/r/` | Implemented (SBWP v1.1 baseline) | CRAN-style |
-| **Pascal** | `tracks/alpha/drivers/pascal/` | Implemented (SBWP v1.1 baseline) | - |
-| **.NET** | `tracks/alpha/drivers/dotnet/` | Implemented (SBWP v1.1 baseline) | NuGet |
-| **Java/JDBC** | `tracks/alpha/drivers/jdbc/` | Implemented (SBWP v1.1 baseline) | Maven/Gradle |
-| **Elixir (Ecto)** | `tracks/p3/drivers/elixir/` | Partial (TLS required, type coverage expanded, initial tests) | Hex |
-| **Swift (Async/Await)** | `tracks/beta/drivers/swift/` | Partial (TLS required, type coverage expanded, initial tests) | SwiftPM |
-| **Dart** | `tracks/beta/drivers/dart/` | Partial (TLS required, type coverage expanded, initial tests) | pub.dev |
-| **Mojo** | `tracks/alpha/drivers/mojo/` | Partial (native SBWP transport; type coverage incomplete) | - |
+| **C/C++ (libscratchbird_client)** | `tracks/beta/drivers/cpp/` | Initial Early Beta (`0.1.0`) | CMake |
+| **ODBC 3.8** | `tracks/alpha/drivers/odbc/` | Initial Early Beta (`0.1.0`) | CMake |
+| **Go** | `tracks/alpha/drivers/go/` | Initial Early Beta (`0.1.0`) | `go get` |
+| **Python** | `tracks/alpha/drivers/python/` | Initial Early Beta (`0.1.0`) | pip/pyproject.toml |
+| **Node.js** | `tracks/alpha/drivers/node/` | Initial Early Beta (`0.1.0`) | npm |
+| **Ruby** | `tracks/alpha/drivers/ruby/` | Initial Early Beta (`0.1.0`) | gem |
+| **Rust** | `tracks/alpha/drivers/rust/` | Initial Early Beta (`0.1.0`) | cargo |
+| **PHP** | `tracks/alpha/drivers/php/` | Initial Early Beta (`0.1.0`) | composer |
+| **R** | `tracks/beta/drivers/r/` | Initial Early Beta (`0.1.0`) | CRAN-style |
+| **Pascal** | `tracks/alpha/drivers/pascal/` | Initial Early Beta (`0.1.0`) | - |
+| **.NET** | `tracks/alpha/drivers/dotnet/` | Initial Early Beta (`0.1.0`) | NuGet |
+| **Java/JDBC** | `tracks/alpha/drivers/jdbc/` | Initial Early Beta (`0.1.0`) | Maven/Gradle |
+| **Elixir (Ecto)** | `tracks/p3/drivers/elixir/` | In development (post-`0.1.0`) | Hex |
+| **Swift (Async/Await)** | `tracks/beta/drivers/swift/` | In development (post-`0.1.0`) | SwiftPM |
+| **Dart** | `tracks/beta/drivers/dart/` | In development (post-`0.1.0`) | pub.dev |
+| **Mojo** | `tracks/alpha/drivers/mojo/` | In development (post-`0.1.0`) | - |
+
+### Completed Drivers (`0.1.0` Initial Early Beta)
+
+- C/C++ (`tracks/beta/drivers/cpp/`)
+- ODBC 3.8 (`tracks/alpha/drivers/odbc/`)
+- Go (`tracks/alpha/drivers/go/`)
+- Python (`tracks/alpha/drivers/python/`)
+- Node.js (`tracks/alpha/drivers/node/`)
+- Ruby (`tracks/alpha/drivers/ruby/`)
+- Rust (`tracks/alpha/drivers/rust/`)
+- PHP (`tracks/alpha/drivers/php/`)
+- R (`tracks/beta/drivers/r/`)
+- Pascal (`tracks/alpha/drivers/pascal/`)
+- .NET (`tracks/alpha/drivers/dotnet/`)
+- Java/JDBC (`tracks/alpha/drivers/jdbc/`)
+
+### Future Plans (Currently Unimplemented for `0.1.0`)
+
+- Elixir (Ecto) (`tracks/p3/drivers/elixir/`) - in development
+- Swift Async/Await (`tracks/beta/drivers/swift/`) - in development
+- Dart (`tracks/beta/drivers/dart/`) - in development
+- Mojo (`tracks/alpha/drivers/mojo/`) - in development
+
+### Driver Status Matrix (Snapshot: 2026-02-07)
+
+Build/test snapshot from a full local pass. This is not a release certification.
+
+| Driver | Build/Test | Notes |
+|--------|------------|-------|
+| Go | Pass | `go test ./...` |
+| Node.js | Pass | `npm test` (4 integration tests skipped: `SCRATCHBIRD_NODE_URL` not set) |
+| Python | Pass | `pytest` in venv (4 integration tests skipped: `SCRATCHBIRD_TEST_DSN` not set) |
+| Ruby | Pass | `ruby -Ilib:test test/test_types.rb` (integration tests require `SCRATCHBIRD_RUBY_URL`) |
+| Rust | Pass | `cargo test` (warnings: deprecated rustls, dead fields) |
+| PHP | Pass | `vendor/bin/phpunit tests` (4 tests skipped) |
+| .NET | Pass | `dotnet test` (warnings: nullability/hiding) |
+| Java/JDBC | Pass | `./gradlew build` with JDK 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`) |
+| Pascal | Pass (compile) | `fpc` compile passes; Indy 10 lacks TLS 1.3 so runtime connects are blocked |
+| ODBC | Pass | `cmake --build` (warns: ODBC headers + GTest not found) |
+| C/C++ | Pass | `cmake --build` |
+| Swift | Pass | `swift test` |
+| Dart | Not run | `dart` not installed |
+| R | Warnings | `R CMD check` completes with warnings/notes (missing docs, replacement function arg name) |
+| Elixir | Fail | `mix test` requires Elixir ~> 1.15 (current 1.14) |
+| Mojo | Not run | `mojo` not installed |
+| CLI tools | Pass | `build_cli` builds core tools; FDW tools gated; OpenSSL 3 deprecation warnings |
+
+### Cross-Platform CI Coverage
+
+The `Driver CI` workflow validates Windows and Linux for released-driver paths:
+- Go, Node.js, Python, Ruby, Rust, PHP, R, .NET, JDBC, Pascal, Dart
+- C/C++ client and ODBC driver
+- CLI tools on Linux, with Windows build attempt enabled (experimental)
+
+Linux-only CI jobs are used where platform support is not yet available:
+- Swift
+- Mojo (gated by `MOJO_ENABLED=true`)
 
 ---
 
@@ -135,12 +178,27 @@ These are the required capabilities for all drivers in this repo:
 - **Transactions** - Always-in-transaction semantics with autocommit mapping
 - **Type Mapping** - Full wire type coverage (including composite/geometry/range)
 
+### P0 Readiness Checklist (Derived from `docs/planning/RELEASE_TARGETS.md`)
+
+Use this as the minimum bar for `0.1.0` beta completeness; in-development drivers are expected to be below this bar until promoted.
+
+- SBWP v1.1 baseline implemented
+- TLS enforced (no plaintext fallback)
+- Binary-only parameters enforced
+- `compression=zstd` rejected
+- Full type matrix encode/decode coverage
+- sys.* metadata helpers aligned to the metadata contract
+- Conformance harness coverage for baseline protocol and types
+- Core server ops viable for testing (create/query/transactions)
+- Developer docs/specs prioritized over general docs
+
 ### Current Implementation Notes
 
-- Core language drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC/ODBC) implement SBWP v1.1 baseline; conformance is tracked in `docs/planning/`.
-- Binary-only mode and `compression=zstd` rejection are enforced in core drivers and Dart/Swift/Elixir/Mojo.
-- C++ type matrix coverage is expanded; initial conformance tests added.
-- Dart/Swift/Elixir type coverage expanded (arrays/composite/range/vector/inet/cidr/macaddr) and metadata helpers added; initial conformance tests added.
+- Core language drivers implement SBWP v1.1 baseline, but build/test results vary (see Driver Status Matrix). Conformance tracking is in `docs/planning/`.
+- Binary-only mode and `compression=zstd` rejection are enforced in core drivers.
+- C/C++ client implements SBWP v1.1 framing and SCRAM, with statement-cache helpers wired into the C API.
+- Dart/Swift/Elixir are partial and do not yet meet full SBWP conformance requirements (metadata helpers, full type matrix, and conformance tests are incomplete).
+- Mojo is currently a Python-bridge adapter (not a native SBWP client).
 - Streaming/paging via `fetch_size` is supported where applicable in core drivers.
 - ODBC metadata is aligned to sys.* and information_schema; Superset/Metabase still need updates to match finalized sys.columns/sys.index_columns schemas.
 
@@ -152,11 +210,11 @@ Server-side feature backlog that unlocks optional driver capabilities:
 These drivers are native-only. For emulated protocol access (PostgreSQL/MySQL/Firebird),
 use the standard drivers for those engines against ScratchBird's emulation listeners.
 
-Application-specific drivers (early):
+Application-specific drivers:
 - Superset: `tracks/beta/integrations/scratchbird-superset-driver/`
 - Metabase: `tracks/alpha/integrations/scratchbird-metabase-driver/`
 
-Integration templates (Alpha/Beta ecosystem targets) live in:
+Integration templates for ecosystem targets live in:
 `docs/specifications/integrations/` (drivers, ORMs, tools, apps, cloud).
 
 ### Integration Targets (Templates)
@@ -165,7 +223,6 @@ The integrations catalog includes templates for the full ecosystem scope:
 
 - **ORMs & Frameworks:** SQLAlchemy, Sequelize, Hibernate/JPA, Entity Framework Core, TypeORM, Prisma, Rails ActiveRecord, Laravel Eloquent, Dapper, Django ORM, Cypher/OpenCypher, Gremlin/TinkerPop
 - **Big Data & Streaming:** Apache Spark, Apache Flink, Apache Kafka, Hadoop (Hive/Pig/HBase), Talend, Pentaho, Informatica
-- **AI/ML:** Vector APIs, LangChain, Haystack
 - **Database Tools:** DBeaver, pgAdmin, MySQL Workbench, DataGrip, Tableau, Power BI, Qlik, Grafana, Metabase, Prometheus, Excel (ODBC)
 - **Applications:** WordPress, Drupal, Joomla, Magento, WooCommerce, QGIS, GeoServer, Mattermost, Odoo
 - **Cloud & Container:** Docker, Kubernetes, Terraform, AWS, GCP, Azure
@@ -175,9 +232,9 @@ The integrations catalog includes templates for the full ecosystem scope:
 | Tool | Purpose | Status |
 |------|---------|--------|
 | **sb_isql** | Native ScratchBird interactive shell | Implemented (baseline) |
-| **sb_fb_isql** | Firebird protocol script runner | Implemented (baseline) |
-| **sb_pg_isql** | PostgreSQL protocol script runner | Implemented (baseline) |
-| **sb_my_isql** | MySQL protocol script runner | Implemented (baseline) |
+| **sb_fb_isql** | Firebird protocol script runner | Gated (requires FDW adapters from engine repo + `SB_BUILD_CLI_FDW=ON`) |
+| **sb_pg_isql** | PostgreSQL protocol script runner | Gated (requires FDW adapters from engine repo + `SB_BUILD_CLI_FDW=ON`) |
+| **sb_my_isql** | MySQL protocol script runner | Gated (requires FDW adapters from engine repo + `SB_BUILD_CLI_FDW=ON`) |
 | **sb_admin** | Server administration CLI | Implemented (baseline) |
 | **sb_backup** | Backup/restore CLI | Implemented (baseline) |
 | **sb_security** | User/role management CLI | Implemented (baseline) |
@@ -289,4 +346,4 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Last Updated:** 2026-02-04
+**Last Updated:** 2026-02-18

@@ -1,16 +1,16 @@
 {
   "schema_version": "1.0",
   "protocol_version": "sbwp-1.1",
-  "suite": "sbwp-v1.1-minimal",
+  "suite": "sbwp-v1.1-native-parser-minimal",
   "fixtures": [
     "core_fixture.sql",
     "types_fixture.sql"
   ],
-  "requires": ["tls", "auth", "prepare_bind", "types"],
+  "requires": ["tls", "auth", "native_parser", "prepare_bind", "types"],
   "tests": [
     {
       "id": "handshake",
-      "kind": "query",
+      "kind": "native_query",
       "sql": "SELECT 1",
       "expect_rows": 1
     },
@@ -20,27 +20,27 @@
     },
     {
       "id": "prepare_bind",
-      "kind": "prepare_bind",
+      "kind": "native_prepare_bind",
       "sql": "SELECT $1::INTEGER",
       "params": [42],
       "expect_rows": 1
     },
     {
       "id": "describe_param_mismatch",
-      "kind": "prepare_bind",
+      "kind": "native_prepare_bind",
       "sql": "SELECT $1::INTEGER, $2::INTEGER",
       "params": [1],
       "expect_sqlstate": "07001"
     },
     {
       "id": "types_one_way",
-      "kind": "query",
+      "kind": "native_query",
       "sql": "SELECT * FROM type_coverage",
       "expect_rows": 1
     },
     {
       "id": "paging_basic_table",
-      "kind": "query",
+      "kind": "native_query",
       "sql": "SELECT id FROM basic_table ORDER BY id",
       "expect_rows": 6,
       "dsn_append": "fetch_size=1"

@@ -1,11 +1,17 @@
 #include "scratchbird/client/scratchbird_client.h"
 
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "scratchbird/client/circuit_breaker.h"
+#include "scratchbird/client/keepalive.h"
+#include "scratchbird/client/leak_detector.h"
+#include "scratchbird/client/telemetry.h"
 #include "scratchbird/client/driver_config.h"
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
@@ -15,6 +21,13 @@
 struct sb_connection {
     scratchbird::client::NetworkClient client;
     scratchbird::client::NetworkClientConfig config;
+    scratchbird::client::CircuitBreaker circuit_breaker;
+    scratchbird::client::TelemetryCollector telemetry;
+    scratchbird::client::KeepaliveManager keepalive_manager;
+    scratchbird::client::KeepaliveTracker* keepalive_tracker{nullptr};
+    scratchbird::client::LeakDetector leak_detector;
+    std::unique_ptr<scratchbird::client::LeakDetectionGuard> leak_guard;
+    std::string connection_id;
 };
 
 struct sb_prepared {
@@ -91,6 +104,39 @@ sb_error_code map_status(scratchbird::core::Status status) {
             return SB_ERR_UNKNOWN;
     }
 }
+
+struct OperationSpan {
+    std::unique_ptr<scratchbird::client::SpanContext> span;
+};
+
+bool start_operation(sb_connection* conn, const char* op_name, const char* sql, OperationSpan& ctx, sb_error* err) {
+    if (!conn->circuit_breaker.AllowRequest()) {
+        set_error(err, SB_ERR_CONNECTION_FAILED, "Circuit breaker is OPEN");
+        return false;
+    }
+    ctx.span = conn->telemetry.StartSpan(op_name ? op_name : "operation");
+    if (ctx.span && sql) {
+        ctx.span->WithAttribute("db.statement",
+            scratchbird::client::TelemetryCollector::SanitizeQuery(sql));
+    }
+    return true;
+}
+
+void end_operation(sb_connection* conn, OperationSpan& ctx, bool success) {
+    if (success) {
+        conn->circuit_breaker.RecordSuccess();
+    } else {
+        conn->circuit_breaker.RecordFailure();
+    }
+    if (conn->keepalive_tracker) {
+        conn->keepalive_tracker->MarkActive();
+    }
+    if (ctx.span) {
+        conn->telemetry.EndSpan(*ctx.span, success);
+    }
+}
+
+static std::atomic<uint64_t> kConnectionCounter{0};
 
 sb_type map_type_oid(uint32_t type_oid) {
     using namespace scratchbird::protocol;
@@ -603,6 +649,7 @@ sb_connection* sb_connect(const char* conn_str, sb_error* err) {
         return nullptr;
     }
     auto* conn = new sb_connection();
+    conn->connection_id = "conn-" + std::to_string(kConnectionCounter.fetch_add(1) + 1);
     scratchbird::core::ErrorContext ctx;
     scratchbird::client::applyDriverDefaultsFromEnv(conn->config);
     auto status = scratchbird::client::parseDriverConnectionString(conn_str, conn->config, &ctx);
@@ -617,6 +664,10 @@ sb_connection* sb_connect(const char* conn_str, sb_error* err) {
         delete conn;
         return nullptr;
     }
+    conn->keepalive_manager.Start();
+    conn->keepalive_tracker = conn->keepalive_manager.Register(conn->connection_id, conn);
+    conn->leak_detector.Start();
+    conn->leak_guard = conn->leak_detector.Checkout(conn->connection_id);
     set_error(err, SB_OK, "");
     return conn;
 }
@@ -625,6 +676,13 @@ void sb_disconnect(sb_connection* conn) {
     if (!conn) {
         return;
     }
+    if (conn->keepalive_tracker) {
+        conn->keepalive_manager.Unregister(conn->connection_id);
+        conn->keepalive_tracker = nullptr;
+    }
+    conn->keepalive_manager.Stop();
+    conn->leak_guard.reset();
+    conn->leak_detector.Stop();
     conn->client.disconnect();
     delete conn;
 }
@@ -634,11 +692,16 @@ sb_result* sb_execute(sb_connection* conn, const char* sql, sb_error* err) {
         set_error(err, SB_ERR_NULL_POINTER, "Connection and SQL required");
         return nullptr;
     }
+    OperationSpan span;
+    if (!start_operation(conn, "execute", sql, span, err)) {
+        return nullptr;
+    }
     auto* result = new sb_result();
     scratchbird::core::ErrorContext ctx;
     auto status = conn->client.executeQuery(sql, result->results, &ctx);
     if (status != scratchbird::core::Status::OK) {
         set_error(err, map_status(status), ctx.message.empty() ? conn->client.lastError() : ctx.message);
+        end_operation(conn, span, false);
         delete result;
         return nullptr;
     }
@@ -647,6 +710,7 @@ sb_result* sb_execute(sb_connection* conn, const char* sql, sb_error* err) {
         result->column_names.push_back(col.name);
     }
     set_error(err, SB_OK, "");
+    end_operation(conn, span, true);
     return result;
 }
 
@@ -967,11 +1031,16 @@ sb_result* sb_execute_prepared(sb_prepared* stmt, sb_error* err) {
         set_error(err, SB_ERR_INVALID_HANDLE, "Statement is null");
         return nullptr;
     }
+    OperationSpan span;
+    if (!start_operation(stmt->conn, "execute_prepared", nullptr, span, err)) {
+        return nullptr;
+    }
     auto* result = new sb_result();
     scratchbird::core::ErrorContext ctx;
     auto status = stmt->conn->client.executePrepared(stmt->stmt, result->results, &ctx);
     if (status != scratchbird::core::Status::OK) {
         set_error(err, map_status(status), ctx.message);
+        end_operation(stmt->conn, span, false);
         delete result;
         return nullptr;
     }
@@ -980,6 +1049,7 @@ sb_result* sb_execute_prepared(sb_prepared* stmt, sb_error* err) {
         result->column_names.push_back(col.name);
     }
     set_error(err, SB_OK, "");
+    end_operation(stmt->conn, span, true);
     return result;
 }
 
@@ -1051,6 +1121,10 @@ int sb_ping(sb_connection* conn, sb_error* err) {
     auto status = conn->client.ping(&ctx);
     set_error(err, map_status(status), ctx.message);
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_is_healthy(sb_connection* conn, sb_error* err) {
+    return sb_ping(conn, err) == SB_OK ? 1 : 0;
 }
 
 int sb_subscribe(sb_connection* conn, uint8_t subscribe_type,

@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Types;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses
@@ -1032,10 +1035,8 @@ begin
   end;
 end;
 
-function StripTrailingNulls(const Data: TBytes): TBytes;
-function LooksLikeText(const Data: TBytes): Boolean;
-function ParseUnknownText(const Text: string): Variant;
-function DecodeUnknownBinary(const Data: TBytes): Variant;
+function ParseUnknownText(const Text: string): Variant; forward;
+function DecodeUnknownBinary(const Data: TBytes): Variant; forward;
 
 function DecodeValue(TypeOid: Cardinal; const Data: TBytes; Format: Word): Variant;
 var

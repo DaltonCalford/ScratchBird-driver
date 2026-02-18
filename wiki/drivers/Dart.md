@@ -2,20 +2,22 @@
 
 # Dart Driver Guide
 
-**Status:** Beta track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** In development (post-`0.1.0`) (partial SBWP v1.1; TLS/binary-only enforced, zstd rejected)
+**Last Updated:** 2026-02-18
 
 ---
 
 ## Overview
 
-Native Dart/Flutter driver for ScratchBird using SBWP v1.1.
+Native Dart/Flutter driver for ScratchBird using SBWP v1.1 (partial).
 
 ## Install
 
+Install the Dart SDK (see `docs/development/toolchain-setup.md` for Ubuntu 24.04).
+
 ```bash
 cd tracks/beta/drivers/dart
-flutter pub get
+dart pub get
 ```
 
 ## Quick Start

@@ -13,6 +13,7 @@ public sealed class ScratchBirdConfig
 {
     public string Host { get; set; } = "localhost";
     public int Port { get; set; } = 3092;
+    public string Protocol { get; set; } = "native";
     public string Database { get; set; } = "";
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
@@ -34,6 +35,16 @@ public sealed class ScratchBirdConfig
     {
         var parsed = DsnParser.Parse(connectionString);
         return parsed;
+    }
+
+    internal static string NormalizeNativeProtocol(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" or "native" or "scratchbird" or "scratchbird-native" or "scratchbird_native" => "native",
+            _ => throw new ArgumentException("Only protocol=native is supported; connect to the native parser listener/port.")
+        };
     }
 }
 
@@ -131,6 +142,11 @@ internal static class DsnParser
             case "dbname":
             case "initial catalog":
                 cfg.Database = value;
+                break;
+            case "protocol":
+            case "parser":
+            case "dialect":
+                cfg.Protocol = ScratchBirdConfig.NormalizeNativeProtocol(value);
                 break;
             case "user":
             case "username":

@@ -13,6 +13,7 @@ sb_connect <- function(dsn = "", ...) {
       cfg <- apply_param(cfg, name, overrides[[name]])
     }
   }
+  cfg$protocol <- normalize_native_protocol(cfg$protocol)
   if (cfg$user == "" || cfg$database == "") stop("user and database are required")
   if (!isTRUE(cfg$binary_transfer)) stop("binary_transfer=false is not supported")
   if (tolower(cfg$compression) == "zstd") stop("compression=zstd is not supported")
@@ -236,17 +237,7 @@ sb_get_last_sblr <- function(client) {
 sb_open_socket <- function(cfg) {
   sslmode <- tolower(cfg$sslmode)
   if (sslmode == "disable") stop("TLS is required for ScratchBird connections")
-  if (!exists("ssl_connect", where = asNamespace("openssl"))) stop("openssl::ssl_connect is required for TLS")
-  verify <- sslmode %in% c("verify-ca", "verify-full", "require")
-  con <- openssl::ssl_connect(
-    cfg$host,
-    port = cfg$port,
-    verify = verify,
-    cert = cfg$sslcert,
-    key = cfg$sslkey,
-    ca = cfg$sslrootcert
-  )
-  con
+  stop("TLS transport is not implemented in the R driver (missing TLS socket support). Use an external TLS wrapper.")
 }
 
 sb_startup_and_auth <- function(client) {

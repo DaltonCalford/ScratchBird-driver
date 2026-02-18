@@ -35,6 +35,7 @@ internal sealed class ProtocolClient
 
     public void Connect(ScratchBirdConfig config)
     {
+        config.Protocol = ScratchBirdConfig.NormalizeNativeProtocol(config.Protocol);
         if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Database))
         {
             throw new ScratchBirdConnectionException("Username and database are required", "08001");

@@ -3,9 +3,8 @@
 This repository is organized by delivery track to keep the root clean and make
 scope clear.
 
-- Alpha = P0/P1 priorities (core deliverables for the current milestone)
-- Beta = P2 priorities (secondary deliverables)
-- P3 = long-horizon deliverables
+- `alpha`, `beta`, and `p3` are internal planning buckets only.
+- Release state is tracked separately (current project release: Initial Early Beta `0.1.0`).
 
 ## Layout
 

@@ -15,6 +15,51 @@ sb_scram_client <- function(username) {
   )
 }
 
+raw_xor <- function(a, b) {
+  as.raw(bitwXor(as.integer(a), as.integer(b)))
+}
+
+hmac_sha256 <- function(key, message) {
+  key_raw <- if (is.raw(key)) key else charToRaw(as.character(key))
+  msg_raw <- if (is.raw(message)) message else charToRaw(as.character(message))
+  block_size <- 64L
+  if (length(key_raw) > block_size) {
+    key_raw <- openssl::sha256(key_raw)
+  }
+  if (length(key_raw) < block_size) {
+    key_raw <- c(key_raw, as.raw(rep(0L, block_size - length(key_raw))))
+  }
+  o_key <- raw_xor(key_raw, as.raw(rep(0x5c, block_size)))
+  i_key <- raw_xor(key_raw, as.raw(rep(0x36, block_size)))
+  inner <- openssl::sha256(c(i_key, msg_raw))
+  openssl::sha256(c(o_key, inner))
+}
+
+int_to_raw_be <- function(value) {
+  con <- rawConnection(raw(), "wb")
+  on.exit(close(con))
+  writeBin(as.integer(value), con, size = 4, endian = "big")
+  rawConnectionValue(con)
+}
+
+pbkdf2_hmac_sha256 <- function(password, salt, iterations, keylen) {
+  hlen <- 32L
+  blocks <- ceiling(keylen / hlen)
+  out <- raw()
+  for (i in seq_len(blocks)) {
+    u <- hmac_sha256(password, c(salt, int_to_raw_be(i)))
+    t <- u
+    if (iterations > 1) {
+      for (j in 2:iterations) {
+        u <- hmac_sha256(password, u)
+        t <- raw_xor(t, u)
+      }
+    }
+    out <- c(out, t)
+  }
+  out[seq_len(keylen)]
+}
+
 sb_scram_client_first <- function(state) {
   escaped <- gsub("=", "=3D", gsub(",", "=2C", state$username, fixed = TRUE), fixed = TRUE)
   state$client_first_bare <- paste0("n=", escaped, ",r=", state$client_nonce)
@@ -30,16 +75,15 @@ sb_scram_handle_server_first <- function(state, password, server_first) {
   if (is.null(salt_b64) || is.null(iter_str)) stop("SCRAM server-first missing fields")
   iterations <- as.integer(iter_str)
   salt <- openssl::base64_decode(salt_b64)
-  if (!exists("pbkdf2", where = asNamespace("openssl"))) stop("openssl::pbkdf2 is required for SCRAM")
-  salted <- openssl::pbkdf2(password, salt, iterations, keylen = 32, algo = "sha256")
-  client_key <- openssl::hmac(salted, "Client Key", algo = "sha256")
+  salted <- pbkdf2_hmac_sha256(password, salt, iterations, keylen = 32)
+  client_key <- hmac_sha256(salted, "Client Key")
   stored_key <- openssl::sha256(client_key)
   client_final_without_proof <- paste0("c=biws,r=", nonce)
   auth_message <- paste(state$client_first_bare, server_first, client_final_without_proof, sep = ",")
-  client_signature <- openssl::hmac(stored_key, auth_message, algo = "sha256")
-  client_proof <- bitwXor(as.integer(client_key), as.integer(client_signature))
-  server_key <- openssl::hmac(salted, "Server Key", algo = "sha256")
-  state$server_signature <- openssl::hmac(server_key, auth_message, algo = "sha256")
+  client_signature <- hmac_sha256(stored_key, auth_message)
+  client_proof <- raw_xor(client_key, client_signature)
+  server_key <- hmac_sha256(salted, "Server Key")
+  state$server_signature <- hmac_sha256(server_key, auth_message)
   proof_b64 <- openssl::base64_encode(as.raw(client_proof))
   list(state = state, message = paste0(client_final_without_proof, ",p=", proof_b64))
 }

@@ -9,16 +9,32 @@ mod client;
 mod config;
 mod errors;
 pub mod metadata;
-mod protocol;
+pub mod pool;
+pub mod protocol;
 mod scram;
 pub mod sql;
 pub mod types;
 
-pub use client::{Client, QueryResult, QueryStream};
+// Resilience and monitoring modules
+pub mod circuit_breaker;
+pub mod keepalive;
+pub mod leak_detection;
+pub mod pipeline;
+pub mod telemetry;
+
+pub use client::{Client, QueryResult, QueryStream, CopyState, CopyOptions, CopyResult};
 pub use config::Config;
 pub use errors::{Error, ErrorKind, Result};
+pub use pool::{ConnectionPool, PoolConfig, PoolStats, PooledConnection, RetryConfig, with_retry};
 pub use sql::{normalize, NormalizedQuery, Params};
 pub use types::{
     Column, Decimal, Geometry, Interval, Json, Jsonb, Money, Param, Range, RangeValue, RawValue, Time, Timestamp,
     TimestampTz, Date, Value,
 };
+
+// Re-export key resilience types
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState, CircuitBreakerStats, with_circuit_breaker};
+pub use keepalive::{KeepaliveConfig, KeepaliveTracker, KeepaliveTask};
+pub use leak_detection::{LeakDetector, LeakDetectionConfig, LeakDetectionGuard, LeakStatistics, CheckoutInfo};
+pub use pipeline::{QueryPipeline, PipelineConfig, PipelineBuilder, PipelineStats};
+pub use telemetry::{TelemetryCollector, TelemetryConfig, SpanContext, Metrics, export_prometheus_metrics};

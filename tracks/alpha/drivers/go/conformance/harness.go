@@ -44,11 +44,11 @@ type TestSpec struct {
 }
 
 type TestResult struct {
-	TestID  string        `json:"test_id"`
-	Status  string        `json:"status"`
-	Rows    [][]any       `json:"rows,omitempty"`
-	Columns []string      `json:"columns,omitempty"`
-	Errors  []string      `json:"errors,omitempty"`
+	TestID  string   `json:"test_id"`
+	Status  string   `json:"status"`
+	Rows    [][]any  `json:"rows,omitempty"`
+	Columns []string `json:"columns,omitempty"`
+	Errors  []string `json:"errors,omitempty"`
 }
 
 type Summary struct {
@@ -86,7 +86,7 @@ func Run(ctx context.Context, dsn, fixtureDir string, manifest *Manifest) (*Summ
 	if dsn == "" {
 		return nil, errors.New("dsn is required")
 	}
-	results, err := runTests(ctx, dsn, fixtureDir, manifest.Fixtures, manifest.Tests)
+	results, err := runTests(ctx, dsn, fixtureDir, manifest.Fixtures, manifest.Requires, manifest.Tests)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,11 @@ func applyFixtures(ctx context.Context, db *sql.DB, fixtureDir string, fixtures 
 	return nil
 }
 
-func runTests(ctx context.Context, dsn, fixtureDir string, fixtures []string, tests []TestSpec) ([]TestResult, error) {
+func runTests(ctx context.Context,
+	dsn, fixtureDir string,
+	fixtures []string,
+	manifestRequires []string,
+	tests []TestSpec) ([]TestResult, error) {
 	results := make([]TestResult, 0, len(tests))
 	baseDB, err := sql.Open("scratchbird", dsn)
 	if err != nil {
@@ -135,7 +139,10 @@ func runTests(ctx context.Context, dsn, fixtureDir string, fixtures []string, te
 	baseDB.Close()
 	for _, test := range tests {
 		result := TestResult{TestID: test.ID}
-		if !requirementsSatisfied(test.Requires) {
+		required := make([]string, 0, len(manifestRequires)+len(test.Requires))
+		required = append(required, manifestRequires...)
+		required = append(required, test.Requires...)
+		if !requirementsSatisfied(required) {
 			result.Status = "skipped"
 			results = append(results, result)
 			continue
@@ -146,12 +153,12 @@ func runTests(ctx context.Context, dsn, fixtureDir string, fixtures []string, te
 			return nil, err
 		}
 		configureDB(db)
-		switch test.Kind {
+		switch normalizeTestKind(test.Kind) {
 		case "auth":
 			err = db.PingContext(ctx)
-		case "prepare_bind":
+		case "native_prepare_bind":
 			result, err = runPrepareBind(ctx, db, test)
-		case "query":
+		case "native_query":
 			result, err = runQuery(ctx, db, test)
 		case "cancel":
 			result, err = runCancel(ctx, db, test)
@@ -424,4 +431,15 @@ func tableExists(ctx context.Context, db *sql.DB, qualifiedName string) bool {
 func configureDB(db *sql.DB) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+}
+
+func normalizeTestKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "query":
+		return "native_query"
+	case "prepare_bind":
+		return "native_prepare_bind"
+	default:
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
 }

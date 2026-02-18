@@ -50,3 +50,10 @@ TLS 1.3 is required. `sslmode=disable` is rejected.
 Integration tests are gated by:
 
 - `SCRATCHBIRD_NODE_URL`
+
+Local test run:
+
+```bash
+npm install
+npm test
+```

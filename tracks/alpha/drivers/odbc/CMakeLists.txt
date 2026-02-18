@@ -1,30 +1,194 @@
-add_library(scratchbird_odbc SHARED
+cmake_minimum_required(VERSION 3.10)
+project(scratchbird_odbc VERSION 0.1.0 LANGUAGES C CXX)
+
+# Platform detection
+if(WIN32)
+    set(SB_PLATFORM_WINDOWS TRUE)
+elseif(APPLE)
+    set(SB_PLATFORM_MACOS TRUE)
+elseif(UNIX)
+    set(SB_PLATFORM_LINUX TRUE)
+endif()
+
+# Source files
+set(ODBC_SOURCES
     src/odbc_client_bridge.cpp
     src/odbc_driver.cpp
     src/odbc_handles.cpp
+    src/keepalive.cpp
+    src/leak_detector.cpp
+    src/circuit_breaker.cpp
+    src/statement_cache.cpp
 )
 
-if (NOT TARGET scratchbird_client)
-    add_subdirectory(
-        ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/scratchbird_cpp
-    )
+# Platform-specific sources
+if(WIN32)
+    list(APPEND ODBC_SOURCES src/platform_windows.c)
+else()
+    list(APPEND ODBC_SOURCES src/platform_unix.c)
 endif()
 
+add_library(scratchbird_odbc SHARED ${ODBC_SOURCES})
+
+# C++ standard
+set_target_properties(scratchbird_odbc PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED ON
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
+)
+
+# Include directories
 target_include_directories(scratchbird_odbc
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp/include>
+        $<INSTALL_INTERFACE:include>
 )
 
-find_package(ODBC)
-if (ODBC_FOUND)
-    target_include_directories(scratchbird_odbc PRIVATE ${ODBC_INCLUDE_DIRS})
-    target_link_libraries(scratchbird_odbc PRIVATE ${ODBC_LIBRARIES})
+# Platform-specific includes and libraries
+if(WIN32)
+    # Windows - ODBC is part of the SDK
+    target_compile_definitions(scratchbird_odbc PRIVATE 
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        SB_PLATFORM_WINDOWS=1
+    )
+    target_link_libraries(scratchbird_odbc PRIVATE 
+        odbc32
+        odbccp32
+        ws2_32
+    )
+else()
+    # Unix - Find ODBC driver manager
+    set(ODBC_INCLUDE_DIR "")
+    set(ODBC_LIBRARY "")
+    
+    # Try to find unixODBC or iODBC
+    find_path(ODBC_INCLUDE_DIR 
+        NAMES sql.h sqlext.h
+        PATHS
+            /usr/include
+            /usr/local/include
+            /opt/homebrew/include
+            /usr/include/odbc
+            /usr/local/include/odbc
+            /opt/odbc/include
+            /usr/include/iodbc
+            /usr/local/include/iodbc
+        PATH_SUFFIXES odbc iodbc
+    )
+    
+    find_library(ODBC_LIBRARY
+        NAMES odbc iodbc unixodbc
+        PATHS
+            /usr/lib
+            /usr/local/lib
+            /opt/homebrew/lib
+            /usr/lib/x86_64-linux-gnu
+            /usr/lib64
+            /opt/odbc/lib
+        PATH_SUFFIXES odbc
+    )
+    
+    if(ODBC_INCLUDE_DIR AND ODBC_LIBRARY)
+        message(STATUS "Found ODBC: ${ODBC_LIBRARY}")
+        message(STATUS "ODBC include: ${ODBC_INCLUDE_DIR}")
+        target_include_directories(scratchbird_odbc PRIVATE ${ODBC_INCLUDE_DIR})
+        target_link_libraries(scratchbird_odbc PRIVATE ${ODBC_LIBRARY})
+    else()
+        message(WARNING "ODBC not found. Building with generic ODBC headers.")
+        # Assume headers are in standard location
+    endif()
+    
+    # Platform-specific definitions
+    if(APPLE)
+        target_compile_definitions(scratchbird_odbc PRIVATE 
+            SB_PLATFORM_MACOS=1
+            SB_PLATFORM_UNIX=1
+        )
+        # macOS frameworks
+        find_library(COREFoundation_LIBRARY CoreFoundation)
+        if(COREFoundation_LIBRARY)
+            target_link_libraries(scratchbird_odbc PRIVATE ${COREFoundation_LIBRARY})
+        endif()
+    else()
+        target_compile_definitions(scratchbird_odbc PRIVATE 
+            SB_PLATFORM_LINUX=1
+            SB_PLATFORM_UNIX=1
+        )
+    endif()
+    
+    # pthread for threading
+    find_package(Threads REQUIRED)
+    target_link_libraries(scratchbird_odbc PRIVATE Threads::Threads)
+    
+    # dl for dynamic loading
+    target_link_libraries(scratchbird_odbc PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
-target_link_libraries(scratchbird_odbc PRIVATE scratchbird_client)
-
-if (WIN32)
-    target_compile_definitions(scratchbird_odbc PRIVATE NOMINMAX)
+# Link with scratchbird C++ client if available
+if(TARGET scratchbird_client)
+    target_link_libraries(scratchbird_odbc PRIVATE scratchbird_client)
+else()
+    # Try to find or build it
+    if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp)
+        add_subdirectory(
+            ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/scratchbird_cpp
+        )
+        target_link_libraries(scratchbird_odbc PRIVATE scratchbird_client)
+    endif()
 endif()
+
+# Installation
+include(GNUInstallDirs)
+
+install(TARGETS scratchbird_odbc
+    EXPORT scratchbird_odbc-targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Export targets
+install(EXPORT scratchbird_odbc-targets
+    FILE scratchbird_odbc-targets.cmake
+    NAMESPACE scratchbird::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scratchbird_odbc
+)
+
+# Create package config file
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/scratchbird_odbc-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/scratchbird_odbc-config.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scratchbird_odbc
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/scratchbird_odbc-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/scratchbird_odbc-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/scratchbird_odbc-config-version.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scratchbird_odbc
+)
+
+# Print summary
+message(STATUS "")
+message(STATUS "ScratchBird ODBC Driver Configuration:")
+message(STATUS "  Version: ${PROJECT_VERSION}")
+message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Windows: ${SB_PLATFORM_WINDOWS}")
+message(STATUS "  Linux: ${SB_PLATFORM_LINUX}")
+message(STATUS "  macOS: ${SB_PLATFORM_MACOS}")
+message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "")

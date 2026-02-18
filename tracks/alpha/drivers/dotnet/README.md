@@ -11,6 +11,14 @@ ScratchBird ADO.NET provider using the native wire protocol.
 
 See `docs/BUILD_MATRIX.md`.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Build
 
 ```bash

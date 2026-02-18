@@ -12,6 +12,9 @@
 #define SCRATCHBIRD_ODBC_HANDLES_H
 
 #include "scratchbird/odbc/odbc_types.h"
+#include "scratchbird/odbc/circuit_breaker.h"
+#include "scratchbird/odbc/keepalive.h"
+#include "scratchbird/odbc/leak_detector.h"
 
 #include <atomic>
 #include <chrono>
@@ -158,6 +161,8 @@ public:
     SQLUINTEGER getConnectionPooling() const { return connection_pooling_; }
     SQLUINTEGER getCpMatch() const { return cp_match_; }
     bool getOutputNts() const { return output_nts_; }
+    ScratchBird::ODBC::KeepaliveManager& keepaliveManager() { return keepalive_manager_; }
+    ScratchBird::ODBC::LeakDetector& leakDetector() { return leak_detector_; }
 
 private:
     SQLUINTEGER odbc_version_{SQL_OV_ODBC3_80};
@@ -167,6 +172,8 @@ private:
 
     std::vector<std::unique_ptr<OdbcConnection>> connections_;
     mutable std::mutex connections_mutex_;
+    ScratchBird::ODBC::KeepaliveManager keepalive_manager_;
+    ScratchBird::ODBC::LeakDetector leak_detector_;
 };
 
 // =============================================================================
@@ -339,6 +346,12 @@ public:
     bool getMetadataId() const { return metadata_id_; }
 
 private:
+    bool allowRequest();
+    void recordSuccess();
+    void recordFailure();
+    void registerResilience();
+    void unregisterResilience();
+
     SQLRETURN parseConnectionString(const std::string& conn_str);
     SQLRETURN applyDsnConfig(const std::string& dsn_name);
     SQLRETURN establishConnection();
@@ -376,6 +389,10 @@ private:
     uint32_t server_protocol_version_{0};
 
     std::unordered_map<uint64_t, std::string> prepared_sql_;
+    std::string connection_id_;
+    ScratchBird::ODBC::CircuitBreaker circuit_breaker_;
+    ScratchBird::ODBC::KeepaliveTracker* keepalive_tracker_{nullptr};
+    std::unique_ptr<ScratchBird::ODBC::LeakDetectionGuard> leak_guard_;
 };
 
 // =============================================================================

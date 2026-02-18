@@ -3,6 +3,18 @@
 This repository builds each driver independently. Use the commands below from
 repo root. Integration tests require a running ScratchBird server.
 
+## CI OS Coverage
+
+Windows and Linux in CI:
+- Go, Node.js, Python, Ruby, Rust, PHP, R, .NET, JDBC, Pascal, Dart
+- C/C++ and ODBC
+- Elixir
+- CLI tools (Linux supported; Windows build attempt enabled)
+
+Linux-only in CI:
+- Swift
+- Mojo (gated by `MOJO_ENABLED=true`)
+
 ## Go
 
 ```bash
@@ -20,9 +32,9 @@ Integration env:
 
 ```bash
 cd tracks/alpha/drivers/python
-python -m pip install -e ".."
+python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
-pytest
+python -m pytest
 ```
 
 Integration env:
@@ -43,11 +55,36 @@ Integration env:
 - `SCRATCHBIRD_NODE_URL`
 - `SCRATCHBIRD_NODE_CANCEL_SQL`
 
+## C/C++
+
+```bash
+cmake -S tracks/beta/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cpp --config Release
+```
+
+## ODBC
+
+```bash
+cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
+cmake --build build-odbc --config Release
+```
+
+## CLI Tools
+
+```bash
+cmake -S . -B build_cli -DSB_BUILD_CLI=ON -DSB_BUILD_CPP=ON -DSB_BUILD_ODBC=OFF
+cmake --build build_cli --config Release
+```
+
+Notes:
+- `-DSB_BUILD_CLI_FDW=ON` builds `sb_pg_isql`, `sb_my_isql`, `sb_fb_isql` (requires FDW adapter implementations from the engine repo).
+- Windows CI currently builds this target in experimental mode.
+
 ## Ruby
 
 ```bash
 cd tracks/alpha/drivers/ruby
-ruby -Ilib -e 'require "scratchbird"'
+ruby -Ilib:test test/*.rb
 ```
 
 Integration env:
@@ -92,6 +129,57 @@ Integration env:
 - `SCRATCHBIRD_R_URL`
 - `SCRATCHBIRD_R_CANCEL_SQL`
 
+## Elixir
+
+```bash
+cd tracks/p3/drivers/elixir
+mix local.hex --force
+mix local.rebar --force
+mix deps.get
+mix test
+```
+
+Windows note:
+- Use the same `mix` commands in PowerShell after installing Elixir/OTP (`erlef/setup-beam` in CI).
+
+Integration env:
+
+- `SCRATCHBIRD_TEST_DSN`
+
+## Dart
+
+```bash
+cd tracks/beta/drivers/dart
+dart pub get
+dart test
+```
+
+Integration env:
+
+- `SCRATCHBIRD_TEST_DSN`
+
+## Swift
+
+```bash
+cd tracks/beta/drivers/swift
+swift test
+```
+
+Notes:
+- CI currently validates Swift on Linux only.
+- Windows is not a supported target in this repository yet.
+
+## Mojo
+
+```bash
+cd tracks/alpha/drivers/mojo/tests
+mojo integration.mojo
+```
+
+Integration env:
+
+- `SCRATCHBIRD_MOJO_URL`
+
 ## Pascal/Delphi
 
 Run the test projects under `tracks/alpha/drivers/pascal/tests/` with:
@@ -116,6 +204,13 @@ Integration env:
 ```bash
 cd tracks/alpha/drivers/jdbc
 ./gradlew test
+```
+
+Windows:
+
+```bash
+cd tracks/alpha/drivers/jdbc
+gradlew.bat test
 ```
 
 Integration env:

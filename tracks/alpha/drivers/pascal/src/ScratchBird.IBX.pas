@@ -8,6 +8,9 @@
 }
 unit ScratchBird.IBX;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

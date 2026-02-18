@@ -3,12 +3,24 @@
 Native ScratchBird driver with an Ecto adapter. Uses SBWP v1.1 and binary-only
 transfer.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Install (local dev)
 
 ```bash
 cd elixir
+mix local.hex --force
+mix local.rebar --force
 mix deps.get
 ```
+
+Requires Elixir ~> 1.15 (per `mix.exs`).
 
 ## Quick Start
 

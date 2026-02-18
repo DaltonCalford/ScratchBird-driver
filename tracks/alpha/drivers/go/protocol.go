@@ -127,6 +127,12 @@ const (
 	queryFlagNoCache      uint32 = 0x20
 )
 
+// COPY format codes
+const (
+	CopyFormatText   = 0
+	CopyFormatBinary = 1
+)
+
 const (
 	isolationReadUncommitted byte = 0
 	isolationReadCommitted   byte = 1
@@ -881,4 +887,87 @@ func parseErrorMessage(payload []byte) (string, string, string, string, string, 
 		}
 	}
 	return severity, sqlState, msg, detail, hint, nil
+}
+
+// ============================================================================
+// COPY Message Builders (SBWP 1.1)
+// ============================================================================
+
+func buildCopyDataPayload(data []byte) []byte {
+	return data
+}
+
+func buildCopyDonePayload() []byte {
+	return []byte{}
+}
+
+func buildCopyFailPayload(errorMessage string) []byte {
+	msg := []byte(errorMessage)
+	payload := make([]byte, 4+len(msg))
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(len(msg)))
+	copy(payload[4:], msg)
+	return payload
+}
+
+// ============================================================================
+// COPY Message Parsers (SBWP 1.1)
+// ============================================================================
+
+type CopyInResponse struct {
+	Format       byte
+	WindowBytes  uint32
+}
+
+type CopyOutResponse struct {
+	Format        byte
+	ColumnCount   uint16
+	ColumnFormats []uint32
+}
+
+type CopyBothResponse struct {
+	Format      byte
+	WindowBytes uint32
+}
+
+func parseCopyInResponse(payload []byte) (CopyInResponse, error) {
+	if len(payload) < 5 {
+		return CopyInResponse{}, errors.New("copy in response truncated")
+	}
+	return CopyInResponse{
+		Format:      payload[0],
+		WindowBytes: binary.LittleEndian.Uint32(payload[1:5]),
+	}, nil
+}
+
+func parseCopyOutResponse(payload []byte) (CopyOutResponse, error) {
+	if len(payload) < 3 {
+		return CopyOutResponse{}, errors.New("copy out response truncated")
+	}
+	format := payload[0]
+	colCount := binary.LittleEndian.Uint16(payload[1:3])
+	offset := 3
+	colFormats := make([]uint32, 0, colCount)
+	for i := uint16(0); i < colCount; i++ {
+		if offset+4 > len(payload) {
+			return CopyOutResponse{}, errors.New("copy out response truncated")
+		}
+		colFormats = append(colFormats, binary.LittleEndian.Uint32(payload[offset:offset+4]))
+		offset += 4
+	}
+	return CopyOutResponse{
+		Format:        format,
+		ColumnCount:   colCount,
+		ColumnFormats: colFormats,
+	}, nil
+}
+
+func parseCopyBothResponse(payload []byte) (CopyBothResponse, error) {
+	response, err := parseCopyInResponse(payload)
+	if err != nil {
+		return CopyBothResponse{}, err
+	}
+	return CopyBothResponse{
+		Format:      response.Format,
+		WindowBytes: response.WindowBytes,
+	}, nil
 }

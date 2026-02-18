@@ -11,7 +11,7 @@ module Scratchbird
   class Config
     attr_accessor :host, :port, :database, :user, :password, :sslmode,
                   :schema, :role, :sslrootcert, :sslcert, :sslkey, :sslpassword,
-                  :connect_timeout_ms, :socket_timeout_ms, :application_name,
+                  :connect_timeout_ms, :socket_timeout_ms, :application_name, :protocol,
                   :binary_transfer, :compression
 
     def initialize
@@ -22,6 +22,7 @@ module Scratchbird
       @password = ""
       @schema = ""
       @role = ""
+      @protocol = "native"
       @sslmode = "require"
       @sslrootcert = nil
       @sslcert = nil
@@ -77,6 +78,16 @@ module Scratchbird
       end
     end
 
+    def self.normalize_native_protocol(value)
+      normalized = value.to_s.strip.downcase
+      return "native" if normalized.empty? ||
+        normalized == "native" ||
+        normalized == "scratchbird" ||
+        normalized == "scratchbird-native" ||
+        normalized == "scratchbird_native"
+      raise ArgumentError, "Only protocol=native is supported; connect to the native parser listener/port."
+    end
+
     def self.apply_param(cfg, key, value)
       case key.to_s.downcase
       when "host", "server", "data source", "datasource"
@@ -93,6 +104,8 @@ module Scratchbird
         cfg.schema = value
       when "role"
         cfg.role = value
+      when "protocol", "parser", "dialect"
+        cfg.protocol = normalize_native_protocol(value)
       when "sslmode", "ssl mode"
         cfg.sslmode = value
       when "sslrootcert"

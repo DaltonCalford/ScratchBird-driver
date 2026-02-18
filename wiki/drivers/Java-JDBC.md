@@ -2,8 +2,8 @@
 
 # Java/JDBC Driver Guide
 
-**Status:** Alpha track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** Initial Early Beta (`0.1.0`) (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-18
 
 ---
 
@@ -17,6 +17,11 @@ ScratchBird JDBC driver using SBWP v1.1.
 cd tracks/alpha/drivers/jdbc
 ./gradlew build
 ```
+
+Requires JDK 17. The Gradle wrapper is pinned to 8.5+ for JDK 21 compatibility.
+If you see `Unsupported class file major version 65`, ensure Gradle is 8.5+
+or run with JDK 17. If Gradle reports missing toolchains, install JDK 17
+and set `JAVA_HOME`.
 
 ## Quick Start
 

@@ -1,7 +1,7 @@
-# Alpha/Beta Integration Targets (Source References)
+# Integration Targets (Source References)
 
 This list is based on the ScratchBird beta requirements and your compiled
-integration inventory. It mirrors the intended Alpha/Beta ecosystem support
+integration inventory. It mirrors the intended ecosystem support
 and is used as the source list for the template specs in this directory.
 
 ## Language Drivers
@@ -49,12 +49,6 @@ and is used as the source list for the template specs in this directory.
 - Talend
 - Pentaho
 - Informatica
-
-## AI & Machine Learning
-
-- Vector APIs
-- LangChain
-- Haystack
 
 ## Database Tools
 

@@ -8,6 +8,9 @@
 }
 unit ScratchBird.Zeos;
 
+{$mode delphi}
+{$H+}
+
 interface
 
 uses

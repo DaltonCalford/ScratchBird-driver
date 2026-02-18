@@ -55,6 +55,30 @@ jobs:
             language: pascal
           - os: windows-latest
             language: pascal
+          - os: ubuntu-latest
+            language: dart
+          - os: windows-latest
+            language: dart
+          - os: ubuntu-latest
+            language: cpp
+          - os: windows-latest
+            language: cpp
+          - os: ubuntu-latest
+            language: odbc
+          - os: windows-latest
+            language: odbc
+          - os: ubuntu-latest
+            language: cli
+          - os: windows-latest
+            language: cli
+          - os: ubuntu-latest
+            language: swift
+          - os: ubuntu-latest
+            language: elixir
+          - os: windows-latest
+            language: elixir
+          - os: ubuntu-latest
+            language: mojo
 
     steps:
       - name: Checkout
@@ -176,6 +200,36 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Setup Dart
+        if: matrix.language == 'dart'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.3.0"
+
+      - name: Setup Elixir/Erlang
+        if: matrix.language == 'elixir'
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26.2"
+          elixir-version: "1.15.7"
+
+      - name: Install native build deps (Linux)
+        if: runner.os == 'Linux' && (matrix.language == 'cpp' || matrix.language == 'odbc' || matrix.language == 'cli')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev unixodbc-dev
+
+      - name: Install OpenSSL (Windows native builds)
+        if: runner.os == 'Windows' && (matrix.language == 'cpp' || matrix.language == 'odbc' || matrix.language == 'cli')
+        shell: powershell
+        run: |
+          choco install openssl.light --no-progress -y
+          $dir = Get-ChildItem 'C:\Program Files', 'C:\Program Files (x86)' -Filter 'OpenSSL-Win*' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dir) {
+            throw "OpenSSL install path not found"
+          }
+          "OPENSSL_ROOT_DIR=$($dir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Cache Gradle
         if: matrix.language == 'jdbc'
         uses: actions/cache@v4
@@ -199,6 +253,30 @@ jobs:
         run: |
           choco install freepascal --no-progress -y
 
+      - name: Build/Test Dart
+        if: matrix.language == 'dart'
+        run: |
+          cd tracks/beta/drivers/dart
+          dart pub get
+          dart test
+
+      - name: Setup Mojo (Linux, gated)
+        if: matrix.language == 'mojo' && runner.os == 'Linux'
+        env:
+          MOJO_ENABLED: ${{ vars.MOJO_ENABLED }}
+        run: |
+          if [ "${MOJO_ENABLED}" != "true" ]; then
+            echo "Skipping Mojo: set MOJO_ENABLED=true to install the toolchain."
+            exit 0
+          fi
+          curl -fsSL https://pixi.sh/install.sh | sh
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+          mkdir -p /tmp/mojo-env
+          cd /tmp/mojo-env
+          pixi init . -c https://conda.modular.com/max-nightly/ -c conda-forge
+          pixi add mojo
+          pixi run mojo --version
+
       - name: Go tests
         if: matrix.language == 'go'
         working-directory: tracks/alpha/drivers/go
@@ -215,13 +293,31 @@ jobs:
         if: matrix.language == 'python'
         working-directory: tracks/alpha/drivers/python
         run: |
+          python -m pip install --upgrade pip
           python -m pip install -e ".[test]"
           python -m pytest
+
+      - name: Build/Test Mojo (gated)
+        if: matrix.language == 'mojo'
+        env:
+          MOJO_ENABLED: ${{ vars.MOJO_ENABLED }}
+        run: |
+          if [ "${MOJO_ENABLED}" != "true" ]; then
+            echo "Skipping Mojo: set MOJO_ENABLED=true to run Mojo tests."
+            exit 0
+          fi
+          if [ -d /tmp/mojo-env ]; then
+            cd /tmp/mojo-env
+            pixi run mojo test -I "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo/src" "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo/tests"
+          else
+            echo "Mojo env missing; ensure setup step completed."
+            exit 1
+          fi
 
       - name: Ruby tests
         if: matrix.language == 'ruby'
         working-directory: tracks/alpha/drivers/ruby
-        run: ruby -Ilib test/*.rb
+        run: ruby -Ilib:test test/*.rb
 
       - name: Rust tests
         if: matrix.language == 'rust'
@@ -240,7 +336,7 @@ jobs:
         working-directory: tracks/beta/drivers/r
         run: |
           R CMD build .
-          R CMD check scratchbird_*.tar.gz --no-manual
+          Rscript -e "pkgs <- Sys.glob('scratchbird_*.tar.gz'); if (length(pkgs) == 0) stop('No package tarball found after R CMD build') ; system2('R', c('CMD','check', pkgs[1], '--no-manual'), stdout = TRUE, stderr = TRUE)"
 
       - name: .NET tests
         if: matrix.language == 'dotnet'
@@ -257,6 +353,46 @@ jobs:
         working-directory: tracks/alpha/drivers/jdbc
         shell: cmd
         run: gradlew.bat test
+
+      - name: Elixir tests
+        if: matrix.language == 'elixir'
+        working-directory: tracks/p3/drivers/elixir
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix test
+
+      - name: Swift tests (Linux)
+        if: matrix.language == 'swift' && runner.os == 'Linux'
+        working-directory: tracks/beta/drivers/swift
+        run: swift test
+
+      - name: C++ build/tests
+        if: matrix.language == 'cpp'
+        run: |
+          cmake -S tracks/beta/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-cpp --config Release
+          ctest --test-dir build-cpp --output-on-failure --build-config Release
+
+      - name: ODBC build
+        if: matrix.language == 'odbc'
+        run: |
+          cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-odbc --config Release
+
+      - name: CLI build (Linux)
+        if: matrix.language == 'cli' && runner.os == 'Linux'
+        run: |
+          cmake -S . -B build_cli -DSB_BUILD_CLI=ON -DSB_BUILD_CPP=ON -DSB_BUILD_ODBC=OFF
+          cmake --build build_cli --config Release
+
+      - name: CLI build (Windows)
+        if: matrix.language == 'cli' && runner.os == 'Windows'
+        shell: powershell
+        run: |
+          cmake -S . -B build_cli -DSB_BUILD_CLI=ON -DSB_BUILD_CPP=ON -DSB_BUILD_ODBC=OFF
+          cmake --build build_cli --config Release
 
       - name: Pascal build (Linux)
         if: matrix.language == 'pascal' && runner.os == 'Linux'

@@ -2,11 +2,19 @@
 
 Native Dart/Flutter driver for ScratchBird (SBWP v1.1).
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Install (local dev)
 
 ```bash
 cd dart
-flutter pub get
+dart pub get
 ```
 
 ## Quick Start

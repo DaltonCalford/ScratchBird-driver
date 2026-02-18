@@ -782,7 +782,12 @@ int main(int argc, char** argv) {
     auto tests = manifest.value("tests", json::array());
     for (const auto& test : tests) {
         std::string test_id = test.value("id", "");
-        std::string kind = test.value("kind", "query");
+        std::string kind = test.value("kind", "native_query");
+        if (kind == "query") {
+            kind = "native_query";
+        } else if (kind == "prepare_bind") {
+            kind = "native_prepare_bind";
+        }
         std::string sql = test.value("sql", "");
         std::string dsn_append = test.value("dsn_append", "");
         int64_t expect_rows = test.value("expect_rows", -1);
@@ -823,7 +828,7 @@ int main(int argc, char** argv) {
 
         if (kind == "auth") {
             result["status"] = "ok";
-        } else if (kind == "query") {
+        } else if (kind == "native_query") {
             scratchbird::client::NetworkResultSet query_results;
             status = client.executeQuery(sql, query_results, &ctx);
             if (status != scratchbird::core::Status::OK) {
@@ -841,7 +846,7 @@ int main(int argc, char** argv) {
                     had_error = true;
                 }
             }
-        } else if (kind == "prepare_bind") {
+        } else if (kind == "native_prepare_bind") {
             std::string expect_sqlstate = test.value("expect_sqlstate", "");
             uint32_t stmt_id = 0;
             status = client.prepareServerStatement(sql, stmt_id, &ctx);

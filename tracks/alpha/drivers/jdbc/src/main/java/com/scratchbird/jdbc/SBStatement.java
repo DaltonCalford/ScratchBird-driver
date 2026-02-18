@@ -80,7 +80,10 @@ public class SBStatement implements Statement {
         }
 
         if (pageSize > 0) {
-            SBQueryResult result = connection.getProtocol().executeStreaming(sql, pageSize, queryTimeout * 1000);
+            final int streamPageSize = pageSize;
+            SBQueryResult result = connection.withResilience("query_stream", sql, () ->
+                connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
+            );
             if (result.getStream() == null) {
                 throw new SQLException("Query did not return a result set", "02000");
             }
@@ -88,7 +91,9 @@ public class SBStatement implements Statement {
             return currentResultSet;
         }
 
-        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("query", sql, () ->
+            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+        );
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
         }
@@ -106,7 +111,9 @@ public class SBStatement implements Statement {
         checkClosed();
         clearResults();
 
-        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("update", sql, () ->
+            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+        );
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             throw new SQLException("executeUpdate cannot return a ResultSet", "21000");
@@ -121,7 +128,9 @@ public class SBStatement implements Statement {
         checkClosed();
         clearResults();
 
-        SBQueryResult result = connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("execute", sql, () ->
+            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+        );
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());

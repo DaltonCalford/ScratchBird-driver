@@ -16,7 +16,11 @@ import socket
 import ssl
 
 from . import errors
-from .dsn import parse_dsn
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
+from .keepalive import KeepaliveManager, KeepaliveConfig
+from .leak_detection import LeakDetector, LeakDetectionConfig
+from .telemetry import TelemetryCollector, TelemetryConfig
+from .dsn import parse_dsn, normalize_native_protocol
 from .cursor import Cursor
 from .protocol import (
     AuthMethod,
@@ -24,6 +28,7 @@ from .protocol import (
     MSG_FLAG_URGENT,
     FEATURE_COMPRESSION,
     FEATURE_STREAMING,
+    FEATURE_BINARY_COPY,
     QUERY_FLAG_DESCRIBE_ONLY,
     QUERY_FLAG_INCLUDE_PLAN,
     QUERY_FLAG_RETURN_SBLR,
@@ -35,6 +40,8 @@ from .protocol import (
     TXN_FLAG_HAS_ISOLATION,
     TXN_FLAG_HAS_TIMEOUT,
     TXN_FLAG_HAS_WAIT,
+    COPY_FORMAT_TEXT,
+    COPY_FORMAT_BINARY,
     HEADER_SIZE,
     MessageHeader,
     build_bind_payload,
@@ -56,12 +63,15 @@ from .protocol import (
     build_stream_control_payload,
     build_attach_create_payload,
     build_startup_payload,
-    decode_header,
-    encode_message,
+    build_copy_data_payload,
+    build_copy_done_payload,
+    build_copy_fail_payload,
     parse_auth_continue,
     parse_auth_ok,
     parse_auth_request,
     parse_command_complete,
+    parse_copy_in_response,
+    parse_copy_out_response,
     parse_data_row,
     parse_error_message,
     parse_notification,
@@ -81,6 +91,7 @@ from .types import FORMAT_BINARY, decode_value, encode_param
 class ConnectionConfig:
     host: str = "localhost"
     port: int = 3092
+    protocol: str = "native"
     database: Optional[str] = None
     user: Optional[str] = None
     password: Optional[str] = None
@@ -118,6 +129,10 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg = ConnectionConfig()
     cfg.host = params.get("host", cfg.host)
     cfg.port = int(params.get("port", cfg.port))
+    try:
+        cfg.protocol = normalize_native_protocol(params.get("protocol", params.get("parser", params.get("dialect"))))
+    except ValueError as exc:
+        raise errors.InterfaceError(str(exc)) from exc
     cfg.database = params.get("database", cfg.database)
     cfg.user = params.get("user", cfg.user)
     cfg.password = params.get("password", cfg.password)
@@ -144,6 +159,9 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "host",
             "port",
             "database",
+            "protocol",
+            "parser",
+            "dialect",
             "user",
             "password",
             "schema",
@@ -185,9 +203,21 @@ class Connection:
         self._notification_handlers = []
         self._last_plan = None
         self._last_sblr = None
+        self._conn_id = f"conn-{id(self)}"
+        self._circuit_breaker = CircuitBreaker(CircuitBreakerConfig(), name=self._conn_id)
+        self._telemetry = TelemetryCollector(TelemetryConfig())
+        self._keepalive = KeepaliveManager(KeepaliveConfig())
+        self._keepalive.start()
+        self._leak_detector = LeakDetector(LeakDetectionConfig())
+        self._leak_detector.start()
+        self._leak_guard = self._leak_detector.checkout(self._conn_id, {"driver": "python"})
         self._connect()
 
     def _connect(self) -> None:
+        try:
+            self._config.protocol = normalize_native_protocol(self._config.protocol)
+        except ValueError as exc:
+            raise errors.InterfaceError(str(exc)) from exc
         if not self._config.user or not self._config.database:
             raise errors.InterfaceError("user and database are required")
         if not self._config.binary_transfer:
@@ -230,16 +260,64 @@ class Connection:
         self._startup_and_auth()
         self._apply_schema()
         self._connected = True
+        self._keepalive_tracker = self._keepalive.register(
+            self._conn_id,
+            self._ping_for_keepalive,
+        )
+
+    def _ping_for_keepalive(self) -> bool:
+        try:
+            self.ping()
+            return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         if not self._closed:
             self._closed = True
             self._connected = False
+            try:
+                if self._keepalive:
+                    self._keepalive.unregister(self._conn_id)
+                    self._keepalive.stop()
+            except Exception:
+                pass
+            try:
+                if self._leak_guard:
+                    self._leak_guard.release()
+                if self._leak_detector:
+                    self._leak_detector.stop()
+            except Exception:
+                pass
             if self._socket:
                 try:
                     self._socket.close()
                 except OSError:
                     pass
+
+    def _begin_operation(self, name: str, sql: Optional[str] = None):
+        if self._circuit_breaker and not self._circuit_breaker.allow_request():
+            raise CircuitBreakerError("circuit breaker is open")
+        if getattr(self, "_keepalive_tracker", None):
+            self._keepalive_tracker.mark_active()
+        span = None
+        if self._telemetry:
+            span = self._telemetry.start_span(name)
+            if span is not None and sql:
+                sql_text = sql
+                if self._telemetry.config.sanitize_queries:
+                    sql_text = self._telemetry.sanitize_query(sql_text)
+                span.with_attribute("sql", sql_text)
+        return span
+
+    def _end_operation(self, span, success: bool) -> None:
+        if self._circuit_breaker:
+            if success:
+                self._circuit_breaker.record_success()
+            else:
+                self._circuit_breaker.record_failure()
+        if self._telemetry and span is not None:
+            self._telemetry.end_span(span, success=success)
 
     def commit(self) -> None:
         self._ensure_open()
@@ -336,14 +414,20 @@ class Connection:
 
     def execute_sblr(self, sblr_hash: int, sblr_bytecode: Optional[bytes] = None, params=None):
         self._ensure_open()
+        span = self._begin_operation("execute_sblr", "")
         param_values = []
         if params:
             for param in params:
                 value, _ = encode_param(param)
                 param_values.append(value)
         payload = build_sblr_execute_payload(sblr_hash, sblr_bytecode, param_values)
-        self._send_message(MessageType.SBLR_EXECUTE, payload)
-        self._send_message(MessageType.SYNC, b"")
+        try:
+            self._send_message(MessageType.SBLR_EXECUTE, payload)
+            self._send_message(MessageType.SYNC, b"")
+            self._end_operation(span, True)
+        except Exception:
+            self._end_operation(span, False)
+            raise
         return ResultStream(self, 0)
 
     def stream_control(self, control_type: int, window_size: int, timeout_ms: int) -> None:
@@ -556,8 +640,14 @@ class Connection:
         return bytes(buf)
 
     def _execute_command(self, sql: str) -> None:
+        span = self._begin_operation("execute_command", sql)
         self._send_simple_query(sql)
-        self._drain_until_ready()
+        try:
+            self._drain_until_ready()
+            self._end_operation(span, True)
+        except Exception:
+            self._end_operation(span, False)
+            raise
 
     def _apply_schema(self) -> None:
         schema = (self._config.schema or "").strip()
@@ -594,10 +684,16 @@ class Connection:
 
     def _execute_query(self, sql: str, params=None, max_rows: int = 0):
         normalized_sql, ordered = normalize_query(sql, params)
-        if ordered:
-            self._send_extended_query(normalized_sql, ordered, max_rows)
-        else:
-            self._send_simple_query(normalized_sql, max_rows)
+        span = self._begin_operation("execute_query", normalized_sql)
+        try:
+            if ordered:
+                self._send_extended_query(normalized_sql, ordered, max_rows)
+            else:
+                self._send_simple_query(normalized_sql, max_rows)
+            self._end_operation(span, True)
+        except Exception:
+            self._end_operation(span, False)
+            raise
         return ResultStream(self, max_rows)
 
     def _describe_statement(self, statement_name: str) -> int:
@@ -647,6 +743,164 @@ class Connection:
             text = f"[{sqlstate}] {text}"
             raise _map_sqlstate(sqlstate)(text)
         raise errors.DatabaseError(text)
+
+    def copy_in(self, sql: str, data: bytes, format: int = COPY_FORMAT_TEXT) -> int:
+        """Execute a COPY FROM operation, sending data to the server.
+        
+        Args:
+            sql: The COPY SQL statement (e.g., "COPY table FROM STDIN")
+            data: The data to copy in bytes
+            format: COPY_FORMAT_TEXT or COPY_FORMAT_BINARY
+            
+        Returns:
+            Number of rows copied
+        """
+        self._ensure_open()
+        span = self._begin_operation("copy_in", sql)
+        
+        # Send COPY SQL as a query
+        try:
+            self._send_simple_query(sql)
+        except Exception:
+            self._end_operation(span, False)
+            raise
+        
+        # Wait for CopyInResponse
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._end_operation(span, False)
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.COPY_IN_RESPONSE:
+                response = parse_copy_in_response(payload)
+                # Use response.window_bytes if needed for flow control
+                _ = response
+                break
+            if header.msg_type == MessageType.READY:
+                self._end_operation(span, False)
+                raise errors.OperationalError("expected COPY IN response")
+        
+        # Send data in chunks
+        offset = 0
+        chunk_size = 65536  # 64KB chunks
+        while offset < len(data):
+            chunk = data[offset:offset + chunk_size]
+            payload = build_copy_data_payload(chunk)
+            self._send_message(MessageType.COPY_DATA, payload)
+            offset += len(chunk)
+        
+        # Send CopyDone
+        self._send_message(MessageType.COPY_DONE, build_copy_done_payload())
+        
+        # Wait for CommandComplete
+        rows_copied = 0
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._end_operation(span, False)
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.COMMAND_COMPLETE:
+                _, rows_copied, _, _ = parse_command_complete(payload)
+                break
+            if header.msg_type == MessageType.READY:
+                self._end_operation(span, False)
+                raise errors.OperationalError("expected CommandComplete after COPY")
+        
+        # Wait for Ready
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._txn_id = txn_id
+                self._end_operation(span, True)
+                return int(rows_copied)
+
+    def copy_out(self, sql: str, format: int = COPY_FORMAT_TEXT) -> bytes:
+        """Execute a COPY TO operation, receiving data from the server.
+        
+        Args:
+            sql: The COPY SQL statement (e.g., "COPY table TO STDOUT")
+            format: COPY_FORMAT_TEXT or COPY_FORMAT_BINARY
+            
+        Returns:
+            The copied data as bytes
+        """
+        self._ensure_open()
+        span = self._begin_operation("copy_out", sql)
+        
+        # Send COPY SQL as a query
+        try:
+            self._send_simple_query(sql)
+        except Exception:
+            self._end_operation(span, False)
+            raise
+        
+        # Wait for CopyOutResponse
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._end_operation(span, False)
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.COPY_OUT_RESPONSE:
+                response = parse_copy_out_response(payload)
+                _ = response
+                break
+            if header.msg_type == MessageType.READY:
+                self._end_operation(span, False)
+                raise errors.OperationalError("expected COPY OUT response")
+        
+        # Collect data until CopyDone
+        chunks = []
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._end_operation(span, False)
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.COPY_DATA:
+                chunks.append(payload)
+            elif header.msg_type == MessageType.COPY_DONE:
+                break
+            elif header.msg_type == MessageType.COPY_FAIL:
+                self._end_operation(span, False)
+                raise errors.OperationalError("COPY failed on server side")
+            elif header.msg_type == MessageType.READY:
+                self._end_operation(span, False)
+                raise errors.OperationalError("unexpected READY during COPY")
+        
+        # Wait for CommandComplete
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._end_operation(span, False)
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.COMMAND_COMPLETE:
+                _ = parse_command_complete(payload)
+                break
+            if header.msg_type == MessageType.READY:
+                raise errors.OperationalError("expected CommandComplete after COPY")
+        
+        # Wait for Ready
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._txn_id = txn_id
+                self._end_operation(span, True)
+                return b"".join(chunks)
 
 
 def _build_schema_statement(schema: str) -> str:

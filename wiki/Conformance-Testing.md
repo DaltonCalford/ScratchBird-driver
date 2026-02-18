@@ -1,6 +1,6 @@
 # Conformance Testing
 
-The shared conformance harness validates SBWP v1.1 protocol compliance and wire type coverage across all drivers.
+The shared conformance harness validates SBWP v1.1 protocol compliance and wire type coverage across released drivers. In-development drivers are not fully covered yet.
 
 ## Overview
 
@@ -28,7 +28,7 @@ The manifest defines required capabilities and test cases:
 }
 ```
 
-## Required Tests
+## Required Tests (Core Drivers)
 
 1. **Handshake** - TLS 1.3 required
 2. **Authentication** - Valid credentials via SCRAM-SHA-256
@@ -134,4 +134,4 @@ Each driver follows the same pattern:
 
 See `docs/BUILD_MATRIX.md` for complete build and test commands across all platforms.
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-02-18

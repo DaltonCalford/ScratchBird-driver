@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <sstream>
 
 namespace scratchbird {
@@ -48,6 +49,16 @@ bool parseBool(const std::string& value, bool& out) {
     }
     if (lower == "false" || lower == "0" || lower == "no" || lower == "off") {
         out = false;
+        return true;
+    }
+    return false;
+}
+
+bool parseProtocol(const std::string& value, std::string& normalized) {
+    std::string lower = toLower(trim(value));
+    if (lower == "native" || lower == "scratchbird" ||
+        lower == "scratchbird-native" || lower == "scratchbird_native") {
+        normalized = "native";
         return true;
     }
     return false;
@@ -281,6 +292,15 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             config.role = value;
         } else if (key == "schema") {
             config.schema = value;
+        } else if (key == "protocol" || key == "parser" || key == "dialect") {
+            std::string normalized;
+            if (!parseProtocol(value, normalized)) {
+                if (ctx) {
+                    ctx->message = "Only protocol=native is supported; connect to the native parser listener/port.";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.protocol = normalized;
         } else if (key == "applicationname" || key == "application_name" || key == "app") {
             config.application_name = value;
         } else if (key == "ssl" || key == "sslmode") {
@@ -367,6 +387,117 @@ void applyDriverDefaults(NetworkClientConfig& config) {
         config.application_name = "scratchbird_driver";
     }
     applyDriverDefaultsFromEnv(config);
+}
+
+void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
+    auto getEnv = [](const char* key) -> const char* {
+        return std::getenv(key);
+    };
+    auto parseU32 = [](const char* value, uint32_t& out) -> bool {
+        if (!value) {
+            return false;
+        }
+        char* end = nullptr;
+        unsigned long parsed = std::strtoul(value, &end, 10);
+        if (!end || *end != '\0') {
+            return false;
+        }
+        out = static_cast<uint32_t>(parsed);
+        return true;
+    };
+    auto parseU16 = [&](const char* value, uint16_t& out) -> bool {
+        uint32_t tmp = 0;
+        if (!parseU32(value, tmp) || tmp > 65535u) {
+            return false;
+        }
+        out = static_cast<uint16_t>(tmp);
+        return true;
+    };
+
+    if (const char* host = getEnv("SCRATCHBIRD_HOST")) {
+        config.host = host;
+    }
+    if (const char* port = getEnv("SCRATCHBIRD_PORT")) {
+        parseU16(port, config.port);
+    }
+    if (const char* db = getEnv("SCRATCHBIRD_DB")) {
+        config.database = db;
+    }
+    if (const char* user = getEnv("SCRATCHBIRD_USER")) {
+        config.username = user;
+    }
+    if (const char* pass = getEnv("SCRATCHBIRD_PASSWORD")) {
+        config.password = pass;
+    }
+    if (const char* protocol = getEnv("SCRATCHBIRD_PROTOCOL")) {
+        std::string normalized;
+        if (parseProtocol(protocol, normalized)) {
+            config.protocol = normalized;
+        } else {
+            config.protocol = "native";
+        }
+    }
+    if (const char* parser = getEnv("SCRATCHBIRD_PARSER")) {
+        std::string normalized;
+        if (parseProtocol(parser, normalized)) {
+            config.protocol = normalized;
+        } else {
+            config.protocol = "native";
+        }
+    }
+    if (const char* role = getEnv("SCRATCHBIRD_ROLE")) {
+        config.role = role;
+    }
+    if (const char* schema = getEnv("SCRATCHBIRD_SCHEMA")) {
+        config.schema = schema;
+    }
+    if (const char* app = getEnv("SCRATCHBIRD_APP_NAME")) {
+        config.application_name = app;
+    }
+    if (const char* sslmode = getEnv("SCRATCHBIRD_SSLMODE")) {
+        config.ssl_mode = parseSslMode(sslmode);
+    }
+    if (const char* ssl_cert = getEnv("SCRATCHBIRD_SSL_CERT")) {
+        config.ssl_cert = ssl_cert;
+    }
+    if (const char* ssl_key = getEnv("SCRATCHBIRD_SSL_KEY")) {
+        config.ssl_key = ssl_key;
+    }
+    if (const char* ssl_root = getEnv("SCRATCHBIRD_SSL_ROOT_CERT")) {
+        config.ssl_root_cert = ssl_root;
+    }
+    if (const char* auth = getEnv("SCRATCHBIRD_AUTH_METHOD")) {
+        bool ok = false;
+        auto method = parseAuthMethod(auth, &ok);
+        if (ok) {
+            config.auth_method = method;
+        }
+    }
+    if (const char* allow_pw = getEnv("SCRATCHBIRD_ALLOW_PASSWORD_FALLBACK")) {
+        config.allow_password_fallback = (std::string(allow_pw) == "1" ||
+                                          std::string(allow_pw) == "true" ||
+                                          std::string(allow_pw) == "TRUE");
+    }
+    if (const char* compression = getEnv("SCRATCHBIRD_ENABLE_COMPRESSION")) {
+        config.enable_compression = (std::string(compression) == "1" ||
+                                     std::string(compression) == "true" ||
+                                     std::string(compression) == "TRUE");
+    }
+    if (const char* connect_to = getEnv("SCRATCHBIRD_CONNECT_TIMEOUT_MS")) {
+        parseU32(connect_to, config.connect_timeout_ms);
+    }
+    if (const char* read_to = getEnv("SCRATCHBIRD_READ_TIMEOUT_MS")) {
+        parseU32(read_to, config.read_timeout_ms);
+    }
+    if (const char* write_to = getEnv("SCRATCHBIRD_WRITE_TIMEOUT_MS")) {
+        parseU32(write_to, config.write_timeout_ms);
+    }
+    if (const char* copy_window = getEnv("SCRATCHBIRD_COPY_WINDOW_BYTES")) {
+        parseU32(copy_window, config.copy_window_bytes);
+    }
+    if (const char* copy_chunk = getEnv("SCRATCHBIRD_COPY_CHUNK_BYTES")) {
+        parseU32(copy_chunk, config.copy_chunk_bytes);
+    }
 }
 
 } // namespace client

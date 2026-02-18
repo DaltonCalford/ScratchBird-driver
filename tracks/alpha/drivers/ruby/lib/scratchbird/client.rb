@@ -15,6 +15,10 @@ require "scratchbird/result"
 require "scratchbird/scram"
 require "scratchbird/sql"
 require "scratchbird/types"
+require "scratchbird/circuit_breaker"
+require "scratchbird/keepalive"
+require "scratchbird/leak_detector"
+require "scratchbird/telemetry"
 
 module Scratchbird
   class Client
@@ -37,9 +41,21 @@ module Scratchbird
       @notification_handlers = []
       @last_plan = nil
       @last_sblr = nil
+      @connection_id = "conn-#{object_id}"
+      @circuit_breaker = CircuitBreaker.new(CircuitBreakerConfig.new, "ruby")
+      @telemetry = TelemetryCollector.new
+      @keepalive_manager = KeepaliveManager.new
+      @keepalive_tracker = nil
+      @leak_detector = LeakDetector.new
+      @leak_guard = nil
     end
 
     def connect
+      begin
+        @config.protocol = Config.normalize_native_protocol(@config.protocol)
+      rescue ArgumentError => e
+        raise NotSupportedError, e.message
+      end
       raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
       raise NotSupportedError, "binary_transfer=false is not supported" unless @config.binary_transfer
       raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
@@ -48,6 +64,10 @@ module Scratchbird
       handshake
       apply_schema
       @connected = true
+      @keepalive_manager.start
+      @keepalive_tracker = @keepalive_manager.register(@connection_id, self) { ping }
+      @leak_detector.start
+      @leak_guard = @leak_detector.checkout(@connection_id, driver: "ruby")
     end
 
     def connected?
@@ -63,6 +83,16 @@ module Scratchbird
       ensure
         @socket = nil
         @connected = false
+        if @keepalive_tracker
+          @keepalive_manager.unregister(@connection_id)
+          @keepalive_tracker = nil
+        end
+        @keepalive_manager.stop
+        if @leak_guard
+          @leak_guard.release
+          @leak_guard = nil
+        end
+        @leak_detector.stop
       end
     end
 
@@ -154,14 +184,16 @@ module Scratchbird
 
     def execute_sblr(hash, bytecode = nil, params = [])
       ensure_connected
-      values = params.map do |param|
-        encoded = Types.encode_param(param)
-        encoded[:param]
+      with_resilience("sblr_execute", nil) do
+        values = params.map do |param|
+          encoded = Types.encode_param(param)
+          encoded[:param]
+        end
+        payload = Protocol.build_sblr_execute_payload(hash, bytecode, values)
+        send_message(Protocol::MSG_SBLR_EXECUTE, payload, 0, false)
+        send_message(Protocol::MSG_SYNC, +"", 0, false)
+        ResultStream.new(self)
       end
-      payload = Protocol.build_sblr_execute_payload(hash, bytecode, values)
-      send_message(Protocol::MSG_SBLR_EXECUTE, payload, 0, false)
-      send_message(Protocol::MSG_SYNC, +"", 0, false)
-      ResultStream.new(self)
     end
 
     def stream_control(control_type, window_size, timeout_ms)
@@ -496,32 +528,65 @@ module Scratchbird
       raise ConnectionError, "client is not connected" unless @connected
     end
 
-    def execute_query(sql, params, options)
-      if params.empty?
-        send_simple_query(sql, options)
-      else
-        send_extended_query(sql, params, options)
+    def with_resilience(operation, sql = nil)
+      raise CircuitBreakerOpenError, "Circuit breaker is OPEN" unless @circuit_breaker.allow_request?
+      if @keepalive_tracker && @keepalive_tracker.needs_validation?
+        ping
+        @keepalive_tracker.mark_active
       end
-      execute_query_loop
+      span = @telemetry.start_span(operation)
+      if span && sql
+        span.with_attribute("db.statement", TelemetryCollector.sanitize_query(sql))
+      end
+      success = false
+      begin
+        result = yield
+        success = true
+        @circuit_breaker.record_success
+        @keepalive_tracker&.mark_active
+        result
+      rescue => e
+        @circuit_breaker.record_failure
+        raise e
+      ensure
+        @telemetry.end_span(span, success)
+      end
+    end
+
+    def execute_query(sql, params, options)
+      with_resilience("query", sql) do
+        if params.empty?
+          send_simple_query(sql, options)
+        else
+          send_extended_query(sql, params, options)
+        end
+        execute_query_loop
+      end
     end
 
     def execute_prepared(name, params, options)
-      send_bind_execute(name, params, options)
-      execute_query_loop
+      with_resilience("execute_prepared", nil) do
+        send_bind_execute(name, params, options)
+        execute_query_loop
+      end
     end
 
     def execute_query_stream(sql, params, options)
-      if params.empty?
-        send_simple_query(sql, options)
-      else
-        send_extended_query(sql, params, options)
+      with_resilience("query_stream", sql) do
+        if params.empty?
+          send_simple_query(sql, options)
+        else
+          send_extended_query(sql, params, options)
+        end
+        ResultStream.new(self)
       end
-      ResultStream.new(self)
     end
 
     def execute_prepared_stream(name, params, options)
-      send_bind_execute(name, params, options)
-      ResultStream.new(self)
+      with_resilience("execute_prepared_stream", nil) do
+        send_bind_execute(name, params, options)
+        ResultStream.new(self)
+      end
     end
 
     def execute_query_loop

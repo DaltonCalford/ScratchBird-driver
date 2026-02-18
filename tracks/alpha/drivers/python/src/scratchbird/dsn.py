@@ -12,6 +12,13 @@ from __future__ import annotations
 import urllib.parse
 
 
+def normalize_native_protocol(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("", "native", "scratchbird", "scratchbird-native", "scratchbird_native"):
+        return "native"
+    raise ValueError("Only protocol=native is supported; connect to the native parser listener/port.")
+
+
 def parse_dsn(dsn: str | None) -> dict:
     if not dsn:
         return {}

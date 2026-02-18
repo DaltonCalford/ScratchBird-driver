@@ -30,16 +30,17 @@ Each driver has two documentation layers:
 - [PHP Driver](../tracks/alpha/drivers/php/README.md)
 - [R Driver](../tracks/beta/drivers/r/README.md)
 - [Pascal Driver](../tracks/alpha/drivers/pascal/README.md)
-- [.NET Driver](../tracks/alpha/drivers/dotnet/) - See solution file
-- [JDBC Driver](../tracks/alpha/drivers/jdbc/) - Java/Gradle project
-- [C/C++ Client](../tracks/beta/drivers/cpp/) - CMake-based client library
-- [ODBC Driver](../tracks/alpha/drivers/odbc/) - ODBC 3.8 driver (CMake)
+- [.NET Driver](../tracks/alpha/drivers/dotnet/README.md)
+- [JDBC Driver](../tracks/alpha/drivers/jdbc/README.md)
+- [C/C++ Client](../tracks/beta/drivers/cpp/README.md)
+- [ODBC Driver](../tracks/alpha/drivers/odbc/README.md)
+- [CLI Tools](../tracks/alpha/drivers/cli/README.md)
 - [Superset Driver](../tracks/beta/integrations/scratchbird-superset-driver/README.md)
 - [Metabase Driver](../tracks/alpha/integrations/scratchbird-metabase-driver/README.md)
-- [Elixir (Ecto) Driver (planned)](specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md)
-- [Swift Async Driver (planned)](specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md)
-- [Dart Driver (planned)](specifications/DRIVER_DART_DATABASE_API.md)
-- [Mojo Driver (planned)](specifications/DRIVER_MOJO_NATIVE_API.md)
+- [Elixir (Ecto) Driver](../tracks/p3/drivers/elixir/README.md)
+- [Swift Async Driver](../tracks/beta/drivers/swift/README.md)
+- [Dart Driver](../tracks/beta/drivers/dart/README.md)
+- [Mojo Driver](../tracks/alpha/drivers/mojo/README.md)
 
 Quick links:
 

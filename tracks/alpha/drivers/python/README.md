@@ -11,6 +11,14 @@ ScratchBird DB-API 2.0 driver using the ScratchBird native wire protocol.
 
 See `docs/BUILD_MATRIX.md`.
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Supported | CI build/test coverage. |
+| Windows | Supported | CI build/test coverage. |
+| macOS | Untested | Not currently covered in CI. |
+
 ## Development
 
 ```bash

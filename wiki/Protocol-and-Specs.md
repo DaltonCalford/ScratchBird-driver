@@ -54,7 +54,7 @@ Batch execution reuses PARSE and issues repeated BIND/EXECUTE cycles. No string 
 
 ## Type Mapping Matrix
 
-All drivers must encode and decode these wire types:
+All drivers are expected to encode and decode these wire types (spec requirement):
 
 | Wire Type | Representation | Notes |
 |-----------|---------------|-------|

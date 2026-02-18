@@ -68,6 +68,10 @@ module Scratchbird
     FORMAT_TEXT = 0
     FORMAT_BINARY = 1
 
+    # Wire-only sentinel OIDs for tests/decoders
+    WIRE_ARRAY = -1
+    WIRE_UUID = 2950
+
     OID_BOOL = 16
     OID_BYTEA = 17
     OID_CHAR = 18
@@ -199,8 +203,12 @@ module Scratchbird
       raise ArgumentError, "unsupported parameter type"
     end
 
-    def self.decode(type_oid, data, format)
+    def self.decode(type_oid, data, format = nil)
       return nil if data.nil?
+      if type_oid == WIRE_ARRAY
+        return parse_array_literal(decode_text_value(data))
+      end
+      format = type_oid == OID_UUID ? FORMAT_BINARY : FORMAT_TEXT if format.nil?
       if type_oid.to_i == 0
         return parse_unknown_text(decode_text_value(data)) if format == FORMAT_TEXT
         return decode_unknown_binary(data)
@@ -343,6 +351,75 @@ module Scratchbird
         end
       end
       text
+    end
+
+    def self.parse_array_literal(text)
+      return [] if text.nil?
+      trimmed = text.strip
+      return [] if trimmed == "{}"
+      return [parse_array_scalar(trimmed)] unless trimmed.start_with?("{") && trimmed.end_with?("}")
+
+      inner = trimmed[1..-2]
+      items = []
+      buffer = +""
+      in_quotes = false
+      escape = false
+      depth = 0
+
+      inner.each_char do |ch|
+        if in_quotes
+          if escape
+            buffer << ch
+            escape = false
+          elsif ch == "\\"
+            escape = true
+          elsif ch == "\""
+            in_quotes = false
+          else
+            buffer << ch
+          end
+          next
+        end
+
+        case ch
+        when "\""
+          in_quotes = true
+        when "{"
+          depth += 1
+          buffer << ch
+        when "}"
+          depth -= 1
+          buffer << ch
+        when ","
+          if depth.zero?
+            items << parse_array_scalar(buffer)
+            buffer.clear
+          else
+            buffer << ch
+          end
+        else
+          buffer << ch
+        end
+      end
+
+      items << parse_array_scalar(buffer) unless buffer.empty?
+      items
+    end
+
+    def self.parse_array_scalar(token)
+      return nil if token.nil?
+      value = token.strip
+      return nil if value.casecmp("NULL").zero?
+      if value.start_with?("{") && value.end_with?("}")
+        return parse_array_literal(value)
+      end
+      if value.start_with?("\"") && value.end_with?("\"")
+        inner = value[1..-2]
+        return inner.gsub("\\\"", "\"").gsub("\\\\", "\\")
+      end
+      return Integer(value, 10) if value.match?(/\A[+-]?\d+\z/)
+      return Float(value) if value.match?(/\A[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?\z/)
+      value
     end
 
     def self.strip_trailing_nulls(data)

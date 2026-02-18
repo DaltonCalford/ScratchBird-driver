@@ -13,6 +13,10 @@ Category: Language Driver
 
 Provide full driver requirements, design notes, and implementation guidance for Pascal/Delphi.
 
+## Key Specs
+
+- `TLS_IMPLEMENTATION_SPEC.md` (native in-driver TLS design; TaurusTLS code not adopted)
+
 ## References
 
 - docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md

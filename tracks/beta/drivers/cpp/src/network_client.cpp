@@ -42,6 +42,11 @@ std::string toLower(std::string value) {
     return value;
 }
 
+bool isNativeProtocol(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower.empty() || lower == "native";
+}
+
 std::string base64Encode(const std::vector<uint8_t>& data) {
     if (data.empty()) {
         return "";
@@ -681,6 +686,11 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
                                     core::ErrorContext* ctx) {
     if (connected_) {
         return setError(ctx, core::Status::INVALID_ARGUMENT, "Already connected");
+    }
+    if (!isNativeProtocol(config.protocol)) {
+        return setError(ctx,
+                        core::Status::INVALID_ARGUMENT,
+                        "Only protocol=native is supported; configure the native parser listener.");
     }
     config_ = config;
     network::NetworkInitGuard guard;

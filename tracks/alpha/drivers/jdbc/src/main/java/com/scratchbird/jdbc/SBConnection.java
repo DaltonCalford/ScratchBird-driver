@@ -62,6 +62,17 @@ public class SBConnection implements Connection {
     // Savepoint counter
     private int savepointCounter = 0;
 
+    // Resilience and telemetry
+    private final CircuitBreaker circuitBreaker = new CircuitBreaker();
+    private final TelemetryCollector telemetry = new TelemetryCollector();
+    private final KeepaliveManager keepaliveManager = new KeepaliveManager();
+    private KeepaliveTracker keepaliveTracker;
+
+    @FunctionalInterface
+    interface SqlSupplier<T> {
+        T get() throws SQLException;
+    }
+
     /**
      * Creates a new connection with the given properties.
      *
@@ -93,6 +104,7 @@ public class SBConnection implements Connection {
      */
     private void connect() throws SQLException {
         try {
+            properties.setProtocol(properties.getProtocol());
             if (!properties.isBinaryTransfer()) {
                 throw new SQLException("binary_transfer=false is not supported", "0A000");
             }
@@ -108,6 +120,8 @@ public class SBConnection implements Connection {
             }
 
             catalog = properties.getDatabase();
+            keepaliveManager.start();
+            keepaliveTracker = keepaliveManager.register(connectionId, this);
 
         } catch (Exception e) {
             throw new SQLException("Failed to connect to " + properties.getHost() +
@@ -282,6 +296,11 @@ public class SBConnection implements Connection {
                 if (protocol != null) {
                     protocol.close();
                 }
+                if (keepaliveTracker != null) {
+                    keepaliveManager.unregister(connectionId);
+                    keepaliveTracker = null;
+                }
+                keepaliveManager.stop();
             } finally {
                 LOGGER.log(Level.FINE, "Connection {0} closed", connectionId);
             }
@@ -650,6 +669,40 @@ public class SBConnection implements Connection {
             warnings = warning;
         } else {
             warnings.setNextWarning(warning);
+        }
+    }
+
+    <T> T withResilience(String operation, String sql, SqlSupplier<T> supplier) throws SQLException {
+        if (!circuitBreaker.allowRequest()) {
+            throw new SQLTransientConnectionException("Circuit breaker is OPEN", "08006");
+        }
+        if (keepaliveTracker != null && keepaliveTracker.needsValidation()) {
+            protocol.ping();
+            keepaliveTracker.markActive();
+        }
+
+        SpanContext span = telemetry.startSpan(operation);
+        if (span != null && sql != null) {
+            String sanitized = TelemetryCollector.sanitizeQuery(sql);
+            if (sanitized != null) {
+                span.withAttribute("db.statement", sanitized);
+            }
+        }
+
+        boolean success = false;
+        try {
+            T result = supplier.get();
+            success = true;
+            circuitBreaker.recordSuccess();
+            if (keepaliveTracker != null) {
+                keepaliveTracker.markActive();
+            }
+            return result;
+        } catch (SQLException | RuntimeException e) {
+            circuitBreaker.recordFailure();
+            throw e;
+        } finally {
+            telemetry.endSpan(span, success);
         }
     }
 

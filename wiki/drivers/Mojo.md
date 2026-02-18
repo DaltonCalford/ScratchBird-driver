@@ -2,8 +2,8 @@
 
 # Mojo Driver Guide
 
-**Status:** Alpha track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** In development (post-`0.1.0`) (Python bridge; native SBWP pending)
+**Last Updated:** 2026-02-18
 
 ---
 
@@ -13,9 +13,9 @@ ScratchBird driver for Mojo using SBWP v1.1 via a Python transport bridge.
 
 ## Install
 
-```text
-Requires Python 3.10+ and the scratchbird Python package on PYTHONPATH.
-```
+Requires:
+- Mojo toolchain (see `docs/development/toolchain-setup.md`)
+- Python 3.10+ and the scratchbird Python package on `PYTHONPATH`
 
 ## Quick Start
 
@@ -37,5 +37,4 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 
 ## Testing
 
-Integration tests use `SCRATCHBIRD_TEST_DSN` via the Python transport.
-
+Integration tests use `SCRATCHBIRD_MOJO_URL` via the Python transport.

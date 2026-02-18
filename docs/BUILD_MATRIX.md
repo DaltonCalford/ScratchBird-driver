@@ -1,12 +1,25 @@
 # Driver Build Requirements & Matrix (Windows/Linux)
 
-All drivers in this repo are userland implementations of SBWP v1.1 unless noted.
+Core drivers in this repo are userland implementations of SBWP v1.1; Mojo currently uses a Python transport bridge.
 Build commands are identical across Windows/Linux unless noted.
 
 Common requirements:
 - ScratchBird server for integration tests (native listener on 3092).
 - Compiler toolchain (`gcc/clang`, `make`, and standard headers) for native dependencies.
 - Set driver-specific `SCRATCHBIRD_*` environment variables as documented in each README.
+
+## CI Platform Coverage (Driver CI)
+
+Verified in GitHub Actions on both `ubuntu-latest` and `windows-latest`:
+- Go, Node.js, Python, Ruby, Rust, PHP, R, .NET, JDBC, Pascal, Dart
+- C/C++ client (`tracks/beta/drivers/cpp`)
+- ODBC driver (`tracks/alpha/drivers/odbc`)
+- Elixir (in-development track)
+- CLI tools: Linux supported; Windows build attempt enabled (experimental)
+
+Linux-only CI coverage:
+- Swift (no official Windows Swift toolchain support in this repo)
+- Mojo (gated by `MOJO_ENABLED=true`)
 
 Ubuntu 24.04 baseline packages:
 - `sudo apt install -y build-essential cmake pkg-config git`
@@ -21,7 +34,8 @@ Ubuntu 24.04 quick-install (full stack + nice-to-have tools):
   rustc cargo \
   php8.2 php8.2-cli php8.2-mbstring php8.2-xml php8.2-curl php8.2-zip composer \
   r-base r-base-dev \
-  fp-compiler \
+  r-cran-dbi r-cran-openssl r-cran-testthat \
+  fp-compiler lazarus lazarus-src \
   dotnet-sdk-8.0 \
   openjdk-17-jdk gradle \
   elixir erlang \
@@ -30,6 +44,29 @@ Ubuntu 24.04 quick-install (full stack + nice-to-have tools):
 Notes:
 - Dart, Swift, and Mojo are not available via Ubuntu apt; install via their official channels.
 - Ubuntu repos may not include Node 20+ or Rust 1.76+; use NodeSource/rustup when needed.
+
+## Build/Test Snapshot (2026-02-07)
+
+Results from a full local pass (Ubuntu 24.04). This is not a release certification.
+
+- Go: `go test ./...` pass.
+- Node: `npm test` pass; 4 integration tests skipped (`SCRATCHBIRD_NODE_URL` not set).
+- Python: `pytest` pass in venv; 4 integration tests skipped (`SCRATCHBIRD_TEST_DSN` not set).
+- Ruby: `ruby -Ilib:test test/test_types.rb` pass. Integration tests skipped (no `SCRATCHBIRD_RUBY_URL`).
+- Rust: `cargo test` pass (warnings: deprecated rustls, dead fields).
+- PHP: `vendor/bin/phpunit tests` pass; 4 tests skipped.
+- .NET: `dotnet test` pass (warnings: nullability/hiding).
+- Java/JDBC: `./gradlew build` pass (JDK 17 required; build ran with `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`).
+- Pascal: `fpc` compile passes with vendored Indy (warnings). TLS 1.3 is not available in Indy 10; driver will refuse to connect unless a TLS 1.3-capable Indy build is provided.
+- ODBC: `cmake --build` pass; warns ODBC headers + GTest not found.
+- C/C++: `cmake --build` pass.
+- Swift: `swift test` pass.
+- Dart: not run (`dart` not installed).
+- R: `R CMD check` completes with warnings/notes (missing documentation entries, replacement function arg name, generic/method consistency).
+- Elixir: `mix test` fails (requires Elixir ~> 1.15; system 1.14).
+- Mojo: not run (`mojo` not installed).
+- CLI tools: build passes for `sb_isql`, `sb_admin`, `sb_backup`, `sb_security`, `sb_verify`, `sbdriver_conformance` (OpenSSL 3 deprecation warnings). FDW-backed tools (`sb_pg_isql`, `sb_my_isql`, `sb_fb_isql`) are gated behind `SB_BUILD_CLI_FDW=ON`.
+- 2026-02-18 sanity checks: direct CMake builds for C/C++, ODBC, and CLI succeed on Linux using the documented CI commands.
 
 ## Go (`tracks/alpha/drivers/go/`)
 - Required tools: Go 1.22+.
@@ -49,6 +86,8 @@ Notes:
 - Required tools: Python 3.11+ and pip.
 - Ubuntu 24.04 packages: `sudo apt install -y python3.11 python3.11-venv python3-pip`
 - Install/test:
+  - `python3 -m venv .venv`
+  - `. .venv/bin/activate`
   - `python -m pip install -e ".[test]"`
   - `python -m pytest`
 
@@ -59,6 +98,7 @@ Notes:
   - `gem build scratchbird.gemspec`
   - `gem install scratchbird-*.gem`
 - Test: `ruby -Ilib test/*.rb`
+  - Tip: include the test directory on the load path: `ruby -Ilib:test test/*.rb`
 
 ## Rust (`tracks/alpha/drivers/rust/`)
 - Required tools: Rust 1.76+ (cargo).
@@ -77,7 +117,8 @@ Notes:
 
 ## R (`tracks/beta/drivers/r/`)
 - Required tools: R 4.3+.
-- Ubuntu 24.04 packages: `sudo apt install -y r-base r-base-dev`
+- Ubuntu 24.04 packages: `sudo apt install -y r-base r-base-dev r-cran-dbi r-cran-openssl r-cran-testthat`
+- R packages (if not using apt): `install.packages(c("DBI", "openssl", "testthat"))`
 - Build/check:
   - `R CMD build .`
   - `R CMD check scratchbird_*.tar.gz`
@@ -85,10 +126,17 @@ Notes:
 ## Pascal (`tracks/alpha/drivers/pascal/`)
 - Required tools:
   - FreePascal 3.2+ or Delphi 11+.
-- Ubuntu 24.04 packages (FreePascal): `sudo apt install -y fp-compiler`
-- FreePascal: include units from `src/` in your project and compile with `fpc`.
+- Default build path uses in-repo native transport/TLS units (no mandatory third-party runtime dependency).
+- Native TLS status (`0.1.0`): API/state machine/record framing plus first-party
+  SHA-256/HMAC/HKDF and certificate policy checks are implemented; wire handshake,
+  certificate parsing, and AEAD record protection remain in progress.
+- Optional legacy path: define `SCRATCHBIRD_USE_INDY` and add vendored Indy unit paths
+  (`third_party/indy/Lib/Core`, `Lib/Protocols`, `Lib/System`, `Lib/Security`) for migration-only builds.
+- FreePascal: include units from `src/` and compile with `fpc`.
 - Delphi: add units in `src/` to the project.
-- No automated test runner yet.
+- Unit test program available:
+  - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FE./tracks/alpha/drivers/pascal/tests ./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests.pas`
+  - `./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests`
 
 ## .NET (`tracks/alpha/drivers/dotnet/`)
 - Required tools: .NET SDK 8.0+.
@@ -100,6 +148,7 @@ Notes:
 ## Java/JDBC (`tracks/alpha/drivers/jdbc/`)
 - Required tools: JDK 17+ and Gradle.
 - Ubuntu 24.04 packages: `sudo apt install -y openjdk-17-jdk gradle`
+- If building on JDK 21+, use Gradle 8.5+ (wrapper is pinned accordingly).
 - Linux/macOS: `./gradlew build`
 - Windows: `gradlew.bat build`
 
@@ -111,6 +160,9 @@ Notes:
 - Build:
   - `cmake -S . -B build`
   - `cmake --build build`
+- Windows:
+  - `cmake -S . -B build`
+  - `cmake --build build --config Release`
 
 ## C/C++ (`tracks/beta/drivers/cpp/`)
 - Required tools: CMake 3.22+, C/C++ compiler.
@@ -118,10 +170,14 @@ Notes:
 - Build:
   - `cmake -S . -B build`
   - `cmake --build build`
+- Windows:
+  - `cmake -S . -B build`
+  - `cmake --build build --config Release`
 
 ## Dart (`tracks/beta/drivers/dart/`)
 - Required tools: Dart 3.3+ (Flutter SDK also works).
 - Ubuntu 24.04 packages: `dart` (from the Dart apt repo), or install via Flutter SDK.
+- CI bootstrap: see `docs/development/toolchain-setup.md`.
 - Build/test:
   - `dart pub get`
   - `dart test`
@@ -132,22 +188,31 @@ Notes:
 - Build/test:
   - `swift build`
   - `swift test`
+- Windows note: no official support target in this repository yet.
 
 ## Elixir (`tracks/p3/drivers/elixir/`)
 - Required tools: Elixir 1.15+ and Erlang/OTP 26+.
 - Ubuntu 24.04 packages: `sudo apt install -y elixir erlang`
 - Build/test:
+  - `mix local.hex --force`
+  - `mix local.rebar --force`
   - `mix deps.get`
   - `mix test`
+- CI uses Elixir `1.15.x` with OTP `26.x` on Linux and Windows.
 
 ## Mojo (`tracks/alpha/drivers/mojo/`)
 - Required tools: Mojo 24.4+ (Python is used for the bridge).
 - Ubuntu 24.04 packages: not available via apt; install from Modular (Mojo).
+- CI bootstrap: see `docs/development/toolchain-setup.md`.
 - Build/test:
   - `mojo test -I src tests`
+  - CI gating: set `MOJO_ENABLED=true` and ensure `mojo` is on PATH.
 
 ## CLI Tools (`tracks/alpha/drivers/cli/`)
-- Required tools: Go 1.22+ (for the native/equivalent protocol runners).
-- Ubuntu 24.04 packages: `sudo apt install -y golang-go`
+- Required tools: C++17 toolchain + OpenSSL.
 - Build/test:
-  - `go test ./...`
+  - `cmake -S . -B build_cli -DSB_BUILD_CLI=ON -DSB_BUILD_CPP=ON -DSB_BUILD_ODBC=OFF`
+  - `cmake --build build_cli`
+  - Windows CI uses `cmake --build build_cli --config Release` (experimental coverage).
+  - Optional: `-DSB_BUILD_CLI_FDW=ON` builds `sb_pg_isql`, `sb_my_isql`, `sb_fb_isql` (requires FDW adapter implementations from the engine repo).
+  - `sbdriver_conformance` uses a vendored `nlohmann/json.hpp` header.

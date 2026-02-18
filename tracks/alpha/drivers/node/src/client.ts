@@ -8,6 +8,7 @@
 import net from "node:net";
 import tls from "node:tls";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import {
   AuthMethod,
   MessageType,
@@ -68,7 +69,7 @@ import {
   SblrCompiledMessage,
 } from "./protocol";
 import { ScramExchange } from "./scram";
-import { parseDsn } from "./dsn";
+import { parseDsn, normalizeNativeProtocol } from "./dsn";
 import { normalizeQuery } from "./sql";
 import {
   ClientConfig,
@@ -81,6 +82,10 @@ import {
   decodeValue,
 } from "./types";
 import { mapSqlState, ScratchbirdError, ScratchbirdNotSupportedError } from "./errors";
+import { CircuitBreaker } from "./circuit_breaker";
+import { KeepaliveManager, KeepaliveTracker } from "./keepalive";
+import { LeakDetector, LeakDetectionGuard } from "./leak_detector";
+import { TelemetryCollector, SpanContext } from "./telemetry";
 
 const QUERY_FLAG_BINARY_RESULT = 0x04;
 const FORMAT_TEXT = 0;
@@ -253,10 +258,18 @@ export class Client {
   private notificationHandlers: Array<(notice: NotificationMessage) => void> = [];
   private lastPlan?: QueryPlanMessage;
   private lastSblr?: SblrCompiledMessage;
+  private readonly connectionId = randomUUID();
+  private readonly circuitBreaker = new CircuitBreaker({}, "node");
+  private readonly telemetry = new TelemetryCollector();
+  private readonly keepaliveManager = new KeepaliveManager();
+  private keepaliveTracker?: KeepaliveTracker;
+  private readonly leakDetector = new LeakDetector();
+  private leakGuard?: LeakDetectionGuard;
 
   constructor(config?: ClientConfig | string) {
     const parsed = typeof config === "string" ? parseDsn(config) : {};
     this.config = { ...parsed, ...(typeof config === "object" ? config : {}) };
+    this.config.protocol = normalizeNativeProtocol(this.config.protocol ?? this.config.parser ?? this.config.dialect);
     if (!this.config.host) this.config.host = "localhost";
     if (!this.config.port) this.config.port = 3092;
     if (!this.config.applicationName) this.config.applicationName = "scratchbird_node";
@@ -266,6 +279,7 @@ export class Client {
   }
 
   async connect(): Promise<void> {
+    this.config.protocol = normalizeNativeProtocol(this.config.protocol ?? this.config.parser ?? this.config.dialect);
     if (!this.config.user || !this.config.database) {
       throw new Error("user and database are required");
     }
@@ -278,6 +292,17 @@ export class Client {
     await this.protocol.connect(this.config);
     await this.handshake();
     await this.applySchema();
+    this.keepaliveManager.start();
+    this.keepaliveTracker = this.keepaliveManager.register(this.connectionId, async () => {
+      try {
+        await this.ping();
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    this.leakDetector.start();
+    this.leakGuard = this.leakDetector.checkout(this.connectionId, { driver: "node" });
     this.connected = true;
   }
 
@@ -327,68 +352,82 @@ export class Client {
 
   async beginTransaction(options?: TxnBeginOptions): Promise<void> {
     this.ensureConnected();
-    const isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
-    let flags = 0;
-    if (options?.isolationLevel !== undefined) flags |= TXN_FLAG_HAS_ISOLATION;
-    if (options?.accessMode !== undefined) flags |= TXN_FLAG_HAS_ACCESS;
-    if (options?.deferrable !== undefined) flags |= TXN_FLAG_HAS_DEFERRABLE;
-    if (options?.wait !== undefined) flags |= TXN_FLAG_HAS_WAIT;
-    if (options?.timeoutMs !== undefined) flags |= TXN_FLAG_HAS_TIMEOUT;
-    if (options?.autocommitMode !== undefined) flags |= TXN_FLAG_HAS_AUTOCOMMIT;
-    const payload = buildTxnBeginPayload(
-      flags,
-      options?.conflictAction ?? 0,
-      options?.autocommitMode ?? 0,
-      isolation,
-      options?.accessMode ?? 0,
-      options?.deferrable ? 1 : 0,
-      options?.wait ? 1 : 0,
-      options?.timeoutMs ?? 0
-    );
-    await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_begin", undefined, async () => {
+      const isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
+      let flags = 0;
+      if (options?.isolationLevel !== undefined) flags |= TXN_FLAG_HAS_ISOLATION;
+      if (options?.accessMode !== undefined) flags |= TXN_FLAG_HAS_ACCESS;
+      if (options?.deferrable !== undefined) flags |= TXN_FLAG_HAS_DEFERRABLE;
+      if (options?.wait !== undefined) flags |= TXN_FLAG_HAS_WAIT;
+      if (options?.timeoutMs !== undefined) flags |= TXN_FLAG_HAS_TIMEOUT;
+      if (options?.autocommitMode !== undefined) flags |= TXN_FLAG_HAS_AUTOCOMMIT;
+      const payload = buildTxnBeginPayload(
+        flags,
+        options?.conflictAction ?? 0,
+        options?.autocommitMode ?? 0,
+        isolation,
+        options?.accessMode ?? 0,
+        options?.deferrable ? 1 : 0,
+        options?.wait ? 1 : 0,
+        options?.timeoutMs ?? 0
+      );
+      await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async commitTransaction(options?: TxnEndOptions): Promise<void> {
     this.ensureConnected();
-    const payload = buildTxnCommitPayload(options?.flags ?? 0);
-    await this.protocol.sendMessage(MessageType.TXN_COMMIT, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_commit", undefined, async () => {
+      const payload = buildTxnCommitPayload(options?.flags ?? 0);
+      await this.protocol.sendMessage(MessageType.TXN_COMMIT, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async rollbackTransaction(options?: TxnEndOptions): Promise<void> {
     this.ensureConnected();
-    const payload = buildTxnRollbackPayload(options?.flags ?? 0);
-    await this.protocol.sendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_rollback", undefined, async () => {
+      const payload = buildTxnRollbackPayload(options?.flags ?? 0);
+      await this.protocol.sendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async savepoint(name: string): Promise<void> {
     this.ensureConnected();
-    const payload = buildTxnSavepointPayload(name);
-    await this.protocol.sendMessage(MessageType.TXN_SAVEPOINT, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_savepoint", undefined, async () => {
+      const payload = buildTxnSavepointPayload(name);
+      await this.protocol.sendMessage(MessageType.TXN_SAVEPOINT, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async releaseSavepoint(name: string): Promise<void> {
     this.ensureConnected();
-    const payload = buildTxnReleasePayload(name);
-    await this.protocol.sendMessage(MessageType.TXN_RELEASE, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_release", undefined, async () => {
+      const payload = buildTxnReleasePayload(name);
+      await this.protocol.sendMessage(MessageType.TXN_RELEASE, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async rollbackToSavepoint(name: string): Promise<void> {
     this.ensureConnected();
-    const payload = buildTxnRollbackToPayload(name);
-    await this.protocol.sendMessage(MessageType.TXN_ROLLBACK_TO, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("txn_rollback_to", undefined, async () => {
+      const payload = buildTxnRollbackToPayload(name);
+      await this.protocol.sendMessage(MessageType.TXN_ROLLBACK_TO, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async setOption(name: string, value: string): Promise<void> {
     this.ensureConnected();
-    const payload = buildSetOptionPayload(name, value);
-    await this.protocol.sendMessage(MessageType.SET_OPTION, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("set_option", undefined, async () => {
+      const payload = buildSetOptionPayload(name, value);
+      await this.protocol.sendMessage(MessageType.SET_OPTION, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async ping(): Promise<void> {
@@ -415,6 +454,7 @@ export class Client {
     }
     await this.protocol.sendMessage(MessageType.TERMINATE, Buffer.alloc(0), 0, false);
     this.protocol.close();
+    this.cleanupResilience();
     this.connected = false;
   }
 
@@ -434,17 +474,19 @@ export class Client {
 
   async executeSblr(hash: bigint, bytecode: Buffer | null, params?: any[], options?: QueryOptions): Promise<QueryResult> {
     this.ensureConnected();
-    const paramValues: ParamValue[] = [];
-    if (params) {
-      for (const param of params) {
-        const encoded = encodeParam(param);
-        paramValues.push(encoded.param);
+    return this.withResilience("sblr_execute", undefined, async () => {
+      const paramValues: ParamValue[] = [];
+      if (params) {
+        for (const param of params) {
+          const encoded = encodeParam(param);
+          paramValues.push(encoded.param);
+        }
       }
-    }
-    const payload = buildSblrExecutePayload(hash, bytecode ?? Buffer.alloc(0), paramValues);
-    await this.protocol.sendMessage(MessageType.SBLR_EXECUTE, payload, 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
-    return this.collectResults(options?.maxRows ?? 0, options);
+      const payload = buildSblrExecutePayload(hash, bytecode ?? Buffer.alloc(0), paramValues);
+      await this.protocol.sendMessage(MessageType.SBLR_EXECUTE, payload, 0, false);
+      await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+      return this.collectResults(options?.maxRows ?? 0, options);
+    });
   }
 
   async streamControl(controlType: number, windowSize: number, timeoutMs: number): Promise<void> {
@@ -455,22 +497,28 @@ export class Client {
 
   async attachCreate(emulationMode: string, dbName: string): Promise<void> {
     this.ensureConnected();
-    const payload = buildAttachCreatePayload(emulationMode, dbName);
-    await this.protocol.sendMessage(MessageType.ATTACH_CREATE, payload, 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("attach_create", undefined, async () => {
+      const payload = buildAttachCreatePayload(emulationMode, dbName);
+      await this.protocol.sendMessage(MessageType.ATTACH_CREATE, payload, 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async attachDetach(): Promise<void> {
     this.ensureConnected();
-    await this.protocol.sendMessage(MessageType.ATTACH_DETACH, Buffer.alloc(0), 0, false);
-    await this.drainUntilReady();
+    await this.withResilience("attach_detach", undefined, async () => {
+      await this.protocol.sendMessage(MessageType.ATTACH_DETACH, Buffer.alloc(0), 0, false);
+      await this.drainUntilReady();
+    });
   }
 
   async attachList(): Promise<QueryResult> {
     this.ensureConnected();
-    await this.protocol.sendMessage(MessageType.ATTACH_LIST, Buffer.alloc(0), 0, false);
-    await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
-    return this.collectResults(0, {});
+    return this.withResilience("attach_list", undefined, async () => {
+      await this.protocol.sendMessage(MessageType.ATTACH_LIST, Buffer.alloc(0), 0, false);
+      await this.protocol.sendMessage(MessageType.SYNC, Buffer.alloc(0), 0, false);
+      return this.collectResults(0, {});
+    });
   }
 
   onNotification(handler: (notice: NotificationMessage) => void): void {
@@ -491,6 +539,7 @@ export class Client {
       return;
     }
     this.protocol.close();
+    this.cleanupResilience();
     this.connected = false;
   }
 
@@ -498,6 +547,55 @@ export class Client {
     if (!this.connected) {
       throw new Error("Client is not connected");
     }
+  }
+
+  private cleanupResilience(): void {
+    if (this.keepaliveTracker) {
+      this.keepaliveManager.unregister(this.connectionId);
+      this.keepaliveTracker = undefined;
+    }
+    this.keepaliveManager.stop();
+    if (this.leakGuard) {
+      this.leakGuard.release();
+      this.leakGuard = undefined;
+    }
+    this.leakDetector.stop();
+  }
+
+  private async validateIfIdle(): Promise<void> {
+    if (this.keepaliveTracker && this.keepaliveTracker.needsValidation()) {
+      await this.ping();
+      this.keepaliveTracker.markActive();
+    }
+  }
+
+  private async withResilience<T>(operation: string, sql: string | undefined, fn: () => Promise<T>): Promise<T> {
+    if (!this.circuitBreaker.allowRequest()) {
+      throw new ScratchbirdError("Circuit breaker is OPEN", "08006");
+    }
+    await this.validateIfIdle();
+    const span = this.telemetry.startSpan(operation);
+    if (span && sql) {
+      span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql));
+    }
+    try {
+      const result = await fn();
+      this.finishOperation(span, true);
+      return result;
+    } catch (err) {
+      this.finishOperation(span, false);
+      throw err;
+    }
+  }
+
+  private finishOperation(span: SpanContext | null, success: boolean): void {
+    if (success) {
+      this.circuitBreaker.recordSuccess();
+      this.keepaliveTracker?.markActive();
+    } else {
+      this.circuitBreaker.recordFailure();
+    }
+    this.telemetry.endSpan(span, success);
   }
 
   private requestedFeatures(): bigint {
@@ -703,65 +801,89 @@ export class Client {
 
   private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
-    if (params.length === 0) {
-      await this.sendSimpleQuery(sql, options);
-    } else {
-      await this.sendExtendedQuery(sql, params, options);
-    }
-    return this.collectResults(pageSize, options);
+    return this.withResilience("query", sql, async () => {
+      if (params.length === 0) {
+        await this.sendSimpleQuery(sql, options);
+      } else {
+        await this.sendExtendedQuery(sql, params, options);
+      }
+      return this.collectResults(pageSize, options);
+    });
   }
 
   private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
-    await this.sendBindExecute(name, params, options);
-    return this.collectResults(pageSize, options);
+    const prepared = this.prepared.get(name);
+    return this.withResilience("execute_prepared", prepared?.sql, async () => {
+      await this.sendBindExecute(name, params, options);
+      return this.collectResults(pageSize, options);
+    });
   }
 
   private async executeQueryStream(sql: string, params: any[], options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
     const pageSize = options?.maxRows ?? 0;
-    if (params.length === 0) {
-      await this.sendSimpleQuery(sql, options);
-    } else {
-      await this.sendExtendedQuery(sql, params, options);
+    if (!this.circuitBreaker.allowRequest()) {
+      throw new ScratchbirdError("Circuit breaker is OPEN", "08006");
+    }
+    await this.validateIfIdle();
+    const span = this.telemetry.startSpan("query_stream");
+    if (span) {
+      span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql));
+    }
+    try {
+      if (params.length === 0) {
+        await this.sendSimpleQuery(sql, options);
+      } else {
+        await this.sendExtendedQuery(sql, params, options);
+      }
+    } catch (err) {
+      this.finishOperation(span, false);
+      throw err;
     }
 
     const self = this;
     async function* iterator() {
       let columns: ReturnType<typeof parseRowDescription> = [];
-      while (true) {
-        if (options?.signal?.aborted) {
-          await self.cancelQuery();
-          throw new ScratchbirdError("query canceled", "57014");
-        }
-        const msg = await self.protocol.recv();
-        if (self.handleAsyncMessage(msg)) {
-          continue;
-        }
-        switch (msg.header.type) {
-          case MessageType.ERROR:
-            throw self.raiseProtocolError(msg.payload);
-          case MessageType.ROW_DESCRIPTION:
-            columns = parseRowDescription(msg.payload);
-            continue;
-          case MessageType.DATA_ROW: {
-            const values = parseDataRow(msg.payload, columns.length);
-            yield buildRow(columns, values);
+      let success = false;
+      try {
+        while (true) {
+          if (options?.signal?.aborted) {
+            await self.cancelQuery();
+            throw new ScratchbirdError("query canceled", "57014");
+          }
+          const msg = await self.protocol.recv();
+          if (self.handleAsyncMessage(msg)) {
             continue;
           }
-          case MessageType.PORTAL_SUSPENDED: {
-            if (pageSize > 0) {
-              await self.resumePortal(pageSize);
+          switch (msg.header.type) {
+            case MessageType.ERROR:
+              throw self.raiseProtocolError(msg.payload);
+            case MessageType.ROW_DESCRIPTION:
+              columns = parseRowDescription(msg.payload);
+              continue;
+            case MessageType.DATA_ROW: {
+              const values = parseDataRow(msg.payload, columns.length);
+              yield buildRow(columns, values);
+              continue;
             }
-            continue;
+            case MessageType.PORTAL_SUSPENDED: {
+              if (pageSize > 0) {
+                await self.resumePortal(pageSize);
+              }
+              continue;
+            }
+            case MessageType.READY: {
+              const { txnId } = parseReady(msg.payload);
+              self.protocol.setTxnId(txnId);
+              success = true;
+              return;
+            }
+            default:
+              continue;
           }
-          case MessageType.READY: {
-            const { txnId } = parseReady(msg.payload);
-            self.protocol.setTxnId(txnId);
-            return;
-          }
-          default:
-            continue;
         }
+      } finally {
+        self.finishOperation(span, success);
       }
     }
     return iterator();

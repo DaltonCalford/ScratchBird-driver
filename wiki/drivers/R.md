@@ -2,8 +2,8 @@
 
 # R Driver Guide
 
-**Status:** Beta track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** Initial Early Beta (`0.1.0`) (SBWP v1.1 baseline)
+**Last Updated:** 2026-02-18
 
 ---
 
@@ -14,9 +14,11 @@ R DBI-compatible driver for ScratchBird using SBWP v1.1.
 ## Install
 
 ```r
-# From this repo
-# Install the package after building the source
+# From the repo root
+install.packages("tracks/beta/drivers/r", repos = NULL, type = "source")
 ```
+
+Dependencies: `DBI`, `openssl` (tests: `testthat`).
 
 ## Quick Start
 
@@ -42,4 +44,3 @@ See [DSN and config standard](https://github.com/DaltonCalford/ScratchBird-drive
 ## Testing
 
 Integration tests use `SCRATCHBIRD_R_URL`.
-

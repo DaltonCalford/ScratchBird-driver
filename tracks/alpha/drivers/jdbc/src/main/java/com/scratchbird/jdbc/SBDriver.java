@@ -319,7 +319,11 @@ public class SBDriver implements Driver {
         // Copy info properties
         if (info != null) {
             for (String key : info.stringPropertyNames()) {
-                props.setProperty(key, info.getProperty(key));
+                try {
+                    props.setProperty(key, info.getProperty(key));
+                } catch (IllegalArgumentException ex) {
+                    throw new SQLException(ex.getMessage(), "0A000", ex);
+                }
             }
         }
 
@@ -398,7 +402,11 @@ public class SBDriver implements Driver {
                     } catch (java.io.UnsupportedEncodingException e) {
                         // UTF-8 is always supported
                     }
-                    props.setProperty(key, value);
+                    try {
+                        props.setProperty(key, value);
+                    } catch (IllegalArgumentException ex) {
+                        throw new SQLException(ex.getMessage(), "0A000", ex);
+                    }
                 }
             }
         }

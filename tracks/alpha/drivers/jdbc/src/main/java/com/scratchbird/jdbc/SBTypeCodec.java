@@ -19,6 +19,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Array;
 import java.sql.SQLException;
+import java.sql.Struct;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -1016,6 +1017,8 @@ public final class SBTypeCodec {
             case "uuid":
                 return UUID.fromString(text);
             default:
+                break;
+        }
         return text;
     }
 
@@ -1049,7 +1052,6 @@ public final class SBTypeCodec {
             out[i] = values[i];
         }
         return out;
-    }
     }
 
     private static byte[] decodeBytea(String text) {

@@ -240,8 +240,11 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         }
 
         if (pageSize > 0) {
-            SBQueryResult result = connection.getProtocol().executeStreaming(sql, parameters, parameterTypes,
-                pageSize, queryTimeout * 1000);
+            final int streamPageSize = pageSize;
+            SBQueryResult result = connection.withResilience("query_stream", sql, () ->
+                connection.getProtocol().executeStreaming(sql, parameters, parameterTypes,
+                    streamPageSize, queryTimeout * 1000)
+            );
             if (result.getStream() == null) {
                 throw new SQLException("Query did not return a result set", "02000");
             }
@@ -249,8 +252,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             return currentResultSet;
         }
 
-        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
-            maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("query", sql, () ->
+            connection.getProtocol().execute(sql, parameters, parameterTypes,
+                maxRows, queryTimeout * 1000)
+        );
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
         }
@@ -269,8 +274,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         clearResults();
 
         String sql = getFinalSQL();
-        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
-            maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("update", sql, () ->
+            connection.getProtocol().execute(sql, parameters, parameterTypes,
+                maxRows, queryTimeout * 1000)
+        );
 
         if (returnGeneratedKeys && result.getColumns() != null && !result.getColumns().isEmpty()) {
             generatedKeys = new SBResultSet(this, result.getColumns(), result.getRows());
@@ -286,8 +293,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         clearResults();
 
         String sql = getFinalSQL();
-        SBQueryResult result = connection.getProtocol().execute(sql, parameters, parameterTypes,
-            maxRows, queryTimeout * 1000);
+        SBQueryResult result = connection.withResilience("execute", sql, () ->
+            connection.getProtocol().execute(sql, parameters, parameterTypes,
+                maxRows, queryTimeout * 1000)
+        );
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             if (returnGeneratedKeys) {

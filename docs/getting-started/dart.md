@@ -1,10 +1,17 @@
 # Dart Driver
 
+## Status
+
+Partial SBWP v1.1 implementation. TLS/binary-only enforcement and zstd rejection are implemented; metadata helpers and full type coverage are still incomplete.
+
 ## Install
+
+Install the Dart SDK (see `docs/development/toolchain-setup.md` for Ubuntu 24.04
+steps).
 
 ```bash
 cd tracks/beta/drivers/dart
-flutter pub get
+dart pub get
 ```
 
 ## Quick Start

@@ -23,6 +23,7 @@ type Config struct {
 	Password       string
 	Schema         string
 	Role           string
+	Protocol       string
 	SSLMode        string
 	SSLRootCert    string
 	SSLCert        string
@@ -40,6 +41,7 @@ func defaultConfig() Config {
 	return Config{
 		Host:           "localhost",
 		Port:           3092,
+		Protocol:       "native",
 		SSLMode:        "require",
 		ConnectTimeout: 30 * time.Second,
 		SocketTimeout:  0,
@@ -90,7 +92,9 @@ func parseURI(dsn string) (Config, error) {
 		if len(values) == 0 {
 			continue
 		}
-		applyParam(&cfg, key, values[0])
+		if err := applyParam(&cfg, key, values[0]); err != nil {
+			return Config{}, err
+		}
 	}
 	return cfg, nil
 }
@@ -115,12 +119,23 @@ func parseKeyValue(dsn string) (Config, error) {
 		}
 		key := strings.TrimSpace(part[:idx])
 		value := strings.Trim(strings.TrimSpace(part[idx+1:]), "\"")
-		applyParam(&cfg, key, value)
+		if err := applyParam(&cfg, key, value); err != nil {
+			return Config{}, err
+		}
 	}
 	return cfg, nil
 }
 
-func applyParam(cfg *Config, key, value string) {
+func normalizeNativeProtocol(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "native", "scratchbird", "scratchbird-native", "scratchbird_native":
+		return "native", true
+	default:
+		return "", false
+	}
+}
+
+func applyParam(cfg *Config, key, value string) error {
 	switch strings.ToLower(key) {
 	case "host", "server", "data source", "datasource":
 		cfg.Host = value
@@ -138,6 +153,12 @@ func applyParam(cfg *Config, key, value string) {
 		cfg.Schema = value
 	case "role":
 		cfg.Role = value
+	case "protocol", "parser", "dialect":
+		normalized, ok := normalizeNativeProtocol(value)
+		if !ok {
+			return errors.New("only protocol=native is supported; connect to the native parser listener/port")
+		}
+		cfg.Protocol = normalized
 	case "sslmode", "ssl mode":
 		cfg.SSLMode = value
 	case "sslrootcert":
@@ -171,4 +192,5 @@ func applyParam(cfg *Config, key, value string) {
 			cfg.FetchSize = uint32(rows)
 		}
 	}
+	return nil
 }

@@ -11,6 +11,7 @@ import Foundation
 public struct ScratchBirdConfig {
     public var host: String
     public var port: Int
+    public var protocolName: String
     public var database: String
     public var user: String
     public var password: String?
@@ -25,6 +26,7 @@ public struct ScratchBirdConfig {
     public init(
         host: String = "localhost",
         port: Int = 3092,
+        protocolName: String = "native",
         database: String,
         user: String,
         password: String? = nil,
@@ -38,6 +40,7 @@ public struct ScratchBirdConfig {
     ) {
         self.host = host
         self.port = port
+        self.protocolName = protocolName
         self.database = database
         self.user = user
         self.password = password
@@ -58,6 +61,7 @@ public struct ScratchBirdConfig {
             let params = Dictionary(uniqueKeysWithValues: query.map { ($0.name.lowercased(), $0.value ?? "") })
             self.host = url.host ?? "localhost"
             self.port = url.port ?? 3092
+            self.protocolName = params["protocol"] ?? params["parser"] ?? params["dialect"] ?? "native"
             self.database = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             self.user = params["user"] ?? userInfo ?? ""
             self.password = params["password"] ?? passInfo
@@ -78,6 +82,7 @@ public struct ScratchBirdConfig {
             }
             self.host = params["host"] ?? "localhost"
             self.port = Int(params["port"] ?? "3092") ?? 3092
+            self.protocolName = params["protocol"] ?? params["parser"] ?? params["dialect"] ?? "native"
             self.database = params["database"] ?? params["dbname"] ?? ""
             self.user = params["user"] ?? params["username"] ?? ""
             self.password = params["password"]

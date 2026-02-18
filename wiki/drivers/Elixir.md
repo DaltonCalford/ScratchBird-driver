@@ -2,21 +2,25 @@
 
 # Elixir (Ecto) Driver Guide
 
-**Status:** Post-gold (P3) track (SBWP v1.1 baseline)
-**Last Updated:** 2026-02-04
+**Status:** In development (post-`0.1.0`) (partial SBWP v1.1; TLS required; binary-only enforced; zstd rejected)
+**Last Updated:** 2026-02-18
 
 ---
 
 ## Overview
 
-Native ScratchBird driver with Ecto adapter (SBWP v1.1).
+Native ScratchBird driver with Ecto adapter (partial SBWP v1.1).
 
 ## Install
 
 ```bash
 cd tracks/p3/drivers/elixir
+mix local.hex --force
+mix local.rebar --force
 mix deps.get
 ```
+
+Requires Elixir ~> 1.15 (per `mix.exs`).
 
 ## Quick Start
 

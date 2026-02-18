@@ -26,6 +26,7 @@ public class SBConnectionProperties {
     // Connection target
     private String host = "localhost";
     private int port = SBDriver.DEFAULT_PORT;
+    private String protocol = "native";
     private String database;
 
     // Authentication
@@ -113,6 +114,11 @@ public class SBConnectionProperties {
             case "dbname":
             case "pgdatabase":
                 this.database = value;
+                break;
+            case "protocol":
+            case "parser":
+            case "dialect":
+                this.protocol = normalizeNativeProtocol(value);
                 break;
             case "user":
             case "username":
@@ -226,6 +232,10 @@ public class SBConnectionProperties {
             case "databasename":
             case "dbname":
                 return database;
+            case "protocol":
+            case "parser":
+            case "dialect":
+                return protocol;
             case "user":
             case "username":
                 return user;
@@ -305,6 +315,14 @@ public class SBConnectionProperties {
 
     public void setDatabase(String database) {
         this.database = database;
+    }
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = normalizeNativeProtocol(protocol);
     }
 
     public String getUser() {
@@ -535,6 +553,7 @@ public class SBConnectionProperties {
         Properties props = new Properties();
         props.setProperty("host", host);
         props.setProperty("port", String.valueOf(port));
+        props.setProperty("protocol", protocol);
         if (database != null) props.setProperty("database", database);
         if (user != null) props.setProperty("user", user);
         if (password != null) props.setProperty("password", password);
@@ -567,10 +586,26 @@ public class SBConnectionProperties {
         return "SBConnectionProperties{" +
                "host='" + host + '\'' +
                ", port=" + port +
+               ", protocol='" + protocol + '\'' +
                ", database='" + database + '\'' +
                ", user='" + user + '\'' +
                ", ssl='" + ssl + '\'' +
                ", currentSchema='" + currentSchema + '\'' +
                '}';
+    }
+
+    private static String normalizeNativeProtocol(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase();
+        switch (normalized) {
+            case "":
+            case "native":
+            case "scratchbird":
+            case "scratchbird-native":
+            case "scratchbird_native":
+                return "native";
+            default:
+                throw new IllegalArgumentException(
+                    "Only protocol=native is supported; connect to the native parser listener/port.");
+        }
     }
 }
