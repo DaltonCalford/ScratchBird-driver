@@ -1,0 +1,12 @@
+c9b18ef652c2d0f0b7c0c7c2c0b2badb05f75b4949f0b37513cd6ca138e893c5  ./composer/scratchbird-pdo-scratchbird-5f6b1563648e9aa74328d0fde280e26504ccdb29-ec4ef5.zip
+fa1a779a57bfec92c398e2f1ba6040d449b42439c18d420bcdf11f82ee542138  ./cran/scratchbird_0.1.0.tar.gz
+6fa24213c751f4a243ba2c69024ed6fe8dd783edc82fc853463d3d895b2e2be1  ./crates/scratchbird-0.1.0.crate
+f4830b8347237a225a7d2057eebbe702f5a4050f3a973e8b507ff564d09442e2  ./hex/scratchbird_ecto-0.1.0.tar
+ecc53a2294b3e343794836db2c3ca10d27dc303428cd36b1c9f3a6cdb2245370  ./maven/scratchbird-jdbc-0.1.0-sources.jar
+90d5bee406186f2fd7fcd08e5a82f23cf9a449266e2f19bbb1571d013b9898d5  ./maven/scratchbird-jdbc-0.1.0.jar
+b2eaf2f1f0c90c9e71289fcb4053cc6638aaa4bf4098c7dbb9290691fa0c0bd8  ./npm/scratchbird-0.1.0.tgz
+684e1f3daa74b35c25389b5e1a6deea03b7976aa34617aea6c6442efcadd3c74  ./nuget/ScratchBird.Data.0.1.0.nupkg
+bedbef8e4b2bf2efe3effbb6780f40e25628e0db38f392cabb929e25136949bd  ./python/scratchbird-0.1.0-py3-none-any.whl
+435283fa4bce862523ed3a893b2fa2b858213e07b4d8b9fb40b8cd46b214dc15  ./python/scratchbird-0.1.0.tar.gz
+82b19ff33a9ce0bde014a916ad81e7126488b7ea906b875b56c76a74e6861696  ./rubygems/scratchbird-0.1.0.gem
+f62ffab93a27770a103996235bf311297d1d8708b6499a6fec319a3fa160525c  ./swift/ScratchBird-0.1.0-source.zip
