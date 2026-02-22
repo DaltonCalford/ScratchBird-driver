@@ -126,10 +126,10 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
 ## Pascal (`tracks/alpha/drivers/pascal/`)
 - Required tools:
   - FreePascal 3.2+ or Delphi 11+.
-- Default build path uses in-repo native transport/TLS units (no mandatory third-party runtime dependency).
-- Native TLS status (`0.1.0`): API/state machine/record framing plus first-party
-  SHA-256/HMAC/HKDF and certificate policy checks are implemented; wire handshake,
-  certificate parsing, and AEAD record protection remain in progress.
+- Default build path uses in-repo native transport/TLS units and requires OpenSSL runtime libraries (`libssl`/`libcrypto`).
+- Native TLS status (`0.1.0`): native runtime TLS transport is implemented with
+  OpenSSL for handshake/read/write and `sslmode` policy enforcement (including
+  `verify-full` hostname checks).
 - Optional legacy path: define `SCRATCHBIRD_USE_INDY` and add vendored Indy unit paths
   (`third_party/indy/Lib/Core`, `Lib/Protocols`, `Lib/System`, `Lib/Security`) for migration-only builds.
 - FreePascal: include units from `src/` and compile with `fpc`.

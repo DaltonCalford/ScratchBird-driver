@@ -4,14 +4,12 @@
 
 Add the `tracks/alpha/drivers/pascal/src` directory to your project search path.
 
-Default builds use first-party native transport/TLS units and do not require
-outside libraries.
+Default builds use first-party native transport/TLS units and require OpenSSL
+runtime libraries (`libssl`/`libcrypto`).
 
-Native TLS status for `0.1.0`: API/state machine/record framing plus first-party
-crypto (`SHA-256`, `HMAC-SHA256`, `HKDF`) and certificate policy checks are in
-place. Wire handshake exchange, certificate parsing, and record AEAD encryption
-are still in progress, so connection attempts still fail with an explicit
-`not implemented` error.
+Native TLS status for `0.1.0`: runtime TLS is implemented in the native
+transport (connect/handshake/read/write/close) using OpenSSL, with
+`sslmode` policy support and hostname checking in `verify-full`.
 
 If you need temporary legacy connectivity during migration, define
 `SCRATCHBIRD_USE_INDY` and add vendored Indy unit paths:

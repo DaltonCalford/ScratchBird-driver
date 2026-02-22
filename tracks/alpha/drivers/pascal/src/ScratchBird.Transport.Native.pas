@@ -86,10 +86,13 @@ begin
   else
     FTlsConfig.RevocationPolicy := trpSoftFail;
   FTlsConfig.ServerName := Config.Host;
+  FTlsConfig.Port := Config.Port;
   FTlsConfig.RootCAPath := Config.SSLRootCert;
   FTlsConfig.ClientCertPath := Config.SSLCert;
   FTlsConfig.ClientKeyPath := Config.SSLKey;
   FTlsConfig.ClientKeyPassword := Config.SSLPassword;
+  FTlsConfig.ConnectTimeoutMs := Config.ConnectTimeoutMs;
+  FTlsConfig.SocketTimeoutMs := Config.SocketTimeoutMs;
 end;
 
 procedure TNativeScratchBirdTransport.RaiseTlsFailure(const Stage: string; const Status: TTlsStatus);
@@ -127,6 +130,8 @@ end;
 
 function TNativeScratchBirdTransport.ReadExact(Length: Integer): TBytes;
 var
+  Status: TTlsStatus;
+  Offset: Integer;
   BytesRead: Integer;
 begin
   Result := nil;
@@ -136,27 +141,41 @@ begin
     Exit;
   end;
   SetLength(Result, Length);
-  BytesRead := FTlsContext.Read(Result[0], Length);
-  if BytesRead <> Length then
+  Offset := 0;
+  while Offset < Length do
   begin
-    SetLength(Result, 0);
-    raise EScratchbirdNotSupported.CreateWithInfo(
-      'native TLS read path is not implemented yet',
-      '0A000', '', '');
+    BytesRead := FTlsContext.Read(Result[Offset], Length - Offset);
+    if BytesRead <= 0 then
+    begin
+      SetLength(Result, 0);
+      Status.Success := False;
+      Status.LastError := FTlsContext.LastError;
+      RaiseTlsFailure('native TLS read failed', Status);
+    end;
+    Inc(Offset, BytesRead);
   end;
 end;
 
 procedure TNativeScratchBirdTransport.Write(const Data: TBytes);
 var
+  Status: TTlsStatus;
+  Offset: Integer;
   BytesWritten: Integer;
 begin
   if Length(Data) = 0 then
     Exit;
-  BytesWritten := FTlsContext.Write(Data[0], Length(Data));
-  if BytesWritten <> Length(Data) then
-    raise EScratchbirdNotSupported.CreateWithInfo(
-      'native TLS write path is not implemented yet',
-      '0A000', '', '');
+  Offset := 0;
+  while Offset < Length(Data) do
+  begin
+    BytesWritten := FTlsContext.Write(Data[Offset], Length(Data) - Offset);
+    if BytesWritten <= 0 then
+    begin
+      Status.Success := False;
+      Status.LastError := FTlsContext.LastError;
+      RaiseTlsFailure('native TLS write failed', Status);
+    end;
+    Inc(Offset, BytesWritten);
+  end;
 end;
 
 function TNativeScratchBirdTransport.IsConnected: Boolean;

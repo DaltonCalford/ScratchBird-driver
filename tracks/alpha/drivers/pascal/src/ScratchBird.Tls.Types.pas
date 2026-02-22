@@ -41,6 +41,7 @@ type
   TTlsConfig = record
     Mode: TTlsMode;
     ServerName: string;
+    Port: Word;
     RootCAPath: string;
     ClientCertPath: string;
     ClientKeyPath: string;
@@ -48,6 +49,8 @@ type
     MinVersion: TTlsVersion;
     MaxVersion: TTlsVersion;
     RevocationPolicy: TTlsRevocationPolicy;
+    ConnectTimeoutMs: Integer;
+    SocketTimeoutMs: Integer;
   end;
 
   TTlsPeerInfo = record
@@ -78,6 +81,7 @@ function DefaultTlsConfig: TTlsConfig;
 begin
   Result.Mode := tmRequire;
   Result.ServerName := '';
+  Result.Port := 3092;
   Result.RootCAPath := '';
   Result.ClientCertPath := '';
   Result.ClientKeyPath := '';
@@ -85,6 +89,8 @@ begin
   Result.MinVersion := tvTLS13;
   Result.MaxVersion := tvTLS13;
   Result.RevocationPolicy := trpSoftFail;
+  Result.ConnectTimeoutMs := 30000;
+  Result.SocketTimeoutMs := 0;
 end;
 
 end.
