@@ -18,13 +18,17 @@ let package = Package(
         .library(name: "ScratchBird", targets: ["ScratchBird"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.1.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.1.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.74.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.30.0")
     ],
     targets: [
         .target(
             name: "ScratchBird",
             dependencies: [
-                .product(name: "Crypto", package: "swift-crypto")
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl")
             ]
         ),
         .testTarget(

@@ -12,6 +12,12 @@ import Foundation
 import Network
 #endif
 
+#if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+import NIOCore
+import NIOPosix
+import NIOSSL
+#endif
+
 #if canImport(Glibc)
 import Glibc
 private func systemConnect(_ fd: Int32, _ addr: UnsafePointer<sockaddr>, _ len: socklen_t) -> Int32 {
@@ -28,19 +34,111 @@ private func systemClose(_ fd: Int32) -> Int32 { Darwin.close(fd) }
 private let socketStream: Int32 = Int32(SOCK_STREAM)
 #endif
 
+struct ScratchBirdTlsConfig {
+    let sslmode: String
+    let sslrootcert: String?
+    let sslcert: String?
+    let sslkey: String?
+    let sslpassword: String?
+}
+
+#if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+private final class NioReadBuffer {
+    private let condition = NSCondition()
+    private var buffer = Data()
+    private var error: Error?
+    private var closed = false
+
+    func append(_ bytes: [UInt8]) {
+        condition.lock()
+        buffer.append(contentsOf: bytes)
+        condition.signal()
+        condition.unlock()
+    }
+
+    func fail(_ error: Error) {
+        condition.lock()
+        self.error = error
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func markClosed() {
+        condition.lock()
+        closed = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func readExact(_ length: Int) throws -> Data {
+        condition.lock()
+        defer { condition.unlock() }
+
+        while buffer.count < length && error == nil && !closed {
+            condition.wait()
+        }
+
+        if let error {
+            throw error
+        }
+
+        if buffer.count < length {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Socket closed"])
+        }
+
+        let out = buffer.prefix(length)
+        buffer.removeFirst(length)
+        return Data(out)
+    }
+}
+
+private final class NioInboundHandler: ChannelInboundHandler {
+    typealias InboundIn = ByteBuffer
+
+    private let readBuffer: NioReadBuffer
+
+    init(readBuffer: NioReadBuffer) {
+        self.readBuffer = readBuffer
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var buffer = unwrapInboundIn(data)
+        if let bytes = buffer.readBytes(length: buffer.readableBytes), !bytes.isEmpty {
+            readBuffer.append(bytes)
+        }
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        readBuffer.fail(error)
+        context.close(promise: nil as EventLoopPromise<Void>?)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        readBuffer.markClosed()
+    }
+}
+#endif
+
 final class ScratchBirdSocket {
     private var fd: Int32 = -1
+
     #if canImport(Network)
     private var nwConnection: NWConnection?
     private var nwBuffer = Data()
     private let nwQueue = DispatchQueue(label: "scratchbird.tls")
     #endif
+    #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+    private var nioGroup: MultiThreadedEventLoopGroup?
+    private var nioChannel: (any Channel)?
+    private var nioReadBuffer: NioReadBuffer?
+    #endif
 
-    func connect(host: String, port: Int, useTls: Bool) throws {
-        if useTls {
-            try connectTls(host: host, port: port)
+    func connect(host: String, port: Int, tlsConfig: ScratchBirdTlsConfig?) throws {
+        if let tlsConfig {
+            try connectTls(host: host, port: port, tlsConfig: tlsConfig)
             return
         }
+
         var hints = addrinfo(
             ai_flags: 0,
             ai_family: AF_UNSPEC,
@@ -72,9 +170,11 @@ final class ScratchBirdSocket {
                     return
                 }
                 _ = systemClose(fd)
+                fd = -1
             }
             ptr = addr.ai_next
         }
+
         throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to connect"])
     }
 
@@ -94,9 +194,18 @@ final class ScratchBirdSocket {
             return
         }
         #endif
+        #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+        if let channel = nioChannel {
+            var buffer = channel.allocator.buffer(capacity: data.count)
+            buffer.writeBytes(data)
+            try channel.writeAndFlush(buffer).wait()
+            return
+        }
+        #endif
+
         let count = data.count
         let written = data.withUnsafeBytes { ptr -> Int in
-            return send(fd, ptr.baseAddress, count, 0)
+            send(fd, ptr.baseAddress, count, 0)
         }
         if written != count {
             throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Socket write failed"])
@@ -110,7 +219,7 @@ final class ScratchBirdSocket {
                 let sema = DispatchSemaphore(value: 0)
                 var recvError: Error?
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, _, error in
-                    if let data = data, !data.isEmpty {
+                    if let data, !data.isEmpty {
                         self.nwBuffer.append(data)
                     }
                     recvError = error
@@ -129,11 +238,17 @@ final class ScratchBirdSocket {
             return Data(out)
         }
         #endif
+        #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+        if let nioReadBuffer {
+            return try nioReadBuffer.readExact(length)
+        }
+        #endif
+
         var buffer = Data(count: length)
         var offset = 0
         while offset < length {
             let readCount = buffer.withUnsafeMutableBytes { ptr -> Int in
-                return recv(fd, ptr.baseAddress!.advanced(by: offset), length - offset, 0)
+                recv(fd, ptr.baseAddress!.advanced(by: offset), length - offset, 0)
             }
             if readCount <= 0 {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Socket closed"])
@@ -149,18 +264,52 @@ final class ScratchBirdSocket {
             connection.cancel()
             nwConnection = nil
             nwBuffer.removeAll(keepingCapacity: true)
-            return
         }
         #endif
+        #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+        if let channel = nioChannel {
+            try? channel.close().wait()
+            nioChannel = nil
+        }
+        if let group = nioGroup {
+            try? group.syncShutdownGracefully()
+            nioGroup = nil
+        }
+        nioReadBuffer = nil
+        #endif
+
         if fd >= 0 {
             _ = systemClose(fd)
             fd = -1
         }
     }
 
-    private func connectTls(host: String, port: Int) throws {
+    private func connectTls(host: String, port: Int, tlsConfig: ScratchBirdTlsConfig) throws {
+        if tlsConfig.sslmode == "disable" {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
+        }
+
+        let hasCustomTLSFiles =
+            (tlsConfig.sslrootcert?.isEmpty == false) ||
+            (tlsConfig.sslcert?.isEmpty == false) ||
+            (tlsConfig.sslkey?.isEmpty == false) ||
+            (tlsConfig.sslpassword?.isEmpty == false)
+
         #if canImport(Network)
-        let parameters = NWParameters.tls
+        if hasCustomTLSFiles {
+            #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+            try connectTlsNio(host: host, port: port, tlsConfig: tlsConfig)
+            return
+            #else
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom TLS certificate file options are not supported on this platform"])
+            #endif
+        }
+
+        let tlsOptions = NWProtocolTLS.Options()
+        sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
+        sec_protocol_options_set_max_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
+
+        let parameters = NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: NWEndpoint.Port(integerLiteral: NWEndpoint.Port.IntegerLiteralType(port)))
         let connection = NWConnection(to: endpoint, using: parameters)
         let sema = DispatchSemaphore(value: 0)
@@ -182,9 +331,72 @@ final class ScratchBirdSocket {
             throw err
         }
         nwConnection = connection
-        return
+        #else
+        #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+        try connectTlsNio(host: host, port: port, tlsConfig: tlsConfig)
         #else
         throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS transport is not available on this platform"])
         #endif
+        #endif
     }
+
+    #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+    private func connectTlsNio(host: String, port: Int, tlsConfig: ScratchBirdTlsConfig) throws {
+        let readBuffer = NioReadBuffer()
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+
+        do {
+            var config = TLSConfiguration.makeClientConfiguration()
+            config.minimumTLSVersion = .tlsv13
+            config.maximumTLSVersion = .tlsv13
+
+            switch tlsConfig.sslmode {
+            case "verify-full":
+                config.certificateVerification = .fullVerification
+            case "verify-ca":
+                config.certificateVerification = .noHostnameVerification
+            default:
+                config.certificateVerification = .none
+            }
+
+            if let rootCert = tlsConfig.sslrootcert, !rootCert.isEmpty {
+                config.trustRoots = .file(rootCert)
+            }
+
+            if let certFile = tlsConfig.sslcert, !certFile.isEmpty {
+                guard let keyFile = tlsConfig.sslkey, !keyFile.isEmpty else {
+                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "sslcert requires sslkey"])
+                }
+                if let password = tlsConfig.sslpassword, !password.isEmpty {
+                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Encrypted TLS private keys are not currently supported in Swift transport"])
+                }
+                config.certificateChain = [.file(certFile)]
+                config.privateKey = .file(keyFile)
+            } else if let keyFile = tlsConfig.sslkey, !keyFile.isEmpty {
+                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "sslkey requires sslcert"])
+            }
+
+            let sslContext = try NIOSSLContext(configuration: config)
+
+            let bootstrap = ClientBootstrap(group: group)
+                .channelInitializer { channel in
+                    do {
+                        let handler = try NIOSSLClientHandler(context: sslContext, serverHostname: host)
+                        return channel.pipeline.addHandlers([handler, NioInboundHandler(readBuffer: readBuffer)])
+                    } catch {
+                        return channel.eventLoop.makeFailedFuture(error)
+                    }
+                }
+
+            let channel = try bootstrap.connect(host: host, port: port).wait()
+
+            self.nioGroup = group
+            self.nioChannel = channel
+            self.nioReadBuffer = readBuffer
+        } catch {
+            try? group.syncShutdownGracefully()
+            throw error
+        }
+    }
+    #endif
 }

@@ -38,6 +38,24 @@ func normalizeFrontDoorMode(_ value: String?) throws -> String {
     }
 }
 
+func normalizeSslMode(_ value: String?) throws -> String {
+    let normalized = (value ?? "require").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    switch normalized {
+    case "verify_ca":
+        return "verify-ca"
+    case "verify_full":
+        return "verify-full"
+    case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+        return normalized
+    default:
+        throw NSError(
+            domain: "ScratchBird",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Unsupported sslmode value: \(value ?? "")"]
+        )
+    }
+}
+
 private func parseBool(_ value: String?, default defaultValue: Bool) -> Bool {
     guard let value else { return defaultValue }
     switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -102,6 +120,10 @@ public struct ScratchBirdConfig {
     public var user: String
     public var password: String?
     public var sslmode: String
+    public var sslrootcert: String?
+    public var sslcert: String?
+    public var sslkey: String?
+    public var sslpassword: String?
     public var applicationName: String?
     public var searchPath: String?
     public var role: String?
@@ -125,6 +147,10 @@ public struct ScratchBirdConfig {
         user: String,
         password: String? = nil,
         sslmode: String = "require",
+        sslrootcert: String? = nil,
+        sslcert: String? = nil,
+        sslkey: String? = nil,
+        sslpassword: String? = nil,
         applicationName: String? = nil,
         searchPath: String? = nil,
         role: String? = nil,
@@ -147,6 +173,10 @@ public struct ScratchBirdConfig {
         self.user = user
         self.password = password
         self.sslmode = sslmode
+        self.sslrootcert = sslrootcert
+        self.sslcert = sslcert
+        self.sslkey = sslkey
+        self.sslpassword = sslpassword
         self.applicationName = applicationName
         self.searchPath = searchPath
         self.role = role
@@ -178,6 +208,10 @@ public struct ScratchBirdConfig {
             self.user = params["user"] ?? userInfo ?? ""
             self.password = params["password"] ?? passInfo
             self.sslmode = params["sslmode"] ?? "require"
+            self.sslrootcert = params["sslrootcert"]
+            self.sslcert = params["sslcert"]
+            self.sslkey = params["sslkey"]
+            self.sslpassword = params["sslpassword"]
             self.applicationName = params["application_name"]
             self.searchPath = params["search_path"]
             self.role = params["role"]
@@ -208,6 +242,10 @@ public struct ScratchBirdConfig {
             self.user = params["user"] ?? params["username"] ?? ""
             self.password = params["password"]
             self.sslmode = params["sslmode"] ?? "require"
+            self.sslrootcert = params["sslrootcert"]
+            self.sslcert = params["sslcert"]
+            self.sslkey = params["sslkey"]
+            self.sslpassword = params["sslpassword"]
             self.applicationName = params["application_name"]
             self.searchPath = params["search_path"]
             self.role = params["role"]

@@ -35,6 +35,12 @@ config = [
 IO.inspect(result.rows)
 ```
 
+Managed mode (`front_door_mode=manager_proxy`) is supported using the
+`manager_*` connection parameters.
+
+TLS is required. `sslmode` supports:
+`disable` (rejected), `allow`, `prefer`, `require`, `verify-ca`, `verify-full`.
+
 ## Ecto Adapter
 
 ```elixir

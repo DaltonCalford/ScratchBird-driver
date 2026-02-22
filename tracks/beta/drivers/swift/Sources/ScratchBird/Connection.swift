@@ -86,7 +86,8 @@ public final class ScratchBirdConnection {
             var normalizedConfig = config
             normalizedConfig.protocolName = try normalizeNativeProtocol(config.protocolName)
             normalizedConfig.frontDoorMode = try normalizeFrontDoorMode(config.frontDoorMode)
-            let sslmode = normalizedConfig.sslmode.lowercased()
+            let sslmode = try normalizeSslMode(normalizedConfig.sslmode)
+            normalizedConfig.sslmode = sslmode
             if sslmode == "disable" {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
             }
@@ -97,7 +98,17 @@ public final class ScratchBirdConnection {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "compression=zstd is not supported"])
             }
             let socket = ScratchBirdSocket()
-            try socket.connect(host: normalizedConfig.host, port: normalizedConfig.port, useTls: true)
+            try socket.connect(
+                host: normalizedConfig.host,
+                port: normalizedConfig.port,
+                tlsConfig: ScratchBirdTlsConfig(
+                    sslmode: sslmode,
+                    sslrootcert: normalizedConfig.sslrootcert,
+                    sslcert: normalizedConfig.sslcert,
+                    sslkey: normalizedConfig.sslkey,
+                    sslpassword: normalizedConfig.sslpassword
+                )
+            )
             let conn = ScratchBirdConnection(config: normalizedConfig, socket: socket)
             if normalizedConfig.frontDoorMode == "manager_proxy" {
                 try conn.performManagerConnect()

@@ -8,7 +8,7 @@
 
 defmodule ScratchBird.Types do
   @moduledoc false
-  use Bitwise
+  import Bitwise
   alias Decimal
 
   @format_text 0

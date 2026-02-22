@@ -29,4 +29,22 @@ final class ConfigTests: XCTestCase {
     func testNormalizeFrontDoorModeRejectsInvalid() throws {
         XCTAssertThrowsError(try normalizeFrontDoorMode("invalid"))
     }
+
+    func testParseTlsOptions() throws {
+        let cfg = ScratchBirdConfig(
+            dsn: "scratchbird://user:pass@localhost:3092/db?sslmode=verify-full&sslrootcert=/tmp/ca.pem&sslcert=/tmp/client.pem&sslkey=/tmp/client.key&sslpassword=secret"
+        )
+        XCTAssertEqual(cfg.sslmode, "verify-full")
+        XCTAssertEqual(cfg.sslrootcert, "/tmp/ca.pem")
+        XCTAssertEqual(cfg.sslcert, "/tmp/client.pem")
+        XCTAssertEqual(cfg.sslkey, "/tmp/client.key")
+        XCTAssertEqual(cfg.sslpassword, "secret")
+    }
+
+    func testNormalizeSslMode() throws {
+        XCTAssertEqual(try normalizeSslMode("verify_ca"), "verify-ca")
+        XCTAssertEqual(try normalizeSslMode("verify-full"), "verify-full")
+        XCTAssertEqual(try normalizeSslMode("require"), "require")
+        XCTAssertThrowsError(try normalizeSslMode("invalid"))
+    }
 }

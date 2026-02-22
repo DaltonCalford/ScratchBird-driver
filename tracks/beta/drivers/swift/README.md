@@ -32,8 +32,13 @@ try await conn.close()
 
 ## TLS Note
 
-The current transport uses a direct TCP socket. TLS wiring is pending and
-will be added once the Swift TLS/crypto transport is finalized for SBWP.
+TLS is required and implemented for ScratchBird connections.
+
+- Apple platforms: native `Network` TLS transport.
+- Linux: native `NIOSSL` TLS transport.
+
+`sslmode` supports: `disable` (rejected), `allow`, `prefer`, `require`,
+`verify-ca`, and `verify-full`.
 
 ## Tests
 

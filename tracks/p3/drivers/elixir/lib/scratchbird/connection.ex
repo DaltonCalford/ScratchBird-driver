@@ -10,7 +10,39 @@ defmodule ScratchBird.Connection do
   @moduledoc false
 
   alias ScratchBird.{Config, Protocol, Scram, Types, CircuitBreaker, Keepalive, LeakDetector, Telemetry}
-  use Bitwise
+  import Bitwise
+
+  @manager_protocol_magic 0x42444253
+  @manager_protocol_version 0x0101
+  @manager_header_size 12
+  @manager_max_payload_size 16 * 1024 * 1024
+
+  @mcp_protocol_version 0x0100
+  @mcp_msg_connect_response 0x02
+  @mcp_msg_auth_challenge 0x12
+  @mcp_msg_auth_response 0x11
+  @mcp_msg_status_response 0x64
+  @mcp_msg_hello 0x65
+  @mcp_msg_auth_start 0x66
+  @mcp_msg_auth_continue 0x67
+  @mcp_msg_db_connect 0x69
+  @mcp_auth_method_token 4
+
+  @msg_negotiate_version Protocol.message_type(:negotiate_version)
+  @msg_auth_request Protocol.message_type(:auth_request)
+  @msg_auth_continue Protocol.message_type(:auth_continue)
+  @msg_auth_ok Protocol.message_type(:auth_ok)
+  @msg_ready Protocol.message_type(:ready)
+  @msg_parameter_status Protocol.message_type(:parameter_status)
+  @msg_parameter_description Protocol.message_type(:parameter_description)
+  @msg_error Protocol.message_type(:error)
+  @msg_pong Protocol.message_type(:pong)
+  @msg_notification Protocol.message_type(:notification)
+  @msg_query_plan Protocol.message_type(:query_plan)
+  @msg_sblr_compiled Protocol.message_type(:sblr_compiled)
+  @msg_row_description Protocol.message_type(:row_description)
+  @msg_data_row Protocol.message_type(:data_row)
+  @msg_command_complete Protocol.message_type(:command_complete)
 
   defstruct [
     :socket,
@@ -36,7 +68,8 @@ defmodule ScratchBird.Connection do
     config = Config.from_opts(opts)
     with :ok <- validate_config(config),
          {:ok, socket, transport} <- open_socket(config),
-         {:ok, state} <- handshake(%__MODULE__{socket: socket, transport: transport, config: config}) do
+         {:ok, state} <- maybe_perform_manager_connect(%__MODULE__{socket: socket, transport: transport, config: config}),
+         {:ok, state} <- handshake(state) do
       {:ok, start_resilience(state)}
     end
   end
@@ -52,12 +85,18 @@ defmodule ScratchBird.Connection do
   end
 
   defp validate_config(config) do
-    sslmode = (config[:sslmode] || "require") |> String.downcase()
+    sslmode = normalize_ssl_mode(config[:sslmode] || "require")
     protocol = (config[:protocol] || "native") |> to_string() |> String.trim() |> String.downcase()
+    front_door_mode = normalize_front_door_mode(config[:front_door_mode] || "direct")
+
     cond do
       protocol not in ["", "native", "scratchbird", "scratchbird-native", "scratchbird_native"] ->
         {:error, "Only protocol=native is supported; connect to the native parser listener/port."}
-      sslmode == "disable" ->
+      front_door_mode == :error ->
+        {:error, "front_door_mode must be direct or manager_proxy."}
+      sslmode == :error ->
+        {:error, "Unsupported sslmode value"}
+      sslmode == {:ok, "disable"} ->
         {:error, "TLS is required for ScratchBird connections"}
       config[:binary_transfer] == false ->
         {:error, "binary_transfer=false is not supported"}
@@ -159,11 +198,11 @@ defmodule ScratchBird.Connection do
           {:handled, new_state} -> ping(new_state)
           {:ok, new_state} ->
             case msg.type do
-              type when type == Protocol.message_type(:pong) -> {:ok, new_state}
-              type when type == Protocol.message_type(:ready) ->
-                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+              @msg_pong -> {:ok, new_state}
+              @msg_ready ->
+                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
                 {:ok, %{new_state | txn_id: txn_id}}
-              type when type == Protocol.message_type(:error) -> {:error, Protocol.parse_error(msg.payload), new_state}
+              @msg_error -> {:error, Protocol.parse_error(msg.payload), new_state}
               _ -> ping(new_state)
             end
         end
@@ -252,9 +291,11 @@ defmodule ScratchBird.Connection do
   def last_sblr_compiled(state), do: state.last_sblr
 
   defp open_socket(config) do
-    host = to_charlist(config[:host] || "localhost")
+    host_name = to_string(config[:host] || "localhost")
+    host = to_charlist(host_name)
     port = config[:port] || 3092
-    sslmode = (config[:sslmode] || "require") |> String.downcase()
+    sslmode = normalize_ssl_mode(config[:sslmode] || "require")
+    connect_timeout = max(to_int(config[:connect_timeout] || 5000, 5000), 1)
 
     opts = [
       mode: :binary,
@@ -262,18 +303,314 @@ defmodule ScratchBird.Connection do
       active: false
     ]
 
-    if sslmode == "disable" do
+    if sslmode == {:ok, "disable"} do
       {:error, "TLS is required for ScratchBird connections"}
     else
+      {:ok, sslmode_value} = sslmode
+
+      verify_mode =
+        if sslmode_value in ["verify-ca", "verify-full"] do
+          :verify_peer
+        else
+          :verify_none
+        end
+
       ssl_opts = [
-        verify: :verify_none,
-        versions: [:'tlsv1.3']
+        verify: verify_mode,
+        versions: [:"tlsv1.3"],
+        server_name_indication: host,
+        reuse_sessions: false
       ]
 
-      case :ssl.connect(host, port, ssl_opts ++ opts, 5000) do
+      ssl_opts =
+        if sslmode_value == "verify-full" do
+          ssl_opts ++ [customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]]
+        else
+          ssl_opts
+        end
+
+      ssl_opts =
+        cond do
+          config[:sslrootcert] && to_string(config[:sslrootcert]) != "" ->
+            ssl_opts ++ [cacertfile: to_string(config[:sslrootcert])]
+
+          verify_mode == :verify_peer ->
+            ssl_opts ++ [cacerts: :public_key.cacerts_get()]
+
+          true ->
+            ssl_opts
+        end
+
+      ssl_opts =
+        if config[:sslcert] && to_string(config[:sslcert]) != "" do
+          ssl_opts ++ [certfile: to_string(config[:sslcert])]
+        else
+          ssl_opts
+        end
+
+      ssl_opts =
+        if config[:sslkey] && to_string(config[:sslkey]) != "" do
+          ssl_opts ++ [keyfile: to_string(config[:sslkey])]
+        else
+          ssl_opts
+        end
+
+      ssl_opts =
+        if config[:sslpassword] && to_string(config[:sslpassword]) != "" do
+          ssl_opts ++ [password: to_string(config[:sslpassword])]
+        else
+          ssl_opts
+        end
+
+      case :ssl.connect(host, port, ssl_opts ++ opts, connect_timeout) do
         {:ok, socket} -> {:ok, socket, :ssl}
         err -> err
       end
+    end
+  end
+
+  defp maybe_perform_manager_connect(state) do
+    if normalize_front_door_mode(state.config[:front_door_mode] || "direct") == {:ok, "manager_proxy"} do
+      perform_manager_connect(state)
+    else
+      {:ok, state}
+    end
+  end
+
+  defp perform_manager_connect(state) do
+    token = to_string(state.config[:manager_auth_token] || "")
+
+    if String.trim(token) == "" do
+      {:error, "manager_proxy mode requires manager_auth_token"}
+    else
+      manager_user =
+        state.config[:manager_username]
+        |> blank_to_nil()
+        |> fallback_blank(state.config[:user])
+        |> fallback_blank("admin")
+
+      manager_database =
+        state.config[:manager_database]
+        |> blank_to_nil()
+        |> fallback_blank(state.config[:database] || "")
+        |> to_string()
+
+      manager_profile =
+        state.config[:manager_connection_profile]
+        |> blank_to_nil()
+        |> fallback_blank("native_v3")
+        |> to_string()
+
+      manager_intent =
+        state.config[:manager_client_intent]
+        |> blank_to_nil()
+        |> fallback_blank("native_v3")
+        |> to_string()
+
+      manager_flags = band(to_int(state.config[:manager_client_flags] || 0, 0), 0xFFFF)
+      auth_fast_path = state.config[:manager_auth_fast_path] != false
+
+      hello_payload = <<@mcp_protocol_version::little-16, manager_flags::little-16>>
+
+      with :ok <- send_manager_frame(state, @mcp_msg_hello, hello_payload),
+           {:ok, msg_type, _hello_status} <- recv_manager_frame(state),
+           :ok <- ensure_manager_type(msg_type, @mcp_msg_status_response, "Expected MCP hello status response"),
+           :ok <- manager_auth_exchange(state, manager_user, token, auth_fast_path),
+           :ok <- manager_db_connect(state, manager_database, manager_profile, manager_intent) do
+        {:ok, state}
+      end
+    end
+  end
+
+  defp manager_auth_exchange(state, manager_user, token, auth_fast_path) do
+    auth_start =
+      if auth_fast_path do
+        token_bytes = token
+        IO.iodata_to_binary([
+          manager_lpref(manager_user),
+          <<@mcp_auth_method_token::8>>,
+          <<byte_size(token_bytes)::little-32>>,
+          token_bytes
+        ])
+      else
+        IO.iodata_to_binary([
+          manager_lpref(manager_user),
+          <<@mcp_auth_method_token::8, 0::little-32>>
+        ])
+      end
+
+    with :ok <- send_manager_frame(state, @mcp_msg_auth_start, auth_start),
+         {:ok, msg_type, payload} <- recv_manager_frame(state),
+         {:ok, msg_type, payload} <- maybe_continue_auth_challenge(state, msg_type, payload, token),
+         :ok <- ensure_manager_type(msg_type, @mcp_msg_auth_response, "Expected MCP auth response"),
+         :ok <- validate_auth_response(payload) do
+      :ok
+    end
+  end
+
+  defp maybe_continue_auth_challenge(state, msg_type, payload, token) do
+    if msg_type == @mcp_msg_auth_challenge do
+      token_bytes = token
+      auth_continue = IO.iodata_to_binary([<<byte_size(token_bytes)::little-32>>, token_bytes])
+
+      with :ok <- send_manager_frame(state, @mcp_msg_auth_continue, auth_continue),
+           {:ok, next_type, next_payload} <- recv_manager_frame(state) do
+        {:ok, next_type, next_payload}
+      end
+    else
+      {:ok, msg_type, payload}
+    end
+  end
+
+  defp validate_auth_response(payload) do
+    if byte_size(payload) < 261 do
+      {:error, "Truncated MCP auth response"}
+    else
+      <<status::8, _reserved::little-32, rest::binary>> = payload
+      if status == 0 do
+        :ok
+      else
+        <<err::binary-size(256), _tail::binary>> = rest
+        err =
+          err
+          |> String.replace(~r/\x00+$/, "")
+          |> String.trim()
+
+        {:error, if(err == "", do: "MCP authentication failed", else: err)}
+      end
+    end
+  end
+
+  defp manager_db_connect(state, manager_database, manager_profile, manager_intent) do
+    nonce = :crypto.strong_rand_bytes(16)
+
+    payload =
+      IO.iodata_to_binary([
+        <<"MCP1">>,
+        manager_lpref(manager_database),
+        manager_lpref(manager_profile),
+        manager_lpref(manager_intent),
+        <<byte_size(nonce)::little-16>>,
+        nonce
+      ])
+
+    with :ok <- send_manager_frame(state, @mcp_msg_db_connect, payload),
+         {:ok, msg_type, connect_payload} <- recv_manager_frame(state),
+         :ok <- ensure_manager_type(msg_type, @mcp_msg_connect_response, "Expected MCP connect response"),
+         :ok <- validate_connect_response(connect_payload) do
+      :ok
+    end
+  end
+
+  defp validate_connect_response(payload) do
+    minimum_size = 1 + 2 + 2 + 16 + 64 + 32
+
+    if byte_size(payload) < minimum_size do
+      {:error, "Truncated MCP connect response"}
+    else
+      <<status::8, _rest::binary>> = payload
+
+      if status == 0 do
+        :ok
+      else
+        err_offset = minimum_size
+
+        case payload do
+          <<_::binary-size(err_offset), err_len::little-32, rest::binary>> when byte_size(rest) >= err_len ->
+            <<err::binary-size(err_len), _::binary>> = rest
+            {:error, if(err == "", do: "MCP database connect failed", else: err)}
+
+          _ ->
+            {:error, "MCP database connect failed"}
+        end
+      end
+    end
+  end
+
+  defp ensure_manager_type(actual, expected, message) do
+    if actual == expected, do: :ok, else: {:error, message}
+  end
+
+  defp send_manager_frame(state, msg_type, payload) do
+    payload = payload || <<>>
+
+    frame =
+      <<@manager_protocol_magic::little-32, @manager_protocol_version::little-16, msg_type::8, 0::8,
+        byte_size(payload)::little-32, payload::binary>>
+
+    case send_raw(state, frame) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "manager frame write failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp recv_manager_frame(state) do
+    with {:ok, header} <- recv_exact(state, @manager_header_size),
+         {:ok, msg_type, payload_len} <- parse_manager_header(header),
+         {:ok, payload} <- recv_exact(state, payload_len) do
+      {:ok, msg_type, payload}
+    end
+  end
+
+  defp parse_manager_header(
+         <<@manager_protocol_magic::little-32, @manager_protocol_version::little-16, msg_type::8, _reserved::8,
+           payload_len::little-32>>
+       ) do
+    if payload_len > @manager_max_payload_size do
+      {:error, "manager payload too large"}
+    else
+      {:ok, msg_type, payload_len}
+    end
+  end
+
+  defp parse_manager_header(<<magic::little-32, _::binary>>) when magic != @manager_protocol_magic,
+    do: {:error, "manager frame magic mismatch"}
+
+  defp parse_manager_header(_), do: {:error, "manager frame version mismatch"}
+
+  defp manager_lpref(value) do
+    bytes = to_string(value || "")
+    <<byte_size(bytes)::little-32, bytes::binary>>
+  end
+
+  defp blank_to_nil(nil), do: nil
+
+  defp blank_to_nil(value) do
+    trimmed = value |> to_string() |> String.trim()
+    if trimmed == "", do: nil, else: trimmed
+  end
+
+  defp fallback_blank(nil, fallback), do: fallback
+  defp fallback_blank(value, _fallback), do: value
+
+  defp normalize_front_door_mode(value) do
+    normalized = value |> to_string() |> String.trim() |> String.downcase()
+
+    case normalized do
+      "" -> {:ok, "direct"}
+      "direct" -> {:ok, "direct"}
+      "manager_proxy" -> {:ok, "manager_proxy"}
+      "manager-proxy" -> {:ok, "manager_proxy"}
+      "managed" -> {:ok, "manager_proxy"}
+      _ -> :error
+    end
+  end
+
+  defp normalize_ssl_mode(value) do
+    case value |> to_string() |> String.trim() |> String.downcase() do
+      "verify_ca" -> {:ok, "verify-ca"}
+      "verify_full" -> {:ok, "verify-full"}
+      mode when mode in ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"] -> {:ok, mode}
+      _ -> :error
+    end
+  end
+
+  defp to_int(value, _default) when is_integer(value), do: value
+
+  defp to_int(value, default) do
+    case Integer.parse(to_string(value)) do
+      {parsed, _} -> parsed
+      _ -> default
     end
   end
 
@@ -295,20 +632,20 @@ defmodule ScratchBird.Connection do
   defp loop_auth(state, scram) do
     with {:ok, msg} <- recv_message(state) do
       case msg.type do
-        type when type == Protocol.message_type(:negotiate_version) ->
+        @msg_negotiate_version ->
           loop_auth(state, scram)
 
-        type when type == Protocol.message_type(:auth_request) ->
+        @msg_auth_request ->
           {:ok, method, data} = Protocol.parse_auth_request(msg.payload)
           {state, scram} = handle_auth_request(state, method, data, scram)
           loop_auth(state, scram)
 
-        type when type == Protocol.message_type(:auth_continue) ->
+        @msg_auth_continue ->
           {:ok, method, _stage, data} = Protocol.parse_auth_continue(msg.payload)
           {state, scram} = handle_auth_continue(state, method, data, scram)
           loop_auth(state, scram)
 
-        type when type == Protocol.message_type(:auth_ok) ->
+        @msg_auth_ok ->
         {:ok, _session_id, info} = Protocol.parse_auth_ok(msg.payload)
         state = %{state | attachment_id: msg.attachment_id, txn_id: msg.txn_id, authed: true}
         if scram && byte_size(info) > 0 do
@@ -316,17 +653,17 @@ defmodule ScratchBird.Connection do
         end
         loop_auth(state, scram)
 
-        type when type == Protocol.message_type(:parameter_status) ->
+        @msg_parameter_status ->
           {:ok, name, value} = Protocol.parse_parameter_status(msg.payload)
           loop_auth(%{state | params: Map.put(state.params, name, value)}, scram)
 
-        type when type == Protocol.message_type(:ready) ->
+        @msg_ready ->
           {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
           state = %{state | txn_id: txn_id}
           state = apply_search_path(state)
           {:ok, state}
 
-        type when type == Protocol.message_type(:error) ->
+        @msg_error ->
           {:error, Protocol.parse_error(msg.payload)}
 
         _ ->
@@ -335,7 +672,7 @@ defmodule ScratchBird.Connection do
     end
   end
 
-  defp handle_auth_request(state, method, data, scram) do
+  defp handle_auth_request(state, method, _data, scram) do
     case method do
       0 -> {state, scram}
       1 ->
@@ -422,13 +759,13 @@ defmodule ScratchBird.Connection do
           {:handled, new_state} -> describe_loop(new_state, param_count)
           {:ok, new_state} ->
             case msg.type do
-              type when type == Protocol.message_type(:parameter_description) ->
+              @msg_parameter_description ->
                 count = length(Protocol.parse_parameter_description(msg.payload))
                 describe_loop(new_state, count)
-              type when type == Protocol.message_type(:ready) ->
+              @msg_ready ->
                 {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
                 {:ok, param_count, %{new_state | txn_id: txn_id}}
-              type when type == Protocol.message_type(:error) ->
+              @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
               _ ->
                 describe_loop(new_state, param_count)
@@ -440,21 +777,21 @@ defmodule ScratchBird.Connection do
 
   defp handle_async(state, msg) do
     case msg.type do
-      type when type == Protocol.message_type(:parameter_status) ->
+      @msg_parameter_status ->
         {:ok, name, value} = Protocol.parse_parameter_status(msg.payload)
         new_state = update_parameter_status(state, to_string(name), to_string(value))
         {:handled, new_state}
 
-      type when type == Protocol.message_type(:notification) ->
+      @msg_notification ->
         notice = Protocol.parse_notification(msg.payload)
         Enum.each(state.notification_handlers, fn handler -> handler.(notice) end)
         {:handled, state}
 
-      type when type == Protocol.message_type(:query_plan) ->
+      @msg_query_plan ->
         plan = Protocol.parse_query_plan(msg.payload)
         {:handled, %{state | last_plan: plan}}
 
-      type when type == Protocol.message_type(:sblr_compiled) ->
+      @msg_sblr_compiled ->
         compiled = Protocol.parse_sblr_compiled(msg.payload)
         {:handled, %{state | last_sblr: compiled}}
 
@@ -503,10 +840,10 @@ defmodule ScratchBird.Connection do
           {:handled, new_state} -> drain_until_ready(new_state)
           {:ok, new_state} ->
             case msg.type do
-              type when type == Protocol.message_type(:ready) ->
+              @msg_ready ->
                 {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
                 {:ok, %{new_state | txn_id: txn_id}}
-              type when type == Protocol.message_type(:error) ->
+              @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
               _ ->
                 drain_until_ready(new_state)
@@ -613,22 +950,22 @@ defmodule ScratchBird.Connection do
           {:handled, new_state} -> collect_results(new_state, rows)
           {:ok, new_state} ->
             case msg.type do
-              type when type == Protocol.message_type(:row_description) ->
+              @msg_row_description ->
                 columns = Protocol.parse_row_description(msg.payload)
                 collect_rows(new_state, columns, rows)
 
-              type when type == Protocol.message_type(:data_row) ->
+              @msg_data_row ->
                 {values, _} = Protocol.parse_data_row(msg.payload)
                 collect_results(new_state, [values | rows])
 
-              type when type == Protocol.message_type(:command_complete) ->
+              @msg_command_complete ->
                 collect_results(new_state, rows)
 
-              type when type == Protocol.message_type(:ready) ->
+              @msg_ready ->
                 {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
                 {:ok, %{rows: Enum.reverse(rows), columns: []}, %{new_state | txn_id: txn_id}}
 
-              type when type == Protocol.message_type(:error) ->
+              @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
 
               _ ->
@@ -646,19 +983,19 @@ defmodule ScratchBird.Connection do
           {:handled, new_state} -> collect_rows(new_state, columns, rows)
           {:ok, new_state} ->
             case msg.type do
-              type when type == Protocol.message_type(:data_row) ->
+              @msg_data_row ->
                 {values, _} = Protocol.parse_data_row(msg.payload)
                 decoded = decode_row(columns, values)
                 collect_rows(new_state, columns, [decoded | rows])
 
-              type when type == Protocol.message_type(:command_complete) ->
+              @msg_command_complete ->
                 collect_rows(new_state, columns, rows)
 
-              type when type == Protocol.message_type(:ready) ->
+              @msg_ready ->
                 {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
                 {:ok, %{rows: Enum.reverse(rows), columns: columns}, %{new_state | txn_id: txn_id}}
 
-              type when type == Protocol.message_type(:error) ->
+              @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
 
               _ ->
@@ -698,11 +1035,15 @@ defmodule ScratchBird.Connection do
       txn_id: state.txn_id
     }
     data = Protocol.encode_message(header, payload)
-    _ = case state.transport do
+    _ = send_raw(state, data)
+    %{state | sequence: state.sequence + 1}
+  end
+
+  defp send_raw(state, data) do
+    case state.transport do
       :ssl -> :ssl.send(state.socket, data)
       :tcp -> :gen_tcp.send(state.socket, data)
     end
-    %{state | sequence: state.sequence + 1}
   end
 
   defp recv_message(state) do

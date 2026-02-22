@@ -8,6 +8,7 @@
 
 defmodule ScratchBird.Protocol do
   @moduledoc false
+  import Bitwise
 
   @protocol_magic 0x50574253
   @protocol_major 1
@@ -428,7 +429,7 @@ defmodule ScratchBird.Protocol do
 
   defp parse_row_values(0, rest, acc), do: {Enum.reverse(acc), rest}
 
-  defp parse_row_values(count, <<-1::little-32, rest::binary>>, acc) do
+  defp parse_row_values(count, <<0xFFFFFFFF::little-32, rest::binary>>, acc) do
     parse_row_values(count - 1, rest, [%{null: true, data: nil} | acc])
   end
 
