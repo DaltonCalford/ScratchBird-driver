@@ -29,6 +29,23 @@ constexpr int64_t kMicrosPerSecond = 1000000LL;
 constexpr int64_t kMicrosPerDay = 86400LL * kMicrosPerSecond;
 constexpr int64_t kDaysFrom1970To2000 = 10957;
 
+// manager MCP uses the SBDB frame header before switching to byte-proxy mode.
+constexpr uint32_t kManagerProtocolMagic = 0x42444253;  // "SBDB"
+constexpr uint16_t kManagerProtocolVersion = 0x0101;    // 1.1
+constexpr size_t kManagerHeaderSize = 12;
+constexpr uint32_t kManagerMaxPayloadSize = 16u * 1024u * 1024u;
+constexpr uint16_t kMcpProtocolVersion = 0x0100;
+
+constexpr uint8_t kMsgConnectResponse = 0x02;
+constexpr uint8_t kMsgAuthChallenge = 0x12;
+constexpr uint8_t kMsgAuthResponse = 0x11;
+constexpr uint8_t kMsgStatusResponse = 0x64;
+constexpr uint8_t kMsgMcpHello = 0x65;
+constexpr uint8_t kMsgMcpAuthStart = 0x66;
+constexpr uint8_t kMsgMcpAuthContinue = 0x67;
+constexpr uint8_t kMsgMcpDbConnect = 0x69;
+constexpr uint8_t kMcpAuthMethodToken = 4;
+
 core::Status setError(core::ErrorContext* ctx, core::Status status, const std::string& message) {
     if (ctx) {
         ctx->set(status, message.c_str(), __FILE__, __LINE__, __func__);
@@ -45,6 +62,40 @@ std::string toLower(std::string value) {
 bool isNativeProtocol(const std::string& value) {
     std::string lower = toLower(value);
     return lower.empty() || lower == "native";
+}
+
+bool isManagerProxyMode(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower == "manager_proxy" || lower == "manager-proxy" || lower == "managed";
+}
+
+void appendU16(std::vector<uint8_t>& out, uint16_t value) {
+    out.push_back(static_cast<uint8_t>(value & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+}
+
+void appendU32(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>(value & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+}
+
+uint16_t readU16(const uint8_t* data) {
+    return static_cast<uint16_t>(data[0]) |
+           (static_cast<uint16_t>(data[1]) << 8);
+}
+
+uint32_t readU32(const uint8_t* data) {
+    return static_cast<uint32_t>(data[0]) |
+           (static_cast<uint32_t>(data[1]) << 8) |
+           (static_cast<uint32_t>(data[2]) << 16) |
+           (static_cast<uint32_t>(data[3]) << 24);
+}
+
+void appendLengthPrefixedString(std::vector<uint8_t>& out, const std::string& value) {
+    appendU32(out, static_cast<uint32_t>(value.size()));
+    out.insert(out.end(), value.begin(), value.end());
 }
 
 std::string base64Encode(const std::vector<uint8_t>& data) {
@@ -692,6 +743,13 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
                         core::Status::INVALID_ARGUMENT,
                         "Only protocol=native is supported; configure the native parser listener.");
     }
+    if (!config.front_door_mode.empty() &&
+        !isManagerProxyMode(config.front_door_mode) &&
+        toLower(config.front_door_mode) != "direct") {
+        return setError(ctx,
+                        core::Status::INVALID_ARGUMENT,
+                        "front_door_mode must be direct or manager_proxy");
+    }
     config_ = config;
     network::NetworkInitGuard guard;
     if (!guard.isInitialized()) {
@@ -743,7 +801,16 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
         return setError(ctx, core::Status::CONNECTION_FAILURE, "TLS is required");
     }
 
-    auto status = handshake(ctx);
+    core::Status status = core::Status::OK;
+    if (isManagerProxyMode(config_.front_door_mode)) {
+        status = performManagerConnect(ctx);
+        if (status != core::Status::OK) {
+            disconnect();
+            return status;
+        }
+    }
+
+    status = handshake(ctx);
     if (status != core::Status::OK) {
         disconnect();
         return status;
@@ -1516,6 +1583,221 @@ core::Status NetworkClient::rollback(core::ErrorContext* ctx) {
         return status;
     }
     return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::sendManagerFrame(uint8_t type,
+                                             const std::vector<uint8_t>& payload,
+                                             core::ErrorContext* ctx) {
+    std::vector<uint8_t> frame;
+    frame.reserve(kManagerHeaderSize + payload.size());
+    appendU32(frame, kManagerProtocolMagic);
+    appendU16(frame, kManagerProtocolVersion);
+    frame.push_back(type);
+    frame.push_back(0);  // flags
+    appendU32(frame, static_cast<uint32_t>(payload.size()));
+    frame.insert(frame.end(), payload.begin(), payload.end());
+
+    if (tls_active_) {
+        size_t total = 0;
+        while (total < frame.size()) {
+            int rc = tls_conn_->write(frame.data() + total, static_cast<int>(frame.size() - total));
+            if (rc <= 0) {
+                return setError(ctx, core::Status::CONNECTION_FAILURE, "Manager frame write failed");
+            }
+            total += static_cast<size_t>(rc);
+        }
+        return core::Status::OK;
+    }
+
+    auto status = socket_->writeExact(frame.data(), frame.size(), ctx);
+    if (status != core::Status::OK) {
+        return setError(ctx, core::Status::CONNECTION_FAILURE, "Manager frame write failed");
+    }
+    return core::Status::OK;
+}
+
+core::Status NetworkClient::receiveManagerFrame(uint8_t& type,
+                                                std::vector<uint8_t>& payload,
+                                                core::ErrorContext* ctx) {
+    uint8_t header[kManagerHeaderSize] = {0};
+    auto status = readExactWithTimeout(header, sizeof(header), ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+
+    const uint32_t magic = readU32(header);
+    if (magic != kManagerProtocolMagic) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Manager frame magic mismatch");
+    }
+    const uint16_t version = readU16(header + 4);
+    if (version != kManagerProtocolVersion) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Manager frame version mismatch");
+    }
+    type = header[6];
+    const uint32_t payload_len = readU32(header + 8);
+    if (payload_len > kManagerMaxPayloadSize) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Manager payload too large");
+    }
+
+    payload.clear();
+    if (payload_len == 0) {
+        return core::Status::OK;
+    }
+    payload.resize(payload_len);
+    return readExactWithTimeout(payload.data(), payload.size(), ctx);
+}
+
+core::Status NetworkClient::performManagerConnect(core::ErrorContext* ctx) {
+    if (config_.manager_auth_token.empty()) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT,
+                        "manager_proxy mode requires manager_auth_token");
+    }
+
+    const std::string manager_user =
+        config_.manager_username.empty() ? (config_.username.empty() ? "admin" : config_.username)
+                                         : config_.manager_username;
+    const std::string manager_db =
+        config_.manager_database.empty() ? config_.database : config_.manager_database;
+    const std::string manager_profile =
+        config_.manager_connection_profile.empty() ? "native_v3" : config_.manager_connection_profile;
+    const std::string manager_intent =
+        config_.manager_client_intent.empty() ? "native_v3" : config_.manager_client_intent;
+
+    // MCP_HELLO
+    std::vector<uint8_t> hello_payload;
+    hello_payload.reserve(4);
+    appendU16(hello_payload, kMcpProtocolVersion);
+    appendU16(hello_payload, config_.manager_client_flags);
+    auto status = sendManagerFrame(kMsgMcpHello, hello_payload, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+
+    uint8_t msg_type = 0;
+    std::vector<uint8_t> msg_payload;
+    status = receiveManagerFrame(msg_type, msg_payload, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    if (msg_type != kMsgStatusResponse) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Expected MCP hello status response");
+    }
+
+    // MCP_AUTH_START
+    std::vector<uint8_t> auth_start;
+    appendLengthPrefixedString(auth_start, manager_user);
+    auth_start.push_back(kMcpAuthMethodToken);
+    if (config_.manager_auth_fast_path) {
+        appendU32(auth_start, static_cast<uint32_t>(config_.manager_auth_token.size()));
+        auth_start.insert(auth_start.end(),
+                          config_.manager_auth_token.begin(),
+                          config_.manager_auth_token.end());
+    } else {
+        appendU32(auth_start, 0);
+    }
+    status = sendManagerFrame(kMsgMcpAuthStart, auth_start, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+
+    status = receiveManagerFrame(msg_type, msg_payload, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+
+    auto parseAuthResponseStatus = [&](const std::vector<uint8_t>& payload,
+                                       std::string* error_out) -> core::Status {
+        if (payload.size() < 1 + 4 + 256) {
+            return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Truncated MCP auth response");
+        }
+        const uint8_t auth_status = payload[0];
+        if (auth_status == 0) {
+            return core::Status::OK;
+        }
+        std::string err(reinterpret_cast<const char*>(payload.data() + 5), 256);
+        const auto nul = err.find('\0');
+        if (nul != std::string::npos) {
+            err.resize(nul);
+        }
+        if (error_out) {
+            *error_out = err;
+        }
+        return core::Status::INVALID_AUTHORIZATION;
+    };
+
+    if (msg_type == kMsgAuthChallenge) {
+        std::vector<uint8_t> auth_continue;
+        appendU32(auth_continue, static_cast<uint32_t>(config_.manager_auth_token.size()));
+        auth_continue.insert(auth_continue.end(),
+                             config_.manager_auth_token.begin(),
+                             config_.manager_auth_token.end());
+        status = sendManagerFrame(kMsgMcpAuthContinue, auth_continue, ctx);
+        if (status != core::Status::OK) {
+            return status;
+        }
+        status = receiveManagerFrame(msg_type, msg_payload, ctx);
+        if (status != core::Status::OK) {
+            return status;
+        }
+    }
+
+    if (msg_type != kMsgAuthResponse) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Expected MCP auth response");
+    }
+    std::string auth_error;
+    status = parseAuthResponseStatus(msg_payload, &auth_error);
+    if (status != core::Status::OK) {
+        return setError(ctx,
+                        core::Status::INVALID_AUTHORIZATION,
+                        auth_error.empty() ? "MCP authentication failed" : auth_error);
+    }
+
+    // MCP_DB_CONNECT (extended payload)
+    std::vector<uint8_t> db_connect;
+    db_connect.push_back('M');
+    db_connect.push_back('C');
+    db_connect.push_back('P');
+    db_connect.push_back('1');
+    appendLengthPrefixedString(db_connect, manager_db);
+    appendLengthPrefixedString(db_connect, manager_profile);
+    appendLengthPrefixedString(db_connect, manager_intent);
+    std::vector<uint8_t> nonce(16);
+    if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) {
+        return setError(ctx, core::Status::INTERNAL_ERROR, "Failed to generate MCP nonce");
+    }
+    appendU16(db_connect, static_cast<uint16_t>(nonce.size()));
+    db_connect.insert(db_connect.end(), nonce.begin(), nonce.end());
+    status = sendManagerFrame(kMsgMcpDbConnect, db_connect, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+
+    status = receiveManagerFrame(msg_type, msg_payload, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    if (msg_type != kMsgConnectResponse) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Expected MCP connect response");
+    }
+    if (msg_payload.size() < 1 + 2 + 2 + 16 + 64 + 32) {
+        return setError(ctx, core::Status::PROTOCOL_VIOLATION, "Truncated MCP connect response");
+    }
+    const bool connect_ok = (msg_payload[0] == 0);
+    if (!connect_ok) {
+        std::string connect_error = "MCP database connect failed";
+        const size_t err_offset = 1 + 2 + 2 + 16 + 64 + 32;
+        if (msg_payload.size() >= err_offset + 4) {
+            const uint32_t err_len = readU32(msg_payload.data() + err_offset);
+            if (err_offset + 4 + err_len <= msg_payload.size()) {
+                connect_error.assign(
+                    reinterpret_cast<const char*>(msg_payload.data() + err_offset + 4),
+                    err_len);
+            }
+        }
+        return setError(ctx, core::Status::INVALID_AUTHORIZATION, connect_error);
+    }
+
+    return core::Status::OK;
 }
 
 core::Status NetworkClient::sendMessage(const protocol::ProtocolMessage& msg,

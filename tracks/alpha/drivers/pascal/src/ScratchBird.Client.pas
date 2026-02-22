@@ -94,6 +94,10 @@ type
     function ReadExact(Length: Integer): TBytes;
     procedure SendBytes(const Data: TBytes);
     function ReceiveMessage: TScratchBirdMessage;
+    procedure SendManagerFrame(MsgType: Byte; const Payload: TBytes);
+    procedure ReceiveManagerFrame(out MsgType: Byte; out Payload: TBytes);
+    procedure AppendLengthPrefixedString(var Buffer: TBytes; const Value: string);
+    procedure PerformManagerConnect;
     procedure HandshakeAndAuth;
     procedure ApplySchema;
     function BuildQueryError(const Payload: TBytes): EScratchBirdError;
@@ -147,6 +151,68 @@ type
   end;
 
 implementation
+
+const
+  MANAGER_PROTOCOL_MAGIC = $42444253; // SBDB
+  MANAGER_PROTOCOL_VERSION = $0101;
+  MANAGER_HEADER_SIZE = 12;
+  MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
+  MCP_PROTOCOL_VERSION = $0100;
+
+  MCP_MSG_CONNECT_RESPONSE = $02;
+  MCP_MSG_AUTH_CHALLENGE = $12;
+  MCP_MSG_AUTH_RESPONSE = $11;
+  MCP_MSG_STATUS_RESPONSE = $64;
+  MCP_MSG_HELLO = $65;
+  MCP_MSG_AUTH_START = $66;
+  MCP_MSG_AUTH_CONTINUE = $67;
+  MCP_MSG_DB_CONNECT = $69;
+  MCP_AUTH_METHOD_TOKEN = 4;
+
+function ReadUInt16LEValue(const Data: TBytes; Offset: Integer): Word;
+begin
+  Result := Word(Data[Offset]) or (Word(Data[Offset + 1]) shl 8);
+end;
+
+function ReadUInt32LEValue(const Data: TBytes; Offset: Integer): Cardinal;
+begin
+  Result := Cardinal(Data[Offset]) or (Cardinal(Data[Offset + 1]) shl 8) or
+    (Cardinal(Data[Offset + 2]) shl 16) or (Cardinal(Data[Offset + 3]) shl 24);
+end;
+
+procedure AppendUInt16LE(var Buffer: TBytes; Value: Word);
+var
+  Start: Integer;
+begin
+  Start := Length(Buffer);
+  SetLength(Buffer, Start + 2);
+  Buffer[Start] := Byte(Value and $FF);
+  Buffer[Start + 1] := Byte((Value shr 8) and $FF);
+end;
+
+procedure AppendUInt32LE(var Buffer: TBytes; Value: Cardinal);
+var
+  Start: Integer;
+begin
+  Start := Length(Buffer);
+  SetLength(Buffer, Start + 4);
+  Buffer[Start] := Byte(Value and $FF);
+  Buffer[Start + 1] := Byte((Value shr 8) and $FF);
+  Buffer[Start + 2] := Byte((Value shr 16) and $FF);
+  Buffer[Start + 3] := Byte((Value shr 24) and $FF);
+end;
+
+procedure AppendBytes(var Buffer: TBytes; const Bytes: TBytes);
+var
+  Start, Count: Integer;
+begin
+  Count := Length(Bytes);
+  if Count = 0 then
+    Exit;
+  Start := Length(Buffer);
+  SetLength(Buffer, Start + Count);
+  Move(Bytes[0], Buffer[Start], Count);
+end;
 
 function GetProcessIdValue: Cardinal;
 begin
@@ -318,12 +384,23 @@ begin
       '0A000', '', '');
   if (FConfig.UserName = '') or (FConfig.Database = '') then
     raise EScratchbirdConnectionError.CreateWithInfo('user and database are required', '08001', '', '');
+  FConfig.FrontDoorMode := LowerCase(Trim(FConfig.FrontDoorMode));
+  if (FConfig.FrontDoorMode = '') then
+    FConfig.FrontDoorMode := 'direct'
+  else if (FConfig.FrontDoorMode = 'manager-proxy') or (FConfig.FrontDoorMode = 'managed') then
+    FConfig.FrontDoorMode := 'manager_proxy';
+  if (FConfig.FrontDoorMode <> 'direct') and (FConfig.FrontDoorMode <> 'manager_proxy') then
+    raise EScratchbirdNotSupported.CreateWithInfo(
+      'front_door_mode must be direct or manager_proxy.',
+      '0A000', '', '');
   if not FConfig.BinaryTransfer then
     raise EScratchbirdNotSupported.CreateWithInfo('binary_transfer=false is not supported', '0A000', '', '');
   if SameText(FConfig.Compression, 'zstd') then
     raise EScratchbirdNotSupported.CreateWithInfo('compression=zstd is not supported', '0A000', '', '');
   FTransport.Configure(FConfig);
   FTransport.Connect;
+  if FConfig.FrontDoorMode = 'manager_proxy' then
+    PerformManagerConnect;
   HandshakeAndAuth;
   ApplySchema;
   FConnected := True;
@@ -636,6 +713,166 @@ begin
     Result.Payload := ReadExact(PayloadLen)
   else
     Result.Payload := nil;
+end;
+
+procedure TScratchBirdClient.AppendLengthPrefixedString(var Buffer: TBytes; const Value: string);
+var
+  Bytes: TBytes;
+begin
+  Bytes := TEncoding.UTF8.GetBytes(Value);
+  AppendUInt32LE(Buffer, Cardinal(Length(Bytes)));
+  AppendBytes(Buffer, Bytes);
+end;
+
+procedure TScratchBirdClient.SendManagerFrame(MsgType: Byte; const Payload: TBytes);
+var
+  Frame: TBytes;
+  Start: Integer;
+begin
+  SetLength(Frame, 0);
+  AppendUInt32LE(Frame, MANAGER_PROTOCOL_MAGIC);
+  AppendUInt16LE(Frame, MANAGER_PROTOCOL_VERSION);
+  Start := Length(Frame);
+  SetLength(Frame, Start + 2);
+  Frame[Start] := MsgType;
+  Frame[Start + 1] := 0;
+  AppendUInt32LE(Frame, Cardinal(Length(Payload)));
+  AppendBytes(Frame, Payload);
+  SendBytes(Frame);
+end;
+
+procedure TScratchBirdClient.ReceiveManagerFrame(out MsgType: Byte; out Payload: TBytes);
+var
+  Header: TBytes;
+  Magic: Cardinal;
+  Version: Word;
+  PayloadLen: Cardinal;
+begin
+  Header := ReadExact(MANAGER_HEADER_SIZE);
+  Magic := ReadUInt32LEValue(Header, 0);
+  if Magic <> MANAGER_PROTOCOL_MAGIC then
+    raise EScratchbirdConnectionError.CreateWithInfo('Manager frame magic mismatch', '08P01', '', '');
+  Version := ReadUInt16LEValue(Header, 4);
+  if Version <> MANAGER_PROTOCOL_VERSION then
+    raise EScratchbirdConnectionError.CreateWithInfo('Manager frame version mismatch', '08P01', '', '');
+  MsgType := Header[6];
+  PayloadLen := ReadUInt32LEValue(Header, 8);
+  if PayloadLen > MANAGER_MAX_PAYLOAD_SIZE then
+    raise EScratchbirdConnectionError.CreateWithInfo('Manager payload too large', '08P01', '', '');
+  if PayloadLen > 0 then
+    Payload := ReadExact(PayloadLen)
+  else
+    SetLength(Payload, 0);
+end;
+
+procedure TScratchBirdClient.PerformManagerConnect;
+var
+  Token: string;
+  ManagerUser, ManagerDatabase, ManagerProfile, ManagerIntent: string;
+  HelloPayload, AuthStart, AuthContinue, DbConnect, Nonce, TokenBytes: TBytes;
+  MsgType: Byte;
+  Payload: TBytes;
+  Start: Integer;
+  I: Integer;
+  ErrText: string;
+  ErrOffset, ErrLen: Cardinal;
+begin
+  Token := Trim(FConfig.ManagerAuthToken);
+  if Token = '' then
+    raise EScratchbirdConnectionError.CreateWithInfo('manager_proxy mode requires manager_auth_token', '08001', '', '');
+
+  ManagerUser := Trim(FConfig.ManagerUsername);
+  if ManagerUser = '' then
+  begin
+    if Trim(FConfig.UserName) <> '' then
+      ManagerUser := FConfig.UserName
+    else
+      ManagerUser := 'admin';
+  end;
+  ManagerDatabase := Trim(FConfig.ManagerDatabase);
+  if ManagerDatabase = '' then
+    ManagerDatabase := FConfig.Database;
+  ManagerProfile := Trim(FConfig.ManagerConnectionProfile);
+  if ManagerProfile = '' then
+    ManagerProfile := 'native_v3';
+  ManagerIntent := Trim(FConfig.ManagerClientIntent);
+  if ManagerIntent = '' then
+    ManagerIntent := 'native_v3';
+
+  SetLength(HelloPayload, 0);
+  AppendUInt16LE(HelloPayload, MCP_PROTOCOL_VERSION);
+  AppendUInt16LE(HelloPayload, Word(FConfig.ManagerClientFlags and $FFFF));
+  SendManagerFrame(MCP_MSG_HELLO, HelloPayload);
+  ReceiveManagerFrame(MsgType, Payload);
+  if MsgType <> MCP_MSG_STATUS_RESPONSE then
+    raise EScratchbirdConnectionError.CreateWithInfo('Expected MCP hello status response', '08P01', '', '');
+
+  SetLength(AuthStart, 0);
+  AppendLengthPrefixedString(AuthStart, ManagerUser);
+  Start := Length(AuthStart);
+  SetLength(AuthStart, Start + 1);
+  AuthStart[Start] := MCP_AUTH_METHOD_TOKEN;
+  if FConfig.ManagerAuthFastPath then
+  begin
+    TokenBytes := TEncoding.UTF8.GetBytes(Token);
+    AppendUInt32LE(AuthStart, Cardinal(Length(TokenBytes)));
+    AppendBytes(AuthStart, TokenBytes);
+  end
+  else
+    AppendUInt32LE(AuthStart, 0);
+
+  SendManagerFrame(MCP_MSG_AUTH_START, AuthStart);
+  ReceiveManagerFrame(MsgType, Payload);
+  if MsgType = MCP_MSG_AUTH_CHALLENGE then
+  begin
+    TokenBytes := TEncoding.UTF8.GetBytes(Token);
+    SetLength(AuthContinue, 0);
+    AppendUInt32LE(AuthContinue, Cardinal(Length(TokenBytes)));
+    AppendBytes(AuthContinue, TokenBytes);
+    SendManagerFrame(MCP_MSG_AUTH_CONTINUE, AuthContinue);
+    ReceiveManagerFrame(MsgType, Payload);
+  end;
+  if MsgType <> MCP_MSG_AUTH_RESPONSE then
+    raise EScratchbirdConnectionError.CreateWithInfo('Expected MCP auth response', '08P01', '', '');
+  if Length(Payload) < (1 + 4 + 256) then
+    raise EScratchbirdConnectionError.CreateWithInfo('Truncated MCP auth response', '08P01', '', '');
+  if Payload[0] <> 0 then
+  begin
+    ErrText := StringReplace(TEncoding.UTF8.GetString(Copy(Payload, 5, 256)), #0, '', [rfReplaceAll]);
+    if Trim(ErrText) = '' then
+      ErrText := 'MCP authentication failed';
+    raise EScratchbirdAuthError.CreateWithInfo(ErrText, '28000', '', '');
+  end;
+
+  SetLength(DbConnect, 0);
+  AppendBytes(DbConnect, TEncoding.ASCII.GetBytes('MCP1'));
+  AppendLengthPrefixedString(DbConnect, ManagerDatabase);
+  AppendLengthPrefixedString(DbConnect, ManagerProfile);
+  AppendLengthPrefixedString(DbConnect, ManagerIntent);
+  SetLength(Nonce, 16);
+  Randomize;
+  for I := 0 to High(Nonce) do
+    Nonce[I] := Byte(Random(256));
+  AppendUInt16LE(DbConnect, Word(Length(Nonce)));
+  AppendBytes(DbConnect, Nonce);
+  SendManagerFrame(MCP_MSG_DB_CONNECT, DbConnect);
+  ReceiveManagerFrame(MsgType, Payload);
+  if MsgType <> MCP_MSG_CONNECT_RESPONSE then
+    raise EScratchbirdConnectionError.CreateWithInfo('Expected MCP connect response', '08P01', '', '');
+  if Length(Payload) < (1 + 2 + 2 + 16 + 64 + 32) then
+    raise EScratchbirdConnectionError.CreateWithInfo('Truncated MCP connect response', '08P01', '', '');
+  if Payload[0] <> 0 then
+  begin
+    ErrText := 'MCP database connect failed';
+    ErrOffset := 1 + 2 + 2 + 16 + 64 + 32;
+    if Length(Payload) >= Integer(ErrOffset + 4) then
+    begin
+      ErrLen := ReadUInt32LEValue(Payload, ErrOffset);
+      if Length(Payload) >= Integer(ErrOffset + 4 + ErrLen) then
+        ErrText := TEncoding.UTF8.GetString(Copy(Payload, ErrOffset + 4, ErrLen));
+    end;
+    raise EScratchbirdAuthError.CreateWithInfo(ErrText, '28000', '', '');
+  end;
 end;
 
 function TScratchBirdClient.SendMessage(MsgType: TScratchBirdMessageType; const Payload: TBytes; Flags: Byte; ForceZero: Boolean): Cardinal;

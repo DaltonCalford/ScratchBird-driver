@@ -23,6 +23,21 @@ require "scratchbird/telemetry"
 module Scratchbird
   class Client
     QUERY_FLAG_BINARY_RESULT = 0x04
+    MANAGER_PROTOCOL_MAGIC = 0x42444253
+    MANAGER_PROTOCOL_VERSION = 0x0101
+    MANAGER_HEADER_SIZE = 12
+    MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024
+    MCP_PROTOCOL_VERSION = 0x0100
+
+    MCP_MSG_CONNECT_RESPONSE = 0x02
+    MCP_MSG_AUTH_CHALLENGE = 0x12
+    MCP_MSG_AUTH_RESPONSE = 0x11
+    MCP_MSG_STATUS_RESPONSE = 0x64
+    MCP_MSG_HELLO = 0x65
+    MCP_MSG_AUTH_START = 0x66
+    MCP_MSG_AUTH_CONTINUE = 0x67
+    MCP_MSG_DB_CONNECT = 0x69
+    MCP_AUTH_METHOD_TOKEN = 4
 
     attr_reader :parameters
 
@@ -53,6 +68,7 @@ module Scratchbird
     def connect
       begin
         @config.protocol = Config.normalize_native_protocol(@config.protocol)
+        @config.front_door_mode = Config.normalize_front_door_mode(@config.front_door_mode)
       rescue ArgumentError => e
         raise NotSupportedError, e.message
       end
@@ -61,6 +77,7 @@ module Scratchbird
       raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
       raw_socket = connect_tcp
       @socket = wrap_tls(raw_socket)
+      perform_manager_connect if @config.front_door_mode == "manager_proxy"
       handshake
       apply_schema
       @connected = true
@@ -409,6 +426,102 @@ module Scratchbird
     rescue OpenSSL::SSL::SSLError
       raw_socket.close
       raise
+    end
+
+    def manager_lpref(text)
+      encoded = text.to_s.b
+      [encoded.bytesize].pack("V") + encoded
+    end
+
+    def send_manager_frame(type, payload)
+      frame = +""
+      frame << [MANAGER_PROTOCOL_MAGIC].pack("V")
+      frame << [MANAGER_PROTOCOL_VERSION].pack("v")
+      frame << [type, 0].pack("C2")
+      frame << [payload.bytesize].pack("V")
+      frame << payload
+      total = 0
+      while total < frame.bytesize
+        written = @socket.write(frame.byteslice(total, frame.bytesize - total))
+        raise ConnectionError, "manager frame write failed" if written.nil? || written.zero?
+        total += written
+      end
+    end
+
+    def recv_manager_frame
+      header = read_exact(MANAGER_HEADER_SIZE)
+      magic = header.byteslice(0, 4).unpack1("V")
+      raise ConnectionError, "manager frame magic mismatch" unless magic == MANAGER_PROTOCOL_MAGIC
+      version = header.byteslice(4, 2).unpack1("v")
+      raise ConnectionError, "manager frame version mismatch" unless version == MANAGER_PROTOCOL_VERSION
+      type = header.getbyte(6)
+      length = header.byteslice(8, 4).unpack1("V")
+      raise ConnectionError, "manager payload too large" if length > MANAGER_MAX_PAYLOAD_SIZE
+      payload = length.positive? ? read_exact(length) : +""
+      [type, payload]
+    end
+
+    def perform_manager_connect
+      token = @config.manager_auth_token.to_s
+      raise ConnectionError, "manager_proxy mode requires manager_auth_token" if token.empty?
+
+      manager_user = @config.manager_username.to_s.empty? ? (@config.user.to_s.empty? ? "admin" : @config.user) : @config.manager_username
+      manager_database = @config.manager_database.to_s.empty? ? @config.database.to_s : @config.manager_database
+      manager_profile = @config.manager_connection_profile.to_s.empty? ? "native_v3" : @config.manager_connection_profile
+      manager_intent = @config.manager_client_intent.to_s.empty? ? "native_v3" : @config.manager_client_intent
+      manager_flags = @config.manager_client_flags.to_i & 0xFFFF
+      auth_fast_path = @config.manager_auth_fast_path != false
+
+      hello = [MCP_PROTOCOL_VERSION, manager_flags].pack("v2")
+      send_manager_frame(MCP_MSG_HELLO, hello)
+      type, _payload = recv_manager_frame
+      raise ConnectionError, "expected MCP hello status response" unless type == MCP_MSG_STATUS_RESPONSE
+
+      auth_start = +""
+      auth_start << manager_lpref(manager_user)
+      auth_start << [MCP_AUTH_METHOD_TOKEN].pack("C")
+      if auth_fast_path
+        auth_start << [token.bytesize].pack("V")
+        auth_start << token.b
+      else
+        auth_start << [0].pack("V")
+      end
+      send_manager_frame(MCP_MSG_AUTH_START, auth_start)
+      type, payload = recv_manager_frame
+      if type == MCP_MSG_AUTH_CHALLENGE
+        auth_continue = [token.bytesize].pack("V") + token.b
+        send_manager_frame(MCP_MSG_AUTH_CONTINUE, auth_continue)
+        type, payload = recv_manager_frame
+      end
+      raise ConnectionError, "expected MCP auth response" unless type == MCP_MSG_AUTH_RESPONSE
+      raise ConnectionError, "truncated MCP auth response" if payload.bytesize < (1 + 4 + 256)
+      if payload.getbyte(0) != 0
+        err = payload.byteslice(5, 256).to_s.sub(/\x00+\z/, "")
+        raise AuthError, (err.empty? ? "MCP authentication failed" : err)
+      end
+
+      db_connect = +"MCP1"
+      db_connect << manager_lpref(manager_database)
+      db_connect << manager_lpref(manager_profile)
+      db_connect << manager_lpref(manager_intent)
+      nonce = OpenSSL::Random.random_bytes(16)
+      db_connect << [nonce.bytesize].pack("v")
+      db_connect << nonce
+      send_manager_frame(MCP_MSG_DB_CONNECT, db_connect)
+      type, payload = recv_manager_frame
+      raise ConnectionError, "expected MCP connect response" unless type == MCP_MSG_CONNECT_RESPONSE
+      raise ConnectionError, "truncated MCP connect response" if payload.bytesize < (1 + 2 + 2 + 16 + 64 + 32)
+      if payload.getbyte(0) != 0
+        err = "MCP database connect failed"
+        err_offset = 1 + 2 + 2 + 16 + 64 + 32
+        if payload.bytesize >= err_offset + 4
+          err_len = payload.byteslice(err_offset, 4).unpack1("V")
+          if payload.bytesize >= err_offset + 4 + err_len
+            err = payload.byteslice(err_offset + 4, err_len).to_s
+          end
+        end
+        raise AuthError, err
+      end
     end
 
     def handshake

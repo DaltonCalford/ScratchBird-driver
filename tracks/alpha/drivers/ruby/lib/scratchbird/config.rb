@@ -12,7 +12,9 @@ module Scratchbird
     attr_accessor :host, :port, :database, :user, :password, :sslmode,
                   :schema, :role, :sslrootcert, :sslcert, :sslkey, :sslpassword,
                   :connect_timeout_ms, :socket_timeout_ms, :application_name, :protocol,
-                  :binary_transfer, :compression
+                  :binary_transfer, :compression, :front_door_mode, :manager_auth_token,
+                  :manager_username, :manager_database, :manager_connection_profile,
+                  :manager_client_intent, :manager_client_flags, :manager_auth_fast_path
 
     def initialize
       @host = "localhost"
@@ -20,6 +22,7 @@ module Scratchbird
       @database = ""
       @user = ""
       @password = ""
+      @front_door_mode = "direct"
       @schema = ""
       @role = ""
       @protocol = "native"
@@ -33,6 +36,13 @@ module Scratchbird
       @application_name = "scratchbird_ruby"
       @binary_transfer = true
       @compression = "off"
+      @manager_auth_token = ""
+      @manager_username = ""
+      @manager_database = ""
+      @manager_connection_profile = "native_v3"
+      @manager_client_intent = "native_v3"
+      @manager_client_flags = 0
+      @manager_auth_fast_path = true
     end
 
     def self.parse(dsn)
@@ -88,12 +98,21 @@ module Scratchbird
       raise ArgumentError, "Only protocol=native is supported; connect to the native parser listener/port."
     end
 
+    def self.normalize_front_door_mode(value)
+      normalized = value.to_s.strip.downcase
+      return "direct" if normalized.empty? || normalized == "direct"
+      return "manager_proxy" if normalized == "manager_proxy" || normalized == "manager-proxy" || normalized == "managed"
+      raise ArgumentError, "front_door_mode must be direct or manager_proxy."
+    end
+
     def self.apply_param(cfg, key, value)
       case key.to_s.downcase
       when "host", "server", "data source", "datasource"
         cfg.host = value
       when "port"
         cfg.port = value.to_i
+      when "front_door_mode", "frontdoormode", "connection_mode", "ingress_mode"
+        cfg.front_door_mode = normalize_front_door_mode(value)
       when "database", "dbname", "initial catalog"
         cfg.database = value
       when "user", "username", "user id", "uid"
@@ -126,6 +145,21 @@ module Scratchbird
         cfg.binary_transfer = (value == "1" || value.to_s.downcase == "true")
       when "compression"
         cfg.compression = value.to_s.downcase == "zstd" ? "zstd" : "off"
+      when "manager_auth_token", "mcp_auth_token"
+        cfg.manager_auth_token = value
+      when "manager_username", "mcp_username"
+        cfg.manager_username = value
+      when "manager_database", "mcp_database"
+        cfg.manager_database = value
+      when "manager_connection_profile", "mcp_connection_profile"
+        cfg.manager_connection_profile = value
+      when "manager_client_intent", "mcp_client_intent"
+        cfg.manager_client_intent = value
+      when "manager_client_flags", "mcp_client_flags"
+        cfg.manager_client_flags = value.to_i
+      when "manager_auth_fast_path", "mcp_auth_fast_path"
+        cfg.manager_auth_fast_path = value.to_s.downcase == "true" || value.to_s == "1" ||
+          value.to_s.downcase == "yes" || value.to_s.downcase == "on"
       end
     end
   end

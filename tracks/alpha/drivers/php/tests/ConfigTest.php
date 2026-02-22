@@ -40,4 +40,12 @@ final class ConfigTest extends TestCase
         $this->assertSame(5000, $cfg->connectTimeoutMs);
         $this->assertSame(7000, $cfg->socketTimeoutMs);
     }
+
+    public function testParseManagerProxyParams(): void
+    {
+        $cfg = Config::fromDsn('scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7');
+        $this->assertSame('manager_proxy', $cfg->frontDoorMode);
+        $this->assertSame('token', $cfg->managerAuthToken);
+        $this->assertSame(7, $cfg->managerClientFlags);
+    }
 }

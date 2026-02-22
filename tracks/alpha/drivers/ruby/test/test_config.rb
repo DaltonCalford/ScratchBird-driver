@@ -36,4 +36,19 @@ class TestConfig < Minitest::Test
     assert_equal 5000, cfg.connect_timeout_ms
     assert_equal 7000, cfg.socket_timeout_ms
   end
+
+  def test_parse_manager_proxy_params
+    cfg = Scratchbird::Config.parse(
+      "scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7"
+    )
+    assert_equal "manager_proxy", cfg.front_door_mode
+    assert_equal "token", cfg.manager_auth_token
+    assert_equal 7, cfg.manager_client_flags
+  end
+
+  def test_invalid_front_door_mode_raises
+    assert_raises(ArgumentError) do
+      Scratchbird::Config.parse("scratchbird://localhost:3092/db?front_door_mode=invalid")
+    end
+  end
 end

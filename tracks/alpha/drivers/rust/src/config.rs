@@ -14,6 +14,7 @@ use crate::errors::{Error, ErrorKind, Result};
 pub struct Config {
     pub host: String,
     pub port: u16,
+    pub front_door_mode: String,
     pub protocol: String,
     pub database: String,
     pub user: String,
@@ -31,6 +32,13 @@ pub struct Config {
     pub binary_transfer: bool,
     pub compression: String,
     pub fetch_size: u32,
+    pub manager_auth_token: String,
+    pub manager_username: String,
+    pub manager_database: String,
+    pub manager_connection_profile: String,
+    pub manager_client_intent: String,
+    pub manager_client_flags: u16,
+    pub manager_auth_fast_path: bool,
     pub extra: HashMap<String, String>,
 }
 
@@ -39,6 +47,7 @@ impl Default for Config {
         Self {
             host: "localhost".to_string(),
             port: 3092,
+            front_door_mode: "direct".to_string(),
             protocol: "native".to_string(),
             database: String::new(),
             user: String::new(),
@@ -56,6 +65,13 @@ impl Default for Config {
             binary_transfer: true,
             compression: "off".to_string(),
             fetch_size: 0,
+            manager_auth_token: String::new(),
+            manager_username: String::new(),
+            manager_database: String::new(),
+            manager_connection_profile: "native_v3".to_string(),
+            manager_client_intent: "native_v3".to_string(),
+            manager_client_flags: 0,
+            manager_auth_fast_path: true,
             extra: HashMap::new(),
         }
     }
@@ -129,10 +145,27 @@ fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     }
 }
 
+fn normalize_front_door_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "direct" => Some("direct"),
+        "manager_proxy" | "manager-proxy" | "managed" => Some("manager_proxy"),
+        _ => None,
+    }
+}
+
 fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
     match key.to_ascii_lowercase().as_str() {
         "host" | "server" | "data source" | "datasource" => cfg.host = value.to_string(),
         "port" => cfg.port = value.parse().unwrap_or(cfg.port),
+        "front_door_mode" | "frontdoormode" | "connection_mode" | "ingress_mode" => {
+            let normalized = normalize_front_door_mode(value).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::Connection,
+                    "front_door_mode must be direct or manager_proxy",
+                )
+            })?;
+            cfg.front_door_mode = normalized.to_string();
+        }
         "database" | "dbname" | "initial catalog" => cfg.database = value.to_string(),
         "user" | "username" | "user id" | "uid" => cfg.user = value.to_string(),
         "password" | "pwd" => cfg.password = value.to_string(),
@@ -177,6 +210,21 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
             if let Ok(rows) = value.parse::<u32>() {
                 cfg.fetch_size = rows;
             }
+        }
+        "manager_auth_token" | "mcp_auth_token" => cfg.manager_auth_token = value.to_string(),
+        "manager_username" | "mcp_username" => cfg.manager_username = value.to_string(),
+        "manager_database" | "mcp_database" => cfg.manager_database = value.to_string(),
+        "manager_connection_profile" | "mcp_connection_profile" => {
+            cfg.manager_connection_profile = value.to_string()
+        }
+        "manager_client_intent" | "mcp_client_intent" => cfg.manager_client_intent = value.to_string(),
+        "manager_client_flags" | "mcp_client_flags" => {
+            cfg.manager_client_flags = value.parse::<u16>().unwrap_or(cfg.manager_client_flags)
+        }
+        "manager_auth_fast_path" | "mcp_auth_fast_path" => {
+            let normalized = value.trim().to_ascii_lowercase();
+            cfg.manager_auth_fast_path =
+                normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
         }
         other => {
             cfg.extra.insert(other.to_string(), value.to_string());

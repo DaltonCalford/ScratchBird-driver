@@ -478,12 +478,29 @@ class AuthMethod:
     PASSWORD = 1
     SCRAM_SHA256 = 3
 
+MANAGER_PROTOCOL_MAGIC = 0x42444253  # SBDB
+MANAGER_PROTOCOL_VERSION = 0x0101
+MANAGER_HEADER_SIZE = 12
+MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024
+MCP_PROTOCOL_VERSION = 0x0100
+
+MCP_MSG_CONNECT_RESPONSE = 0x02
+MCP_MSG_AUTH_CHALLENGE = 0x12
+MCP_MSG_AUTH_RESPONSE = 0x11
+MCP_MSG_STATUS_RESPONSE = 0x64
+MCP_MSG_HELLO = 0x65
+MCP_MSG_AUTH_START = 0x66
+MCP_MSG_AUTH_CONTINUE = 0x67
+MCP_MSG_DB_CONNECT = 0x69
+MCP_AUTH_METHOD_TOKEN = 4
+
 class ScratchBirdConfig:
     def __init__(self, dsn: str = ""):
         self.dsn = dsn or ""
         self.host = "localhost"
         self.port = 3092
         self.protocol = "native"
+        self.front_door_mode = "direct"
         self.database = ""
         self.user = ""
         self.password = ""
@@ -500,11 +517,20 @@ class ScratchBirdConfig:
         self.binary_transfer = True
         self.compression = "off"
         self.fetch_size = 0
+        self.manager_auth_token = ""
+        self.manager_username = ""
+        self.manager_database = ""
+        self.manager_connection_profile = "native_v3"
+        self.manager_client_intent = "native_v3"
+        self.manager_client_flags = 0
+        self.manager_auth_fast_path = True
 
         if self.dsn:
             self._apply_params(parse_dsn(self.dsn))
 
     def _apply_params(self, params):
+        params = {str(k).lower(): v for k, v in params.items()}
+
         def _as_bool(value):
             if isinstance(value, bool):
                 return value
@@ -527,6 +553,14 @@ class ScratchBirdConfig:
             self.protocol = normalize_native_protocol(params["parser"])
         elif "dialect" in params:
             self.protocol = normalize_native_protocol(params["dialect"])
+        if "front_door_mode" in params:
+            self.front_door_mode = normalize_front_door_mode(params["front_door_mode"])
+        elif "frontdoormode" in params:
+            self.front_door_mode = normalize_front_door_mode(params["frontdoormode"])
+        elif "connection_mode" in params:
+            self.front_door_mode = normalize_front_door_mode(params["connection_mode"])
+        elif "ingress_mode" in params:
+            self.front_door_mode = normalize_front_door_mode(params["ingress_mode"])
         if "user" in params:
             self.user = params["user"]
         if "username" in params and not self.user:
@@ -568,6 +602,40 @@ class ScratchBirdConfig:
                 self.fetch_size = int(params["fetch_size"])
             except Exception:
                 pass
+        if "manager_auth_token" in params:
+            self.manager_auth_token = params["manager_auth_token"]
+        elif "mcp_auth_token" in params:
+            self.manager_auth_token = params["mcp_auth_token"]
+        if "manager_username" in params:
+            self.manager_username = params["manager_username"]
+        elif "mcp_username" in params:
+            self.manager_username = params["mcp_username"]
+        if "manager_database" in params:
+            self.manager_database = params["manager_database"]
+        elif "mcp_database" in params:
+            self.manager_database = params["mcp_database"]
+        if "manager_connection_profile" in params:
+            self.manager_connection_profile = params["manager_connection_profile"]
+        elif "mcp_connection_profile" in params:
+            self.manager_connection_profile = params["mcp_connection_profile"]
+        if "manager_client_intent" in params:
+            self.manager_client_intent = params["manager_client_intent"]
+        elif "mcp_client_intent" in params:
+            self.manager_client_intent = params["mcp_client_intent"]
+        if "manager_client_flags" in params:
+            try:
+                self.manager_client_flags = int(params["manager_client_flags"])
+            except Exception:
+                pass
+        elif "mcp_client_flags" in params:
+            try:
+                self.manager_client_flags = int(params["mcp_client_flags"])
+            except Exception:
+                pass
+        if "manager_auth_fast_path" in params:
+            self.manager_auth_fast_path = _as_bool(params["manager_auth_fast_path"])
+        elif "mcp_auth_fast_path" in params:
+            self.manager_auth_fast_path = _as_bool(params["mcp_auth_fast_path"])
 
     def to_dsn(self) -> str:
         if self.dsn:
@@ -607,6 +675,22 @@ class ScratchBirdConfig:
             params["compression"] = self.compression
         if self.fetch_size:
             params["fetch_size"] = str(self.fetch_size)
+        if self.front_door_mode:
+            params["front_door_mode"] = self.front_door_mode
+        if self.manager_auth_token:
+            params["manager_auth_token"] = self.manager_auth_token
+        if self.manager_username:
+            params["manager_username"] = self.manager_username
+        if self.manager_database:
+            params["manager_database"] = self.manager_database
+        if self.manager_connection_profile:
+            params["manager_connection_profile"] = self.manager_connection_profile
+        if self.manager_client_intent:
+            params["manager_client_intent"] = self.manager_client_intent
+        if self.manager_client_flags:
+            params["manager_client_flags"] = str(self.manager_client_flags)
+        if self.manager_auth_fast_path is not None:
+            params["manager_auth_fast_path"] = "true" if self.manager_auth_fast_path else "false"
 
         query = urllib.parse.urlencode(params) if params else ""
         host = self.host or "localhost"
@@ -623,6 +707,15 @@ def normalize_native_protocol(value) -> str:
     if normalized in ("", "native", "scratchbird", "scratchbird-native", "scratchbird_native"):
         return "native"
     raise RuntimeError("Only protocol=native is supported; connect to the native parser listener/port.")
+
+
+def normalize_front_door_mode(value) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in ("", "direct"):
+        return "direct"
+    if normalized in ("manager_proxy", "manager-proxy", "managed"):
+        return "manager_proxy"
+    raise RuntimeError("front_door_mode must be direct or manager_proxy.")
 
 
 def parse_dsn(dsn: str):
@@ -1170,6 +1263,7 @@ class ScratchBirdConnection:
 
     def _connect(self):
         self.config.protocol = normalize_native_protocol(self.config.protocol)
+        self.config.front_door_mode = normalize_front_door_mode(self.config.front_door_mode)
         if not self.config.user or not self.config.database:
             raise RuntimeError("user and database are required")
         if not self.config.binary_transfer:
@@ -1203,6 +1297,8 @@ class ScratchBirdConnection:
 
         sock = ctx.wrap_socket(raw_sock, server_hostname=self.config.host)
         self._socket = sock
+        if self.config.front_door_mode == "manager_proxy":
+            self._perform_manager_connect()
         self._startup_and_auth()
 
     def _startup_and_auth(self):
@@ -1263,6 +1359,97 @@ class ScratchBirdConnection:
                 self._parameters[name] = value
             elif msg_type == MessageType.ERROR:
                 raise RuntimeError("authentication failed")
+
+    def _append_length_prefixed_string(self, value: str) -> bytes:
+        encoded = value.encode("utf-8")
+        return struct.pack("<I", len(encoded)) + encoded
+
+    def _send_manager_frame(self, msg_type: int, payload: bytes):
+        header = struct.pack(
+            "<I H B B I",
+            MANAGER_PROTOCOL_MAGIC,
+            MANAGER_PROTOCOL_VERSION,
+            msg_type,
+            0,
+            len(payload),
+        )
+        self._socket.sendall(header + payload)
+
+    def _recv_manager_frame(self):
+        header = self._read_exact(MANAGER_HEADER_SIZE)
+        magic, version, msg_type, _, length = struct.unpack("<I H B B I", header)
+        if magic != MANAGER_PROTOCOL_MAGIC:
+            raise RuntimeError("Manager frame magic mismatch")
+        if version != MANAGER_PROTOCOL_VERSION:
+            raise RuntimeError("Manager frame version mismatch")
+        if length > MANAGER_MAX_PAYLOAD_SIZE:
+            raise RuntimeError("Manager payload too large")
+        payload = self._read_exact(length) if length > 0 else b""
+        return msg_type, payload
+
+    def _perform_manager_connect(self):
+        token = self.config.manager_auth_token or ""
+        if not token:
+            raise RuntimeError("manager_proxy mode requires manager_auth_token")
+        manager_user = self.config.manager_username or self.config.user or "admin"
+        manager_database = self.config.manager_database or self.config.database or ""
+        manager_profile = self.config.manager_connection_profile or "native_v3"
+        manager_intent = self.config.manager_client_intent or "native_v3"
+        manager_flags = int(self.config.manager_client_flags or 0) & 0xFFFF
+        auth_fast_path = self.config.manager_auth_fast_path is not False
+
+        hello = struct.pack("<H H", MCP_PROTOCOL_VERSION, manager_flags)
+        self._send_manager_frame(MCP_MSG_HELLO, hello)
+        msg_type, payload = self._recv_manager_frame()
+        if msg_type != MCP_MSG_STATUS_RESPONSE:
+            raise RuntimeError("expected MCP hello status response")
+
+        auth_start = bytearray()
+        auth_start.extend(self._append_length_prefixed_string(manager_user))
+        auth_start.append(MCP_AUTH_METHOD_TOKEN)
+        if auth_fast_path:
+            token_bytes = token.encode("utf-8")
+            auth_start.extend(struct.pack("<I", len(token_bytes)))
+            auth_start.extend(token_bytes)
+        else:
+            auth_start.extend(struct.pack("<I", 0))
+        self._send_manager_frame(MCP_MSG_AUTH_START, bytes(auth_start))
+        msg_type, payload = self._recv_manager_frame()
+        if msg_type == MCP_MSG_AUTH_CHALLENGE:
+            token_bytes = token.encode("utf-8")
+            auth_continue = struct.pack("<I", len(token_bytes)) + token_bytes
+            self._send_manager_frame(MCP_MSG_AUTH_CONTINUE, auth_continue)
+            msg_type, payload = self._recv_manager_frame()
+        if msg_type != MCP_MSG_AUTH_RESPONSE:
+            raise RuntimeError("expected MCP auth response")
+        if len(payload) < 1 + 4 + 256:
+            raise RuntimeError("truncated MCP auth response")
+        if payload[0] != 0:
+            err = payload[5:261].decode("utf-8", errors="replace").rstrip("\x00")
+            raise RuntimeError(err if err else "MCP authentication failed")
+
+        nonce = secrets.token_bytes(16)
+        db_connect = bytearray()
+        db_connect.extend(b"MCP1")
+        db_connect.extend(self._append_length_prefixed_string(manager_database))
+        db_connect.extend(self._append_length_prefixed_string(manager_profile))
+        db_connect.extend(self._append_length_prefixed_string(manager_intent))
+        db_connect.extend(struct.pack("<H", len(nonce)))
+        db_connect.extend(nonce)
+        self._send_manager_frame(MCP_MSG_DB_CONNECT, bytes(db_connect))
+        msg_type, payload = self._recv_manager_frame()
+        if msg_type != MCP_MSG_CONNECT_RESPONSE:
+            raise RuntimeError("expected MCP connect response")
+        if len(payload) < 1 + 2 + 2 + 16 + 64 + 32:
+            raise RuntimeError("truncated MCP connect response")
+        if payload[0] != 0:
+            err = "MCP database connect failed"
+            err_offset = 1 + 2 + 2 + 16 + 64 + 32
+            if len(payload) >= err_offset + 4:
+                err_len = struct.unpack_from("<I", payload, err_offset)[0]
+                if len(payload) >= err_offset + 4 + err_len:
+                    err = payload[err_offset + 4 : err_offset + 4 + err_len].decode("utf-8", errors="replace")
+            raise RuntimeError(err)
 
     def _send_message(self, msg_type: int, payload: bytes, flags: int = 0, force_zero: bool = False):
         self._sequence += 1

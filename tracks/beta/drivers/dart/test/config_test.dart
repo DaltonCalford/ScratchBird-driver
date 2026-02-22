@@ -16,4 +16,22 @@ void main() {
     expect(cfg.password, 'pass');
     expect(cfg.database, 'db');
   });
+
+  test('parses manager proxy params', () {
+    final cfg = ScratchBirdConfig.fromDsn(
+      'scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7',
+    );
+    expect(cfg.frontDoorMode, 'manager_proxy');
+    expect(cfg.managerAuthToken, 'token');
+    expect(cfg.managerClientFlags, 7);
+  });
+
+  test('rejects invalid front door mode', () {
+    expect(
+      () => ScratchBirdConfig.fromDsn(
+        'scratchbird://localhost:3092/db?front_door_mode=invalid',
+      ),
+      throwsArgumentError,
+    );
+  });
 }

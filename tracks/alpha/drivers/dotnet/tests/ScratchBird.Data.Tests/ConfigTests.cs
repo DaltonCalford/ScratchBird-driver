@@ -43,4 +43,14 @@ public class ConfigTests
         Assert.Equal(5000, cfg.ConnectTimeoutMs);
         Assert.Equal(7000, cfg.SocketTimeoutMs);
     }
+
+    [Fact]
+    public void ParseManagerProxyParams()
+    {
+        var cfg = ScratchBirdConfig.FromConnectionString("scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7");
+
+        Assert.Equal("manager_proxy", cfg.FrontDoorMode);
+        Assert.Equal("token", cfg.ManagerAuthToken);
+        Assert.Equal((ushort)7, cfg.ManagerClientFlags);
+    }
 }

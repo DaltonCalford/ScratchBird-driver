@@ -8,7 +8,7 @@
 import net from "node:net";
 import tls from "node:tls";
 import fs from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   AuthMethod,
   MessageType,
@@ -69,7 +69,7 @@ import {
   SblrCompiledMessage,
 } from "./protocol";
 import { ScramExchange } from "./scram";
-import { parseDsn, normalizeNativeProtocol } from "./dsn";
+import { parseDsn, normalizeFrontDoorMode, normalizeNativeProtocol } from "./dsn";
 import { normalizeQuery } from "./sql";
 import {
   ClientConfig,
@@ -89,6 +89,21 @@ import { TelemetryCollector, SpanContext } from "./telemetry";
 
 const QUERY_FLAG_BINARY_RESULT = 0x04;
 const FORMAT_TEXT = 0;
+const MANAGER_PROTOCOL_MAGIC = 0x42444253; // SBDB
+const MANAGER_PROTOCOL_VERSION = 0x0101;
+const MANAGER_HEADER_SIZE = 12;
+const MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
+const MCP_PROTOCOL_VERSION = 0x0100;
+
+const MCP_MSG_CONNECT_RESPONSE = 0x02;
+const MCP_MSG_AUTH_CHALLENGE = 0x12;
+const MCP_MSG_AUTH_RESPONSE = 0x11;
+const MCP_MSG_STATUS_RESPONSE = 0x64;
+const MCP_MSG_HELLO = 0x65;
+const MCP_MSG_AUTH_START = 0x66;
+const MCP_MSG_AUTH_CONTINUE = 0x67;
+const MCP_MSG_DB_CONNECT = 0x69;
+const MCP_AUTH_METHOD_TOKEN = 4;
 
 interface Message {
   header: MessageHeader;
@@ -225,13 +240,18 @@ class ProtocolConnection {
       txnId: forceZero ? 0n : this.txnId,
     };
     const data = encodeMessage(header, payload);
+    await this.sendRaw(data);
+    return seq;
+  }
+
+  private async sendRaw(data: Buffer): Promise<void> {
+    if (!this.socket) throw new Error("Socket not connected");
     await new Promise<void>((resolve, reject) => {
       this.socket!.write(data, (err) => {
         if (err) reject(err);
         else resolve();
       });
     });
-    return seq;
   }
 
   async recv(): Promise<Message> {
@@ -240,6 +260,36 @@ class ProtocolConnection {
     const header = decodeHeader(headerBuf);
     const payload = header.length ? await this.reader.readExact(header.length) : Buffer.alloc(0);
     return { header, payload };
+  }
+
+  async sendManagerFrame(type: number, payload: Buffer): Promise<void> {
+    const header = Buffer.alloc(MANAGER_HEADER_SIZE);
+    header.writeUInt32LE(MANAGER_PROTOCOL_MAGIC, 0);
+    header.writeUInt16LE(MANAGER_PROTOCOL_VERSION, 4);
+    header.writeUInt8(type, 6);
+    header.writeUInt8(0, 7);
+    header.writeUInt32LE(payload.length, 8);
+    await this.sendRaw(Buffer.concat([header, payload]));
+  }
+
+  async recvManagerFrame(): Promise<{ type: number; payload: Buffer }> {
+    if (!this.reader) throw new Error("Socket not connected");
+    const header = await this.reader.readExact(MANAGER_HEADER_SIZE);
+    const magic = header.readUInt32LE(0);
+    if (magic !== MANAGER_PROTOCOL_MAGIC) {
+      throw new Error("Manager frame magic mismatch");
+    }
+    const version = header.readUInt16LE(4);
+    if (version !== MANAGER_PROTOCOL_VERSION) {
+      throw new Error("Manager frame version mismatch");
+    }
+    const type = header.readUInt8(6);
+    const length = header.readUInt32LE(8);
+    if (length > MANAGER_MAX_PAYLOAD_SIZE) {
+      throw new Error("Manager payload too large");
+    }
+    const payload = length > 0 ? await this.reader.readExact(length) : Buffer.alloc(0);
+    return { type, payload };
   }
 
   close(): void {
@@ -270,16 +320,22 @@ export class Client {
     const parsed = typeof config === "string" ? parseDsn(config) : {};
     this.config = { ...parsed, ...(typeof config === "object" ? config : {}) };
     this.config.protocol = normalizeNativeProtocol(this.config.protocol ?? this.config.parser ?? this.config.dialect);
+    this.config.frontDoorMode = normalizeFrontDoorMode(this.config.frontDoorMode);
     if (!this.config.host) this.config.host = "localhost";
     if (!this.config.port) this.config.port = 3092;
     if (!this.config.applicationName) this.config.applicationName = "scratchbird_node";
     if (!this.config.sslmode) this.config.sslmode = "require";
     if (this.config.binaryTransfer === undefined) this.config.binaryTransfer = true;
     if (!this.config.compression) this.config.compression = "off";
+    if (!this.config.managerConnectionProfile) this.config.managerConnectionProfile = "native_v3";
+    if (!this.config.managerClientIntent) this.config.managerClientIntent = "native_v3";
+    if (this.config.managerClientFlags === undefined) this.config.managerClientFlags = 0;
+    if (this.config.managerAuthFastPath === undefined) this.config.managerAuthFastPath = true;
   }
 
   async connect(): Promise<void> {
     this.config.protocol = normalizeNativeProtocol(this.config.protocol ?? this.config.parser ?? this.config.dialect);
+    this.config.frontDoorMode = normalizeFrontDoorMode(this.config.frontDoorMode);
     if (!this.config.user || !this.config.database) {
       throw new Error("user and database are required");
     }
@@ -290,6 +346,9 @@ export class Client {
       throw new ScratchbirdNotSupportedError("compression=zstd is not supported", "0A000");
     }
     await this.protocol.connect(this.config);
+    if (this.config.frontDoorMode === "manager_proxy") {
+      await this.performManagerConnect();
+    }
     await this.handshake();
     await this.applySchema();
     this.keepaliveManager.start();
@@ -607,6 +666,94 @@ export class Client {
       features |= FEATURE_STREAMING;
     }
     return features;
+  }
+
+  private appendLengthPrefixedString(out: Buffer[], value: string): void {
+    const bytes = Buffer.from(value, "utf8");
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(bytes.length, 0);
+    out.push(len, bytes);
+  }
+
+  private async performManagerConnect(): Promise<void> {
+    if (!this.config.managerAuthToken) {
+      throw new ScratchbirdError("manager_proxy mode requires manager_auth_token", "08001");
+    }
+    const managerUser = this.config.managerUsername || this.config.user || "admin";
+    const managerDatabase = this.config.managerDatabase || this.config.database || "";
+    const managerProfile = this.config.managerConnectionProfile || "native_v3";
+    const managerIntent = this.config.managerClientIntent || "native_v3";
+    const managerFlags = this.config.managerClientFlags ?? 0;
+    const authFastPath = this.config.managerAuthFastPath !== false;
+
+    const hello = Buffer.alloc(4);
+    hello.writeUInt16LE(MCP_PROTOCOL_VERSION, 0);
+    hello.writeUInt16LE(managerFlags & 0xffff, 2);
+    await this.protocol.sendManagerFrame(MCP_MSG_HELLO, hello);
+    let frame = await this.protocol.recvManagerFrame();
+    if (frame.type !== MCP_MSG_STATUS_RESPONSE) {
+      throw new ScratchbirdError("expected MCP hello status response", "08P01");
+    }
+
+    const authStartParts: Buffer[] = [];
+    this.appendLengthPrefixedString(authStartParts, managerUser);
+    authStartParts.push(Buffer.from([MCP_AUTH_METHOD_TOKEN]));
+    if (authFastPath) {
+      const token = Buffer.from(this.config.managerAuthToken, "utf8");
+      const len = Buffer.alloc(4);
+      len.writeUInt32LE(token.length, 0);
+      authStartParts.push(len, token);
+    } else {
+      authStartParts.push(Buffer.alloc(4));
+    }
+    await this.protocol.sendManagerFrame(MCP_MSG_AUTH_START, Buffer.concat(authStartParts));
+    frame = await this.protocol.recvManagerFrame();
+    if (frame.type === MCP_MSG_AUTH_CHALLENGE) {
+      const token = Buffer.from(this.config.managerAuthToken, "utf8");
+      const authContinue = Buffer.alloc(4 + token.length);
+      authContinue.writeUInt32LE(token.length, 0);
+      token.copy(authContinue, 4);
+      await this.protocol.sendManagerFrame(MCP_MSG_AUTH_CONTINUE, authContinue);
+      frame = await this.protocol.recvManagerFrame();
+    }
+    if (frame.type !== MCP_MSG_AUTH_RESPONSE) {
+      throw new ScratchbirdError("expected MCP auth response", "08P01");
+    }
+    if (frame.payload.length < 1 + 4 + 256) {
+      throw new ScratchbirdError("truncated MCP auth response", "08P01");
+    }
+    if (frame.payload.readUInt8(0) !== 0) {
+      const errText = frame.payload.subarray(5, 261).toString("utf8").replace(/\0+$/, "") || "MCP authentication failed";
+      throw new ScratchbirdError(errText, "28000");
+    }
+
+    const nonce = randomBytes(16);
+    const dbConnectParts: Buffer[] = [Buffer.from("MCP1", "ascii")];
+    this.appendLengthPrefixedString(dbConnectParts, managerDatabase);
+    this.appendLengthPrefixedString(dbConnectParts, managerProfile);
+    this.appendLengthPrefixedString(dbConnectParts, managerIntent);
+    const nonceLen = Buffer.alloc(2);
+    nonceLen.writeUInt16LE(nonce.length, 0);
+    dbConnectParts.push(nonceLen, nonce);
+    await this.protocol.sendManagerFrame(MCP_MSG_DB_CONNECT, Buffer.concat(dbConnectParts));
+    frame = await this.protocol.recvManagerFrame();
+    if (frame.type !== MCP_MSG_CONNECT_RESPONSE) {
+      throw new ScratchbirdError("expected MCP connect response", "08P01");
+    }
+    if (frame.payload.length < 1 + 2 + 2 + 16 + 64 + 32) {
+      throw new ScratchbirdError("truncated MCP connect response", "08P01");
+    }
+    if (frame.payload.readUInt8(0) !== 0) {
+      const errOffset = 1 + 2 + 2 + 16 + 64 + 32;
+      let errText = "MCP database connect failed";
+      if (frame.payload.length >= errOffset + 4) {
+        const errLen = frame.payload.readUInt32LE(errOffset);
+        if (frame.payload.length >= errOffset + 4 + errLen) {
+          errText = frame.payload.subarray(errOffset + 4, errOffset + 4 + errLen).toString("utf8");
+        }
+      }
+      throw new ScratchbirdError(errText, "28000");
+    }
   }
 
   private async handshake(): Promise<void> {

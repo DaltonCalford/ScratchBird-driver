@@ -19,6 +19,15 @@ def normalize_native_protocol(value: str | None) -> str:
     raise ValueError("Only protocol=native is supported; connect to the native parser listener/port.")
 
 
+def normalize_front_door_mode(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("", "direct"):
+        return "direct"
+    if normalized in ("manager_proxy", "manager-proxy", "managed"):
+        return "manager_proxy"
+    raise ValueError("front_door_mode must be direct or manager_proxy.")
+
+
 def parse_dsn(dsn: str | None) -> dict:
     if not dsn:
         return {}

@@ -9,14 +9,17 @@ package scratchbird
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -28,6 +31,24 @@ import (
 const (
 	formatText   uint16 = 0
 	formatBinary uint16 = 1
+)
+
+const (
+	managerProtocolMagic   uint32 = 0x42444253 // SBDB
+	managerProtocolVersion uint16 = 0x0101
+	managerHeaderSize             = 12
+	managerMaxPayloadSize  uint32 = 16 * 1024 * 1024
+	mcpProtocolVersion     uint16 = 0x0100
+
+	mcpMsgConnectResponse uint8 = 0x02
+	mcpMsgAuthChallenge   uint8 = 0x12
+	mcpMsgAuthResponse    uint8 = 0x11
+	mcpMsgStatusResponse  uint8 = 0x64
+	mcpMsgHello           uint8 = 0x65
+	mcpMsgAuthStart       uint8 = 0x66
+	mcpMsgAuthContinue    uint8 = 0x67
+	mcpMsgDbConnect       uint8 = 0x69
+	mcpAuthMethodToken    uint8 = 4
 )
 
 type Conn struct {
@@ -63,6 +84,11 @@ func (c *Conn) connect(ctx context.Context) error {
 		return &Error{Kind: ErrNotSupported, Message: "only protocol=native is supported; connect to the native parser listener/port", SQLState: "0A000"}
 	}
 	c.config.Protocol = protocol
+	frontDoorMode, ok := normalizeFrontDoorMode(c.config.FrontDoorMode)
+	if !ok {
+		return &Error{Kind: ErrNotSupported, Message: "front_door_mode must be direct or manager_proxy", SQLState: "0A000"}
+	}
+	c.config.FrontDoorMode = frontDoorMode
 	if !c.config.BinaryTransfer {
 		return &Error{Kind: ErrNotSupported, Message: "binary_transfer=false is not supported", SQLState: "0A000"}
 	}
@@ -79,6 +105,12 @@ func (c *Conn) connect(ctx context.Context) error {
 	if err := c.applyTLS(ctx); err != nil {
 		_ = c.raw.Close()
 		return err
+	}
+	if c.config.FrontDoorMode == "manager_proxy" {
+		if err := c.performManagerConnect(ctx); err != nil {
+			_ = c.raw.Close()
+			return err
+		}
 	}
 	if err := c.handshake(ctx); err != nil {
 		_ = c.raw.Close()
@@ -251,6 +283,202 @@ func loadTLSKeyPair(certFile, keyFile, password string) (tls.Certificate, error)
 		return tls.Certificate{}, errors.New("unsupported private key format")
 	}
 	return tls.Certificate{Certificate: certs, PrivateKey: privateKey}, nil
+}
+
+func isManagerProxyMode(mode string) bool {
+	normalized, ok := normalizeFrontDoorMode(mode)
+	return ok && normalized == "manager_proxy"
+}
+
+func appendU16(buf []byte, value uint16) []byte {
+	return append(buf, byte(value), byte(value>>8))
+}
+
+func appendU32(buf []byte, value uint32) []byte {
+	return append(buf, byte(value), byte(value>>8), byte(value>>16), byte(value>>24))
+}
+
+func appendLengthPrefixedString(buf []byte, value string) []byte {
+	buf = appendU32(buf, uint32(len(value)))
+	buf = append(buf, []byte(value)...)
+	return buf
+}
+
+func readU32(data []byte) uint32 {
+	return binary.LittleEndian.Uint32(data)
+}
+
+func (c *Conn) sendManagerFrame(msgType uint8, payload []byte) error {
+	if c.raw == nil {
+		return errors.New("connection not open")
+	}
+	frame := make([]byte, 0, managerHeaderSize+len(payload))
+	frame = appendU32(frame, managerProtocolMagic)
+	frame = appendU16(frame, managerProtocolVersion)
+	frame = append(frame, msgType, 0)
+	frame = appendU32(frame, uint32(len(payload)))
+	frame = append(frame, payload...)
+	if c.config.SocketTimeout > 0 {
+		_ = c.raw.SetWriteDeadline(time.Now().Add(c.config.SocketTimeout))
+	}
+	_, err := c.raw.Write(frame)
+	if err != nil {
+		return &Error{Kind: ErrConnection, Message: "manager frame write failed: " + err.Error(), SQLState: "08006"}
+	}
+	return nil
+}
+
+func (c *Conn) receiveManagerFrame() (uint8, []byte, error) {
+	if c.raw == nil {
+		return 0, nil, errors.New("connection not open")
+	}
+	if c.config.SocketTimeout > 0 {
+		_ = c.raw.SetReadDeadline(time.Now().Add(c.config.SocketTimeout))
+	}
+	header := make([]byte, managerHeaderSize)
+	if _, err := io.ReadFull(c.raw, header); err != nil {
+		return 0, nil, &Error{Kind: ErrConnection, Message: "manager frame read failed: " + err.Error(), SQLState: "08006"}
+	}
+	if readU32(header[0:4]) != managerProtocolMagic {
+		return 0, nil, &Error{Kind: ErrConnection, Message: "manager frame magic mismatch", SQLState: "08P01"}
+	}
+	if binary.LittleEndian.Uint16(header[4:6]) != managerProtocolVersion {
+		return 0, nil, &Error{Kind: ErrConnection, Message: "manager frame version mismatch", SQLState: "08P01"}
+	}
+	msgType := header[6]
+	payloadLen := readU32(header[8:12])
+	if payloadLen > managerMaxPayloadSize {
+		return 0, nil, &Error{Kind: ErrConnection, Message: "manager payload too large", SQLState: "08P01"}
+	}
+	payload := make([]byte, payloadLen)
+	if payloadLen > 0 {
+		if _, err := io.ReadFull(c.raw, payload); err != nil {
+			return 0, nil, &Error{Kind: ErrConnection, Message: "manager payload read failed: " + err.Error(), SQLState: "08006"}
+		}
+	}
+	return msgType, payload, nil
+}
+
+func (c *Conn) performManagerConnect(_ context.Context) error {
+	if c.config.ManagerAuthToken == "" {
+		return &Error{Kind: ErrConnection, Message: "manager_proxy mode requires manager_auth_token", SQLState: "08001"}
+	}
+
+	managerUser := c.config.ManagerUsername
+	if managerUser == "" {
+		if c.config.User != "" {
+			managerUser = c.config.User
+		} else {
+			managerUser = "admin"
+		}
+	}
+	managerDB := c.config.ManagerDatabase
+	if managerDB == "" {
+		managerDB = c.config.Database
+	}
+	managerProfile := c.config.ManagerConnectionProfile
+	if managerProfile == "" {
+		managerProfile = "native_v3"
+	}
+	managerIntent := c.config.ManagerClientIntent
+	if managerIntent == "" {
+		managerIntent = "native_v3"
+	}
+
+	helloPayload := make([]byte, 0, 4)
+	helloPayload = appendU16(helloPayload, mcpProtocolVersion)
+	helloPayload = appendU16(helloPayload, c.config.ManagerClientFlags)
+	if err := c.sendManagerFrame(mcpMsgHello, helloPayload); err != nil {
+		return err
+	}
+	msgType, _, err := c.receiveManagerFrame()
+	if err != nil {
+		return err
+	}
+	if msgType != mcpMsgStatusResponse {
+		return &Error{Kind: ErrConnection, Message: "expected MCP hello status response", SQLState: "08P01"}
+	}
+
+	authStart := make([]byte, 0, 96+len(c.config.ManagerAuthToken))
+	authStart = appendLengthPrefixedString(authStart, managerUser)
+	authStart = append(authStart, mcpAuthMethodToken)
+	if c.config.ManagerAuthFastPath {
+		authStart = appendU32(authStart, uint32(len(c.config.ManagerAuthToken)))
+		authStart = append(authStart, []byte(c.config.ManagerAuthToken)...)
+	} else {
+		authStart = appendU32(authStart, 0)
+	}
+	if err := c.sendManagerFrame(mcpMsgAuthStart, authStart); err != nil {
+		return err
+	}
+
+	msgType, payload, err := c.receiveManagerFrame()
+	if err != nil {
+		return err
+	}
+	if msgType == mcpMsgAuthChallenge {
+		authContinue := make([]byte, 0, 4+len(c.config.ManagerAuthToken))
+		authContinue = appendU32(authContinue, uint32(len(c.config.ManagerAuthToken)))
+		authContinue = append(authContinue, []byte(c.config.ManagerAuthToken)...)
+		if err := c.sendManagerFrame(mcpMsgAuthContinue, authContinue); err != nil {
+			return err
+		}
+		msgType, payload, err = c.receiveManagerFrame()
+		if err != nil {
+			return err
+		}
+	}
+	if msgType != mcpMsgAuthResponse {
+		return &Error{Kind: ErrConnection, Message: "expected MCP auth response", SQLState: "08P01"}
+	}
+	if len(payload) < 1+4+256 {
+		return &Error{Kind: ErrConnection, Message: "truncated MCP auth response", SQLState: "08P01"}
+	}
+	if payload[0] != 0 {
+		errMsg := strings.TrimRight(string(payload[5:261]), "\x00")
+		if errMsg == "" {
+			errMsg = "MCP authentication failed"
+		}
+		return &Error{Kind: ErrAuth, Message: errMsg, SQLState: "28000"}
+	}
+
+	dbConnect := make([]byte, 0, 160)
+	dbConnect = append(dbConnect, 'M', 'C', 'P', '1')
+	dbConnect = appendLengthPrefixedString(dbConnect, managerDB)
+	dbConnect = appendLengthPrefixedString(dbConnect, managerProfile)
+	dbConnect = appendLengthPrefixedString(dbConnect, managerIntent)
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return &Error{Kind: ErrConnection, Message: "failed to generate MCP nonce", SQLState: "08006"}
+	}
+	dbConnect = appendU16(dbConnect, uint16(len(nonce)))
+	dbConnect = append(dbConnect, nonce...)
+	if err := c.sendManagerFrame(mcpMsgDbConnect, dbConnect); err != nil {
+		return err
+	}
+
+	msgType, payload, err = c.receiveManagerFrame()
+	if err != nil {
+		return err
+	}
+	if msgType != mcpMsgConnectResponse {
+		return &Error{Kind: ErrConnection, Message: "expected MCP connect response", SQLState: "08P01"}
+	}
+	if len(payload) < 1+2+2+16+64+32 {
+		return &Error{Kind: ErrConnection, Message: "truncated MCP connect response", SQLState: "08P01"}
+	}
+	if payload[0] != 0 {
+		errMsg := "MCP database connect failed"
+		errOffset := 1 + 2 + 2 + 16 + 64 + 32
+		if len(payload) >= errOffset+4 {
+			errLen := int(readU32(payload[errOffset : errOffset+4]))
+			if len(payload) >= errOffset+4+errLen {
+				errMsg = string(payload[errOffset+4 : errOffset+4+errLen])
+			}
+		}
+		return &Error{Kind: ErrAuth, Message: errMsg, SQLState: "28000"}
+	}
+	return nil
 }
 
 func (c *Conn) handshake(ctx context.Context) error {

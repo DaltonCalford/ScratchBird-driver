@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "scratchbird/client/driver_config.h"
 #include "scratchbird/client/network_client.h"
 
 namespace {
@@ -105,4 +106,26 @@ TEST(DriverDefaultsEnvTest, DoesNotOverrideExplicitConfig) {
     EXPECT_EQ(cfg.host, "override.host");
     EXPECT_EQ(cfg.port, 4100);
     EXPECT_EQ(cfg.application_name, "override_app");
+}
+
+TEST(DriverDefaultsEnvTest, ParsesManagerProxyConnectionParams) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "scratchbird://admin:pw@127.0.0.1:3090/main?"
+        "front_door_mode=manager_proxy&manager_auth_token=abc123&"
+        "manager_username=admin&manager_database=main&"
+        "manager_connection_profile=native_v3&manager_client_intent=native_v3&"
+        "manager_client_flags=7&manager_auth_fast_path=false",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.front_door_mode, "manager_proxy");
+    EXPECT_EQ(cfg.manager_auth_token, "abc123");
+    EXPECT_EQ(cfg.manager_username, "admin");
+    EXPECT_EQ(cfg.manager_database, "main");
+    EXPECT_EQ(cfg.manager_connection_profile, "native_v3");
+    EXPECT_EQ(cfg.manager_client_intent, "native_v3");
+    EXPECT_EQ(cfg.manager_client_flags, 7);
+    EXPECT_FALSE(cfg.manager_auth_fast_path);
 }

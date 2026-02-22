@@ -64,6 +64,19 @@ bool parseProtocol(const std::string& value, std::string& normalized) {
     return false;
 }
 
+bool parseFrontDoorMode(const std::string& value, std::string& normalized) {
+    std::string lower = toLower(trim(value));
+    if (lower.empty() || lower == "direct") {
+        normalized = "direct";
+        return true;
+    }
+    if (lower == "manager_proxy" || lower == "manager-proxy" || lower == "managed") {
+        normalized = "manager_proxy";
+        return true;
+    }
+    return false;
+}
+
 uint32_t normalizeTimeoutMs(const std::string& key, const std::string& value) {
     uint32_t parsed = 0;
     if (!parseUint32(value, parsed)) {
@@ -301,6 +314,41 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
                 return core::Status::INVALID_ARGUMENT;
             }
             config.protocol = normalized;
+        } else if (key == "front_door_mode" || key == "frontdoormode" ||
+                   key == "connection_mode" || key == "ingress_mode") {
+            std::string normalized;
+            if (!parseFrontDoorMode(value, normalized)) {
+                if (ctx) {
+                    ctx->message = "front_door_mode must be direct or manager_proxy";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.front_door_mode = normalized;
+        } else if (key == "manager_auth_token" || key == "mcp_auth_token" ||
+                   key == "managerauthtoken") {
+            config.manager_auth_token = value;
+        } else if (key == "manager_username" || key == "mcp_username") {
+            config.manager_username = value;
+        } else if (key == "manager_database" || key == "mcp_database") {
+            config.manager_database = value;
+        } else if (key == "manager_connection_profile" || key == "mcp_connection_profile") {
+            config.manager_connection_profile = value;
+        } else if (key == "manager_client_intent" || key == "mcp_client_intent") {
+            config.manager_client_intent = value;
+        } else if (key == "manager_client_flags" || key == "mcp_client_flags") {
+            uint32_t parsed = 0;
+            if (!parseUint32(value, parsed) || parsed > 65535u) {
+                if (ctx) {
+                    ctx->message = "Invalid manager_client_flags";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.manager_client_flags = static_cast<uint16_t>(parsed);
+        } else if (key == "manager_auth_fast_path" || key == "mcp_auth_fast_path") {
+            bool parsed = false;
+            if (parseBool(value, parsed)) {
+                config.manager_auth_fast_path = parsed;
+            }
         } else if (key == "applicationname" || key == "application_name" || key == "app") {
             config.application_name = value;
         } else if (key == "ssl" || key == "sslmode") {
@@ -386,6 +434,21 @@ void applyDriverDefaults(NetworkClientConfig& config) {
     if (config.application_name.empty()) {
         config.application_name = "scratchbird_driver";
     }
+    if (config.front_door_mode.empty()) {
+        config.front_door_mode = "direct";
+    }
+    if (config.manager_username.empty()) {
+        config.manager_username = config.username.empty() ? "admin" : config.username;
+    }
+    if (config.manager_database.empty()) {
+        config.manager_database = config.database;
+    }
+    if (config.manager_connection_profile.empty()) {
+        config.manager_connection_profile = "native_v3";
+    }
+    if (config.manager_client_intent.empty()) {
+        config.manager_client_intent = "native_v3";
+    }
     applyDriverDefaultsFromEnv(config);
 }
 
@@ -447,6 +510,38 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
     }
     if (const char* role = getEnv("SCRATCHBIRD_ROLE")) {
         config.role = role;
+    }
+    if (const char* front_door_mode = getEnv("SCRATCHBIRD_FRONT_DOOR_MODE")) {
+        std::string normalized;
+        if (parseFrontDoorMode(front_door_mode, normalized)) {
+            config.front_door_mode = normalized;
+        }
+    }
+    if (const char* manager_token = getEnv("SCRATCHBIRD_MANAGER_AUTH_TOKEN")) {
+        config.manager_auth_token = manager_token;
+    }
+    if (const char* manager_user = getEnv("SCRATCHBIRD_MANAGER_USERNAME")) {
+        config.manager_username = manager_user;
+    }
+    if (const char* manager_db = getEnv("SCRATCHBIRD_MANAGER_DATABASE")) {
+        config.manager_database = manager_db;
+    }
+    if (const char* manager_profile = getEnv("SCRATCHBIRD_MANAGER_CONNECTION_PROFILE")) {
+        config.manager_connection_profile = manager_profile;
+    }
+    if (const char* manager_intent = getEnv("SCRATCHBIRD_MANAGER_CLIENT_INTENT")) {
+        config.manager_client_intent = manager_intent;
+    }
+    if (const char* manager_flags = getEnv("SCRATCHBIRD_MANAGER_CLIENT_FLAGS")) {
+        uint32_t parsed = 0;
+        if (parseU32(manager_flags, parsed) && parsed <= 65535u) {
+            config.manager_client_flags = static_cast<uint16_t>(parsed);
+        }
+    }
+    if (const char* manager_fast_path = getEnv("SCRATCHBIRD_MANAGER_AUTH_FAST_PATH")) {
+        config.manager_auth_fast_path = (std::string(manager_fast_path) == "1" ||
+                                         std::string(manager_fast_path) == "true" ||
+                                         std::string(manager_fast_path) == "TRUE");
     }
     if (const char* schema = getEnv("SCRATCHBIRD_SCHEMA")) {
         config.schema = schema;

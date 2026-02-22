@@ -14,6 +14,7 @@ sb_connect <- function(dsn = "", ...) {
     }
   }
   cfg$protocol <- normalize_native_protocol(cfg$protocol)
+  cfg$front_door_mode <- normalize_front_door_mode(cfg$front_door_mode)
   if (cfg$user == "" || cfg$database == "") stop("user and database are required")
   if (!isTRUE(cfg$binary_transfer)) stop("binary_transfer=false is not supported")
   if (tolower(cfg$compression) == "zstd") stop("compression=zstd is not supported")
@@ -31,13 +32,16 @@ sb_connect <- function(dsn = "", ...) {
   client$last_sblr <- NULL
   client$prepared <- new.env(parent = emptyenv())
   client$autocommit <- TRUE
+  if (identical(cfg$front_door_mode, "manager_proxy")) {
+    sb_perform_manager_connect(client)
+  }
   sb_startup_and_auth(client)
   sb_apply_schema(client)
   client
 }
 
 sb_disconnect <- function(client) {
-  try(close(client$con), silent = TRUE)
+  try(sb_socket_close(client$con), silent = TRUE)
   client$con <- NULL
 }
 
@@ -237,7 +241,161 @@ sb_get_last_sblr <- function(client) {
 sb_open_socket <- function(cfg) {
   sslmode <- tolower(cfg$sslmode)
   if (sslmode == "disable") stop("TLS is required for ScratchBird connections")
-  stop("TLS transport is not implemented in the R driver (missing TLS socket support). Use an external TLS wrapper.")
+  sb_tls_connect_native(cfg)
+}
+
+sb_socket_write <- function(con, data) {
+  if (is.null(con)) stop("connection closed")
+  sb_tls_write_native(con, data)
+  invisible(NULL)
+}
+
+sb_socket_read_exact <- function(con, n) {
+  if (is.null(con)) stop("connection closed")
+  sb_tls_read_exact_native(con, n)
+}
+
+sb_socket_close <- function(con) {
+  if (is.null(con)) return(invisible(NULL))
+  sb_tls_close_native(con)
+  invisible(NULL)
+}
+
+SB_MANAGER_PROTOCOL_MAGIC <- 0x42444253L
+SB_MANAGER_PROTOCOL_VERSION <- 0x0101L
+SB_MANAGER_HEADER_SIZE <- 12L
+SB_MANAGER_MAX_PAYLOAD_SIZE <- 16L * 1024L * 1024L
+SB_MCP_PROTOCOL_VERSION <- 0x0100L
+
+SB_MCP_MSG_CONNECT_RESPONSE <- 0x02L
+SB_MCP_MSG_AUTH_CHALLENGE <- 0x12L
+SB_MCP_MSG_AUTH_RESPONSE <- 0x11L
+SB_MCP_MSG_STATUS_RESPONSE <- 0x64L
+SB_MCP_MSG_HELLO <- 0x65L
+SB_MCP_MSG_AUTH_START <- 0x66L
+SB_MCP_MSG_AUTH_CONTINUE <- 0x67L
+SB_MCP_MSG_DB_CONNECT <- 0x69L
+SB_MCP_AUTH_METHOD_TOKEN <- 4L
+
+sb_build_lp_string <- function(value) {
+  bytes <- charToRaw(enc2utf8(value))
+  c(pack_u32(length(bytes)), bytes)
+}
+
+sb_send_manager_frame <- function(client, type, payload) {
+  frame <- c(
+    pack_u32(SB_MANAGER_PROTOCOL_MAGIC),
+    pack_u16(SB_MANAGER_PROTOCOL_VERSION),
+    pack_u8(type),
+    pack_u8(0L),
+    pack_u32(length(payload)),
+    payload
+  )
+  sb_socket_write(client$con, frame)
+  invisible(NULL)
+}
+
+sb_recv_manager_frame <- function(client) {
+  header <- sb_socket_read_exact(client$con, SB_MANAGER_HEADER_SIZE)
+  if (length(header) != SB_MANAGER_HEADER_SIZE) stop("Manager frame read failed")
+  magic <- read_u32(header, 1)
+  if (magic != SB_MANAGER_PROTOCOL_MAGIC) stop("Manager frame magic mismatch")
+  version <- read_u16(header, 5)
+  if (version != SB_MANAGER_PROTOCOL_VERSION) stop("Manager frame version mismatch")
+  type <- read_u8(header, 7)
+  payload_len <- read_u32(header, 9)
+  if (payload_len > SB_MANAGER_MAX_PAYLOAD_SIZE) stop("Manager payload too large")
+  payload <- if (payload_len > 0) sb_socket_read_exact(client$con, payload_len) else raw()
+  list(type = type, payload = payload)
+}
+
+sb_perform_manager_connect <- function(client) {
+  token <- if (!is.null(client$cfg$manager_auth_token)) client$cfg$manager_auth_token else ""
+  if (token == "") stop("manager_proxy mode requires manager_auth_token")
+
+  manager_user <- if (!is.null(client$cfg$manager_username) && client$cfg$manager_username != "") {
+    client$cfg$manager_username
+  } else if (client$cfg$user != "") {
+    client$cfg$user
+  } else {
+    "admin"
+  }
+  manager_database <- if (!is.null(client$cfg$manager_database) && client$cfg$manager_database != "") {
+    client$cfg$manager_database
+  } else {
+    client$cfg$database
+  }
+  manager_profile <- if (!is.null(client$cfg$manager_connection_profile) && client$cfg$manager_connection_profile != "") {
+    client$cfg$manager_connection_profile
+  } else {
+    "native_v3"
+  }
+  manager_intent <- if (!is.null(client$cfg$manager_client_intent) && client$cfg$manager_client_intent != "") {
+    client$cfg$manager_client_intent
+  } else {
+    "native_v3"
+  }
+  manager_flags <- suppressWarnings(as.integer(client$cfg$manager_client_flags))
+  if (is.na(manager_flags)) manager_flags <- 0L
+  auth_fast_path <- isTRUE(client$cfg$manager_auth_fast_path)
+
+  hello <- c(pack_u16(SB_MCP_PROTOCOL_VERSION), pack_u16(bitwAnd(manager_flags, 0xFFFFL)))
+  sb_send_manager_frame(client, SB_MCP_MSG_HELLO, hello)
+  frame <- sb_recv_manager_frame(client)
+  if (frame$type != SB_MCP_MSG_STATUS_RESPONSE) stop("Expected MCP hello status response")
+
+  auth_start <- c(sb_build_lp_string(manager_user), pack_u8(SB_MCP_AUTH_METHOD_TOKEN))
+  if (auth_fast_path) {
+    token_bytes <- charToRaw(enc2utf8(token))
+    auth_start <- c(auth_start, pack_u32(length(token_bytes)), token_bytes)
+  } else {
+    auth_start <- c(auth_start, pack_u32(0L))
+  }
+  sb_send_manager_frame(client, SB_MCP_MSG_AUTH_START, auth_start)
+  frame <- sb_recv_manager_frame(client)
+  if (frame$type == SB_MCP_MSG_AUTH_CHALLENGE) {
+    token_bytes <- charToRaw(enc2utf8(token))
+    auth_continue <- c(pack_u32(length(token_bytes)), token_bytes)
+    sb_send_manager_frame(client, SB_MCP_MSG_AUTH_CONTINUE, auth_continue)
+    frame <- sb_recv_manager_frame(client)
+  }
+  if (frame$type != SB_MCP_MSG_AUTH_RESPONSE) stop("Expected MCP auth response")
+  if (length(frame$payload) < 1 + 4 + 256) stop("Truncated MCP auth response")
+  if (frame$payload[1] != as.raw(0x00)) {
+    err_raw <- frame$payload[6:261]
+    err_raw <- err_raw[err_raw != as.raw(0x00)]
+    err <- if (length(err_raw) > 0) rawToChar(err_raw) else ""
+    if (trimws(err) == "") err <- "MCP authentication failed"
+    stop(err)
+  }
+
+  nonce <- as.raw(sample.int(256, 16, replace = TRUE) - 1L)
+  db_connect <- c(
+    charToRaw("MCP1"),
+    sb_build_lp_string(manager_database),
+    sb_build_lp_string(manager_profile),
+    sb_build_lp_string(manager_intent),
+    pack_u16(length(nonce)),
+    nonce
+  )
+  sb_send_manager_frame(client, SB_MCP_MSG_DB_CONNECT, db_connect)
+  frame <- sb_recv_manager_frame(client)
+  if (frame$type != SB_MCP_MSG_CONNECT_RESPONSE) stop("Expected MCP connect response")
+  if (length(frame$payload) < 1 + 2 + 2 + 16 + 64 + 32) stop("Truncated MCP connect response")
+  if (frame$payload[1] != as.raw(0x00)) {
+    message <- "MCP database connect failed"
+    err_offset <- 1 + 2 + 2 + 16 + 64 + 32
+    err_len_index <- err_offset + 1
+    if (length(frame$payload) >= err_len_index + 3) {
+      err_len <- read_u32(frame$payload, err_len_index)
+      err_start <- err_len_index + 4
+      err_end <- err_start + err_len - 1
+      if (length(frame$payload) >= err_end && err_len > 0) {
+        message <- rawToChar(frame$payload[err_start:err_end])
+      }
+    }
+    stop(message)
+  }
 }
 
 sb_startup_and_auth <- function(client) {
@@ -538,15 +696,15 @@ sb_send_message <- function(client, type, payload, flags = 0L, force_zero = FALS
   attachment <- if (force_zero) raw(16) else client$attachment_id
   txn_id <- if (force_zero) 0 else client$txn_id
   data <- encode_message(type, payload, flags, sequence, attachment, txn_id)
-  writeBin(data, client$con)
+  sb_socket_write(client$con, data)
   sequence
 }
 
 sb_recv_message <- function(client) {
-  header <- readBin(client$con, raw(), n = SB_HEADER_SIZE)
+  header <- sb_socket_read_exact(client$con, SB_HEADER_SIZE)
   if (length(header) != SB_HEADER_SIZE) stop("connection closed")
   parsed <- decode_header(header)
-  payload <- if (parsed$length > 0) readBin(client$con, raw(), n = parsed$length) else raw()
+  payload <- if (parsed$length > 0) sb_socket_read_exact(client$con, parsed$length) else raw()
   list(
     type = parsed$type,
     flags = parsed$flags,

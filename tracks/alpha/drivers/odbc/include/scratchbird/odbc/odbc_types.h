@@ -800,6 +800,14 @@ struct ConnectionParams {
     std::string ssl_key;
     std::string ssl_root_cert;
     std::string protocol{"native"};
+    std::string front_door_mode{"direct"};
+    std::string manager_auth_token;
+    std::string manager_username;
+    std::string manager_database;
+    std::string manager_connection_profile{"native_v3"};
+    std::string manager_client_intent{"native_v3"};
+    uint16_t manager_client_flags{0};
+    bool manager_auth_fast_path{true};
     uint32_t connect_timeout{30};
     uint32_t query_timeout{0};
     std::string application_name;

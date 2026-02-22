@@ -34,6 +34,13 @@ test("parseDsn supports key-value", () => {
   assert.equal(cfg.user, "me");
 });
 
+test("parseDsn supports manager_proxy mode params", () => {
+  const cfg = parseDsn("scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7");
+  assert.equal(cfg.frontDoorMode, "manager_proxy");
+  assert.equal(cfg.managerAuthToken, "token");
+  assert.equal(cfg.managerClientFlags, 7);
+});
+
 test("normalizeQuery rewrites positional", () => {
   const normalized = normalizeQuery("select ?", [1]);
   assert.equal(normalized.sql, "select $1");

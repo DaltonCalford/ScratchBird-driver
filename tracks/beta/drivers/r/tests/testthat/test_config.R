@@ -29,3 +29,14 @@ test_that("parse key-value config", {
   expect_equal(cfg$connect_timeout_ms, 5000L)
   expect_equal(cfg$socket_timeout_ms, 7000L)
 })
+
+test_that("parse manager proxy params", {
+  cfg <- sb_config("scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7")
+  expect_equal(cfg$front_door_mode, "manager_proxy")
+  expect_equal(cfg$manager_auth_token, "token")
+  expect_equal(cfg$manager_client_flags, 7L)
+})
+
+test_that("invalid front door mode errors", {
+  expect_error(sb_config("scratchbird://localhost:3092/db?front_door_mode=invalid"), "front_door_mode must be direct or manager_proxy")
+})

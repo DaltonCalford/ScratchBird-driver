@@ -56,3 +56,32 @@ func TestParseRejectsNonNativeProtocol(t *testing.T) {
 		t.Fatalf("expected parse failure for non-native protocol")
 	}
 }
+
+func TestParseManagerProxyParams(t *testing.T) {
+	cfg, err := ParseConfig("scratchbird://user:pass@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_username=admin&manager_database=mydb&manager_connection_profile=native_v3&manager_client_intent=native_v3&manager_client_flags=7&manager_auth_fast_path=false")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if cfg.FrontDoorMode != "manager_proxy" {
+		t.Fatalf("expected manager_proxy mode, got %q", cfg.FrontDoorMode)
+	}
+	if cfg.ManagerAuthToken != "token" || cfg.ManagerUsername != "admin" || cfg.ManagerDatabase != "mydb" {
+		t.Fatalf("unexpected manager config fields")
+	}
+	if cfg.ManagerConnectionProfile != "native_v3" || cfg.ManagerClientIntent != "native_v3" {
+		t.Fatalf("unexpected manager profile/intent values")
+	}
+	if cfg.ManagerClientFlags != 7 {
+		t.Fatalf("expected manager_client_flags=7, got %d", cfg.ManagerClientFlags)
+	}
+	if cfg.ManagerAuthFastPath {
+		t.Fatalf("expected manager_auth_fast_path=false")
+	}
+}
+
+func TestParseRejectsInvalidFrontDoorMode(t *testing.T) {
+	_, err := ParseConfig("scratchbird://localhost:3092/db?front_door_mode=invalid")
+	if err == nil {
+		t.Fatalf("expected parse failure for invalid front_door_mode")
+	}
+}

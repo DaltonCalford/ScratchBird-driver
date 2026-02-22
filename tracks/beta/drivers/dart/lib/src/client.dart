@@ -21,6 +21,22 @@ import 'keepalive.dart';
 import 'leak_detector.dart';
 import 'telemetry.dart';
 
+const MANAGER_PROTOCOL_MAGIC = 0x42444253; // SBDB
+const MANAGER_PROTOCOL_VERSION = 0x0101;
+const MANAGER_HEADER_SIZE = 12;
+const MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
+const MCP_PROTOCOL_VERSION = 0x0100;
+
+const MCP_MSG_CONNECT_RESPONSE = 0x02;
+const MCP_MSG_AUTH_CHALLENGE = 0x12;
+const MCP_MSG_AUTH_RESPONSE = 0x11;
+const MCP_MSG_STATUS_RESPONSE = 0x64;
+const MCP_MSG_HELLO = 0x65;
+const MCP_MSG_AUTH_START = 0x66;
+const MCP_MSG_AUTH_CONTINUE = 0x67;
+const MCP_MSG_DB_CONNECT = 0x69;
+const MCP_AUTH_METHOD_TOKEN = 4;
+
 class ScratchBirdColumn {
   final String name;
   final int typeOid;
@@ -95,9 +111,10 @@ class ScratchBirdClient {
 
   Future<void> _connect() async {
     normalizeNativeProtocol(config.protocol);
+    final frontDoorMode = normalizeFrontDoorMode(config.frontDoorMode);
     final host = config.host;
     final port = config.port;
-    final sslmode = config.sslmode.toLowerCase();
+    final sslmode = _normalizeSslMode(config.sslmode);
     if (sslmode == 'disable') {
       throw Exception('TLS is required for ScratchBird connections');
     }
@@ -107,15 +124,171 @@ class ScratchBirdClient {
     if (config.compression.toLowerCase() == 'zstd') {
       throw Exception('compression=zstd is not supported');
     }
-    final useTls = true;
+
+    final strictVerify =
+        sslmode == 'verify-ca' || sslmode == 'verify-full' || sslmode == 'require';
+    final context = SecurityContext(withTrustedRoots: true);
+    if (config.sslrootcert != null && config.sslrootcert!.isNotEmpty) {
+      context.setTrustedCertificates(config.sslrootcert!);
+    }
+    if (config.sslcert != null &&
+        config.sslcert!.isNotEmpty &&
+        config.sslkey != null &&
+        config.sslkey!.isNotEmpty) {
+      context.useCertificateChain(config.sslcert!);
+      context.usePrivateKey(
+        config.sslkey!,
+        password: config.sslpassword?.isNotEmpty == true ? config.sslpassword : null,
+      );
+    }
 
     _socket = await SecureSocket.connect(host, port,
+        context: context,
+        onBadCertificate: strictVerify ? null : (_) => true,
         supportedProtocols: ['tlsv1.3'],
-        onBadCertificate: (_) => true);
+        timeout: Duration(milliseconds: config.connectTimeoutMs));
     _iter = StreamIterator(_socket!);
     _reader = _SocketReader(_iter);
+    if (frontDoorMode == 'manager_proxy') {
+      await _performManagerConnect();
+    }
     await _handshake();
     _startResilience();
+  }
+
+  String _normalizeSslMode(String value) {
+    final normalized = value.trim().toLowerCase();
+    switch (normalized) {
+      case 'disable':
+      case 'allow':
+      case 'prefer':
+      case 'require':
+        return normalized;
+      case 'verify-ca':
+      case 'verify_ca':
+        return 'verify-ca';
+      case 'verify-full':
+      case 'verify_full':
+        return 'verify-full';
+      default:
+        throw Exception('Unsupported sslmode value: $value');
+    }
+  }
+
+  void _appendLengthPrefixedString(BytesBuilder out, String value) {
+    final bytes = utf8.encode(value);
+    final len = ByteData(4)..setUint32(0, bytes.length, Endian.little);
+    out.add(len.buffer.asUint8List());
+    out.add(bytes);
+  }
+
+  Uint8List _randomBytes(int length) {
+    final rng = Random.secure();
+    return Uint8List.fromList(List<int>.generate(length, (_) => rng.nextInt(256)));
+  }
+
+  Future<void> _performManagerConnect() async {
+    final token = config.managerAuthToken ?? '';
+    if (token.isEmpty) {
+      throw Exception('manager_proxy mode requires manager_auth_token');
+    }
+    final managerUser =
+        (config.managerUsername != null && config.managerUsername!.isNotEmpty)
+            ? config.managerUsername!
+            : (config.user.isNotEmpty ? config.user : 'admin');
+    final managerDatabase =
+        (config.managerDatabase != null && config.managerDatabase!.isNotEmpty)
+            ? config.managerDatabase!
+            : config.database;
+    final managerProfile = (config.managerConnectionProfile != null &&
+            config.managerConnectionProfile!.isNotEmpty)
+        ? config.managerConnectionProfile!
+        : 'native_v3';
+    final managerIntent = (config.managerClientIntent != null &&
+            config.managerClientIntent!.isNotEmpty)
+        ? config.managerClientIntent!
+        : 'native_v3';
+    final managerFlags = config.managerClientFlags;
+    final authFastPath = config.managerAuthFastPath;
+
+    final hello = ByteData(4);
+    hello.setUint16(0, MCP_PROTOCOL_VERSION, Endian.little);
+    hello.setUint16(2, managerFlags & 0xffff, Endian.little);
+    await _sendManagerFrame(MCP_MSG_HELLO, hello.buffer.asUint8List());
+    var frame = await _recvManagerFrame();
+    if (frame.type != MCP_MSG_STATUS_RESPONSE) {
+      throw Exception('Expected MCP hello status response');
+    }
+
+    final authStart = BytesBuilder();
+    _appendLengthPrefixedString(authStart, managerUser);
+    authStart.add([MCP_AUTH_METHOD_TOKEN]);
+    if (authFastPath) {
+      final tokenBytes = utf8.encode(token);
+      final tokenLen = ByteData(4)..setUint32(0, tokenBytes.length, Endian.little);
+      authStart.add(tokenLen.buffer.asUint8List());
+      authStart.add(tokenBytes);
+    } else {
+      authStart.add(Uint8List(4));
+    }
+    await _sendManagerFrame(MCP_MSG_AUTH_START, authStart.toBytes());
+    frame = await _recvManagerFrame();
+    if (frame.type == MCP_MSG_AUTH_CHALLENGE) {
+      final tokenBytes = utf8.encode(token);
+      final authContinue = BytesBuilder();
+      final tokenLen = ByteData(4)..setUint32(0, tokenBytes.length, Endian.little);
+      authContinue.add(tokenLen.buffer.asUint8List());
+      authContinue.add(tokenBytes);
+      await _sendManagerFrame(MCP_MSG_AUTH_CONTINUE, authContinue.toBytes());
+      frame = await _recvManagerFrame();
+    }
+    if (frame.type != MCP_MSG_AUTH_RESPONSE) {
+      throw Exception('Expected MCP auth response');
+    }
+    if (frame.payload.length < 1 + 4 + 256) {
+      throw Exception('Truncated MCP auth response');
+    }
+    if (frame.payload[0] != 0) {
+      final err = utf8
+          .decode(frame.payload.sublist(5, 261), allowMalformed: true)
+          .replaceAll(RegExp(r'\x00+$'), '');
+      throw Exception(err.isEmpty ? 'MCP authentication failed' : err);
+    }
+
+    final dbConnect = BytesBuilder();
+    dbConnect.add(utf8.encode('MCP1'));
+    _appendLengthPrefixedString(dbConnect, managerDatabase);
+    _appendLengthPrefixedString(dbConnect, managerProfile);
+    _appendLengthPrefixedString(dbConnect, managerIntent);
+    final nonce = _randomBytes(16);
+    final nonceLen = ByteData(2)..setUint16(0, nonce.length, Endian.little);
+    dbConnect.add(nonceLen.buffer.asUint8List());
+    dbConnect.add(nonce);
+
+    await _sendManagerFrame(MCP_MSG_DB_CONNECT, dbConnect.toBytes());
+    frame = await _recvManagerFrame();
+    if (frame.type != MCP_MSG_CONNECT_RESPONSE) {
+      throw Exception('Expected MCP connect response');
+    }
+    if (frame.payload.length < 1 + 2 + 2 + 16 + 64 + 32) {
+      throw Exception('Truncated MCP connect response');
+    }
+    if (frame.payload[0] != 0) {
+      var message = 'MCP database connect failed';
+      final errOffset = 1 + 2 + 2 + 16 + 64 + 32;
+      if (frame.payload.length >= errOffset + 4) {
+        final errLen =
+            ByteData.sublistView(frame.payload, errOffset, errOffset + 4)
+                .getUint32(0, Endian.little);
+        if (frame.payload.length >= errOffset + 4 + errLen) {
+          message = utf8.decode(
+            frame.payload.sublist(errOffset + 4, errOffset + 4 + errLen),
+            allowMalformed: true,
+          );
+        }
+      }
+      throw Exception(message);
+    }
   }
 
   Future<void> close() async {
@@ -571,6 +744,40 @@ class ScratchBirdClient {
     final header = decodeHeader(headerBytes);
     final payload = header.length == 0 ? Uint8List(0) : await _reader.readExact(header.length);
     return ScratchBirdMessage(header, payload);
+  }
+
+  Future<void> _sendManagerFrame(int type, Uint8List payload) async {
+    final header = ByteData(MANAGER_HEADER_SIZE);
+    header.setUint32(0, MANAGER_PROTOCOL_MAGIC, Endian.little);
+    header.setUint16(4, MANAGER_PROTOCOL_VERSION, Endian.little);
+    header.setUint8(6, type);
+    header.setUint8(7, 0);
+    header.setUint32(8, payload.length, Endian.little);
+    _socket!.add(Uint8List.fromList([
+      ...header.buffer.asUint8List(),
+      ...payload,
+    ]));
+    await _socket!.flush();
+  }
+
+  Future<({int type, Uint8List payload})> _recvManagerFrame() async {
+    final header = await _reader.readExact(MANAGER_HEADER_SIZE);
+    final data = ByteData.sublistView(header);
+    final magic = data.getUint32(0, Endian.little);
+    if (magic != MANAGER_PROTOCOL_MAGIC) {
+      throw Exception('Manager frame magic mismatch');
+    }
+    final version = data.getUint16(4, Endian.little);
+    if (version != MANAGER_PROTOCOL_VERSION) {
+      throw Exception('Manager frame version mismatch');
+    }
+    final type = data.getUint8(6);
+    final length = data.getUint32(8, Endian.little);
+    if (length > MANAGER_MAX_PAYLOAD_SIZE) {
+      throw Exception('Manager payload too large');
+    }
+    final payload = length == 0 ? Uint8List(0) : await _reader.readExact(length);
+    return (type: type, payload: payload);
   }
 
   List<ScratchBirdColumn> _parseRowDescription(Uint8List payload) {

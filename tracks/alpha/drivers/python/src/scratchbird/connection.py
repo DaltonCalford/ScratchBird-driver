@@ -14,13 +14,15 @@ from typing import Any, Dict, Optional
 
 import socket
 import ssl
+import os
+import struct
 
 from . import errors
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
 from .keepalive import KeepaliveManager, KeepaliveConfig
 from .leak_detection import LeakDetector, LeakDetectionConfig
 from .telemetry import TelemetryCollector, TelemetryConfig
-from .dsn import parse_dsn, normalize_native_protocol
+from .dsn import parse_dsn, normalize_front_door_mode, normalize_native_protocol
 from .cursor import Cursor
 from .protocol import (
     AuthMethod,
@@ -86,11 +88,28 @@ from .scram import ScramExchange
 from .sql import normalize_query
 from .types import FORMAT_BINARY, decode_value, encode_param
 
+MANAGER_PROTOCOL_MAGIC = 0x42444253  # SBDB
+MANAGER_PROTOCOL_VERSION = 0x0101
+MANAGER_HEADER_SIZE = 12
+MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024
+MCP_PROTOCOL_VERSION = 0x0100
+
+MCP_MSG_CONNECT_RESPONSE = 0x02
+MCP_MSG_AUTH_CHALLENGE = 0x12
+MCP_MSG_AUTH_RESPONSE = 0x11
+MCP_MSG_STATUS_RESPONSE = 0x64
+MCP_MSG_HELLO = 0x65
+MCP_MSG_AUTH_START = 0x66
+MCP_MSG_AUTH_CONTINUE = 0x67
+MCP_MSG_DB_CONNECT = 0x69
+MCP_AUTH_METHOD_TOKEN = 4
+
 
 @dataclass
 class ConnectionConfig:
     host: str = "localhost"
     port: int = 3092
+    front_door_mode: str = "direct"
     protocol: str = "native"
     database: Optional[str] = None
     user: Optional[str] = None
@@ -107,6 +126,13 @@ class ConnectionConfig:
     role: Optional[str] = None
     binary_transfer: bool = True
     compression: str = "off"
+    manager_auth_token: Optional[str] = None
+    manager_username: Optional[str] = None
+    manager_database: Optional[str] = None
+    manager_connection_profile: str = "native_v3"
+    manager_client_intent: str = "native_v3"
+    manager_client_flags: int = 0
+    manager_auth_fast_path: bool = True
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -131,6 +157,15 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.port = int(params.get("port", cfg.port))
     try:
         cfg.protocol = normalize_native_protocol(params.get("protocol", params.get("parser", params.get("dialect"))))
+        cfg.front_door_mode = normalize_front_door_mode(
+            params.get(
+                "front_door_mode",
+                params.get(
+                    "frontdoormode",
+                    params.get("frontDoorMode", params.get("connection_mode", params.get("ingress_mode"))),
+                ),
+            )
+        )
     except ValueError as exc:
         raise errors.InterfaceError(str(exc)) from exc
     cfg.database = params.get("database", cfg.database)
@@ -152,12 +187,38 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     else:
         cfg.binary_transfer = bool(raw_binary)
     cfg.compression = params.get("compression", cfg.compression) or "off"
+    cfg.manager_auth_token = params.get("manager_auth_token", params.get("mcp_auth_token", cfg.manager_auth_token))
+    cfg.manager_username = params.get("manager_username", params.get("mcp_username", cfg.manager_username))
+    cfg.manager_database = params.get("manager_database", params.get("mcp_database", cfg.manager_database))
+    cfg.manager_connection_profile = params.get(
+        "manager_connection_profile", params.get("mcp_connection_profile", cfg.manager_connection_profile)
+    ) or "native_v3"
+    cfg.manager_client_intent = params.get(
+        "manager_client_intent", params.get("mcp_client_intent", cfg.manager_client_intent)
+    ) or "native_v3"
+    raw_manager_flags = params.get("manager_client_flags", params.get("mcp_client_flags"))
+    if raw_manager_flags is not None:
+        try:
+            cfg.manager_client_flags = int(raw_manager_flags)
+        except ValueError:
+            cfg.manager_client_flags = 0
+    raw_fast_path = params.get("manager_auth_fast_path", params.get("mcp_auth_fast_path"))
+    if raw_fast_path is not None:
+        if isinstance(raw_fast_path, str):
+            cfg.manager_auth_fast_path = raw_fast_path.lower() in ("1", "true", "yes", "on")
+        else:
+            cfg.manager_auth_fast_path = bool(raw_fast_path)
     cfg.extra = {
         k: v
         for k, v in params.items()
         if k not in {
             "host",
             "port",
+            "front_door_mode",
+            "frontdoormode",
+            "frontDoorMode",
+            "connection_mode",
+            "ingress_mode",
             "database",
             "protocol",
             "parser",
@@ -180,6 +241,20 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "role",
             "binary_transfer",
             "compression",
+            "manager_auth_token",
+            "mcp_auth_token",
+            "manager_username",
+            "mcp_username",
+            "manager_database",
+            "mcp_database",
+            "manager_connection_profile",
+            "mcp_connection_profile",
+            "manager_client_intent",
+            "mcp_client_intent",
+            "manager_client_flags",
+            "mcp_client_flags",
+            "manager_auth_fast_path",
+            "mcp_auth_fast_path",
         }
     }
 
@@ -216,6 +291,7 @@ class Connection:
     def _connect(self) -> None:
         try:
             self._config.protocol = normalize_native_protocol(self._config.protocol)
+            self._config.front_door_mode = normalize_front_door_mode(self._config.front_door_mode)
         except ValueError as exc:
             raise errors.InterfaceError(str(exc)) from exc
         if not self._config.user or not self._config.database:
@@ -257,6 +333,8 @@ class Connection:
             raise
         self._socket = sock
 
+        if self._config.front_door_mode == "manager_proxy":
+            self._perform_manager_connect()
         self._startup_and_auth()
         self._apply_schema()
         self._connected = True
@@ -530,6 +608,102 @@ class Connection:
         self._ensure_open()
         payload = build_cancel_payload(0, 0)
         self._send_message(MessageType.CANCEL, payload, MSG_FLAG_URGENT)
+
+    def _send_manager_frame(self, msg_type: int, payload: bytes) -> None:
+        if not self._socket:
+            raise errors.InterfaceError("no active socket")
+        header = struct.pack(
+            "<IHBBI",
+            MANAGER_PROTOCOL_MAGIC,
+            MANAGER_PROTOCOL_VERSION,
+            msg_type,
+            0,
+            len(payload),
+        )
+        self._socket.sendall(header + payload)
+
+    def _recv_manager_frame(self) -> tuple[int, bytes]:
+        header = self._read_exact(MANAGER_HEADER_SIZE)
+        magic, version, msg_type, _flags, payload_len = struct.unpack("<IHBBI", header)
+        if magic != MANAGER_PROTOCOL_MAGIC:
+            raise errors.OperationalError("manager frame magic mismatch")
+        if version != MANAGER_PROTOCOL_VERSION:
+            raise errors.OperationalError("manager frame version mismatch")
+        if payload_len > MANAGER_MAX_PAYLOAD_SIZE:
+            raise errors.OperationalError("manager payload too large")
+        payload = self._read_exact(payload_len) if payload_len else b""
+        return msg_type, payload
+
+    @staticmethod
+    def _pack_lpreface(text: str) -> bytes:
+        encoded = text.encode("utf-8")
+        return struct.pack("<I", len(encoded)) + encoded
+
+    def _perform_manager_connect(self) -> None:
+        if not self._config.manager_auth_token:
+            raise errors.InterfaceError("manager_proxy mode requires manager_auth_token")
+
+        manager_user = self._config.manager_username or self._config.user or "admin"
+        manager_database = self._config.manager_database or self._config.database or ""
+        manager_profile = self._config.manager_connection_profile or "native_v3"
+        manager_intent = self._config.manager_client_intent or "native_v3"
+        manager_flags = int(self._config.manager_client_flags or 0) & 0xFFFF
+        auth_fast_path = self._config.manager_auth_fast_path is not False
+
+        hello_payload = struct.pack("<HH", MCP_PROTOCOL_VERSION, manager_flags)
+        self._send_manager_frame(MCP_MSG_HELLO, hello_payload)
+        msg_type, _ = self._recv_manager_frame()
+        if msg_type != MCP_MSG_STATUS_RESPONSE:
+            raise errors.OperationalError("expected MCP hello status response")
+
+        auth_start = bytearray()
+        auth_start += self._pack_lpreface(manager_user)
+        auth_start += struct.pack("<B", MCP_AUTH_METHOD_TOKEN)
+        if auth_fast_path:
+            token = self._config.manager_auth_token.encode("utf-8")
+            auth_start += struct.pack("<I", len(token)) + token
+        else:
+            auth_start += struct.pack("<I", 0)
+
+        self._send_manager_frame(MCP_MSG_AUTH_START, bytes(auth_start))
+        msg_type, payload = self._recv_manager_frame()
+        if msg_type == MCP_MSG_AUTH_CHALLENGE:
+            token = self._config.manager_auth_token.encode("utf-8")
+            self._send_manager_frame(MCP_MSG_AUTH_CONTINUE, struct.pack("<I", len(token)) + token)
+            msg_type, payload = self._recv_manager_frame()
+
+        if msg_type != MCP_MSG_AUTH_RESPONSE:
+            raise errors.OperationalError("expected MCP auth response")
+        if len(payload) < 1 + 4 + 256:
+            raise errors.OperationalError("truncated MCP auth response")
+        if payload[0] != 0:
+            err_text = payload[5 : 5 + 256].split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+            raise errors.OperationalError(err_text or "MCP authentication failed")
+
+        nonce = os.urandom(16)
+        db_connect = bytearray(b"MCP1")
+        db_connect += self._pack_lpreface(manager_database)
+        db_connect += self._pack_lpreface(manager_profile)
+        db_connect += self._pack_lpreface(manager_intent)
+        db_connect += struct.pack("<H", len(nonce))
+        db_connect += nonce
+
+        self._send_manager_frame(MCP_MSG_DB_CONNECT, bytes(db_connect))
+        msg_type, payload = self._recv_manager_frame()
+        if msg_type != MCP_MSG_CONNECT_RESPONSE:
+            raise errors.OperationalError("expected MCP connect response")
+        if len(payload) < 1 + 2 + 2 + 16 + 64 + 32:
+            raise errors.OperationalError("truncated MCP connect response")
+        if payload[0] != 0:
+            err_text = "MCP database connect failed"
+            err_offset = 1 + 2 + 2 + 16 + 64 + 32
+            if len(payload) >= err_offset + 4:
+                err_len = struct.unpack_from("<I", payload, err_offset)[0]
+                start = err_offset + 4
+                end = start + err_len
+                if len(payload) >= end:
+                    err_text = payload[start:end].decode("utf-8", errors="replace")
+            raise errors.OperationalError(err_text)
 
     def _startup_and_auth(self) -> None:
         self._authed = False

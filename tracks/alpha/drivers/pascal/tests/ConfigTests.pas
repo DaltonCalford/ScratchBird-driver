@@ -25,6 +25,12 @@ begin
     raise Exception.Create(MessageText + ': expected=' + IntToStr(Expected) + ' actual=' + IntToStr(Actual));
 end;
 
+procedure AssertTrue(Value: Boolean; const MessageText: string);
+begin
+  if not Value then
+    raise Exception.Create(MessageText + ': expected true');
+end;
+
 var
   Config: TScratchBirdConfig;
 begin
@@ -45,6 +51,20 @@ begin
     AssertEqual('db', Config.Database, 'database kv');
     AssertEqual('me', Config.UserName, 'user kv');
     AssertEqual('secret', Config.Password, 'password kv');
+
+    Config := ParseConfig('scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7');
+    AssertEqual('manager_proxy', Config.FrontDoorMode, 'front_door_mode');
+    AssertEqual('token', Config.ManagerAuthToken, 'manager_auth_token');
+    AssertEqualInt(7, Config.ManagerClientFlags, 'manager_client_flags');
+
+    try
+      ParseConfig('scratchbird://localhost:3092/db?front_door_mode=invalid');
+      raise Exception.Create('expected invalid front_door_mode parse failure');
+    except
+      on E: Exception do
+        AssertTrue(Pos('front_door_mode must be direct or manager_proxy', E.Message) > 0, 'invalid front door error');
+    end;
+
     Writeln('ConfigTests: OK');
   except
     on E: Exception do

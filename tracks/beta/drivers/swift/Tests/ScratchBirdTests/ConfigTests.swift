@@ -16,4 +16,17 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(cfg.password, "pass")
         XCTAssertEqual(cfg.database, "db")
     }
+
+    func testParseManagerProxyParams() throws {
+        let cfg = ScratchBirdConfig(
+            dsn: "scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7"
+        )
+        XCTAssertEqual(cfg.frontDoorMode, "manager_proxy")
+        XCTAssertEqual(cfg.managerAuthToken, "token")
+        XCTAssertEqual(cfg.managerClientFlags, 7)
+    }
+
+    func testNormalizeFrontDoorModeRejectsInvalid() throws {
+        XCTAssertThrowsError(try normalizeFrontDoorMode("invalid"))
+    }
 }

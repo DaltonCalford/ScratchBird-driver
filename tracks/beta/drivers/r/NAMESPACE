@@ -1,3 +1,4 @@
+useDynLib(scratchbird, .registration=TRUE)
 export(Scratchbird)
 export(sb_connect)
 export(sb_disconnect)

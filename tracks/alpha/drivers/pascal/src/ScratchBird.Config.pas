@@ -21,6 +21,7 @@ type
     Host: string;
     Port: Integer;
     Protocol: string;
+    FrontDoorMode: string;
     Database: string;
     UserName: string;
     Password: string;
@@ -37,6 +38,13 @@ type
     BinaryTransfer: Boolean;
     Compression: string;
     FetchSize: Integer;
+    ManagerAuthToken: string;
+    ManagerUsername: string;
+    ManagerDatabase: string;
+    ManagerConnectionProfile: string;
+    ManagerClientIntent: string;
+    ManagerClientFlags: Integer;
+    ManagerAuthFastPath: Boolean;
   end;
 
 function DefaultConfig: TScratchBirdConfig;
@@ -49,6 +57,7 @@ begin
   Result.Host := 'localhost';
   Result.Port := 3092;
   Result.Protocol := 'native';
+  Result.FrontDoorMode := 'direct';
   Result.Database := '';
   Result.UserName := '';
   Result.Password := '';
@@ -65,6 +74,33 @@ begin
   Result.BinaryTransfer := True;
   Result.Compression := 'off';
   Result.FetchSize := 0;
+  Result.ManagerAuthToken := '';
+  Result.ManagerUsername := '';
+  Result.ManagerDatabase := '';
+  Result.ManagerConnectionProfile := 'native_v3';
+  Result.ManagerClientIntent := 'native_v3';
+  Result.ManagerClientFlags := 0;
+  Result.ManagerAuthFastPath := True;
+end;
+
+function NormalizeFrontDoorMode(const Value: string): string;
+var
+  Normalized: string;
+begin
+  Normalized := LowerCase(Trim(Value));
+  if (Normalized = '') or (Normalized = 'direct') then
+    Exit('direct');
+  if (Normalized = 'manager_proxy') or (Normalized = 'manager-proxy') or (Normalized = 'managed') then
+    Exit('manager_proxy');
+  raise Exception.Create('front_door_mode must be direct or manager_proxy.');
+end;
+
+function ParseBoolean(const Value: string): Boolean;
+var
+  Normalized: string;
+begin
+  Normalized := LowerCase(Trim(Value));
+  Result := (Normalized = '1') or (Normalized = 'true') or (Normalized = 'yes') or (Normalized = 'on');
 end;
 
 procedure ApplyParam(var Config: TScratchBirdConfig; const Key, Value: string);
@@ -88,6 +124,9 @@ begin
     else
       raise Exception.Create('Only protocol=native is supported; connect to the native parser listener/port.');
   end
+  else if (KeyLower = 'front_door_mode') or (KeyLower = 'frontdoormode') or
+          (KeyLower = 'connection_mode') or (KeyLower = 'ingress_mode') then
+    Config.FrontDoorMode := NormalizeFrontDoorMode(Value)
   else if (KeyLower = 'user') or (KeyLower = 'username') or (KeyLower = 'user id') or (KeyLower = 'uid') then
     Config.UserName := Value
   else if (KeyLower = 'password') or (KeyLower = 'pwd') then
@@ -113,7 +152,7 @@ begin
   else if (KeyLower = 'application_name') or (KeyLower = 'applicationname') then
     Config.ApplicationName := Value
   else if (KeyLower = 'binary_transfer') or (KeyLower = 'binarytransfer') then
-    Config.BinaryTransfer := SameText(Value, 'true') or (Value = '1')
+    Config.BinaryTransfer := ParseBoolean(Value)
   else if (KeyLower = 'fetch_size') or (KeyLower = 'fetchsize') or (KeyLower = 'default_fetch_size') then
     Config.FetchSize := StrToIntDef(Value, 0)
   else if KeyLower = 'compression' then
@@ -122,7 +161,21 @@ begin
       Config.Compression := 'zstd'
     else
       Config.Compression := 'off';
-  end;
+  end
+  else if (KeyLower = 'manager_auth_token') or (KeyLower = 'mcp_auth_token') then
+    Config.ManagerAuthToken := Value
+  else if (KeyLower = 'manager_username') or (KeyLower = 'mcp_username') then
+    Config.ManagerUsername := Value
+  else if (KeyLower = 'manager_database') or (KeyLower = 'mcp_database') then
+    Config.ManagerDatabase := Value
+  else if (KeyLower = 'manager_connection_profile') or (KeyLower = 'mcp_connection_profile') then
+    Config.ManagerConnectionProfile := Value
+  else if (KeyLower = 'manager_client_intent') or (KeyLower = 'mcp_client_intent') then
+    Config.ManagerClientIntent := Value
+  else if (KeyLower = 'manager_client_flags') or (KeyLower = 'mcp_client_flags') then
+    Config.ManagerClientFlags := StrToIntDef(Value, 0)
+  else if (KeyLower = 'manager_auth_fast_path') or (KeyLower = 'mcp_auth_fast_path') then
+    Config.ManagerAuthFastPath := ParseBoolean(Value);
 end;
 
 function UrlDecode(const Value: string): string;
@@ -163,9 +216,9 @@ var
 begin
   Result := DefaultConfig;
   Work := Dsn;
-  if Copy(Work, 1, 13) <> 'scratchbird://' then
+  if Copy(LowerCase(Work), 1, 14) <> 'scratchbird://' then
     raise Exception.Create('Unsupported DSN scheme');
-  Work := Copy(Work, 14, MaxInt);
+  Work := Copy(Work, 15, MaxInt);
   QueryPos := Pos('?', Work);
   if QueryPos > 0 then
   begin

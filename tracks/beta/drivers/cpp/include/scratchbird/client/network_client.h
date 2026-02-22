@@ -26,12 +26,22 @@ struct NetworkClientConfig {
     std::string host{"127.0.0.1"};
     uint16_t port{network::DEFAULT_NATIVE_PORT};
     std::string protocol{"native"};
+    std::string front_door_mode{"direct"};  // direct | manager_proxy
     std::string database;
     std::string username;
     std::string password;
     std::string role;
     std::string schema;
     std::string application_name{"scratchbird_odbc"};
+
+    // manager_proxy mode options
+    std::string manager_auth_token;
+    std::string manager_username;
+    std::string manager_database;
+    std::string manager_connection_profile{"native_v3"};
+    std::string manager_client_intent{"native_v3"};
+    uint16_t manager_client_flags{0};
+    bool manager_auth_fast_path{true};
 
     uint32_t connect_timeout_ms{network::DEFAULT_CONNECT_TIMEOUT_MS};
     uint32_t read_timeout_ms{network::DEFAULT_READ_TIMEOUT_MS};
@@ -201,6 +211,14 @@ public:
     void setCopyOutputStream(std::ostream* out) { copy_output_stream_ = out; }
 
 private:
+    core::Status sendManagerFrame(uint8_t type,
+                                  const std::vector<uint8_t>& payload,
+                                  core::ErrorContext* ctx = nullptr);
+    core::Status receiveManagerFrame(uint8_t& type,
+                                     std::vector<uint8_t>& payload,
+                                     core::ErrorContext* ctx = nullptr);
+    core::Status performManagerConnect(core::ErrorContext* ctx = nullptr);
+
     core::Status sendMessage(const protocol::ProtocolMessage& msg,
                              core::ErrorContext* ctx = nullptr);
     core::Status sendMessage(protocol::MessageType type,

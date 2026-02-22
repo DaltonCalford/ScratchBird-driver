@@ -246,6 +246,14 @@ client::NetworkClientConfig OdbcClientBridge::buildConfig(const ConnectionParams
     cfg.ssl_cert = params.ssl_cert;
     cfg.ssl_key = params.ssl_key;
     cfg.ssl_root_cert = params.ssl_root_cert;
+    cfg.front_door_mode = params.front_door_mode;
+    cfg.manager_auth_token = params.manager_auth_token;
+    cfg.manager_username = params.manager_username;
+    cfg.manager_database = params.manager_database;
+    cfg.manager_connection_profile = params.manager_connection_profile;
+    cfg.manager_client_intent = params.manager_client_intent;
+    cfg.manager_client_flags = params.manager_client_flags;
+    cfg.manager_auth_fast_path = params.manager_auth_fast_path;
     client::applyDriverDefaultsFromEnv(cfg);
     return cfg;
 }

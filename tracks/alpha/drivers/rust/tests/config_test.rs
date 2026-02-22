@@ -36,3 +36,14 @@ fn parse_key_value() {
     assert_eq!(cfg.connect_timeout_ms, 5000);
     assert_eq!(cfg.socket_timeout_ms, 7000);
 }
+
+#[test]
+fn parse_manager_proxy_params() {
+    let cfg = Config::from_dsn(
+        "scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7",
+    )
+    .unwrap();
+    assert_eq!(cfg.front_door_mode, "manager_proxy");
+    assert_eq!(cfg.manager_auth_token, "token");
+    assert_eq!(cfg.manager_client_flags, 7);
+}

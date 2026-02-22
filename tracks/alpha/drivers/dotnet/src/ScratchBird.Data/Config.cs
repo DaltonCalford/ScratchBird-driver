@@ -13,6 +13,7 @@ public sealed class ScratchBirdConfig
 {
     public string Host { get; set; } = "localhost";
     public int Port { get; set; } = 3092;
+    public string FrontDoorMode { get; set; } = "direct";
     public string Protocol { get; set; } = "native";
     public string Database { get; set; } = "";
     public string Username { get; set; } = "";
@@ -30,6 +31,13 @@ public sealed class ScratchBirdConfig
     public bool BinaryTransfer { get; set; } = true;
     public string Compression { get; set; } = "off";
     public int DefaultFetchSize { get; set; } = 0;
+    public string ManagerAuthToken { get; set; } = string.Empty;
+    public string ManagerUsername { get; set; } = string.Empty;
+    public string ManagerDatabase { get; set; } = string.Empty;
+    public string ManagerConnectionProfile { get; set; } = "native_v3";
+    public string ManagerClientIntent { get; set; } = "native_v3";
+    public ushort ManagerClientFlags { get; set; } = 0;
+    public bool ManagerAuthFastPath { get; set; } = true;
 
     public static ScratchBirdConfig FromConnectionString(string connectionString)
     {
@@ -44,6 +52,17 @@ public sealed class ScratchBirdConfig
         {
             "" or "native" or "scratchbird" or "scratchbird-native" or "scratchbird_native" => "native",
             _ => throw new ArgumentException("Only protocol=native is supported; connect to the native parser listener/port.")
+        };
+    }
+
+    internal static string NormalizeFrontDoorMode(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" or "direct" => "direct",
+            "manager_proxy" or "manager-proxy" or "managed" => "manager_proxy",
+            _ => throw new ArgumentException("front_door_mode must be direct or manager_proxy.")
         };
     }
 }
@@ -138,6 +157,12 @@ internal static class DsnParser
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port))
                     cfg.Port = port;
                 break;
+            case "front_door_mode":
+            case "frontdoormode":
+            case "connection_mode":
+            case "ingress_mode":
+                cfg.FrontDoorMode = ScratchBirdConfig.NormalizeFrontDoorMode(value);
+                break;
             case "database":
             case "dbname":
             case "initial catalog":
@@ -210,6 +235,38 @@ internal static class DsnParser
             case "default_fetch_size":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fetch))
                     cfg.DefaultFetchSize = Math.Max(0, fetch);
+                break;
+            case "manager_auth_token":
+            case "mcp_auth_token":
+                cfg.ManagerAuthToken = value;
+                break;
+            case "manager_username":
+            case "mcp_username":
+                cfg.ManagerUsername = value;
+                break;
+            case "manager_database":
+            case "mcp_database":
+                cfg.ManagerDatabase = value;
+                break;
+            case "manager_connection_profile":
+            case "mcp_connection_profile":
+                cfg.ManagerConnectionProfile = value;
+                break;
+            case "manager_client_intent":
+            case "mcp_client_intent":
+                cfg.ManagerClientIntent = value;
+                break;
+            case "manager_client_flags":
+            case "mcp_client_flags":
+                if (ushort.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var managerFlags))
+                    cfg.ManagerClientFlags = managerFlags;
+                break;
+            case "manager_auth_fast_path":
+            case "mcp_auth_fast_path":
+                cfg.ManagerAuthFastPath = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
                 break;
         }
     }

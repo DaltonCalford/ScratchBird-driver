@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rand::RngCore;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -27,12 +28,48 @@ use crate::telemetry::{SpanContext, TelemetryCollector, TelemetryConfig};
 use crate::types::{decode_value, encode_param, Column, Param, Value, FORMAT_BINARY};
 
 const QUERY_FLAG_BINARY_RESULT: u32 = 0x04;
+const MANAGER_PROTOCOL_MAGIC: u32 = 0x4244_4253; // SBDB
+const MANAGER_PROTOCOL_VERSION: u16 = 0x0101;
+const MANAGER_HEADER_SIZE: usize = 12;
+const MANAGER_MAX_PAYLOAD_SIZE: u32 = 16 * 1024 * 1024;
+const MCP_PROTOCOL_VERSION: u16 = 0x0100;
+
+const MCP_MSG_CONNECT_RESPONSE: u8 = 0x02;
+const MCP_MSG_AUTH_CHALLENGE: u8 = 0x12;
+const MCP_MSG_AUTH_RESPONSE: u8 = 0x11;
+const MCP_MSG_STATUS_RESPONSE: u8 = 0x64;
+const MCP_MSG_HELLO: u8 = 0x65;
+const MCP_MSG_AUTH_START: u8 = 0x66;
+const MCP_MSG_AUTH_CONTINUE: u8 = 0x67;
+const MCP_MSG_DB_CONNECT: u8 = 0x69;
+const MCP_AUTH_METHOD_TOKEN: u8 = 4;
 
 fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
         "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => Some("native"),
         _ => None,
     }
+}
+
+fn normalize_front_door_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "direct" => Some("direct"),
+        "manager_proxy" | "manager-proxy" | "managed" => Some("manager_proxy"),
+        _ => None,
+    }
+}
+
+fn append_u16(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn append_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn append_lpreface(out: &mut Vec<u8>, value: &str) {
+    append_u32(out, value.len() as u32);
+    out.extend_from_slice(value.as_bytes());
 }
 
 pub struct Client {
@@ -168,6 +205,16 @@ impl Client {
             )
         })?;
         self.config.protocol = protocol.to_string();
+        let front_door_mode = normalize_front_door_mode(&self.config.front_door_mode).ok_or_else(|| {
+            Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                "front_door_mode must be direct or manager_proxy",
+                Some("0A000".to_string()),
+                None,
+                None,
+            )
+        })?;
+        self.config.front_door_mode = front_door_mode.to_string();
         if self.config.user.is_empty() || self.config.database.is_empty() {
             return Err(Error::new(ErrorKind::Connection, "user and database are required"));
         }
@@ -191,6 +238,9 @@ impl Client {
         }
         let stream = self.connect_transport().await?;
         self.stream = Some(stream);
+        if self.config.front_door_mode == "manager_proxy" {
+            self.perform_manager_connect().await?;
+        }
         self.handshake().await?;
         self.apply_schema().await?;
         self.connected = true;
@@ -734,6 +784,177 @@ impl Client {
         self.send_message(protocol::MSG_CANCEL, &payload, protocol::MSG_FLAG_URGENT, false)
             .await
             .map(|_| ())
+    }
+
+    async fn send_manager_frame(&mut self, msg_type: u8, payload: &[u8]) -> Result<()> {
+        let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
+        let mut frame = Vec::with_capacity(MANAGER_HEADER_SIZE + payload.len());
+        append_u32(&mut frame, MANAGER_PROTOCOL_MAGIC);
+        append_u16(&mut frame, MANAGER_PROTOCOL_VERSION);
+        frame.push(msg_type);
+        frame.push(0);
+        append_u32(&mut frame, payload.len() as u32);
+        frame.extend_from_slice(payload);
+        if self.config.socket_timeout_ms > 0 {
+            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.write_all(&frame))
+                .await
+                .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
+        } else {
+            stream.write_all(&frame).await?;
+        }
+        Ok(())
+    }
+
+    async fn recv_manager_frame(&mut self) -> Result<(u8, Vec<u8>)> {
+        let mut header = [0u8; MANAGER_HEADER_SIZE];
+        self.read_exact(&mut header).await?;
+        let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
+        if magic != MANAGER_PROTOCOL_MAGIC {
+            return Err(Error::new(ErrorKind::Connection, "manager frame magic mismatch"));
+        }
+        let version = u16::from_le_bytes([header[4], header[5]]);
+        if version != MANAGER_PROTOCOL_VERSION {
+            return Err(Error::new(ErrorKind::Connection, "manager frame version mismatch"));
+        }
+        let msg_type = header[6];
+        let payload_len = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
+        if payload_len > MANAGER_MAX_PAYLOAD_SIZE {
+            return Err(Error::new(ErrorKind::Connection, "manager payload too large"));
+        }
+        let mut payload = vec![0u8; payload_len as usize];
+        if payload_len > 0 {
+            self.read_exact(&mut payload).await?;
+        }
+        Ok((msg_type, payload))
+    }
+
+    async fn perform_manager_connect(&mut self) -> Result<()> {
+        if self.config.manager_auth_token.is_empty() {
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "manager_proxy mode requires manager_auth_token",
+            ));
+        }
+        let manager_user = if !self.config.manager_username.is_empty() {
+            self.config.manager_username.clone()
+        } else if !self.config.user.is_empty() {
+            self.config.user.clone()
+        } else {
+            "admin".to_string()
+        };
+        let manager_database = if !self.config.manager_database.is_empty() {
+            self.config.manager_database.clone()
+        } else {
+            self.config.database.clone()
+        };
+        let manager_profile = if !self.config.manager_connection_profile.is_empty() {
+            self.config.manager_connection_profile.clone()
+        } else {
+            "native_v3".to_string()
+        };
+        let manager_intent = if !self.config.manager_client_intent.is_empty() {
+            self.config.manager_client_intent.clone()
+        } else {
+            "native_v3".to_string()
+        };
+
+        let hello = {
+            let mut out = Vec::with_capacity(4);
+            append_u16(&mut out, MCP_PROTOCOL_VERSION);
+            append_u16(&mut out, self.config.manager_client_flags);
+            out
+        };
+        self.send_manager_frame(MCP_MSG_HELLO, &hello).await?;
+        let (mut msg_type, mut payload) = self.recv_manager_frame().await?;
+        if msg_type != MCP_MSG_STATUS_RESPONSE {
+            return Err(Error::new(ErrorKind::Connection, "expected MCP hello status response"));
+        }
+
+        let mut auth_start = Vec::new();
+        append_lpreface(&mut auth_start, &manager_user);
+        auth_start.push(MCP_AUTH_METHOD_TOKEN);
+        if self.config.manager_auth_fast_path {
+            append_u32(&mut auth_start, self.config.manager_auth_token.len() as u32);
+            auth_start.extend_from_slice(self.config.manager_auth_token.as_bytes());
+        } else {
+            append_u32(&mut auth_start, 0);
+        }
+        self.send_manager_frame(MCP_MSG_AUTH_START, &auth_start).await?;
+        (msg_type, payload) = self.recv_manager_frame().await?;
+        if msg_type == MCP_MSG_AUTH_CHALLENGE {
+            let mut auth_continue = Vec::new();
+            append_u32(&mut auth_continue, self.config.manager_auth_token.len() as u32);
+            auth_continue.extend_from_slice(self.config.manager_auth_token.as_bytes());
+            self.send_manager_frame(MCP_MSG_AUTH_CONTINUE, &auth_continue).await?;
+            (msg_type, payload) = self.recv_manager_frame().await?;
+        }
+        if msg_type != MCP_MSG_AUTH_RESPONSE {
+            return Err(Error::new(ErrorKind::Connection, "expected MCP auth response"));
+        }
+        if payload.len() < 1 + 4 + 256 {
+            return Err(Error::new(ErrorKind::Connection, "truncated MCP auth response"));
+        }
+        if payload[0] != 0 {
+            let mut error_bytes = payload[5..(5 + 256)].to_vec();
+            if let Some(pos) = error_bytes.iter().position(|b| *b == 0) {
+                error_bytes.truncate(pos);
+            }
+            let err_text = String::from_utf8_lossy(&error_bytes).to_string();
+            return Err(Error::with_sqlstate(
+                ErrorKind::Auth,
+                if err_text.is_empty() {
+                    "MCP authentication failed".to_string()
+                } else {
+                    err_text
+                },
+                Some("28000".to_string()),
+                None,
+                None,
+            ));
+        }
+
+        let mut db_connect = b"MCP1".to_vec();
+        append_lpreface(&mut db_connect, &manager_database);
+        append_lpreface(&mut db_connect, &manager_profile);
+        append_lpreface(&mut db_connect, &manager_intent);
+        let mut nonce = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut nonce);
+        append_u16(&mut db_connect, nonce.len() as u16);
+        db_connect.extend_from_slice(&nonce);
+        self.send_manager_frame(MCP_MSG_DB_CONNECT, &db_connect).await?;
+        let (msg_type, payload) = self.recv_manager_frame().await?;
+        if msg_type != MCP_MSG_CONNECT_RESPONSE {
+            return Err(Error::new(ErrorKind::Connection, "expected MCP connect response"));
+        }
+        if payload.len() < 1 + 2 + 2 + 16 + 64 + 32 {
+            return Err(Error::new(ErrorKind::Connection, "truncated MCP connect response"));
+        }
+        if payload[0] != 0 {
+            let mut err_text = "MCP database connect failed".to_string();
+            let err_offset = 1 + 2 + 2 + 16 + 64 + 32;
+            if payload.len() >= err_offset + 4 {
+                let err_len = u32::from_le_bytes([
+                    payload[err_offset],
+                    payload[err_offset + 1],
+                    payload[err_offset + 2],
+                    payload[err_offset + 3],
+                ]) as usize;
+                if payload.len() >= err_offset + 4 + err_len {
+                    err_text = String::from_utf8_lossy(
+                        &payload[(err_offset + 4)..(err_offset + 4 + err_len)],
+                    )
+                    .to_string();
+                }
+            }
+            return Err(Error::with_sqlstate(
+                ErrorKind::Auth,
+                err_text,
+                Some("28000".to_string()),
+                None,
+                None,
+            ));
+        }
+        Ok(())
     }
 
     async fn handshake(&mut self) -> Result<()> {

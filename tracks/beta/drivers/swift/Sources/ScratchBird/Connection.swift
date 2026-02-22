@@ -41,6 +41,22 @@ public struct SblrCompiledMessage {
     public let bytecode: Data
 }
 
+private let managerProtocolMagic: UInt32 = 0x42444253 // SBDB
+private let managerProtocolVersion: UInt16 = 0x0101
+private let managerHeaderSize = 12
+private let managerMaxPayloadSize: UInt32 = 16 * 1024 * 1024
+private let mcpProtocolVersion: UInt16 = 0x0100
+
+private let mcpMsgConnectResponse: UInt8 = 0x02
+private let mcpMsgAuthChallenge: UInt8 = 0x12
+private let mcpMsgAuthResponse: UInt8 = 0x11
+private let mcpMsgStatusResponse: UInt8 = 0x64
+private let mcpMsgHello: UInt8 = 0x65
+private let mcpMsgAuthStart: UInt8 = 0x66
+private let mcpMsgAuthContinue: UInt8 = 0x67
+private let mcpMsgDbConnect: UInt8 = 0x69
+private let mcpAuthMethodToken: UInt8 = 4
+
 public final class ScratchBirdConnection {
     private let config: ScratchBirdConfig
     private let socket: ScratchBirdSocket
@@ -67,23 +83,25 @@ public final class ScratchBirdConnection {
 
     public static func connect(_ config: ScratchBirdConfig) async throws -> ScratchBirdConnection {
         return try await Task.detached { () -> ScratchBirdConnection in
-            let protocolName = config.protocolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if !["", "native", "scratchbird", "scratchbird-native", "scratchbird_native"].contains(protocolName) {
-                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Only protocol=native is supported; connect to the native parser listener/port."])
-            }
-            let sslmode = config.sslmode.lowercased()
+            var normalizedConfig = config
+            normalizedConfig.protocolName = try normalizeNativeProtocol(config.protocolName)
+            normalizedConfig.frontDoorMode = try normalizeFrontDoorMode(config.frontDoorMode)
+            let sslmode = normalizedConfig.sslmode.lowercased()
             if sslmode == "disable" {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
             }
-            if !config.binaryTransfer {
+            if !normalizedConfig.binaryTransfer {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "binary_transfer=false is not supported"])
             }
-            if config.compression.lowercased() == "zstd" {
+            if normalizedConfig.compression.lowercased() == "zstd" {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "compression=zstd is not supported"])
             }
             let socket = ScratchBirdSocket()
-            try socket.connect(host: config.host, port: config.port, useTls: true)
-            let conn = ScratchBirdConnection(config: config, socket: socket)
+            try socket.connect(host: normalizedConfig.host, port: normalizedConfig.port, useTls: true)
+            let conn = ScratchBirdConnection(config: normalizedConfig, socket: socket)
+            if normalizedConfig.frontDoorMode == "manager_proxy" {
+                try conn.performManagerConnect()
+            }
             try conn.handshake()
             conn.startResilience()
             return conn
@@ -600,6 +618,139 @@ public final class ScratchBirdConnection {
     private func readUInt64LE(_ data: Data, _ offset: Int) -> UInt64 {
         let slice = data.subdata(in: offset..<(offset + 8))
         return UInt64(littleEndian: slice.withUnsafeBytes { $0.load(as: UInt64.self) })
+    }
+
+    private func buildLengthPrefixedString(_ value: String) -> Data {
+        let bytes = Data(value.utf8)
+        var data = Data()
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(bytes.count).littleEndian, Array.init))
+        data.append(bytes)
+        return data
+    }
+
+    private func sendManagerFrame(type: UInt8, payload: Data) throws {
+        var frame = Data()
+        frame.append(contentsOf: withUnsafeBytes(of: managerProtocolMagic.littleEndian, Array.init))
+        frame.append(contentsOf: withUnsafeBytes(of: managerProtocolVersion.littleEndian, Array.init))
+        frame.append(type)
+        frame.append(0)
+        frame.append(contentsOf: withUnsafeBytes(of: UInt32(payload.count).littleEndian, Array.init))
+        frame.append(payload)
+        try socket.write(frame)
+    }
+
+    private func recvManagerFrame() throws -> (UInt8, Data) {
+        let header = try socket.readExact(managerHeaderSize)
+        let magic = readUInt32LE(header, 0)
+        if magic != managerProtocolMagic {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Manager frame magic mismatch"])
+        }
+        let version = UInt16(littleEndian: header.subdata(in: 4..<6).withUnsafeBytes { $0.load(as: UInt16.self) })
+        if version != managerProtocolVersion {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Manager frame version mismatch"])
+        }
+        let type = header[6]
+        let length = readUInt32LE(header, 8)
+        if length > managerMaxPayloadSize {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Manager payload too large"])
+        }
+        let payload = length > 0 ? try socket.readExact(Int(length)) : Data()
+        return (type, payload)
+    }
+
+    private func performManagerConnect() throws {
+        let token = config.managerAuthToken ?? ""
+        if token.isEmpty {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "manager_proxy mode requires manager_auth_token"])
+        }
+        let managerUser: String
+        if let configured = config.managerUsername, !configured.isEmpty {
+            managerUser = configured
+        } else if !config.user.isEmpty {
+            managerUser = config.user
+        } else {
+            managerUser = "admin"
+        }
+        let managerDatabase =
+            (config.managerDatabase?.isEmpty == false) ? config.managerDatabase! : config.database
+        let managerProfile = config.managerConnectionProfile.isEmpty ? "native_v3" : config.managerConnectionProfile
+        let managerIntent = config.managerClientIntent.isEmpty ? "native_v3" : config.managerClientIntent
+
+        var hello = Data()
+        hello.append(contentsOf: withUnsafeBytes(of: mcpProtocolVersion.littleEndian, Array.init))
+        hello.append(contentsOf: withUnsafeBytes(of: UInt16(config.managerClientFlags & 0xFFFF).littleEndian, Array.init))
+        try sendManagerFrame(type: mcpMsgHello, payload: hello)
+        var frame = try recvManagerFrame()
+        if frame.0 != mcpMsgStatusResponse {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Expected MCP hello status response"])
+        }
+
+        var authStart = Data()
+        authStart.append(buildLengthPrefixedString(managerUser))
+        authStart.append(mcpAuthMethodToken)
+        if config.managerAuthFastPath {
+            let tokenBytes = Data(token.utf8)
+            authStart.append(contentsOf: withUnsafeBytes(of: UInt32(tokenBytes.count).littleEndian, Array.init))
+            authStart.append(tokenBytes)
+        } else {
+            authStart.append(contentsOf: [0, 0, 0, 0])
+        }
+        try sendManagerFrame(type: mcpMsgAuthStart, payload: authStart)
+        frame = try recvManagerFrame()
+        if frame.0 == mcpMsgAuthChallenge {
+            let tokenBytes = Data(token.utf8)
+            var authContinue = Data()
+            authContinue.append(contentsOf: withUnsafeBytes(of: UInt32(tokenBytes.count).littleEndian, Array.init))
+            authContinue.append(tokenBytes)
+            try sendManagerFrame(type: mcpMsgAuthContinue, payload: authContinue)
+            frame = try recvManagerFrame()
+        }
+        if frame.0 != mcpMsgAuthResponse {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Expected MCP auth response"])
+        }
+        if frame.1.count < 1 + 4 + 256 {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Truncated MCP auth response"])
+        }
+        if frame.1[0] != 0 {
+            let errSlice = frame.1.subdata(in: 5..<261)
+            let err = String(data: errSlice, encoding: .utf8)?
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+            throw NSError(
+                domain: "ScratchBird",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: err.isEmpty ? "MCP authentication failed" : err]
+            )
+        }
+
+        var dbConnect = Data("MCP1".utf8)
+        dbConnect.append(buildLengthPrefixedString(managerDatabase))
+        dbConnect.append(buildLengthPrefixedString(managerProfile))
+        dbConnect.append(buildLengthPrefixedString(managerIntent))
+        let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        dbConnect.append(contentsOf: withUnsafeBytes(of: UInt16(nonce.count).littleEndian, Array.init))
+        dbConnect.append(nonce)
+        try sendManagerFrame(type: mcpMsgDbConnect, payload: dbConnect)
+        frame = try recvManagerFrame()
+        if frame.0 != mcpMsgConnectResponse {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Expected MCP connect response"])
+        }
+        if frame.1.count < 1 + 2 + 2 + 16 + 64 + 32 {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Truncated MCP connect response"])
+        }
+        if frame.1[0] != 0 {
+            var message = "MCP database connect failed"
+            let errOffset = 1 + 2 + 2 + 16 + 64 + 32
+            if frame.1.count >= errOffset + 4 {
+                let errLen = Int(readUInt32LE(frame.1, errOffset))
+                if frame.1.count >= errOffset + 4 + errLen {
+                    let errData = frame.1.subdata(in: (errOffset + 4)..<(errOffset + 4 + errLen))
+                    if let decoded = String(data: errData, encoding: .utf8), !decoded.isEmpty {
+                        message = decoded
+                    }
+                }
+            }
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
+        }
     }
 
     private func drainUntilReady() throws -> Bool {

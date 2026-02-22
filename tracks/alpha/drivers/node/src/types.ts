@@ -10,6 +10,7 @@ import { Buffer } from "node:buffer";
 export interface ClientConfig {
   host?: string;
   port?: number;
+  frontDoorMode?: "direct" | "manager_proxy" | string;
   protocol?: string;
   parser?: string;
   dialect?: string;
@@ -29,6 +30,13 @@ export interface ClientConfig {
   role?: string;
   binaryTransfer?: boolean;
   compression?: "zstd" | "off";
+  managerAuthToken?: string;
+  managerUsername?: string;
+  managerDatabase?: string;
+  managerConnectionProfile?: string;
+  managerClientIntent?: string;
+  managerClientFlags?: number;
+  managerAuthFastPath?: boolean;
 }
 
 export interface FieldDef {

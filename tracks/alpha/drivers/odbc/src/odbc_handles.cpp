@@ -2026,6 +2026,27 @@ SQLRETURN OdbcConnection::parseConnectionString(const std::string& conn_str) {
                 return SQL_ERROR;
             }
             params_.protocol = normalized;
+        } else if (key == "front_door_mode" || key == "frontdoormode" ||
+                   key == "connection_mode" || key == "ingress_mode") {
+            params_.front_door_mode = value;
+        } else if (key == "manager_auth_token" || key == "mcp_auth_token") {
+            params_.manager_auth_token = value;
+        } else if (key == "manager_username" || key == "mcp_username") {
+            params_.manager_username = value;
+        } else if (key == "manager_database" || key == "mcp_database") {
+            params_.manager_database = value;
+        } else if (key == "manager_connection_profile" || key == "mcp_connection_profile") {
+            params_.manager_connection_profile = value;
+        } else if (key == "manager_client_intent" || key == "mcp_client_intent") {
+            params_.manager_client_intent = value;
+        } else if (key == "manager_client_flags" || key == "mcp_client_flags") {
+            try {
+                params_.manager_client_flags = static_cast<uint16_t>(std::stoul(value));
+            } catch (...) {
+            }
+        } else if (key == "manager_auth_fast_path" || key == "mcp_auth_fast_path") {
+            const auto lower = toLower(value);
+            params_.manager_auth_fast_path = (lower == "true" || lower == "1" || lower == "yes");
         } else if (key == "timeout" || key == "connecttimeout") {
             try {
                 params_.connect_timeout = static_cast<uint32_t>(std::stoul(value));
@@ -2164,6 +2185,80 @@ SQLRETURN OdbcConnection::applyDsnConfig(const std::string& dsn_name) {
             return SQL_ERROR;
         }
         params_.protocol = normalized;
+    }
+
+    auto front_door_mode = getEntry("front_door_mode");
+    if (front_door_mode.empty()) {
+        front_door_mode = getEntry("frontdoormode");
+    }
+    if (front_door_mode.empty()) {
+        front_door_mode = getEntry("connection_mode");
+    }
+    if (front_door_mode.empty()) {
+        front_door_mode = getEntry("ingress_mode");
+    }
+    if (!front_door_mode.empty()) {
+        params_.front_door_mode = front_door_mode;
+    }
+
+    auto manager_auth_token = getEntry("manager_auth_token");
+    if (manager_auth_token.empty()) {
+        manager_auth_token = getEntry("mcp_auth_token");
+    }
+    if (!manager_auth_token.empty()) {
+        params_.manager_auth_token = manager_auth_token;
+    }
+
+    auto manager_username = getEntry("manager_username");
+    if (manager_username.empty()) {
+        manager_username = getEntry("mcp_username");
+    }
+    if (!manager_username.empty()) {
+        params_.manager_username = manager_username;
+    }
+
+    auto manager_database = getEntry("manager_database");
+    if (manager_database.empty()) {
+        manager_database = getEntry("mcp_database");
+    }
+    if (!manager_database.empty()) {
+        params_.manager_database = manager_database;
+    }
+
+    auto manager_profile = getEntry("manager_connection_profile");
+    if (manager_profile.empty()) {
+        manager_profile = getEntry("mcp_connection_profile");
+    }
+    if (!manager_profile.empty()) {
+        params_.manager_connection_profile = manager_profile;
+    }
+
+    auto manager_intent = getEntry("manager_client_intent");
+    if (manager_intent.empty()) {
+        manager_intent = getEntry("mcp_client_intent");
+    }
+    if (!manager_intent.empty()) {
+        params_.manager_client_intent = manager_intent;
+    }
+
+    auto manager_flags = getEntry("manager_client_flags");
+    if (manager_flags.empty()) {
+        manager_flags = getEntry("mcp_client_flags");
+    }
+    if (!manager_flags.empty()) {
+        try {
+            params_.manager_client_flags = static_cast<uint16_t>(std::stoul(manager_flags));
+        } catch (...) {
+        }
+    }
+
+    auto manager_fast_path = toLower(getEntry("manager_auth_fast_path"));
+    if (manager_fast_path.empty()) {
+        manager_fast_path = toLower(getEntry("mcp_auth_fast_path"));
+    }
+    if (!manager_fast_path.empty()) {
+        params_.manager_auth_fast_path =
+            (manager_fast_path == "true" || manager_fast_path == "1" || manager_fast_path == "yes");
     }
 
     auto timeout = getEntry("timeout");

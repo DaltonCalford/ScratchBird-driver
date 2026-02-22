@@ -21,6 +21,20 @@ use ScratchBird\LeakDetectionGuard;
 final class Connection
 {
     private const QUERY_FLAG_BINARY_RESULT = 0x04;
+    private const MANAGER_PROTOCOL_MAGIC = 0x42444253; // SBDB
+    private const MANAGER_PROTOCOL_VERSION = 0x0101;
+    private const MANAGER_HEADER_SIZE = 12;
+    private const MANAGER_MAX_PAYLOAD_SIZE = 16777216;
+    private const MCP_PROTOCOL_VERSION = 0x0100;
+    private const MCP_MSG_CONNECT_RESPONSE = 0x02;
+    private const MCP_MSG_AUTH_CHALLENGE = 0x12;
+    private const MCP_MSG_AUTH_RESPONSE = 0x11;
+    private const MCP_MSG_STATUS_RESPONSE = 0x64;
+    private const MCP_MSG_HELLO = 0x65;
+    private const MCP_MSG_AUTH_START = 0x66;
+    private const MCP_MSG_AUTH_CONTINUE = 0x67;
+    private const MCP_MSG_DB_CONNECT = 0x69;
+    private const MCP_AUTH_METHOD_TOKEN = 4;
     private static int $connectionCounter = 0;
 
     private Config $config;
@@ -442,6 +456,7 @@ final class Connection
     private function connect(): void
     {
         $this->config->protocol = $this->normalizeNativeProtocol($this->config->protocol ?? 'native');
+        $this->config->frontDoorMode = $this->normalizeFrontDoorMode($this->config->frontDoorMode ?? 'direct');
         if ($this->config->user === '' || $this->config->database === '') {
             throw new ScratchBirdConnectionException('user and database are required', '08001');
         }
@@ -460,6 +475,9 @@ final class Connection
         stream_set_blocking($socket, true);
         $this->socket = $socket;
         $this->applyTls();
+        if ($this->config->frontDoorMode === 'manager_proxy') {
+            $this->performManagerConnect();
+        }
         $this->handshake();
         $this->applySchema();
         $this->connected = true;
@@ -479,6 +497,18 @@ final class Connection
             'Only protocol=native is supported; connect to the native parser listener/port.',
             '0A000'
         );
+    }
+
+    private function normalizeFrontDoorMode(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '' || $normalized === 'direct') {
+            return 'direct';
+        }
+        if ($normalized === 'manager_proxy' || $normalized === 'manager-proxy' || $normalized === 'managed') {
+            return 'manager_proxy';
+        }
+        throw new ScratchBirdNotSupportedException('front_door_mode must be direct or manager_proxy.', '0A000');
     }
 
     private function applyTls(): void
@@ -508,6 +538,125 @@ final class Connection
         $result = @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
         if ($result !== true) {
             throw new ScratchBirdConnectionException('TLS handshake failed', '08001');
+        }
+    }
+
+    private function managerLpref(string $value): string
+    {
+        return pack('V', strlen($value)) . $value;
+    }
+
+    private function sendManagerFrame(int $type, string $payload): void
+    {
+        $frame = pack('V', self::MANAGER_PROTOCOL_MAGIC)
+            . pack('v', self::MANAGER_PROTOCOL_VERSION)
+            . chr($type)
+            . chr(0)
+            . pack('V', strlen($payload))
+            . $payload;
+        $total = 0;
+        $length = strlen($frame);
+        while ($total < $length) {
+            $written = fwrite($this->socket, substr($frame, $total));
+            if ($written === false || $written === 0) {
+                throw new ScratchBirdConnectionException('Manager frame write failed', '08006');
+            }
+            $total += $written;
+        }
+    }
+
+    private function recvManagerFrame(): array
+    {
+        $header = $this->readExact(self::MANAGER_HEADER_SIZE);
+        $magic = unpack('V', substr($header, 0, 4))[1];
+        if ($magic !== self::MANAGER_PROTOCOL_MAGIC) {
+            throw new ScratchBirdConnectionException('Manager frame magic mismatch', '08P01');
+        }
+        $version = unpack('v', substr($header, 4, 2))[1];
+        if ($version !== self::MANAGER_PROTOCOL_VERSION) {
+            throw new ScratchBirdConnectionException('Manager frame version mismatch', '08P01');
+        }
+        $type = ord($header[6]);
+        $length = unpack('V', substr($header, 8, 4))[1];
+        if ($length > self::MANAGER_MAX_PAYLOAD_SIZE) {
+            throw new ScratchBirdConnectionException('Manager payload too large', '08P01');
+        }
+        $payload = $length > 0 ? $this->readExact($length) : '';
+        return [$type, $payload];
+    }
+
+    private function performManagerConnect(): void
+    {
+        if ($this->config->managerAuthToken === '') {
+            throw new ScratchBirdConnectionException('manager_proxy mode requires manager_auth_token', '08001');
+        }
+        $managerUser = $this->config->managerUsername !== ''
+            ? $this->config->managerUsername
+            : ($this->config->user !== '' ? $this->config->user : 'admin');
+        $managerDatabase = $this->config->managerDatabase !== '' ? $this->config->managerDatabase : $this->config->database;
+        $managerProfile = $this->config->managerConnectionProfile !== '' ? $this->config->managerConnectionProfile : 'native_v3';
+        $managerIntent = $this->config->managerClientIntent !== '' ? $this->config->managerClientIntent : 'native_v3';
+        $managerFlags = $this->config->managerClientFlags & 0xFFFF;
+        $authFastPath = $this->config->managerAuthFastPath !== false;
+
+        $helloPayload = pack('vv', self::MCP_PROTOCOL_VERSION, $managerFlags);
+        $this->sendManagerFrame(self::MCP_MSG_HELLO, $helloPayload);
+        [$type] = $this->recvManagerFrame();
+        if ($type !== self::MCP_MSG_STATUS_RESPONSE) {
+            throw new ScratchBirdConnectionException('Expected MCP hello status response', '08P01');
+        }
+
+        $authStart = $this->managerLpref($managerUser)
+            . chr(self::MCP_AUTH_METHOD_TOKEN);
+        if ($authFastPath) {
+            $token = $this->config->managerAuthToken;
+            $authStart .= pack('V', strlen($token)) . $token;
+        } else {
+            $authStart .= pack('V', 0);
+        }
+        $this->sendManagerFrame(self::MCP_MSG_AUTH_START, $authStart);
+        [$type, $payload] = $this->recvManagerFrame();
+        if ($type === self::MCP_MSG_AUTH_CHALLENGE) {
+            $token = $this->config->managerAuthToken;
+            $this->sendManagerFrame(self::MCP_MSG_AUTH_CONTINUE, pack('V', strlen($token)) . $token);
+            [$type, $payload] = $this->recvManagerFrame();
+        }
+        if ($type !== self::MCP_MSG_AUTH_RESPONSE) {
+            throw new ScratchBirdConnectionException('Expected MCP auth response', '08P01');
+        }
+        if (strlen($payload) < (1 + 4 + 256)) {
+            throw new ScratchBirdConnectionException('Truncated MCP auth response', '08P01');
+        }
+        if (ord($payload[0]) !== 0) {
+            $err = rtrim(substr($payload, 5, 256), "\0");
+            throw new ScratchBirdAuthException($err !== '' ? $err : 'MCP authentication failed', '28000');
+        }
+
+        $nonce = random_bytes(16);
+        $dbConnect = 'MCP1'
+            . $this->managerLpref($managerDatabase)
+            . $this->managerLpref($managerProfile)
+            . $this->managerLpref($managerIntent)
+            . pack('v', strlen($nonce))
+            . $nonce;
+        $this->sendManagerFrame(self::MCP_MSG_DB_CONNECT, $dbConnect);
+        [$type, $payload] = $this->recvManagerFrame();
+        if ($type !== self::MCP_MSG_CONNECT_RESPONSE) {
+            throw new ScratchBirdConnectionException('Expected MCP connect response', '08P01');
+        }
+        if (strlen($payload) < (1 + 2 + 2 + 16 + 64 + 32)) {
+            throw new ScratchBirdConnectionException('Truncated MCP connect response', '08P01');
+        }
+        if (ord($payload[0]) !== 0) {
+            $err = 'MCP database connect failed';
+            $errOffset = 1 + 2 + 2 + 16 + 64 + 32;
+            if (strlen($payload) >= $errOffset + 4) {
+                $errLen = unpack('V', substr($payload, $errOffset, 4))[1];
+                if (strlen($payload) >= $errOffset + 4 + $errLen) {
+                    $err = substr($payload, $errOffset + 4, $errLen);
+                }
+            }
+            throw new ScratchBirdAuthException($err, '28000');
         }
     }
 

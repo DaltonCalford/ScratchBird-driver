@@ -16,39 +16,51 @@ import (
 )
 
 type Config struct {
-	Host           string
-	Port           int
-	Database       string
-	User           string
-	Password       string
-	Schema         string
-	Role           string
-	Protocol       string
-	SSLMode        string
-	SSLRootCert    string
-	SSLCert        string
-	SSLKey         string
-	SSLPassword    string
-	ConnectTimeout time.Duration
-	SocketTimeout  time.Duration
-	Application    string
-	BinaryTransfer bool
-	Compression    string
-	FetchSize      uint32
+	Host                     string
+	Port                     int
+	FrontDoorMode            string
+	Database                 string
+	User                     string
+	Password                 string
+	Schema                   string
+	Role                     string
+	Protocol                 string
+	SSLMode                  string
+	SSLRootCert              string
+	SSLCert                  string
+	SSLKey                   string
+	SSLPassword              string
+	ConnectTimeout           time.Duration
+	SocketTimeout            time.Duration
+	Application              string
+	BinaryTransfer           bool
+	Compression              string
+	FetchSize                uint32
+	ManagerAuthToken         string
+	ManagerUsername          string
+	ManagerDatabase          string
+	ManagerConnectionProfile string
+	ManagerClientIntent      string
+	ManagerClientFlags       uint16
+	ManagerAuthFastPath      bool
 }
 
 func defaultConfig() Config {
 	return Config{
-		Host:           "localhost",
-		Port:           3092,
-		Protocol:       "native",
-		SSLMode:        "require",
-		ConnectTimeout: 30 * time.Second,
-		SocketTimeout:  0,
-		Application:    "scratchbird_go",
-		BinaryTransfer: true,
-		Compression:    "off",
-		FetchSize:      0,
+		Host:                     "localhost",
+		Port:                     3092,
+		FrontDoorMode:            "direct",
+		Protocol:                 "native",
+		SSLMode:                  "require",
+		ConnectTimeout:           30 * time.Second,
+		SocketTimeout:            0,
+		Application:              "scratchbird_go",
+		BinaryTransfer:           true,
+		Compression:              "off",
+		FetchSize:                0,
+		ManagerConnectionProfile: "native_v3",
+		ManagerClientIntent:      "native_v3",
+		ManagerAuthFastPath:      true,
 	}
 }
 
@@ -135,6 +147,17 @@ func normalizeNativeProtocol(value string) (string, bool) {
 	}
 }
 
+func normalizeFrontDoorMode(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "direct":
+		return "direct", true
+	case "manager_proxy", "manager-proxy", "managed":
+		return "manager_proxy", true
+	default:
+		return "", false
+	}
+}
+
 func applyParam(cfg *Config, key, value string) error {
 	switch strings.ToLower(key) {
 	case "host", "server", "data source", "datasource":
@@ -143,6 +166,12 @@ func applyParam(cfg *Config, key, value string) error {
 		if port, err := strconv.Atoi(value); err == nil {
 			cfg.Port = port
 		}
+	case "front_door_mode", "frontdoormode", "connection_mode", "ingress_mode":
+		normalized, ok := normalizeFrontDoorMode(value)
+		if !ok {
+			return errors.New("front_door_mode must be direct or manager_proxy")
+		}
+		cfg.FrontDoorMode = normalized
 	case "database", "dbname", "initial catalog":
 		cfg.Database = value
 	case "user", "username", "user id", "uid":
@@ -191,6 +220,26 @@ func applyParam(cfg *Config, key, value string) error {
 		if rows, err := strconv.Atoi(value); err == nil && rows >= 0 {
 			cfg.FetchSize = uint32(rows)
 		}
+	case "manager_auth_token", "mcp_auth_token":
+		cfg.ManagerAuthToken = value
+	case "manager_username", "mcp_username":
+		cfg.ManagerUsername = value
+	case "manager_database", "mcp_database":
+		cfg.ManagerDatabase = value
+	case "manager_connection_profile", "mcp_connection_profile":
+		cfg.ManagerConnectionProfile = value
+	case "manager_client_intent", "mcp_client_intent":
+		cfg.ManagerClientIntent = value
+	case "manager_client_flags", "mcp_client_flags":
+		if flags, err := strconv.ParseUint(value, 10, 16); err == nil {
+			cfg.ManagerClientFlags = uint16(flags)
+		}
+	case "manager_auth_fast_path", "mcp_auth_fast_path":
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		cfg.ManagerAuthFastPath = normalized == "1" ||
+			normalized == "true" ||
+			normalized == "yes" ||
+			normalized == "on"
 	}
 	return nil
 }

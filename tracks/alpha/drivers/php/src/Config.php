@@ -15,6 +15,7 @@ final class Config
 {
     public string $host = 'localhost';
     public int $port = 3092;
+    public string $frontDoorMode = 'direct';
     public string $protocol = 'native';
     public string $database = '';
     public string $user = '';
@@ -32,6 +33,13 @@ final class Config
     public bool $binaryTransfer = true;
     public string $compression = 'off';
     public int $fetchSize = 0;
+    public string $managerAuthToken = '';
+    public string $managerUsername = '';
+    public string $managerDatabase = '';
+    public string $managerConnectionProfile = 'native_v3';
+    public string $managerClientIntent = 'native_v3';
+    public int $managerClientFlags = 0;
+    public bool $managerAuthFastPath = true;
 
     public static function fromDsn(string $dsn): self
     {
@@ -104,6 +112,12 @@ final class Config
             case 'port':
                 $cfg->port = (int)$value;
                 break;
+            case 'front_door_mode':
+            case 'frontdoormode':
+            case 'connection_mode':
+            case 'ingress_mode':
+                $cfg->frontDoorMode = self::normalizeFrontDoorMode($value);
+                break;
             case 'database':
             case 'dbname':
             case 'initial catalog':
@@ -174,6 +188,35 @@ final class Config
             case 'default_fetch_size':
                 $cfg->fetchSize = max(0, (int)$value);
                 break;
+            case 'manager_auth_token':
+            case 'mcp_auth_token':
+                $cfg->managerAuthToken = $value;
+                break;
+            case 'manager_username':
+            case 'mcp_username':
+                $cfg->managerUsername = $value;
+                break;
+            case 'manager_database':
+            case 'mcp_database':
+                $cfg->managerDatabase = $value;
+                break;
+            case 'manager_connection_profile':
+            case 'mcp_connection_profile':
+                $cfg->managerConnectionProfile = $value;
+                break;
+            case 'manager_client_intent':
+            case 'mcp_client_intent':
+                $cfg->managerClientIntent = $value;
+                break;
+            case 'manager_client_flags':
+            case 'mcp_client_flags':
+                $cfg->managerClientFlags = (int)$value;
+                break;
+            case 'manager_auth_fast_path':
+            case 'mcp_auth_fast_path':
+                $normalized = strtolower(trim($value));
+                $cfg->managerAuthFastPath = in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+                break;
         }
     }
 
@@ -188,5 +231,17 @@ final class Config
             return 'native';
         }
         throw new \InvalidArgumentException('Only protocol=native is supported; connect to the native parser listener/port.');
+    }
+
+    private static function normalizeFrontDoorMode(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '' || $normalized === 'direct') {
+            return 'direct';
+        }
+        if ($normalized === 'manager_proxy' || $normalized === 'manager-proxy' || $normalized === 'managed') {
+            return 'manager_proxy';
+        }
+        throw new \InvalidArgumentException('front_door_mode must be direct or manager_proxy.');
     }
 }

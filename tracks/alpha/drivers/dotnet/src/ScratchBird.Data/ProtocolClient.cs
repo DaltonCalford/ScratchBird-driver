@@ -5,9 +5,12 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
+using System.Buffers.Binary;
+using System.IO;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
@@ -16,6 +19,21 @@ namespace ScratchBird.Data;
 internal sealed class ProtocolClient
 {
     private const uint QueryFlagBinaryResult = 0x04;
+    private const uint ManagerProtocolMagic = 0x42444253;
+    private const ushort ManagerProtocolVersion = 0x0101;
+    private const ushort McpProtocolVersion = 0x0100;
+    private const int ManagerHeaderSize = 12;
+    private const int ManagerMaxPayloadSize = 16 * 1024 * 1024;
+
+    private const byte McpMsgConnectResponse = 0x02;
+    private const byte McpMsgAuthChallenge = 0x12;
+    private const byte McpMsgAuthResponse = 0x11;
+    private const byte McpMsgStatusResponse = 0x64;
+    private const byte McpMsgHello = 0x65;
+    private const byte McpMsgAuthStart = 0x66;
+    private const byte McpMsgAuthContinue = 0x67;
+    private const byte McpMsgDbConnect = 0x69;
+    private const byte McpAuthMethodToken = 4;
     private sealed record NotificationMessage(uint ProcessId, string Channel, byte[] Payload, char? ChangeType, ulong? RowId);
 
     private TcpClient? _client;
@@ -36,6 +54,7 @@ internal sealed class ProtocolClient
     public void Connect(ScratchBirdConfig config)
     {
         config.Protocol = ScratchBirdConfig.NormalizeNativeProtocol(config.Protocol);
+        config.FrontDoorMode = ScratchBirdConfig.NormalizeFrontDoorMode(config.FrontDoorMode);
         if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Database))
         {
             throw new ScratchBirdConnectionException("Username and database are required", "08001");
@@ -68,6 +87,10 @@ internal sealed class ProtocolClient
 
         _stream = UpgradeToTls(_stream, config, sslMode);
         _config = config;
+        if (string.Equals(config.FrontDoorMode, "manager_proxy", StringComparison.OrdinalIgnoreCase))
+        {
+            PerformManagerConnect(config);
+        }
         Handshake(config);
         _connected = true;
     }
@@ -536,6 +559,154 @@ internal sealed class ProtocolClient
     private static bool TryParseUInt64(string value, out ulong parsed)
     {
         return ulong.TryParse(value.Trim(), out parsed);
+    }
+
+    private static byte[] BuildLengthPrefixedString(string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var payload = new byte[4 + bytes.Length];
+        BitConverter.GetBytes((uint)bytes.Length).CopyTo(payload, 0);
+        bytes.CopyTo(payload, 4);
+        return payload;
+    }
+
+    private void SendManagerFrame(byte msgType, byte[] payload)
+    {
+        if (_stream == null)
+        {
+            throw new InvalidOperationException("No active stream");
+        }
+        var frame = new byte[ManagerHeaderSize + payload.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(0, 4), ManagerProtocolMagic);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(4, 2), ManagerProtocolVersion);
+        frame[6] = msgType;
+        frame[7] = 0;
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(8, 4), (uint)payload.Length);
+        if (payload.Length > 0)
+        {
+            Buffer.BlockCopy(payload, 0, frame, ManagerHeaderSize, payload.Length);
+        }
+        _stream.Write(frame, 0, frame.Length);
+        _stream.Flush();
+    }
+
+    private (byte Type, byte[] Payload) ReceiveManagerFrame()
+    {
+        var header = ReadExact(ManagerHeaderSize);
+        var magic = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
+        if (magic != ManagerProtocolMagic)
+        {
+            throw new ScratchBirdConnectionException("Manager frame magic mismatch", "08P01");
+        }
+        var version = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(4, 2));
+        if (version != ManagerProtocolVersion)
+        {
+            throw new ScratchBirdConnectionException("Manager frame version mismatch", "08P01");
+        }
+        var type = header[6];
+        var length = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(8, 4));
+        if (length > ManagerMaxPayloadSize)
+        {
+            throw new ScratchBirdConnectionException("Manager payload too large", "08P01");
+        }
+        var payload = length > 0 ? ReadExact((int)length) : Array.Empty<byte>();
+        return (type, payload);
+    }
+
+    private void PerformManagerConnect(ScratchBirdConfig config)
+    {
+        if (string.IsNullOrEmpty(config.ManagerAuthToken))
+        {
+            throw new ScratchBirdConnectionException("manager_proxy mode requires manager_auth_token", "08001");
+        }
+        var managerUser = !string.IsNullOrEmpty(config.ManagerUsername)
+            ? config.ManagerUsername
+            : (!string.IsNullOrEmpty(config.Username) ? config.Username : "admin");
+        var managerDatabase = !string.IsNullOrEmpty(config.ManagerDatabase) ? config.ManagerDatabase : config.Database;
+        var managerProfile = !string.IsNullOrEmpty(config.ManagerConnectionProfile) ? config.ManagerConnectionProfile : "native_v3";
+        var managerIntent = !string.IsNullOrEmpty(config.ManagerClientIntent) ? config.ManagerClientIntent : "native_v3";
+
+        var helloPayload = new byte[4];
+        BinaryPrimitives.WriteUInt16LittleEndian(helloPayload.AsSpan(0, 2), McpProtocolVersion);
+        BinaryPrimitives.WriteUInt16LittleEndian(helloPayload.AsSpan(2, 2), config.ManagerClientFlags);
+        SendManagerFrame(McpMsgHello, helloPayload);
+        var (msgType, _) = ReceiveManagerFrame();
+        if (msgType != McpMsgStatusResponse)
+        {
+            throw new ScratchBirdConnectionException("Expected MCP hello status response", "08P01");
+        }
+
+        using var authStart = new MemoryStream();
+        authStart.Write(BuildLengthPrefixedString(managerUser));
+        authStart.WriteByte(McpAuthMethodToken);
+        if (config.ManagerAuthFastPath)
+        {
+            var tokenBytes = Encoding.UTF8.GetBytes(config.ManagerAuthToken);
+            authStart.Write(BitConverter.GetBytes((uint)tokenBytes.Length));
+            authStart.Write(tokenBytes);
+        }
+        else
+        {
+            authStart.Write(BitConverter.GetBytes(0U));
+        }
+        SendManagerFrame(McpMsgAuthStart, authStart.ToArray());
+        (msgType, var payload) = ReceiveManagerFrame();
+        if (msgType == McpMsgAuthChallenge)
+        {
+            var tokenBytes = Encoding.UTF8.GetBytes(config.ManagerAuthToken);
+            using var authContinue = new MemoryStream();
+            authContinue.Write(BitConverter.GetBytes((uint)tokenBytes.Length));
+            authContinue.Write(tokenBytes);
+            SendManagerFrame(McpMsgAuthContinue, authContinue.ToArray());
+            (msgType, payload) = ReceiveManagerFrame();
+        }
+        if (msgType != McpMsgAuthResponse)
+        {
+            throw new ScratchBirdConnectionException("Expected MCP auth response", "08P01");
+        }
+        if (payload.Length < 1 + 4 + 256)
+        {
+            throw new ScratchBirdConnectionException("Truncated MCP auth response", "08P01");
+        }
+        if (payload[0] != 0)
+        {
+            var err = Encoding.UTF8.GetString(payload, 5, 256).TrimEnd('\0');
+            throw new ScratchBirdAuthException(string.IsNullOrEmpty(err) ? "MCP authentication failed" : err, "28000");
+        }
+
+        var nonce = new byte[16];
+        RandomNumberGenerator.Fill(nonce);
+        using var dbConnect = new MemoryStream();
+        dbConnect.Write(Encoding.ASCII.GetBytes("MCP1"));
+        dbConnect.Write(BuildLengthPrefixedString(managerDatabase));
+        dbConnect.Write(BuildLengthPrefixedString(managerProfile));
+        dbConnect.Write(BuildLengthPrefixedString(managerIntent));
+        dbConnect.Write(BitConverter.GetBytes((ushort)nonce.Length));
+        dbConnect.Write(nonce);
+        SendManagerFrame(McpMsgDbConnect, dbConnect.ToArray());
+        (msgType, payload) = ReceiveManagerFrame();
+        if (msgType != McpMsgConnectResponse)
+        {
+            throw new ScratchBirdConnectionException("Expected MCP connect response", "08P01");
+        }
+        if (payload.Length < 1 + 2 + 2 + 16 + 64 + 32)
+        {
+            throw new ScratchBirdConnectionException("Truncated MCP connect response", "08P01");
+        }
+        if (payload[0] != 0)
+        {
+            var err = "MCP database connect failed";
+            var errOffset = 1 + 2 + 2 + 16 + 64 + 32;
+            if (payload.Length >= errOffset + 4)
+            {
+                var errLen = BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(errOffset, 4));
+                if (payload.Length >= errOffset + 4 + errLen)
+                {
+                    err = Encoding.UTF8.GetString(payload, errOffset + 4, (int)errLen);
+                }
+            }
+            throw new ScratchBirdAuthException(err, "28000");
+        }
     }
 
     private ProtocolMessage Receive()

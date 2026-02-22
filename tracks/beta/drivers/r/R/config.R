@@ -10,6 +10,7 @@ sb_config <- function(dsn = "") {
     host = "localhost",
     port = 3092L,
     protocol = "native",
+    front_door_mode = "direct",
     database = "",
     user = "",
     password = "",
@@ -26,6 +27,13 @@ sb_config <- function(dsn = "") {
     fetch_size = 0L,
     binary_transfer = TRUE,
     compression = "off",
+    manager_auth_token = "",
+    manager_username = "",
+    manager_database = "",
+    manager_connection_profile = "native_v3",
+    manager_client_intent = "native_v3",
+    manager_client_flags = 0L,
+    manager_auth_fast_path = TRUE,
     extra = list()
   )
   if (is.null(dsn) || trimws(dsn) == "") {
@@ -45,6 +53,17 @@ normalize_native_protocol <- function(value) {
     return("native")
   }
   stop("Only protocol=native is supported; connect to the native parser listener/port.")
+}
+
+normalize_front_door_mode <- function(value) {
+  normalized <- tolower(trimws(as.character(value)))
+  if (normalized %in% c("", "direct")) {
+    return("direct")
+  }
+  if (normalized %in% c("manager_proxy", "manager-proxy", "managed")) {
+    return("manager_proxy")
+  }
+  stop("front_door_mode must be direct or manager_proxy.")
 }
 
 parse_uri_dsn <- function(cfg, dsn) {
@@ -108,6 +127,8 @@ apply_param <- function(cfg, key, value) {
     cfg$database <- value
   } else if (key %in% c("protocol", "parser", "dialect")) {
     cfg$protocol <- normalize_native_protocol(value)
+  } else if (key %in% c("front_door_mode", "frontdoormode", "connection_mode", "ingress_mode")) {
+    cfg$front_door_mode <- normalize_front_door_mode(value)
   } else if (key %in% c("user", "username", "user id", "uid")) {
     cfg$user <- value
   } else if (key %in% c("password", "pwd")) {
@@ -138,6 +159,21 @@ apply_param <- function(cfg, key, value) {
     cfg$binary_transfer <- value %in% c("1", "true", "TRUE")
   } else if (key == "compression") {
     cfg$compression <- if (tolower(value) == "zstd") "zstd" else "off"
+  } else if (key %in% c("manager_auth_token", "mcp_auth_token")) {
+    cfg$manager_auth_token <- value
+  } else if (key %in% c("manager_username", "mcp_username")) {
+    cfg$manager_username <- value
+  } else if (key %in% c("manager_database", "mcp_database")) {
+    cfg$manager_database <- value
+  } else if (key %in% c("manager_connection_profile", "mcp_connection_profile")) {
+    cfg$manager_connection_profile <- value
+  } else if (key %in% c("manager_client_intent", "mcp_client_intent")) {
+    cfg$manager_client_intent <- value
+  } else if (key %in% c("manager_client_flags", "mcp_client_flags")) {
+    parsed <- suppressWarnings(as.integer(value))
+    if (!is.na(parsed)) cfg$manager_client_flags <- parsed
+  } else if (key %in% c("manager_auth_fast_path", "mcp_auth_fast_path")) {
+    cfg$manager_auth_fast_path <- tolower(value) %in% c("1", "true", "yes", "on")
   } else {
     cfg$extra[[key]] <- value
   }

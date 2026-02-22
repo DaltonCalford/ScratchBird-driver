@@ -8,10 +8,96 @@
 
 import Foundation
 
+func normalizeNativeProtocol(_ value: String?) throws -> String {
+    let normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    switch normalized {
+    case "", "native", "scratchbird", "scratchbird-native", "scratchbird_native":
+        return "native"
+    default:
+        throw NSError(
+            domain: "ScratchBird",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Only protocol=native is supported; connect to the native parser listener/port."]
+        )
+    }
+}
+
+func normalizeFrontDoorMode(_ value: String?) throws -> String {
+    let normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    switch normalized {
+    case "", "direct":
+        return "direct"
+    case "manager_proxy", "manager-proxy", "managed":
+        return "manager_proxy"
+    default:
+        throw NSError(
+            domain: "ScratchBird",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "front_door_mode must be direct or manager_proxy."]
+        )
+    }
+}
+
+private func parseBool(_ value: String?, default defaultValue: Bool) -> Bool {
+    guard let value else { return defaultValue }
+    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "true", "1", "yes", "on":
+        return true
+    case "false", "0", "no", "off":
+        return false
+    default:
+        return defaultValue
+    }
+}
+
+private func parseInt(_ value: String?, default defaultValue: Int) -> Int {
+    guard let value, let parsed = Int(value) else { return defaultValue }
+    return parsed
+}
+
+private func normalizeConnectionParams(_ raw: [String: String]) -> [String: String] {
+    var out: [String: String] = [:]
+    for (key, value) in raw {
+        let lower = key.lowercased()
+        switch lower {
+        case "dbname":
+            out["database"] = value
+        case "username":
+            out["user"] = value
+        case "applicationname":
+            out["application_name"] = value
+        case "searchpath":
+            out["search_path"] = value
+        case "binarytransfer":
+            out["binary_transfer"] = value
+        case "frontdoormode", "connection_mode", "ingress_mode":
+            out["front_door_mode"] = value
+        case "mcp_auth_token":
+            out["manager_auth_token"] = value
+        case "mcp_username":
+            out["manager_username"] = value
+        case "mcp_database":
+            out["manager_database"] = value
+        case "mcp_connection_profile":
+            out["manager_connection_profile"] = value
+        case "mcp_client_intent":
+            out["manager_client_intent"] = value
+        case "mcp_client_flags":
+            out["manager_client_flags"] = value
+        case "mcp_auth_fast_path":
+            out["manager_auth_fast_path"] = value
+        default:
+            out[lower] = value
+        }
+    }
+    return out
+}
+
 public struct ScratchBirdConfig {
     public var host: String
     public var port: Int
     public var protocolName: String
+    public var frontDoorMode: String
     public var database: String
     public var user: String
     public var password: String?
@@ -22,11 +108,19 @@ public struct ScratchBirdConfig {
     public var binaryTransfer: Bool
     public var compression: String
     public var fetchSize: Int
+    public var managerAuthToken: String?
+    public var managerUsername: String?
+    public var managerDatabase: String?
+    public var managerConnectionProfile: String
+    public var managerClientIntent: String
+    public var managerClientFlags: Int
+    public var managerAuthFastPath: Bool
 
     public init(
         host: String = "localhost",
         port: Int = 3092,
         protocolName: String = "native",
+        frontDoorMode: String = "direct",
         database: String,
         user: String,
         password: String? = nil,
@@ -36,11 +130,19 @@ public struct ScratchBirdConfig {
         role: String? = nil,
         binaryTransfer: Bool = true,
         compression: String = "off",
-        fetchSize: Int = 0
+        fetchSize: Int = 0,
+        managerAuthToken: String? = nil,
+        managerUsername: String? = nil,
+        managerDatabase: String? = nil,
+        managerConnectionProfile: String = "native_v3",
+        managerClientIntent: String = "native_v3",
+        managerClientFlags: Int = 0,
+        managerAuthFastPath: Bool = true
     ) {
         self.host = host
         self.port = port
         self.protocolName = protocolName
+        self.frontDoorMode = frontDoorMode
         self.database = database
         self.user = user
         self.password = password
@@ -51,17 +153,27 @@ public struct ScratchBirdConfig {
         self.binaryTransfer = binaryTransfer
         self.compression = compression
         self.fetchSize = fetchSize
+        self.managerAuthToken = managerAuthToken
+        self.managerUsername = managerUsername
+        self.managerDatabase = managerDatabase
+        self.managerConnectionProfile = managerConnectionProfile
+        self.managerClientIntent = managerClientIntent
+        self.managerClientFlags = managerClientFlags
+        self.managerAuthFastPath = managerAuthFastPath
     }
 
     public init(dsn: String) {
+        self.init(database: "", user: "")
         if dsn.contains("://"), let url = URLComponents(string: dsn) {
             let userInfo = url.user
             let passInfo = url.password
             let query = url.queryItems ?? []
-            let params = Dictionary(uniqueKeysWithValues: query.map { ($0.name.lowercased(), $0.value ?? "") })
+            let rawParams = Dictionary(uniqueKeysWithValues: query.map { ($0.name, $0.value ?? "") })
+            let params = normalizeConnectionParams(rawParams)
             self.host = url.host ?? "localhost"
             self.port = url.port ?? 3092
             self.protocolName = params["protocol"] ?? params["parser"] ?? params["dialect"] ?? "native"
+            self.frontDoorMode = params["front_door_mode"] ?? "direct"
             self.database = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             self.user = params["user"] ?? userInfo ?? ""
             self.password = params["password"] ?? passInfo
@@ -69,20 +181,29 @@ public struct ScratchBirdConfig {
             self.applicationName = params["application_name"]
             self.searchPath = params["search_path"]
             self.role = params["role"]
-            self.binaryTransfer = params["binary_transfer"]?.lowercased() != "false"
+            self.binaryTransfer = parseBool(params["binary_transfer"], default: true)
             self.compression = params["compression"] ?? "off"
-            self.fetchSize = Int(params["fetch_size"] ?? "0") ?? 0
+            self.fetchSize = parseInt(params["fetch_size"], default: 0)
+            self.managerAuthToken = params["manager_auth_token"]
+            self.managerUsername = params["manager_username"]
+            self.managerDatabase = params["manager_database"]
+            self.managerConnectionProfile = params["manager_connection_profile"] ?? "native_v3"
+            self.managerClientIntent = params["manager_client_intent"] ?? "native_v3"
+            self.managerClientFlags = parseInt(params["manager_client_flags"], default: 0)
+            self.managerAuthFastPath = parseBool(params["manager_auth_fast_path"], default: true)
         } else {
-            var params: [String: String] = [:]
+            var rawParams: [String: String] = [:]
             for part in dsn.split(separator: " ") {
                 let pieces = part.split(separator: "=", maxSplits: 1)
                 if pieces.count == 2 {
-                    params[String(pieces[0]).lowercased()] = String(pieces[1])
+                    rawParams[String(pieces[0])] = String(pieces[1])
                 }
             }
+            let params = normalizeConnectionParams(rawParams)
             self.host = params["host"] ?? "localhost"
             self.port = Int(params["port"] ?? "3092") ?? 3092
             self.protocolName = params["protocol"] ?? params["parser"] ?? params["dialect"] ?? "native"
+            self.frontDoorMode = params["front_door_mode"] ?? "direct"
             self.database = params["database"] ?? params["dbname"] ?? ""
             self.user = params["user"] ?? params["username"] ?? ""
             self.password = params["password"]
@@ -90,9 +211,16 @@ public struct ScratchBirdConfig {
             self.applicationName = params["application_name"]
             self.searchPath = params["search_path"]
             self.role = params["role"]
-            self.binaryTransfer = params["binary_transfer"]?.lowercased() != "false"
+            self.binaryTransfer = parseBool(params["binary_transfer"], default: true)
             self.compression = params["compression"] ?? "off"
-            self.fetchSize = Int(params["fetch_size"] ?? "0") ?? 0
+            self.fetchSize = parseInt(params["fetch_size"], default: 0)
+            self.managerAuthToken = params["manager_auth_token"]
+            self.managerUsername = params["manager_username"]
+            self.managerDatabase = params["manager_database"]
+            self.managerConnectionProfile = params["manager_connection_profile"] ?? "native_v3"
+            self.managerClientIntent = params["manager_client_intent"] ?? "native_v3"
+            self.managerClientFlags = parseInt(params["manager_client_flags"], default: 0)
+            self.managerAuthFastPath = parseBool(params["manager_auth_fast_path"], default: true)
         }
     }
 }

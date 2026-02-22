@@ -119,6 +119,11 @@ public class SBProtocolHandler {
     private static final int PROTOCOL_VERSION_MINOR = 1;
     private static final int HEADER_SIZE = 40;
     private static final int MAX_MESSAGE_SIZE = 1024 * 1024 * 1024;
+    private static final int MANAGER_PROTOCOL_MAGIC = 0x42444253;
+    private static final int MANAGER_PROTOCOL_VERSION = 0x0101;
+    private static final int MANAGER_HEADER_SIZE = 12;
+    private static final int MANAGER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
+    private static final int MCP_PROTOCOL_VERSION = 0x0100;
 
     private static final byte MSG_STARTUP = 0x01;
     private static final byte MSG_AUTH_RESPONSE = 0x02;
@@ -191,6 +196,15 @@ public class SBProtocolHandler {
     private static final int AUTH_OK = 0;
     private static final int AUTH_PASSWORD = 1;
     private static final int AUTH_SCRAM_SHA_256 = 3;
+    private static final byte MCP_MSG_CONNECT_RESPONSE = 0x02;
+    private static final byte MCP_MSG_AUTH_CHALLENGE = 0x12;
+    private static final byte MCP_MSG_AUTH_RESPONSE = 0x11;
+    private static final byte MCP_MSG_STATUS_RESPONSE = 0x64;
+    private static final byte MCP_MSG_HELLO = 0x65;
+    private static final byte MCP_MSG_AUTH_START = 0x66;
+    private static final byte MCP_MSG_AUTH_CONTINUE = 0x67;
+    private static final byte MCP_MSG_DB_CONNECT = 0x69;
+    private static final byte MCP_AUTH_METHOD_TOKEN = 4;
 
     private static final byte MSG_FLAG_URGENT = 0x08;
 
@@ -280,6 +294,9 @@ public class SBProtocolHandler {
             }
             upgradeToSSL(sslMode);
 
+            if ("manager_proxy".equalsIgnoreCase(props.getFrontDoorMode())) {
+                performManagerConnect();
+            }
             sendStartupMessage();
             handleAuthentication();
             connected = true;
@@ -613,6 +630,147 @@ public class SBProtocolHandler {
 
     public String getServerParameter(String name) {
         return serverParameters.get(name);
+    }
+
+    private byte[] buildLengthPrefixedString(String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + bytes.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(bytes.length);
+        buf.put(bytes);
+        return buf.array();
+    }
+
+    private void sendManagerFrame(byte type, byte[] payload) throws IOException {
+        ByteBuffer buf = ByteBuffer.allocate(MANAGER_HEADER_SIZE + payload.length).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putInt(MANAGER_PROTOCOL_MAGIC);
+        buf.putShort((short) MANAGER_PROTOCOL_VERSION);
+        buf.put(type);
+        buf.put((byte) 0);
+        buf.putInt(payload.length);
+        buf.put(payload);
+        outputStream.write(buf.array());
+        outputStream.flush();
+    }
+
+    private ProtocolMessage readManagerFrame() throws IOException {
+        byte[] header = new byte[MANAGER_HEADER_SIZE];
+        readFully(header);
+        ByteBuffer buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+        int magic = buf.getInt();
+        if (magic != MANAGER_PROTOCOL_MAGIC) {
+            throw new IOException("Manager frame magic mismatch");
+        }
+        int version = Short.toUnsignedInt(buf.getShort());
+        if (version != MANAGER_PROTOCOL_VERSION) {
+            throw new IOException("Manager frame version mismatch");
+        }
+        byte type = buf.get();
+        byte flags = buf.get();
+        int length = buf.getInt();
+        if (length > MANAGER_MAX_PAYLOAD_SIZE) {
+            throw new IOException("Manager payload too large");
+        }
+        byte[] payload = new byte[length];
+        if (length > 0) {
+            readFully(payload);
+        }
+        return new ProtocolMessage(type, flags, length, 0, new byte[16], 0L, payload);
+    }
+
+    private void performManagerConnect() throws IOException, SQLException {
+        String token = props.getManagerAuthToken() != null ? props.getManagerAuthToken() : "";
+        if (token.isEmpty()) {
+            throw createSQLException("manager_proxy mode requires manager_auth_token", "08001");
+        }
+        String managerUser = (props.getManagerUsername() != null && !props.getManagerUsername().isEmpty())
+            ? props.getManagerUsername()
+            : (props.getUser() != null && !props.getUser().isEmpty() ? props.getUser() : "admin");
+        String managerDatabase = (props.getManagerDatabase() != null && !props.getManagerDatabase().isEmpty())
+            ? props.getManagerDatabase()
+            : (props.getDatabase() != null ? props.getDatabase() : "");
+        String managerProfile = (props.getManagerConnectionProfile() != null && !props.getManagerConnectionProfile().isEmpty())
+            ? props.getManagerConnectionProfile()
+            : "native_v3";
+        String managerIntent = (props.getManagerClientIntent() != null && !props.getManagerClientIntent().isEmpty())
+            ? props.getManagerClientIntent()
+            : "native_v3";
+
+        ByteBuffer hello = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        hello.putShort((short) MCP_PROTOCOL_VERSION);
+        hello.putShort((short) props.getManagerClientFlags());
+        sendManagerFrame(MCP_MSG_HELLO, hello.array());
+        ProtocolMessage msg = readManagerFrame();
+        if (msg.type != MCP_MSG_STATUS_RESPONSE) {
+            throw createSQLException("Expected MCP hello status response", "08P01");
+        }
+
+        ByteArrayOutputStream authStart = new ByteArrayOutputStream();
+        authStart.write(buildLengthPrefixedString(managerUser));
+        authStart.write(MCP_AUTH_METHOD_TOKEN);
+        if (props.isManagerAuthFastPath()) {
+            byte[] tokenBytes = token.getBytes(StandardCharsets.UTF_8);
+            ByteBuffer tokenLen = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+            tokenLen.putInt(tokenBytes.length);
+            authStart.write(tokenLen.array());
+            authStart.write(tokenBytes);
+        } else {
+            authStart.write(new byte[4]);
+        }
+        sendManagerFrame(MCP_MSG_AUTH_START, authStart.toByteArray());
+        msg = readManagerFrame();
+        if (msg.type == MCP_MSG_AUTH_CHALLENGE) {
+            byte[] tokenBytes = token.getBytes(StandardCharsets.UTF_8);
+            ByteBuffer authContinue = ByteBuffer.allocate(4 + tokenBytes.length).order(ByteOrder.LITTLE_ENDIAN);
+            authContinue.putInt(tokenBytes.length);
+            authContinue.put(tokenBytes);
+            sendManagerFrame(MCP_MSG_AUTH_CONTINUE, authContinue.array());
+            msg = readManagerFrame();
+        }
+        if (msg.type != MCP_MSG_AUTH_RESPONSE) {
+            throw createSQLException("Expected MCP auth response", "08P01");
+        }
+        if (msg.payload.length < 1 + 4 + 256) {
+            throw createSQLException("Truncated MCP auth response", "08P01");
+        }
+        if (msg.payload[0] != 0) {
+            String err = new String(Arrays.copyOfRange(msg.payload, 5, 261), StandardCharsets.UTF_8).replace("\0", "").trim();
+            if (err.isEmpty()) {
+                err = "MCP authentication failed";
+            }
+            throw createSQLException(err, "28000");
+        }
+
+        ByteArrayOutputStream dbConnect = new ByteArrayOutputStream();
+        dbConnect.write("MCP1".getBytes(StandardCharsets.US_ASCII));
+        dbConnect.write(buildLengthPrefixedString(managerDatabase));
+        dbConnect.write(buildLengthPrefixedString(managerProfile));
+        dbConnect.write(buildLengthPrefixedString(managerIntent));
+        byte[] nonce = new byte[16];
+        new java.security.SecureRandom().nextBytes(nonce);
+        ByteBuffer nonceLen = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN);
+        nonceLen.putShort((short) nonce.length);
+        dbConnect.write(nonceLen.array());
+        dbConnect.write(nonce);
+        sendManagerFrame(MCP_MSG_DB_CONNECT, dbConnect.toByteArray());
+        msg = readManagerFrame();
+        if (msg.type != MCP_MSG_CONNECT_RESPONSE) {
+            throw createSQLException("Expected MCP connect response", "08P01");
+        }
+        if (msg.payload.length < 1 + 2 + 2 + 16 + 64 + 32) {
+            throw createSQLException("Truncated MCP connect response", "08P01");
+        }
+        if (msg.payload[0] != 0) {
+            String err = "MCP database connect failed";
+            int errOffset = 1 + 2 + 2 + 16 + 64 + 32;
+            if (msg.payload.length >= errOffset + 4) {
+                ByteBuffer errLenBuf = ByteBuffer.wrap(msg.payload, errOffset, 4).order(ByteOrder.LITTLE_ENDIAN);
+                int errLen = errLenBuf.getInt();
+                if (msg.payload.length >= errOffset + 4 + errLen) {
+                    err = new String(msg.payload, errOffset + 4, errLen, StandardCharsets.UTF_8);
+                }
+            }
+            throw createSQLException(err, "28000");
+        }
     }
 
     private void sendStartupMessage() throws IOException {

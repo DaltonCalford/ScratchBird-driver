@@ -21,7 +21,18 @@ function normalizeNativeProtocol(value?: string): string {
   throw new Error("Only protocol=native is supported; connect to the native parser listener/port.");
 }
 
-export { normalizeNativeProtocol };
+function normalizeFrontDoorMode(value?: string): "direct" | "manager_proxy" {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "" || normalized === "direct") {
+    return "direct";
+  }
+  if (normalized === "manager_proxy" || normalized === "manager-proxy" || normalized === "managed") {
+    return "manager_proxy";
+  }
+  throw new Error("front_door_mode must be direct or manager_proxy.");
+}
+
+export { normalizeNativeProtocol, normalizeFrontDoorMode };
 
 export function parseDsn(dsn?: string): Partial<ClientConfig> {
   if (!dsn) {
@@ -72,6 +83,12 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
       break;
     case "port":
       config.port = Number(value);
+      break;
+    case "front_door_mode":
+    case "frontdoormode":
+    case "connection_mode":
+    case "ingress_mode":
+      config.frontDoorMode = normalizeFrontDoorMode(value);
       break;
     case "database":
     case "dbname":
@@ -130,6 +147,38 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
       break;
     case "compression":
       config.compression = value === "zstd" ? "zstd" : "off";
+      break;
+    case "manager_auth_token":
+    case "mcp_auth_token":
+      config.managerAuthToken = value;
+      break;
+    case "manager_username":
+    case "mcp_username":
+      config.managerUsername = value;
+      break;
+    case "manager_database":
+    case "mcp_database":
+      config.managerDatabase = value;
+      break;
+    case "manager_connection_profile":
+    case "mcp_connection_profile":
+      config.managerConnectionProfile = value;
+      break;
+    case "manager_client_intent":
+    case "mcp_client_intent":
+      config.managerClientIntent = value;
+      break;
+    case "manager_client_flags":
+    case "mcp_client_flags":
+      config.managerClientFlags = Number(value) || 0;
+      break;
+    case "manager_auth_fast_path":
+    case "mcp_auth_fast_path":
+      config.managerAuthFastPath =
+        value.toLowerCase() === "true" ||
+        value === "1" ||
+        value.toLowerCase() === "yes" ||
+        value.toLowerCase() === "on";
       break;
     default:
       break;

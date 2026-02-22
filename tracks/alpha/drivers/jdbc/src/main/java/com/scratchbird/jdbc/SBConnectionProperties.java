@@ -26,6 +26,7 @@ public class SBConnectionProperties {
     // Connection target
     private String host = "localhost";
     private int port = SBDriver.DEFAULT_PORT;
+    private String frontDoorMode = "direct";
     private String protocol = "native";
     private String database;
 
@@ -59,6 +60,13 @@ public class SBConnectionProperties {
     private int prepareThreshold = 5;
     private boolean binaryTransfer = true;
     private String compression = "off";
+    private String managerAuthToken = "";
+    private String managerUsername = "";
+    private String managerDatabase = "";
+    private String managerConnectionProfile = "native_v3";
+    private String managerClientIntent = "native_v3";
+    private int managerClientFlags = 0;
+    private boolean managerAuthFastPath = true;
     private boolean reWriteBatchedInserts = false;
 
     // Logging
@@ -108,6 +116,12 @@ public class SBConnectionProperties {
             case "portnumber":
             case "pgport":
                 this.port = Integer.parseInt(value);
+                break;
+            case "front_door_mode":
+            case "frontdoormode":
+            case "connection_mode":
+            case "ingress_mode":
+                this.frontDoorMode = normalizeFrontDoorMode(value);
                 break;
             case "database":
             case "databasename":
@@ -193,6 +207,38 @@ public class SBConnectionProperties {
             case "compression":
                 this.compression = value;
                 break;
+            case "manager_auth_token":
+            case "mcp_auth_token":
+                this.managerAuthToken = value;
+                break;
+            case "manager_username":
+            case "mcp_username":
+                this.managerUsername = value;
+                break;
+            case "manager_database":
+            case "mcp_database":
+                this.managerDatabase = value;
+                break;
+            case "manager_connection_profile":
+            case "mcp_connection_profile":
+                this.managerConnectionProfile = value;
+                break;
+            case "manager_client_intent":
+            case "mcp_client_intent":
+                this.managerClientIntent = value;
+                break;
+            case "manager_client_flags":
+            case "mcp_client_flags":
+                this.managerClientFlags = Integer.parseInt(value);
+                break;
+            case "manager_auth_fast_path":
+            case "mcp_auth_fast_path":
+                this.managerAuthFastPath =
+                    "1".equals(value) ||
+                    "true".equalsIgnoreCase(value) ||
+                    "yes".equalsIgnoreCase(value) ||
+                    "on".equalsIgnoreCase(value);
+                break;
             case "rewritebatchedinserts":
                 this.reWriteBatchedInserts = Boolean.parseBoolean(value);
                 break;
@@ -228,6 +274,11 @@ public class SBConnectionProperties {
             case "port":
             case "portnumber":
                 return String.valueOf(port);
+            case "front_door_mode":
+            case "frontdoormode":
+            case "connection_mode":
+            case "ingress_mode":
+                return frontDoorMode;
             case "database":
             case "databasename":
             case "dbname":
@@ -280,6 +331,27 @@ public class SBConnectionProperties {
                 return String.valueOf(binaryTransfer);
             case "compression":
                 return compression;
+            case "manager_auth_token":
+            case "mcp_auth_token":
+                return managerAuthToken;
+            case "manager_username":
+            case "mcp_username":
+                return managerUsername;
+            case "manager_database":
+            case "mcp_database":
+                return managerDatabase;
+            case "manager_connection_profile":
+            case "mcp_connection_profile":
+                return managerConnectionProfile;
+            case "manager_client_intent":
+            case "mcp_client_intent":
+                return managerClientIntent;
+            case "manager_client_flags":
+            case "mcp_client_flags":
+                return String.valueOf(managerClientFlags);
+            case "manager_auth_fast_path":
+            case "mcp_auth_fast_path":
+                return String.valueOf(managerAuthFastPath);
             case "rewritebatchedinserts":
                 return String.valueOf(reWriteBatchedInserts);
             case "loggerlevel":
@@ -307,6 +379,14 @@ public class SBConnectionProperties {
 
     public void setPort(int port) {
         this.port = port;
+    }
+
+    public String getFrontDoorMode() {
+        return frontDoorMode;
+    }
+
+    public void setFrontDoorMode(String frontDoorMode) {
+        this.frontDoorMode = normalizeFrontDoorMode(frontDoorMode);
     }
 
     public String getDatabase() {
@@ -493,6 +573,62 @@ public class SBConnectionProperties {
         this.compression = compression;
     }
 
+    public String getManagerAuthToken() {
+        return managerAuthToken;
+    }
+
+    public void setManagerAuthToken(String managerAuthToken) {
+        this.managerAuthToken = managerAuthToken;
+    }
+
+    public String getManagerUsername() {
+        return managerUsername;
+    }
+
+    public void setManagerUsername(String managerUsername) {
+        this.managerUsername = managerUsername;
+    }
+
+    public String getManagerDatabase() {
+        return managerDatabase;
+    }
+
+    public void setManagerDatabase(String managerDatabase) {
+        this.managerDatabase = managerDatabase;
+    }
+
+    public String getManagerConnectionProfile() {
+        return managerConnectionProfile;
+    }
+
+    public void setManagerConnectionProfile(String managerConnectionProfile) {
+        this.managerConnectionProfile = managerConnectionProfile;
+    }
+
+    public String getManagerClientIntent() {
+        return managerClientIntent;
+    }
+
+    public void setManagerClientIntent(String managerClientIntent) {
+        this.managerClientIntent = managerClientIntent;
+    }
+
+    public int getManagerClientFlags() {
+        return managerClientFlags;
+    }
+
+    public void setManagerClientFlags(int managerClientFlags) {
+        this.managerClientFlags = managerClientFlags;
+    }
+
+    public boolean isManagerAuthFastPath() {
+        return managerAuthFastPath;
+    }
+
+    public void setManagerAuthFastPath(boolean managerAuthFastPath) {
+        this.managerAuthFastPath = managerAuthFastPath;
+    }
+
     public boolean isReWriteBatchedInserts() {
         return reWriteBatchedInserts;
     }
@@ -553,6 +689,7 @@ public class SBConnectionProperties {
         Properties props = new Properties();
         props.setProperty("host", host);
         props.setProperty("port", String.valueOf(port));
+        props.setProperty("front_door_mode", frontDoorMode);
         props.setProperty("protocol", protocol);
         if (database != null) props.setProperty("database", database);
         if (user != null) props.setProperty("user", user);
@@ -574,6 +711,13 @@ public class SBConnectionProperties {
         props.setProperty("prepareThreshold", String.valueOf(prepareThreshold));
         props.setProperty("binaryTransfer", String.valueOf(binaryTransfer));
         props.setProperty("compression", compression);
+        if (managerAuthToken != null && !managerAuthToken.isEmpty()) props.setProperty("manager_auth_token", managerAuthToken);
+        if (managerUsername != null && !managerUsername.isEmpty()) props.setProperty("manager_username", managerUsername);
+        if (managerDatabase != null && !managerDatabase.isEmpty()) props.setProperty("manager_database", managerDatabase);
+        if (managerConnectionProfile != null && !managerConnectionProfile.isEmpty()) props.setProperty("manager_connection_profile", managerConnectionProfile);
+        if (managerClientIntent != null && !managerClientIntent.isEmpty()) props.setProperty("manager_client_intent", managerClientIntent);
+        props.setProperty("manager_client_flags", String.valueOf(managerClientFlags));
+        props.setProperty("manager_auth_fast_path", String.valueOf(managerAuthFastPath));
         props.setProperty("reWriteBatchedInserts", String.valueOf(reWriteBatchedInserts));
         props.setProperty("loggerLevel", loggerLevel);
         if (loggerFile != null) props.setProperty("loggerFile", loggerFile);
@@ -606,6 +750,21 @@ public class SBConnectionProperties {
             default:
                 throw new IllegalArgumentException(
                     "Only protocol=native is supported; connect to the native parser listener/port.");
+        }
+    }
+
+    private static String normalizeFrontDoorMode(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase();
+        switch (normalized) {
+            case "":
+            case "direct":
+                return "direct";
+            case "manager_proxy":
+            case "manager-proxy":
+            case "managed":
+                return "manager_proxy";
+            default:
+                throw new IllegalArgumentException("front_door_mode must be direct or manager_proxy.");
         }
     }
 }
