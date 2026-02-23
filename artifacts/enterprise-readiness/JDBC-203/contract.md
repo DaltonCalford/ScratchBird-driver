@@ -7,9 +7,13 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
 - Drivers: `tracks/alpha/drivers/dotnet`, `tracks/alpha/drivers/jdbc`
 - Runtime APIs: connection lifecycle, command execution reuse, transaction recovery, pool saturation, and cancellation
 - Required environments:
-  - ScratchBird server (managed/listener)
-  - .NET test runner with `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL`
-  - JDBC test runner with `SCRATCHBIRD_JDBC_URL` and `SCRATCHBIRD_JDBC_CANCEL_SQL`
+- ScratchBird server (managed/listener)
+- .NET test runner with:
+  - `SCRATCHBIRD_DOTNET_URL` in `scratchbird://host:port/database?...` or key/value form (`host=...;port=...;database=...`)
+  - `SCRATCHBIRD_DOTNET_CANCEL_SQL`
+- JDBC test runner with:
+  - `SCRATCHBIRD_JDBC_URL` in `jdbc:scratchbird://host:port/database?...` format
+  - `SCRATCHBIRD_JDBC_CANCEL_SQL`
 
 ## Gate Script
 - `run_cross_runtime_pool_contract.sh` enforces optional strict mode:

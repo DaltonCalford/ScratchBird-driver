@@ -107,6 +107,13 @@ if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
 elif [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_DOTNET_CANCEL_SQL not set; .NET phase cannot run required cancel-reuse scenarios"
   dotnet_status="env_missing"
+elif [[ "${SCRATCHBIRD_DOTNET_URL}" == *"://"* && "${SCRATCHBIRD_DOTNET_URL%%://*}" != "scratchbird" ]]; then
+  echo "[warn] SCRATCHBIRD_DOTNET_URL has unsupported scheme '${SCRATCHBIRD_DOTNET_URL%%://*}'"
+  echo "       .NET URL formats supported: scratchbird://host:port/db?query or key=value semicolon/string pairs."
+  dotnet_status="failed"
+  release_freeze="true"
+  release_freeze_reasons+=("dotnet_contract_failed")
+  exit_code=1
 else
   echo "[step] .NET pooling phase"
   cd "$ROOT_DIR"
@@ -134,6 +141,12 @@ if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
 elif [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_JDBC_CANCEL_SQL not set; JDBC phase cannot run required cancel-reuse scenarios"
   jdbc_status="env_missing"
+elif [[ "${SCRATCHBIRD_JDBC_URL}" != jdbc:scratchbird:* ]]; then
+  echo "[warn] SCRATCHBIRD_JDBC_URL must start with jdbc:scratchbird:. Got '${SCRATCHBIRD_JDBC_URL}'"
+  jdbc_status="failed"
+  release_freeze="true"
+  release_freeze_reasons+=("jdbc_contract_failed")
+  exit_code=1
 else
   echo "[step] JDBC pooling phase"
   cd "$ROOT_DIR/tracks/alpha/drivers/jdbc"
