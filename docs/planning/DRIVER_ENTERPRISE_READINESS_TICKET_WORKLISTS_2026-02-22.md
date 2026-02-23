@@ -192,7 +192,7 @@ subtasks, artifact paths, and verification gates.
 - **Subtasks continued**
   - [ ] Update both per-driver and per-handle getters.
   - [ ] Add automated comparisons against server/connector test matrix.
-  - [ ] Add CI gate for feature false-positive regressions.
+  - [x] Add CI gate for feature false-positive regressions.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-008`
 - **Blocking conditions:** Inconsistent response by handle state or connection mode.
 
