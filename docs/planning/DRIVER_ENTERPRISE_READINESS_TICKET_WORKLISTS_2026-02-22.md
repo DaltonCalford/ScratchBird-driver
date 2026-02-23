@@ -200,7 +200,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Define and enforce ODBC enterprise release gate  
 **Owner:** Platform Lead + ODBC Team  
 **Risk:** High  
-**Status:** Verification complete (in-tree ODBC gate executed; external BI runbook placeholder pending)  
+**Status:** Verification complete (in-tree ODBC gate executed; BI smoke command wiring complete, external BI fixture pending)  
 **ETA:** 1 week  
 **Acceptance:** BI runbook, ODBC conformance, memory/perf sanity checks pass and are repeatable.
 **Latest evidence:** `artifacts/enterprise-readiness/ODBC-009/notes.md`
@@ -213,14 +213,14 @@ subtasks, artifact paths, and verification gates.
   - [x] Add release approval checklist requiring closed gate logs.
   - [x] Create CI workflow integration for the ODBC gate checks.
   - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (placeholder until external fixture is available).
-  - [ ] Add memory and performance trend checks with preserved baselines.
+  - [x] Add memory and performance trend checks with preserved baselines.
   - [ ] Replace placeholder with hosted BI fixture in CI and enable repeatable runbook assertions.
 - **Artifacts required**
   - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh` (or equivalent)
   - `artifacts/enterprise-readiness/ODBC-009/gates.md` (pass/fail criteria and rollback conditions)
   - `artifacts/enterprise-readiness/ODBC-009/notes.md` (execution evidence and decisions)
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-009`
-- **Blocking conditions:** Missing baseline metrics for BI smoke and perf tests.
+- **Blocking conditions:** Hosted BI runbook fixture still required for full hardening; enforce via `ODBC_009_BI_SMOKE_CMD` + `ODBC_009_BI_SMOKE_MANDATORY=1` once available.
 
 ### DOTNET-101 (P1)
 **Title:** Implement async API semantics and cancellable operations  
