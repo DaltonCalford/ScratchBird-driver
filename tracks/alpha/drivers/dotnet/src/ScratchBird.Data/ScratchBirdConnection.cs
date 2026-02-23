@@ -67,12 +67,13 @@ public sealed class ScratchBirdConnection : DbConnection
         _state = ConnectionState.Open;
     }
 
-    private void OpenWithRetry()
+    private void OpenWithRetry(CancellationToken cancellationToken)
     {
         ScratchBirdException? lastFailure = null;
 
         for (var attempt = 0; attempt < MaxConnectRetries; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 BorrowAndConnect();
@@ -99,6 +100,11 @@ public sealed class ScratchBirdConnection : DbConnection
         {
             throw lastFailure;
         }
+    }
+
+    private void OpenWithRetry()
+    {
+        OpenWithRetry(CancellationToken.None);
     }
 
     private void BorrowAndConnect()
@@ -151,7 +157,12 @@ public sealed class ScratchBirdConnection : DbConnection
 
     public override async Task OpenAsync(CancellationToken cancellationToken)
     {
-        await Task.Run(Open, cancellationToken);
+        if (_state != ConnectionState.Closed)
+        {
+            return;
+        }
+
+        await Task.Run(() => OpenWithRetry(cancellationToken), cancellationToken);
     }
 
     public override void Close()

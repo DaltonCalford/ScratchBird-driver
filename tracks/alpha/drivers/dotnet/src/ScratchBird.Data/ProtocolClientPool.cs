@@ -15,58 +15,114 @@ internal sealed class ProtocolClientPool
 {
     private sealed class PooledClient
     {
-        public PooledClient(ProtocolClient protocol, TimeSpan maxAge)
+        public PooledClient(ProtocolClient client, DateTimeOffset createdUtc)
         {
-            Protocol = protocol;
-            CreatedUtc = DateTimeOffset.UtcNow;
-            LastReturnedUtc = CreatedUtc;
-            MaxAge = maxAge;
+            Client = client;
+            CreatedUtc = createdUtc;
         }
 
-        public ProtocolClient Protocol { get; }
+        public ProtocolClient Client { get; }
         public DateTimeOffset CreatedUtc { get; }
-        public DateTimeOffset LastReturnedUtc { get; set; }
-        public TimeSpan MaxAge { get; }
-
-        public bool Expired => MaxAge > TimeSpan.Zero && (DateTimeOffset.UtcNow - CreatedUtc) > MaxAge;
     }
 
-    private sealed class ClientPool
+    internal sealed class ClientPool
     {
+        private const int BorrowTimeoutMs = 250;
         private readonly ConcurrentQueue<PooledClient> _idle = new();
+        private readonly ConcurrentDictionary<ProtocolClient, DateTimeOffset> _active = new();
+        private readonly SemaphoreSlim _slots;
 
-        public int MaxSize;
-        public int ActiveCount;
-
-        public bool TryTake(out ProtocolClient protocol)
+        public ClientPool(int maxSize)
         {
-            while (_idle.TryDequeue(out var item))
-            {
-                item.LastReturnedUtc = DateTimeOffset.UtcNow;
-
-                if (item.Expired || !item.Protocol.Connected)
-                {
-                    item.Protocol.Close();
-                    continue;
-                }
-
-                protocol = item.Protocol;
-                return true;
-            }
-
-            protocol = default!;
-            return false;
+            MaxSize = Math.Max(1, maxSize);
+            _slots = new SemaphoreSlim(MaxSize, MaxSize);
         }
 
-        public bool TryReturn(ProtocolClient protocol, TimeSpan maxAge)
+        public int MaxSize { get; set; }
+        public int MinSize { get; set; }
+
+        public int ActiveCount => _active.Count;
+        public int IdleCount => _idle.Count;
+
+        public bool TryBorrow(TimeSpan maxAge, out ProtocolClient protocolClient)
         {
-            if (_idle.Count >= MaxSize)
+            protocolClient = default!;
+
+            if (!TryAcquireSlot())
             {
                 return false;
             }
 
-            _idle.Enqueue(new PooledClient(protocol, maxAge));
+            var now = DateTimeOffset.UtcNow;
+            while (_idle.TryDequeue(out var pooled))
+            {
+                if (!pooled.Client.IsHealthy || IsExpired(pooled.CreatedUtc, now, maxAge))
+                {
+                    pooled.Client.Close();
+                    continue;
+                }
+
+                if (_active.TryAdd(pooled.Client, pooled.CreatedUtc))
+                {
+                    protocolClient = pooled.Client;
+                    return true;
+                }
+
+                pooled.Client.Close();
+            }
+
+            protocolClient = new ProtocolClient();
+            _active.TryAdd(protocolClient, now);
             return true;
+        }
+
+        public void Return(ProtocolClient protocolClient, TimeSpan maxAge)
+        {
+            if (!_active.TryRemove(protocolClient, out var createdUtc))
+            {
+                protocolClient.Close();
+                return;
+            }
+
+            if (protocolClient.IsHealthy && !IsExpired(createdUtc, DateTimeOffset.UtcNow, maxAge))
+            {
+                _idle.Enqueue(new PooledClient(protocolClient, createdUtc));
+            }
+            else
+            {
+                protocolClient.Close();
+            }
+
+            _slots.Release();
+        }
+
+        public void Reject(ProtocolClient protocolClient)
+        {
+            if (_active.TryRemove(protocolClient, out _))
+            {
+                protocolClient.Close();
+                _slots.Release();
+            }
+            else
+            {
+                protocolClient.Close();
+            }
+        }
+
+        private bool TryAcquireSlot()
+        {
+            if (_slots.Wait(0))
+            {
+                return true;
+            }
+
+            // Avoid indefinite block; fallback clients can still be created outside the pool.
+            return _slots.Wait(BorrowTimeoutMs);
+        }
+
+        private static bool IsExpired(DateTimeOffset createdUtc, DateTimeOffset now, TimeSpan maxAge)
+        {
+            return maxAge > TimeSpan.Zero && (now - createdUtc) > maxAge;
         }
     }
 
@@ -74,12 +130,14 @@ internal sealed class ProtocolClientPool
     {
         private readonly ProtocolClient _client;
         private readonly ScratchBirdConfig _config;
+        private readonly ClientPool? _pool;
         private bool _disposed;
 
-        public Lease(ProtocolClient client, ScratchBirdConfig config)
+        internal Lease(ProtocolClient client, ScratchBirdConfig config, ClientPool? pool = null)
         {
             _client = client;
             _config = config;
+            _pool = pool;
         }
 
         public ProtocolClient Client => _client;
@@ -92,14 +150,14 @@ internal sealed class ProtocolClientPool
             }
 
             _disposed = true;
-            ProtocolClientPool.Return(_config, _client);
+            Return(_config, _client, _pool);
             GC.SuppressFinalize(this);
         }
     }
 
     private static readonly ConcurrentDictionary<string, ClientPool> Pools = new();
 
-    public static ProtocolClient BorrowOrCreate(ScratchBirdConfig config, out Lease lease)
+    internal static ProtocolClient BorrowOrCreate(ScratchBirdConfig config, out Lease lease)
     {
         if (!config.Pooling)
         {
@@ -109,46 +167,48 @@ internal sealed class ProtocolClientPool
         }
 
         var key = BuildPoolKey(config);
-        var pool = Pools.GetOrAdd(key, _ => new ClientPool { MaxSize = Math.Max(1, config.MaxPoolSize) });
+        var pool = Pools.GetOrAdd(
+            key,
+            _ => new ClientPool(Math.Max(1, config.MaxPoolSize))
+            {
+                MinSize = Math.Max(0, config.MinPoolSize)
+            });
+        pool.MaxSize = Math.Max(1, config.MaxPoolSize);
+        pool.MinSize = Math.Max(0, config.MinPoolSize);
 
-        if (pool.TryTake(out var pooledClient))
+        var maxAge = TimeSpan.FromSeconds(Math.Max(0, config.ConnectionLifetime));
+        if (pool.TryBorrow(maxAge, out var protocolClient))
         {
-            Interlocked.Increment(ref pool.ActiveCount);
-            lease = new Lease(pooledClient, config);
-            return pooledClient;
+            lease = new Lease(protocolClient, config, pool);
+            return protocolClient;
         }
 
-        var fresh = new ProtocolClient();
-        Interlocked.Increment(ref pool.ActiveCount);
-        lease = new Lease(fresh, config);
-        return fresh;
+        // Fallback when pool is full: do not track these clients.
+        var unpooledClient = new ProtocolClient();
+        lease = new Lease(unpooledClient, config);
+        return unpooledClient;
     }
 
-    public static void Return(ScratchBirdConfig config, ProtocolClient client)
+    internal static void Return(ScratchBirdConfig config, ProtocolClient client, ClientPool? pool = null)
     {
-        if (!config.Pooling || !client.Connected)
+        if (!config.Pooling || pool == null)
         {
             client.Close();
             return;
         }
 
-        var key = BuildPoolKey(config);
-        var pool = Pools.GetOrAdd(key, _ => new ClientPool { MaxSize = Math.Max(1, config.MaxPoolSize) });
-
         var maxAge = TimeSpan.FromSeconds(Math.Max(0, config.ConnectionLifetime));
-        if (!pool.TryReturn(client, maxAge))
+        if (!client.IsHealthy)
         {
-            client.Close();
+            pool.Reject(client);
+            return;
         }
 
-        if (pool.ActiveCount > 0)
-        {
-            Interlocked.Decrement(ref pool.ActiveCount);
-        }
+        pool.Return(client, maxAge);
     }
 
     private static string BuildPoolKey(ScratchBirdConfig config)
     {
-        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}";
+        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}|{config.SslMode}|{config.SslRootCert}|{config.SslCert}|{config.ManagerAuthFastPath}|{config.ManagerClientFlags}|{config.MaxPoolSize}|{config.MinPoolSize}|{config.ConnectionLifetime}";
     }
 }
