@@ -149,90 +149,154 @@ ParamEncoding encodeParam(dynamic value) {
   }
   if (value is ScratchBirdComposite) {
     final encoded = _encodeComposite(value);
-    return ParamEncoding(ParamValue(format: 1, data: encoded.data), encoded.oid);
+    return ParamEncoding(
+        ParamValue(format: 1, data: encoded.data), encoded.oid);
   }
   if (value is ScratchBirdRange) {
     final encoded = _encodeRange(value);
-    return ParamEncoding(ParamValue(format: 1, data: encoded.data), encoded.oid);
+    return ParamEncoding(
+        ParamValue(format: 1, data: encoded.data), encoded.oid);
   }
   if (value is ScratchBirdJsonb) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(value.raw)), oidJsonb);
+    return ParamEncoding(
+        ParamValue(format: 1, data: _lengthPrefixed(value.raw)), oidJsonb);
   }
   if (value is ScratchBirdJson) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(value.raw)), oidJson);
+    return ParamEncoding(
+        ParamValue(format: 1, data: _lengthPrefixed(value.raw)), oidJson);
   }
   if (value is ScratchBirdGeometry) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(value.wkb)), oidPoint);
+    return ParamEncoding(
+        ParamValue(format: 1, data: _lengthPrefixed(value.wkb)), oidPoint);
   }
   if (value is ScratchBirdInterval) {
     final buf = ByteData(16);
     buf.setInt64(0, value.micros, Endian.little);
     buf.setInt32(8, value.days, Endian.little);
     buf.setInt32(12, value.months, Endian.little);
-    return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInterval);
+    return ParamEncoding(
+        ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInterval);
   }
   if (value is ScratchBirdInet) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))), oidInet);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data:
+                _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))),
+        oidInet);
   }
   if (value is ScratchBirdCidr) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))), oidCidr);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data:
+                _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))),
+        oidCidr);
   }
   if (value is ScratchBirdMacaddr) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))), oidMacaddr);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data:
+                _lengthPrefixed(Uint8List.fromList(utf8.encode(value.value)))),
+        oidMacaddr);
   }
   if (value is bool) {
-    return ParamEncoding(ParamValue(format: 1, data: Uint8List.fromList([value ? 1 : 0])), oidBool);
+    return ParamEncoding(
+        ParamValue(format: 1, data: Uint8List.fromList([value ? 1 : 0])),
+        oidBool);
   }
   if (value is int) {
     if (value >= -32768 && value <= 32767) {
       final buf = ByteData(2);
       buf.setInt16(0, value, Endian.little);
-      return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt2);
+      return ParamEncoding(
+          ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt2);
     }
     if (value >= -2147483648 && value <= 2147483647) {
       final buf = ByteData(4);
       buf.setInt32(0, value, Endian.little);
-      return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt4);
+      return ParamEncoding(
+          ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt4);
     }
     final buf = ByteData(8);
     buf.setInt64(0, value, Endian.little);
-    return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt8);
+    return ParamEncoding(
+        ParamValue(format: 1, data: buf.buffer.asUint8List()), oidInt8);
   }
   if (value is double) {
     final buf = ByteData(8);
     buf.setFloat64(0, value, Endian.little);
-    return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidFloat8);
+    return ParamEncoding(
+        ParamValue(format: 1, data: buf.buffer.asUint8List()), oidFloat8);
   }
   if (value is DateTime) {
     final base = DateTime.utc(2000, 1, 1);
     final micros = value.toUtc().difference(base).inMicroseconds;
     final buf = ByteData(8);
     buf.setInt64(0, micros, Endian.little);
-    return ParamEncoding(ParamValue(format: 1, data: buf.buffer.asUint8List()), oidTimestamptz);
+    return ParamEncoding(
+        ParamValue(format: 1, data: buf.buffer.asUint8List()), oidTimestamptz);
   }
   if (value is Uint8List) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(value)), oidBytea);
+    return ParamEncoding(
+        ParamValue(format: 1, data: _lengthPrefixed(value)), oidBytea);
   }
   if (value is List<double>) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(_formatVectorLiteral(value))))), oidVector);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data: _lengthPrefixed(
+                Uint8List.fromList(utf8.encode(_formatVectorLiteral(value))))),
+        oidVector);
   }
-  if (value is List<num> && value.every((v) => v is num)) {
+  if (value is List<int>) {
+    final encodedValue = _formatArrayLiteral(value.toList());
+    final payload = Utf8Encoder().convert(encodedValue);
+    final prefixed = _lengthPrefixed(Uint8List.fromList(payload));
+    return ParamEncoding(ParamValue(format: 1, data: prefixed), 0);
+  }
+  if (value is List<num>) {
+    final allInt = value.every((v) => v is int);
+    if (allInt) {
+      final encodedValue =
+          _formatArrayLiteral(value.map((v) => (v as int)).toList());
+      final payload = Utf8Encoder().convert(encodedValue);
+      final prefixed = _lengthPrefixed(Uint8List.fromList(payload));
+      return ParamEncoding(ParamValue(format: 1, data: prefixed), 0);
+    }
     final asDouble = value.map((v) => v.toDouble()).toList();
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(_formatVectorLiteral(asDouble))))), oidVector);
+    final encodedValue = _formatVectorLiteral(asDouble);
+    final payload = Utf8Encoder().convert(encodedValue);
+    final prefixed = _lengthPrefixed(Uint8List.fromList(payload));
+    return ParamEncoding(ParamValue(format: 1, data: prefixed), oidVector);
   }
   if (value is List) {
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(_formatArrayLiteral(value))))), 0);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data: _lengthPrefixed(
+                Uint8List.fromList(utf8.encode(_formatArrayLiteral(value))))),
+        0);
   }
   if (value is String) {
     final uuid = _uuidToBytes(value);
     if (uuid != null) {
       return ParamEncoding(ParamValue(format: 1, data: uuid), oidUuid);
     }
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(value)))), oidText);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data: _lengthPrefixed(Uint8List.fromList(utf8.encode(value)))),
+        oidText);
   }
   if (value is Map || value is List) {
     final json = jsonEncode(value);
-    return ParamEncoding(ParamValue(format: 1, data: _lengthPrefixed(Uint8List.fromList(utf8.encode(json)))), oidJson);
+    return ParamEncoding(
+        ParamValue(
+            format: 1,
+            data: _lengthPrefixed(Uint8List.fromList(utf8.encode(json)))),
+        oidJson);
   }
   throw Exception('Unsupported parameter type');
 }
@@ -290,7 +354,8 @@ dynamic decodeValue(int typeOid, Uint8List data, int format) {
       return DateTime.utc(2000, 1, 1).add(Duration(microseconds: micros));
     case oidInterval:
       final bd = ByteData.sublistView(data);
-      return ScratchBirdInterval(bd.getInt64(0, Endian.little), bd.getInt32(8, Endian.little), bd.getInt32(12, Endian.little));
+      return ScratchBirdInterval(bd.getInt64(0, Endian.little),
+          bd.getInt32(8, Endian.little), bd.getInt32(12, Endian.little));
     case oidInt4Range:
     case oidInt8Range:
     case oidNumRange:
@@ -361,13 +426,15 @@ ScratchBirdRange _decodeRange(int rangeOid, Uint8List data) {
   dynamic lower;
   dynamic upper;
   if ((flags & rangeLbInf) == 0) {
-    final len = ByteData.sublistView(data, offset, offset + 4).getUint32(0, Endian.little);
+    final len = ByteData.sublistView(data, offset, offset + 4)
+        .getUint32(0, Endian.little);
     offset += 4;
     lower = _decodeRangeBound(rangeOid, data.sublist(offset, offset + len));
     offset += len;
   }
   if ((flags & rangeUbInf) == 0) {
-    final len = ByteData.sublistView(data, offset, offset + 4).getUint32(0, Endian.little);
+    final len = ByteData.sublistView(data, offset, offset + 4)
+        .getUint32(0, Endian.little);
     offset += 4;
     upper = _decodeRangeBound(rangeOid, data.sublist(offset, offset + len));
   }
@@ -425,8 +492,12 @@ _EncodedComposite _encodeComposite(ScratchBirdComposite composite) {
       final encoded = encodeParam(field.value);
       if (fieldOid == 0) {
         fieldOid = encoded.oid;
+      } else if (field.value is int &&
+          _isNumericOid(fieldOid) &&
+          !encoded.param.isNull) {
+        fieldData = _encodeIntForOid(field.value as int, fieldOid);
       }
-      if (!encoded.param.isNull) {
+      if (fieldData == null && !encoded.param.isNull) {
         fieldData = encoded.param.data ?? Uint8List(0);
       }
     }
@@ -459,9 +530,11 @@ ScratchBirdComposite _decodeComposite(Uint8List data) {
   final fields = <ScratchBirdCompositeField>[];
   for (var i = 0; i < count; i++) {
     if (offset + 8 > data.length) break;
-    final oid = ByteData.sublistView(data, offset, offset + 4).getUint32(0, Endian.little);
+    final oid = ByteData.sublistView(data, offset, offset + 4)
+        .getUint32(0, Endian.little);
     offset += 4;
-    final len = ByteData.sublistView(data, offset, offset + 4).getInt32(0, Endian.little);
+    final len = ByteData.sublistView(data, offset, offset + 4)
+        .getInt32(0, Endian.little);
     offset += 4;
     if (len < 0) {
       fields.add(ScratchBirdCompositeField(oid: oid, value: null, raw: null));
@@ -570,6 +643,29 @@ Uint8List _encodeRangeBound(int oid, dynamic value) {
       throw Exception('tsrange requires DateTime bounds');
     default:
       throw Exception('unsupported range type');
+  }
+}
+
+bool _isNumericOid(int oid) {
+  return oid == oidInt2 || oid == oidInt4 || oid == oidInt8;
+}
+
+Uint8List _encodeIntForOid(int value, int oid) {
+  switch (oid) {
+    case oidInt2:
+      final buf = ByteData(2);
+      buf.setInt16(0, value, Endian.little);
+      return buf.buffer.asUint8List();
+    case oidInt4:
+      final buf = ByteData(4);
+      buf.setInt32(0, value, Endian.little);
+      return buf.buffer.asUint8List();
+    case oidInt8:
+      final buf = ByteData(8);
+      buf.setInt64(0, value, Endian.little);
+      return buf.buffer.asUint8List();
+    default:
+      return Uint8List(0);
   }
 }
 

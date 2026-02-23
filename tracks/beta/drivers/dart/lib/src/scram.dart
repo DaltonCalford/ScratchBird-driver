@@ -43,7 +43,8 @@ class ScramClient {
     final clientKey = _hmacSha256(salted, utf8.encode('Client Key'));
     final storedKey = sha256.convert(clientKey).bytes;
     final clientFinalWithoutProof = 'c=biws,r=$nonce';
-    final authMessage = '${clientFirstBare!},$serverFirst,$clientFinalWithoutProof';
+    final authMessage =
+        '${clientFirstBare!},$serverFirst,$clientFinalWithoutProof';
     final clientSignature = _hmacSha256(storedKey, utf8.encode(authMessage));
     final clientProof = _xor(clientKey, clientSignature);
     final serverKey = _hmacSha256(salted, utf8.encode('Server Key'));
@@ -60,7 +61,8 @@ class ScramClient {
     }
   }
 
-  String _escape(String input) => input.replaceAll('=', '=3D').replaceAll(',', '=2C');
+  String _escape(String input) =>
+      input.replaceAll('=', '=3D').replaceAll(',', '=2C');
 
   Map<String, String> _parseAttrs(String message) {
     final out = <String, String>{};
@@ -73,9 +75,9 @@ class ScramClient {
     return out;
   }
 
-  List<int> _hmacSha256(List<int> key, List<int> data) {
+  Uint8List _hmacSha256(List<int> key, List<int> data) {
     final hmacSha = Hmac(sha256, key);
-    return hmacSha.convert(data).bytes;
+    return Uint8List.fromList(hmacSha.convert(data).bytes);
   }
 
   Uint8List _xor(List<int> left, List<int> right) {
@@ -86,7 +88,8 @@ class ScramClient {
     return out;
   }
 
-  Uint8List _pbkdf2Sha256(List<int> password, List<int> salt, int iterations, int keyLen) {
+  Uint8List _pbkdf2Sha256(
+      List<int> password, List<int> salt, int iterations, int keyLen) {
     final blocks = (keyLen / 32).ceil();
     final out = BytesBuilder();
     for (var i = 1; i <= blocks; i++) {
@@ -96,7 +99,8 @@ class ScramClient {
     return Uint8List.sublistView(bytes, 0, keyLen);
   }
 
-  List<int> _pbkdf2F(List<int> password, List<int> salt, int iterations, int blockIndex) {
+  List<int> _pbkdf2F(
+      List<int> password, List<int> salt, int iterations, int blockIndex) {
     final block = Uint8List(salt.length + 4);
     block.setAll(0, salt);
     block[block.length - 4] = (blockIndex >> 24) & 0xff;

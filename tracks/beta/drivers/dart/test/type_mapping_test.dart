@@ -11,7 +11,8 @@ void main() {
   test('vector literal round-trip', () {
     final encoded = encodeParam([1.0, 2.5, 3.25]);
     expect(encoded.oid, equals(oidVector));
-    final decoded = decodeValue(oidVector, encoded.param.data!, 1) as List<dynamic>;
+    final decoded =
+        decodeValue(oidVector, encoded.param.data!, 1) as List<dynamic>;
     expect(decoded.length, equals(3));
     expect(decoded[0], closeTo(1.0, 0.00001));
     expect(decoded[1], closeTo(2.5, 0.00001));
@@ -28,7 +29,8 @@ void main() {
     );
     final encoded = encodeParam(range);
     expect(encoded.oid, equals(oidInt4Range));
-    final decoded = decodeValue(encoded.oid, encoded.param.data!, 1) as ScratchBirdRange;
+    final decoded =
+        decodeValue(encoded.oid, encoded.param.data!, 1) as ScratchBirdRange;
     expect(decoded.lower, equals(1));
     expect(decoded.upper, equals(10));
     expect(decoded.lowerInclusive, isTrue);
@@ -43,7 +45,8 @@ void main() {
     ]);
     final encoded = encodeParam(comp);
     expect(encoded.oid, equals(oidRecord));
-    final decoded = decodeValue(oidRecord, encoded.param.data!, 1) as ScratchBirdComposite;
+    final decoded =
+        decodeValue(oidRecord, encoded.param.data!, 1) as ScratchBirdComposite;
     expect(decoded.fields.length, equals(2));
     expect(decoded.fields[0].value, equals(7));
     expect(decoded.fields[1].value, equals("hello"));
@@ -60,6 +63,7 @@ void main() {
 
     expect(decodeValue(oidInet, inetEnc.param.data!, 1), equals("127.0.0.1"));
     expect(decodeValue(oidCidr, cidrEnc.param.data!, 1), equals("10.0.0.0/24"));
-    expect(decodeValue(oidMacaddr, macEnc.param.data!, 1), equals("aa:bb:cc:dd:ee:ff"));
+    expect(decodeValue(oidMacaddr, macEnc.param.data!, 1),
+        equals("aa:bb:cc:dd:ee:ff"));
   });
 }
