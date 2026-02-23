@@ -33,7 +33,7 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcBulkOperationsTest.BulkOperationsRejectsNonColumnWiseBindingMode (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution
 [       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution (0 ms)
-[----------] 7 tests from OdbcBulkOperationsTest (1 ms total)
+[----------] 7 tests from OdbcBulkOperationsTest (0 ms total)
 
 [----------] 7 tests from OdbcCapabilityBrowseTest
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected
@@ -50,7 +50,7 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath (0 ms)
-[----------] 7 tests from OdbcCapabilityBrowseTest (1 ms total)
+[----------] 7 tests from OdbcCapabilityBrowseTest (0 ms total)
 
 [----------] 8 tests from OdbcCatalogTest
 [ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
@@ -69,7 +69,7 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCatalogTest.StatisticsAndSpecialColumnsUsePrimaryKey (0 ms)
 [ RUN      ] OdbcCatalogTest.ForeignKeysExposeMappings
 [       OK ] OdbcCatalogTest.ForeignKeysExposeMappings (0 ms)
-[----------] 8 tests from OdbcCatalogTest (2 ms total)
+[----------] 8 tests from OdbcCatalogTest (1 ms total)
 
 [----------] 1 test from OdbcGetDataTest
 [ RUN      ] OdbcGetDataTest.TemporalAndGuidConversions
@@ -116,5 +116,5 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [----------] 5 tests from OdbcLobStreamingTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 42 tests from 10 test suites ran. (9 ms total)
+[==========] 42 tests from 10 test suites ran. (5 ms total)
 [  PASSED  ] 42 tests.

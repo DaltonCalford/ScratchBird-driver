@@ -1,0 +1,9 @@
+JDBC-203 cross-runtime pooling contract run
+timestamp: 20260223T043302Z
+root: /home/dcalford/CliWork/ScratchBird-driver
+
+[warn] SCRATCHBIRD_DOTNET_URL not set; .NET phase cannot run
+
+[warn] SCRATCHBIRD_JDBC_URL not set; JDBC phase cannot run
+
+[blocker] both runtimes not available in same pass; capture blocker reason in notes.md

@@ -16,12 +16,14 @@ public sealed class ScratchBirdConnection : DbConnection
 {
     private const int MaxConnectRetries = 3;
     private const int ReconnectBackoffMs = 120;
+    private const int MinConnectTimeoutMs = 1;
 
     private string _connectionString = string.Empty;
     private ConnectionState _state = ConnectionState.Closed;
     private ScratchBirdConfig _config = new();
     private ProtocolClient? _client;
     private ProtocolClientPool.Lease? _clientLease;
+    private bool _disposed;
 
     public ScratchBirdConnection() { }
 
@@ -88,7 +90,11 @@ public sealed class ScratchBirdConnection : DbConnection
 
                 if (attempt + 1 < MaxConnectRetries)
                 {
-                    Thread.Sleep(Math.Min(ReconnectBackoffMs * (1 << attempt), 1000));
+                    var retryDelayMs = Math.Max(MinConnectTimeoutMs, Math.Min(ReconnectBackoffMs * (1 << attempt), 1000));
+                    if (cancellationToken.WaitHandle.WaitOne(retryDelayMs))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
                     continue;
                 }
 
@@ -167,11 +173,32 @@ public sealed class ScratchBirdConnection : DbConnection
 
     public override void Close()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         var lease = _clientLease;
         _clientLease = null;
         _client = null;
         _state = ConnectionState.Closed;
         lease?.Dispose();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            base.Dispose(disposing);
+            return;
+        }
+
+        _disposed = true;
+        if (disposing)
+        {
+            Close();
+        }
+        base.Dispose(disposing);
     }
 
     public override void ChangeDatabase(string databaseName)
@@ -196,6 +223,61 @@ public sealed class ScratchBirdConnection : DbConnection
     protected override DbCommand CreateDbCommand()
     {
         return new ScratchBirdCommand { Connection = this };
+    }
+
+    public override System.Data.DataTable GetSchema()
+    {
+        return GetSchema("Tables");
+    }
+
+    public override System.Data.DataTable GetSchema(string collectionName)
+    {
+        return GetSchema(collectionName, null);
+    }
+
+    public override System.Data.DataTable GetSchema(string collectionName, string[]? restrictionValues)
+    {
+        if (_state != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection is not open");
+        }
+
+        var query = collectionName?.ToLowerInvariant() switch
+        {
+            null or "" or "tables" => ScratchBirdMetadata.TablesQuery,
+            "columns" => ScratchBirdMetadata.ColumnsQuery,
+            "schemas" => ScratchBirdMetadata.SchemasQuery,
+            "indexes" => ScratchBirdMetadata.IndexesQuery,
+            "indexcolumns" or "index_columns" => ScratchBirdMetadata.IndexColumnsQuery,
+            "constraints" => ScratchBirdMetadata.ConstraintsQuery,
+            "procedures" => ScratchBirdMetadata.ProceduresQuery,
+            "functions" => ScratchBirdMetadata.FunctionsQuery,
+            _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
+        };
+
+        _ = restrictionValues;
+
+        using var cmd = CreateDbCommand();
+        cmd.CommandText = query;
+        using var reader = cmd.ExecuteReader();
+
+        var table = new System.Data.DataTable(collectionName);
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+        }
+
+        while (reader.Read())
+        {
+            var row = table.NewRow();
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+            }
+            table.Rows.Add(row);
+        }
+
+        return table;
     }
 
     private void ApplySchema()

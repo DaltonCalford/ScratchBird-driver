@@ -117,27 +117,58 @@ public static class ScratchBirdSqlStateMapper
             return new ScratchBirdException(message, sqlState, detail, hint);
         }
 
-        if (sqlState.Length == 5)
+        var mappedExact = MapByExactState(message, sqlState, detail, hint);
+        if (mappedExact is not null)
         {
-            return sqlState switch
-            {
-                "01000" => new ScratchBirdWarning(message, sqlState, detail, hint),
-                "02000" => new ScratchBirdNoDataException(message, sqlState, detail, hint),
-                "08001" or "08003" or "08004" or "08006" or "08P01" => new ScratchBirdConnectionException(message, sqlState, detail, hint),
-                "0A000" => new ScratchBirdNotSupportedException(message, sqlState, detail, hint),
-                "22001" or "22003" or "22007" or "22012" or "22023" or "22P02" or "22P03" => new ScratchBirdDataException(message, sqlState, detail, hint),
-                "23000" or "23502" or "23503" or "23505" or "23514" => new ScratchBirdIntegrityException(message, sqlState, detail, hint),
-                "28000" or "28P01" => new ScratchBirdAuthException(message, sqlState, detail, hint),
-                "40001" or "40P01" => new ScratchBirdTransactionException(message, sqlState, detail, hint),
-                "42501" or "42601" or "42703" or "42704" or "42710" or "42883" or "42P01" or "42P07" => new ScratchBirdSyntaxException(message, sqlState, detail, hint),
-                "53P00" or "53100" or "53200" or "53300" => new ScratchBirdResourceException(message, sqlState, detail, hint),
-                "54000" => new ScratchBirdLimitException(message, sqlState, detail, hint),
-                "57014" or "57P01" or "57P03" => new ScratchBirdOperatorInterventionException(message, sqlState, detail, hint),
-                "58000" => new ScratchBirdSystemException(message, sqlState, detail, hint),
-                "XX000" => new ScratchBirdInternalException(message, sqlState, detail, hint),
-                _ => new ScratchBirdException(message, sqlState, detail, hint)
-            };
+            return mappedExact;
         }
-        return new ScratchBirdException(message, sqlState, detail, hint);
+
+        var mappedClass = MapByStateClass(message, sqlState, detail, hint);
+        return mappedClass ?? new ScratchBirdException(message, sqlState, detail, hint);
+    }
+
+    private static ScratchBirdException? MapByExactState(string message, string sqlState, string? detail, string? hint)
+    {
+        return sqlState switch
+        {
+            "01000" => new ScratchBirdWarning(message, sqlState, detail, hint),
+            "02000" => new ScratchBirdNoDataException(message, sqlState, detail, hint),
+            "08001" or "08003" or "08004" or "08006" or "08P01" => new ScratchBirdConnectionException(message, sqlState, detail, hint),
+            "0A000" => new ScratchBirdNotSupportedException(message, sqlState, detail, hint),
+            "22001" or "22003" or "22007" or "22012" or "22023" or "22P02" or "22P03" => new ScratchBirdDataException(message, sqlState, detail, hint),
+            "23000" or "23502" or "23503" or "23505" or "23514" => new ScratchBirdIntegrityException(message, sqlState, detail, hint),
+            "28000" or "28P01" => new ScratchBirdAuthException(message, sqlState, detail, hint),
+            "40001" or "40P01" => new ScratchBirdTransactionException(message, sqlState, detail, hint),
+            "42501" or "42601" or "42703" or "42704" or "42710" or "42883" or "42P01" or "42P07" => new ScratchBirdSyntaxException(message, sqlState, detail, hint),
+            "53P00" or "53100" or "53200" or "53300" => new ScratchBirdResourceException(message, sqlState, detail, hint),
+            "54000" => new ScratchBirdLimitException(message, sqlState, detail, hint),
+            "57014" or "57P01" or "57P03" => new ScratchBirdOperatorInterventionException(message, sqlState, detail, hint),
+            "58000" => new ScratchBirdSystemException(message, sqlState, detail, hint),
+            "XX000" => new ScratchBirdInternalException(message, sqlState, detail, hint),
+            _ => null
+        };
+    }
+
+    private static ScratchBirdException? MapByStateClass(string message, string sqlState, string? detail, string? hint)
+    {
+        var stateClass = sqlState[..2];
+        return stateClass switch
+        {
+            "01" => new ScratchBirdWarning(message, sqlState, detail, hint),
+            "02" => new ScratchBirdNoDataException(message, sqlState, detail, hint),
+            "08" => new ScratchBirdConnectionException(message, sqlState, detail, hint),
+            "0A" => new ScratchBirdNotSupportedException(message, sqlState, detail, hint),
+            "22" => new ScratchBirdDataException(message, sqlState, detail, hint),
+            "23" => new ScratchBirdIntegrityException(message, sqlState, detail, hint),
+            "28" => new ScratchBirdAuthException(message, sqlState, detail, hint),
+            "40" => new ScratchBirdTransactionException(message, sqlState, detail, hint),
+            "42" => new ScratchBirdSyntaxException(message, sqlState, detail, hint),
+            "53" => new ScratchBirdResourceException(message, sqlState, detail, hint),
+            "54" => new ScratchBirdLimitException(message, sqlState, detail, hint),
+            "57" => new ScratchBirdOperatorInterventionException(message, sqlState, detail, hint),
+            "58" => new ScratchBirdSystemException(message, sqlState, detail, hint),
+            "XX" => new ScratchBirdInternalException(message, sqlState, detail, hint),
+            _ => null
+        };
     }
 }

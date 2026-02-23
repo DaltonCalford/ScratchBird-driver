@@ -13,6 +13,17 @@ namespace ScratchBird.Data;
 
 internal sealed class ProtocolClientPool
 {
+    internal readonly record struct PoolStats(
+        int ActiveCount,
+        int IdleCount,
+        int MaxSize,
+        int MinSize,
+        long BorrowAttempts,
+        long Borrowed,
+        long Returned,
+        long Rejected,
+        long Evicted);
+
     private sealed class PooledClient
     {
         public PooledClient(ProtocolClient client, DateTimeOffset createdUtc)
@@ -31,6 +42,11 @@ internal sealed class ProtocolClientPool
         private readonly ConcurrentQueue<PooledClient> _idle = new();
         private readonly ConcurrentDictionary<ProtocolClient, DateTimeOffset> _active = new();
         private readonly SemaphoreSlim _slots;
+        private long _borrowAttempts;
+        private long _borrowed;
+        private long _returned;
+        private long _rejected;
+        private long _evicted;
 
         public ClientPool(int maxSize)
         {
@@ -47,6 +63,7 @@ internal sealed class ProtocolClientPool
         public bool TryBorrow(TimeSpan maxAge, out ProtocolClient protocolClient)
         {
             protocolClient = default!;
+            Interlocked.Increment(ref _borrowAttempts);
 
             if (!TryAcquireSlot())
             {
@@ -59,20 +76,24 @@ internal sealed class ProtocolClientPool
                 if (!pooled.Client.IsHealthy || IsExpired(pooled.CreatedUtc, now, maxAge))
                 {
                     pooled.Client.Close();
+                    Interlocked.Increment(ref _evicted);
                     continue;
                 }
 
                 if (_active.TryAdd(pooled.Client, pooled.CreatedUtc))
                 {
                     protocolClient = pooled.Client;
+                    Interlocked.Increment(ref _borrowed);
                     return true;
                 }
 
                 pooled.Client.Close();
+                Interlocked.Increment(ref _rejected);
             }
 
             protocolClient = new ProtocolClient();
             _active.TryAdd(protocolClient, now);
+            Interlocked.Increment(ref _borrowed);
             return true;
         }
 
@@ -87,10 +108,12 @@ internal sealed class ProtocolClientPool
             if (protocolClient.IsHealthy && !IsExpired(createdUtc, DateTimeOffset.UtcNow, maxAge))
             {
                 _idle.Enqueue(new PooledClient(protocolClient, createdUtc));
+                Interlocked.Increment(ref _returned);
             }
             else
             {
                 protocolClient.Close();
+                Interlocked.Increment(ref _evicted);
             }
 
             _slots.Release();
@@ -101,6 +124,7 @@ internal sealed class ProtocolClientPool
             if (_active.TryRemove(protocolClient, out _))
             {
                 protocolClient.Close();
+                Interlocked.Increment(ref _rejected);
                 _slots.Release();
             }
             else
@@ -108,6 +132,12 @@ internal sealed class ProtocolClientPool
                 protocolClient.Close();
             }
         }
+
+        public long BorrowAttempts => Interlocked.Read(ref _borrowAttempts);
+        public long Borrowed => Interlocked.Read(ref _borrowed);
+        public long Returned => Interlocked.Read(ref _returned);
+        public long Rejected => Interlocked.Read(ref _rejected);
+        public long Evicted => Interlocked.Read(ref _evicted);
 
         private bool TryAcquireSlot()
         {
@@ -188,6 +218,28 @@ internal sealed class ProtocolClientPool
         lease = new Lease(unpooledClient, config);
         return unpooledClient;
     }
+
+    internal static PoolStats? GetStats(ScratchBirdConfig config)
+    {
+        var key = BuildPoolKey(config);
+        if (!Pools.TryGetValue(key, out var pool))
+        {
+            return null;
+        }
+
+        return new PoolStats(
+            pool.ActiveCount,
+            pool.IdleCount,
+            pool.MaxSize,
+            pool.MinSize,
+            pool.BorrowAttempts,
+            pool.Borrowed,
+            pool.Returned,
+            pool.Rejected,
+            pool.Evicted);
+    }
+
+    internal static int PoolCount => Pools.Count;
 
     internal static void Return(ScratchBirdConfig config, ProtocolClient client, ClientPool? pool = null)
     {

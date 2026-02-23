@@ -1,10 +1,10 @@
 {
-  "timestamp": "20260223T025930Z",
+  "timestamp": "20260223T040550Z",
   "command": "/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests",
-  "elapsed_seconds": "0.01",
-  "max_rss_kb": "9256",
+  "elapsed_seconds": "0.00",
+  "max_rss_kb": "9144",
   "cpu_user_seconds": "0.00",
   "cpu_system_seconds": "0.00",
-  "voluntary_context_switches": "169",
-  "involuntary_context_switches": "4"
+  "voluntary_context_switches": "168",
+  "involuntary_context_switches": "1"
 }

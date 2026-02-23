@@ -27,13 +27,13 @@
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| DOTNET-101 | P1 | In progress | Async and cancellation behavior partially implemented | Cancel long queries without deadlock/connection leaks | .NET Team | High | 2–3w | None |
-| DOTNET-102 | P0 | In progress | Pooling, reconnection, and circuit-breaker behavior incomplete | Soak test with saturation/failover and bounded leak | .NET Team | High | 3–5w | DOTNET-101 |
-| DOTNET-103 | P0 | In progress | Isolation and savepoint handling partially implemented | Isolation + savepoint matrix across concurrent writers | .NET Team + QA | High | 4–6w | DOTNET-102 |
-| DOTNET-104 | P1 | Partial | Metadata/retrieval/LOB paths and statement cache incomplete | Metadata and LOB roundtrip matrix, cache invalidation tests | .NET Team | High | 3–5w | DOTNET-101 |
-| JDBC-201 | P1 | Partial | Reactive and cancellation coverage limited | Async cancel and timeout tests under contention | JDBC Team | High | 3–5w | None |
-| JDBC-202 | P0 | Partial | Missing protocol and metadata parity for enterprise clients | JDBC conformance and metadata accuracy suite | JDBC Team + QA | High | 4–6w | JDBC-201 |
-| JDBC-203 | P0 | Not yet defined | No cross-runtime pooling contract and release gate | Contract suite passes for .NET/JDBC pooling & recovery | Core Runtime + JVM/Platform | High | 1w | DOTNET-101, JDBC-201, DOTNET-102 |
+| DOTNET-101 | P1 | Verification complete (integration and cancellation lifecycle assertions passing) | Async and cancellation behavior partially implemented | Cancel long queries without deadlock/connection leaks | .NET Team | High | 2–3w | None |
+| DOTNET-102 | P0 | Verification complete | Pooling, reconnection, and stale-handle handling incomplete | Soak test with saturation/failover and bounded leak | .NET Team | High | 3–5w | DOTNET-101 |
+| DOTNET-103 | P0 | Verification complete | Lock contention matrix under explicit fault injection remains | Isolation + savepoint matrix across concurrent writers | .NET Team + QA | High | 4–6w | DOTNET-102 |
+| DOTNET-104 | P1 | Verification complete (metadata/LOB and cache-lifecycle tests passing) | Metadata/retrieval/LOB paths and statement cache completeness | Metadata and LOB roundtrip matrix, cache invalidation tests | .NET Team | High | 3–5w | DOTNET-101 |
+| JDBC-201 | P1 | Verification complete (async timeout and contention assertions passing) | Async/reactive cancellation and contention coverage now implemented | Async cancel and timeout tests under contention | JDBC Team | High | 3–5w | None |
+| JDBC-202 | P0 | In progress (prepared-statement lifecycle + large LOB and concurrency paths added; nested/derived and failover families still open) | Missing protocol and metadata parity for enterprise clients | JDBC conformance and metadata accuracy suite | JDBC Team + QA | High | 4–6w | JDBC-201 |
+| JDBC-203 | P0 | In progress (contract and execution harness created) | No cross-runtime pooling contract and release gate | Contract suite passes for .NET/JDBC pooling & recovery | Core Runtime + JVM/Platform | High | 1w | DOTNET-101, JDBC-201, DOTNET-102 |
 
 ### Platform
 

@@ -641,30 +641,174 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern)
             throws SQLException {
-        // Return empty result set for now
-        return createEmptyResultSet(
-            new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "reserved1",
-                         "reserved2", "reserved3", "REMARKS", "PROCEDURE_TYPE", "SPECIFIC_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.VARCHAR, Types.SMALLINT, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "RESERVED1",
+                             "RESERVED2", "RESERVED3", "REMARKS", "PROCEDURE_TYPE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR, Types.VARCHAR, Types.SMALLINT, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT routine_schema, routine_name, routine_name, data_type " +
+                "FROM information_schema.routines " +
+                "WHERE routine_type = 'PROCEDURE'"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String procedureName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(procedureName, procedureNamePattern)) {
+                    continue;
+                }
+
+                String specificName = toStringValue(row, 2);
+                String dataType = toStringValue(row, 3);
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    procedureName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    mapProcedureTypeFromDataType(dataType),
+                    specificName
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "RESERVED1",
+                             "RESERVED2", "RESERVED3", "REMARKS", "PROCEDURE_TYPE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR, Types.VARCHAR, Types.SMALLINT, Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("PROCEDURE_CAT", 25));
+        cols.add(column("PROCEDURE_SCHEM", 25));
+        cols.add(column("PROCEDURE_NAME", 25));
+        cols.add(column("RESERVED1", 25));
+        cols.add(column("RESERVED2", 25));
+        cols.add(column("RESERVED3", 25));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("PROCEDURE_TYPE", 21));
+        cols.add(column("SPECIFIC_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getProcedureColumns(String catalog, String schemaPattern,
             String procedureNamePattern, String columnNamePattern) throws SQLException {
-        // Return empty result set for now
-        return createEmptyResultSet(
-            new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "COLUMN_NAME",
-                         "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
-                         "RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
-                         "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE",
-                         "SPECIFIC_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
-                      Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
-                      Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
-                      Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "COLUMN_NAME",
+                             "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+                             "RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
+                             "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE",
+                             "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                          Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
+                          Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT p.specific_schema, p.specific_name, p.parameter_mode, p.parameter_name, " +
+                "       p.data_type, p.character_maximum_length, p.numeric_precision, p.numeric_scale, " +
+                "       p.ordinal_position " +
+                "FROM information_schema.parameters p " +
+                "JOIN information_schema.routines r " +
+                "  ON r.routine_schema = p.specific_schema " +
+                " AND r.routine_name = p.specific_name " +
+                "WHERE r.routine_type = 'PROCEDURE'"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String procedureName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(procedureName, procedureNamePattern)) {
+                    continue;
+                }
+
+                String parameterName = toStringValue(row, 3);
+                if (!matchesPattern(parameterName, columnNamePattern)) {
+                    continue;
+                }
+
+                String mode = toStringValue(row, 2);
+                String typeName = normalizeTypeName(toStringValue(row, 4));
+                int jdbcType = jdbcTypeFromTypeName(typeName);
+                int precision = toIntValue(row[6], 0);
+                int length = toIntValue(row[5], 0);
+                int scale = toIntValue(row[7], 0);
+                short nullable = DatabaseMetaData.columnNullable;
+
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    procedureName,
+                    parameterName,
+                    mapProcedureColumnType(mode),
+                    jdbcType,
+                    typeName,
+                    precision,
+                    length,
+                    scale,
+                    10,
+                    nullable,
+                    null,
+                    null,
+                    null,
+                    toIntValue(row[5], 0),
+                    toShortValue(row[8]),
+                    nullable == DatabaseMetaData.columnNullable ? "YES" : "NO",
+                    procedureName
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "COLUMN_NAME",
+                             "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+                             "RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
+                             "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE",
+                             "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                          Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
+                          Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("PROCEDURE_CAT", 25));
+                cols.add(column("PROCEDURE_SCHEM", 25));
+                cols.add(column("PROCEDURE_NAME", 25));
+                cols.add(column("COLUMN_NAME", 25));
+                cols.add(column("COLUMN_TYPE", 21));
+                cols.add(column("DATA_TYPE", 23));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("PRECISION", 23));
+        cols.add(column("LENGTH", 23));
+        cols.add(column("SCALE", 21));
+        cols.add(column("RADIX", 21));
+        cols.add(column("NULLABLE", 21));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("COLUMN_DEF", 25));
+        cols.add(column("SQL_DATA_TYPE", 23));
+        cols.add(column("SQL_DATETIME_SUB", 23));
+        cols.add(column("CHAR_OCTET_LENGTH", 23));
+        cols.add(column("ORDINAL_POSITION", 23));
+        cols.add(column("IS_NULLABLE", 25));
+        cols.add(column("SPECIFIC_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -1406,6 +1550,67 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         return DatabaseMetaData.importedKeyInitiallyImmediate;
     }
 
+    private String metadataKey(String schema, String name) {
+        String safeSchema = schema == null ? "" : schema.toLowerCase(Locale.ROOT);
+        String safeName = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return safeSchema + "\u0000" + safeName;
+    }
+
+    private String normalizeTypeName(String typeName) {
+        if (typeName == null) {
+            return "text";
+        }
+        String normalized = typeName.trim();
+        if (normalized.isEmpty()) {
+            return "text";
+        }
+        int dot = normalized.indexOf('(');
+        if (dot >= 0) {
+            normalized = normalized.substring(0, dot).trim();
+        }
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private short mapProcedureTypeFromDataType(String dataType) {
+        if (dataType == null) {
+            return DatabaseMetaData.procedureResultUnknown;
+        }
+        if ("void".equalsIgnoreCase(dataType.trim())) {
+            return DatabaseMetaData.procedureNoResult;
+        }
+        return DatabaseMetaData.procedureReturnsResult;
+    }
+
+    private short mapProcedureColumnType(String mode) {
+        if (mode == null) {
+            return DatabaseMetaData.procedureColumnIn;
+        }
+        return switch (mode.toUpperCase(Locale.ROOT)) {
+            case "OUT" -> DatabaseMetaData.procedureColumnOut;
+            case "IN OUT", "INOUT" -> DatabaseMetaData.procedureColumnInOut;
+            default -> DatabaseMetaData.procedureColumnIn;
+        };
+    }
+
+    private short mapFunctionType(String dataType) {
+        String normalized = dataType == null ? "" : dataType.toLowerCase(Locale.ROOT).trim();
+        if ("table".equals(normalized)) {
+            return DatabaseMetaData.functionReturnsTable;
+        }
+        return DatabaseMetaData.functionNoTable;
+    }
+
+    private short mapFunctionColumnType(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return DatabaseMetaData.functionColumnIn;
+        }
+        return switch (mode.toUpperCase(Locale.ROOT)) {
+            case "OUT" -> DatabaseMetaData.functionColumnOut;
+            case "INOUT", "IN OUT" -> DatabaseMetaData.functionColumnInOut;
+            default -> DatabaseMetaData.functionColumnIn;
+        };
+    }
+
     private Object[] typeInfoRow(String typeName, int dataType, int precision, String createParams) {
         String literalPrefix = null;
         String literalSuffix = null;
@@ -1907,27 +2112,225 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern)
             throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "REMARKS",
-                         "FUNCTION_TYPE", "SPECIFIC_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.SMALLINT, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "REMARKS",
+                             "FUNCTION_TYPE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.SMALLINT, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT routine_schema, routine_name, data_type, routine_name " +
+                "FROM information_schema.routines " +
+                "WHERE routine_type = 'FUNCTION'"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String functionName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(functionName, functionNamePattern)) {
+                    continue;
+                }
+
+                String dataType = normalizeTypeName(toStringValue(row, 2));
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    functionName,
+                    null,
+                    mapFunctionType(dataType),
+                    toStringValue(row, 3)
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "REMARKS",
+                             "FUNCTION_TYPE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.SMALLINT, Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("FUNCTION_CAT", 25));
+        cols.add(column("FUNCTION_SCHEM", 25));
+        cols.add(column("FUNCTION_NAME", 25));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("FUNCTION_TYPE", 21));
+        cols.add(column("SPECIFIC_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getFunctionColumns(String catalog, String schemaPattern, String functionNamePattern,
             String columnNamePattern) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME",
-                         "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
-                         "RADIX", "NULLABLE", "REMARKS", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION",
-                         "IS_NULLABLE", "SPECIFIC_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
-                      Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
-                      Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
-                      Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME",
+                             "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+                             "RADIX", "NULLABLE", "REMARKS", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION",
+                             "IS_NULLABLE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                          Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
+                          Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
+                          Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<String[]> functionReturnTypes = new ArrayList<>();
+        Map<String, String> functionTypeByKey = new HashMap<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT routine_schema, routine_name, data_type, routine_name " +
+                "FROM information_schema.routines " +
+                "WHERE routine_type = 'FUNCTION'"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String functionName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(functionName, functionNamePattern)) {
+                    continue;
+                }
+                String returnType = normalizeTypeName(toStringValue(row, 2));
+                String specificName = toStringValue(row, 3);
+                String functionKey = metadataKey(schemaName, functionName);
+                functionTypeByKey.put(functionKey, returnType);
+                functionReturnTypes.add(new String[]{schemaName, functionName, specificName});
+            }
+
+            if (functionTypeByKey.isEmpty()) {
+                return createEmptyResultSet(
+                    new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME",
+                                 "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+                                 "RADIX", "NULLABLE", "REMARKS", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION",
+                                 "IS_NULLABLE", "SPECIFIC_NAME"},
+                    new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                              Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
+                              Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
+                              Types.VARCHAR, Types.VARCHAR}
+                );
+            }
+
+            Map<String, List<Object[]>> parameterRowsByFunction = new HashMap<>();
+            for (Object[] row : queryRows(
+                "SELECT p.specific_schema, p.specific_name, p.parameter_mode, p.parameter_name, " +
+                "       p.data_type, p.character_maximum_length, p.numeric_precision, p.numeric_scale, " +
+                "       p.ordinal_position " +
+                "FROM information_schema.parameters p " +
+                "JOIN information_schema.routines r " +
+                "  ON r.routine_schema = p.specific_schema " +
+                " AND r.routine_name = p.specific_name " +
+                "WHERE r.routine_type = 'FUNCTION' " +
+                "ORDER BY p.specific_schema, p.specific_name, p.ordinal_position"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String functionName = toStringValue(row, 1);
+                String functionKey = metadataKey(schemaName, functionName);
+                if (!functionTypeByKey.containsKey(functionKey)) {
+                    continue;
+                }
+                String parameterName = toStringValue(row, 3);
+                if (!matchesPattern(parameterName, columnNamePattern)) {
+                    continue;
+                }
+                String typeName = normalizeTypeName(toStringValue(row, 4));
+                int jdbcType = jdbcTypeFromTypeName(typeName);
+                int precision = toIntValue(row[6], 0);
+                int length = toIntValue(row[5], 0);
+                int scale = toIntValue(row[7], 0);
+                short nullable = DatabaseMetaData.columnNullable;
+                Object[] parameterRow = {
+                    currentCatalog,
+                    schemaName,
+                    functionName,
+                    parameterName,
+                    mapFunctionColumnType(toStringValue(row, 2)),
+                    jdbcType,
+                    typeName,
+                    precision,
+                    length,
+                    scale,
+                    10,
+                    nullable,
+                    null,
+                    length,
+                    toIntValue(row[8], 0),
+                    nullable == DatabaseMetaData.columnNullable ? "YES" : "NO",
+                    functionName
+                };
+                parameterRowsByFunction.computeIfAbsent(functionKey, k -> new ArrayList<>()).add(parameterRow);
+            }
+
+            List<Object[]> rows = new ArrayList<>();
+            for (String[] functionInfo : functionReturnTypes) {
+                String schemaName = functionInfo[0];
+                String functionName = functionInfo[1];
+                String specificName = functionInfo[2];
+                String functionKey = metadataKey(schemaName, functionName);
+                String returnType = functionTypeByKey.get(functionKey);
+                String normalizedReturnType = normalizeTypeName(returnType);
+                int returnSqlType = jdbcTypeFromTypeName(normalizedReturnType);
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    functionName,
+                    null,
+                    DatabaseMetaData.functionColumnResult,
+                    returnSqlType,
+                    normalizedReturnType,
+                    0,
+                    0,
+                    0,
+                    10,
+                    DatabaseMetaData.columnNullable,
+                    null,
+                    0,
+                    0,
+                    "YES",
+                    specificName
+                });
+                List<Object[]> parameters = parameterRowsByFunction.get(functionKey);
+                if (parameters != null) {
+                    rows.addAll(parameters);
+                }
+            }
+
+            List<SBColumnInfo> cols = new ArrayList<>();
+            cols.add(column("FUNCTION_CAT", 25));
+            cols.add(column("FUNCTION_SCHEM", 25));
+            cols.add(column("FUNCTION_NAME", 25));
+            cols.add(column("COLUMN_NAME", 25));
+            cols.add(column("COLUMN_TYPE", 21));
+            cols.add(column("DATA_TYPE", 23));
+            cols.add(column("TYPE_NAME", 25));
+            cols.add(column("PRECISION", 23));
+            cols.add(column("LENGTH", 23));
+            cols.add(column("SCALE", 21));
+            cols.add(column("RADIX", 21));
+            cols.add(column("NULLABLE", 21));
+            cols.add(column("REMARKS", 25));
+            cols.add(column("CHAR_OCTET_LENGTH", 23));
+            cols.add(column("ORDINAL_POSITION", 23));
+            cols.add(column("IS_NULLABLE", 25));
+            cols.add(column("SPECIFIC_NAME", 25));
+            return new SBResultSet(null, cols, rows);
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME",
+                             "COLUMN_TYPE", "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+                             "RADIX", "NULLABLE", "REMARKS", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION",
+                             "IS_NULLABLE", "SPECIFIC_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                          Types.INTEGER, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.SMALLINT,
+                          Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.INTEGER,
+                          Types.VARCHAR, Types.VARCHAR}
+            );
+        }
     }
 
     @Override

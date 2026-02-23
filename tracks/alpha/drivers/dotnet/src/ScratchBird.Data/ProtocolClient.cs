@@ -8,6 +8,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.Data;
+using System.Linq;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -20,6 +21,7 @@ namespace ScratchBird.Data;
 internal sealed class ProtocolClient
 {
     private const uint QueryFlagBinaryResult = 0x04;
+    private const int MaxPreparedStatements = 256;
     private const uint ManagerProtocolMagic = 0x42444253;
     private const ushort ManagerProtocolVersion = 0x0101;
     private const ushort McpProtocolVersion = 0x0100;
@@ -48,7 +50,10 @@ internal sealed class ProtocolClient
     private readonly List<Action<NotificationMessage>> _notificationHandlers = new();
     private (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan)? _lastPlan;
     private (ulong Hash, uint Version, byte[] Bytecode)? _lastSblr;
+    private readonly Dictionary<string, PreparedStatement> _preparedStatements = new(StringComparer.Ordinal);
+    private uint _preparedStatementSequence;
     private ScratchBirdConfig? _config;
+    private record struct PreparedStatement(string Name, string Sql, uint[] ParamTypes, DateTimeOffset LastUsedUtc);
 
     public bool Connected => _connected;
     internal bool IsHealthy => _connected && _stream != null && (_client?.Connected ?? false);
@@ -84,6 +89,8 @@ internal sealed class ProtocolClient
         _lastQuerySequence = 0;
         _txnId = 0;
         _parameters.Clear();
+        _preparedStatements.Clear();
+        _preparedStatementSequence = 0;
         _attachmentId = new byte[16];
         _config = config;
 
@@ -121,15 +128,28 @@ internal sealed class ProtocolClient
     public QueryStream ExecuteQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int timeoutMs, int maxRows)
     {
         EnsureConnected();
+
+        if (IsSchemaMutation(sql))
+        {
+            ClearPreparedStatements();
+        }
+
         if (parameters.Count == 0)
         {
             SendSimpleQuery(sql, timeoutMs, maxRows);
         }
         else
         {
-            SendExtendedQuery(sql, parameters, maxRows);
+            SendPreparedQuery(sql, parameters, maxRows);
         }
         return new QueryStream(this, timeoutMs, maxRows);
+    }
+
+    internal int PreparedStatementCount => _preparedStatements.Count;
+
+    internal void EnsurePreparedStatement(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    {
+        _ = GetOrPrepareStatement(sql, parameters, forceReprepare: true);
     }
 
     public void Begin()
@@ -446,7 +466,26 @@ internal sealed class ProtocolClient
         _lastQuerySequence = SendMessage(MessageType.QUERY, payload, 0, false);
     }
 
-    private void SendExtendedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int maxRows)
+    private void SendPreparedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int maxRows)
+    {
+        var attempts = 0;
+        while (true)
+        {
+            try
+            {
+                ExecutePreparedQuery(sql, parameters, maxRows);
+                return;
+            }
+            catch (ScratchBirdException ex) when (attempts++ == 0 && IsRecoverableCachedStatementError(ex))
+            {
+                // Statement became invalid due to schema/DDL churn; discard local cache and retry once.
+                ClearPreparedStatements();
+                continue;
+            }
+        }
+    }
+
+    private void ExecutePreparedQuery(string sql, IReadOnlyList<ScratchBirdParameter> parameters, int maxRows)
     {
         var paramValues = new List<ParamValue>(parameters.Count);
         var paramTypes = new List<uint>(parameters.Count);
@@ -456,16 +495,14 @@ internal sealed class ProtocolClient
             paramValues.Add(encoded.Param);
             paramTypes.Add(encoded.Oid);
         }
-        var parsePayload = ProtocolCodec.BuildParsePayload(string.Empty, sql, paramTypes);
-        SendMessage(MessageType.PARSE, parsePayload, 0, false);
-        var described = DescribeStatement(string.Empty);
-        if (described >= 0 && described != paramTypes.Count)
+        var statementName = GetOrPrepareStatement(sql, parameterTypes: paramTypes, forceReprepare: false).Name;
+        if (statementName != null)
         {
-            throw new ScratchBirdSyntaxException("parameter count mismatch", "07001");
+            MarkPreparedStatementUsed(sql, paramTypes);
         }
 
         var resultFormats = ConfigBinaryTransfer() ? new[] { TypeDecoder.FormatBinary } : Array.Empty<ushort>();
-        var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, string.Empty, paramValues, resultFormats);
+        var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, statementName, paramValues, resultFormats);
         SendMessage(MessageType.BIND, bindPayload, 0, false);
 
         var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)Math.Max(0, maxRows));
@@ -474,6 +511,60 @@ internal sealed class ProtocolClient
         {
             SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
         }
+    }
+
+    private PreparedStatement GetOrPrepareStatement(string sql, IReadOnlyList<ScratchBirdParameter> parameters, bool forceReprepare)
+    {
+        var paramTypes = parameters.Select(parameter =>
+        {
+            var encoded = TypeDecoder.EncodeParameter(parameter);
+            return encoded.Oid;
+        }).ToArray();
+
+        return GetOrPrepareStatement(sql, paramTypes, forceReprepare);
+    }
+
+    private PreparedStatement GetOrPrepareStatement(string sql, IReadOnlyList<uint> parameterTypes, bool forceReprepare)
+    {
+        var key = BuildPreparedStatementKey(sql, parameterTypes);
+        if (!forceReprepare && _preparedStatements.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var statementName = $"sb_stmt_{_preparedStatementSequence++}";
+        var parsePayload = ProtocolCodec.BuildParsePayload(statementName, sql, parameterTypes);
+        SendMessage(MessageType.PARSE, parsePayload, 0, false);
+
+        var described = DescribeStatement(statementName);
+        if (described >= 0 && described != parameterTypes.Count)
+        {
+            throw new ScratchBirdSyntaxException("parameter count mismatch", "07001");
+        }
+
+        var prepared = new PreparedStatement(statementName, sql, parameterTypes.ToArray(), DateTimeOffset.UtcNow);
+        if (forceReprepare)
+        {
+            RemovePreparedStatement(key);
+        }
+
+        if (!_preparedStatements.TryAdd(key, prepared))
+        {
+            _preparedStatements[key] = prepared;
+        }
+        LimitPreparedStatementCache();
+        return prepared;
+    }
+
+    private void MarkPreparedStatementUsed(string sql, IReadOnlyList<uint> parameterTypes)
+    {
+        var key = BuildPreparedStatementKey(sql, parameterTypes);
+        if (!_preparedStatements.TryGetValue(key, out var cached))
+        {
+            return;
+        }
+
+        _preparedStatements[key] = cached with { LastUsedUtc = DateTimeOffset.UtcNow };
     }
 
     private int DescribeStatement(string name)
@@ -505,6 +596,136 @@ internal sealed class ProtocolClient
                     continue;
             }
         }
+    }
+
+    private static string BuildPreparedStatementKey(string sql, IReadOnlyList<uint> parameterTypes)
+    {
+        var sb = new StringBuilder(sql.Length + (parameterTypes.Count * 5));
+        sb.Append(sql.Trim());
+        foreach (var type in parameterTypes)
+        {
+            sb.Append('|');
+            sb.Append(type);
+        }
+
+        return sb.ToString();
+    }
+
+    private void RemovePreparedStatement(string key)
+    {
+        if (_preparedStatements.ContainsKey(key))
+        {
+            _preparedStatements.Remove(key);
+        }
+    }
+
+    private void LimitPreparedStatementCache()
+    {
+        while (_preparedStatements.Count > MaxPreparedStatements)
+        {
+            var oldest = _preparedStatements
+                .OrderBy(statement => statement.Value.LastUsedUtc)
+                .FirstOrDefault();
+            if (string.IsNullOrEmpty(oldest.Key))
+            {
+                return;
+            }
+            _preparedStatements.Remove(oldest.Key);
+        }
+    }
+
+    internal void ClearPreparedStatements()
+    {
+        if (_preparedStatements.Count > 0)
+        {
+            _preparedStatements.Clear();
+        }
+    }
+
+    private static bool IsSchemaMutation(string sql)
+    {
+        var leadingKeyword = GetLeadingSqlKeyword(sql.AsSpan());
+        if (leadingKeyword.Length == 0)
+        {
+            return false;
+        }
+
+        return leadingKeyword.SequenceEqual("CREATE")
+               || leadingKeyword.SequenceEqual("ALTER")
+               || leadingKeyword.SequenceEqual("DROP")
+               || leadingKeyword.SequenceEqual("TRUNCATE")
+               || leadingKeyword.SequenceEqual("REINDEX")
+               || leadingKeyword.SequenceEqual("COMMENT")
+               || leadingKeyword.SequenceEqual("ANALYZE");
+    }
+
+    private static string GetLeadingSqlKeyword(ReadOnlySpan<char> sql)
+    {
+        var span = sql;
+        while (true)
+        {
+            var trimmedStart = span.IndexOfAnyExcept(" \t\r\n");
+            if (trimmedStart < 0)
+            {
+                return string.Empty;
+            }
+
+            span = span[trimmedStart..];
+            if (span.StartsWith("--".AsSpan(), StringComparison.Ordinal))
+            {
+                var lineEnd = span.IndexOf('\n');
+                if (lineEnd < 0)
+                {
+                    return string.Empty;
+                }
+
+                span = span[(lineEnd + 1)..];
+                continue;
+            }
+
+            if (span.StartsWith("/*".AsSpan(), StringComparison.Ordinal))
+            {
+                var blockEnd = span.IndexOf("*/".AsSpan(), StringComparison.Ordinal);
+                if (blockEnd < 0)
+                {
+                    return string.Empty;
+                }
+
+                span = span[(blockEnd + 2)..];
+                continue;
+            }
+
+            break;
+        }
+
+        if (span.IsEmpty)
+        {
+            return string.Empty;
+        }
+
+        var tokenLength = 0;
+        while (tokenLength < span.Length
+               && (char.IsLetterOrDigit(span[tokenLength]) || span[tokenLength] == '_'))
+        {
+            tokenLength++;
+        }
+
+        return span[..tokenLength].ToString().ToUpperInvariant();
+    }
+
+    private static bool IsRecoverableCachedStatementError(ScratchBirdException ex)
+    {
+        if (ex is ScratchBirdSyntaxException && (ex.SqlState is "42P01" or "42P05"))
+        {
+            return true;
+        }
+
+        var details = $"{ex.Message} {ex.Detail} {ex.Hint}".ToLowerInvariant();
+        return details.Contains("prepared statement")
+               || details.Contains("cached plan")
+               || details.Contains("cachedplan")
+               || details.Contains("relation does not exist")
+               || details.Contains("invalid prepared statement");
     }
 
     private bool ConfigBinaryTransfer()
@@ -913,8 +1134,10 @@ internal sealed class ProtocolClient
         private long _rowsAffected = -1;
         private string _command = string.Empty;
         private readonly int _pageSize;
+        private bool _disposed;
 
         private readonly CancellationTokenSource? _timeoutCts;
+        private CancellationTokenRegistration _timeoutCancelRegistration;
 
         public QueryStream(ProtocolClient client, int timeoutMs, int pageSize)
         {
@@ -923,7 +1146,45 @@ internal sealed class ProtocolClient
             if (timeoutMs > 0)
             {
                 _timeoutCts = new CancellationTokenSource(timeoutMs);
-                _timeoutCts.Token.Register(() => _client.Cancel());
+                _timeoutCancelRegistration = _timeoutCts.Token.Register(() => _client.Cancel());
+            }
+        }
+
+        public void Cancel()
+        {
+            if (_done)
+            {
+                return;
+            }
+
+            _done = true;
+            try
+            {
+                _client.Cancel();
+            }
+            catch
+            {
+                // best effort
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            if (!_done)
+            {
+                Cancel();
+            }
+
+            if (_timeoutCts != null)
+            {
+                _timeoutCancelRegistration.Dispose();
+                _timeoutCts.Dispose();
             }
         }
 

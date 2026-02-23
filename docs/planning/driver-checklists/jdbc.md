@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [ ] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`. Issue: Open (2026-02-04)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`. Issue: Closed (2026-02-23)
 
 ### Integration Appendix Tasks
 

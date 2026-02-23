@@ -15,6 +15,13 @@ package com.scratchbird.jdbc;
 
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -25,6 +32,18 @@ import java.util.logging.Logger;
 public class SBStatement implements Statement {
 
     private static final Logger LOGGER = Logger.getLogger(SBStatement.class.getName());
+    private static final ExecutorService ASYNC_EXECUTOR =
+        Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "sb-jdbc-stmt");
+            t.setDaemon(true);
+            return t;
+        });
+    private static final ScheduledExecutorService ASYNC_TIMEOUT_SCHEDULER =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "sb-jdbc-stmt-timeout");
+            t.setDaemon(true);
+            return t;
+        });
 
     // Parent connection
     protected final SBConnection connection;
@@ -57,6 +76,7 @@ public class SBStatement implements Statement {
 
     // Generated keys
     protected SBResultSet generatedKeys;
+    protected final Object executionLock = new Object();
 
     /**
      * Creates a new statement.
@@ -72,33 +92,45 @@ public class SBStatement implements Statement {
 
     @Override
     public ResultSet executeQuery(String sql) throws SQLException {
-        checkClosed();
-        clearResults();
-        int pageSize = fetchSize > 0 ? fetchSize : 0;
-        if (maxRows > 0 && pageSize > 0) {
-            pageSize = Math.min(pageSize, maxRows);
-        }
+        synchronized (executionLock) {
+            checkClosed();
+            clearResults();
+            int pageSize = fetchSize > 0 ? fetchSize : 0;
+            if (maxRows > 0 && pageSize > 0) {
+                pageSize = Math.min(pageSize, maxRows);
+            }
 
-        if (pageSize > 0) {
-            final int streamPageSize = pageSize;
-            SBQueryResult result = connection.withResilience("query_stream", sql, () ->
-                connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
+            if (pageSize > 0) {
+                final int streamPageSize = pageSize;
+                SBQueryResult result = connection.withResilience("query_stream", sql, () ->
+                    connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
+                );
+                if (result.getStream() == null) {
+                    throw new SQLException("Query did not return a result set", "02000");
+                }
+                currentResultSet = new SBResultSet(this, result.getStream(), maxRows);
+                return currentResultSet;
+            }
+
+            SBQueryResult result = connection.withResilience("query", sql, () ->
+                connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
             );
-            if (result.getStream() == null) {
+            if (result.getColumns() == null || result.getColumns().isEmpty()) {
                 throw new SQLException("Query did not return a result set", "02000");
             }
-            currentResultSet = new SBResultSet(this, result.getStream(), maxRows);
+            currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
             return currentResultSet;
         }
+    }
 
-        SBQueryResult result = connection.withResilience("query", sql, () ->
-            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
-        );
-        if (result.getColumns() == null || result.getColumns().isEmpty()) {
-            throw new SQLException("Query did not return a result set", "02000");
-        }
-        currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
-        return currentResultSet;
+    public CompletableFuture<ResultSet> executeQueryAsync(String sql) {
+        return executeAsyncInternal(() -> executeQuery(sql), queryTimeout)
+            .thenApply(result -> result);
+    }
+
+    public CompletableFuture<Boolean> executeAsync(String sql) {
+        return executeAsyncInternal(() -> execute(sql), queryTimeout)
+            .thenApply(result -> result != null && result);
     }
 
     @Override
@@ -106,39 +138,51 @@ public class SBStatement implements Statement {
         return (int) executeLargeUpdate(sql);
     }
 
+    public CompletableFuture<Integer> executeUpdateAsync(String sql) {
+        return executeAsyncInternal(() -> executeUpdate(sql), queryTimeout);
+    }
+
+    public CompletableFuture<Long> executeLargeUpdateAsync(String sql) {
+        return executeAsyncInternal(() -> executeLargeUpdate(sql), queryTimeout);
+    }
+
     @Override
     public long executeLargeUpdate(String sql) throws SQLException {
-        checkClosed();
-        clearResults();
+        synchronized (executionLock) {
+            checkClosed();
+            clearResults();
 
-        SBQueryResult result = connection.withResilience("update", sql, () ->
-            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
-        );
+            SBQueryResult result = connection.withResilience("update", sql, () ->
+                connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+            );
 
-        if (result.getColumns() != null && !result.getColumns().isEmpty()) {
-            throw new SQLException("executeUpdate cannot return a ResultSet", "21000");
+            if (result.getColumns() != null && !result.getColumns().isEmpty()) {
+                throw new SQLException("executeUpdate cannot return a ResultSet", "21000");
+            }
+
+            updateCount = result.getUpdateCount();
+            return updateCount;
         }
-
-        updateCount = result.getUpdateCount();
-        return updateCount;
     }
 
     @Override
     public boolean execute(String sql) throws SQLException {
-        checkClosed();
-        clearResults();
+        synchronized (executionLock) {
+            checkClosed();
+            clearResults();
 
-        SBQueryResult result = connection.withResilience("execute", sql, () ->
-            connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
-        );
+            SBQueryResult result = connection.withResilience("execute", sql, () ->
+                connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+            );
 
-        if (result.getColumns() != null && !result.getColumns().isEmpty()) {
-            currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
-            updateCount = -1;
-            return true;
-        } else {
-            updateCount = result.getUpdateCount();
-            return false;
+            if (result.getColumns() != null && !result.getColumns().isEmpty()) {
+                currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
+                updateCount = -1;
+                return true;
+            } else {
+                updateCount = result.getUpdateCount();
+                return false;
+            }
         }
     }
 
@@ -273,6 +317,71 @@ public class SBStatement implements Statement {
     public void cancel() throws SQLException {
         checkClosed();
         connection.cancelQuery();
+    }
+
+    private <T> CompletableFuture<T> executeAsyncInternal(SqlTask<T> action, int timeoutSeconds) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var worker = ASYNC_EXECUTOR.submit(() -> {
+            try {
+                T result = action.execute();
+                if (done.compareAndSet(false, true)) {
+                    future.complete(result);
+                }
+            } catch (SQLException e) {
+                if (done.compareAndSet(false, true)) {
+                    future.completeExceptionally(e);
+                }
+            } catch (Throwable e) {
+                if (done.compareAndSet(false, true)) {
+                    future.completeExceptionally(new SQLException("Async execution failed", "58000", e));
+                }
+            }
+        });
+
+        Runnable cancelCurrentQuery = () -> {
+            if (done.compareAndSet(false, true)) {
+                worker.cancel(true);
+                try {
+                    cancel();
+                } catch (SQLException e) {
+                    LOGGER.log(Level.WARNING, "Async statement cancel failed", e);
+                }
+            }
+        };
+
+        future.whenComplete((result, error) -> {
+            if (error instanceof CancellationException) {
+                cancelCurrentQuery.run();
+                future.completeExceptionally(error);
+            }
+        });
+
+        if (timeoutSeconds > 0) {
+            long timeoutMs = Math.max(1L, timeoutSeconds) * 1000L;
+            ScheduledFuture<?> timeoutTask = ASYNC_TIMEOUT_SCHEDULER.schedule(() -> {
+                if (!future.isDone()) {
+                    if (done.compareAndSet(false, true)) {
+                        worker.cancel(true);
+                        try {
+                            cancel();
+                        } catch (SQLException e) {
+                            LOGGER.log(Level.WARNING, "Async timeout cancel failed", e);
+                        }
+                        future.completeExceptionally(new SQLTimeoutException(
+                            "Query timeout exceeded", "57014"));
+                    }
+                }
+            }, timeoutMs, TimeUnit.MILLISECONDS);
+            future.whenComplete((r, e) -> timeoutTask.cancel(false));
+        }
+
+        return future;
+    }
+
+    @FunctionalInterface
+    private interface SqlTask<T> {
+        T execute() throws SQLException;
     }
 
     @Override

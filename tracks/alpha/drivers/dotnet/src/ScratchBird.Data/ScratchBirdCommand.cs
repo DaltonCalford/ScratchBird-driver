@@ -21,6 +21,7 @@ public sealed class ScratchBirdCommand : DbCommand
     private ScratchBirdTransaction? _transaction;
     private int _fetchSize;
     private readonly ScratchBirdParameterCollection _parameters = new();
+    private NormalizedQuery? _preparedQuery;
 
     public ScratchBirdCommand() { }
 
@@ -45,7 +46,11 @@ public sealed class ScratchBirdCommand : DbCommand
     public override string CommandText
     {
         get => _commandText;
-        set => _commandText = value ?? string.Empty;
+        set
+        {
+            _commandText = value ?? string.Empty;
+            _preparedQuery = null;
+        }
     }
 
     public override int CommandTimeout
@@ -119,6 +124,13 @@ public sealed class ScratchBirdCommand : DbCommand
         {
             throw new NotSupportedException("Prepare only supports CommandType.Text");
         }
+        if (_connection == null || _connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection must be open");
+        }
+
+        _preparedQuery = NormalizeParameters();
+        _connection.GetConnectedClient().EnsurePreparedStatement(_preparedQuery.Sql, _preparedQuery.Parameters);
     }
 
     public override int ExecuteNonQuery()
@@ -132,6 +144,11 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
         using var cancellation = cancellationToken.Register(Cancel);
         try
         {
@@ -163,6 +180,11 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
         using var cancellation = cancellationToken.Register(Cancel);
         try
         {
@@ -200,15 +222,31 @@ public sealed class ScratchBirdCommand : DbCommand
         }
 
         var client = _connection.GetConnectedClient();
-        var normalized = SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
+        var normalized = NormalizeParameters();
+        if (_preparedQuery == null
+            || !string.Equals(_preparedQuery.Sql, normalized.Sql, StringComparison.Ordinal)
+            || _preparedQuery.Parameters.Count != normalized.Parameters.Count)
+        {
+            _preparedQuery = normalized;
+        }
         var timeoutMs = _commandTimeout > 0 ? _commandTimeout * 1000 : 0;
         var maxRows = _fetchSize > 0 ? _fetchSize : _connection.Config.DefaultFetchSize;
         var stream = client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
         return new ScratchBirdDataReader(stream, behavior, _connection);
     }
 
+    private NormalizedQuery NormalizeParameters()
+    {
+        return SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
+    }
+
     protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
         using var cancellation = cancellationToken.Register(Cancel);
         try
         {

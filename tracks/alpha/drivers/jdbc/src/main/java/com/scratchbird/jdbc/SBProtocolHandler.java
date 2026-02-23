@@ -47,6 +47,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -216,6 +217,7 @@ public class SBProtocolHandler {
     private static final int QUERY_FLAG_INCLUDE_PLAN = 0x08;
     private static final int QUERY_FLAG_RETURN_SBLR = 0x10;
     private static final int QUERY_FLAG_NO_CACHE = 0x20;
+    private static final int MAX_PREPARED_STATEMENTS = 256;
 
     private static final byte ISOLATION_READ_COMMITTED = 1;
 
@@ -254,6 +256,9 @@ public class SBProtocolHandler {
     private QueryPlanMessage lastPlan;
     private SblrCompiledMessage lastSblr;
     private final List<NotificationListener> notificationListeners = new ArrayList<>();
+    private final Map<String, PreparedStatementCacheEntry> preparedStatements =
+        new LinkedHashMap<>(16, 0.75f, true);
+    private int preparedStatementSequence = 0;
 
     public SBProtocolHandler(SBConnectionProperties props) {
         this.props = props;
@@ -320,11 +325,26 @@ public class SBProtocolHandler {
         ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
         try {
             if (params == null || params.isEmpty()) {
+                if (isSchemaMutation(sql)) {
+                    clearPreparedStatements();
+                }
                 sendSimpleQuery(sql, maxRows, timeoutMs);
-            } else {
-                sendExtendedQuery(sql, params, paramTypes, maxRows);
+                return readQueryResult();
             }
-            return readQueryResult();
+
+            int attempts = 0;
+            while (true) {
+                try {
+                    sendExtendedQuery(sql, params, paramTypes, maxRows);
+                    return readQueryResult();
+                } catch (SQLException ex) {
+                    if (attempts++ == 0 && isRecoverableCachedStatementError(ex)) {
+                        clearPreparedStatements();
+                        continue;
+                    }
+                    throw ex;
+                }
+            }
         } catch (IOException e) {
             throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
         } finally {
@@ -1007,15 +1027,9 @@ public class SBProtocolHandler {
             oids.add(enc.getOid());
         }
 
-        byte[] parsePayload = buildParsePayload("", sql, oids);
-        sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
-        int described = describeStatement("");
-        if (described >= 0 && described != params.size()) {
-            throw createSQLException("parameter count mismatch", "07001");
-        }
-
+        String statementName = getOrPrepareStatement(sql, oids);
         int[] resultFormats = props.isBinaryTransfer() ? new int[]{SBTypeCodec.FORMAT_BINARY} : new int[0];
-        byte[] bindPayload = buildBindPayload("", "", encoded, resultFormats);
+        byte[] bindPayload = buildBindPayload("", statementName, encoded, resultFormats);
         sendMessage(MSG_BIND, bindPayload, (byte) 0, false);
 
         byte[] execPayload = buildExecutePayload("", maxRows);
@@ -1026,6 +1040,106 @@ public class SBProtocolHandler {
         if (maxRows <= 0) {
             sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
         }
+    }
+
+    private String getOrPrepareStatement(String sql, List<Integer> parameterTypes) throws IOException, SQLException {
+        String key = buildPreparedStatementKey(sql, parameterTypes);
+        PreparedStatementCacheEntry cached = preparedStatements.get(key);
+        if (cached != null) {
+            return cached.statementName;
+        }
+
+        String statementName = "sb_stmt_" + preparedStatementSequence++;
+        byte[] parsePayload = buildParsePayload(statementName, sql, parameterTypes);
+        sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
+        int described = describeStatement(statementName);
+        if (described >= 0 && described != parameterTypes.size()) {
+            throw createSQLException("parameter count mismatch", "07001");
+        }
+
+        preparedStatements.put(key, new PreparedStatementCacheEntry(statementName, parameterTypes));
+        while (preparedStatements.size() > MAX_PREPARED_STATEMENTS) {
+            String oldestKey = preparedStatements.keySet().iterator().next();
+            preparedStatements.remove(oldestKey);
+        }
+        return statementName;
+    }
+
+    private String buildPreparedStatementKey(String sql, List<Integer> parameterTypes) {
+        StringBuilder key = new StringBuilder(sql.trim());
+        for (Integer type : parameterTypes) {
+            key.append('|').append(type);
+        }
+        return key.toString();
+    }
+
+    private void clearPreparedStatements() {
+        preparedStatements.clear();
+    }
+
+    private boolean isRecoverableCachedStatementError(SQLException error) {
+        String state = error.getSQLState();
+        if ("42P01".equals(state) || "42P05".equals(state)) {
+            return true;
+        }
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("prepared statement")
+            || lower.contains("cached plan")
+            || lower.contains("cachedplan")
+            || lower.contains("invalid prepared statement")
+            || lower.contains("relation does not exist");
+    }
+
+    private boolean isSchemaMutation(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return false;
+        }
+        int index = 0;
+        int length = sql.length();
+        while (index < length) {
+            char ch = sql.charAt(index);
+            if (Character.isWhitespace(ch)) {
+                index++;
+                continue;
+            }
+            if (ch == '-' && index + 1 < length && sql.charAt(index + 1) == '-') {
+                index += 2;
+                while (index < length && sql.charAt(index) != '\n') {
+                    index++;
+                }
+                continue;
+            }
+            if (ch == '/' && index + 1 < length && sql.charAt(index + 1) == '*') {
+                index += 2;
+                while (index + 1 < length && !(sql.charAt(index) == '*' && sql.charAt(index + 1) == '/')) {
+                    index++;
+                }
+                if (index + 1 < length) {
+                    index += 2;
+                }
+                continue;
+            }
+            break;
+        }
+        if (index >= length) {
+            return false;
+        }
+
+        int tokenStart = index;
+        while (index < length && (Character.isLetterOrDigit(sql.charAt(index)) || sql.charAt(index) == '_')) {
+            index++;
+        }
+        String keyword = sql.substring(tokenStart, index).toUpperCase(Locale.ROOT);
+        return "CREATE".equals(keyword)
+            || "ALTER".equals(keyword)
+            || "DROP".equals(keyword)
+            || "TRUNCATE".equals(keyword)
+            || "COMMENT".equals(keyword)
+            || "ANALYZE".equals(keyword);
     }
 
     private byte[] buildStartupPayload(long features, Map<String, String> params) {
@@ -1739,6 +1853,22 @@ public class SBProtocolHandler {
         return kmf.getKeyManagers();
     }
 
+    private static final class PreparedStatementCacheEntry {
+        final String statementName;
+        final String sql;
+        final List<Integer> parameterTypes;
+
+        PreparedStatementCacheEntry(String statementName, String sql, List<Integer> parameterTypes) {
+            this.statementName = statementName;
+            this.sql = sql;
+            this.parameterTypes = List.copyOf(parameterTypes);
+        }
+
+        PreparedStatementCacheEntry(String statementName, List<Integer> parameterTypes) {
+            this(statementName, "", parameterTypes);
+        }
+    }
+
     private static final class ProtocolMessage {
         final byte type;
         final byte flags;
@@ -1904,31 +2034,9 @@ public class SBProtocolHandler {
     private SQLException createSQLException(String message, String sqlState, Throwable cause) {
         String state = (sqlState == null || sqlState.isEmpty()) ? "42000" : sqlState;
         SQLException ex;
-        if (state.length() == 5) {
-            ex = switch (state) {
-                case "01000" -> new SQLWarning(message, state);
-                case "02000" -> new SQLDataException(message, state);
-                case "08001", "08003", "08006" -> new SQLTransientConnectionException(message, state);
-                case "08004", "08P01" -> new SQLNonTransientConnectionException(message, state);
-                case "0A000" -> new SQLFeatureNotSupportedException(message, state);
-                case "22001", "22003", "22007", "22012", "22023", "22P02", "22P03" ->
-                    new SQLDataException(message, state);
-                case "23000", "23502", "23503", "23505", "23514" ->
-                    new SQLIntegrityConstraintViolationException(message, state);
-                case "28000", "28P01" -> new SQLInvalidAuthorizationSpecException(message, state);
-                case "40001", "40P01" -> new SQLTransactionRollbackException(message, state);
-                case "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07" ->
-                    new SQLSyntaxErrorException(message, state);
-                case "53P00", "53100", "53200", "53300" -> new SQLTransientException(message, state);
-                case "54000" -> new SQLNonTransientException(message, state);
-                case "57014" -> new SQLTimeoutException(message, state);
-                case "57P03" -> new SQLTransientConnectionException(message, state);
-                case "57P01" -> new SQLNonTransientConnectionException(message, state);
-                case "58000", "XX000" -> new SQLNonTransientException(message, state);
-                default -> null;
-            };
-        } else {
-            ex = null;
+        ex = mapByExactState(message, state);
+        if (ex == null) {
+            ex = mapByStateClass(message, state);
         }
         if (ex == null) {
             ex = new SQLException(message, state);
@@ -1937,6 +2045,51 @@ public class SBProtocolHandler {
             ex.initCause(cause);
         }
         return ex;
+    }
+
+    private SQLException mapByExactState(String message, String state) {
+        return switch (state) {
+            case "01000" -> new SQLWarning(message, state);
+            case "02000" -> new SQLDataException(message, state);
+            case "08001", "08003", "08006" -> new SQLTransientConnectionException(message, state);
+            case "08004", "08P01" -> new SQLNonTransientConnectionException(message, state);
+            case "0A000" -> new SQLFeatureNotSupportedException(message, state);
+            case "22001", "22003", "22007", "22012", "22023", "22P02", "22P03" ->
+                new SQLDataException(message, state);
+            case "23000", "23502", "23503", "23505", "23514" ->
+                new SQLIntegrityConstraintViolationException(message, state);
+            case "28000", "28P01" -> new SQLInvalidAuthorizationSpecException(message, state);
+            case "40001", "40P01" -> new SQLTransactionRollbackException(message, state);
+            case "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07" ->
+                new SQLSyntaxErrorException(message, state);
+            case "53P00", "53100", "53200", "53300" -> new SQLTransientException(message, state);
+            case "54000" -> new SQLNonTransientException(message, state);
+            case "57014" -> new SQLTimeoutException(message, state);
+            case "57P03" -> new SQLTransientConnectionException(message, state);
+            case "57P01" -> new SQLNonTransientConnectionException(message, state);
+            case "58000", "XX000" -> new SQLNonTransientException(message, state);
+            default -> null;
+        };
+    }
+
+    private SQLException mapByStateClass(String message, String state) {
+        String stateClass = state.substring(0, 2);
+        return switch (stateClass) {
+            case "01" -> new SQLWarning(message, state);
+            case "02" -> new SQLDataException(message, state);
+            case "08" -> new SQLTransientConnectionException(message, state);
+            case "0A" -> new SQLFeatureNotSupportedException(message, state);
+            case "22" -> new SQLDataException(message, state);
+            case "23" -> new SQLIntegrityConstraintViolationException(message, state);
+            case "28" -> new SQLInvalidAuthorizationSpecException(message, state);
+            case "40" -> new SQLTransactionRollbackException(message, state);
+            case "42" -> new SQLSyntaxErrorException(message, state);
+            case "53" -> new SQLTransientException(message, state);
+            case "54" -> new SQLNonTransientException(message, state);
+            case "57" -> new SQLNonTransientException(message, state);
+            case "58" -> new SQLNonTransientException(message, state);
+            default -> null;
+        };
     }
 
     private static final class ReadyStatus {

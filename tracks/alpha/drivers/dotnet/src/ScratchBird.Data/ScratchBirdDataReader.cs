@@ -8,6 +8,8 @@
 using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.IO;
+using System.Text;
 
 namespace ScratchBird.Data;
 
@@ -88,7 +90,24 @@ public sealed class ScratchBirdDataReader : DbDataReader
 
     public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
-        using var registration = cancellationToken.Register(() => _connection?.GetConnectedClient().Cancel());
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+        using var registration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!_done)
+                {
+                    _stream.Cancel();
+                }
+            }
+            catch
+            {
+                // best effort cleanup only; ignore transport-level cancellation errors
+            }
+        });
         try
         {
             return await Task.Run(Read, cancellationToken);
@@ -171,7 +190,29 @@ public sealed class ScratchBirdDataReader : DbDataReader
     public override byte GetByte(int ordinal) => (byte)GetValue(ordinal);
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
     {
-        var data = (byte[])GetValue(ordinal);
+        if (GetValue(ordinal) is not byte[] data)
+        {
+            throw new InvalidCastException("Column value is not a byte array");
+        }
+        if (dataOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dataOffset), "Data offset cannot be negative");
+        }
+        if (length < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative");
+        }
+        if (buffer != null)
+        {
+            if (bufferOffset < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bufferOffset), "Buffer offset cannot be negative");
+            }
+            if (bufferOffset > buffer.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bufferOffset), "Buffer offset is beyond buffer length");
+            }
+        }
         var available = data.Length - (int)dataOffset;
         if (available <= 0)
         {
@@ -180,14 +221,73 @@ public sealed class ScratchBirdDataReader : DbDataReader
         var toCopy = Math.Min(available, length);
         if (buffer != null)
         {
+            if (bufferOffset + toCopy > buffer.Length)
+            {
+                throw new ArgumentException("The buffer is too small for the requested read");
+            }
             Buffer.BlockCopy(data, (int)dataOffset, buffer, bufferOffset, toCopy);
+        }
+        if (buffer == null)
+        {
+            return available;
         }
         return toCopy;
     }
 
     public override char GetChar(int ordinal) => (char)GetValue(ordinal);
+
+    public override Stream GetStream(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        if (value == null || value == DBNull.Value)
+        {
+            throw new InvalidCastException("Column value is NULL");
+        }
+        return value is byte[] bytes ? new MemoryStream(bytes, writable: false) : new MemoryStream(Encoding.UTF8.GetBytes(Convert.ToString(value)!));
+    }
+
+    public override TextReader GetTextReader(int ordinal)
+    {
+        var value = GetValue(ordinal);
+        if (value == null || value == DBNull.Value)
+        {
+            throw new InvalidCastException("Column value is NULL");
+        }
+        return value is string text ? new StringReader(text) : new StringReader(Convert.ToString(value)!);
+    }
+
+    public Task<Stream> GetStreamAsync(int ordinal, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(GetStream(ordinal));
+    }
+
+    public Task<TextReader> GetTextReaderAsync(int ordinal, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(GetTextReader(ordinal));
+    }
+
     public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
     {
+        if (dataOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dataOffset), "Data offset cannot be negative");
+        }
+        if (length < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative");
+        }
+        if (buffer != null)
+        {
+            if (bufferOffset < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bufferOffset), "Buffer offset cannot be negative");
+            }
+            if (bufferOffset > buffer.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(bufferOffset), "Buffer offset is beyond buffer length");
+            }
+        }
+
         var data = GetString(ordinal).ToCharArray();
         var available = data.Length - (int)dataOffset;
         if (available <= 0)
@@ -197,9 +297,27 @@ public sealed class ScratchBirdDataReader : DbDataReader
         var toCopy = Math.Min(available, length);
         if (buffer != null)
         {
+            if (bufferOffset + toCopy > buffer.Length)
+            {
+                throw new ArgumentException("The buffer is too small for the requested read");
+            }
             Array.Copy(data, (int)dataOffset, buffer, bufferOffset, toCopy);
         }
+        if (buffer == null)
+        {
+            return available;
+        }
         return toCopy;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Close();
+        }
+
+        base.Dispose(disposing);
     }
 
     public override Guid GetGuid(int ordinal) => (Guid)GetValue(ordinal);
@@ -226,6 +344,11 @@ public sealed class ScratchBirdDataReader : DbDataReader
         {
             return;
         }
+        if (!_done)
+        {
+            _stream.Cancel();
+        }
+        _stream.Dispose();
         _closed = true;
         if (_behavior.HasFlag(CommandBehavior.CloseConnection))
         {

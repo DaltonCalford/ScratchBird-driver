@@ -7,6 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data;
 using System.Data.Common;
+using System;
 
 namespace ScratchBird.Data;
 
@@ -15,7 +16,8 @@ public sealed class ScratchBirdTransaction : DbTransaction
     private readonly ScratchBirdConnection _connection;
     private readonly IsolationLevel _isolationLevel;
     private bool _completed;
-    private readonly Stack<string> _savepoints = new();
+    private readonly List<string> _savepoints = new();
+    private bool _disposed;
 
     internal ScratchBirdTransaction(ScratchBirdConnection connection, IsolationLevel isolationLevel)
     {
@@ -33,8 +35,10 @@ public sealed class ScratchBirdTransaction : DbTransaction
         {
             return;
         }
+        EnsureTransactionActive();
         _connection.GetConnectedClient().Commit();
         _completed = true;
+        _savepoints.Clear();
     }
 
     public override void Rollback()
@@ -43,44 +47,103 @@ public sealed class ScratchBirdTransaction : DbTransaction
         {
             return;
         }
+        EnsureTransactionActive();
         _connection.GetConnectedClient().Rollback();
         _completed = true;
+        _savepoints.Clear();
     }
 
     public override void Save(string savepointName)
     {
-        if (_completed)
-        {
-            throw new InvalidOperationException("Transaction is already completed");
-        }
+        EnsureTransactionActive();
         if (string.IsNullOrWhiteSpace(savepointName))
         {
             throw new ArgumentException("Savepoint name is required", nameof(savepointName));
         }
         _connection.GetConnectedClient().Savepoint(savepointName);
-        _savepoints.Push(savepointName);
+        _savepoints.Add(savepointName);
     }
 
     public override void Rollback(string savepointName)
+    {
+        EnsureTransactionActive();
+        if (string.IsNullOrWhiteSpace(savepointName))
+        {
+            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+        }
+        var index = FindSavepoint(savepointName);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Savepoint '{savepointName}' not found");
+        }
+        _connection.GetConnectedClient().RollbackToSavepoint(savepointName);
+        if (index < _savepoints.Count - 1)
+        {
+            _savepoints.RemoveRange(index + 1, _savepoints.Count - index - 1);
+        }
+    }
+
+    public override void Release(string savepointName)
+    {
+        EnsureTransactionActive();
+        if (string.IsNullOrWhiteSpace(savepointName))
+        {
+            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+        }
+        var index = FindSavepoint(savepointName);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Savepoint '{savepointName}' not found");
+        }
+        _connection.GetConnectedClient().ReleaseSavepoint(savepointName);
+        _savepoints.RemoveRange(index, _savepoints.Count - index);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing && !_completed)
+        {
+            try
+            {
+                Rollback();
+            }
+            catch (ScratchBirdException)
+            {
+                // Allow dispose to complete and avoid re-throwing after user-initiated disposal.
+            }
+        }
+
+        _disposed = true;
+        base.Dispose(disposing);
+    }
+
+    private void EnsureTransactionActive()
     {
         if (_completed)
         {
             throw new InvalidOperationException("Transaction is already completed");
         }
-        if (string.IsNullOrWhiteSpace(savepointName))
+        if (_connection.State != ConnectionState.Open)
         {
-            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+            throw new InvalidOperationException("Connection is not open");
         }
-        _connection.GetConnectedClient().RollbackToSavepoint(savepointName);
     }
 
-    public override void Release(string savepointName)
+    private int FindSavepoint(string savepointName)
     {
-        if (string.IsNullOrWhiteSpace(savepointName))
+        for (var i = _savepoints.Count - 1; i >= 0; i--)
         {
-            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+            if (string.Equals(_savepoints[i], savepointName, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
         }
-        _connection.GetConnectedClient().ReleaseSavepoint(savepointName);
-        _savepoints.TryPop(out _);
+
+        return -1;
     }
 }

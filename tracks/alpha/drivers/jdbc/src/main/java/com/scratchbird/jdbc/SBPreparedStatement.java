@@ -20,6 +20,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.Calendar;
 import java.time.*;
+import java.nio.charset.StandardCharsets;
 
 /**
  * JDBC PreparedStatement implementation for ScratchBird.
@@ -457,76 +458,50 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setAsciiStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        try {
-            byte[] bytes = new byte[length];
-            x.read(bytes);
-            setString(parameterIndex, new String(bytes, "US-ASCII"));
-        } catch (IOException e) {
-            throw new SQLException("Failed to read ASCII stream", "HY000", e);
-        }
+        validateStreamLength(parameterIndex, length);
+        byte[] bytes = readExactBytes(parameterIndex, x, length, "ASCII");
+        setString(parameterIndex, new String(bytes, StandardCharsets.US_ASCII));
     }
 
     @Override
     public void setAsciiStream(int parameterIndex, InputStream x, long length) throws SQLException {
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new SQLException("Stream length out of range", "HY024");
+        }
         setAsciiStream(parameterIndex, x, (int) length);
     }
 
     @Override
     public void setAsciiStream(int parameterIndex, InputStream x) throws SQLException {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = x.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
-            }
-            setString(parameterIndex, new String(baos.toByteArray(), "US-ASCII"));
-        } catch (IOException e) {
-            throw new SQLException("Failed to read ASCII stream", "HY000", e);
-        }
+        byte[] bytes = readAllBytes(parameterIndex, x, "ASCII");
+        setString(parameterIndex, new String(bytes, StandardCharsets.US_ASCII));
     }
 
     @Override
     @Deprecated
     public void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        try {
-            byte[] bytes = new byte[length];
-            x.read(bytes);
-            setString(parameterIndex, new String(bytes, "UTF-8"));
-        } catch (IOException e) {
-            throw new SQLException("Failed to read Unicode stream", "HY000", e);
-        }
+        validateStreamLength(parameterIndex, length);
+        byte[] bytes = readExactBytes(parameterIndex, x, length, "Unicode");
+        setString(parameterIndex, new String(bytes, StandardCharsets.UTF_8));
     }
 
     @Override
     public void setBinaryStream(int parameterIndex, InputStream x, int length) throws SQLException {
-        try {
-            byte[] bytes = new byte[length];
-            x.read(bytes);
-            setBytes(parameterIndex, bytes);
-        } catch (IOException e) {
-            throw new SQLException("Failed to read binary stream", "HY000", e);
-        }
+        validateStreamLength(parameterIndex, length);
+        setBytes(parameterIndex, readExactBytes(parameterIndex, x, length, "binary"));
     }
 
     @Override
     public void setBinaryStream(int parameterIndex, InputStream x, long length) throws SQLException {
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new SQLException("Stream length out of range", "HY024");
+        }
         setBinaryStream(parameterIndex, x, (int) length);
     }
 
     @Override
     public void setBinaryStream(int parameterIndex, InputStream x) throws SQLException {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = x.read(buffer)) != -1) {
-                baos.write(buffer, 0, len);
-            }
-            setBytes(parameterIndex, baos.toByteArray());
-        } catch (IOException e) {
-            throw new SQLException("Failed to read binary stream", "HY000", e);
-        }
+        setBytes(parameterIndex, readAllBytes(parameterIndex, x, "binary"));
     }
 
     @Override
@@ -710,9 +685,28 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setCharacterStream(int parameterIndex, Reader reader, int length) throws SQLException {
+        if (length < 0) {
+            throw new SQLException("Stream length must be >= 0", "HY024");
+        }
+        if (length > Integer.MAX_VALUE) {
+            throw new SQLException("Stream length out of range", "HY024");
+        }
         try {
             char[] chars = new char[length];
-            reader.read(chars);
+            int totalRead = 0;
+            while (totalRead < length) {
+                int read = reader.read(chars, totalRead, length - totalRead);
+                if (read == -1) {
+                    break;
+                }
+                totalRead += read;
+            }
+
+            if (totalRead != length) {
+                setString(parameterIndex, new String(chars, 0, totalRead));
+                return;
+            }
+
             setString(parameterIndex, new String(chars));
         } catch (IOException e) {
             throw new SQLException("Failed to read character stream", "HY000", e);
@@ -721,22 +715,82 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setCharacterStream(int parameterIndex, Reader reader, long length) throws SQLException {
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new SQLException("Stream length out of range", "HY024");
+        }
         setCharacterStream(parameterIndex, reader, (int) length);
     }
 
     @Override
     public void setCharacterStream(int parameterIndex, Reader reader) throws SQLException {
-        try {
-            StringBuilder sb = new StringBuilder();
-            char[] buffer = new char[8192];
-            int len;
-            while ((len = reader.read(buffer)) != -1) {
-                sb.append(buffer, 0, len);
-            }
-            setString(parameterIndex, sb.toString());
-        } catch (IOException e) {
-            throw new SQLException("Failed to read character stream", "HY000", e);
+        setString(parameterIndex, readAllChars(parameterIndex, reader, "character"));
+    }
+
+    private void validateStreamLength(int parameterIndex, int length) throws SQLException {
+        if (length < 0) {
+            throw new SQLException("Stream length must be >= 0", "HY024");
         }
+        if (length > Integer.MAX_VALUE) {
+            throw new SQLException("Stream length out of range", "HY024");
+        }
+        if (parameterIndex < 1 || parameterIndex > parameterCount) {
+            throw new SQLException("Parameter index out of range: " + parameterIndex +
+                " (expected 1-" + parameterCount + ")", "07001");
+        }
+    }
+
+    private byte[] readExactBytes(int parameterIndex, InputStream input, int expectedLength,
+                                 String label) throws SQLException {
+        if (expectedLength < 0) {
+            throw new SQLException(label + " stream length must be non-negative", "HY024");
+        }
+        checkClosed();
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.max(0, expectedLength));
+        byte[] buffer = new byte[Math.max(1, Math.min(expectedLength, 8192))];
+        int remaining = expectedLength;
+        int read;
+        try {
+            while (remaining > 0 && (read = input.read(buffer, 0,
+                Math.min(buffer.length, remaining))) != -1) {
+                output.write(buffer, 0, read);
+                remaining -= read;
+            }
+        } catch (IOException e) {
+            throw new SQLException("Failed to read " + label + " stream", "HY000", e);
+        }
+
+        return output.toByteArray();
+    }
+
+    private byte[] readAllBytes(int parameterIndex, InputStream input, String label) throws SQLException {
+        checkClosed();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        try {
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+        } catch (IOException e) {
+            throw new SQLException("Failed to read " + label + " stream", "HY000", e);
+        }
+        return output.toByteArray();
+    }
+
+    private String readAllChars(int parameterIndex, Reader reader, String label) throws SQLException {
+        checkClosed();
+        StringBuilder sb = new StringBuilder();
+        char[] buffer = new char[8192];
+        int read;
+        try {
+            while ((read = reader.read(buffer)) != -1) {
+                sb.append(buffer, 0, read);
+            }
+        } catch (IOException e) {
+            throw new SQLException("Failed to read " + label + " stream", "HY000", e);
+        }
+        return sb.toString();
     }
 
     @Override

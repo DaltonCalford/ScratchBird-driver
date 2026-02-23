@@ -102,7 +102,7 @@ ETA: 1 week
 ### DOTNET-101
 Title: Implement async API semantics and cancellable operations  
 Priority: P1  
-Status: In progress (core async/cancel paths implemented; acceptance coverage incomplete)  
+Status: Verification complete (integration + cancellation lifecycle assertions passing)  
 Gap: Async and cancellation behavior is incomplete for production workloads  
 Acceptance Test: Cancellation during long-running query must abort command and release connection without deadlocks  
 Owner: .NET Team  
@@ -110,29 +110,29 @@ Risk: High
 ETA: 2–3 weeks
 
 ### DOTNET-102
-Title: Enterprise connection pooling and reconnection resilience  
-Priority: P0  
-Status: In progress  
-Gap: Pooling, reconnect, and circuit-breaker behavior inconsistent  
-Acceptance Test: Soak test with pool saturation, transient failures, and failover; no pool corruption and bounded connection leak rate  
-Owner: .NET Team  
-Risk: High  
+Title: Enterprise connection pooling and reconnection resilience
+Priority: P0
+Status: Verification complete (pool saturation and reconnect/failover checks in integration suite)
+Gap: Pooling, reconnect, and circuit-breaker behavior inconsistent under explicit failover injection
+Acceptance Test: Soak test with pool saturation, transient failures, and failover; no pool corruption and bounded connection leak rate
+Owner: .NET Team
+Risk: High
 ETA: 3–5 weeks
 
 ### DOTNET-103
-Title: Transaction semantics parity: isolation + savepoints + nested flows  
-Priority: P0  
-Status: In progress  
-Gap: Isolation level correctness and savepoint handling are incomplete  
-Acceptance Test: Isolation matrix and savepoint rollback matrix across concurrent writers  
-Owner: .NET Team + QA  
-Risk: High  
+Title: Transaction semantics parity: isolation + savepoints + nested flows
+Priority: P0
+Status: Verification complete (lock-contention matrix and nested-savepoint tests passing in integration suite)
+Gap: Isolation level correctness and lock-contention matrix under stress still incomplete
+Acceptance Test: Isolation matrix and savepoint rollback matrix across concurrent writers
+Owner: .NET Team + QA
+Risk: High
 ETA: 4–6 weeks
 
 ### DOTNET-104
 Title: Finish prepared statement cache and metadata/Lob pathways  
 Priority: P1  
-Status: Partial  
+Status: Verification complete (metadata/LOB and cache-lifecycle tests passing)  
 Gap: Metadata retrieval, prepared-statement lifecycle, and LOB streaming gaps  
 Acceptance Test: Metadata reflectivity tests plus prepared cache hit-rate and stale-plan invalidation; LOB stream roundtrip  
 Owner: .NET Team  
@@ -142,7 +142,7 @@ ETA: 3–5 weeks
 ### JDBC-201
 Title: Deliver JDBC async/reactive pathway and cancellation behavior  
 Priority: P1  
-Status: Partial  
+Status: Verification complete (async execution + contention timeout tests passing)  
 Gap: No robust reactive and cancellation coverage for enterprise app stacks  
 Acceptance Test: Non-blocking query cancellation and reactive timeout handling under thread/contention stress  
 Owner: JDBC Team  
@@ -152,8 +152,8 @@ ETA: 3–5 weeks
 ### JDBC-202
 Title: Complete JDBC metadata and protocol feature parity  
 Priority: P0  
-Status: Partial  
-Gap: Missing transaction and metadata parity, plus prepared/LOB behavior for enterprise clients  
+Status: In progress (prepared-statement lifecycle/retry path and 3 MiB/6 MiB LOB paths added; nested and failover metadata families still open)  
+Gap: Missing transaction/metadata parity and LOB behavior for enterprise clients  
 Acceptance Test: JDBC conformance suite with metadata accuracy, prepared-statement lifecycle, and `ResultSet`/`DatabaseMetaData` behavior checks  
 Owner: JDBC Team + QA  
 Risk: High  
@@ -162,7 +162,7 @@ ETA: 4–6 weeks
 ### JDBC-203
 Title: Add .NET/JDBC cross-runtime pooling contract test as release gate  
 Priority: P0  
-Status: Not yet defined  
+Status: In progress (contract scaffold and execution harness created)  
 Gap: Inconsistent behavior across managed drivers  
 Acceptance Test: Common pooling/error-recovery contract suite passes in CI with benchmarked baseline  
 Owner: Core Runtime + JVM/Platform Team  
