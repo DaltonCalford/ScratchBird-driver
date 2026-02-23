@@ -1,0 +1,24 @@
+===== ODBC verification run 2026-02-23_010207Z =====
+date: 2026-02-23 01:02:22 UTC
+cmake:
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Skipping ODBC tests: GoogleTest not found
+-- 
+-- ScratchBird ODBC Driver Configuration:
+--   Version: 0.1.0
+--   Platform: Linux
+--   Windows: 
+--   Linux: TRUE
+--   macOS: 
+--   Install prefix: /usr/local
+-- 
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dcalford/CliWork/ScratchBird-driver/build
+build:
+[ 65%] Built target scratchbird_client
+[100%] Built target scratchbird_odbc
+ctest:
+Internal ctest changing into directory: /home/dcalford/CliWork/ScratchBird-driver/build
+Test project /home/dcalford/CliWork/ScratchBird-driver/build
