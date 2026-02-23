@@ -27,7 +27,8 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 - `SCRATCHBIRD_DOTNET_CANCEL_SQL` is required for scenarios A/B/D/E.
 
 ## Gate Control
-- `JDBC203_STRICT_GATE=true` (default on CI when `GITHUB_ACTIONS=true`) blocks execution if any required endpoint/cancel variable is missing.
+- `JDBC203_STRICT_GATE=true` blocks execution if any required endpoint/cancel variable is missing.
+- The CI job now sets `JDBC203_STRICT_GATE` from the repository variable `JDBC203_STRICT_GATE` (default `false`) so CI captures evidence even when env is absent.
 - Local runs are partial only when strict gate is disabled and will emit `contract_gate_summary_<timestamp>.json` with status and missing env list.
 - `run_cross_runtime_pool_contract.sh` now writes a structured `overallStatus`/`reason` artifact in
   `contract_gate_summary_<timestamp>.json`.

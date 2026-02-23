@@ -1,14 +1,13 @@
 {
-  "timestamp": "20260223T050927Z",
-  "strictGate": "true",
+  "timestamp": "20260223T051125Z",
+  "strictGate": "false",
   "dotnet": {
-    "status": "not_run",
-    "note": "not_executed"
+    "status": "env_missing"
   },
   "jdbc": {
-    "status": "not_run",
-    "note": "not_executed"
+    "status": "env_missing"
   },
   "overallStatus": "blocked",
-  "reason": "strict_gate_enabled_and_required_env_missing"
+  "reason": "missing_env_for_full_cross_runtime_contract",
+  "missingEnv": ["SCRATCHBIRD_DOTNET_URL","SCRATCHBIRD_DOTNET_CANCEL_SQL","SCRATCHBIRD_JDBC_URL","SCRATCHBIRD_JDBC_CANCEL_SQL"]
 }

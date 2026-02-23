@@ -421,3 +421,51 @@ jobs:
           fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\ConfigTests.pas
           fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\SqlTests.pas
           fpc -Fu.\tracks\alpha\drivers\pascal\src tracks\alpha\drivers\pascal\tests\IntegrationTest.pas
+
+  jdbc203-cross-runtime-gate:
+    name: JDBC/.NET cross-runtime gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ubuntu-gradle-${{ hashFiles('tracks/alpha/drivers/jdbc/**/*.gradle*', 'tracks/alpha/drivers/jdbc/gradle.properties', 'tracks/alpha/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ubuntu-gradle-
+
+      - name: Run JDBC-203 cross-runtime contract
+        env:
+          JDBC203_STRICT_GATE: ${{ vars.JDBC203_STRICT_GATE || 'false' }}
+          SCRATCHBIRD_DOTNET_URL: ${{ secrets.SCRATCHBIRD_DOTNET_URL }}
+          SCRATCHBIRD_DOTNET_CANCEL_SQL: ${{ secrets.SCRATCHBIRD_DOTNET_CANCEL_SQL }}
+          SCRATCHBIRD_JDBC_URL: ${{ secrets.SCRATCHBIRD_JDBC_URL }}
+          SCRATCHBIRD_JDBC_CANCEL_SQL: ${{ secrets.SCRATCHBIRD_JDBC_CANCEL_SQL }}
+        run: bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh
+
+      - name: Upload JDBC-203 contract artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jdbc203-cross-runtime-${{ github.run_id }}
+          path: |
+            artifacts/enterprise-readiness/JDBC-203/latest_verification.log
+            artifacts/enterprise-readiness/JDBC-203/latest_contract_summary.json
+          if-no-files-found: ignore
+          retention-days: 30
