@@ -41,10 +41,10 @@
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| PLATFORM-301 | P1 | Verification artifacts complete; runtime smoke blocked on cluster/env | Sidecar chart and smoke script implemented | Helm + sidecar smoke test in local Kubernetes | Platform Engineering | High | 2–4w | PLATFORM-303 |
-| PLATFORM-302 | P0 | Verification artifacts complete; runtime validation pending environment | TLS rotation and managed/listener secret behavior unclear | Online rotation with clean reconnects and no drops | Security + Platform Engineering | High | 2–3w | None |
-| PLATFORM-303 | P1 | Verification artifacts complete; runtime secret flow verification pending | Secret integration examples complete | Docs/examples for short-lived creds and rotation | Platform Engineering | Medium | 2w | None |
-| PLATFORM-304 | P0 | Verification artifacts complete; runtime matrix requires endpoints | Managed/listener semantics diverge across drivers | Golden matrix for auth/reconnect/timeout/cancel | Platform + Driver Lead | High | 2–4w | PLATFORM-302, PLATFORM-301 |
+| PLATFORM-301 | P1 | Blocked (runtime smoke blocked on cluster/env) | Sidecar chart and smoke script implemented | Helm + sidecar smoke test in local Kubernetes | Platform Engineering | High | 2–4w | PLATFORM-303 |
+| PLATFORM-302 | P0 | Blocked (live cert rotation validation needs runtime environment) | TLS rotation and managed/listener secret behavior unclear | Online rotation with clean reconnects and no drops | Security + Platform Engineering | High | 2–3w | None |
+| PLATFORM-303 | P1 | Blocked (runtime consumer verification pending) | Secret integration examples complete | Docs/examples for short-lived creds and rotation | Platform Engineering | Medium | 2w | None |
+| PLATFORM-304 | P0 | Blocked (runtime matrix requires endpoints) | Managed/listener semantics diverge across drivers | Golden matrix for auth/reconnect/timeout/cancel | Platform + Driver Lead | High | 2–4w | PLATFORM-302, PLATFORM-301 |
 
 ### Ecosystem
 

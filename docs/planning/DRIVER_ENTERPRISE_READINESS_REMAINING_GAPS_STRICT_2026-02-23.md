@@ -4,6 +4,18 @@
 This list reflects only executable gaps still open after current implementation work.
 Each gap is tied to a release blocker and includes owners, risk, and acceptance condition.
 
+## Verification Snapshot (2026-02-23)
+
+- Full-suite command log: `artifacts/enterprise-readiness/verification-sprint-20260223/full_suite_final.log`
+- R corrected integration command: `artifacts/enterprise-readiness/verification-sprint-20260223/r_test_corrected.log`
+- Current blocker posture:
+  - `.NET and JVM paths: in-tree suites pass`
+  - `Node`: `tsc` missing in runtime image (`npm run build` fails)
+  - `PHP`: `test` script is not defined
+  - `Ruby`: no runnable tests discovered
+  - `Elixir`: runtime environment has Elixir `~> 1.15` requirement mismatch (1.14 available)
+  - `Mojo`, `CLI`, `Python` (partial/optional checks): no dedicated suite or unsupported commands for this environment
+
 | Area | Gap | Severity | Owner | Status | ETA | Required Evidence |
 |---|---|---|---|---|---|---|
 | DOTNET-101 | Add sustained long-running soak-style async cancellation/release tests (beyond existing stress fixtures). | P1 | .NET Team | In progress | 1-2 weeks | 24-hour style soak evidence with no handle leaks |

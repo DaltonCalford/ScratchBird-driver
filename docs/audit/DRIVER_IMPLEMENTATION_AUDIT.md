@@ -1,7 +1,7 @@
 # ScratchBird Driver Implementation Audit (SBWP v1.1)
 
 Status: In Progress
-Last Updated: 2026-02-04
+Last Updated: 2026-02-23
 Scope: All drivers and adapters in this repository (core language drivers, JDBC/ODBC, Superset, Metabase, Mojo/Dart/Swift/Elixir, C++ client, CLI tools).
 
 ## Method
@@ -137,9 +137,9 @@ Outstanding:
 ### Swift `tracks/beta/drivers/swift/`
 Implemented:
 - SBWP v1.1 framing, SCRAM, parse/bind, basic query.
+- TLS is implemented via NIOSSL (Apple + Linux).
 - Basic type encoding/decoding (numeric, JSON/JSONB, UUID, geometry).
 Outstanding:
-- No TLS implementation (TCP only).
 - Binary-only enforcement missing.
 - Compression rejection missing.
 - Type mapping incomplete (arrays, composites, ranges, inet/cidr/macaddr, vectors).
