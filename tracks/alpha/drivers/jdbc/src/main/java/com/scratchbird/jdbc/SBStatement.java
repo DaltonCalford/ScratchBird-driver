@@ -104,6 +104,7 @@ public class SBStatement implements Statement {
                 final int streamPageSize = pageSize;
                 SBQueryResult result = connection.withResilience("query_stream", sql, () ->
                     connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
+                    , true
                 );
                 if (result.getStream() == null) {
                     throw new SQLException("Query did not return a result set", "02000");
@@ -114,6 +115,7 @@ public class SBStatement implements Statement {
 
             SBQueryResult result = connection.withResilience("query", sql, () ->
                 connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+                , true
             );
             if (result.getColumns() == null || result.getColumns().isEmpty()) {
                 throw new SQLException("Query did not return a result set", "02000");

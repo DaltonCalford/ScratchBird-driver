@@ -113,6 +113,33 @@ public class SBProtocolHandlerPreparedCacheTest {
         assertNotEquals(firstParseName, retryParseName);
     }
 
+    @Test
+    public void recoverableCachedStatementErrorTriggersReprepareWithPreparedStatementState() throws Exception {
+        byte[] payloads = concatFrames(
+            MSG_PARAMETER_DESCRIPTION, buildParameterDescriptionPayload(1),
+            MSG_READY, buildReadyPayload(),
+            MSG_COMMAND_COMPLETE, buildCommandCompletePayload(1),
+            MSG_READY, buildReadyPayload(),
+            MSG_ERROR, buildErrorPayload("26000", "Unknown prepared statement: sb_stmt"),
+            MSG_PARAMETER_DESCRIPTION, buildParameterDescriptionPayload(1),
+            MSG_READY, buildReadyPayload(),
+            MSG_COMMAND_COMPLETE, buildCommandCompletePayload(1),
+            MSG_READY, buildReadyPayload()
+        );
+        assertValidProtocolFrames(payloads);
+
+        var handler = handlerForResponsePayloads(payloads);
+        handler.execute("SELECT ?::INTEGER", List.of(11), List.of(), 0, 0);
+        handler.execute("SELECT ?::INTEGER", List.of(22), List.of(), 0, 0);
+
+        byte[] sent = getSentBytes(handler);
+        List<Byte> messageTypes = parseMessageTypes(sent);
+        List<Byte> parseMessages = messageTypes.stream()
+            .filter(type -> type == MSG_PARSE)
+            .toList();
+        assertEquals(2, parseMessages.size());
+    }
+
     private static SBProtocolHandler handlerForResponsePayloads(byte[] payloads) throws Exception {
         SBProtocolHandler handler = new SBProtocolHandler(new SBConnectionProperties());
         setField(handler, "inputStream", new ByteArrayInputStream(payloads));

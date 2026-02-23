@@ -1,0 +1,113 @@
+/*
+ * ScratchBird-driver
+ * Copyright (c) 2025-2026 Dalton Calford
+ *
+ * Licensed under the Initial Developer's Public License Version 1.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ * https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
+ */
+/*
+ * ScratchBird JDBC Driver
+ * Copyright (c) 2025 ScratchBird Project
+ */
+package com.scratchbird.jdbc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.lang.reflect.Field;
+import java.sql.SQLTransientConnectionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import sun.misc.Unsafe;
+
+import org.junit.jupiter.api.Test;
+
+public class SBConnectionResilienceTest {
+
+    @Test
+    public void replayableQueryRetriesAfterTransientFailure() throws Exception {
+        var protocol = new FailingReplayProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+
+        AtomicInteger attempts = new AtomicInteger();
+        String result = connection.withResilience("query", "SELECT 1", () -> {
+            attempts.incrementAndGet();
+            if (attempts.get() == 1) {
+                throw new SQLTransientConnectionException("transport reset", "08006");
+            }
+            return "ok";
+        }, true);
+
+        assertEquals(2, attempts.get());
+        assertEquals(1, protocol.connectAttempts.get());
+        assertEquals("ok", result);
+    }
+
+    @Test
+    public void nonReplayableOperationDoesNotRetryAfterTransientFailure() throws Exception {
+        var protocol = new FailingReplayProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+
+        AtomicInteger attempts = new AtomicInteger();
+        assertThrows(SQLTransientConnectionException.class, () ->
+            connection.withResilience("update", "UPDATE test", () -> {
+                attempts.incrementAndGet();
+                throw new SQLTransientConnectionException("transport reset", "08006");
+            }, false)
+        );
+
+        assertEquals(1, attempts.get());
+        assertEquals(0, protocol.connectAttempts.get());
+    }
+
+    private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
+        SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
+        setField(connection, "protocol", protocol);
+        setField(connection, "properties", new SBConnectionProperties());
+        setField(connection, "closed", new java.util.concurrent.atomic.AtomicBoolean(false));
+        setField(connection, "circuitBreaker", new CircuitBreaker());
+        setField(connection, "telemetry", new TelemetryCollector());
+        setField(connection, "readOnly", false);
+        setField(connection, "autoCommit", true);
+        setField(connection, "schema", "public");
+        return connection;
+    }
+
+    private static Unsafe getUnsafe() throws Exception {
+        Field field = Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (Unsafe) field.get(null);
+    }
+
+    private static void setField(Object object, String fieldName, Object value) throws Exception {
+        Field field = SBConnection.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(object, value);
+    }
+
+    private static final class FailingReplayProtocol extends SBProtocolHandler {
+        final AtomicInteger connectAttempts = new AtomicInteger();
+        final AtomicInteger executeAttempts = new AtomicInteger();
+
+        FailingReplayProtocol() {
+            super(new SBConnectionProperties());
+        }
+
+        @Override
+        public void connect() {
+            connectAttempts.incrementAndGet();
+        }
+
+        @Override
+        public void close() {
+            // No-op in this test
+        }
+
+        @Override
+        public SBQueryResult execute(String sql) {
+            executeAttempts.incrementAndGet();
+            return new SBQueryResult();
+        }
+    }
+}

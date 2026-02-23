@@ -1402,7 +1402,9 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     }
 
     private List<Object[]> queryRows(String sql) throws SQLException {
-        SBQueryResult result = connection.getProtocol().execute(sql);
+        SBQueryResult result = connection.withResilience("metadata_query", sql, () ->
+            connection.getProtocol().execute(sql), true
+        );
         if (result == null || result.getRows() == null) {
             return Collections.emptyList();
         }
@@ -1971,12 +1973,60 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getUDTs(String catalog, String schemaPattern, String typeNamePattern, int[] types)
             throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "CLASS_NAME", "DATA_TYPE",
-                         "REMARKS", "BASE_TYPE"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
-                      Types.VARCHAR, Types.SMALLINT}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "CLASS_NAME", "DATA_TYPE",
+                             "REMARKS", "BASE_TYPE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.VARCHAR, Types.SMALLINT}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT USER_DEFINED_TYPE_SCHEMA, USER_DEFINED_TYPE_NAME, DATA_TYPE " +
+                "FROM information_schema.user_defined_types"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String typeName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(typeName, typeNamePattern)) {
+                    continue;
+                }
+
+                String dataTypeName = toStringValue(row, 2);
+                int dataType = jdbcTypeFromTypeName(dataTypeName);
+
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    typeName,
+                    typeName,
+                    dataType,
+                    null,
+                    dataType
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "CLASS_NAME", "DATA_TYPE",
+                             "REMARKS", "BASE_TYPE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.VARCHAR, Types.SMALLINT}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TYPE_CAT", 25));
+        cols.add(column("TYPE_SCHEM", 25));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("CLASS_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("BASE_TYPE", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -2007,38 +2057,226 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getSuperTypes(String catalog, String schemaPattern, String typeNamePattern)
             throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SUPERTYPE_CAT", "SUPERTYPE_SCHEM",
-                         "SUPERTYPE_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SUPERTYPE_CAT", "SUPERTYPE_SCHEM",
+                             "SUPERTYPE_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT n.nspname, t.typname, sn.nspname, st.typname " +
+                "FROM pg_catalog.pg_type t " +
+                "JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace " +
+                "LEFT JOIN pg_catalog.pg_type st ON st.oid = t.typbasetype " +
+                "LEFT JOIN pg_catalog.pg_namespace sn ON sn.oid = st.typnamespace " +
+                "WHERE t.typbasetype IS NOT NULL " +
+                "  AND t.typbasetype <> 0"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String typeName = toStringValue(row, 1);
+                String superSchemaName = toStringValue(row, 2);
+                String superTypeName = toStringValue(row, 3);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(typeName, typeNamePattern)) {
+                    continue;
+                }
+
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    typeName,
+                    currentCatalog,
+                    superSchemaName,
+                    superTypeName
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SUPERTYPE_CAT", "SUPERTYPE_SCHEM",
+                             "SUPERTYPE_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TYPE_CAT", 25));
+        cols.add(column("TYPE_SCHEM", 25));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("SUPERTYPE_CAT", 25));
+        cols.add(column("SUPERTYPE_SCHEM", 25));
+        cols.add(column("SUPERTYPE_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getSuperTables(String catalog, String schemaPattern, String tableNamePattern)
             throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "SUPERTABLE_NAME"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "SUPERTABLE_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT cns.nspname, c.relname, pns.nspname, prs.relname " +
+                "FROM pg_catalog.pg_inherits i " +
+                "JOIN pg_catalog.pg_class c ON c.oid = i.inhrelid " +
+                "JOIN pg_catalog.pg_class prs ON prs.oid = i.inhparent " +
+                "JOIN pg_catalog.pg_namespace cns ON cns.oid = c.relnamespace " +
+                "JOIN pg_catalog.pg_namespace pns ON pns.oid = prs.relnamespace " +
+                "WHERE c.relkind IN ('r', 'v', 'm', 'f') " +
+                "ORDER BY cns.nspname, c.relname, pns.nspname, prs.relname"
+            )) {
+                String childSchemaName = toStringValue(row, 0);
+                String childTableName = toStringValue(row, 1);
+                String superTableName = toStringValue(row, 3);
+                if (!matchesPattern(childSchemaName, schemaPattern)
+                        || !matchesPattern(childTableName, tableNamePattern)) {
+                    continue;
+                }
+
+                rows.add(new Object[]{
+                    currentCatalog,
+                    childSchemaName,
+                    childTableName,
+                    superTableName
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "SUPERTABLE_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("SUPERTABLE_NAME", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getAttributes(String catalog, String schemaPattern, String typeNamePattern,
             String attributeNamePattern) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "ATTR_NAME", "DATA_TYPE",
-                         "ATTR_TYPE_NAME", "ATTR_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "NULLABLE",
-                         "REMARKS", "ATTR_DEF", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH",
-                         "ORDINAL_POSITION", "IS_NULLABLE", "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE",
-                         "SOURCE_DATA_TYPE"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
-                      Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.INTEGER,
-                      Types.VARCHAR, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER,
-                      Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.SMALLINT}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "ATTR_NAME", "DATA_TYPE",
+                             "ATTR_TYPE_NAME", "ATTR_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "NULLABLE",
+                             "REMARKS", "ATTR_DEF", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH",
+                             "ORDINAL_POSITION", "IS_NULLABLE", "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE",
+                             "SOURCE_DATA_TYPE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.INTEGER,
+                          Types.VARCHAR, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER,
+                          Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.SMALLINT}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT ns.nspname, t.typname, a.attname, a.atttypid, a.attnotnull, a.attnum " +
+                "FROM pg_catalog.pg_attribute a " +
+                "JOIN pg_catalog.pg_type t ON t.oid = a.attrelid " +
+                "JOIN pg_catalog.pg_namespace ns ON ns.oid = t.typnamespace " +
+                "WHERE t.typtype = 'c' " +
+                "  AND a.attnum > 0 " +
+                "  AND NOT a.attisdropped " +
+                "ORDER BY ns.nspname, t.typname, a.attnum"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String typeName = toStringValue(row, 1);
+                String attributeName = toStringValue(row, 2);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(typeName, typeNamePattern)
+                        || !matchesPattern(attributeName, attributeNamePattern)) {
+                    continue;
+                }
+
+                Integer typeOid = parseOid(row[3]);
+                int dataType = typeOid != null ? jdbcTypeFromOid(typeOid) : Types.OTHER;
+                String attrTypeName = typeOid != null ? typeNameFromOid(typeOid) : null;
+                boolean nullable = toBooleanValue(row[4]);
+                int ordinalPosition = toIntValue(row[5], 0);
+                int nullableValue = nullable ? DatabaseMetaData.attributeNullable : DatabaseMetaData.attributeNoNulls;
+
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    typeName,
+                    attributeName,
+                    dataType,
+                    attrTypeName,
+                    0,
+                    0,
+                    10,
+                    nullableValue,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0,
+                    ordinalPosition,
+                    nullable ? "YES" : "NO",
+                    null,
+                    null,
+                    null,
+                    null
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "ATTR_NAME", "DATA_TYPE",
+                             "ATTR_TYPE_NAME", "ATTR_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "NULLABLE",
+                             "REMARKS", "ATTR_DEF", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH",
+                             "ORDINAL_POSITION", "IS_NULLABLE", "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE",
+                             "SOURCE_DATA_TYPE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.INTEGER,
+                          Types.VARCHAR, Types.VARCHAR, Types.INTEGER, Types.INTEGER, Types.INTEGER,
+                          Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                          Types.SMALLINT}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TYPE_CAT", 25));
+        cols.add(column("TYPE_SCHEM", 25));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("ATTR_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("ATTR_TYPE_NAME", 25));
+        cols.add(column("ATTR_SIZE", 23));
+        cols.add(column("DECIMAL_DIGITS", 21));
+        cols.add(column("NUM_PREC_RADIX", 23));
+        cols.add(column("NULLABLE", 23));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("ATTR_DEF", 25));
+        cols.add(column("SQL_DATA_TYPE", 23));
+        cols.add(column("SQL_DATETIME_SUB", 23));
+        cols.add(column("CHAR_OCTET_LENGTH", 23));
+        cols.add(column("ORDINAL_POSITION", 23));
+        cols.add(column("IS_NULLABLE", 25));
+        cols.add(column("SCOPE_CATALOG", 25));
+        cols.add(column("SCOPE_SCHEMA", 25));
+        cols.add(column("SCOPE_TABLE", 25));
+        cols.add(column("SOURCE_DATA_TYPE", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -2336,14 +2574,82 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getPseudoColumns(String catalog, String schemaPattern, String tableNamePattern,
             String columnNamePattern) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
-                         "COLUMN_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "COLUMN_USAGE",
-                         "REMARKS", "CHAR_OCTET_LENGTH", "IS_NULLABLE"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
-                      Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR,
-                      Types.INTEGER, Types.VARCHAR}
-        );
+        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
+                             "COLUMN_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "COLUMN_USAGE",
+                             "REMARKS", "CHAR_OCTET_LENGTH", "IS_NULLABLE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR,
+                          Types.INTEGER, Types.VARCHAR}
+            );
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT ns.nspname, c.relname, a.attname, a.atttypid " +
+                "FROM pg_catalog.pg_class c " +
+                "JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace " +
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid " +
+                "WHERE c.relkind IN ('r','v','m','f') " +
+                "  AND ns.nspname NOT IN ('pg_catalog','pg_toast','information_schema') " +
+                "  AND a.attnum < 0 " +
+                "  AND a.attname IN ('ctid','xmin','xmax','cmin','cmax','tableoid') " +
+                "ORDER BY ns.nspname, c.relname, a.attname"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 1);
+                String columnName = toStringValue(row, 2);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(tableName, tableNamePattern)
+                        || !matchesPattern(columnName, columnNamePattern)) {
+                    continue;
+                }
+
+                Integer typeOid = parseOid(row[3]);
+                int dataType = typeOid != null ? jdbcTypeFromOid(typeOid) : Types.OTHER;
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    tableName,
+                    columnName,
+                    dataType,
+                    0,
+                    0,
+                    10,
+                    "SYSTEM",
+                    null,
+                    0,
+                    "NO"
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
+                             "COLUMN_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "COLUMN_USAGE",
+                             "REMARKS", "CHAR_OCTET_LENGTH", "IS_NULLABLE"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.INTEGER, Types.INTEGER, Types.VARCHAR, Types.VARCHAR,
+                          Types.INTEGER, Types.VARCHAR}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("COLUMN_SIZE", 23));
+        cols.add(column("DECIMAL_DIGITS", 21));
+        cols.add(column("NUM_PREC_RADIX", 23));
+        cols.add(column("COLUMN_USAGE", 25));
+        cols.add(column("REMARKS", 25));
+        cols.add(column("CHAR_OCTET_LENGTH", 23));
+        cols.add(column("IS_NULLABLE", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override

@@ -1,5 +1,5 @@
-Path for java installation '/usr/lib/jvm/openjdk-21' (Common Linux Locations) does not contain a java executable
 Path for java installation '/usr/lib/jvm/openjdk-17' (Common Linux Locations) does not contain a java executable
+Path for java installation '/usr/lib/jvm/openjdk-21' (Common Linux Locations) does not contain a java executable
 > Task :compileJava UP-TO-DATE
 > Task :processResources UP-TO-DATE
 > Task :classes UP-TO-DATE
@@ -8,5 +8,5 @@ Path for java installation '/usr/lib/jvm/openjdk-17' (Common Linux Locations) do
 > Task :testClasses UP-TO-DATE
 > Task :test UP-TO-DATE
 
-BUILD SUCCESSFUL in 348ms
+BUILD SUCCESSFUL in 328ms
 4 actionable tasks: 4 up-to-date

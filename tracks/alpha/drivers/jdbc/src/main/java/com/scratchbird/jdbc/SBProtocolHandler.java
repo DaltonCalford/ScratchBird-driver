@@ -1079,19 +1079,39 @@ public class SBProtocolHandler {
 
     private boolean isRecoverableCachedStatementError(SQLException error) {
         String state = error.getSQLState();
-        if ("42P01".equals(state) || "42P05".equals(state)) {
-            return true;
-        }
         String message = error.getMessage();
         if (message == null) {
             return false;
         }
         String lower = message.toLowerCase(Locale.ROOT);
-        return lower.contains("prepared statement")
-            || lower.contains("cached plan")
-            || lower.contains("cachedplan")
-            || lower.contains("invalid prepared statement")
-            || lower.contains("relation does not exist");
+        return isRecoverableCachedStatementState(state, lower)
+            || isRecoverableCachedStatementMessage(lower);
+    }
+
+    private boolean isRecoverableCachedStatementState(String state, String lowerMessage) {
+        if (state == null) {
+            return false;
+        }
+        if (!"26000".equals(state) && !"34000".equals(state) && !"42P01".equals(state)
+                && !"42P05".equals(state)) {
+            return false;
+        }
+        return lowerMessage.contains("prepared statement")
+            || lowerMessage.contains("unknown prepared statement")
+            || lowerMessage.contains("portal does not exist")
+            || lowerMessage.contains("relation does not exist")
+            || lowerMessage.contains("cache lookup failed for");
+    }
+
+    private boolean isRecoverableCachedStatementMessage(String lowerMessage) {
+        return lowerMessage.contains("prepared statement")
+            || lowerMessage.contains("unknown prepared statement")
+            || lowerMessage.contains("cached plan")
+            || lowerMessage.contains("cachedplan")
+            || lowerMessage.contains("invalid prepared statement")
+            || lowerMessage.contains("relation does not exist")
+            || lowerMessage.contains("portal does not exist")
+            || lowerMessage.contains("cache lookup failed for");
     }
 
     private boolean isSchemaMutation(String sql) {

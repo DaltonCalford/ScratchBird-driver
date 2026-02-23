@@ -673,40 +673,100 @@ public class SBConnection implements Connection {
     }
 
     <T> T withResilience(String operation, String sql, SqlSupplier<T> supplier) throws SQLException {
+        return withResilience(operation, sql, supplier, false);
+    }
+
+    <T> T withResilience(String operation, String sql, SqlSupplier<T> supplier,
+            boolean allowFailoverReplay) throws SQLException {
         if (!circuitBreaker.allowRequest()) {
             throw new SQLTransientConnectionException("Circuit breaker is OPEN", "08006");
         }
-        if (keepaliveTracker != null && keepaliveTracker.needsValidation()) {
-            protocol.ping();
-            keepaliveTracker.markActive();
-        }
 
-        SpanContext span = telemetry.startSpan(operation);
-        if (span != null && sql != null) {
-            String sanitized = TelemetryCollector.sanitizeQuery(sql);
-            if (sanitized != null) {
-                span.withAttribute("db.statement", sanitized);
-            }
-        }
-
-        boolean success = false;
-        try {
-            T result = supplier.get();
-            success = true;
-            circuitBreaker.recordSuccess();
-            if (keepaliveTracker != null) {
+        int attempts = 0;
+        while (true) {
+            if (keepaliveTracker != null && keepaliveTracker.needsValidation()) {
+                protocol.ping();
                 keepaliveTracker.markActive();
             }
-            return result;
-        } catch (SQLException | RuntimeException e) {
-            circuitBreaker.recordFailure();
-            throw e;
-        } finally {
-            telemetry.endSpan(span, success);
+
+            SpanContext span = telemetry.startSpan(operation);
+            if (span != null && sql != null) {
+                String sanitized = TelemetryCollector.sanitizeQuery(sql);
+                if (sanitized != null) {
+                    span.withAttribute("db.statement", sanitized);
+                }
+            }
+
+            boolean success = false;
+            try {
+                T result = supplier.get();
+                success = true;
+                circuitBreaker.recordSuccess();
+                if (keepaliveTracker != null) {
+                    keepaliveTracker.markActive();
+                }
+                return result;
+            } catch (SQLException e) {
+                circuitBreaker.recordFailure();
+                boolean shouldReplay = allowFailoverReplay
+                    && attempts == 0
+                    && isFailoverReplayCandidate(e);
+                attempts++;
+
+                if (!shouldReplay) {
+                    throw e;
+                }
+
+                try {
+                    reconnectForFailover();
+                } catch (SQLException reconnectFailure) {
+                    reconnectFailure.addSuppressed(e);
+                    throw reconnectFailure;
+                }
+                continue;
+            } catch (RuntimeException e) {
+                circuitBreaker.recordFailure();
+                throw e;
+            } finally {
+                telemetry.endSpan(span, success);
+            }
         }
     }
 
     // ==================== Private Methods ====================
+
+    private void reconnectForFailover() throws SQLException {
+        if (protocol == null) {
+            throw new SQLException("Protocol handler is not available", "08003");
+        }
+
+        protocol.close();
+        protocol.connect();
+
+        if (schema != null && !schema.isBlank()) {
+            protocol.execute("SET SCHEMA '" + schema.replace("'", "''") + "'");
+        }
+
+        if (!autoCommit) {
+            protocol.execute("SET AUTOCOMMIT OFF");
+            protocol.beginTransaction();
+        }
+
+        protocol.execute("SET TRANSACTION READ " + (readOnly ? "ONLY" : "WRITE"));
+
+        if (keepaliveTracker != null) {
+            keepaliveTracker.markActive();
+        }
+    }
+
+    private boolean isFailoverReplayCandidate(SQLException ex) {
+        String state = ex.getSQLState();
+        if (state == null || state.isEmpty()) {
+            return false;
+        }
+        return state.startsWith("08")
+            || ex instanceof SQLTransientConnectionException;
+    }
 
     /**
      * Checks if connection is closed and throws exception if so.

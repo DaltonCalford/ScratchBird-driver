@@ -327,19 +327,19 @@ subtasks, artifact paths, and verification gates.
 **Title:** Complete JDBC metadata and protocol feature parity  
 **Owner:** JDBC Team + QA  
 **Risk:** High  
-**Status:** Partial  
+**Status:** Verification complete  
 **ETA:** 4–6 weeks  
 **Acceptance:** JDBC conformance suite with metadata accuracy and prepared/Lob lifecycle behavior.
 
 - **Goal:** Remove protocol and metadata parity gaps blocking enterprise usage.
 - **Dependencies:** JDBC-201
 - **Subtasks**
-  - [ ] Fill missing metadata contract (ResultSet/DatabaseMetaData consistency).
-  - [x] Close prepared statement lifecycle edge cases and stale plan behavior.
-  - [ ] Complete LOB upload/download lifecycle.
-  - [ ] Add enterprise metadata regression suite for nested and derived types.
+- [x] Fill missing metadata contract (ResultSet/DatabaseMetaData consistency).
+- [x] Close prepared statement lifecycle edge cases and stale plan behavior.
+- [x] Complete LOB upload/download lifecycle.
+- [x] Add enterprise metadata regression suite for nested and derived types.
 - **Artifacts path:** `artifacts/enterprise-readiness/JDBC-202`
-- **Blocking conditions:** Incomplete metadata assertions for complex schema objects.
+- **Blocking conditions:** None (JDBC-202 scoped work completed; remaining validation is external cross-runtime acceptance).
 
 ### JDBC-203 (P0)
 **Title:** Add .NET/JDBC cross-runtime pooling contract test as release gate  

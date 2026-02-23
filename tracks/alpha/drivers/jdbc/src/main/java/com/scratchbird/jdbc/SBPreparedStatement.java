@@ -245,6 +245,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             SBQueryResult result = connection.withResilience("query_stream", sql, () ->
                 connection.getProtocol().executeStreaming(sql, parameters, parameterTypes,
                     streamPageSize, queryTimeout * 1000)
+                , true
             );
             if (result.getStream() == null) {
                 throw new SQLException("Query did not return a result set", "02000");
@@ -256,6 +257,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         SBQueryResult result = connection.withResilience("query", sql, () ->
             connection.getProtocol().execute(sql, parameters, parameterTypes,
                 maxRows, queryTimeout * 1000)
+            , true
         );
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");

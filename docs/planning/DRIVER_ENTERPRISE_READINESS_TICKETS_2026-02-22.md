@@ -152,7 +152,7 @@ ETA: 3–5 weeks
 ### JDBC-202
 Title: Complete JDBC metadata and protocol feature parity  
 Priority: P0  
-Status: In progress (prepared-statement lifecycle/retry path and 3 MiB/6 MiB LOB paths added; nested and failover metadata families still open)  
+Status: Verification complete (`SBDatabaseMetaData` UDT/super/attribute/pseudo families, cache-recovery detection, and query failover replay implemented)  
 Gap: Missing transaction/metadata parity and LOB behavior for enterprise clients  
 Acceptance Test: JDBC conformance suite with metadata accuracy, prepared-statement lifecycle, and `ResultSet`/`DatabaseMetaData` behavior checks  
 Owner: JDBC Team + QA  

@@ -138,6 +138,60 @@ public class SBIntegrationTest {
 
     @Test
     @EnabledIfEnvironmentVariable(named = "SCRATCHBIRD_JDBC_URL", matches = ".*")
+    public void metadataUdtAndTypeMetadataMethodsReturnExpectedColumns() throws Exception {
+        String domainName = "jdbc_udt_" + System.currentTimeMillis();
+        try (Connection conn = openConnection();
+             Statement stmt = conn.createStatement()) {
+            try {
+                stmt.execute("CREATE DOMAIN " + domainName + " INTEGER");
+            } catch (SQLException ex) {
+                // If domain DDL is not available in this environment, still validate metadata shape.
+            }
+
+            DatabaseMetaData metadata = conn.getMetaData();
+            try (ResultSet udts = metadata.getUDTs(null, null, "%", null)) {
+                assertMetadataColumns(udts,
+                    "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "CLASS_NAME", "DATA_TYPE",
+                    "REMARKS", "BASE_TYPE");
+            }
+
+            try (ResultSet superTypes = metadata.getSuperTypes(null, null, "%")) {
+                assertMetadataColumns(superTypes,
+                    "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SUPERTYPE_CAT", "SUPERTYPE_SCHEM",
+                    "SUPERTYPE_NAME");
+            }
+
+            try (ResultSet attributes = metadata.getAttributes(null, null, "%", "%")) {
+                assertMetadataColumns(attributes,
+                    "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "ATTR_NAME", "DATA_TYPE",
+                    "ATTR_TYPE_NAME", "ATTR_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "NULLABLE",
+                    "REMARKS", "ATTR_DEF", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH",
+                    "ORDINAL_POSITION", "IS_NULLABLE", "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE",
+                    "SOURCE_DATA_TYPE");
+            }
+
+            try (ResultSet superTables = metadata.getSuperTables(null, null, "%")) {
+                assertMetadataColumns(superTables,
+                    "TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "SUPERTABLE_NAME");
+            }
+
+            try (ResultSet pseudoColumns = metadata.getPseudoColumns(null, null, "%", "%")) {
+                assertMetadataColumns(pseudoColumns,
+                    "TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
+                    "COLUMN_SIZE", "DECIMAL_DIGITS", "NUM_PREC_RADIX", "COLUMN_USAGE",
+                    "REMARKS", "CHAR_OCTET_LENGTH", "IS_NULLABLE");
+            }
+
+            try {
+                stmt.execute("DROP DOMAIN " + domainName);
+            } catch (SQLException ex) {
+                // Ignore cleanup failures after partial environments; next tests should manage independently.
+            }
+        }
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "SCRATCHBIRD_JDBC_URL", matches = ".*")
     public void preparedStatementReplayAfterSchemaRecreate() throws Exception {
         String table = "jdbc_stmt_replay_" + System.currentTimeMillis();
 
