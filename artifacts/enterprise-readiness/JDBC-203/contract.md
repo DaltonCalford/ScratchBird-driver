@@ -13,7 +13,8 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
 
 ## Gate Script
 - `run_cross_runtime_pool_contract.sh` enforces optional strict mode:
-  - `JDBC203_STRICT_GATE=true` or CI (`GITHUB_ACTIONS=true`) blocks on missing envs.
+  - Set `JDBC203_STRICT_GATE=true` to block when any required endpoint/cancel environment is missing.
+  - The default CI path in `ci.yml` sets `JDBC203_STRICT_GATE` explicitly from repository variable (fallback `false`) to avoid mandatory blocking in environments without both runtimes.
   - Non-strict mode records partial results when only one runtime is reachable.
 - Summary file: `contract_gate_summary_<timestamp>.json`.
 

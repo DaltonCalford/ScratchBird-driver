@@ -132,7 +132,7 @@ else
   echo "[step] JDBC pooling phase"
   cd "$ROOT_DIR/tracks/alpha/drivers/jdbc"
   set +e
-  ./gradlew test --tests "com.scratchbird.jdbc.JDBC203*" \
+  ./gradlew test --tests "com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest" \
     -Dorg.gradle.warning.mode=none
   jdbc_rc=$?
   set -e
