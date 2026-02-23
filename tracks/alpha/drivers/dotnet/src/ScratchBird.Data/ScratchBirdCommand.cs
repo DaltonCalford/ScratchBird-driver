@@ -199,10 +199,11 @@ public sealed class ScratchBirdCommand : DbCommand
             throw new InvalidOperationException("Connection must be open");
         }
 
+        var client = _connection.GetConnectedClient();
         var normalized = SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
         var timeoutMs = _commandTimeout > 0 ? _commandTimeout * 1000 : 0;
         var maxRows = _fetchSize > 0 ? _fetchSize : _connection.Config.DefaultFetchSize;
-        var stream = _connection.Client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
+        var stream = client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
         return new ScratchBirdDataReader(stream, behavior, _connection);
     }
 
@@ -229,7 +230,12 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override void Cancel()
     {
-        _connection?.Client.Cancel();
+        if (_connection == null || _connection.State != ConnectionState.Open)
+        {
+            return;
+        }
+
+        _connection.GetConnectedClient().Cancel();
     }
 
     protected override DbParameter CreateDbParameter()

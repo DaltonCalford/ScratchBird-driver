@@ -226,7 +226,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement async API semantics and cancellable operations  
 **Owner:** .NET Team  
 **Risk:** High  
-**Status:** Partial  
+**Status:** In progress (core async/cancel paths implemented; enterprise-grade verification remaining)  
 **ETA:** 2–3 weeks  
 **Acceptance:** Cancellations abort query and release connection without deadlock.
 
@@ -239,6 +239,7 @@ subtasks, artifact paths, and verification gates.
   - [ ] Audit task/cancel execution paths for command/reader/dispose flows.
   - [ ] Add deadlock and orphan-connection regression tests.
   - [ ] Add cancellation + cleanup verification under concurrent cancellation.
+- **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-101/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-101`
 - **Blocking conditions:** Unreleased connection state under cancellation.
 
@@ -246,17 +247,19 @@ subtasks, artifact paths, and verification gates.
 **Title:** Enterprise connection pooling and reconnection resilience  
 **Owner:** .NET Team  
 **Risk:** High  
-**Status:** Partial  
+**Status:** In progress  
 **ETA:** 3–5 weeks  
 **Acceptance:** Soak/reconnect/failover test with bounded leak and stable pool behavior.
 
 - **Goal:** Make pooling deterministic under failure.
 - **Dependencies:** DOTNET-101
 - **Subtasks**
-  - [ ] Add reconnect policy controls and backoff.
+  - [x] Add reconnect policy controls and backoff.
+  - [x] Harden pool lease return/return handling with health checks.
   - [ ] Harden pool eviction, leak detection, and stale handle handling.
   - [ ] Add chaos tests for transient outages and restart events.
   - [ ] Validate metrics for pool saturation and recovery.
+- **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-102`
 - **Blocking conditions:** Opaque leak instrumentation across CI environments.
 
@@ -264,17 +267,18 @@ subtasks, artifact paths, and verification gates.
 **Title:** Transaction semantics parity: isolation + savepoints + nested flows  
 **Owner:** .NET Team + QA  
 **Risk:** High  
-**Status:** Partial  
+**Status:** In progress  
 **ETA:** 4–6 weeks  
 **Acceptance:** Isolation and savepoint matrix passes with concurrent writers.
 
 - **Goal:** Align transaction state behavior with enterprise expectations.
 - **Dependencies:** DOTNET-102
 - **Subtasks**
-  - [ ] Map driver API to server isolation semantics.
-  - [ ] Implement nested savepoint lifecycle and rollback correctness.
+  - [x] Map driver API to server isolation semantics.
+  - [x] Implement nested savepoint lifecycle and rollback correctness.
   - [ ] Add concurrent transaction matrix including lock contention cases.
   - [ ] Add explicit tests for mixed read/write sessions.
+- **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-103/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-103`
 - **Blocking conditions:** Hidden transaction state machine divergence.
 

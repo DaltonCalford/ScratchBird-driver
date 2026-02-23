@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using ScratchBird.Data;
@@ -71,6 +72,71 @@ public class IntegrationTests
         using var reader = cmd.ExecuteReader();
 
         Assert.True(reader.Read());
+    }
+
+    [Fact]
+    public void ConnectionPoolingReusesProtocolClient()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+
+        var poolingDsn = AddPoolingFlags(dsn);
+        ProtocolClient? firstClient;
+
+        using (var conn1 = new ScratchBirdConnection(poolingDsn))
+        {
+            conn1.Open();
+            firstClient = GetClient(conn1);
+        }
+
+        using (var conn2 = new ScratchBirdConnection(poolingDsn))
+        {
+            conn2.Open();
+            var secondClient = GetClient(conn2);
+            Assert.NotNull(firstClient);
+            Assert.Same(firstClient!, secondClient);
+        }
+    }
+
+    [Fact]
+    public void SavepointRollbackAndRelease()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        using var tx = conn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        tx.Save("odbc_pool_savepoint");
+        tx.Rollback("odbc_pool_savepoint");
+        tx.Release("odbc_pool_savepoint");
+        tx.Rollback();
+    }
+
+    private static ProtocolClient? GetClient(ScratchBirdConnection connection)
+    {
+        var field = typeof(ScratchBirdConnection).GetField("_client", BindingFlags.NonPublic | BindingFlags.Instance);
+        return field?.GetValue(connection) as ProtocolClient;
+    }
+
+    private static string AddPoolingFlags(string dsn)
+    {
+        if (dsn.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{dsn}{(dsn.Contains("?", StringComparison.OrdinalIgnoreCase) ? "&" : "?")}Pooling=true&MaxPoolSize=2&ConnectionLifetime=300";
+        }
+        if (dsn.EndsWith(';'))
+        {
+            return $"{dsn}Pooling=true;MaxPoolSize=2;ConnectionLifetime=300";
+        }
+        return $"{dsn};Pooling=true;MaxPoolSize=2;ConnectionLifetime=300";
     }
 
     [Fact]

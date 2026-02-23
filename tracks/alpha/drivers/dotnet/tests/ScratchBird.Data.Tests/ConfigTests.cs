@@ -53,4 +53,15 @@ public class ConfigTests
         Assert.Equal("token", cfg.ManagerAuthToken);
         Assert.Equal((ushort)7, cfg.ManagerClientFlags);
     }
+
+    [Fact]
+    public void ParsePoolingOptions()
+    {
+        var cfg = ScratchBirdConfig.FromConnectionString("Host=localhost;Port=3092;Database=pooling;Username=app;Password=secret;Pooling=true;MinPoolSize=2;MaxPoolSize=25;ConnectionLifetime=60");
+
+        Assert.True(cfg.Pooling);
+        Assert.Equal(2, cfg.MinPoolSize);
+        Assert.Equal(25, cfg.MaxPoolSize);
+        Assert.Equal(60, cfg.ConnectionLifetime);
+    }
 }

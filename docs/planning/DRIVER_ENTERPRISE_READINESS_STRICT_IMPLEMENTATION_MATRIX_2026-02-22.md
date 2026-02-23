@@ -27,9 +27,9 @@
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| DOTNET-101 | P1 | Partial | Async and cancellation behavior incomplete | Cancel long queries without deadlock/connection leaks | .NET Team | High | 2–3w | None |
-| DOTNET-102 | P0 | Partial | Pooling, reconnection, and circuit-breaker behavior incomplete | Soak test with saturation/failover and bounded leak | .NET Team | High | 3–5w | DOTNET-101 |
-| DOTNET-103 | P0 | Partial | Isolation and savepoint handling incomplete | Isolation + savepoint matrix across concurrent writers | .NET Team + QA | High | 4–6w | DOTNET-102 |
+| DOTNET-101 | P1 | In progress | Async and cancellation behavior partially implemented | Cancel long queries without deadlock/connection leaks | .NET Team | High | 2–3w | None |
+| DOTNET-102 | P0 | In progress | Pooling, reconnection, and circuit-breaker behavior incomplete | Soak test with saturation/failover and bounded leak | .NET Team | High | 3–5w | DOTNET-101 |
+| DOTNET-103 | P0 | In progress | Isolation and savepoint handling partially implemented | Isolation + savepoint matrix across concurrent writers | .NET Team + QA | High | 4–6w | DOTNET-102 |
 | DOTNET-104 | P1 | Partial | Metadata/retrieval/LOB paths and statement cache incomplete | Metadata and LOB roundtrip matrix, cache invalidation tests | .NET Team | High | 3–5w | DOTNET-101 |
 | JDBC-201 | P1 | Partial | Reactive and cancellation coverage limited | Async cancel and timeout tests under contention | JDBC Team | High | 3–5w | None |
 | JDBC-202 | P0 | Partial | Missing protocol and metadata parity for enterprise clients | JDBC conformance and metadata accuracy suite | JDBC Team + QA | High | 4–6w | JDBC-201 |

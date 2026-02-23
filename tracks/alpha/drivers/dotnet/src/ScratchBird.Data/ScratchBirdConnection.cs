@@ -8,15 +8,20 @@
 using System.Data;
 using System.Data.Common;
 using System.Linq;
+using System.Threading;
 
 namespace ScratchBird.Data;
 
 public sealed class ScratchBirdConnection : DbConnection
 {
+    private const int MaxConnectRetries = 3;
+    private const int ReconnectBackoffMs = 120;
+
     private string _connectionString = string.Empty;
     private ConnectionState _state = ConnectionState.Closed;
     private ScratchBirdConfig _config = new();
     private ProtocolClient? _client;
+    private ProtocolClientPool.Lease? _clientLease;
 
     public ScratchBirdConnection() { }
 
@@ -49,6 +54,7 @@ public sealed class ScratchBirdConnection : DbConnection
 
     internal ProtocolClient Client => _client ?? throw new InvalidOperationException("Connection not open");
     internal ScratchBirdConfig Config => _config;
+    internal ProtocolClient GetConnectedClient() => EnsureConnectedClient();
 
     public override void Open()
     {
@@ -56,10 +62,91 @@ public sealed class ScratchBirdConnection : DbConnection
         {
             return;
         }
-        _client = new ProtocolClient();
-        _client.Connect(_config);
-        ApplySchema();
+
+        OpenWithRetry();
         _state = ConnectionState.Open;
+    }
+
+    private void OpenWithRetry()
+    {
+        ScratchBirdException? lastFailure = null;
+
+        for (var attempt = 0; attempt < MaxConnectRetries; attempt++)
+        {
+            try
+            {
+                BorrowAndConnect();
+                return;
+            }
+            catch (ScratchBirdException ex)
+            {
+                lastFailure = ex;
+                _clientLease?.Dispose();
+                _clientLease = null;
+                _client = null;
+
+                if (attempt + 1 < MaxConnectRetries)
+                {
+                    Thread.Sleep(Math.Min(ReconnectBackoffMs * (1 << attempt), 1000));
+                    continue;
+                }
+
+                throw;
+            }
+        }
+
+        if (lastFailure != null)
+        {
+            throw lastFailure;
+        }
+    }
+
+    private void BorrowAndConnect()
+    {
+        _clientLease?.Dispose();
+        _clientLease = null;
+
+        _client = ProtocolClientPool.BorrowOrCreate(_config, out var lease);
+        _clientLease = lease;
+        try
+        {
+            _client.Connect(_config);
+            _state = ConnectionState.Open;
+            ApplySchema();
+        }
+        catch
+        {
+            _clientLease?.Dispose();
+            _clientLease = null;
+            _client = null;
+            throw;
+        }
+    }
+
+    private ProtocolClient EnsureConnectedClient()
+    {
+        if (_state != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection is not open");
+        }
+
+        if (_client == null)
+        {
+            OpenWithRetry();
+            return _client ?? throw new InvalidOperationException("Connection could not be restored");
+        }
+
+        if (_client.IsHealthy)
+        {
+            return _client;
+        }
+
+        _clientLease?.Dispose();
+        _clientLease = null;
+        _client = null;
+        OpenWithRetry();
+
+        return _client ?? throw new InvalidOperationException("Connection could not be restored");
     }
 
     public override async Task OpenAsync(CancellationToken cancellationToken)
@@ -69,8 +156,11 @@ public sealed class ScratchBirdConnection : DbConnection
 
     public override void Close()
     {
-        _client?.Close();
+        var lease = _clientLease;
+        _clientLease = null;
+        _client = null;
         _state = ConnectionState.Closed;
+        lease?.Dispose();
     }
 
     public override void ChangeDatabase(string databaseName)
@@ -88,7 +178,7 @@ public sealed class ScratchBirdConnection : DbConnection
         {
             throw new InvalidOperationException("Connection is not open");
         }
-        _client?.Begin();
+        GetConnectedClient().Begin(isolationLevel);
         return new ScratchBirdTransaction(this, isolationLevel);
     }
 

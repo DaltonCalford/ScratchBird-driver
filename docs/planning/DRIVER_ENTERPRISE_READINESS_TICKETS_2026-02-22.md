@@ -102,7 +102,7 @@ ETA: 1 week
 ### DOTNET-101
 Title: Implement async API semantics and cancellable operations  
 Priority: P1  
-Status: Partial  
+Status: In progress (core async/cancel paths implemented; acceptance coverage incomplete)  
 Gap: Async and cancellation behavior is incomplete for production workloads  
 Acceptance Test: Cancellation during long-running query must abort command and release connection without deadlocks  
 Owner: .NET Team  
@@ -112,7 +112,7 @@ ETA: 2–3 weeks
 ### DOTNET-102
 Title: Enterprise connection pooling and reconnection resilience  
 Priority: P0  
-Status: Partial  
+Status: In progress  
 Gap: Pooling, reconnect, and circuit-breaker behavior inconsistent  
 Acceptance Test: Soak test with pool saturation, transient failures, and failover; no pool corruption and bounded connection leak rate  
 Owner: .NET Team  
@@ -122,7 +122,7 @@ ETA: 3–5 weeks
 ### DOTNET-103
 Title: Transaction semantics parity: isolation + savepoints + nested flows  
 Priority: P0  
-Status: Partial  
+Status: In progress  
 Gap: Isolation level correctness and savepoint handling are incomplete  
 Acceptance Test: Isolation matrix and savepoint rollback matrix across concurrent writers  
 Owner: .NET Team + QA  

@@ -7,6 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Buffers.Binary;
 using System.IO;
+using System.Data;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -50,6 +51,16 @@ internal sealed class ProtocolClient
     private ScratchBirdConfig? _config;
 
     public bool Connected => _connected;
+    internal bool IsHealthy => _connected && _stream != null && (_client?.Connected ?? false);
+
+    internal void EnsureHealthy()
+    {
+        if (_connected && IsHealthy)
+        {
+            return;
+        }
+        throw new ScratchBirdConnectionException("Connection is not healthy", "08006");
+    }
 
     public void Connect(ScratchBirdConfig config)
     {
@@ -67,6 +78,14 @@ internal sealed class ProtocolClient
         {
             throw new ScratchBirdNotSupportedException("compression=zstd is not supported", "0A000");
         }
+
+        _connected = false;
+        _sequence = 0;
+        _lastQuerySequence = 0;
+        _txnId = 0;
+        _parameters.Clear();
+        _attachmentId = new byte[16];
+        _config = config;
 
         _client = new TcpClient { NoDelay = true };
         _client.SendTimeout = config.SocketTimeoutMs > 0 ? config.SocketTimeoutMs : 0;
@@ -86,7 +105,6 @@ internal sealed class ProtocolClient
         }
 
         _stream = UpgradeToTls(_stream, config, sslMode);
-        _config = config;
         if (string.Equals(config.FrontDoorMode, "manager_proxy", StringComparison.OrdinalIgnoreCase))
         {
             PerformManagerConnect(config);
@@ -116,10 +134,30 @@ internal sealed class ProtocolClient
 
     public void Begin()
     {
+        Begin(IsolationLevel.ReadCommitted);
+    }
+
+    public void Begin(IsolationLevel isolationLevel)
+    {
         EnsureConnected();
+        var mappedIsolation = MapIsolationLevel(isolationLevel);
         var payload = ProtocolCodec.BuildTxnBeginPayload(0, 0, 0, ProtocolConstants.IsolationReadCommitted, 0, 0, 0, 0);
+        payload[4] = mappedIsolation;
         SendMessage(MessageType.TXN_BEGIN, payload, 0, false);
         DrainUntilReady();
+    }
+
+    private static byte MapIsolationLevel(IsolationLevel isolationLevel)
+    {
+        return isolationLevel switch
+        {
+            IsolationLevel.Unspecified => ProtocolConstants.IsolationReadCommitted,
+            IsolationLevel.ReadUncommitted => ProtocolConstants.IsolationReadUncommitted,
+            IsolationLevel.ReadCommitted => ProtocolConstants.IsolationReadCommitted,
+            IsolationLevel.RepeatableRead => ProtocolConstants.IsolationRepeatableRead,
+            IsolationLevel.Serializable => ProtocolConstants.IsolationSerializable,
+            _ => ProtocolConstants.IsolationReadCommitted
+        };
     }
 
     public void Commit()
@@ -402,6 +440,7 @@ internal sealed class ProtocolClient
 
     private void SendSimpleQuery(string sql, int timeoutMs, int maxRows)
     {
+        EnsureHealthy();
         var flags = ConfigBinaryTransfer() ? QueryFlagBinaryResult : 0;
         var payload = ProtocolCodec.BuildQueryPayload(sql, flags, (uint)Math.Max(0, maxRows), (uint)Math.Max(0, timeoutMs));
         _lastQuerySequence = SendMessage(MessageType.QUERY, payload, 0, false);
@@ -439,6 +478,7 @@ internal sealed class ProtocolClient
 
     private int DescribeStatement(string name)
     {
+        EnsureHealthy();
         var payload = ProtocolCodec.BuildDescribePayload((byte)'S', name);
         SendMessage(MessageType.DESCRIBE, payload, 0, false);
         SendMessage(MessageType.SYNC, Array.Empty<byte>(), 0, false);
@@ -572,6 +612,7 @@ internal sealed class ProtocolClient
 
     private void SendManagerFrame(byte msgType, byte[] payload)
     {
+        EnsureHealthy();
         if (_stream == null)
         {
             throw new InvalidOperationException("No active stream");
@@ -592,6 +633,10 @@ internal sealed class ProtocolClient
 
     private (byte Type, byte[] Payload) ReceiveManagerFrame()
     {
+        if (_stream == null)
+        {
+            throw new InvalidOperationException("No active stream");
+        }
         var header = ReadExact(ManagerHeaderSize);
         var magic = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4));
         if (magic != ManagerProtocolMagic)
@@ -711,6 +756,7 @@ internal sealed class ProtocolClient
 
     private ProtocolMessage Receive()
     {
+        EnsureHealthy();
         var headerBytes = ReadExact(ProtocolConstants.HeaderSize);
         var header = ProtocolMessage.ParseHeader(headerBytes);
         var payload = header.Length > 0 ? ReadExact((int)header.Length) : Array.Empty<byte>();
@@ -727,18 +773,29 @@ internal sealed class ProtocolClient
         var offset = 0;
         while (offset < length)
         {
-            var read = _stream.Read(buffer, offset, length - offset);
-            if (read <= 0)
+            try
             {
-                throw new ScratchBirdConnectionException("Connection closed", "08006");
+                var read = _stream.Read(buffer, offset, length - offset);
+                if (read <= 0)
+                {
+                    throw new ScratchBirdConnectionException("Connection closed", "08006");
+                }
+                offset += read;
             }
-            offset += read;
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
+            {
+                _connected = false;
+                _stream?.Dispose();
+                _client?.Close();
+                throw new ScratchBirdConnectionException("Connection lost during read", "08006");
+            }
         }
         return buffer;
     }
 
     private uint SendMessage(MessageType type, byte[] payload, byte flags, bool forceZero)
     {
+        EnsureHealthy();
         if (_stream == null)
         {
             throw new InvalidOperationException("No active stream");
@@ -749,8 +806,18 @@ internal sealed class ProtocolClient
         var header = new MessageHeader((byte)type, flags, (uint)payload.Length, sequence, attachmentId, txnId);
         var message = new ProtocolMessage(header, payload);
         var data = message.ToBytes();
-        _stream.Write(data, 0, data.Length);
-        _stream.Flush();
+        try
+        {
+            _stream.Write(data, 0, data.Length);
+            _stream.Flush();
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
+        {
+            _connected = false;
+            _stream?.Dispose();
+            _client?.Close();
+            throw new ScratchBirdConnectionException("Connection lost during write", "08006");
+        }
         return sequence;
     }
 

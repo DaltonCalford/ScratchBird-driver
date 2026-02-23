@@ -31,6 +31,10 @@ public sealed class ScratchBirdConfig
     public bool BinaryTransfer { get; set; } = true;
     public string Compression { get; set; } = "off";
     public int DefaultFetchSize { get; set; } = 0;
+    public bool Pooling { get; set; } = true;
+    public int MinPoolSize { get; set; } = 0;
+    public int MaxPoolSize { get; set; } = 100;
+    public int ConnectionLifetime { get; set; } = 0;
     public string ManagerAuthToken { get; set; } = string.Empty;
     public string ManagerUsername { get; set; } = string.Empty;
     public string ManagerDatabase { get; set; } = string.Empty;
@@ -235,6 +239,26 @@ internal static class DsnParser
             case "default_fetch_size":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fetch))
                     cfg.DefaultFetchSize = Math.Max(0, fetch);
+                break;
+            case "pooling":
+                cfg.Pooling = value.Equals("true", StringComparison.OrdinalIgnoreCase) || value == "1";
+                break;
+            case "minpoolsize":
+            case "minimumpoolsize":
+            case "min_pool_size":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minPool))
+                    cfg.MinPoolSize = Math.Max(0, minPool);
+                break;
+            case "maxpoolsize":
+            case "maximumpoolsize":
+            case "max_pool_size":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxPool))
+                    cfg.MaxPoolSize = Math.Max(1, maxPool);
+                break;
+            case "connectionlifetime":
+            case "connection_lifetime":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lifetime))
+                    cfg.ConnectionLifetime = Math.Max(0, lifetime);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":

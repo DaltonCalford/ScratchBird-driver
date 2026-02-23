@@ -15,6 +15,7 @@ public sealed class ScratchBirdTransaction : DbTransaction
     private readonly ScratchBirdConnection _connection;
     private readonly IsolationLevel _isolationLevel;
     private bool _completed;
+    private readonly Stack<string> _savepoints = new();
 
     internal ScratchBirdTransaction(ScratchBirdConnection connection, IsolationLevel isolationLevel)
     {
@@ -32,7 +33,7 @@ public sealed class ScratchBirdTransaction : DbTransaction
         {
             return;
         }
-        _connection.Client.Commit();
+        _connection.GetConnectedClient().Commit();
         _completed = true;
     }
 
@@ -42,7 +43,44 @@ public sealed class ScratchBirdTransaction : DbTransaction
         {
             return;
         }
-        _connection.Client.Rollback();
+        _connection.GetConnectedClient().Rollback();
         _completed = true;
+    }
+
+    public override void Save(string savepointName)
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException("Transaction is already completed");
+        }
+        if (string.IsNullOrWhiteSpace(savepointName))
+        {
+            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+        }
+        _connection.GetConnectedClient().Savepoint(savepointName);
+        _savepoints.Push(savepointName);
+    }
+
+    public override void Rollback(string savepointName)
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException("Transaction is already completed");
+        }
+        if (string.IsNullOrWhiteSpace(savepointName))
+        {
+            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+        }
+        _connection.GetConnectedClient().RollbackToSavepoint(savepointName);
+    }
+
+    public override void Release(string savepointName)
+    {
+        if (string.IsNullOrWhiteSpace(savepointName))
+        {
+            throw new ArgumentException("Savepoint name is required", nameof(savepointName));
+        }
+        _connection.GetConnectedClient().ReleaseSavepoint(savepointName);
+        _savepoints.TryPop(out _);
     }
 }
