@@ -6,7 +6,10 @@ Official database drivers for the [ScratchBird Database Engine](https://github.c
 
 ScratchBird-driver is now in **Initial Early Beta release (`0.1.0`)**.
 
-**Status:** Native-parser compliant SBWP v1.1 baseline is complete for the beta driver set. Incomplete drivers remain in active development for post-`0.1.0` milestones.
+**Status:** SBWP v1.1 baseline implementation is in place for the released driver set.  
+Current verification evidence is captured in `docs/planning/DRIVER_ENTERPRISE_READINESS_*` and
+`artifacts/enterprise-readiness/`.
+
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 **Release Targets:** `docs/planning/RELEASE_TARGETS.md`
 
@@ -62,29 +65,39 @@ own native client drivers against ScratchBird's emulation listeners.
 - Dart (`tracks/beta/drivers/dart/`) - in development
 - Mojo (`tracks/alpha/drivers/mojo/`) - in development
 
-### Driver Status Matrix (Snapshot: 2026-02-07)
+### Driver Status Matrix (Snapshot: 2026-02-23)
 
-Build/test snapshot from a full local pass. This is not a release certification.
+Build/test snapshot from the latest local verification sweep. This is not a release certification.
 
 | Driver | Build/Test | Notes |
 |--------|------------|-------|
+| C/C++ | Pass | `cmake --build` (core client tests not run as part of the latest sweep) |
+| ODBC | Pass | `cmake --build` (`scratchbird_odbc_tests`) |
 | Go | Pass | `go test ./...` |
-| Node.js | Pass | `npm test` (4 integration tests skipped: `SCRATCHBIRD_NODE_URL` not set) |
-| Python | Pass | `pytest` in venv (4 integration tests skipped: `SCRATCHBIRD_TEST_DSN` not set) |
-| Ruby | Pass | `ruby -Ilib:test test/test_types.rb` (integration tests require `SCRATCHBIRD_RUBY_URL`) |
-| Rust | Pass | `cargo test` (warnings: deprecated rustls, dead fields) |
-| PHP | Pass | `vendor/bin/phpunit tests` (4 tests skipped) |
-| .NET | Pass | `dotnet test` (warnings: nullability/hiding) |
-| Java/JDBC | Pass | `./gradlew build` with JDK 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`) |
-| Pascal | Pass (compile) | `fpc` compile passes; Indy 10 lacks TLS 1.3 so runtime connects are blocked |
-| ODBC | Pass | `cmake --build` (warns: ODBC headers + GTest not found) |
-| C/C++ | Pass | `cmake --build` |
+| Node.js | Blocked | `npm test` blocked (missing `tsc` tool in this environment) |
+| Python | Pass | `pytest -q` |
+| PHP | Blocked | `composer test` script is not defined |
+| Ruby | Blocked | no runnable tests discovered in this environment |
+| Rust | Pass | `cargo test` |
+| R | Pass* | `R -q -e ...` (`C` extension tests pass, integration skipped) |
+| Pascal | Partial | compile pass; runtime tests are environment-specific |
+| .NET | Pass | `dotnet test` |
+| Java/JDBC | Pass | `./gradlew test` |
+| Elixir | Blocked | `mix test` requires Elixir ~> 1.15 (environment has 1.14) |
 | Swift | Pass | `swift test` |
-| Dart | Not run | `dart` not installed |
-| R | Warnings | `R CMD check` completes with warnings/notes (missing docs, replacement function arg name) |
-| Elixir | Fail | `mix test` requires Elixir ~> 1.15 (current 1.14) |
-| Mojo | Not run | `mojo` not installed |
-| CLI tools | Pass | `build_cli` builds core tools; FDW tools gated; OpenSSL 3 deprecation warnings |
+| Dart | Pass | `dart test` |
+| Mojo | Blocked | environment has no `mojo` runtime/runner |
+| CLI | Pass | core CLI build/test checks; FDW tools gated |
+
+\* R status: in-tree config/type/transport tests pass; integration checks are skipped unless `SCRATCHBIRD_R_URL` is set.
+
+### Current Enterprise Readiness Status
+
+- `DRIVER_ENTERPRISE_READINESS_STRICT_IMPLEMENTATION_MATRIX_2026-02-22.md` defines exact ticket-level completion status and blockers.
+- `DRIVER_ENTERPRISE_READINESS_TICKETS_2026-02-22.md` holds ownership and acceptance criteria.
+- `DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_2026-02-23.md` contains current unresolved gaps.
+
+Snapshot date for this table is February 23, 2026.
 
 ### Cross-Platform CI Coverage
 
