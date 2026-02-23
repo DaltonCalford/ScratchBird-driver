@@ -660,6 +660,7 @@ private:
 
     SQLRETURN bindResultData();
     SQLRETURN convertAndStore(size_t col_index, const std::string& value);
+    void clearGetDataState();
     SQLRETURN buildParameterData(std::vector<ParameterLiteral>& literals, SQLULEN row_offset);
     std::vector<ParameterLiteral> buildParameterData();
     SQLRETURN executeSqlStatements(const std::string& sql);
@@ -722,6 +723,13 @@ private:
     bool noscan_{false};
     bool use_bookmarks_{false};
     bool retrieve_data_{true};
+
+    // SQLGetData streaming state for long-data chunked retrieval
+    struct GetDataStreamState {
+        std::string value;
+        size_t offset{0};
+    };
+    std::unordered_map<SQLUSMALLINT, GetDataStreamState> get_data_stream_;
 };
 
 // =============================================================================

@@ -3743,6 +3743,7 @@ SQLRETURN OdbcStatement::fetch() {
     }
 
     current_row_ = next_index + 1;
+    clearGetDataState();
     auto result = bindResultData();
 
     return result;
@@ -3804,9 +3805,14 @@ SQLRETURN OdbcStatement::fetchScroll(SQLSMALLINT fetch_orientation, SQLLEN fetch
     }
 
     current_row_ = static_cast<size_t>(new_index) + 1;
+    clearGetDataState();
     auto result = bindResultData();
 
     return result;
+}
+
+void OdbcStatement::clearGetDataState() {
+    get_data_stream_.clear();
 }
 
 SQLRETURN OdbcStatement::getData(SQLUSMALLINT column_number,
@@ -3834,6 +3840,81 @@ SQLRETURN OdbcStatement::getData(SQLUSMALLINT column_number,
     const auto& value = rows_[current_row_ - 1][column_number - 1];
     const auto& column_meta = columns_[column_number - 1];
     bool is_binary_column = isBinarySqlType(column_meta.sql_type);
+    bool stream_binary = target_type == SQL_C_BINARY;
+    bool stream_text = (target_type == SQL_C_CHAR || target_type == SQL_C_DEFAULT);
+    bool can_stream = stream_binary || stream_text;
+
+    auto prepareStreamState = [&](SQLUSMALLINT column) -> GetDataStreamState& {
+        auto it = get_data_stream_.find(column);
+        if (it == get_data_stream_.end()) {
+            GetDataStreamState state;
+            if (stream_binary) {
+                state.value = value;
+            } else if (stream_text) {
+                state.value = is_binary_column ? bytesToHexString(value) : value;
+            }
+            it = get_data_stream_.emplace(column, std::move(state)).first;
+        }
+        return it->second;
+    };
+
+    auto streamChunk = [&](SQLUSMALLINT column, bool is_text, SQLLEN* remaining_len_ptr) -> SQLRETURN {
+        if (!can_stream) {
+            return SQL_ERROR;
+        }
+
+        GetDataStreamState& stream_state = prepareStreamState(column);
+        const auto& source = stream_state.value;
+        const auto total_size = source.size();
+        const auto offset = stream_state.offset;
+
+        if (offset >= total_size) {
+            if (remaining_len_ptr) {
+                *remaining_len_ptr = 0;
+            }
+            get_data_stream_.erase(column);
+            return SQL_SUCCESS;
+        }
+
+        if (buffer_length <= 0) {
+            if (remaining_len_ptr) {
+                *remaining_len_ptr = static_cast<SQLLEN>(total_size);
+            }
+            return SQL_SUCCESS;
+        }
+
+        auto capacity = static_cast<size_t>(buffer_length);
+        if (is_text) {
+            capacity = std::max<size_t>(1, static_cast<size_t>(buffer_length));
+            capacity -= 1;
+        }
+
+        const size_t remaining = total_size - offset;
+        const size_t copy_size = std::min(capacity, remaining);
+        if (remaining_len_ptr) {
+            *remaining_len_ptr = static_cast<SQLLEN>(total_size);
+        }
+
+        if (target_value && copy_size > 0) {
+            std::memcpy(target_value,
+                        source.data() + offset,
+                        copy_size);
+            if (is_text) {
+                static_cast<char*>(target_value)[copy_size] = '\0';
+            }
+        } else if (is_text && target_value) {
+            static_cast<char*>(target_value)[0] = '\0';
+        }
+
+        stream_state.offset += copy_size;
+        if (stream_state.offset < total_size) {
+            setError("01004", 0, "String data, right truncated");
+            return SQL_SUCCESS_WITH_INFO;
+        }
+
+        get_data_stream_.erase(column);
+        return SQL_SUCCESS;
+    };
 
     // Handle NULL
     if (value.empty()) {
@@ -3849,23 +3930,12 @@ SQLRETURN OdbcStatement::getData(SQLUSMALLINT column_number,
     switch (target_type) {
         case SQL_C_CHAR:
         case SQL_C_DEFAULT: {
-            std::string out_value = value;
-            if (is_binary_column) {
-                out_value = bytesToHexString(value);
-            }
+            SQLLEN total_length = 0;
+            auto stream_result = streamChunk(column_number, true, &total_length);
             if (str_len_or_ind) {
-                *str_len_or_ind = static_cast<SQLLEN>(out_value.size());
+                *str_len_or_ind = total_length;
             }
-            if (target_value && buffer_length > 0) {
-                size_t copy_len = std::min(static_cast<size_t>(buffer_length - 1), out_value.size());
-                std::memcpy(target_value, out_value.c_str(), copy_len);
-                static_cast<char*>(target_value)[copy_len] = '\0';
-                if (out_value.size() >= static_cast<size_t>(buffer_length)) {
-                    setError("01004", 0, "String data, right truncated");
-                    result = SQL_SUCCESS_WITH_INFO;
-                }
-            }
-            break;
+            return stream_result;
         }
 
         case SQL_C_LONG:
@@ -3932,18 +4002,12 @@ SQLRETURN OdbcStatement::getData(SQLUSMALLINT column_number,
         }
 
         case SQL_C_BINARY: {
+            SQLLEN total_length = 0;
+            auto stream_result = streamChunk(column_number, false, &total_length);
             if (str_len_or_ind) {
-                *str_len_or_ind = static_cast<SQLLEN>(value.size());
+                *str_len_or_ind = total_length;
             }
-            if (target_value && buffer_length > 0) {
-                size_t copy_len = std::min(static_cast<size_t>(buffer_length), value.size());
-                std::memcpy(target_value, value.data(), copy_len);
-                if (value.size() > static_cast<size_t>(buffer_length)) {
-                    setError("01004", 0, "String data, right truncated");
-                    result = SQL_SUCCESS_WITH_INFO;
-                }
-            }
-            break;
+            return stream_result;
         }
 
         case SQL_C_DATE: {
@@ -4074,6 +4138,8 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
         setError("HYC00", 0, "Invalid lock type");
         return SQL_ERROR;
     }
+
+    clearGetDataState();
 
     auto uses_entire_rowset = [](SQLSETPOSIROW row) { return row == SQL_ENTIRE_ROWSET; };
     auto valid_row = [&](SQLSETPOSIROW row) {
@@ -4835,6 +4901,7 @@ void OdbcStatement::applyResultSet(size_t index) {
         resetResults();
         return;
     }
+    clearGetDataState();
 
     ResultSet& rs = result_sets_[index];
     columns_ = std::move(rs.columns);
@@ -4845,6 +4912,7 @@ void OdbcStatement::applyResultSet(size_t index) {
 }
 
 void OdbcStatement::resetResults() {
+    clearGetDataState();
     columns_.clear();
     rows_.clear();
     result_sets_.clear();

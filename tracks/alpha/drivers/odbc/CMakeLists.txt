@@ -192,6 +192,7 @@ if (BUILD_TESTING)
             tests/test_odbc_bulk_operations.cpp
             tests/test_odbc_capabilities_browse.cpp
             tests/test_odbc_catalog_and_types.cpp
+            tests/test_odbc_lob_streaming.cpp
         )
 
         target_link_libraries(scratchbird_odbc_tests

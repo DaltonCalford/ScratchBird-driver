@@ -1,0 +1,19 @@
+CMake Warning at CMakeLists.txt:102 (message):
+  ODBC not found.  Building with generic ODBC headers.
+
+
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Skipping ODBC tests: GoogleTest not found
+-- 
+-- ScratchBird ODBC Driver Configuration:
+--   Version: 0.1.0
+--   Platform: Linux
+--   Windows: 
+--   Linux: TRUE
+--   macOS: 
+--   Install prefix: /usr/local
+-- 
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local

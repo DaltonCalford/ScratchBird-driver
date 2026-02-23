@@ -156,17 +156,17 @@ subtasks, artifact paths, and verification gates.
 **Title:** Finalize ODBC large-object streaming support  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Partial  
+**Status:** In progress (read-side chunking complete; write side pending)
 **ETA:** 3–5 weeks  
 **Acceptance:** 10MB+ LOB stream upload/download with truncation, encoding, and boundary checks.
 
 - **Goal:** Complete streaming semantics for large payloads with strict truncation behavior.
 - **Dependencies:** ODBC-005
 - **Subtasks**
-  - [ ] Implement complete LOB stream get/put and chunk handling.
-  - [ ] Handle boundary truncation and encoding edge cases.
-  - [ ] Validate behavior for binary/text large payloads and mixed cancellation cases.
-  - [ ] Add boundary tests (small, exact boundary, oversize, repeated chunks).
+  - [x] Implement `SQLGetData` chunked retrieval with stateful per-column continuation.
+  - [x] Add stream-state reset across fetch/setpos/result-set transitions.
+  - [x] Add truncation and chunk-boundary tests for text and binary reads.
+  - [ ] Implement `SQLPutData` write-side upload/stream path and mixed-direction lifecycle.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-007`
 - **Blocking conditions:** Incomplete stream lifecycle cleanup after error/cancel.
 
