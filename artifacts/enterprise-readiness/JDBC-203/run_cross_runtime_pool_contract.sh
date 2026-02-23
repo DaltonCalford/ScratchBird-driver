@@ -104,6 +104,9 @@ echo
 if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_DOTNET_URL not set; .NET phase cannot run"
   dotnet_status="env_missing"
+elif [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
+  echo "[warn] SCRATCHBIRD_DOTNET_CANCEL_SQL not set; .NET phase cannot run required cancel-reuse scenarios"
+  dotnet_status="env_missing"
 else
   echo "[step] .NET pooling phase"
   cd "$ROOT_DIR"
@@ -127,6 +130,9 @@ fi
 echo
 if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_JDBC_URL not set; JDBC phase cannot run"
+  jdbc_status="env_missing"
+elif [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
+  echo "[warn] SCRATCHBIRD_JDBC_CANCEL_SQL not set; JDBC phase cannot run required cancel-reuse scenarios"
   jdbc_status="env_missing"
 else
   echo "[step] JDBC pooling phase"
