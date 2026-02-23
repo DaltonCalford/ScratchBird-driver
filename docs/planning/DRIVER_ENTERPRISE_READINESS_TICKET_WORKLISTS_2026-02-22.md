@@ -84,7 +84,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement descriptor and bind/column descriptor APIs  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete (verification blocked)  
+**Status:** Code complete (verification blocked by missing in-tree ODBC metadata test harness)  
 **ETA:** 2–3 weeks  
 **Acceptance:** APD/IPD/ARD metadata and output bindings pass descriptor conformance tests.
 
