@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scratchbird-sidecar.fullname" . }}
+  labels:
+    {{- include "scratchbird-sidecar.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.deployment.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "scratchbird-sidecar.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "scratchbird-sidecar.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        {{- with .Values.deployment.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      containers:
+        - name: scratchbird
+          image: "{{ .Values.scratchbird.image.repository }}:{{ .Values.scratchbird.image.tag }}"
+          imagePullPolicy: {{ .Values.scratchbird.image.pullPolicy }}
+          ports:
+            - name: scratchbird
+              containerPort: {{ .Values.scratchbird.port }}
+          env:
+            - name: SCRATCHBIRD_FRONT_DOOR_MODE
+              value: "direct"
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.scratchbird.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.scratchbird.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- if .Values.deployment.tls.enabled }}
+          volumeMounts:
+            - name: scratchbird-tls
+              mountPath: /etc/scratchbird/tls
+              readOnly: true
+          {{- end }}
+        - name: sidecar
+          image: "{{ .Values.sidecar.image.repository }}:{{ .Values.sidecar.image.tag }}"
+          imagePullPolicy: {{ .Values.sidecar.image.pullPolicy }}
+          command:
+            - "nginx"
+            - "-g"
+            - "daemon off;"
+            - "-c"
+            - "/etc/nginx/nginx.conf"
+          ports:
+            - name: sidecar
+              containerPort: {{ .Values.sidecar.proxyPort }}
+          volumeMounts:
+            - name: sidecar-config
+              mountPath: /etc/nginx
+      {{- if .Values.deployment.tls.enabled }}
+      volumes:
+        - name: scratchbird-tls
+          secret:
+            secretName: {{ .Values.deployment.tls.secretName | default (printf "%s-tls" (include "scratchbird-sidecar.fullname" .)) }}
+        - name: sidecar-config
+          configMap:
+            name: {{ include "scratchbird-sidecar.fullname" . }}-sidecar-config
+      {{- else }}
+      volumes:
+        - name: sidecar-config
+          configMap:
+            name: {{ include "scratchbird-sidecar.fullname" . }}-sidecar-config
+      {{- end }}

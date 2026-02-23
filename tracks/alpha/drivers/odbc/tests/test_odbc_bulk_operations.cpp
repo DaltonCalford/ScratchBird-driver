@@ -281,4 +281,83 @@ TEST_F(OdbcBulkOperationsTest, BulkOperationsPartialFailureStopsExecution) {
     EXPECT_EQ(conn_.client_bridge_.get(), flaky_ptr);
 }
 
+TEST_F(OdbcBulkOperationsTest, BulkOperationsReportsSuccessWithInfoForTruncatedParameterData) {
+    const char* sql = "INSERT INTO bulk_errors (note, id) VALUES (?, ?)";
+    ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
+
+    SQLINTEGER ids[] = {7};
+    SQLLEN id_ind[] = {0};
+    char notes[1][16] = {};
+    std::strcpy(notes[0], "overflow");
+    SQLLEN note_ind[] = {7};  // > buffer declared for this column binding
+
+    ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR,
+                                 4, 0, notes, 0, note_ind),
+              SQL_SUCCESS);
+    ASSERT_EQ(stmt_.bindParameter(2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
+                                 0, 0, ids, 0, id_ind),
+              SQL_SUCCESS);
+
+    SQLULEN paramset_size = 1;
+    SQLUSMALLINT param_status[1] = {0};
+    SQLULEN processed = 0;
+    SQLULEN fetched = 0;
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMSET_SIZE,
+                                 reinterpret_cast<SQLPOINTER>(paramset_size), 0),
+              SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAM_STATUS_PTR, param_status, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMS_PROCESSED_PTR, &processed, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_ROWS_FETCHED_PTR, &fetched, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_SUCCESS_WITH_INFO);
+    ASSERT_EQ(bridge_->statements.size(), 1u);
+    EXPECT_NE(bridge_->statements[0].find("INSERT INTO bulk_errors (note,id) VALUES ('overflo',7)"),
+              std::string::npos);
+    EXPECT_EQ(param_status[0], SQL_PARAM_SUCCESS_WITH_INFO);
+    EXPECT_EQ(processed, 1u);
+    EXPECT_EQ(fetched, 1u);
+}
+
+TEST_F(OdbcBulkOperationsTest, BulkOperationsPartialFailureOnFirstRowLeavesLaterRowsUnprocessed) {
+    const char* sql = "INSERT INTO bulk_audit (id, note) VALUES (?, ?)";
+    ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
+
+    SQLINTEGER ids[] = {1, 2, 3};
+    SQLLEN id_ind[] = {0, 0, 0};
+    char notes[3][12] = {};
+    std::strcpy(notes[0], "a");
+    std::strcpy(notes[1], "b");
+    std::strcpy(notes[2], "c");
+    SQLLEN note_ind[] = {0, 0, 0};
+
+    ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
+                                 0, 0, ids, 0, id_ind),
+              SQL_SUCCESS);
+    ASSERT_EQ(stmt_.bindParameter(2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR,
+                                 sizeof(notes[0]), 0, notes, sizeof(notes[0]), note_ind),
+              SQL_SUCCESS);
+
+    auto flaky_bridge = std::make_unique<OdbcFlakyBulkClientBridge>(1);
+    auto* flaky_ptr = flaky_bridge.get();
+    conn_.client_bridge_ = std::move(flaky_bridge);
+
+    SQLULEN paramset_size = 3;
+    SQLUSMALLINT param_status[3] = {0};
+    SQLULEN processed = 0;
+    SQLULEN fetched = 0;
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMSET_SIZE, reinterpret_cast<SQLPOINTER>(paramset_size), 0),
+              SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAM_STATUS_PTR, param_status, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMS_PROCESSED_PTR, &processed, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_ROWS_FETCHED_PTR, &fetched, 0), SQL_SUCCESS);
+
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_ERROR);
+    EXPECT_EQ(processed, 0u);
+    EXPECT_EQ(fetched, 0u);
+    EXPECT_EQ(param_status[0], SQL_PARAM_ERROR);
+    EXPECT_EQ(param_status[1], 0u);
+    EXPECT_EQ(param_status[2], 0u);
+    EXPECT_EQ(flaky_ptr->statements.size(), 1u);
+    EXPECT_EQ(conn_.client_bridge_.get(), flaky_ptr);
+}
+
 }  // namespace

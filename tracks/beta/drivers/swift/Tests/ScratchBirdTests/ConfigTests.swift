@@ -47,4 +47,55 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(try normalizeSslMode("require"), "require")
         XCTAssertThrowsError(try normalizeSslMode("invalid"))
     }
+
+    func testConnectRejectsDisableSslMode() async {
+        let config = ScratchBirdConfig(
+            database: "mydb",
+            user: "user",
+            sslmode: "disable"
+        )
+
+        do {
+            _ = try await ScratchBirdConnection.connect(config)
+            XCTFail("Expected connect to reject sslmode=disable")
+        } catch {
+            let nsError = error as NSError
+            XCTAssertEqual(nsError.domain, "ScratchBird")
+            XCTAssertTrue(nsError.localizedDescription.contains("TLS is required"))
+        }
+    }
+
+    func testConnectRejectsBinaryTransferDisabled() async {
+        let config = ScratchBirdConfig(
+            database: "mydb",
+            user: "user",
+            binaryTransfer: false
+        )
+
+        do {
+            _ = try await ScratchBirdConnection.connect(config)
+            XCTFail("Expected connect to reject binary_transfer=false")
+        } catch {
+            let nsError = error as NSError
+            XCTAssertEqual(nsError.domain, "ScratchBird")
+            XCTAssertTrue(nsError.localizedDescription.contains("binary_transfer=false"))
+        }
+    }
+
+    func testConnectRejectsUnsupportedCompression() async {
+        let config = ScratchBirdConfig(
+            database: "mydb",
+            user: "user",
+            compression: "zstd"
+        )
+
+        do {
+            _ = try await ScratchBirdConnection.connect(config)
+            XCTFail("Expected connect to reject compression=zstd")
+        } catch {
+            let nsError = error as NSError
+            XCTAssertEqual(nsError.domain, "ScratchBird")
+            XCTAssertTrue(nsError.localizedDescription.contains("compression=zstd"))
+        }
+    }
 }

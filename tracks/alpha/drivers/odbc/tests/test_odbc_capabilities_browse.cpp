@@ -14,6 +14,7 @@
 #include "scratchbird/odbc/metadata_helpers.h"
 #include "scratchbird/odbc/odbc_handles.h"
 #include "scratchbird/odbc/odbc_client_bridge.h"
+#include "scratchbird/odbc/odbc_driver.h"
 #undef private
 
 namespace {
@@ -341,6 +342,30 @@ TEST_F(OdbcCapabilityBrowseTest, BrowseConnectRawPathWithoutKeyFallsBackToPath) 
     EXPECT_NE(row_columns.find("COLUMN=id"), std::string::npos);
     EXPECT_NE(row_columns.find("COLUMN=name"), std::string::npos);
     EXPECT_NE(row_columns.find("COLUMN=created_at"), std::string::npos);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, NullEnvConnectionPoolingDefaultsPropagateToNewEnvironments) {
+    SQLHENV env = SQL_NULL_HENV;
+    constexpr SQLUINTEGER desired_pooling = SQL_CP_ONE_PER_DRIVER;
+    SQLUINTEGER pooling = SQL_CP_OFF;
+    SQLINTEGER len = 0;
+
+    ASSERT_EQ(SQLSetEnvAttr(SQL_NULL_HENV, SQL_ATTR_CONNECTION_POOLING,
+                           reinterpret_cast<SQLPOINTER>(desired_pooling), 0),
+              SQL_SUCCESS);
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env), SQL_SUCCESS);
+    ASSERT_NE(env, nullptr);
+    EXPECT_EQ(SQLGetEnvAttr(env, SQL_ATTR_CONNECTION_POOLING, &pooling, sizeof(pooling), &len),
+              SQL_SUCCESS);
+    EXPECT_EQ(pooling, desired_pooling);
+    EXPECT_EQ(len, sizeof(pooling));
+
+    ASSERT_EQ(SQLFreeHandle(SQL_HANDLE_ENV, env), SQL_SUCCESS);
+
+    // Restore default to avoid leaking state to other tests.
+    ASSERT_EQ(SQLSetEnvAttr(SQL_NULL_HENV, SQL_ATTR_CONNECTION_POOLING,
+                           reinterpret_cast<SQLPOINTER>(SQL_CP_OFF), 0),
+              SQL_SUCCESS);
 }
 
 }  // namespace

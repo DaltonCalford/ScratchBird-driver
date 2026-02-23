@@ -295,16 +295,16 @@ final class ScratchBirdSocket {
             (tlsConfig.sslkey?.isEmpty == false) ||
             (tlsConfig.sslpassword?.isEmpty == false)
 
-        #if canImport(Network)
         if hasCustomTLSFiles {
             #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
             try connectTlsNio(host: host, port: port, tlsConfig: tlsConfig)
             return
             #else
-            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom TLS certificate file options are not supported on this platform"])
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS certificate file options require NIOSSL support in this build"])
             #endif
         }
 
+        #if canImport(Network)
         let tlsOptions = NWProtocolTLS.Options()
         sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
         sec_protocol_options_set_max_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
@@ -367,11 +367,24 @@ final class ScratchBirdSocket {
                 guard let keyFile = tlsConfig.sslkey, !keyFile.isEmpty else {
                     throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "sslcert requires sslkey"])
                 }
-                if let password = tlsConfig.sslpassword, !password.isEmpty {
-                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Encrypted TLS private keys are not currently supported in Swift transport"])
+                let certificates = try NIOSSLCertificate.fromPEMFile(certFile)
+                guard let leafCertificate = certificates.first else {
+                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "sslcert provided no certificate"])
                 }
-                config.certificateChain = [.file(certFile)]
-                config.privateKey = .file(keyFile)
+                let privateKey: NIOSSLPrivateKey
+                if let password = tlsConfig.sslpassword, !password.isEmpty {
+                    privateKey = try NIOSSLPrivateKey(file: keyFile, format: .pem) { passphrase in
+                        passphrase(password.utf8)
+                    }
+                } else {
+                    privateKey = try NIOSSLPrivateKey(file: keyFile, format: .pem)
+                }
+                config.certificateChain = [NIOSSLCertificateSource.certificate(leafCertificate)]
+                if certificates.count > 1 {
+                    let additionalCertificates = certificates.dropFirst().map { NIOSSLCertificateSource.certificate($0) }
+                    config.certificateChain.append(contentsOf: additionalCertificates)
+                }
+                config.privateKey = .privateKey(privateKey)
             } else if let keyFile = tlsConfig.sslkey, !keyFile.isEmpty {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "sslkey requires sslcert"])
             }
@@ -382,7 +395,9 @@ final class ScratchBirdSocket {
                 .channelInitializer { channel in
                     do {
                         let handler = try NIOSSLClientHandler(context: sslContext, serverHostname: host)
-                        return channel.pipeline.addHandlers([handler, NioInboundHandler(readBuffer: readBuffer)])
+                        return channel.pipeline.addHandler(handler).flatMap {
+                            channel.pipeline.addHandler(NioInboundHandler(readBuffer: readBuffer))
+                        }
                     } catch {
                         return channel.eventLoop.makeFailedFuture(error)
                     }

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: scratchbird-sidecar
+description: Enterprise readiness sidecar smoke chart for ScratchBird managed/listener connectivity
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,11 +1,87 @@
-ODBC-009 gate run: 20260223T040550Z
+ODBC-009 gate run: 20260223T054922Z
 Repository: /home/dcalford/CliWork/ScratchBird-driver
 Build directory: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate
 Test binary: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
 Timing capture: 1
+Test binary missing. Configuring and building ODBC test target...
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.13")
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- GoogleTest not found. Fetching GoogleTest from source.
+-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter
+-- 
+-- ScratchBird ODBC Driver Configuration:
+--   Version: 0.1.0
+--   Platform: Linux
+--   Windows: 
+--   Linux: TRUE
+--   macOS: 
+--   Install prefix: /usr/local
+-- 
+-- Configuring done (1.7s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate
+[  2%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+[  5%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/keepalive.cpp.o
+[  8%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/connection.cpp.o
+[ 10%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/circuit_breaker.cpp.o
+[ 13%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/leak_detector.cpp.o
+[ 16%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/telemetry.cpp.o
+[ 18%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/statement_cache.cpp.o
+[ 21%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/driver_config.cpp.o
+[ 24%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/network_client.cpp.o
+[ 27%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/protocol/sbwp_protocol.cpp.o
+[ 29%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/scratchbird_client_c.cpp.o
+[ 32%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/core/sqlstate.cpp.o
+[ 35%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/core/type_extractor.cpp.o
+[ 37%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/network/network.cpp.o
+[ 40%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/network/socket.cpp.o
+[ 43%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/network/socket_types.cpp.o
+[ 45%] Linking CXX static library ../../../lib/libgtest.a
+[ 45%] Built target gtest
+[ 48%] Building CXX object scratchbird_cpp/CMakeFiles/scratchbird_client.dir/src/security/tls_context.cpp.o
+[ 51%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
+[ 54%] Linking CXX static library libscratchbird_client.a
+[ 54%] Built target scratchbird_client
+[ 56%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/odbc_driver.cpp.o
+[ 62%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/odbc_client_bridge.cpp.o
+[ 62%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/odbc_handles.cpp.o
+[ 64%] Linking CXX static library ../../../lib/libgtest_main.a
+[ 64%] Built target gtest_main
+[ 67%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/keepalive.cpp.o
+[ 70%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/leak_detector.cpp.o
+[ 72%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/circuit_breaker.cpp.o
+[ 75%] Building CXX object CMakeFiles/scratchbird_odbc.dir/src/statement_cache.cpp.o
+[ 78%] Building C object CMakeFiles/scratchbird_odbc.dir/src/platform_unix.c.o
+[ 81%] Linking CXX shared library libscratchbird_odbc.so
+[ 81%] Built target scratchbird_odbc
+[ 83%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_cursor_operations.cpp.o
+[ 89%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_bulk_operations.cpp.o
+[ 89%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_capabilities_browse.cpp.o
+[ 91%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_catalog_and_types.cpp.o
+[ 94%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_capabilities_descriptors.cpp.o
+[ 97%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_lob_streaming.cpp.o
+[100%] Linking CXX executable scratchbird_odbc_tests
+[100%] Built target scratchbird_odbc_tests
+[ 65%] Built target scratchbird_client
+[100%] Built target scratchbird_odbc
 Running ODBC gate executable: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
 Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc
-[==========] Running 42 tests from 10 test suites.
+[==========] Running 45 tests from 10 test suites.
 [----------] Global test environment set-up.
 [----------] 7 tests from OdbcCursorOperationTest
 [ RUN      ] OdbcCursorOperationTest.FetchScrollHonorsForwardOnlyCursorType
@@ -22,9 +98,9 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCursorOperationTest.SetAttributeValidatesCursorAndConcurrencyOptions (0 ms)
 [ RUN      ] OdbcCursorOperationTest.SetAttributeCursorScrollabilityAndSensitivity
 [       OK ] OdbcCursorOperationTest.SetAttributeCursorScrollabilityAndSensitivity (0 ms)
-[----------] 7 tests from OdbcCursorOperationTest (1 ms total)
+[----------] 7 tests from OdbcCursorOperationTest (0 ms total)
 
-[----------] 7 tests from OdbcBulkOperationsTest
+[----------] 9 tests from OdbcBulkOperationsTest
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsExecutesEachRowInOrder
 [       OK ] OdbcBulkOperationsTest.BulkOperationsExecutesEachRowInOrder (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsUsesBindOffsetInArrayAddressing
@@ -39,9 +115,13 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcBulkOperationsTest.BulkOperationsRejectsNonColumnWiseBindingMode (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution
 [       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution (0 ms)
-[----------] 7 tests from OdbcBulkOperationsTest (0 ms total)
+[ RUN      ] OdbcBulkOperationsTest.BulkOperationsReportsSuccessWithInfoForTruncatedParameterData
+[       OK ] OdbcBulkOperationsTest.BulkOperationsReportsSuccessWithInfoForTruncatedParameterData (0 ms)
+[ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureOnFirstRowLeavesLaterRowsUnprocessed
+[       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureOnFirstRowLeavesLaterRowsUnprocessed (0 ms)
+[----------] 9 tests from OdbcBulkOperationsTest (0 ms total)
 
-[----------] 7 tests from OdbcCapabilityBrowseTest
+[----------] 8 tests from OdbcCapabilityBrowseTest
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns
@@ -56,7 +136,9 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath (0 ms)
-[----------] 7 tests from OdbcCapabilityBrowseTest (0 ms total)
+[ RUN      ] OdbcCapabilityBrowseTest.NullEnvConnectionPoolingDefaultsPropagateToNewEnvironments
+[       OK ] OdbcCapabilityBrowseTest.NullEnvConnectionPoolingDefaultsPropagateToNewEnvironments (0 ms)
+[----------] 8 tests from OdbcCapabilityBrowseTest (1 ms total)
 
 [----------] 8 tests from OdbcCatalogTest
 [ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
@@ -122,10 +204,10 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [----------] 5 tests from OdbcLobStreamingTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 42 tests from 10 test suites ran. (5 ms total)
-[  PASSED  ] 42 tests.
-ODBC gate perf snapshot: elapsed_seconds=0.00 max_rss_kb=9144
-Perf trend check passed vs prior sample 20260223T040438Z -> 20260223T040550Z: elapsed_ratio=0.00x rss_ratio=0.99x
+[==========] 45 tests from 10 test suites ran. (4 ms total)
+[  PASSED  ] 45 tests.
+ODBC gate perf snapshot: elapsed_seconds=0.00 max_rss_kb=9384
+Perf trend check passed vs prior sample 20260223T040550Z -> 20260223T054922Z: elapsed_ratio=0.00x rss_ratio=1.03x
 Running BI smoke command: /home/dcalford/CliWork/ScratchBird-driver/artifacts/enterprise-readiness/ODBC-009/odbc_bi_smoke.sh
 ODBC BI smoke: running subset against /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
 Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc

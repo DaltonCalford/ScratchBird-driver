@@ -9,9 +9,16 @@
 
 #include "scratchbird/odbc/odbc_driver.h"
 
+#include <atomic>
 #include <cstring>
 
 using namespace scratchbird::odbc;
+
+namespace {
+// Connection-pooling mode set via SQLSetEnvAttr with SQL_NULL_HENV applies to
+// subsequent environment allocations.
+std::atomic<SQLUINTEGER> g_default_connection_pooling{SQL_CP_OFF};
+}  // namespace
 
 // =============================================================================
 // Handle Allocation and Freeing
@@ -29,6 +36,7 @@ extern "C" SQLRETURN ODBC_API SQLAllocHandle(
     switch (HandleType) {
         case SQL_HANDLE_ENV: {
             auto* env = new OdbcEnvironment();
+            env->setConnectionPooling(g_default_connection_pooling.load());
             *OutputHandlePtr = static_cast<SQLHANDLE>(env);
             return SQL_SUCCESS;
         }
@@ -194,7 +202,8 @@ extern "C" SQLRETURN ODBC_API SQLSetEnvAttr(
     // Special case: SQL_ATTR_CONNECTION_POOLING can be set before env allocation
     if (EnvironmentHandle == SQL_NULL_HENV) {
         if (Attribute == SQL_ATTR_CONNECTION_POOLING) {
-            // Global pooling setting - not implemented
+            g_default_connection_pooling.store(
+                static_cast<SQLUINTEGER>(reinterpret_cast<uintptr_t>(ValuePtr)));
             return SQL_SUCCESS;
         }
         return SQL_INVALID_HANDLE;

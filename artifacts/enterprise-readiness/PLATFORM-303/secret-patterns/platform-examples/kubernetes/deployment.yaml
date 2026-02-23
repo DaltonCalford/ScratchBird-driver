@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scratchbird-secret-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scratchbird-secret-demo
+  template:
+    metadata:
+      labels:
+        app: scratchbird-secret-demo
+    spec:
+      containers:
+        - name: scratchbird-client
+          image: scratchbird/client:latest
+          env:
+            - name: SCRATCHBIRD_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: scratchbird-credentials
+                  key: SCRATCHBIRD_USERNAME
+            - name: SCRATCHBIRD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: scratchbird-credentials
+                  key: SCRATCHBIRD_PASSWORD
+            - name: SCRATCHBIRD_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: scratchbird-credentials
+                  key: SCRATCHBIRD_DSN
+            - name: SCRATCHBIRD_MANAGER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: scratchbird-credentials
+                  key: SCRATCHBIRD_MANAGER_TOKEN

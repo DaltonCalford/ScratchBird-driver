@@ -159,6 +159,7 @@ public:
 
     SQLUINTEGER getOdbcVersion() const { return odbc_version_; }
     SQLUINTEGER getConnectionPooling() const { return connection_pooling_; }
+    void setConnectionPooling(SQLUINTEGER value) { connection_pooling_ = value; }
     SQLUINTEGER getCpMatch() const { return cp_match_; }
     bool getOutputNts() const { return output_nts_; }
     ScratchBird::ODBC::KeepaliveManager& keepaliveManager() { return keepalive_manager_; }

@@ -1,0 +1,4 @@
+scenario,status,details
+render,started,"helm template"
+render,blocked,"helm binary missing"
+cluster_smoke,skipped,"helm unavailable"

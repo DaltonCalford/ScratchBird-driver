@@ -1,0 +1,17 @@
+{
+  "timestamp": "20260223T052446Z",
+  "strictGate": "false",
+  "dotnet": {
+    "status": "failed"
+  },
+  "jdbc": {
+    "status": "env_missing"
+  },
+  "overallStatus": "failed",
+  "reason": "runtime_contract_failure",
+  "missingEnv": ["SCRATCHBIRD_JDBC_URL","SCRATCHBIRD_JDBC_CANCEL_SQL"],
+  "releaseFreeze": {
+    "active": true,
+    "reasons": ["dotnet_contract_failed","runtime_contract_failure"]
+  }
+}

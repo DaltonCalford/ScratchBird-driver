@@ -1,0 +1,19 @@
+Deployment rendered for `{{ .Release.Name }}`.
+
+ScratchBird direct endpoint:
+  {{- if .Values.service.type }}
+http://{{ .Release.Name }}-scratchbird.{{ .Release.Namespace }}.svc:{{ .Values.scratchbird.port }}
+  {{- else }}
+N/A
+  {{- end }}
+
+Sidecar endpoint:
+  {{- if .Values.service.type }}
+http://{{ .Release.Name }}-sidecar.{{ .Release.Namespace }}.svc:{{ .Values.sidecar.proxyPort }}
+  {{- else }}
+N/A
+  {{- end }}
+
+To run the platform smoke:
+  PLATFORM_301_DRY_RUN=0 PLATFORM_301_REQUIRE_CLUSTER=1 \
+  run-platform-301-k8s-smoke.sh

@@ -1,5 +1,5 @@
 Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc
-[==========] Running 42 tests from 10 test suites.
+[==========] Running 45 tests from 10 test suites.
 [----------] Global test environment set-up.
 [----------] 7 tests from OdbcCursorOperationTest
 [ RUN      ] OdbcCursorOperationTest.FetchScrollHonorsForwardOnlyCursorType
@@ -16,9 +16,9 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCursorOperationTest.SetAttributeValidatesCursorAndConcurrencyOptions (0 ms)
 [ RUN      ] OdbcCursorOperationTest.SetAttributeCursorScrollabilityAndSensitivity
 [       OK ] OdbcCursorOperationTest.SetAttributeCursorScrollabilityAndSensitivity (0 ms)
-[----------] 7 tests from OdbcCursorOperationTest (1 ms total)
+[----------] 7 tests from OdbcCursorOperationTest (0 ms total)
 
-[----------] 7 tests from OdbcBulkOperationsTest
+[----------] 9 tests from OdbcBulkOperationsTest
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsExecutesEachRowInOrder
 [       OK ] OdbcBulkOperationsTest.BulkOperationsExecutesEachRowInOrder (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsUsesBindOffsetInArrayAddressing
@@ -33,9 +33,13 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcBulkOperationsTest.BulkOperationsRejectsNonColumnWiseBindingMode (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution
 [       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution (0 ms)
-[----------] 7 tests from OdbcBulkOperationsTest (0 ms total)
+[ RUN      ] OdbcBulkOperationsTest.BulkOperationsReportsSuccessWithInfoForTruncatedParameterData
+[       OK ] OdbcBulkOperationsTest.BulkOperationsReportsSuccessWithInfoForTruncatedParameterData (0 ms)
+[ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureOnFirstRowLeavesLaterRowsUnprocessed
+[       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureOnFirstRowLeavesLaterRowsUnprocessed (0 ms)
+[----------] 9 tests from OdbcBulkOperationsTest (0 ms total)
 
-[----------] 7 tests from OdbcCapabilityBrowseTest
+[----------] 8 tests from OdbcCapabilityBrowseTest
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns
@@ -50,7 +54,9 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath (0 ms)
-[----------] 7 tests from OdbcCapabilityBrowseTest (0 ms total)
+[ RUN      ] OdbcCapabilityBrowseTest.NullEnvConnectionPoolingDefaultsPropagateToNewEnvironments
+[       OK ] OdbcCapabilityBrowseTest.NullEnvConnectionPoolingDefaultsPropagateToNewEnvironments (0 ms)
+[----------] 8 tests from OdbcCapabilityBrowseTest (1 ms total)
 
 [----------] 8 tests from OdbcCatalogTest
 [ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
@@ -116,5 +122,5 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [----------] 5 tests from OdbcLobStreamingTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 42 tests from 10 test suites ran. (5 ms total)
-[  PASSED  ] 42 tests.
+[==========] 45 tests from 10 test suites ran. (4 ms total)
+[  PASSED  ] 45 tests.

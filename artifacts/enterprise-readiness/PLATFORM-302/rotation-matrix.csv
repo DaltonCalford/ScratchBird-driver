@@ -1,0 +1,5 @@
+scenario,mode,status,details
+file_rotation,simulation,started,"creating self-signed cert chain"
+file_rotation,simulation,passed,"old=68:D7:91:81:32:3D:8D:01:E2:FC:C9:CD:36:A0:86:DD:99:1E:BF:F2:A4:FA:A7:FA:0D:AA:99:62:F0:46:A3:F5 new=79:DA:1D:7D:7C:17:EB:1A:80:49:07:03:12:02:DB:05:C6:C7:88:EF:99:C3:66:4D:B5:D9:AE:39:37:73:41:17"
+file_rotation,simulation,passed,"bootstrap cert material staged"
+runtime_reconnect,simulation,skipped,"PLATFORM302_DRY_RUN=1"

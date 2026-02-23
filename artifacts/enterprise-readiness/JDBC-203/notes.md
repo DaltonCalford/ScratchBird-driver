@@ -21,7 +21,7 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 
 ## Blocking
 - Runtime-wide execution blocked until both `.NET` and `JDBC` CI environments provide valid ScratchBird endpoints with managed/listener toggles.
-- For `.NET`, use `scratchbird://...` or key/value DSN format; raw `sb://...` is unsupported by the .NET parser.
+- For `.NET`, use `scratchbird://...` or key/value DSN format. `run_cross_runtime_pool_contract.sh` now normalizes legacy `sb://...` to `scratchbird://...` before running the .NET pool contract phase.
 - The contract run must capture scenario A-E matrix evidence for both runtime clients before gate closure.
 - JDBC run additionally requires `SCRATCHBIRD_JDBC_CANCEL_SQL` for scenarios A/B/D/E.
 - `SCRATCHBIRD_JDBC_URL` and `SCRATCHBIRD_DOTNET_URL` are required for cross-runtime execution.
@@ -36,7 +36,7 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 - Each run also writes replay-ready `latest_verification.log` and `latest_contract_summary.json` artifacts.
 - In strict mode with missing envs, `overallStatus` is `blocked` and `reason` is `strict_gate_missing_env`.
 - URL format validation is also performed before each phase:
-  - `.NET` requires scratchbird URI (`scratchbird://`) or key/value format.
+- `.NET` accepts key/value format or URI form; the script normalizes `sb://...` to `scratchbird://...` for legacy compatibility.
   - `JDBC` requires `jdbc:scratchbird:` prefix.
 - Release-freeze metadata is now emitted on every run:
   - `releaseFreeze.active` indicates a hard stop condition requiring release triage.

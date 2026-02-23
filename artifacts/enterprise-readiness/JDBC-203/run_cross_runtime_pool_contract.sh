@@ -107,30 +107,43 @@ if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
 elif [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_DOTNET_CANCEL_SQL not set; .NET phase cannot run required cancel-reuse scenarios"
   dotnet_status="env_missing"
-elif [[ "${SCRATCHBIRD_DOTNET_URL}" == *"://"* && "${SCRATCHBIRD_DOTNET_URL%%://*}" != "scratchbird" ]]; then
-  echo "[warn] SCRATCHBIRD_DOTNET_URL has unsupported scheme '${SCRATCHBIRD_DOTNET_URL%%://*}'"
-  echo "       .NET URL formats supported: scratchbird://host:port/db?query or key=value semicolon/string pairs."
-  dotnet_status="failed"
-  release_freeze="true"
-  release_freeze_reasons+=("dotnet_contract_failed")
-  exit_code=1
 else
-  echo "[step] .NET pooling phase"
-  cd "$ROOT_DIR"
-  set +e
-  dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj \
-    --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest" \
-    -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract.trx"
-  dotnet_rc=$?
-  set -e
-  if [[ "$dotnet_rc" -eq 0 ]]; then
-    dotnet_status="passed"
-  else
+  can_run_dotnet="true"
+  dotnet_url="${SCRATCHBIRD_DOTNET_URL}"
+  if [[ "${dotnet_url}" == sb://* ]]; then
+    dotnet_url="scratchbird://${dotnet_url#sb://}"
+    echo "[warn] normalized SCRATCHBIRD_DOTNET_URL from sb:// to scratchbird://"
+  fi
+  if [[ "${dotnet_url}" == *"://"* && "${dotnet_url%%://*}" != "scratchbird" ]]; then
+    echo "[warn] SCRATCHBIRD_DOTNET_URL has unsupported scheme '${dotnet_url%%://*}'"
+    echo "       .NET URL formats supported: scratchbird://host:port/db?query or key=value semicolon/string pairs."
     dotnet_status="failed"
     release_freeze="true"
     release_freeze_reasons+=("dotnet_contract_failed")
     exit_code=1
-    echo "[fail] .NET pooling phase failed with exit code $dotnet_rc"
+    can_run_dotnet="false"
+  else
+    export SCRATCHBIRD_DOTNET_URL="$dotnet_url"
+    echo "[info] using .NET DSN: $SCRATCHBIRD_DOTNET_URL"
+  fi
+  if [[ "${can_run_dotnet:-false}" == "true" ]]; then
+    echo "[step] .NET pooling phase"
+    cd "$ROOT_DIR"
+    set +e
+    dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj \
+      --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest" \
+      -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract.trx"
+    dotnet_rc=$?
+    set -e
+    if [[ "$dotnet_rc" -eq 0 ]]; then
+      dotnet_status="passed"
+    else
+      dotnet_status="failed"
+      release_freeze="true"
+      release_freeze_reasons+=("dotnet_contract_failed")
+      exit_code=1
+      echo "[fail] .NET pooling phase failed with exit code $dotnet_rc"
+    fi
   fi
 fi
 

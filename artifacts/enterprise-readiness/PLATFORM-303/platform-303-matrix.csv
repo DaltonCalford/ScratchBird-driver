@@ -1,0 +1,5 @@
+scenario,status,details
+pattern_kubernetes_secret,passed,"required files exist"
+pattern_kubernetes_secret,skipped,"PLATFORM303_DRY_RUN=1"
+negative_validation,passed,"invalid secret example detected as bad by pattern check"
+latest_log,passed,"verification file generated"

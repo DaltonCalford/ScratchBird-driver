@@ -14,15 +14,15 @@ Operationalize the enterprise ODBC release gate for BI and conformance readiness
 - `artifacts/enterprise-readiness/ODBC-009/gates.md`
 - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh`
 - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.log`
-- `artifacts/enterprise-readiness/ODBC-009/verification_20260223T025930Z.log`
+- `artifacts/enterprise-readiness/ODBC-009/verification_20260223T054922Z.log`
 - `artifacts/enterprise-readiness/ODBC-009/odbc_bi_smoke.sh`
-- `artifacts/enterprise-readiness/ODBC-009/latest_verification.log` (42 tests)
+- `artifacts/enterprise-readiness/ODBC-009/latest_verification.log` (45 tests)
 - `artifacts/enterprise-readiness/ODBC-009/perf_baseline.csv`
 - `artifacts/enterprise-readiness/ODBC-009/latest_perf_snapshot.json`
 
 Latest verification run:
 
-- `2026-02-23T02:59:30Z` stored at `artifacts/enterprise-readiness/ODBC-009/verification_20260223T025930Z.log`
+- `2026-02-23T05:49:22Z` stored at `artifacts/enterprise-readiness/ODBC-009/verification_20260223T054922Z.log`
 
 ## Blockers
 - BI connector-style smoke command now runs an in-tree ODBC smoke subset (`OdbcSmokeTest`, `OdbcCapabilityBrowseTest`, `OdbcCatalogTest`) during the gate.

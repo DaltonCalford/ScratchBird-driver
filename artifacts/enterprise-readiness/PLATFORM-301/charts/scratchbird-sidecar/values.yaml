@@ -1,0 +1,37 @@
+scratchbird:
+  image:
+    repository: scratchbird/server
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3092
+  protocol: TCP
+  keepAlive:
+    enabled: true
+sidecar:
+  image:
+    repository: nginx
+    tag: 1.27-alpine
+    pullPolicy: IfNotPresent
+  proxyPort: 3093
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+  scratchbirdSelector: {}
+deployment:
+  nameOverride: ""
+  fullnameOverride: ""
+  replicaCount: 1
+  annotations: {}
+  podAnnotations: {}
+  imagePullSecrets: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  tls:
+    enabled: true
+    secretName: ""
+    certFile: /etc/scratchbird/tls/tls.crt
+    keyFile: /etc/scratchbird/tls/tls.key
+    caFile: /etc/scratchbird/tls/ca.pem

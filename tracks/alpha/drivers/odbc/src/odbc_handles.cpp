@@ -2728,12 +2728,13 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
     }
 
     if (function_id == SQL_API_ODBC3_ALL_FUNCTIONS) {
-        // SQL_API_ODBC3_ALL_FUNCTIONS - return bitmap
-        std::memset(supported, 0, 250 * sizeof(SQLUSMALLINT));
+        // SQL_API_ODBC3_ALL_FUNCTIONS - return bitmap.
+        std::memset(supported, 0,
+                    static_cast<size_t>(SQL_API_ODBC3_ALL_FUNCTIONS_SIZE) * sizeof(SQLUSMALLINT));
         for (auto func : supported_functions) {
             size_t word = func >> 4;
             size_t bit = func & 0x0F;
-            if (word < 250) {
+            if (word < SQL_API_ODBC3_ALL_FUNCTIONS_SIZE) {
                 supported[word] |= static_cast<SQLUSMALLINT>(1u << bit);
             }
         }
@@ -4893,6 +4894,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
     for (SQLULEN row = 0; row < paramset_size_; ++row) {
         std::vector<ParameterLiteral> params;
         auto build_status = buildParameterData(params, row);
+        const bool row_has_info = (build_status == SQL_SUCCESS_WITH_INFO);
         if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
             if (param_status_ptr_) {
                 param_status_ptr_[row] = SQL_PARAM_ERROR;
@@ -4940,13 +4942,16 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
             }
             return rc;
         }
-        if (rc == SQL_SUCCESS_WITH_INFO) {
-            info_seen = true;
-            if (param_status_ptr_) {
+        if (param_status_ptr_) {
+            if (row_has_info || rc == SQL_SUCCESS_WITH_INFO) {
                 param_status_ptr_[row] = SQL_PARAM_SUCCESS_WITH_INFO;
+                info_seen = true;
+            } else {
+                param_status_ptr_[row] = SQL_PARAM_SUCCESS;
             }
-        } else if (param_status_ptr_) {
-            param_status_ptr_[row] = SQL_PARAM_SUCCESS;
+        }
+        if (build_status == SQL_SUCCESS_WITH_INFO) {
+            info_seen = true;
         }
         ++processed;
     }

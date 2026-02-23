@@ -34,11 +34,14 @@ try await conn.close()
 
 TLS is required and implemented for ScratchBird connections.
 
-- Apple platforms: native `Network` TLS transport.
-- Linux: native `NIOSSL` TLS transport.
+- Apple and Linux: TLS transport uses `NIOSSL` whenever certificate files are
+  supplied (`sslrootcert`, `sslcert`, `sslkey`), otherwise `Network` is used on
+  Apple platforms.
 
 `sslmode` supports: `disable` (rejected), `allow`, `prefer`, `require`,
 `verify-ca`, and `verify-full`.
+
+`sslkey`/`sslpassword` are currently loaded through NIOSSL when present.
 
 ## Tests
 

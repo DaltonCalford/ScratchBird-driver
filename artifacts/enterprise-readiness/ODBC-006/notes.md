@@ -31,7 +31,8 @@ Status: Verification complete (in-tree ODBC unit suite).
 - `ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure`
     -> `artifacts/enterprise-readiness/ODBC-006/verification_tests.log`
     -> `artifacts/enterprise-readiness/ODBC-006/verification_20260223T024300Z.log`
-- `cat artifacts/enterprise-readiness/ODBC-006/latest_verification.log` for evidence bundle.
+- `cat artifacts/enterprise-readiness/ODBC-006/verification_20260223T054828Z.log`
+- `cat artifacts/enterprise-readiness/ODBC-006/latest_verification.log` for latest evidence bundle.
 
 ## Blocker
 - No blockers. Full bulk operation suite now exercised in `scratchbird_odbc_tests`.
@@ -40,6 +41,9 @@ Status: Verification complete (in-tree ODBC unit suite).
 - `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
 - `tracks/alpha/drivers/odbc/tests/test_odbc_bulk_operations.cpp`
 - `tracks/alpha/drivers/odbc/CMakeLists.txt`
+- `tracks/alpha/drivers/odbc/include/scratchbird/odbc/odbc_handles.h`
+- `tracks/alpha/drivers/odbc/src/odbc_driver.cpp`
+- `tracks/alpha/drivers/odbc/tests/test_odbc_capabilities_browse.cpp`
 
 ## Next Step
-- Continue to maintain this evidence as test coverage expands (including additional bulk scenarios).
+- Continue to maintain this evidence as test coverage expands (including additional bulk scenarios and parameter truncation status propagation).
