@@ -233,8 +233,10 @@ subtasks, artifact paths, and verification gates.
 - **Goal:** Harden async command execution and cancellation lifecycle.
 - **Dependencies:** None
 - **Subtasks**
+  - [x] Add cancellation token hooks on async command execution paths (`ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ExecuteReaderAsync`).
+  - [x] Add cancellation token hook for async row reads (`ReadAsync`).
+  - [x] Add integration assertion that cancellation by token leaves connection reusable.
   - [ ] Audit task/cancel execution paths for command/reader/dispose flows.
-  - [ ] Ensure cancellation token handling maps to server-side cancel behavior.
   - [ ] Add deadlock and orphan-connection regression tests.
   - [ ] Add cancellation + cleanup verification under concurrent cancellation.
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-101`
@@ -305,6 +307,7 @@ subtasks, artifact paths, and verification gates.
 - **Goal:** Add robust cancellation and reactive behavior in JDBC driver.
 - **Dependencies:** None
 - **Subtasks**
+  - [x] Add integration assertion that statement cancel leaves connection reusable after cancel.
   - [ ] Implement async/reactive execution pathway(s) expected by modern stacks.
   - [ ] Propagate timeouts and interrupts to server-side cancel path.
   - [ ] Add stress tests for cancellation under concurrent query loads.
