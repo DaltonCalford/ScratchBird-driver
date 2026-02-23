@@ -522,6 +522,27 @@ extern "C" SQLRETURN ODBC_API SQLGetData(
                          BufferLength, StrLen_or_IndPtr);
 }
 
+extern "C" SQLRETURN ODBC_API SQLParamData(
+    SQLHSTMT StatementHandle,
+    SQLPOINTER* ValuePtrPtr) {
+
+    auto* stmt = asStatement(StatementHandle);
+    if (!stmt) return SQL_INVALID_HANDLE;
+
+    return stmt->paramData(ValuePtrPtr);
+}
+
+extern "C" SQLRETURN ODBC_API SQLPutData(
+    SQLHSTMT StatementHandle,
+    SQLPOINTER DataPtr,
+    SQLLEN StrLen_or_Ind) {
+
+    auto* stmt = asStatement(StatementHandle);
+    if (!stmt) return SQL_INVALID_HANDLE;
+
+    return stmt->putData(DataPtr, StrLen_or_Ind);
+}
+
 extern "C" SQLRETURN ODBC_API SQLRowCount(
     SQLHSTMT StatementHandle,
     SQLLEN* RowCountPtr) {

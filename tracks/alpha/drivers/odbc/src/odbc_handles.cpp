@@ -44,6 +44,7 @@ constexpr const char* kMetaBrowseSchemaKey = "SCHEMA";
 constexpr const char* kMetaBrowseTableKey = "TABLE";
 constexpr const char* kMetaBrowseColumnKey = "COLUMN";
 constexpr const char* kMetaBrowseDatabaseKey = "DATABASE";
+constexpr SQLLEN kDataAtExecLenOffset = -100;
 
 struct BrowseStage {
     bool has_dsn{false};
@@ -128,6 +129,32 @@ bool getBrowseField(const std::map<std::string, std::string>& options,
         out = it->second;
         return true;
     }
+    return false;
+}
+
+bool isDataAtExecIndicatorValue(SQLLEN indicator) {
+    if (indicator == SQL_DATA_AT_EXEC) {
+        return true;
+    }
+    return indicator <= kDataAtExecLenOffset && indicator != SQL_NULL_DATA &&
+           indicator != SQL_NTS;
+}
+
+bool parseDataAtExecLength(SQLLEN indicator, SQLLEN* out_length) {
+    if (indicator == SQL_DATA_AT_EXEC) {
+        return false;
+    }
+
+    if (indicator <= kDataAtExecLenOffset && indicator != SQL_NTS &&
+        indicator != SQL_NULL_DATA) {
+        auto length = -indicator - 100;
+        if (length < 0) {
+            return false;
+        }
+        *out_length = length;
+        return true;
+    }
+
     return false;
 }
 
@@ -2455,6 +2482,8 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         43,  // SQLPrimaryKeys
         44,  // SQLProcedureColumns
         45,  // SQLProcedures
+        48,  // SQLParamData
+        49,  // SQLPutData
         68,  // SQLSetPos
         47,  // SQLRowCount
         48,  // SQLSetConnectAttr
@@ -3223,6 +3252,7 @@ SQLRETURN OdbcStatement::prepare(const SQLCHAR* sql, SQLINTEGER sql_len) {
     if (result == SQL_SUCCESS) {
         prepared_ = true;
         executed_ = false;
+        clearPutDataState();
     }
 
     return result;
@@ -3236,8 +3266,23 @@ SQLRETURN OdbcStatement::execute() {
         return SQL_ERROR;
     }
 
+    if (data_at_exec_active_) {
+        return SQL_NEED_DATA;
+    }
+
+    auto init_data_at_exec = validateOrInitDataAtExecState();
+    if (init_data_at_exec == SQL_NEED_DATA) {
+        return SQL_NEED_DATA;
+    }
+    if (init_data_at_exec != SQL_SUCCESS) {
+        return init_data_at_exec;
+    }
+
     std::vector<ParameterLiteral> params;
     auto build_status = buildParameterData(params, 0);
+    if (build_status == SQL_NEED_DATA) {
+        return SQL_NEED_DATA;
+    }
     if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
         return build_status;
     }
@@ -3245,10 +3290,13 @@ SQLRETURN OdbcStatement::execute() {
     std::string sql;
     auto status = conn_->buildPreparedSQL(server_stmt_id_, params, sql);
     if (status != SQL_SUCCESS) {
+        clearPutDataState();
         return status;
     }
 
-    return executeSqlStatements(sql);
+    auto execute_status = executeSqlStatements(sql);
+    clearPutDataState();
+    return execute_status;
 }
 
 SQLRETURN OdbcStatement::execDirect(const SQLCHAR* sql, SQLINTEGER sql_len) {
@@ -3264,6 +3312,7 @@ SQLRETURN OdbcStatement::execDirect(const SQLCHAR* sql, SQLINTEGER sql_len) {
         std::string(reinterpret_cast<const char*>(sql), sql_len);
 
     auto result = executeSqlStatements(sql_);
+    clearPutDataState();
     if (result == SQL_SUCCESS) {
         prepared_ = false;
     }
@@ -3313,6 +3362,7 @@ SQLRETURN OdbcStatement::freeStmt(SQLUSMALLINT option) {
 
         case SQL_RESET_PARAMS:
             param_bindings_.clear();
+            clearPutDataState();
             break;
 
         default:
@@ -3333,6 +3383,7 @@ SQLRETURN OdbcStatement::bindParameter(SQLUSMALLINT parameter_number,
                                         SQLLEN buffer_length,
                                         SQLLEN* str_len_or_ind) {
     clearDiagnostics();
+    clearPutDataState();
 
     if (parameter_number == 0) {
         setError("HY000", 0, "Invalid parameter number");
@@ -3809,6 +3860,247 @@ SQLRETURN OdbcStatement::fetchScroll(SQLSMALLINT fetch_orientation, SQLLEN fetch
     auto result = bindResultData();
 
     return result;
+}
+
+void OdbcStatement::clearPutDataState() {
+    put_data_stream_.clear();
+    data_at_exec_params_.clear();
+    data_at_exec_index_ = 0;
+    data_at_exec_active_ = false;
+}
+
+bool OdbcStatement::isDataAtExecIndicator(SQLLEN indicator) const {
+    return isDataAtExecIndicatorValue(indicator);
+}
+
+SQLRETURN OdbcStatement::validateOrInitDataAtExecState() {
+    if (!prepared_) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    if (!data_at_exec_params_.empty() && data_at_exec_index_ < data_at_exec_params_.size()) {
+        data_at_exec_active_ = true;
+        return SQL_NEED_DATA;
+    }
+
+    data_at_exec_active_ = false;
+    data_at_exec_params_.clear();
+    data_at_exec_index_ = 0;
+
+    std::vector<SQLUSMALLINT> pending_params;
+    pending_params.reserve(param_bindings_.size());
+
+    for (const auto& [parameter_number, binding] : param_bindings_) {
+        auto* ind = binding.str_len_or_ind;
+        if (ind && isDataAtExecIndicator(*ind)) {
+            pending_params.push_back(parameter_number);
+            if (put_data_stream_.find(parameter_number) == put_data_stream_.end()) {
+                PutDataStreamState state;
+                SQLLEN expected = 0;
+                if (parseDataAtExecLength(*ind, &expected)) {
+                    state.expected_length = expected;
+                    state.expected_length_known = true;
+                }
+                put_data_stream_.emplace(parameter_number, state);
+            } else {
+                auto expected = SQLLEN{0};
+                if (parseDataAtExecLength(*ind, &expected)) {
+                    auto& state = put_data_stream_.at(parameter_number);
+                    state.expected_length = expected;
+                    state.expected_length_known = true;
+                }
+            }
+        }
+    }
+
+    if (!pending_params.empty()) {
+        std::sort(pending_params.begin(), pending_params.end());
+        data_at_exec_params_ = std::move(pending_params);
+        data_at_exec_active_ = true;
+        return SQL_NEED_DATA;
+    }
+
+    return SQL_SUCCESS;
+}
+
+SQLUSMALLINT OdbcStatement::getCurrentDataAtExecParameter() const {
+    if (!data_at_exec_active_ || data_at_exec_params_.empty()) {
+        return 0;
+    }
+    if (data_at_exec_index_ >= data_at_exec_params_.size()) {
+        return 0;
+    }
+    return data_at_exec_params_[data_at_exec_index_];
+}
+
+SQLPOINTER OdbcStatement::putDataTokenToPointer(SQLUSMALLINT parameter_number) const {
+    if (parameter_number == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<SQLPOINTER>(static_cast<uintptr_t>(parameter_number));
+}
+
+SQLUSMALLINT OdbcStatement::pointerToPutDataToken(SQLPOINTER token) const {
+    auto raw = reinterpret_cast<uintptr_t>(token);
+    if (raw == 0) {
+        return 0;
+    }
+    return static_cast<SQLUSMALLINT>(raw);
+}
+
+SQLRETURN OdbcStatement::paramData(SQLPOINTER* token) {
+    clearDiagnostics();
+
+    if (!token) {
+        setError("HY009", 0, "Invalid use of null pointer");
+        return SQL_ERROR;
+    }
+
+    if (!prepared_) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    if (!data_at_exec_active_) {
+        auto status = validateOrInitDataAtExecState();
+        if (status == SQL_SUCCESS) {
+            *token = nullptr;
+            return SQL_SUCCESS;
+        }
+        if (status == SQL_NEED_DATA) {
+            auto current_param = getCurrentDataAtExecParameter();
+            if (current_param == 0) {
+                setError("HY000", 0, "Failed to initialize SQLDataAtExec state");
+                return SQL_ERROR;
+            }
+            *token = putDataTokenToPointer(current_param);
+            return SQL_NEED_DATA;
+        }
+        return status;
+    }
+
+    auto current_param = getCurrentDataAtExecParameter();
+    if (current_param == 0) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    *token = putDataTokenToPointer(current_param);
+    return SQL_NEED_DATA;
+}
+
+SQLRETURN OdbcStatement::putData(SQLPOINTER data, SQLLEN len) {
+    clearDiagnostics();
+
+    if (!prepared_) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    if (!data_at_exec_active_) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    auto current_param = getCurrentDataAtExecParameter();
+    if (current_param == 0) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    auto binding_it = param_bindings_.find(current_param);
+    if (binding_it == param_bindings_.end()) {
+        setError("07009", 0, "Invalid descriptor index");
+        return SQL_ERROR;
+    }
+
+    auto ind_ptr = binding_it->second.str_len_or_ind;
+    if (!ind_ptr) {
+        setError("HY000", 0, "Missing parameter indicator for SQL_DATA_AT_EXEC");
+        return SQL_ERROR;
+    }
+    if (!isDataAtExecIndicator(*ind_ptr)) {
+        setError("HY000", 0, "Parameter is not marked SQL_DATA_AT_EXEC");
+        return SQL_ERROR;
+    }
+
+    auto stream_it = put_data_stream_.find(current_param);
+    if (stream_it == put_data_stream_.end()) {
+        setError("HY000", 0, "Invalid SQL_DATA_AT_EXEC parameter state");
+        return SQL_ERROR;
+    }
+
+    auto& stream = stream_it->second;
+    if (stream.complete) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    std::string chunk;
+    if (len == SQL_NTS && binding_it->second.value_type == SQL_C_CHAR) {
+        if (!data) {
+            setError("HY009", 0, "Invalid use of null pointer");
+            return SQL_ERROR;
+        }
+        chunk.assign(static_cast<const char*>(data), std::strlen(static_cast<const char*>(data)));
+    } else if (len > 0) {
+        if (!data) {
+            setError("HY009", 0, "Invalid use of null pointer");
+            return SQL_ERROR;
+        }
+        const auto* bytes = static_cast<const char*>(data);
+        chunk.assign(bytes, bytes + len);
+    } else if (len == 0) {
+        chunk.clear();
+    } else {
+        setError("HY009", 0, "Invalid use of negative length");
+        return SQL_ERROR;
+    }
+
+    if (stream.expected_length_known) {
+        auto remaining = stream.expected_length - static_cast<SQLLEN>(stream.value.size());
+        if (remaining <= 0) {
+            stream.complete = true;
+        } else if (static_cast<SQLLEN>(chunk.size()) > remaining) {
+            stream.value.append(chunk.data(), static_cast<size_t>(remaining));
+            stream.truncated = true;
+            stream.complete = true;
+            if (!chunk.empty()) {
+                setError("01004", 0, "String data, right truncated");
+            }
+            if (data_at_exec_index_ + 1 < data_at_exec_params_.size()) {
+                data_at_exec_index_++;
+            } else {
+                data_at_exec_active_ = false;
+            }
+            return SQL_SUCCESS_WITH_INFO;
+        } else {
+            stream.value.append(chunk);
+        }
+
+        if (static_cast<SQLLEN>(stream.value.size()) >= stream.expected_length) {
+            stream.complete = true;
+            if (data_at_exec_index_ + 1 < data_at_exec_params_.size()) {
+                data_at_exec_index_++;
+            } else {
+                data_at_exec_active_ = false;
+            }
+        }
+        return SQL_SUCCESS;
+    }
+
+    stream.value.append(chunk);
+    if (len == 0) {
+        stream.complete = true;
+        if (data_at_exec_index_ + 1 < data_at_exec_params_.size()) {
+            data_at_exec_index_++;
+            return SQL_SUCCESS;
+        }
+        data_at_exec_active_ = false;
+    }
+
+    return SQL_SUCCESS;
 }
 
 void OdbcStatement::clearGetDataState() {
@@ -4708,6 +5000,35 @@ SQLRETURN OdbcStatement::buildParameterData(std::vector<ParameterLiteral>& liter
             ind = reinterpret_cast<const SQLLEN*>(reinterpret_cast<const char*>(ind_base) +
                                                   static_cast<size_t>(row_offset) *
                                                   static_cast<size_t>(indicatorStride()));
+        }
+
+        if (ind && isDataAtExecIndicator(*ind)) {
+            if (row_offset != 0) {
+                setError("HYC00", 0, "SQL_DATA_AT_EXEC with array binding not supported");
+                return SQL_ERROR;
+            }
+
+            auto stream_it = put_data_stream_.find(i);
+            if (stream_it == put_data_stream_.end() || !stream_it->second.complete) {
+                data_at_exec_active_ = true;
+                return SQL_NEED_DATA;
+            }
+
+            const auto& stream = stream_it->second;
+            ParameterLiteral literal;
+            if (stream.truncated) {
+                has_info = true;
+            }
+            if (binding.value_type == SQL_C_BINARY) {
+                literal.quoted = false;
+                literal.text = "X'" + bytesToHexString(stream.value) + "'";
+            } else {
+                literal.quoted = true;
+                literal.text = stream.value;
+            }
+
+            literals.push_back(std::move(literal));
+            continue;
         }
 
         // Check for NULL

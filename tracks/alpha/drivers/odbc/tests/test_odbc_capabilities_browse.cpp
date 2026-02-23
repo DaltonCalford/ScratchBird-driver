@@ -185,8 +185,8 @@ TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
 
     EXPECT_FALSE(isAdvertised(function_map, SQLGetCursorName));
     EXPECT_FALSE(isAdvertised(function_map, SQLNativeSql));
-    EXPECT_FALSE(isAdvertised(function_map, SQLParamData));
-    EXPECT_FALSE(isAdvertised(function_map, SQLPutData));
+    EXPECT_TRUE(isAdvertised(function_map, SQLParamData));
+    EXPECT_TRUE(isAdvertised(function_map, SQLPutData));
     EXPECT_FALSE(isAdvertised(function_map, SQLSetCursorName));
     EXPECT_TRUE(isAdvertised(function_map, SQLConnect));
     EXPECT_TRUE(isAdvertised(function_map, SQLTables));

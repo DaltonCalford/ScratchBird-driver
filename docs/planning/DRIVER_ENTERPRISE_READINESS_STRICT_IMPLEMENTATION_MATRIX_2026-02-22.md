@@ -19,7 +19,7 @@
 | ODBC-004 | P0 | In progress (code complete) | Metadata query surfaces incomplete for enterprise clients | Golden metadata tests for nested types and object relationships | ODBC Team + QA | High | 2–4w | ODBC-002 |
 | ODBC-005 | P0 | In progress (code complete; verification blocked by missing GTest harness) | Scroll and positioned cursor semantics limited | Scrollable/forward-only and positioned update/delete in concurrent load | ODBC Team | High | 2–4w | ODBC-003, ODBC-004 |
 | ODBC-006 | P1 | In progress (code complete) | Bulk DML and array binding partially implemented | 10k+ row bulk insert/update correctness/performance | ODBC Team | High | 3–5w | ODBC-003 |
-| ODBC-007 | P1 | In progress (read-side streaming implemented; write path pending) | LOB read/write streaming incomplete | 10MB+ LOB stream upload/download correctness | ODBC Team | High | 3–5w | ODBC-005 |
+| ODBC-007 | P1 | In progress (read/write streaming code complete; verification blocked by test harness) | LOB read/write streaming incomplete | 10MB+ LOB stream upload/download correctness | ODBC Team | High | 3–5w | ODBC-005 |
 | ODBC-008 | P1 | In progress (code complete) | `SQLGetInfo` and `SQLGetFunctions` are overly optimistic | Feature matrix test with no false-positive capabilities | ODBC Team + QA | Medium | 2w | ODBC-001 |
 | ODBC-009 | P0 | Not yet defined | No enterprise release gate for ODBC path | End-to-end BI runbook + conformance + perf/memory checks | Platform Lead + ODBC Team | High | 1w | ODBC-001 .. ODBC-008 |
 

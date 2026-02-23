@@ -1,3 +1,37 @@
+==== ODBC-007 Verification Run 2026-02-23T00:53:43Z ====
+cd /home/dcalford/CliWork/ScratchBird-driver
+cmake -S tracks/alpha/drivers/odbc -B build/odbc_local
+CMake Warning at CMakeLists.txt:102 (message):
+  ODBC not found.  Building with generic ODBC headers.
+
+
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- Skipping ODBC tests: GoogleTest not found
+-- 
+-- ScratchBird ODBC Driver Configuration:
+--   Version: 0.1.0
+--   Platform: Linux
+--   Windows: 
+--   Linux: TRUE
+--   macOS: 
+--   Install prefix: /usr/local
+-- 
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local
+---
+cmake --build build/odbc_local -j4
+[ 65%] Built target scratchbird_client
+[100%] Built target scratchbird_odbc
+---
+ctest --test-dir build/odbc_local -N
+Internal ctest changing into directory: /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local
+Test project /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local
+
+Total Tests: 0
+---
+ctest --test-dir build/odbc_local --output-on-failure
 Internal ctest changing into directory: /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local
 Test project /home/dcalford/CliWork/ScratchBird-driver/build/odbc_local
 No tests were found!!!

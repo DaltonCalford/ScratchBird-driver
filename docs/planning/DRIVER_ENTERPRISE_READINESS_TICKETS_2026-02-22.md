@@ -70,7 +70,7 @@ ETA: 3–5 weeks
 ### ODBC-007
 Title: Finalize ODBC large-object streaming support  
 Priority: P1  
-Status: In progress (read-side streaming implemented; SQLPutData upload path still missing)
+Status: In progress (read-side and write-side streaming implemented; verification blocked by missing ODBC in-tree test harness)
 Gap: LOB read/write behavior is incomplete/inconsistent for enterprise payload sizes  
 Acceptance Test: 10MB+ LOB stream upload/download with boundary/encoding/truncation checks  
 Owner: ODBC Team  

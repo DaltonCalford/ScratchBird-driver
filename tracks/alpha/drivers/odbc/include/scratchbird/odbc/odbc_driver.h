@@ -339,6 +339,21 @@ ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetData(
     scratchbird::odbc::SQLLEN* StrLen_or_IndPtr);
 
 /**
+ * @brief Return parameter token for SQLDataAtExec path
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLParamData(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLPOINTER* ValuePtrPtr);
+
+/**
+ * @brief Supply data for SQLDataAtExec parameters
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLPutData(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLPOINTER DataPtr,
+    scratchbird::odbc::SQLLEN StrLen_or_Ind);
+
+/**
  * @brief Get row count
  */
 ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLRowCount(

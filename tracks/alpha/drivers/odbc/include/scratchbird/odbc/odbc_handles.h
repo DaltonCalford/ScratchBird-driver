@@ -540,6 +540,16 @@ public:
                       SQLLEN* str_len_or_ind);
 
     /**
+     * @brief Return token for parameter requiring streamed data
+     */
+    SQLRETURN paramData(SQLPOINTER* token);
+
+    /**
+     * @brief Provide chunks for parameters bound SQL_DATA_AT_EXEC
+     */
+    SQLRETURN putData(SQLPOINTER data, SQLLEN len);
+
+    /**
      * @brief Get row count
      */
     SQLRETURN rowCount(SQLLEN* row_count);
@@ -661,6 +671,12 @@ private:
     SQLRETURN bindResultData();
     SQLRETURN convertAndStore(size_t col_index, const std::string& value);
     void clearGetDataState();
+    void clearPutDataState();
+    bool isDataAtExecIndicator(SQLLEN indicator) const;
+    SQLRETURN validateOrInitDataAtExecState();
+    SQLUSMALLINT getCurrentDataAtExecParameter() const;
+    SQLPOINTER putDataTokenToPointer(SQLUSMALLINT parameter_number) const;
+    SQLUSMALLINT pointerToPutDataToken(SQLPOINTER token) const;
     SQLRETURN buildParameterData(std::vector<ParameterLiteral>& literals, SQLULEN row_offset);
     std::vector<ParameterLiteral> buildParameterData();
     SQLRETURN executeSqlStatements(const std::string& sql);
@@ -730,6 +746,19 @@ private:
         size_t offset{0};
     };
     std::unordered_map<SQLUSMALLINT, GetDataStreamState> get_data_stream_;
+
+    // Parameter streaming state for SQL_DATA_AT_EXEC / SQLPutData.
+    struct PutDataStreamState {
+        std::string value;
+        SQLLEN expected_length{0};
+        bool expected_length_known{false};
+        bool complete{false};
+        bool truncated{false};
+    };
+    std::unordered_map<SQLUSMALLINT, PutDataStreamState> put_data_stream_;
+    std::vector<SQLUSMALLINT> data_at_exec_params_;
+    size_t data_at_exec_index_{0};
+    bool data_at_exec_active_{false};
 };
 
 // =============================================================================
