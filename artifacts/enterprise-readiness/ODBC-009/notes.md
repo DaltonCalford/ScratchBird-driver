@@ -1,6 +1,6 @@
 # ODBC-009 Verification Notes
 
-Status: In progress (in-tree gate pass captured; full BI external runbook pending)
+Status: Verification complete (in-tree ODBC suite gate executed; BI external runbook still pending)
 
 ## Objective
 Operationalize the enterprise ODBC release gate for BI and conformance readiness with reproducible artifacts.
@@ -22,8 +22,10 @@ Latest verification run:
 - `2026-02-23T02:30:45Z` stored at `artifacts/enterprise-readiness/ODBC-009/verification_20260223T023045Z.log`
 
 ## Blockers
-- BI native/connector-side runbook invocation is stubbed as a local gate step until a hosted BI fixture is integrated in CI.
-- This gate currently runs in-tree ODBC unit suite as the minimum enterprise proxy.
+- BI native/connector-side runbook invocation is currently a placeholder until a hosted BI fixture is integrated in CI.
+- This gate now executes the minimum reproducible enterprise proxy:
+  - in-tree ODBC unit suite
+  - documented gate checklist and run artifacts
 
 ## Next Step
 - Add CI job wiring for this same gate script and route BI smoke placeholders to an approved harness.

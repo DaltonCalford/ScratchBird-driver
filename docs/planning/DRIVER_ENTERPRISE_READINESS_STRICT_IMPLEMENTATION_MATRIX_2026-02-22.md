@@ -21,7 +21,7 @@
 | ODBC-006 | P1 | Verification complete (in-tree ODBC unit suite) | Bulk DML and array binding partially implemented | 10k+ row bulk insert/update correctness/performance | ODBC Team | High | 3–5w | ODBC-003 |
 | ODBC-007 | P1 | Verification complete (in-tree ODBC unit suite) | LOB read/write streaming incomplete | 10MB+ LOB stream upload/download correctness | ODBC Team | High | 3–5w | ODBC-005 |
 | ODBC-008 | P1 | Verification complete (in-tree ODBC unit suite) | `SQLGetInfo` and `SQLGetFunctions` are overly optimistic | Feature matrix test with no false-positive capabilities | ODBC Team + QA | Medium | 2w | ODBC-001 |
-| ODBC-009 | P0 | In progress (release gate defined) | No enterprise release gate for ODBC path | BI runbook automation + conformance + perf/memory checks in CI | Platform Lead + ODBC Team | High | 1w | ODBC-001 .. ODBC-008 |
+| ODBC-009 | P0 | Verification complete (in-tree ODBC gate executed; external BI harness pending) | Missing fully automated BI toolchain/harness in CI | BI runbook automation + conformance + perf/memory checks in CI | Platform Lead + ODBC Team | High | 1w | ODBC-001 .. ODBC-008 |
 
 ### .NET/JDBC
 

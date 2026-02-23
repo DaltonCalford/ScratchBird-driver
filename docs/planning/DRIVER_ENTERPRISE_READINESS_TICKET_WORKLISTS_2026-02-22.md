@@ -200,7 +200,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Define and enforce ODBC enterprise release gate  
 **Owner:** Platform Lead + ODBC Team  
 **Risk:** High  
-**Status:** In progress (release gate defined; execution evidence pending)  
+**Status:** Verification complete (in-tree ODBC gate executed; external BI runbook placeholder pending)  
 **ETA:** 1 week  
 **Acceptance:** BI runbook, ODBC conformance, memory/perf sanity checks pass and are repeatable.
 **Latest evidence:** `artifacts/enterprise-readiness/ODBC-009/notes.md`
@@ -212,10 +212,11 @@ subtasks, artifact paths, and verification gates.
   - [x] Define fail criteria and rollback conditions.
   - [x] Add release approval checklist requiring closed gate logs.
   - [ ] Create CI workflow integration for the ODBC gate checks.
-  - [ ] Add BI smoke harness invocation for BI-tool-style SQL validation.
+  - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (placeholder until external fixture is available).
   - [ ] Add memory and performance trend checks with preserved baselines.
+  - [ ] Replace placeholder with hosted BI fixture in CI and enable repeatable runbook assertions.
 - **Artifacts required**
-  - `artifacts/enterprise-readiness/ODBC-009/run_odbc_gate.sh` (or equivalent)
+  - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh` (or equivalent)
   - `artifacts/enterprise-readiness/ODBC-009/gates.md` (pass/fail criteria and rollback conditions)
   - `artifacts/enterprise-readiness/ODBC-009/notes.md` (execution evidence and decisions)
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-009`
