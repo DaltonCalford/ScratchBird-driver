@@ -13,14 +13,14 @@
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| ODBC-001 | P0 | In progress (code complete) | Optional-feature handling returns unsupported-feature paths on BI-required codepaths | BI smoke matrix with no unsupported-feature failures in required paths | ODBC Team | High | 1–2w | None |
-| ODBC-002 | P0 | In progress (code complete) | `SQLBrowseConnect` not supported for hierarchical object discovery | BI-style browse flows enumerate catalogs, schemas, tables, columns | ODBC Team | High | 1–2w | ODBC-001, ODBC-008 |
+| ODBC-001 | P0 | Code complete (verification attempted; blocked by missing in-tree BI harness) | Optional-feature handling returns unsupported-feature paths on BI-required codepaths | BI smoke matrix with no unsupported-feature failures in required paths | ODBC Team | High | 1–2w | None |
+| ODBC-002 | P0 | Verification attempted (blocked by missing ODBC BI/Browse harness) | `SQLBrowseConnect` not supported for hierarchical object discovery | BI-style browse flows enumerate catalogs, schemas, tables, columns | ODBC Team | High | 1–2w | ODBC-001, ODBC-008 |
 | ODBC-003 | P0 | Code complete (verification blocked) | Descriptor APIs are partially stubbed/insufficient for typed binding and result metadata | Descriptor conformance for APD/IPD/ARD and output bindings | ODBC Team | High | 2–3w | ODBC-001 |
 | ODBC-004 | P0 | In progress (code complete) | Metadata query surfaces incomplete for enterprise clients | Golden metadata tests for nested types and object relationships | ODBC Team + QA | High | 2–4w | ODBC-002 |
 | ODBC-005 | P0 | In progress (code complete; verification blocked by missing GTest harness) | Scroll and positioned cursor semantics limited | Scrollable/forward-only and positioned update/delete in concurrent load | ODBC Team | High | 2–4w | ODBC-003, ODBC-004 |
 | ODBC-006 | P1 | In progress (code complete) | Bulk DML and array binding partially implemented | 10k+ row bulk insert/update correctness/performance | ODBC Team | High | 3–5w | ODBC-003 |
 | ODBC-007 | P1 | In progress (read/write streaming code complete; verification blocked by test harness) | LOB read/write streaming incomplete | 10MB+ LOB stream upload/download correctness | ODBC Team | High | 3–5w | ODBC-005 |
-| ODBC-008 | P1 | In progress (code complete) | `SQLGetInfo` and `SQLGetFunctions` are overly optimistic | Feature matrix test with no false-positive capabilities | ODBC Team + QA | Medium | 2w | ODBC-001 |
+| ODBC-008 | P1 | Code complete (verification attempted; blocked by missing in-tree ODBC harness) | `SQLGetInfo` and `SQLGetFunctions` are overly optimistic | Feature matrix test with no false-positive capabilities | ODBC Team + QA | Medium | 2w | ODBC-001 |
 | ODBC-009 | P0 | Not yet defined | No enterprise release gate for ODBC path | End-to-end BI runbook + conformance + perf/memory checks | Platform Lead + ODBC Team | High | 1w | ODBC-001 .. ODBC-008 |
 
 ### .NET/JDBC

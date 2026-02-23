@@ -1,14 +1,22 @@
 # ODBC-008 Verification Notes
 
-Status: Code complete in-tree code changes applied.
+Status: Verification attempted (strict capability signal updates applied)
 
 ## Evidence
+- `cmake -S . -B build -DBUILD_TESTING=ON`
 - `cmake --build build --target scratchbird_odbc -j 4`
-- `SQLGetInfo` and `SQLGetFunctions` outputs were tightened:
-  - Removed unsupported ids from hard-coded advertised function list.
-  - Fixed support bitmap clear size (`250 * sizeof(SQLUSMALLINT)`).
+- `ctest --test-dir build --output-on-failure`
+
+Latest verification run:
+
+- `2026-02-23T01:02:07Z` stored at `artifacts/enterprise-readiness/ODBC-008/verification_2026-02-23T010207Z.log`
+
+## Findings
+- `SQLGetFunctions` now reports a clean, supported-function list built from header constants.
+- Removed incorrect/overstated IDs and fixed `SQLSetConnectAttr` collision.
+- Kept unsupported/unimplemented APIs (for example `SQLGetCursorName`) out of advertised bitmap.
 
 ## Blocker
-- Could not run full Info matrix/capability false-positive suite in-tree:
+- No ODBC capability matrix executable in this tree:
   - `Could NOT find GTest` during configure.
-  - No ODBC capability-matrix test executable is currently available in this build configuration.
+  - `No tests were found!!!` from ctest.

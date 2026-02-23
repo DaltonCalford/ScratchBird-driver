@@ -10,7 +10,7 @@ and strict dependency/acceptance matrix is in
 ### ODBC-001
 Title: Fix unsupported-feature paths returning HYC00 for BI-required capabilities  
 Priority: P0  
-Status: Code complete (verification blocked: BI smoke harness not integrated in this repo)  
+Status: Code complete (verification attempted; blocked by missing BI smoke harness in this repo)  
 Gap: Optional-feature handling is not enterprise-safe for core BI metadata/capability flows  
 Acceptance Test: Full ODBC BI smoke matrix (`SQLGetInfo`, catalog/browser metadata, and standard connection queries) with no `HYC00` on supported BI paths  
 Owner: ODBC Team  
@@ -80,7 +80,7 @@ ETA: 3–5 weeks
 ### ODBC-008
 Title: Make `SQLGetInfo`/`SQLGetFunctions` reporting accurate  
 Priority: P1  
-Status: Code complete (verification blocked: ODBC capability matrix tests not currently executable in this tree)  
+Status: Code complete (verification attempted; blocked by missing ODBC capability matrix executable in this tree)  
 Gap: Info responses are optimistic and may mislead clients  
 Acceptance Test: ODBC Info matrix test against documented/advertised capabilities; no false-positive feature claims  
 Owner: ODBC Team + QA  

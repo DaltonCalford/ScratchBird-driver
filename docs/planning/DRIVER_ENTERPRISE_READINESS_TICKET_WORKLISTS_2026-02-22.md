@@ -48,7 +48,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Fix unsupported-feature paths returning HYC00 for BI-required capabilities  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete (verification blocked by missing BI test harness in-tree)  
+**Status:** Code complete (verification attempted; blocked by missing BI test harness in-tree)  
 **ETA:** 1–2 weeks  
 **Acceptance:** BI smoke matrix (`SQLGetInfo`, catalog metadata, connection flows) with no unsupported-feature paths on supported BI-required APIs.
 
@@ -66,7 +66,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement `SQLBrowseConnect` for object discovery  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete (verification blocked by missing BI test harness in-tree)  
+**Status:** Verification attempted; blocked by missing BI test harness in-tree  
 **ETA:** 1–2 weeks  
 **Acceptance:** BI-style browse flows can enumerate catalogs, schemas, tables, and columns without errors.
 
@@ -174,7 +174,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Make `SQLGetInfo`/`SQLGetFunctions` reporting accurate  
 **Owner:** ODBC Team + QA  
 **Risk:** Medium  
-**Status:** Code complete (verification blocked by missing BI test harness in-tree)  
+**Status:** Code complete (verification attempted; blocked by missing in-tree ODBC harness)  
 **ETA:** 2 weeks  
 **Acceptance:** Info matrix has no false-positive feature claims.
 
