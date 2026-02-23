@@ -33,6 +33,7 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 - `run_cross_runtime_pool_contract.sh` now writes a structured `overallStatus`/`reason` artifact in
   `contract_gate_summary_<timestamp>.json`.
 - Each run also writes replay-ready `latest_verification.log` and `latest_contract_summary.json` artifacts.
+- In strict mode with missing envs, `overallStatus` is `blocked` and `reason` is `strict_gate_missing_env`.
 - Release-freeze metadata is now emitted on every run:
   - `releaseFreeze.active` indicates a hard stop condition requiring release triage.
   - `releaseFreeze.reasons` captures `strict_gate_missing_env` and/or `runtime_contract_failure` conditions.

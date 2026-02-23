@@ -161,7 +161,11 @@ elif [[ "${#required_env[@]}" -eq 0 ]]; then
   echo "[warn] one or both runtimes skipped due missing environment while strict_gate is false"
 else
   overall_status="blocked"
-  reason="missing_env_for_full_cross_runtime_contract"
+  if [[ "${strict_gate}" == "true" || "${strict_gate}" == "1" ]]; then
+    reason="strict_gate_missing_env"
+  else
+    reason="missing_env_for_full_cross_runtime_contract"
+  fi
   echo "[warn] blocked by missing env for both-runtimes gate; capture blocker reason in notes.md"
 fi
 
