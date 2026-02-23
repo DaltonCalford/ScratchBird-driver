@@ -141,10 +141,10 @@ Use one of these states for each ticket:
 | ODBC-006 | 2 | ODBC-003 | ODBC Team | Add `SQLBulkOperations`; array binding path; add paging and batch performance harness | `artifacts/enterprise-readiness/ODBC-006` | 10k+ rows multitype bulk correctness + perf | 3–5w | verification_complete |
 | ODBC-007 | 2 | ODBC-005 | ODBC Team | Implement large-object bind/read/write streams; verify truncation, encoding, and chunking behavior | `artifacts/enterprise-readiness/ODBC-007` | 10MB+ LOB stream roundtrip suite | 3–5w | verification_complete |
 | ODBC-009 | 3 | ODBC-001..008 | Platform Lead + ODBC Team | Create enterprise release checklist; BI runbook automation; add memory/perf leak checks; define fail criteria | `artifacts/enterprise-readiness/ODBC-009` | Full BI + ODBC conformance pass | 1w | verification_complete |
-| PLATFORM-302 | 4 | None | Security + Platform | Define cert rotation process; secret update workflows; session behavior expectations for managed/listener | `artifacts/enterprise-readiness/PLATFORM-302` | Rotating cert online with session continuity | 2–3w | planned |
-| PLATFORM-303 | 4 | None | Platform Engineering | Publish secure secret patterns, short-lived credentials flow, mounting examples, rotation docs | `artifacts/enterprise-readiness/PLATFORM-303` | Docs + sample deployment pass | 2w | planned |
-| PLATFORM-301 | 4 | PLATFORM-303 | Platform Engineering | Create Helm chart and sidecar integration docs; CI smoke run in local cluster | `artifacts/enterprise-readiness/PLATFORM-301` | Helm + sidecar scenario passes | 2–4w | planned |
-| PLATFORM-304 | 4 | PLATFORM-302, 301 | Platform + Driver Lead | Build cross-driver managed/listener matrix harness; define expected contract for auth/reconnect/timeout behavior | `artifacts/enterprise-readiness/PLATFORM-304` | Golden behavior matrix for all drivers | 2–4w | planned |
+| PLATFORM-302 | 4 | None | Security + Platform | Define cert rotation process; secret update workflows; session behavior expectations for managed/listener | `artifacts/enterprise-readiness/PLATFORM-302` | Rotating cert online with session continuity | 2–3w | blocked |
+| PLATFORM-303 | 4 | None | Platform Engineering | Publish secure secret patterns, short-lived credentials flow, mounting examples, rotation docs | `artifacts/enterprise-readiness/PLATFORM-303` | Docs + sample deployment pass | 2w | blocked |
+| PLATFORM-301 | 4 | PLATFORM-303 | Platform Engineering | Create Helm chart and sidecar integration docs; CI smoke run in local cluster | `artifacts/enterprise-readiness/PLATFORM-301` | Helm + sidecar scenario passes | 2–4w | blocked |
+| PLATFORM-304 | 4 | PLATFORM-302, 301 | Platform + Driver Lead | Build cross-driver managed/listener matrix harness; define expected contract for auth/reconnect/timeout behavior | `artifacts/enterprise-readiness/PLATFORM-304` | Golden behavior matrix for all drivers | 2–4w | blocked |
 | DOTNET-101 | 5 | Platform harness, ODBC-009 optional | .NET Team | Implement cancellable command execution; verify cancellation token propagation and cleanup semantics | `artifacts/enterprise-readiness/DOTNET-101` | Cancelled long query test with no deadlock/connection leak | 2–3w | verification_complete |
 | DOTNET-102 | 5 | DOTNET-101 | .NET Team | Hardening pooling, reconnect, circuit-breaker recovery; add failover tests | `artifacts/enterprise-readiness/DOTNET-102` | Soak + failover tests with bounded leaks | 3–5w | verification_complete |
 | DOTNET-103 | 5 | DOTNET-102 | .NET Team + QA | Audit transaction isolation and savepoint operations; add concurrent rollback/commit tests | `artifacts/enterprise-readiness/DOTNET-103` | Isolation/savepoint matrix complete | 4–6w | verification_complete |
@@ -152,11 +152,11 @@ Use one of these states for each ticket:
 | JDBC-201 | 5 | DOTNET-101 | JDBC Team | Add reactive API execution path and cancellation; enforce timeout/interrupt cleanup | `artifacts/enterprise-readiness/JDBC-201` | Non-blocking cancel and timeout stress suite | 3–5w | verification_complete |
 | JDBC-202 | 5 | JDBC-201 | JDBC Team + QA | Expand metadata/protocol parity coverage; refine prepared statement and LOB lifecycle tests | `artifacts/enterprise-readiness/JDBC-202` | JDBC conformance suite pass with parity checks | 4–6w | verification_complete |
 | JDBC-203 | 5 | DOTNET-101, JDBC-201, DOTNET-102 | Core Runtime + JVM/Platform | Build cross-runtime contract harness and shared expected behavior document | `artifacts/enterprise-readiness/JDBC-203` | Unified .NET/JDBC pooling contract pass | 1w | blocked |
-| ECOSYS-405 | 6 | None (can start after Platform-302) | Platform + Python/Go Drivers | Standardize cancellation/timeouts patterns; publish API signatures and semantics | `artifacts/enterprise-readiness/ECOSYS-405` | Async timeout/cancel suites in both ecosystems | 4–6w | planned |
-| ECOSYS-402 | 6 | JDBC-202, JDBC-201 | Ecosystem Team | Author SQLAlchemy dialect package with metadata and transaction coverage | `artifacts/enterprise-readiness/ECOSYS-402` | SQLAlchemy integration tests across dialect features | 4–8w | planned |
-| ECOSYS-401 | 6 | ECOSYS-402 | Ecosystem Team | Add Prisma adapter and mapping layer; connect sample CRUD/transaction tests | `artifacts/enterprise-readiness/ECOSYS-401` | Prisma app integration tests | 4–8w | planned |
-| ECOSYS-403 | 6 | JDBC-202 | Ecosystem Team | Produce Hibernate dialect and entity lifecycle tests | `artifacts/enterprise-readiness/ECOSYS-403` | JPA bootstrap + migration tests pass | 6–8w | planned |
-| ECOSYS-404 | 6 | Node driver baseline + PLATFORM-304 | Ecosystem Team | Add TypeORM adapter with schema + CRUD + transaction support | `artifacts/enterprise-readiness/ECOSYS-404` | Node TypeORM sample tests complete | 4–8w | planned |
+| ECOSYS-405 | 6 | None (can start after Platform-302) | Platform + Python/Go Drivers | Standardize cancellation/timeouts patterns; publish API signatures and semantics | `artifacts/enterprise-readiness/ECOSYS-405` | Async timeout/cancel suites in both ecosystems | 4–6w | in_progress |
+| ECOSYS-402 | 6 | JDBC-202, JDBC-201 | Ecosystem Team | Author SQLAlchemy dialect package with metadata and transaction coverage | `artifacts/enterprise-readiness/ECOSYS-402` | SQLAlchemy integration tests across dialect features | 4–8w | in_progress |
+| ECOSYS-401 | 6 | ECOSYS-402 | Ecosystem Team | Add Prisma adapter and mapping layer; connect sample CRUD/transaction tests | `artifacts/enterprise-readiness/ECOSYS-401` | Prisma app integration tests | 4–8w | in_progress |
+| ECOSYS-403 | 6 | JDBC-202 | Ecosystem Team | Produce Hibernate dialect and entity lifecycle tests | `artifacts/enterprise-readiness/ECOSYS-403` | JPA bootstrap + migration tests pass | 6–8w | in_progress |
+| ECOSYS-404 | 6 | Node driver baseline + PLATFORM-304 | Ecosystem Team | Add TypeORM adapter with schema + CRUD + transaction support | `artifacts/enterprise-readiness/ECOSYS-404` | Node TypeORM sample tests complete | 4–8w | in_progress |
 
 ## Weekly Progress Cadence
 
@@ -175,6 +175,11 @@ Use one of these states for each ticket:
 3. No P0 or P1 ticket can remain `in_progress` without an owner and next action defined.
 4. ODBC-009 and JDBC-203 cannot be marked `closed` unless ODBC and .NET/JDBC release gates both pass.
 5. Platform-304 requires all core drivers represented in the managed/listener matrix (ODBC, .NET, JDBC, JDBC-like language drivers).
+
+## Open Gaps
+
+- Use `DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_2026-02-23.md` for the currently unresolved
+  completion items after this snapshot.
 
 ## Escalation Path
 

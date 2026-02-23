@@ -4,9 +4,9 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [ ] Implement TLS transport in `tracks/beta/drivers/swift/Sources/ScratchBird/Socket.swift`. Issue: Open
-- [ ] Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Open
-- [ ] Reject `compression=zstd` until server support exists in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Open
+- [x] Implement TLS transport in `tracks/beta/drivers/swift/Sources/ScratchBird/Socket.swift`. Issue: Complete (2026-02-23)
+- [x] Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Complete (2026-02-23)
+- [x] Reject `compression=zstd` until server support exists in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Complete (2026-02-23)
 
 ## P1 (Core)
 

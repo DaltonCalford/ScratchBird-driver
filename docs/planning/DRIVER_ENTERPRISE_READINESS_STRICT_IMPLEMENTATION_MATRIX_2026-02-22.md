@@ -6,6 +6,8 @@
 - Blocked until all ticket acceptance artifacts are present in:
   - `artifacts/enterprise-readiness/<TICKET>`
 - Blocked until all P0 tickets are re-verified after any protocol or transport changes.
+- Open gaps and follow-up items are tracked in:
+  `DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_2026-02-23.md`.
 
 ## Matrix
 
@@ -39,20 +41,20 @@
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| PLATFORM-301 | P1 | Missing | No official Helm/sidecar story | Helm + sidecar smoke test in local Kubernetes | Platform Engineering | High | 2–4w | PLATFORM-303 |
-| PLATFORM-302 | P0 | Partial | TLS rotation and managed/listener secret behavior unclear | Online rotation with clean reconnects and no drops | Security + Platform Engineering | High | 2–3w | None |
-| PLATFORM-303 | P1 | Missing | Secret integration examples incomplete | Docs/examples for short-lived creds and rotation | Platform Engineering | Medium | 2w | None |
-| PLATFORM-304 | P0 | Partial | Managed/listener semantics diverge across drivers | Golden matrix for auth/reconnect/timeout/cancel | Platform + Driver Lead | High | 2–4w | PLATFORM-302, PLATFORM-301 |
+| PLATFORM-301 | P1 | Verification artifacts complete; runtime smoke blocked on cluster/env | Sidecar chart and smoke script implemented | Helm + sidecar smoke test in local Kubernetes | Platform Engineering | High | 2–4w | PLATFORM-303 |
+| PLATFORM-302 | P0 | Verification artifacts complete; runtime validation pending environment | TLS rotation and managed/listener secret behavior unclear | Online rotation with clean reconnects and no drops | Security + Platform Engineering | High | 2–3w | None |
+| PLATFORM-303 | P1 | Verification artifacts complete; runtime secret flow verification pending | Secret integration examples complete | Docs/examples for short-lived creds and rotation | Platform Engineering | Medium | 2w | None |
+| PLATFORM-304 | P0 | Verification artifacts complete; runtime matrix requires endpoints | Managed/listener semantics diverge across drivers | Golden matrix for auth/reconnect/timeout/cancel | Platform + Driver Lead | High | 2–4w | PLATFORM-302, PLATFORM-301 |
 
 ### Ecosystem
 
 | Ticket | Priority | Status | Gap | Acceptance Test | Owner | Risk | ETA | Dependency |
 |---|---|---|---|---|---|---|---|
-| ECOSYS-401 | P1 | Missing | No Prisma adapter | Prisma CRUD/transaction/reflection matrix | Ecosystem Team | Medium | 4–8w | ECOSYS-402 |
-| ECOSYS-402 | P1 | Missing | No SQLAlchemy dialect package | SQLAlchemy ORM/session/transaction matrix | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202 |
-| ECOSYS-403 | P1 | Missing | No Hibernate package | JPA bootstrap/lifecycle/migration tests | Ecosystem Team | Medium | 6–8w | JDBC-202 |
-| ECOSYS-404 | P1 | Missing | No TypeORM adapter | Node TypeORM schema/CRUD/transaction suite | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202, PLATFORM-304 |
-| ECOSYS-405 | P1 | Incomplete | Python asyncio and Go cancellation semantics incomplete | Async cancel/timeouts in both ecosystems | Platform + Python/Go Drivers | High | 4–6w | None |
+| ECOSYS-401 | P1 | In progress | No Prisma adapter | Prisma CRUD/transaction/reflection matrix | Ecosystem Team | Medium | 4–8w | ECOSYS-402 |
+| ECOSYS-402 | P1 | In progress | No SQLAlchemy dialect package | SQLAlchemy ORM/session/transaction matrix | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202 |
+| ECOSYS-403 | P1 | In progress | No Hibernate package | JPA bootstrap/lifecycle/migration tests | Ecosystem Team | Medium | 6–8w | JDBC-202 |
+| ECOSYS-404 | P1 | In progress | No TypeORM adapter | Node TypeORM schema/CRUD/transaction suite | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202, PLATFORM-304 |
+| ECOSYS-405 | P1 | In progress | Python asyncio and Go cancellation semantics incomplete | Async cancel/timeouts in both ecosystems | Platform + Python/Go Drivers | High | 4–6w | None |
 
 ## Artifacts and Evidence Standards
 

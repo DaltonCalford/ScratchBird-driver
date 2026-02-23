@@ -5,6 +5,9 @@ This file is the canonical ticket list. Detailed ticket subtasks are in
 and strict dependency/acceptance matrix is in
 `DRIVER_ENTERPRISE_READINESS_STRICT_IMPLEMENTATION_MATRIX_2026-02-22.md`.
 
+Open gaps and follow-up work items after this snapshot are tracked in
+`DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_2026-02-23.md`.
+
 ## ODBC Workstream
 
 ### ODBC-001
@@ -174,94 +177,103 @@ ETA: 1 week (post JDBC-201 to JDBC-202 and DOTNET-101 to DOTNET-104)
 ### PLATFORM-301
 Title: Kubernetes packaging and sidecar connectivity story  
 Priority: P1  
-Status: Missing  
+Status: Verification complete for artifacts; runtime smoke pending on cluster availability  
 Gap: No official cloud-native deployment pattern  
 Acceptance Test: Helm chart deploy and sidecar path verified in CI on local Kubernetes cluster  
 Owner: Platform Engineering  
 Risk: High  
 ETA: 2–4 weeks
+Artifacts path: `artifacts/enterprise-readiness/PLATFORM-301`
 
 ### PLATFORM-302
 Title: TLS + cert rotation playbook for managed/listener modes  
 Priority: P0  
-Status: Partial  
+Status: Verification complete for rotation artifacts; live cert swap validation pending runtime environment  
 Gap: No clear cert-rotation and secret-update story  
 Acceptance Test: Rotate certificate secret while service stays online; active sessions reconnect cleanly  
 Owner: Security + Platform Engineering  
 Risk: High  
 ETA: 2–3 weeks
+Artifacts path: `artifacts/enterprise-readiness/PLATFORM-302`
 
 ### PLATFORM-303
 Title: Standardize secure secret integration patterns  
 Priority: P1  
-Status: Missing  
+Status: Verification complete for secret patterns; credential flow runbook pending runtime consumer verification  
 Gap: Incomplete secret/backend integration examples  
 Acceptance Test: Docs and examples for short-lived credentials, rotation, and non-interactive startup via mounted secrets  
 Owner: Platform Engineering  
 Risk: Medium  
 ETA: 2 weeks
+Artifacts path: `artifacts/enterprise-readiness/PLATFORM-303`
 
 ### PLATFORM-304
 Title: Cross-driver managed/listener behavior contract  
 Priority: P0  
-Status: Partial  
+Status: Verification complete for contract matrix framework; runtime matrix pending endpoint availability  
 Gap: Connection/retry/cancel/reconnect semantics differ between drivers  
 Acceptance Test: Golden integration matrix across all drivers for managed/listener handshake, reconnect, auth failure, and timeout handling  
 Owner: Platform + Driver Lead  
 Risk: High  
 ETA: 2–4 weeks
+Artifacts path: `artifacts/enterprise-readiness/PLATFORM-304`
 
 ## Ecosystem Workstream
 
 ### ECOSYS-401
 Title: Prisma adapter integration  
 Priority: P1  
-Status: Missing  
+Status: In progress  
 Gap: No Prisma adapter  
 Acceptance Test: CRUD/transaction/reflection tests in a Prisma sample app  
 Owner: Ecosystem Team  
 Risk: Medium  
 ETA: 4–8 weeks
+Artifacts path: `artifacts/enterprise-readiness/ECOSYS-401`
 
 ### ECOSYS-402
 Title: Production-ready SQLAlchemy dialect  
 Priority: P1  
-Status: Missing  
+Status: In progress  
 Gap: No production-ready SQLAlchemy dialect package  
 Acceptance Test: SQLAlchemy introspection and ORM session/transaction tests across model types  
 Owner: Ecosystem Team  
 Risk: Medium  
 ETA: 4–8 weeks
+Artifacts path: `artifacts/enterprise-readiness/ECOSYS-402`
 
 ### ECOSYS-403
 Title: Hibernate dialect package  
 Priority: P1  
-Status: Missing  
+Status: In progress  
 Gap: No Hibernate integration package  
 Acceptance Test: JPA bootstrapping plus entity lifecycle and migration-mapping tests in a sample service  
 Owner: Ecosystem Team  
 Risk: Medium  
 ETA: 6–8 weeks
+Artifacts path: `artifacts/enterprise-readiness/ECOSYS-403`
 
 ### ECOSYS-404
 Title: TypeORM adapter  
 Priority: P1  
-Status: Missing  
+Status: In progress  
 Gap: No TypeORM driver/adapter  
 Acceptance Test: TypeORM schema + CRUD + transaction tests in sample Node service  
 Owner: Ecosystem Team  
 Risk: Medium  
 ETA: 4–8 weeks
+Artifacts path: `artifacts/enterprise-readiness/ECOSYS-404`
 
 ### ECOSYS-405
 Title: Native async consistency across languages  
 Priority: P1  
-Status: Incomplete  
+Status: In progress  
 Gap: Python asyncio and Go context cancellation are not fully standardized  
 Acceptance Test: Async integration tests with cancellation/timeouts in both ecosystems and comparable API patterns across drivers  
 Owner: Platform + Python/Go Drivers  
 Risk: High  
 ETA: 4–6 weeks
+Artifacts path: `artifacts/enterprise-readiness/ECOSYS-405`
 
 ## Release Gate Policy (strict)
 
