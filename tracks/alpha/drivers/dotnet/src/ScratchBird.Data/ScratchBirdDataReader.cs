@@ -88,7 +88,23 @@ public sealed class ScratchBirdDataReader : DbDataReader
 
     public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
-        return await Task.Run(Read, cancellationToken);
+        using var registration = cancellationToken.Register(() => _connection?.Client.Cancel());
+        try
+        {
+            return await Task.Run(Read, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public override bool NextResult()

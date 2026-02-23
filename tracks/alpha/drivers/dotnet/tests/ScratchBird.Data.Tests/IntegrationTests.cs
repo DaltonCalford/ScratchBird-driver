@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using ScratchBird.Data;
 using Xunit;
@@ -95,5 +96,34 @@ public class IntegrationTests
         await Task.Delay(200);
         cmd.Cancel();
         await Assert.ThrowsAnyAsync<Exception>(async () => await task);
+    }
+
+    [Fact]
+    public async Task CancelQueryAsyncViaTokenReleasesConnection()
+    {
+        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        if (string.IsNullOrWhiteSpace(dsn))
+        {
+            return;
+        }
+
+        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
+        if (string.IsNullOrWhiteSpace(cancelSql))
+        {
+            return;
+        }
+
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = cancelSql;
+        using var cts = new CancellationTokenSource(400);
+        await Assert.ThrowsAnyAsync<Exception>(async () => await cmd.ExecuteNonQueryAsync(cts.Token));
+
+        using var verify = conn.CreateCommand();
+        verify.CommandText = "SELECT 1";
+        var result = verify.ExecuteScalar();
+        Assert.Equal(1, Convert.ToInt32(result));
     }
 }

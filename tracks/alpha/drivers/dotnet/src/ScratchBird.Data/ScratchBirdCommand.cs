@@ -132,7 +132,23 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
     {
-        return await Task.Run(ExecuteNonQuery, cancellationToken);
+        using var cancellation = cancellationToken.Register(Cancel);
+        try
+        {
+            return await Task.Run(ExecuteNonQuery, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public override object? ExecuteScalar()
@@ -147,7 +163,23 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
     {
-        return await Task.Run(ExecuteScalar, cancellationToken);
+        using var cancellation = cancellationToken.Register(Cancel);
+        try
+        {
+            return await Task.Run(ExecuteScalar, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public new ScratchBirdDataReader ExecuteReader()
@@ -176,7 +208,23 @@ public sealed class ScratchBirdCommand : DbCommand
 
     protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
     {
-        return await Task.Run(() => ExecuteDbDataReader(behavior), cancellationToken);
+        using var cancellation = cancellationToken.Register(Cancel);
+        try
+        {
+            return await Task.Run(() => ExecuteDbDataReader(behavior), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public override void Cancel()

@@ -92,6 +92,11 @@ public class SBIntegrationTest {
             } catch (ExecutionException ex) {
                 // expected cancel or execution error
             }
+            try (Statement verify = conn.createStatement();
+                 ResultSet verifyRs = verify.executeQuery("SELECT 1")) {
+                verifyRs.next();
+                assertEquals(1, verifyRs.getInt(1));
+            }
         } finally {
             executor.shutdownNow();
         }
