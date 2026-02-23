@@ -120,7 +120,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Expand cursor behavior support and positioned operations  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** In progress (code complete; verification blocked by missing in-tree ODBC GTest harness)  
+**Status:** Code complete; verification blocked by missing in-tree ODBC GTest harness  
 **ETA:** 2–4 weeks  
 **Acceptance:** Scrollable and forward-only cursor tests plus positioned operations pass under concurrent load.
 

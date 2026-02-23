@@ -50,7 +50,7 @@ ETA: 2–4 weeks
 ### ODBC-005
 Title: Expand cursor behavior support and positioned operations  
 Priority: P0  
-Status: In progress (verification blocked by missing ODBC in-tree test harness and GTest dependency)  
+Status: Code complete; verification blocked by missing ODBC in-tree test harness and GTest dependency  
 Gap: Scroll and positioned semantics are limited  
 Acceptance Test: Scrollable and forward-only cursor tests plus positioned update/delete pass under concurrent load  
 Owner: ODBC Team  

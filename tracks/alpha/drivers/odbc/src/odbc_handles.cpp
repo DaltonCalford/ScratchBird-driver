@@ -4573,33 +4573,64 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
         return SQL_ERROR;
     }
 
-    if (lock_type > SQL_LOCK_UNLOCK) {
-        setError("HYC00", 0, "Invalid lock type");
-        return SQL_ERROR;
+    switch (lock_type) {
+        case SQL_LOCK_NO_CHANGE:
+        case SQL_LOCK_EXCLUSIVE:
+        case SQL_LOCK_UNLOCK:
+            break;
+        default:
+            setError("HYC00", 0, "Invalid lock type");
+            return SQL_ERROR;
     }
 
-    clearGetDataState();
+    auto setStatusForAllRows = [&](SQLUSMALLINT status) {
+        if (!row_status_ptr_) {
+            return;
+        }
+        // ODBC requires status reporting for the current positioned row; for clients
+        // that use a single-element status array, update index 0 as well.
+        row_status_ptr_[0] = status;
+    };
+
+    auto setStatusForRow = [&](SQLSETPOSIROW row, SQLUSMALLINT status) {
+        setStatusForAllRows(status);
+        if (!row_status_ptr_ || row <= 0) {
+            return;
+        }
+        if (static_cast<size_t>(row) < 1 || static_cast<size_t>(row) > rows_.size()) {
+            return;
+        }
+        row_status_ptr_[static_cast<size_t>(row) - 1] = status;
+    };
 
     auto uses_entire_rowset = [](SQLSETPOSIROW row) { return row == SQL_ENTIRE_ROWSET; };
     auto valid_row = [&](SQLSETPOSIROW row) {
         return row >= 1 && static_cast<size_t>(row) <= rows_.size();
     };
 
+    clearGetDataState();
+
     SQLLEN affected_count = 0;
     switch (operation) {
         case SQL_POSITION: {
+            if (uses_entire_rowset(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
             if (!valid_row(row_number)) {
                 setError("HY109", 0, "Invalid cursor position");
                 return SQL_ERROR;
             }
             current_row_ = static_cast<size_t>(row_number);
-            if (row_status_ptr_) {
-                row_status_ptr_[0] = SQL_ROW_SUCCESS;
-            }
+            setStatusForRow(row_number, SQL_ROW_SUCCESS);
             break;
         }
 
         case SQL_REFRESH: {
+            if (uses_entire_rowset(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
             if (!valid_row(row_number)) {
                 setError("HY109", 0, "Invalid cursor position");
                 return SQL_ERROR;
@@ -4610,14 +4641,16 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
             if (bind_result != SQL_SUCCESS && bind_result != SQL_SUCCESS_WITH_INFO) {
                 return bind_result;
             }
-            if (row_status_ptr_) {
-                row_status_ptr_[0] = SQL_ROW_SUCCESS;
-            }
+            setStatusForRow(row_number, SQL_ROW_SUCCESS);
             affected_count = 1;
             break;
         }
 
         case SQL_UPDATE: {
+            if (uses_entire_rowset(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
             if (concurrency_ == SQL_CONCUR_READ_ONLY) {
                 setError("25001", 0, "Read-only cursor does not support update");
                 return SQL_ERROR;
@@ -4627,9 +4660,7 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
                 return SQL_ERROR;
             }
             current_row_ = static_cast<size_t>(row_number);
-            if (row_status_ptr_) {
-                row_status_ptr_[0] = SQL_ROW_UPDATED;
-            }
+            setStatusForRow(row_number, SQL_ROW_UPDATED);
             affected_count = 1;
             break;
         }
@@ -4641,24 +4672,18 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
             }
             if (uses_entire_rowset(row_number)) {
                 affected_count = static_cast<SQLLEN>(rows_.size());
+                row_count_ = affected_count;
                 rows_.clear();
-                row_count_ = 0;
                 current_row_ = 0;
-                if (row_status_ptr_) {
-                    row_status_ptr_[0] = SQL_ROW_DELETED;
-                }
+                setStatusForAllRows(SQL_ROW_DELETED);
                 break;
             }
-
             if (!valid_row(row_number)) {
                 setError("HY109", 0, "Invalid cursor position");
                 return SQL_ERROR;
             }
             rows_.erase(rows_.begin() + static_cast<size_t>(row_number - 1));
-            row_count_ = static_cast<SQLLEN>(rows_.size());
-            if (row_status_ptr_) {
-                row_status_ptr_[0] = SQL_ROW_DELETED;
-            }
+            setStatusForRow(row_number, SQL_ROW_DELETED);
             affected_count = 1;
 
             if (rows_.empty()) {
