@@ -52,6 +52,17 @@ public:
             results = {{"audit_log", "0", "PRIMARY", "event_id", "BTREE"}};
             return SQL_SUCCESS;
         }
+        if (sql == "SHOW GRANTS") {
+            results = {
+                {"alice", "public.users", "SELECT", "dba", "YES"},
+                {"alice", "public.users.id", "UPDATE", "dba", "NO"},
+                {"dave", "public.orders", "INSERT", "SYSTEM", "NO"},
+                {"carol", "public.users.email", "SELECT", "alice", "YES"},
+                {"PUBLIC", "ROLE auditors", "ROLE", "dba", "YES"},
+                {"eve", "sales.orders.status", "SELECT", "dba", "YES"}
+            };
+            return SQL_SUCCESS;
+        }
         if (sql == "SELECT schema_id, schema_name FROM sb_catalog.sb_schemas") {
             results = {{"schema_public", "public"}};
             return SQL_SUCCESS;
@@ -222,6 +233,56 @@ TEST_F(OdbcCatalogTest, ProcedureColumnsExposeFunctionAndProcedurePaths) {
     ASSERT_EQ(stmt_.rows_.size(), 1u);
     EXPECT_EQ(stmt_.rows_[0][3], "status");
     EXPECT_EQ(stmt_.rows_[0][4], std::to_string(SQL_PARAM_OUTPUT));
+}
+
+TEST_F(OdbcCatalogTest, TablePrivilegesFiltersBySchemaAndPattern) {
+    SQLRETURN rc = stmt_.tablePrivileges(nullptr, 0, toSqlChar("public"), SQL_NTS,
+                                       toSqlChar("users"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+
+    const auto* users_row = findRow(stmt_.rows_, 2, "users");
+    ASSERT_NE(users_row, nullptr);
+    EXPECT_EQ((*users_row)[0], "testdb");
+    EXPECT_EQ((*users_row)[1], "public");
+    EXPECT_EQ((*users_row)[2], "users");
+    EXPECT_EQ((*users_row)[3], "dba");
+    EXPECT_EQ((*users_row)[4], "alice");
+    EXPECT_EQ((*users_row)[5], "SELECT");
+    EXPECT_EQ((*users_row)[6], "YES");
+
+    rc = stmt_.tablePrivileges(nullptr, 0, nullptr, 0,
+                              toSqlChar("sales.orders"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+    EXPECT_EQ(stmt_.rows_[0][1], "sales");
+    EXPECT_EQ(stmt_.rows_[0][2], "orders");
+    EXPECT_EQ(stmt_.rows_[0][5], "SELECT");
+}
+
+TEST_F(OdbcCatalogTest, ColumnPrivilegesFiltersByTableAndColumn) {
+    SQLRETURN rc = stmt_.columnPrivileges(nullptr, 0, toSqlChar("public"), SQL_NTS,
+                                        toSqlChar("users"), SQL_NTS,
+                                        toSqlChar("id"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+
+    EXPECT_EQ(stmt_.rows_[0][0], "testdb");
+    EXPECT_EQ(stmt_.rows_[0][1], "public");
+    EXPECT_EQ(stmt_.rows_[0][2], "users");
+    EXPECT_EQ(stmt_.rows_[0][3], "id");
+    EXPECT_EQ(stmt_.rows_[0][4], "dba");
+    EXPECT_EQ(stmt_.rows_[0][5], "alice");
+    EXPECT_EQ(stmt_.rows_[0][6], "UPDATE");
+    EXPECT_EQ(stmt_.rows_[0][7], "NO");
+
+    rc = stmt_.columnPrivileges(nullptr, 0, nullptr, 0,
+                               toSqlChar("public.users.email"), SQL_NTS,
+                               nullptr, 0);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+    EXPECT_EQ(stmt_.rows_[0][2], "users");
+    EXPECT_EQ(stmt_.rows_[0][3], "email");
 }
 
 TEST_F(OdbcCatalogTest, StatisticsAndSpecialColumnsUsePrimaryKey) {

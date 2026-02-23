@@ -929,6 +929,130 @@ std::vector<std::string> splitCsvColumns(const std::string& value) {
     return columns;
 }
 
+struct PrivilegeObjectPath {
+    std::string full;
+    std::string schema;
+    std::string table;
+    std::string column;
+    bool has_column{false};
+};
+
+std::vector<std::string> splitQualifiedIdentifierPath(const std::string& value) {
+    std::vector<std::string> parts;
+    std::string current;
+    bool in_single_quote = false;
+    bool in_double_quote = false;
+    bool in_backtick_quote = false;
+
+    for (size_t index = 0; index < value.size(); ++index) {
+        char ch = value[index];
+
+        if (ch == '\'' && !in_double_quote && !in_backtick_quote) {
+            in_single_quote = !in_single_quote;
+            continue;
+        }
+        if (ch == '"' && !in_single_quote && !in_backtick_quote) {
+            in_double_quote = !in_double_quote;
+            continue;
+        }
+        if (ch == '`' && !in_single_quote && !in_double_quote) {
+            in_backtick_quote = !in_backtick_quote;
+            continue;
+        }
+
+        if (!in_single_quote && !in_double_quote && !in_backtick_quote && ch == '.') {
+            std::string part = trimString(current);
+            if (!part.empty()) {
+                parts.push_back(part);
+            }
+            current.clear();
+            continue;
+        }
+
+        current.push_back(ch);
+    }
+
+    std::string part = trimString(current);
+    if (!part.empty()) {
+        parts.push_back(part);
+    }
+
+    return parts;
+}
+
+PrivilegeObjectPath parsePrivilegeObjectPath(const std::string& object_name) {
+    PrivilegeObjectPath parsed;
+    parsed.full = stripIdentifierQuotes(trimString(object_name));
+    if (parsed.full.empty()) {
+        return parsed;
+    }
+
+    const auto path_parts = splitQualifiedIdentifierPath(parsed.full);
+    if (path_parts.empty()) {
+        return parsed;
+    }
+
+    if (path_parts.size() == 1) {
+        parsed.table = stripIdentifierQuotes(path_parts[0]);
+        return parsed;
+    }
+
+    if (path_parts.size() == 2) {
+        parsed.schema = stripIdentifierQuotes(path_parts[0]);
+        parsed.table = stripIdentifierQuotes(path_parts[1]);
+        return parsed;
+    }
+
+    parsed.has_column = true;
+    for (size_t index = 0; index + 2 < path_parts.size(); ++index) {
+        if (!parsed.schema.empty()) {
+            parsed.schema.push_back('.');
+        }
+        parsed.schema += stripIdentifierQuotes(path_parts[index]);
+    }
+    parsed.table = stripIdentifierQuotes(path_parts[path_parts.size() - 2]);
+    parsed.column = stripIdentifierQuotes(path_parts.back());
+    return parsed;
+}
+
+bool isRoleGrantObject(const std::string& object_name, const std::string& privilege) {
+    if (toUpper(trimString(privilege)) == "ROLE") {
+        return true;
+    }
+    return toUpper(trimString(object_name)).rfind("ROLE ", 0) == 0;
+}
+
+std::string normalizeGrantOption(const std::string& value) {
+    if (parseBoolValue(value, false)) {
+        return "YES";
+    }
+    return "NO";
+}
+
+bool queryShowGrants(OdbcConnection* conn, std::vector<std::vector<std::string>>& rows) {
+    std::vector<ColumnMetadata> columns;
+    SQLLEN rows_affected = 0;
+    return conn->executeSQL("SHOW GRANTS", rows, columns, rows_affected) == SQL_SUCCESS;
+}
+
+bool matchTablePattern(const PrivilegeObjectPath& path,
+                      const std::string& table_pattern,
+                      bool metadata_id) {
+    if (table_pattern.empty()) {
+        return true;
+    }
+    return matchPattern(path.table, table_pattern, metadata_id);
+}
+
+bool matchSchemaPattern(const PrivilegeObjectPath& path,
+                       const std::string& schema_pattern,
+                       bool metadata_id) {
+    if (schema_pattern.empty()) {
+        return true;
+    }
+    return matchPattern(path.schema, schema_pattern, metadata_id);
+}
+
 SQLRETURN executeCatalogQuery(OdbcConnection* conn,
                               const std::vector<std::string>& queries,
                               std::vector<std::vector<std::string>>& rows,
@@ -6281,6 +6405,26 @@ SQLRETURN OdbcStatement::tablePrivileges(const SQLCHAR* catalog, SQLSMALLINT cat
                                           const SQLCHAR* table, SQLSMALLINT table_len) {
     clearDiagnostics();
 
+    if (!conn_ || !conn_->isConnected()) {
+        setError("08003", 0, "Connection not open");
+        return SQL_ERROR;
+    }
+
+    std::string catalog_pattern = sqlCharToString(catalog, catalog_len);
+    std::string schema_pattern = sqlCharToString(schema, schema_len);
+    std::string table_pattern = sqlCharToString(table, table_len);
+    bool metadata_id = conn_->getMetadataId();
+
+    if (schema_pattern.empty() && !table_pattern.empty()) {
+        const auto parsed_table = parsePrivilegeObjectPath(table_pattern);
+        if (!parsed_table.schema.empty()) {
+            schema_pattern = parsed_table.schema;
+            if (!parsed_table.table.empty()) {
+                table_pattern = parsed_table.table;
+            }
+        }
+    }
+
     std::vector<ColumnMetadata> cols;
     cols.push_back(makeCatalogColumn("TABLE_CAT", SQL_VARCHAR, DriverConfig::MAX_CATALOG_NAME_LEN));
     cols.push_back(makeCatalogColumn("TABLE_SCHEM", SQL_VARCHAR, DriverConfig::MAX_SCHEMA_NAME_LEN));
@@ -6290,14 +6434,52 @@ SQLRETURN OdbcStatement::tablePrivileges(const SQLCHAR* catalog, SQLSMALLINT cat
     cols.push_back(makeCatalogColumn("PRIVILEGE", SQL_VARCHAR, 64));
     cols.push_back(makeCatalogColumn("IS_GRANTABLE", SQL_VARCHAR, 3));
 
-    (void)catalog;
-    (void)catalog_len;
-    (void)schema;
-    (void)schema_len;
-    (void)table;
-    (void)table_len;
+    const std::string& current_catalog = conn_->getCurrentDatabase();
 
-    setCatalogResult(std::move(cols), {});
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
+        setCatalogResult(std::move(cols), {});
+        return SQL_SUCCESS;
+    }
+
+    std::vector<std::vector<std::string>> grant_rows;
+    auto grant_status = queryShowGrants(conn_, grant_rows);
+    if (grant_status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to execute SHOW GRANTS");
+        return grant_status;
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    for (const auto& grant_row : grant_rows) {
+        if (grant_row.size() < 5) {
+            continue;
+        }
+        if (isRoleGrantObject(grant_row[1], grant_row[2])) {
+            continue;
+        }
+
+        const auto path = parsePrivilegeObjectPath(grant_row[1]);
+        if (path.has_column || path.table.empty()) {
+            continue;
+        }
+        if (!matchSchemaPattern(path, schema_pattern, metadata_id)) {
+            continue;
+        }
+        if (!matchTablePattern(path, table_pattern, metadata_id)) {
+            continue;
+        }
+
+        rows.push_back({
+            current_catalog,
+            path.schema,
+            path.table,
+            grant_row[3],
+            grant_row[0],
+            grant_row[2],
+            normalizeGrantOption(grant_row[4])
+        });
+    }
+
+    setCatalogResult(std::move(cols), std::move(rows));
     return SQL_SUCCESS;
 }
 
@@ -6306,6 +6488,32 @@ SQLRETURN OdbcStatement::columnPrivileges(const SQLCHAR* catalog, SQLSMALLINT ca
                                            const SQLCHAR* table, SQLSMALLINT table_len,
                                            const SQLCHAR* column, SQLSMALLINT column_len) {
     clearDiagnostics();
+
+    if (!conn_ || !conn_->isConnected()) {
+        setError("08003", 0, "Connection not open");
+        return SQL_ERROR;
+    }
+
+    std::string catalog_pattern = sqlCharToString(catalog, catalog_len);
+    std::string schema_pattern = sqlCharToString(schema, schema_len);
+    std::string table_pattern = sqlCharToString(table, table_len);
+    std::string column_pattern = sqlCharToString(column, column_len);
+    bool metadata_id = conn_->getMetadataId();
+
+    if (schema_pattern.empty()) {
+        const auto parsed_table = parsePrivilegeObjectPath(table_pattern);
+        if (!parsed_table.schema.empty()) {
+            schema_pattern = parsed_table.schema;
+            if (!parsed_table.table.empty()) {
+                table_pattern = parsed_table.table;
+            }
+            if (parsed_table.has_column && parsed_table.column.empty() == false) {
+                if (column_pattern.empty()) {
+                    column_pattern = parsed_table.column;
+                }
+            }
+        }
+    }
 
     std::vector<ColumnMetadata> cols;
     cols.push_back(makeCatalogColumn("TABLE_CAT", SQL_VARCHAR, DriverConfig::MAX_CATALOG_NAME_LEN));
@@ -6317,16 +6525,59 @@ SQLRETURN OdbcStatement::columnPrivileges(const SQLCHAR* catalog, SQLSMALLINT ca
     cols.push_back(makeCatalogColumn("PRIVILEGE", SQL_VARCHAR, 64));
     cols.push_back(makeCatalogColumn("IS_GRANTABLE", SQL_VARCHAR, 3));
 
-    (void)catalog;
-    (void)catalog_len;
-    (void)schema;
-    (void)schema_len;
-    (void)table;
-    (void)table_len;
-    (void)column;
-    (void)column_len;
+    const std::string& current_catalog = conn_->getCurrentDatabase();
 
-    setCatalogResult(std::move(cols), {});
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
+        setCatalogResult(std::move(cols), {});
+        return SQL_SUCCESS;
+    }
+
+    std::vector<std::vector<std::string>> grant_rows;
+    auto grant_status = queryShowGrants(conn_, grant_rows);
+    if (grant_status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to execute SHOW GRANTS");
+        return grant_status;
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    for (const auto& grant_row : grant_rows) {
+        if (grant_row.size() < 5) {
+            continue;
+        }
+        if (isRoleGrantObject(grant_row[1], grant_row[2])) {
+            continue;
+        }
+
+        const auto path = parsePrivilegeObjectPath(grant_row[1]);
+        if (!path.has_column) {
+            continue;
+        }
+        if (path.schema.empty()) {
+            continue;
+        }
+        if (!matchSchemaPattern(path, schema_pattern, metadata_id)) {
+            continue;
+        }
+        if (!matchTablePattern(path, table_pattern, metadata_id)) {
+            continue;
+        }
+        if (!matchPattern(path.column, column_pattern, metadata_id)) {
+            continue;
+        }
+
+        rows.push_back({
+            current_catalog,
+            path.schema,
+            path.table,
+            path.column,
+            grant_row[3],
+            grant_row[0],
+            grant_row[2],
+            normalizeGrantOption(grant_row[4])
+        });
+    }
+
+    setCatalogResult(std::move(cols), std::move(rows));
     return SQL_SUCCESS;
 }
 

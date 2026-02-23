@@ -40,7 +40,7 @@ ETA: 2–3 weeks
 ### ODBC-004
 Title: Complete metadata API correctness (`SQLTables`, `SQLColumns`, `SQLProcedures`)  
 Priority: P0  
-Status: In progress (code complete; verification blocked by missing in-tree ODBC metadata test harness)  
+Status: Code complete; verification blocked by missing in-tree ODBC test harness  
 Gap: Metadata query surfaces are simplified and incomplete for enterprise clients  
 Acceptance Test: Golden metadata tests for nested types, constraints, and key/parent-child relationships across schemas  
 Owner: ODBC Team + QA  

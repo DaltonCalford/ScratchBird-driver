@@ -1,28 +1,30 @@
 # ODBC-004 Verification Notes
 
-Status: Code complete (verification blocked by missing in-tree ODBC test harness)
+Status: Code complete; functional verification still blocked by missing in-tree ODBC test harness
 
 ## Evidence
-- Implemented `OdbcStatement::procedures` and `OdbcStatement::procedureColumns` in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`.
+- Implemented additional metadata surfaces in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`:
+  - `OdbcStatement::tablePrivileges`
+  - `OdbcStatement::columnPrivileges`
+  - supporting helpers (`parsePrivilegeObjectPath`, path split/match helpers, SHOW GRANTS query execution and filtering helpers)
 - Added corresponding regression coverage scaffolding in `tracks/alpha/drivers/odbc/tests/test_odbc_catalog_and_types.cpp` for:
-  - procedure/function result counts and function/procedure type mapping,
-  - synthetic return-value row behavior for function parameters,
-  - output-parameter filtering and filtering by schema/procedure.
-- `cmake --build build --target scratchbird_odbc -j 6` succeeded.
-- `ctest --test-dir build --output-on-failure` ran and reported no discoverable tests in-tree.
-- Syntax check for current ODBC metadata test harness remains blocked by missing `gtest/gtest.h`.
+  - procedure metadata and `procedureColumns` mapping
+  - table privilege result filtering by schema, LIKE/exact table pattern, and schema-qualified table path
+  - column privilege filtering by schema/table/column and schema-qualified table.path patterns
+- `cmake --build tracks/alpha/drivers/odbc/build --target scratchbird_odbc -j 6` succeeded.
+- `ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure` ran and reported no discoverable tests.
+- Syntax check for ODBC metadata test harness remains blocked by missing `gtest/gtest.h`.
 
 ## Blocker
 - No executable test target for ODBC metadata tests in this repository.
-- `-I`-only gtest syntax check fails due missing GTest dependency in workspace.
+- Metadata test compilation still depends on missing GTest dependency in workspace.
 
 ## Files Touched
 - `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
-- (Tests are prepared in `tracks/alpha/drivers/odbc/tests/*.cpp` but are not wired into the build/test pipeline.)
+- `tracks/alpha/drivers/odbc/tests/test_odbc_catalog_and_types.cpp` (new fixture rows and tests for privilege metadata)
 
 ## Next Step
-- Hook ODBC unit tests under a dedicated CTest target (with GTest) and run the following cases before marking verification complete:
-  - procedure metadata returns with procedure/function distinctions
-  - return-value row for functions
-  - input/output counts and result-set count mapping in `SQLProcedures`
-  - `SQLProcedureColumns` parent-child filtering for schema/procedure/column patterns
+- Wire ODBC unit tests into CTest under a GTest-enabled build and run:
+  - procedure and function metadata cases in `ProceduresExposeInputOutputAndResultCounts` and `ProcedureColumnsExposeFunctionAndProcedurePaths`
+  - `TablePrivilegesFiltersBySchemaAndPattern`
+  - `ColumnPrivilegesFiltersByTableAndColumn`
