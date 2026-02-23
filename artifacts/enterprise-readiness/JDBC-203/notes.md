@@ -1,7 +1,7 @@
 # JDBC-203 Verification Notes (2026-02-23)
 
 ## Status
-In progress. JDBC-side pooling implementation and `JDBC203PoolingAndRecoveryContractTest` are committed and in-tree verification is passing; cross-runtime execution remains blocked by missing runtime endpoints.
+Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryContractTests` are committed and in-tree verification is passing; cross-runtime execution remains blocked by missing runtime endpoints and required cancellation SQL envs.
 
 ## Evidence
 - `artifacts/enterprise-readiness/JDBC-203/contract.md`
@@ -19,20 +19,27 @@ In progress. JDBC-side pooling implementation and `JDBC203PoolingAndRecoveryCont
 
 ## Blocking
 - Runtime-wide execution blocked until both `.NET` and `JDBC` CI environments provide valid ScratchBird endpoints with managed/listener toggles.
-- The contract run must capture pool counters and failure-recovery traces for scenarios A-E before gate closure.
+- The contract run must capture scenario A-E matrix evidence for both runtime clients before gate closure.
 - JDBC run additionally requires `SCRATCHBIRD_JDBC_CANCEL_SQL` for scenarios A/B/D/E.
 - `SCRATCHBIRD_JDBC_URL` and `SCRATCHBIRD_DOTNET_URL` are required for cross-runtime execution.
-- `SCRATCHBIRD_JDBC_CANCEL_SQL` is required for scenarios A/B/D/E.
+- `SCRATCHBIRD_DOTNET_CANCEL_SQL` is required for scenarios A/B/D/E.
+
+## Gate Control
+- `JDBC203_STRICT_GATE=true` (default on CI when `GITHUB_ACTIONS=true`) blocks execution if any required endpoint/cancel variable is missing.
+- Local runs are partial only when strict gate is disabled and will emit `contract_gate_summary_<timestamp>.json` with status and missing env list.
+- `run_cross_runtime_pool_contract.sh` now writes a structured `overallStatus`/`reason` artifact in
+  `contract_gate_summary_<timestamp>.json`.
 
 ## Latest Run
-- Timestamp: 2026-02-23T05:03Z
+- Timestamp: 2026-02-23T05:07Z
 - Command: `bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
-- Result: blocked by missing `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_JDBC_URL`; no cross-runtime scenarios executed.
+- Result: blocked in non-strict mode due missing runtime/cancel vars; summary file
+  `contract_gate_summary_20260223T050700Z.json` written with `overallStatus=blocked`.
 
 ## Local Verification (in-tree only)
 - `cd tracks/alpha/drivers/jdbc && ./gradlew test --tests com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest`
   - Result: pass (tests skipped when env vars are missing)
 - `cd tracks/alpha/drivers/jdbc && ./gradlew test`
   - Result: pass
-- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj`
-  - Result: pass (36 tests, 0 skipped)
+- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests"`
+  - Result: pass (5 scenarios, environment-gated by `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL`; currently skipped locally when envs missing)

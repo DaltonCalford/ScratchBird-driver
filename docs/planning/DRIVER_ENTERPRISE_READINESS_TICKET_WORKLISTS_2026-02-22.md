@@ -345,16 +345,16 @@ subtasks, artifact paths, and verification gates.
 **Title:** Add .NET/JDBC cross-runtime pooling contract test as release gate  
 **Owner:** Core Runtime + JVM/Platform Team  
 **Risk:** High  
-**Status:** In progress (contract scaffold and executable harness in place)  
+**Status:** Blocked (cross-runtime gate blocked by missing managed/listener endpoints and cancel-SQL envs; strict mode configured in CI)  
 **ETA:** 1 week  
 **Acceptance:** Cross-runtime pooling and error-recovery contract suite passes with no regressions.
 
 - **Goal:** Create a shared contract that blocks drift between runtime drivers.
 - **Dependencies:** DOTNET-101, JDBC-201, DOTNET-102
 - **Subtasks**
-- [ ] Define cross-runtime pooling semantics and expected failures/retries.
+- [x] Define cross-runtime pooling semantics and expected failures/retries.
 - [x] Implement shared test harness with deterministic expectations.
-- [ ] Add CI gate with pass/fail artifacts and baseline comparison.
+- [ ] Add CI gate with pass/fail artifacts and baseline comparison (strict-mode path implemented; baseline files now captured as JSON summary + logs).
 - [ ] Add release freeze rules for contract failures.
 - **Artifacts path:** `artifacts/enterprise-readiness/JDBC-203`
 - **Latest evidence:** `artifacts/enterprise-readiness/JDBC-203/notes.md`

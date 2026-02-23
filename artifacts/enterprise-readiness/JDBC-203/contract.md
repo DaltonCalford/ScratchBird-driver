@@ -8,8 +8,14 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
 - Runtime APIs: connection lifecycle, command execution reuse, transaction recovery, pool saturation, and cancellation
 - Required environments:
   - ScratchBird server (managed/listener)
-  - .NET test runner with `SCRATCHBIRD_DOTNET_URL`
-  - JDBC test runner with `SCRATCHBIRD_JDBC_URL`
+  - .NET test runner with `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL`
+  - JDBC test runner with `SCRATCHBIRD_JDBC_URL` and `SCRATCHBIRD_JDBC_CANCEL_SQL`
+
+## Gate Script
+- `run_cross_runtime_pool_contract.sh` enforces optional strict mode:
+  - `JDBC203_STRICT_GATE=true` or CI (`GITHUB_ACTIONS=true`) blocks on missing envs.
+  - Non-strict mode records partial results when only one runtime is reachable.
+- Summary file: `contract_gate_summary_<timestamp>.json`.
 
 ## Mandatory Rules
 1. Borrow and return behavior
@@ -35,4 +41,3 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
 - Scenario C: concurrent pool stress (at least 10 workers)
 - Scenario D: transient network/connection interruption recovery
 - Scenario E: metadata and stream reuse after cancellation/reconnect
-
