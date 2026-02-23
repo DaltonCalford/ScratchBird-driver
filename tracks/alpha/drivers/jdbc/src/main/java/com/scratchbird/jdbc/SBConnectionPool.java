@@ -25,6 +25,7 @@ import java.util.logging.Logger;
  */
 public class SBConnectionPool {
     private static final Logger LOGGER = Logger.getLogger(SBConnectionPool.class.getName());
+    public static final long DEFAULT_LIFETIME_MS = 60 * 60 * 1000L;
     
     private final SBConnectionProperties properties;
     private final PoolConfig config;
@@ -453,9 +454,14 @@ public class SBConnectionPool {
             
             // No available connection, try to create new one
             missCount.incrementAndGet();
-            PooledConnection created = createNewPooledConnection();
-            created.attachLeakGuard(leakDetector.checkout(created.delegate.getConnectionId()));
-            return created;
+            if (totalConnections.get() < config.getMaxConnections()) {
+                PooledConnection created = createNewPooledConnection();
+                created.attachLeakGuard(leakDetector.checkout(created.delegate.getConnectionId()));
+                return created;
+            }
+
+            throw new SQLException("Connection pool exhausted. "
+                + "Increase MaxPoolSize or reduce concurrent usage, then retry.");
             
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

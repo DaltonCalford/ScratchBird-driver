@@ -19,6 +19,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.logging.Logger;
 import java.util.logging.Level;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * ScratchBird JDBC Driver implementation.
@@ -75,6 +76,8 @@ public class SBDriver implements Driver {
     /** Singleton instance for registration */
     private static SBDriver registeredDriver;
 
+    private static final ConcurrentHashMap<String, SBConnectionPool> CONNECTION_POOLS = new ConcurrentHashMap<>();
+
     // Static initializer - register driver with DriverManager
     static {
         try {
@@ -110,7 +113,22 @@ public class SBDriver implements Driver {
 
         // Parse URL and create connection
         SBConnectionProperties props = parseURL(url, info);
-        return new SBConnection(props);
+        if (!props.isPooling()) {
+            return new SBConnection(props);
+        }
+
+        SBConnectionPool pool;
+        try {
+            pool = getOrCreatePool(props);
+        } catch (RuntimeException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof SQLException sqlEx) {
+                throw sqlEx;
+            }
+            throw ex;
+        }
+
+        return pool.acquire();
     }
 
     /**
@@ -229,6 +247,32 @@ public class SBDriver implements Driver {
         binaryProp.description = "Use binary protocol for data transfer";
         binaryProp.choices = new String[]{"true", "false"};
         propList.add(binaryProp);
+
+        DriverPropertyInfo poolingProp = new DriverPropertyInfo("Pooling",
+            props.getProperty("pooling", "true"));
+        poolingProp.description = "Enable connection pooling";
+        poolingProp.choices = new String[]{"true", "false"};
+        propList.add(poolingProp);
+
+        DriverPropertyInfo maxPoolProp = new DriverPropertyInfo("MaxPoolSize",
+            props.getProperty("maxpoolsize", "10"));
+        maxPoolProp.description = "Maximum pooled connections";
+        propList.add(maxPoolProp);
+
+        DriverPropertyInfo minPoolProp = new DriverPropertyInfo("MinPoolSize",
+            props.getProperty("minpoolsize", "0"));
+        minPoolProp.description = "Minimum pooled connections to keep alive";
+        propList.add(minPoolProp);
+
+        DriverPropertyInfo lifetimeProp = new DriverPropertyInfo("ConnectionLifetime",
+            props.getProperty("connectionlifetime", "30"));
+        lifetimeProp.description = "Connection lifetime in seconds before recycle";
+        propList.add(lifetimeProp);
+
+        DriverPropertyInfo acquireProp = new DriverPropertyInfo("AcquireTimeout",
+            props.getProperty("acquiretimeout", "30"));
+        acquireProp.description = "Maximum wait time in seconds for an available pooled connection";
+        propList.add(acquireProp);
 
         // Compression
         DriverPropertyInfo compressionProp = new DriverPropertyInfo("compression",
@@ -438,5 +482,75 @@ public class SBDriver implements Driver {
     @Override
     public String toString() {
         return DRIVER_NAME + " " + VERSION;
+    }
+
+    /**
+     * Gets pool statistics for a parsed connection profile.
+     *
+     * @param properties connection properties
+     * @return pool statistics or null when pooling is disabled or no pool exists
+     */
+    public static SBConnectionPool.PoolStats getPoolStats(SBConnectionProperties properties) {
+        if (properties == null || !properties.isPooling()) {
+            return null;
+        }
+
+        String key = buildPoolKey(properties, buildPoolConfig(properties));
+        SBConnectionPool pool = CONNECTION_POOLS.get(key);
+        if (pool == null) {
+            return null;
+        }
+        return pool.getStats();
+    }
+
+    private static SBConnectionPool getOrCreatePool(SBConnectionProperties properties) throws SQLException {
+        String key = buildPoolKey(properties, buildPoolConfig(properties));
+        return CONNECTION_POOLS.computeIfAbsent(key, k -> {
+            try {
+                return new SBConnectionPool(properties, buildPoolConfig(properties));
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private static SBConnectionPool.PoolConfig buildPoolConfig(SBConnectionProperties properties) {
+        SBConnectionPool.PoolConfig config = new SBConnectionPool.PoolConfig();
+
+        config.setMinConnections(Math.max(0, properties.getMinPoolSize()));
+        config.setMaxConnections(Math.max(1, properties.getMaxPoolSize()));
+        long lifetimeMs = properties.getConnectionLifetime() <= 0
+            ? SBConnectionPool.DEFAULT_LIFETIME_MS
+            : (long) properties.getConnectionLifetime() * 1000L;
+        config.setMaxLifetimeMillis(Math.max(60_000L, lifetimeMs));
+        config.setAcquireTimeoutMillis(Math.max(1_000L, (long) Math.max(1, properties.getAcquireTimeout()) * 1000L));
+        return config;
+    }
+
+    private static String buildPoolKey(SBConnectionProperties properties, SBConnectionPool.PoolConfig config) {
+        StringBuilder key = new StringBuilder();
+        key.append("host=").append(properties.getHost()).append('|');
+        key.append("port=").append(properties.getPort()).append('|');
+        key.append("db=").append(normalize(properties.getDatabase())).append('|');
+        key.append("user=").append(normalize(properties.getUser())).append('|');
+        key.append("schema=").append(normalize(properties.getCurrentSchema())).append('|');
+        key.append("front=").append(properties.getFrontDoorMode()).append('|');
+        key.append("protocol=").append(properties.getProtocol()).append('|');
+        key.append("ssl=").append(properties.getSsl()).append('|');
+        key.append("sslmode=").append(properties.getSslMode()).append('|');
+        key.append("sslroot=").append(normalize(properties.getSslRootCert())).append('|');
+        key.append("sslcert=").append(normalize(properties.getSslCert())).append('|');
+        key.append("readonly=").append(properties.isReadOnly()).append('|');
+        key.append("autocommit=").append(properties.isAutoCommit()).append('|');
+        key.append("pool=").append(properties.isPooling()).append('|');
+        key.append("max=").append(config.getMaxConnections()).append('|');
+        key.append("min=").append(config.getMinConnections()).append('|');
+        key.append("life=").append(config.getMaxLifetimeMillis()).append('|');
+        key.append("acq=").append(config.getAcquireTimeoutMillis()).append('|');
+        return key.toString();
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim();
     }
 }

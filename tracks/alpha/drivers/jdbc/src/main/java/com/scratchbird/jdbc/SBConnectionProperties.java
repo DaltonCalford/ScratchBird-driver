@@ -56,6 +56,11 @@ public class SBConnectionProperties {
     private boolean autoCommit = true;
 
     // Performance options
+    private boolean pooling = true;
+    private int minPoolSize = 0;
+    private int maxPoolSize = 10;
+    private int connectionLifetime = 30;
+    private int acquireTimeout = 30;
     private int defaultRowFetchSize = 0;
     private int prepareThreshold = 5;
     private boolean binaryTransfer = true;
@@ -204,6 +209,26 @@ public class SBConnectionProperties {
             case "binarytransfer":
                 this.binaryTransfer = Boolean.parseBoolean(value);
                 break;
+            case "pooling":
+                this.pooling = Boolean.parseBoolean(value);
+                break;
+            case "minpoolsize":
+            case "min_pool_size":
+                this.minPoolSize = Integer.parseInt(value);
+                break;
+            case "maxpoolsize":
+            case "max_pool_size":
+                this.maxPoolSize = Integer.parseInt(value);
+                break;
+            case "connectionlifetime":
+            case "connection_lifetime":
+            case "poolingconnectionlifetime":
+                this.connectionLifetime = Integer.parseInt(value);
+                break;
+            case "acquiretimeout":
+            case "poolingacquiretimeout":
+                this.acquireTimeout = Integer.parseInt(value);
+                break;
             case "compression":
                 this.compression = value;
                 break;
@@ -329,6 +354,21 @@ public class SBConnectionProperties {
                 return String.valueOf(prepareThreshold);
             case "binarytransfer":
                 return String.valueOf(binaryTransfer);
+            case "pooling":
+                return String.valueOf(pooling);
+            case "minpoolsize":
+            case "min_pool_size":
+                return String.valueOf(minPoolSize);
+            case "maxpoolsize":
+            case "max_pool_size":
+                return String.valueOf(maxPoolSize);
+            case "connectionlifetime":
+            case "connection_lifetime":
+            case "poolingconnectionlifetime":
+                return String.valueOf(connectionLifetime);
+            case "acquiretimeout":
+            case "poolingacquiretimeout":
+                return String.valueOf(acquireTimeout);
             case "compression":
                 return compression;
             case "manager_auth_token":
@@ -561,6 +601,46 @@ public class SBConnectionProperties {
         return binaryTransfer;
     }
 
+    public boolean isPooling() {
+        return pooling;
+    }
+
+    public void setPooling(boolean pooling) {
+        this.pooling = pooling;
+    }
+
+    public int getMinPoolSize() {
+        return minPoolSize;
+    }
+
+    public void setMinPoolSize(int minPoolSize) {
+        this.minPoolSize = Math.max(0, minPoolSize);
+    }
+
+    public int getMaxPoolSize() {
+        return maxPoolSize;
+    }
+
+    public void setMaxPoolSize(int maxPoolSize) {
+        this.maxPoolSize = Math.max(1, maxPoolSize);
+    }
+
+    public int getConnectionLifetime() {
+        return connectionLifetime;
+    }
+
+    public void setConnectionLifetime(int connectionLifetime) {
+        this.connectionLifetime = Math.max(0, connectionLifetime);
+    }
+
+    public int getAcquireTimeout() {
+        return acquireTimeout;
+    }
+
+    public void setAcquireTimeout(int acquireTimeout) {
+        this.acquireTimeout = Math.max(1, acquireTimeout);
+    }
+
     public void setBinaryTransfer(boolean binaryTransfer) {
         this.binaryTransfer = binaryTransfer;
     }
@@ -704,6 +784,11 @@ public class SBConnectionProperties {
         props.setProperty("loginTimeout", String.valueOf(loginTimeout));
         props.setProperty("tcpKeepAlive", String.valueOf(tcpKeepAlive));
         props.setProperty("currentSchema", currentSchema);
+        props.setProperty("pooling", String.valueOf(pooling));
+        props.setProperty("maxPoolSize", String.valueOf(maxPoolSize));
+        props.setProperty("minPoolSize", String.valueOf(minPoolSize));
+        props.setProperty("connectionLifetime", String.valueOf(connectionLifetime));
+        props.setProperty("acquireTimeout", String.valueOf(acquireTimeout));
         if (applicationName != null) props.setProperty("ApplicationName", applicationName);
         props.setProperty("readOnly", String.valueOf(readOnly));
         props.setProperty("autoCommit", String.valueOf(autoCommit));
