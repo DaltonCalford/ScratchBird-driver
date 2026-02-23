@@ -7,6 +7,8 @@ OUTDIR="${ROOT_DIR}/artifacts/enterprise-readiness/JDBC-203"
 mkdir -p "$OUTDIR"
 LOG_FILE="$OUTDIR/contract_run_${TIMESTAMP}.log"
 SUMMARY_FILE="$OUTDIR/contract_gate_summary_${TIMESTAMP}.json"
+LATEST_LOG="$OUTDIR/latest_verification.log"
+LATEST_SUMMARY="$OUTDIR/latest_contract_summary.json"
 
 required_env=()
 if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
@@ -54,6 +56,8 @@ if [[ "${#required_env[@]}" -gt 0 && ("$strict_gate" == "true" || "$strict_gate"
   "reason": "strict_gate_enabled_and_required_env_missing"
 }
 JSON
+  cp "$SUMMARY_FILE" "$LATEST_SUMMARY"
+  cp "$LOG_FILE" "$LATEST_LOG"
   exit 1
 fi
 
@@ -112,3 +116,5 @@ cat > "$SUMMARY_FILE" <<JSON
   "missingEnv": [$(printf '"%s",' "${required_env[@]}" | sed 's/,$//' )]
 }
 JSON
+cp "$SUMMARY_FILE" "$LATEST_SUMMARY"
+cp "$LOG_FILE" "$LATEST_LOG"

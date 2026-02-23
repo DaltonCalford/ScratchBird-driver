@@ -6,6 +6,8 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 ## Evidence
 - `artifacts/enterprise-readiness/JDBC-203/contract.md`
 - `artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
+- `artifacts/enterprise-readiness/JDBC-203/latest_verification.log`
+- `artifacts/enterprise-readiness/JDBC-203/latest_contract_summary.json`
 - `artifacts/enterprise-readiness/JDBC-203/contract_run_20260223T043302Z.log`
 - `artifacts/enterprise-readiness/JDBC-203/contract_run_20260223T050052Z.log`
 - `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBConnectionProperties.java`
@@ -29,12 +31,13 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 - Local runs are partial only when strict gate is disabled and will emit `contract_gate_summary_<timestamp>.json` with status and missing env list.
 - `run_cross_runtime_pool_contract.sh` now writes a structured `overallStatus`/`reason` artifact in
   `contract_gate_summary_<timestamp>.json`.
+- Each run also writes replay-ready `latest_verification.log` and `latest_contract_summary.json` artifacts.
 
 ## Latest Run
-- Timestamp: 2026-02-23T05:07Z
+- Latest timestamp: from the most recent local run
 - Command: `bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
 - Result: blocked in non-strict mode due missing runtime/cancel vars; summary file
-  `contract_gate_summary_20260223T050700Z.json` written with `overallStatus=blocked`.
+  `latest_contract_summary.json` and `latest_verification.log` capture the active blocker state and reproduce the run conditions.
 
 ## Local Verification (in-tree only)
 - `cd tracks/alpha/drivers/jdbc && ./gradlew test --tests com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest`

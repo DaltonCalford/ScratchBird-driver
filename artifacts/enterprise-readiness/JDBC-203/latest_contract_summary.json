@@ -1,0 +1,14 @@
+{
+  "timestamp": "20260223T050927Z",
+  "strictGate": "true",
+  "dotnet": {
+    "status": "not_run",
+    "note": "not_executed"
+  },
+  "jdbc": {
+    "status": "not_run",
+    "note": "not_executed"
+  },
+  "overallStatus": "blocked",
+  "reason": "strict_gate_enabled_and_required_env_missing"
+}
