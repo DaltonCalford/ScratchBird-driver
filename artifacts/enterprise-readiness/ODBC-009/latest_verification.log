@@ -1,5 +1,5 @@
 Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc
-[==========] Running 41 tests from 10 test suites.
+[==========] Running 42 tests from 10 test suites.
 [----------] Global test environment set-up.
 [----------] 7 tests from OdbcCursorOperationTest
 [ RUN      ] OdbcCursorOperationTest.FetchScrollHonorsForwardOnlyCursorType
@@ -33,22 +33,24 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcBulkOperationsTest.BulkOperationsRejectsNonColumnWiseBindingMode (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution
 [       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution (0 ms)
-[----------] 7 tests from OdbcBulkOperationsTest (0 ms total)
+[----------] 7 tests from OdbcBulkOperationsTest (1 ms total)
 
-[----------] 6 tests from OdbcCapabilityBrowseTest
+[----------] 7 tests from OdbcCapabilityBrowseTest
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.GetInfoAndGetFunctionsReportNoFalsePositives
 [       OK ] OdbcCapabilityBrowseTest.GetInfoAndGetFunctionsReportNoFalsePositives (0 ms)
+[ RUN      ] OdbcCapabilityBrowseTest.GetFunctionsAdvertisesOnlyImplementedFunctions
+[       OK ] OdbcCapabilityBrowseTest.GetFunctionsAdvertisesOnlyImplementedFunctions (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.GetFunctionsSupportsAllFunctionsBitmapAlias
 [       OK ] OdbcCapabilityBrowseTest.GetFunctionsSupportsAllFunctionsBitmapAlias (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath (0 ms)
-[----------] 6 tests from OdbcCapabilityBrowseTest (1 ms total)
+[----------] 7 tests from OdbcCapabilityBrowseTest (1 ms total)
 
 [----------] 8 tests from OdbcCatalogTest
 [ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
@@ -114,5 +116,5 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [----------] 5 tests from OdbcLobStreamingTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 41 tests from 10 test suites ran. (8 ms total)
-[  PASSED  ] 41 tests.
+[==========] 42 tests from 10 test suites ran. (9 ms total)
+[  PASSED  ] 42 tests.

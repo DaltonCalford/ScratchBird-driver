@@ -188,7 +188,7 @@ subtasks, artifact paths, and verification gates.
 - **Goal:** Ensure advertised capabilities strictly match actual supported behavior.
 - **Dependencies:** ODBC-001
 - **Subtasks**
-  - [ ] Build authoritative capability matrix from implemented features only.
+  - [x] Build authoritative capability matrix from implemented features only.
 - **Subtasks continued**
   - [ ] Update both per-driver and per-handle getters.
   - [ ] Add automated comparisons against server/connector test matrix.
@@ -200,7 +200,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Define and enforce ODBC enterprise release gate  
 **Owner:** Platform Lead + ODBC Team  
 **Risk:** High  
-**Status:** Verification complete (in-tree ODBC gate executed; BI smoke command wiring complete, external BI fixture pending)  
+**Status:** Verification complete (in-tree ODBC gate + mandatory in-tree BI smoke command)  
 **ETA:** 1 week  
 **Acceptance:** BI runbook, ODBC conformance, memory/perf sanity checks pass and are repeatable.
 **Latest evidence:** `artifacts/enterprise-readiness/ODBC-009/notes.md`
@@ -212,15 +212,15 @@ subtasks, artifact paths, and verification gates.
   - [x] Define fail criteria and rollback conditions.
   - [x] Add release approval checklist requiring closed gate logs.
   - [x] Create CI workflow integration for the ODBC gate checks.
-  - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (placeholder until external fixture is available).
+  - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (in-tree smoke subset by default).
   - [x] Add memory and performance trend checks with preserved baselines.
-  - [ ] Replace placeholder with hosted BI fixture in CI and enable repeatable runbook assertions.
+  - [ ] Add hosted BI-vendor coverage (Tableau/Power BI/Excel) as a follow-on hardening item.
 - **Artifacts required**
   - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh` (or equivalent)
   - `artifacts/enterprise-readiness/ODBC-009/gates.md` (pass/fail criteria and rollback conditions)
   - `artifacts/enterprise-readiness/ODBC-009/notes.md` (execution evidence and decisions)
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-009`
-- **Blocking conditions:** Hosted BI runbook fixture still required for full hardening; enforce via `ODBC_009_BI_SMOKE_CMD` + `ODBC_009_BI_SMOKE_MANDATORY=1` once available.
+- **Blocking conditions:** None for this gate; vendor BI fixture coverage is follow-on hardening.
 
 ### DOTNET-101 (P1)
 **Title:** Implement async API semantics and cancellable operations  

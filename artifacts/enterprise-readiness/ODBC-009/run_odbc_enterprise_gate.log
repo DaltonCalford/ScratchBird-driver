@@ -1,11 +1,35 @@
-ODBC-009 gate run: 20260223T024254Z
+ODBC-009 gate run: 20260223T025930Z
 Repository: /home/dcalford/CliWork/ScratchBird-driver
 Build directory: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate
 Test binary: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
 Timing capture: 1
+Test binary missing. Configuring and building ODBC test target...
+-- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY) 
+-- GoogleTest not found. Fetching GoogleTest from source.
+-- 
+-- ScratchBird ODBC Driver Configuration:
+--   Version: 0.1.0
+--   Platform: Linux
+--   Windows: 
+--   Linux: TRUE
+--   macOS: 
+--   Install prefix: /usr/local
+-- 
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate
+[  5%] Built target gtest
+[ 51%] Built target scratchbird_client
+[ 56%] Built target gtest_main
+[ 81%] Built target scratchbird_odbc
+[ 83%] Building CXX object CMakeFiles/scratchbird_odbc_tests.dir/tests/test_odbc_capabilities_browse.cpp.o
+[ 86%] Linking CXX executable scratchbird_odbc_tests
+[100%] Built target scratchbird_odbc_tests
+[ 65%] Built target scratchbird_client
+[100%] Built target scratchbird_odbc
 Running ODBC gate executable: /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
 Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc
-[==========] Running 41 tests from 10 test suites.
+[==========] Running 42 tests from 10 test suites.
 [----------] Global test environment set-up.
 [----------] 7 tests from OdbcCursorOperationTest
 [ RUN      ] OdbcCursorOperationTest.FetchScrollHonorsForwardOnlyCursorType
@@ -39,22 +63,24 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [       OK ] OdbcBulkOperationsTest.BulkOperationsRejectsNonColumnWiseBindingMode (0 ms)
 [ RUN      ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution
 [       OK ] OdbcBulkOperationsTest.BulkOperationsPartialFailureStopsExecution (0 ms)
-[----------] 7 tests from OdbcBulkOperationsTest (0 ms total)
+[----------] 7 tests from OdbcBulkOperationsTest (1 ms total)
 
-[----------] 6 tests from OdbcCapabilityBrowseTest
+[----------] 7 tests from OdbcCapabilityBrowseTest
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectListsAvailableDsnsWhenNotYetConnected (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.GetInfoAndGetFunctionsReportNoFalsePositives
 [       OK ] OdbcCapabilityBrowseTest.GetInfoAndGetFunctionsReportNoFalsePositives (0 ms)
+[ RUN      ] OdbcCapabilityBrowseTest.GetFunctionsAdvertisesOnlyImplementedFunctions
+[       OK ] OdbcCapabilityBrowseTest.GetFunctionsAdvertisesOnlyImplementedFunctions (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.GetFunctionsSupportsAllFunctionsBitmapAlias
 [       OK ] OdbcCapabilityBrowseTest.GetFunctionsSupportsAllFunctionsBitmapAlias (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectPathFallbackParsesHierarchicalPath (0 ms)
 [ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath
 [       OK ] OdbcCapabilityBrowseTest.BrowseConnectRawPathWithoutKeyFallsBackToPath (0 ms)
-[----------] 6 tests from OdbcCapabilityBrowseTest (1 ms total)
+[----------] 7 tests from OdbcCapabilityBrowseTest (1 ms total)
 
 [----------] 8 tests from OdbcCatalogTest
 [ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
@@ -120,10 +146,33 @@ Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drive
 [----------] 5 tests from OdbcLobStreamingTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 41 tests from 10 test suites ran. (8 ms total)
-[  PASSED  ] 41 tests.
-ODBC gate perf snapshot: elapsed_seconds=0.01 max_rss_kb=9228
-Perf trend check passed vs prior sample 20260223T024241Z -> 20260223T024254Z: elapsed_ratio=0.00x rss_ratio=1.00x
-Running BI smoke command: true
+[==========] 42 tests from 10 test suites ran. (9 ms total)
+[  PASSED  ] 42 tests.
+ODBC gate perf snapshot: elapsed_seconds=0.01 max_rss_kb=9256
+Perf trend check passed vs prior sample 20260223T025904Z -> 20260223T025930Z: elapsed_ratio=1.00x rss_ratio=1.00x
+Running BI smoke command: /home/dcalford/CliWork/ScratchBird-driver/artifacts/enterprise-readiness/ODBC-009/odbc_bi_smoke.sh
+ODBC BI smoke: running subset against /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/scratchbird_odbc_tests
+Running main() from /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/odbc/build_odbc_gate/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = OdbcSmokeTest.*:OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns:OdbcCatalogTest.TablesHonorsPatterns
+[==========] Running 3 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from OdbcCapabilityBrowseTest
+[ RUN      ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns
+[       OK ] OdbcCapabilityBrowseTest.BrowseConnectTraversesCatalogSchemaTableColumns (1 ms)
+[----------] 1 test from OdbcCapabilityBrowseTest (1 ms total)
+
+[----------] 1 test from OdbcCatalogTest
+[ RUN      ] OdbcCatalogTest.TablesHonorsPatterns
+[       OK ] OdbcCatalogTest.TablesHonorsPatterns (0 ms)
+[----------] 1 test from OdbcCatalogTest (0 ms total)
+
+[----------] 1 test from OdbcSmokeTest
+[ RUN      ] OdbcSmokeTest.ConnectExecFetch
+[       OK ] OdbcSmokeTest.ConnectExecFetch (0 ms)
+[----------] 1 test from OdbcSmokeTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 3 test suites ran. (2 ms total)
+[  PASSED  ] 3 tests.
 BI smoke command completed.
 ODBC-009 gate checks passed.

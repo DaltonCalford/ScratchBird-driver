@@ -113,6 +113,86 @@ protected:
     }
 };
 
+
+static std::vector<SQLUSMALLINT> expectedSupportedFunctions() {
+    return {
+        SQL_API_SQLALLOCCONNECT,
+        SQL_API_SQLALLOCENV,
+        SQL_API_SQLALLOCSTMT,
+        SQL_API_SQLALLOCHANDLE,
+        SQL_API_SQLFREECONNECT,
+        SQL_API_SQLFREEENV,
+        SQL_API_SQLFREESTMT,
+        SQL_API_SQLFREEHANDLE,
+        SQL_API_SQLENDTRAN,
+        SQL_API_SQLCONNECT,
+        SQL_API_SQLDRIVERCONNECT,
+        SQL_API_SQLBROWSECONNECT,
+        SQL_API_SQLDISCONNECT,
+        SQL_API_SQLSETCONNECTATTR,
+        SQL_API_SQLGETCONNECTATTR,
+        SQL_API_SQLSETENVATTR,
+        SQL_API_SQLGETENVATTR,
+        SQL_API_SQLSETSTMTATTR,
+        SQL_API_SQLGETSTMTATTR,
+        SQL_API_SQLPREPARE,
+        SQL_API_SQLEXECUTE,
+        SQL_API_SQLEXECDIRECT,
+        SQL_API_SQLCANCEL,
+        SQL_API_SQLCLOSECURSOR,
+        SQL_API_SQLBULKOPERATIONS,
+        SQL_API_SQLSETPOS,
+        SQL_API_SQLFETCH,
+        SQL_API_SQLFETCHSCROLL,
+        SQL_API_SQLMORERESULTS,
+        SQL_API_SQLBINDCOL,
+        SQL_API_SQLBINDPARAM,
+        SQL_API_SQLBINDPARAMETER,
+        SQL_API_SQLNUMPARAMS,
+        SQL_API_SQLDESCRIBEPARAM,
+        SQL_API_SQLDESCRIBECOL,
+        SQL_API_SQLNUMRESULTCOLS,
+        SQL_API_SQLCOLATTRIBUTE,
+        SQL_API_SQLSETDESCREC,
+        SQL_API_SQLGETDESCREC,
+        SQL_API_SQLSETDESCFIELD,
+        SQL_API_SQLGETDESCFIELD,
+        SQL_API_SQLCOPYDESC,
+        SQL_API_SQLROWCOUNT,
+        SQL_API_SQLGETDATA,
+        SQL_API_SQLPARAMDATA,
+        SQL_API_SQLPUTDATA,
+        SQL_API_SQLGETDIAGFIELD,
+        SQL_API_SQLGETDIAGREC,
+        SQL_API_SQLERROR,
+        SQL_API_SQLTABLES,
+        SQL_API_SQLCOLUMNS,
+        SQL_API_SQLPRIMARYKEYS,
+        SQL_API_SQLFOREIGNKEYS,
+        SQL_API_SQLSTATISTICS,
+        SQL_API_SQLSPECIALCOLUMNS,
+        SQL_API_SQLPROCEDURES,
+        SQL_API_SQLPROCEDURECOLUMNS,
+        SQL_API_SQLTABLEPRIVILEGES,
+        SQL_API_SQLCOLUMNPRIVILEGES,
+        SQL_API_SQLGETFUNCTIONS,
+        SQL_API_SQLGETINFO,
+        SQL_API_SQLGETTYPEINFO,
+    };
+}
+
+static bool isFunctionAdvertised(const SQLUSMALLINT* function_map, SQLUSMALLINT function_id) {
+    if (!function_map) {
+        return false;
+    }
+    if (function_id >= SQL_API_ODBC3_ALL_FUNCTIONS_SIZE * 16) {
+        return false;
+    }
+    std::size_t word = static_cast<std::size_t>(function_id >> 4);
+    std::size_t bit = static_cast<std::size_t>(function_id & 0x0F);
+    return ((function_map[word] >> bit) & 1u) != 0;
+}
+
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectListsAvailableDsnsWhenNotYetConnected) {
     auto ini_path = writeIniFile();
     ASSERT_FALSE(ini_path.empty());
@@ -176,28 +256,55 @@ TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
 
     SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
     EXPECT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
-    auto isAdvertised = [](const SQLUSMALLINT* map, SQLUSMALLINT id) {
-        if (id >= SQL_API_ODBC3_ALL_FUNCTIONS_SIZE * 16) {
-            return false;
-        }
-        std::size_t word = id >> 4;
-        std::size_t bit = id & 0x0F;
-        return ((map[word] >> bit) & 1u) != 0;
-    };
-
-    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLGETCURSORNAME));
-    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLNATIVESQL));
-    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLPARAMDATA));
-    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLPUTDATA));
-    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLSETCURSORNAME));
-    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLCONNECT));
-    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLTABLES));
+    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLGETCURSORNAME));
+    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLNATIVESQL));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLPARAMDATA));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLPUTDATA));
+    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLSETCURSORNAME));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLCONNECT));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLTABLES));
 
     SQLUSMALLINT unsupported = 0;
     EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETCURSORNAME, &unsupported), SQL_SUCCESS);
     EXPECT_EQ(unsupported, 0);
     EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETFUNCTIONS, &unsupported), SQL_SUCCESS);
     EXPECT_EQ(unsupported, 1);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetFunctionsAdvertisesOnlyImplementedFunctions) {
+    SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    ASSERT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
+
+    auto expected = expectedSupportedFunctions();
+    std::sort(expected.begin(), expected.end());
+
+    for (auto func_id : expected) {
+        EXPECT_TRUE(isFunctionAdvertised(function_map, func_id))
+            << "Expected function is not advertised: " << func_id;
+    }
+
+    for (std::size_t word = 0; word < SQL_API_ODBC3_ALL_FUNCTIONS_SIZE; ++word) {
+        SQLUSMALLINT bits = function_map[word];
+        for (std::size_t bit = 0; bit < 16; ++bit) {
+            if ((bits >> bit) & 1u) {
+                SQLUSMALLINT func_id = static_cast<SQLUSMALLINT>((word << 4) + bit);
+                EXPECT_TRUE(std::binary_search(expected.begin(), expected.end(), func_id))
+                    << "Unexpected advertised function id: " << func_id;
+            }
+        }
+    }
+
+    const char* matrix_path = std::getenv("ODBC_008_CAPABILITY_MATRIX_PATH");
+    if (matrix_path && std::strlen(matrix_path) > 0) {
+        std::ofstream matrix_file(matrix_path);
+        ASSERT_TRUE(matrix_file.good()) << "Failed to open capability matrix path: " << matrix_path;
+        matrix_file << "function_id,advertised\n";
+        const SQLUSMALLINT max_function_id =
+            static_cast<SQLUSMALLINT>(SQL_API_ODBC3_ALL_FUNCTIONS_SIZE * 16);
+        for (SQLUSMALLINT func_id = 0; func_id < max_function_id; ++func_id) {
+            matrix_file << func_id << ',' << (isFunctionAdvertised(function_map, func_id) ? 1 : 0) << '\n';
+        }
+    }
 }
 
 TEST_F(OdbcCapabilityBrowseTest, GetFunctionsSupportsAllFunctionsBitmapAlias) {

@@ -10,13 +10,15 @@ Status: Verification complete (in-tree ODBC unit suite)
 
 Latest verification run:
 
-- `2026-02-23T02:43:00Z` stored at `artifacts/enterprise-readiness/ODBC-008/verification_20260223T024300Z.log`
+- `2026-02-23T03:02:00Z` stored at `artifacts/enterprise-readiness/ODBC-008/verification_20260223T030200Z.log`
 
 ## Findings
 - `SQLGetFunctions` now reports a clean, supported-function list built from header constants.
 - Removed incorrect/overstated IDs and fixed `SQLSetConnectAttr` collision.
 - Kept unsupported/unimplemented APIs (for example `SQLGetCursorName`) out of advertised bitmap.
 - Added explicit handling so `SQL_API_ALL_FUNCTIONS` now returns the same ODBC 3.x function bitmap as `SQL_API_ODBC3_ALL_FUNCTIONS`.
+- Added `GetFunctionsAdvertisesOnlyImplementedFunctions` coverage that enumerates and validates the function bitmap for exact parity.
+- Captured an exported function matrix artifact in `artifacts/enterprise-readiness/ODBC-008/odbc_function_matrix.csv` when enabled via `ODBC_008_CAPABILITY_MATRIX_PATH`.
 
 ## Blocker
 - No blockers.

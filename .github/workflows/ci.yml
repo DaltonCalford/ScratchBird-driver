@@ -383,7 +383,7 @@ jobs:
 
       - name: ODBC enterprise readiness gate (in-tree)
         if: matrix.language == 'odbc' && runner.os == 'Linux'
-        run: ./artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh
+        run: ODBC_009_BI_SMOKE_MANDATORY=1 ./artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh
 
       - name: Upload ODBC enterprise gate log
         if: matrix.language == 'odbc' && runner.os == 'Linux'

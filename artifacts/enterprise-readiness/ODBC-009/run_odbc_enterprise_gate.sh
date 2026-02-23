@@ -22,6 +22,10 @@ elapsed_threshold="${ODBC_009_ELAPSED_REGRESSION_THRESHOLD:-2}"
 rss_threshold="${ODBC_009_MAX_RSS_REGRESSION_THRESHOLD:-2}"
 mandatory_bi_smoke="${ODBC_009_BI_SMOKE_MANDATORY:-0}"
 bi_smoke_cmd="${ODBC_009_BI_SMOKE_CMD:-}"
+default_bi_smoke_script="$SCRIPT_DIR/odbc_bi_smoke.sh"
+if [[ -z "$bi_smoke_cmd" && -x "$default_bi_smoke_script" ]]; then
+  bi_smoke_cmd="$default_bi_smoke_script"
+fi
 
 {
   echo "ODBC-009 gate run: $TS"
@@ -164,6 +168,12 @@ PY
     fi
   else
     echo "TIMING_CAPTURE_UNAVAILABLE; perf baseline checks skipped."
+  fi
+
+  if [[ ${#RUN_CMD[@]} -eq 1 ]]; then
+    export ODBC_009_SMOKE_BINARY="${RUN_CMD[0]}"
+  else
+    unset ODBC_009_SMOKE_BINARY
   fi
 
   if [[ -n "$bi_smoke_cmd" ]]; then
