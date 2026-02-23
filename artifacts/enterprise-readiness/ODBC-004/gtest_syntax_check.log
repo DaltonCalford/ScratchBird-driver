@@ -1,0 +1,4 @@
+tracks/alpha/drivers/odbc/tests/test_odbc_catalog_and_types.cpp:1:10: fatal error: gtest/gtest.h: No such file or directory
+    1 | #include <gtest/gtest.h>
+      |          ^~~~~~~~~~~~~~~
+compilation terminated.

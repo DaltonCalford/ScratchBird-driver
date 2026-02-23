@@ -646,6 +646,10 @@ public:
     bool isPrepared() const { return prepared_; }
     bool hasResults() const { return has_results_; }
     SQLLEN getRowCount() const { return row_count_; }
+    OdbcDescriptor* getAppParamDescriptor() const { return app_param_desc_; }
+    OdbcDescriptor* getImpParamDescriptor() const { return ipd_desc_; }
+    OdbcDescriptor* getAppRowDescriptor() const { return app_row_desc_; }
+    OdbcDescriptor* getImpRowDescriptor() const { return ird_desc_; }
 
 private:
     struct ResultSet {
@@ -685,6 +689,16 @@ private:
     SQLUSMALLINT* row_status_ptr_{nullptr};
     SQLLEN row_bind_offset_{0};
     SQLULEN row_bind_type_{0};  // SQL_BIND_BY_COLUMN
+
+    // Statement descriptor handles
+    std::unique_ptr<OdbcDescriptor> owned_app_param_desc_;
+    std::unique_ptr<OdbcDescriptor> owned_imp_param_desc_;
+    std::unique_ptr<OdbcDescriptor> owned_app_row_desc_;
+    std::unique_ptr<OdbcDescriptor> owned_ird_desc_;
+    OdbcDescriptor* app_param_desc_{nullptr};
+    OdbcDescriptor* ipd_desc_{nullptr};
+    OdbcDescriptor* app_row_desc_{nullptr};
+    OdbcDescriptor* ird_desc_{nullptr};
 
     // Result set
     std::vector<ColumnMetadata> columns_;
@@ -791,6 +805,8 @@ private:
         SQLSMALLINT concise_type{SQL_UNKNOWN_TYPE};
         SQLSMALLINT datetime_interval_code{0};
         SQLSMALLINT datetime_interval_precision{0};
+        SQLSMALLINT maximum_scale{0};
+        SQLSMALLINT minimum_scale{0};
         SQLSMALLINT nullable{SQL_NULLABLE_UNKNOWN};
         SQLSMALLINT precision{0};
         SQLSMALLINT scale{0};
@@ -827,7 +843,7 @@ private:
     // Header fields
     SQLSMALLINT count_{0};
     SQLULEN array_size_{1};
-    SQLSMALLINT alloc_type_{0};  // SQL_DESC_ALLOC_AUTO or SQL_DESC_ALLOC_USER
+    SQLSMALLINT alloc_type_{SQL_DESC_ALLOC_AUTO};  // SQL_DESC_ALLOC_AUTO or SQL_DESC_ALLOC_USER
     SQLULEN* array_status_ptr_{nullptr};
     SQLLEN* bind_offset_ptr_{nullptr};
     SQLULEN bind_type_{0};

@@ -7,6 +7,7 @@
 
 #include "scratchbird/odbc/odbc_handles.h"
 #include "scratchbird/client/driver_config.h"
+#include "scratchbird/odbc/metadata_helpers.h"
 #include "scratchbird/odbc/odbc_client_bridge.h"
 #include "scratchbird/core/status.h"
 
@@ -23,6 +24,7 @@
 #include <map>
 #include <regex>
 #include <sstream>
+#include <set>
 
 #include "scratchbird/core/type_extractor.h"
 
@@ -35,6 +37,165 @@ namespace odbc {
 
 namespace {
 std::atomic<uint64_t> kConnectionIdCounter{0};
+
+constexpr const char* kMetaBrowseDsnKey = "DSN";
+constexpr const char* kMetaBrowseCatalogKey = "CATALOG";
+constexpr const char* kMetaBrowseSchemaKey = "SCHEMA";
+constexpr const char* kMetaBrowseTableKey = "TABLE";
+constexpr const char* kMetaBrowseColumnKey = "COLUMN";
+constexpr const char* kMetaBrowseDatabaseKey = "DATABASE";
+
+struct BrowseStage {
+    bool has_dsn{false};
+    bool has_catalog{false};
+    bool has_schema{false};
+    bool has_table{false};
+    bool has_column{false};
+    std::string dsn;
+    std::string catalog;
+    std::string schema;
+    std::string table;
+    std::string column;
+};
+
+struct IniSection {
+    std::map<std::string, std::string> entries;
+};
+
+std::string toLower(const std::string& value);
+std::vector<std::string> splitPaths(const std::string& value);
+std::vector<std::string> getOdbcIniPaths();
+bool parseIniFile(const std::string& path, std::map<std::string, IniSection>& sections);
+bool loadIniSection(const std::string& section_name, std::map<std::string, std::string>& entries);
+
+std::string canonicalBrowseKey(const std::string& key) {
+    if (key.empty()) {
+        return key;
+    }
+    auto lower = toLower(key);
+    if (lower == "dsn") {
+        return kMetaBrowseDsnKey;
+    }
+    if (lower == "catalog" || lower == "database") {
+        return kMetaBrowseCatalogKey;
+    }
+    if (lower == "schema") {
+        return kMetaBrowseSchemaKey;
+    }
+    if (lower == "table") {
+        return kMetaBrowseTableKey;
+    }
+    if (lower == "column") {
+        return kMetaBrowseColumnKey;
+    }
+    return std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(key[0])))) +
+        key.substr(1);
+}
+
+std::string browseValue(const std::string& value) {
+    if (value.empty()) {
+        return value;
+    }
+    return value;
+}
+
+void appendBrowseField(std::string& out, const char* key, const std::string& value) {
+    if (!value.empty()) {
+        out += key;
+        out += "=";
+        out += browseValue(value);
+        out += ";";
+    }
+}
+
+bool getBrowseField(const std::map<std::string, std::string>& options,
+                   const char* primary,
+                   const char* secondary,
+                   std::string& out) {
+    auto primary_key = toLower(primary);
+    auto secondary_key = secondary ? toLower(secondary) : std::string();
+
+    auto it = options.find(primary_key);
+    if (it != options.end() && !it->second.empty()) {
+        out = it->second;
+        return true;
+    }
+    if (!secondary) {
+        return false;
+    }
+    it = options.find(secondary_key);
+    if (it != options.end() && !it->second.empty()) {
+        out = it->second;
+        return true;
+    }
+    return false;
+}
+
+std::vector<std::string> discoverIniDsns() {
+    std::set<std::string> names;
+    for (const auto& path : getOdbcIniPaths()) {
+        std::map<std::string, IniSection> sections;
+        if (!parseIniFile(path, sections)) {
+            continue;
+        }
+        auto it = sections.find("odbc data sources");
+        if (it == sections.end()) {
+            continue;
+        }
+        for (const auto& entry : it->second.entries) {
+            if (!entry.first.empty()) {
+                names.insert(entry.first);
+            }
+        }
+    }
+    return {names.begin(), names.end()};
+}
+
+bool copyBrowseResponse(std::string response, SQLCHAR* out_conn_str, SQLSMALLINT out_buffer_len,
+                        SQLSMALLINT* out_conn_str_len, bool need_data,
+                        SQLRETURN& result, OdbcConnection* conn) {
+    if (out_conn_str_len) {
+        *out_conn_str_len = static_cast<SQLSMALLINT>(response.size());
+    }
+    if (out_buffer_len <= 0) {
+        if (out_conn_str && !response.empty()) {
+            out_conn_str[0] = '\0';
+        }
+        if (need_data) {
+            conn->setError("01004", 0, "String data, right truncated");
+            result = SQL_SUCCESS_WITH_INFO;
+        }
+        return need_data;
+    }
+    if (!out_conn_str) {
+        if (need_data) {
+            result = SQL_SUCCESS_WITH_INFO;
+        }
+        return need_data;
+    }
+    size_t copy_len = 0;
+    if (response.empty()) {
+        out_conn_str[0] = '\0';
+        result = need_data ? SQL_NEED_DATA : SQL_SUCCESS;
+        return need_data;
+    }
+    if (out_buffer_len > 0) {
+        if (out_buffer_len > 1) {
+            copy_len = std::min(static_cast<size_t>(out_buffer_len - 1), response.size());
+            std::memcpy(out_conn_str, response.c_str(), copy_len);
+        }
+        out_conn_str[copy_len] = '\0';
+    }
+    if (response.size() >= static_cast<size_t>(out_buffer_len)) {
+        conn->setError("01004", 0, "String data, right truncated");
+        result = SQL_SUCCESS_WITH_INFO;
+    } else if (need_data) {
+        result = SQL_NEED_DATA;
+    } else {
+        result = SQL_SUCCESS;
+    }
+    return true;
+}
 const char* mapStatusToSqlState(core::Status status) {
     switch (status) {
         case core::Status::OK:
@@ -182,11 +343,12 @@ std::string toUpper(std::string value) {
     return value;
 }
 
-std::string toLower(std::string value) {
-    for (char& ch : value) {
+std::string toLower(const std::string& value) {
+    auto output = value;
+    for (char& ch : output) {
         ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     }
-    return value;
+    return output;
 }
 
 bool normalizeNativeProtocol(const std::string& input, std::string& out) {
@@ -243,9 +405,157 @@ std::string formatGuidStruct(const SQLGUID& guid) {
     return std::string(buf);
 }
 
-struct IniSection {
-    std::map<std::string, std::string> entries;
-};
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+        out.push_back(ch);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+std::vector<std::string> splitBrowsePath(const std::string& path) {
+    std::vector<std::string> parts;
+    if (path.empty()) {
+        return parts;
+    }
+
+    std::string normalized = path;
+    std::replace(normalized.begin(), normalized.end(), '.', '/');
+
+    std::string part;
+    for (char ch : normalized) {
+        if (ch == '/') {
+            part = trimString(part);
+            if (!part.empty()) {
+                parts.push_back(part);
+            }
+            part.clear();
+            continue;
+        }
+        part.push_back(ch);
+    }
+
+    part = trimString(part);
+    if (!part.empty()) {
+        parts.push_back(part);
+    }
+
+    return parts;
+}
+
+void parseBrowseInput(const std::string& in_conn_str, SQLSMALLINT in_conn_str_len,
+                     std::map<std::string, std::string>& out) {
+    out.clear();
+    if (in_conn_str.empty()) {
+        return;
+    }
+    std::string conn_string = in_conn_str;
+    if (in_conn_str_len > 0 && in_conn_str_len != SQL_NTS) {
+        conn_string = std::string(in_conn_str.data(), static_cast<size_t>(in_conn_str_len));
+    }
+
+    if (conn_string.empty()) {
+        return;
+    }
+
+    scratchbird::client::parseKeyValueConnectionString(conn_string, out, nullptr);
+}
+
+void deriveBrowseStageFromPath(const std::string& path, BrowseStage& stage) {
+    const auto parts = splitBrowsePath(path);
+    if (parts.empty()) {
+        return;
+    }
+    if (!stage.has_dsn && parts.size() >= 1) {
+        stage.dsn = parts[0];
+        stage.has_dsn = true;
+    }
+    if (!stage.has_catalog && parts.size() >= 2) {
+        stage.catalog = parts[1];
+        stage.has_catalog = true;
+    }
+    if (!stage.has_schema && parts.size() >= 3) {
+        stage.schema = parts[2];
+        stage.has_schema = true;
+    }
+    if (!stage.has_table && parts.size() >= 4) {
+        stage.table = parts[3];
+        stage.has_table = true;
+    }
+    if (!stage.has_column && parts.size() >= 5) {
+        stage.column = parts[4];
+        stage.has_column = true;
+    }
+}
+
+BrowseStage parseBrowseStage(const std::map<std::string, std::string>& options) {
+    BrowseStage stage;
+    std::string catalog;
+    std::string path;
+    if (getBrowseField(options, "dsn", nullptr, stage.dsn)) {
+        stage.has_dsn = !stage.dsn.empty();
+    }
+    if (getBrowseField(options, kMetaBrowseCatalogKey, kMetaBrowseDatabaseKey, stage.catalog)) {
+        stage.has_catalog = !stage.catalog.empty();
+    }
+    if (getBrowseField(options, kMetaBrowseSchemaKey, "currentschema", stage.schema)) {
+        stage.has_schema = !stage.schema.empty();
+    }
+    if (getBrowseField(options, kMetaBrowseTableKey, "table_name", stage.table)) {
+        stage.has_table = !stage.table.empty();
+    }
+    if (getBrowseField(options, kMetaBrowseColumnKey, "column_name", stage.column)) {
+        stage.has_column = !stage.column.empty();
+    }
+    if (getBrowseField(options, "path", nullptr, path)) {
+        deriveBrowseStageFromPath(path, stage);
+    }
+
+    if (!stage.has_dsn && options.empty() && !path.empty()) {
+        deriveBrowseStageFromPath(path, stage);
+    }
+
+    return stage;
+}
+
+BrowseStage parseBrowseStage(const SQLCHAR* in_conn_str, SQLSMALLINT in_conn_str_len) {
+    std::string input;
+    if (in_conn_str) {
+        input = (in_conn_str_len == SQL_NTS) ?
+            std::string(reinterpret_cast<const char*>(in_conn_str)) :
+            std::string(reinterpret_cast<const char*>(in_conn_str), in_conn_str_len);
+    }
+    std::map<std::string, std::string> options;
+    parseBrowseInput(input, in_conn_str_len, options);
+    return parseBrowseStage(options);
+}
+
+void appendPersistentConnectionAttributes(const std::map<std::string, std::string>& options,
+                                        std::string& response) {
+    for (const auto& entry : options) {
+        auto key = toLower(entry.first);
+        if (key == toLower(kMetaBrowseDsnKey) ||
+            key == toLower(kMetaBrowseCatalogKey) ||
+            key == toLower(kMetaBrowseDatabaseKey) ||
+            key == toLower(kMetaBrowseSchemaKey) ||
+            key == toLower(kMetaBrowseTableKey) ||
+            key == toLower(kMetaBrowseColumnKey) ||
+            key == "path" ||
+            key == "table_name" ||
+            key == "column_name" ||
+            key == "currentschema") {
+            continue;
+        }
+
+        appendBrowseField(response, canonicalBrowseKey(entry.first).c_str(), entry.second);
+    }
+}
 
 std::vector<std::string> splitPaths(const std::string& value) {
     std::vector<std::string> parts;
@@ -922,6 +1232,81 @@ ParsedTypeInfo parseTypeString(const std::string& type_str) {
     return info;
 }
 
+namespace {
+constexpr SQLSMALLINT kOdbcProcedureTypeUnknown = 0;
+constexpr SQLSMALLINT kOdbcProcedureTypeProcedure = 1;
+constexpr SQLSMALLINT kOdbcProcedureTypeFunction = 2;
+
+constexpr SQLSMALLINT kOdbcProcedureColumnTypeUnknown = 0;
+constexpr SQLSMALLINT kOdbcProcedureColumnInput = 1;
+constexpr SQLSMALLINT kOdbcProcedureColumnInputOutput = 2;
+constexpr SQLSMALLINT kOdbcProcedureColumnOutput = 4;
+constexpr SQLSMALLINT kOdbcProcedureColumnReturn = 5;
+
+SQLSMALLINT parseProcedureType(const std::string& routine_type) {
+    auto raw = toUpper(trimString(routine_type));
+    int64_t numeric_type = 0;
+    if (!raw.empty() && parseInt64(raw, numeric_type)) {
+        if (numeric_type == 1) {
+            return kOdbcProcedureTypeFunction;
+        }
+        if (numeric_type == 0) {
+            return kOdbcProcedureTypeProcedure;
+        }
+        return kOdbcProcedureTypeUnknown;
+    }
+
+    if (raw == "PROCEDURE" || raw == "PROC") {
+        return kOdbcProcedureTypeProcedure;
+    }
+    if (raw == "FUNCTION" || raw == "FUNC") {
+        return kOdbcProcedureTypeFunction;
+    }
+    return kOdbcProcedureTypeUnknown;
+}
+
+SQLSMALLINT parseProcedureColumnMode(const std::string& mode) {
+    auto normalized = toUpper(trimString(mode));
+    if (normalized.empty()) {
+        return kOdbcProcedureColumnTypeUnknown;
+    }
+
+    int64_t numeric_mode = 0;
+    if (parseInt64(normalized, numeric_mode)) {
+        if (numeric_mode == kOdbcProcedureColumnInput) {
+            return kOdbcProcedureColumnInput;
+        }
+        if (numeric_mode == kOdbcProcedureColumnInputOutput) {
+            return kOdbcProcedureColumnInputOutput;
+        }
+        if (numeric_mode == kOdbcProcedureColumnOutput) {
+            return kOdbcProcedureColumnOutput;
+        }
+        if (numeric_mode == kOdbcProcedureColumnReturn) {
+            return kOdbcProcedureColumnReturn;
+        }
+        return kOdbcProcedureColumnTypeUnknown;
+    }
+
+    if (normalized.find("INOUT") != std::string::npos) {
+        return kOdbcProcedureColumnInputOutput;
+    }
+    if (normalized == "IN") {
+        return kOdbcProcedureColumnInput;
+    }
+    if (normalized == "OUT") {
+        return kOdbcProcedureColumnOutput;
+    }
+    if (normalized == "IN OUT" || normalized == "OUTPUT") {
+        return kOdbcProcedureColumnOutput;
+    }
+    if (normalized == "RETURN") {
+        return kOdbcProcedureColumnReturn;
+    }
+    return kOdbcProcedureColumnTypeUnknown;
+}
+}
+
 struct TypeInfoEntry {
     const char* type_name;
     SQLSMALLINT data_type;
@@ -1272,14 +1657,240 @@ SQLRETURN OdbcConnection::driverConnect(HWND /*window_handle*/,
 SQLRETURN OdbcConnection::browseConnect(const SQLCHAR* in_conn_str, SQLSMALLINT in_conn_str_len,
                                          SQLCHAR* out_conn_str, SQLSMALLINT out_buffer_len,
                                          SQLSMALLINT* out_conn_str_len) {
-    (void)in_conn_str;
-    (void)in_conn_str_len;
-    (void)out_conn_str;
-    (void)out_buffer_len;
-    (void)out_conn_str_len;
     clearDiagnostics();
-    setError("HYC00", 0, "Optional feature not implemented");
-    return SQL_ERROR;
+
+    std::string input;
+    if (in_conn_str) {
+        input = (in_conn_str_len == SQL_NTS) ?
+            std::string(reinterpret_cast<const char*>(in_conn_str)) :
+            std::string(reinterpret_cast<const char*>(in_conn_str), in_conn_str_len);
+    }
+
+    std::map<std::string, std::string> options;
+    parseBrowseInput(input, in_conn_str_len, options);
+    BrowseStage stage = parseBrowseStage(options);
+
+    SQLRETURN result = SQL_SUCCESS;
+    std::string out;
+    appendPersistentConnectionAttributes(options, out);
+
+    auto emitResponse = [&](bool need_data) {
+        return copyBrowseResponse(out, out_conn_str, out_buffer_len, out_conn_str_len,
+                                  need_data, result, this);
+    };
+
+    auto appendField = [&](const char* key, const std::string& value) {
+        appendBrowseField(out, key, value);
+    };
+
+    auto add_dsn = [&](const std::string& dsn) {
+        appendField(kMetaBrowseDsnKey, dsn);
+    };
+
+    auto add_catalog = [&](const std::string& catalog) {
+        appendField(kMetaBrowseCatalogKey, catalog);
+    };
+
+    auto add_schema = [&](const std::string& schema) {
+        appendField(kMetaBrowseSchemaKey, schema);
+    };
+
+    auto add_table = [&](const std::string& table) {
+        appendField(kMetaBrowseTableKey, table);
+    };
+
+    auto add_column = [&](const std::string& column) {
+        appendField(kMetaBrowseColumnKey, column);
+    };
+
+    auto appendContext = [&]() {
+        if (stage.has_dsn) {
+            add_dsn(stage.dsn);
+        }
+        if (stage.has_catalog) {
+            add_catalog(stage.catalog);
+        }
+        if (stage.has_schema) {
+            add_schema(stage.schema);
+        }
+        if (stage.has_table) {
+            add_table(stage.table);
+        }
+        if (stage.has_column) {
+            add_column(stage.column);
+        }
+    };
+
+    auto ensureConnection = [&]() -> SQLRETURN {
+        if (connected_ && !params_.dsn.empty() && toLower(params_.dsn) == toLower(stage.dsn)) {
+            return SQL_SUCCESS;
+        }
+        auto parse_result = parseConnectionString(input);
+        if (parse_result != SQL_SUCCESS) {
+            return parse_result;
+        }
+        return establishConnection();
+    };
+
+    auto executeMetadataQuery = [&](const std::string& sql,
+                                   const std::string& filter_value,
+                                   int filter_col,
+                                   std::vector<std::vector<std::string>>* rows) -> SQLRETURN {
+        if (sql.empty()) {
+            setError("HY000", 0, "Invalid metadata query");
+            return SQL_ERROR;
+        }
+
+        SQLLEN rows_affected = 0;
+        std::vector<ColumnMetadata> cols;
+        rows->clear();
+        auto status = executeSQL(sql, *rows, cols, rows_affected);
+        if (status != SQL_SUCCESS) {
+            return status;
+        }
+        if (filter_value.empty() || filter_col < 0) {
+            return SQL_SUCCESS;
+        }
+
+        std::vector<std::vector<std::string>> filtered;
+        filtered.reserve(rows->size());
+        for (const auto& row : *rows) {
+            if (filter_col >= static_cast<int>(row.size()) || row[filter_col].empty()) {
+                continue;
+            }
+            if (!matchPattern(row[filter_col], filter_value, false)) {
+                continue;
+            }
+            filtered.push_back(row);
+        }
+        rows->swap(filtered);
+        return SQL_SUCCESS;
+    };
+
+    auto filterMetadataRows = [&](const std::string& filter_value,
+                                 int filter_col,
+                                 std::vector<std::vector<std::string>>* rows_to_filter) {
+        if (filter_value.empty() || filter_col < 0) {
+            return SQL_SUCCESS;
+        }
+
+        std::vector<std::vector<std::string>> filtered;
+        filtered.reserve(rows_to_filter->size());
+        for (const auto& row : *rows_to_filter) {
+            if (filter_col >= static_cast<int>(row.size()) || row[filter_col].empty()) {
+                continue;
+            }
+            if (!matchPattern(row[filter_col], filter_value, false)) {
+                continue;
+            }
+            filtered.push_back(row);
+        }
+        rows_to_filter->swap(filtered);
+        return SQL_SUCCESS;
+    };
+
+    if (!stage.has_dsn) {
+        auto names = discoverIniDsns();
+        if (names.empty()) {
+            setError("IM002", 0, "No browse data source names available");
+            return SQL_ERROR;
+        }
+        for (const auto& dsn : names) {
+            add_dsn(dsn);
+        }
+        if (!emitResponse(true)) {
+            return result;
+        }
+        return result;
+    }
+
+    if (connected_ && toLower(params_.dsn) != toLower(stage.dsn) && !stage.dsn.empty()) {
+        auto ensure_result = ensureConnection();
+        if (ensure_result != SQL_SUCCESS) {
+            return ensure_result;
+        }
+    } else if (!connected_ && !stage.dsn.empty()) {
+        auto ensure_result = ensureConnection();
+        if (ensure_result != SQL_SUCCESS) {
+            return ensure_result;
+        }
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    if (!stage.has_catalog && !stage.has_schema && !stage.has_table && !stage.has_column) {
+        result = executeMetadataQuery("SHOW DATABASES", {}, 0, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        appendContext();
+        for (const auto& row : rows) {
+            if (!row.empty() && !row[0].empty()) {
+                add_catalog(row[0]);
+            }
+        }
+        emitResponse(true);
+        return result;
+    }
+
+    if (stage.has_catalog && !stage.has_schema) {
+        result = executeMetadataQuery(metadata::kSchemasQuery, {}, 0, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        appendContext();
+        for (const auto& row : rows) {
+            if (row.empty() || row[0].empty()) {
+                continue;
+            }
+            add_schema(row[0]);
+        }
+        emitResponse(true);
+        return result;
+    }
+
+    if (stage.has_schema && !stage.has_table) {
+        result = executeMetadataQuery(metadata::kTablesQuery, stage.schema, 1, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        appendContext();
+        for (const auto& row : rows) {
+            if (row.empty()) {
+                continue;
+            }
+            add_table(row[0]);
+        }
+        emitResponse(true);
+        return result;
+    }
+
+    if (stage.has_table && !stage.has_column) {
+        result = executeMetadataQuery(metadata::kColumnsQuery, {}, 0, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        result = filterMetadataRows(stage.table, 1, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        result = filterMetadataRows(stage.schema, 2, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        appendContext();
+        for (const auto& row : rows) {
+            if (row.size() < 3 || row[0].empty()) {
+                continue;
+            }
+            add_column(row[0]);
+        }
+        emitResponse(true);
+        return result;
+    }
+
+    appendContext();
+    emitResponse(false);
+    return SQL_SUCCESS;
 }
 
 SQLRETURN OdbcConnection::disconnect() {
@@ -1647,9 +2258,9 @@ SQLRETURN OdbcConnection::getInfo(SQLUSMALLINT info_type, SQLPOINTER info_value,
         case SQL_ACCESSIBLE_PROCEDURES:
             return copyString("Y");
         case SQL_MULT_RESULT_SETS:
-            return copyString("Y");
+            return copyString("N");
         case SQL_MULTIPLE_ACTIVE_TXN:
-            return copyString("Y");
+            return copyString("N");
         case SQL_PROCEDURES:
             return copyString("Y");
         case SQL_CATALOG_NAME:
@@ -1827,7 +2438,6 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         23,  // SQLFreeHandle
         24,  // SQLFreeStmt
         25,  // SQLGetConnectAttr
-        26,  // SQLGetCursorName
         27,  // SQLGetData
         28,  // SQLGetDescField
         29,  // SQLGetDescRec
@@ -1839,18 +2449,14 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         35,  // SQLGetStmtAttr
         36,  // SQLGetTypeInfo
         37,  // SQLMoreResults
-        38,  // SQLNativeSql
         39,  // SQLNumParams
         40,  // SQLNumResultCols
-        41,  // SQLParamData
         42,  // SQLPrepare
         43,  // SQLPrimaryKeys
         44,  // SQLProcedureColumns
         45,  // SQLProcedures
-        46,  // SQLPutData
         47,  // SQLRowCount
         48,  // SQLSetConnectAttr
-        49,  // SQLSetCursorName
         50,  // SQLSetDescField
         51,  // SQLSetDescRec
         52,  // SQLSetEnvAttr
@@ -1866,7 +2472,7 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         *supported = 0;
     } else if (function_id == 999) {
         // SQL_API_ODBC3_ALL_FUNCTIONS - return bitmap
-        std::memset(supported, 0, 250);
+        std::memset(supported, 0, 250 * sizeof(SQLUSMALLINT));
         for (auto func : supported_functions) {
             size_t word = func >> 4;
             size_t bit = func & 0x0F;
@@ -2585,7 +3191,17 @@ SQLRETURN OdbcConnection::buildPreparedSQL(uint64_t stmt_id,
 // =============================================================================
 
 OdbcStatement::OdbcStatement(OdbcConnection* conn)
-    : conn_(conn) {}
+    : conn_(conn) {
+    owned_app_param_desc_ = std::make_unique<OdbcDescriptor>(conn, OdbcDescriptor::DescriptorType::APD, true);
+    owned_imp_param_desc_ = std::make_unique<OdbcDescriptor>(conn, OdbcDescriptor::DescriptorType::IPD, true);
+    owned_app_row_desc_ = std::make_unique<OdbcDescriptor>(conn, OdbcDescriptor::DescriptorType::ARD, true);
+    owned_ird_desc_ = std::make_unique<OdbcDescriptor>(conn, OdbcDescriptor::DescriptorType::IRD, true);
+
+    app_param_desc_ = owned_app_param_desc_.get();
+    ipd_desc_ = owned_imp_param_desc_.get();
+    app_row_desc_ = owned_app_row_desc_.get();
+    ird_desc_ = owned_ird_desc_.get();
+}
 
 OdbcStatement::~OdbcStatement() = default;
 
@@ -2731,6 +3347,83 @@ SQLRETURN OdbcStatement::bindParameter(SQLUSMALLINT parameter_number,
 
     param_bindings_[parameter_number] = binding;
 
+    if (!app_param_desc_) {
+        setError("HY024", 0, "Statement not initialized");
+        return SQL_ERROR;
+    }
+
+    SQLSMALLINT count = static_cast<SQLSMALLINT>(parameter_number);
+
+    auto update_param_descriptor = [&](OdbcDescriptor* desc) -> SQLRETURN {
+        if (!desc) {
+            return SQL_SUCCESS;
+        }
+
+        auto unsigned_flag = SQLSMALLINT(0);
+        switch (value_type) {
+            case SQL_C_UTINYINT:
+            case SQL_C_USHORT:
+            case SQL_C_ULONG:
+            case SQL_C_UBIGINT:
+                unsigned_flag = 1;
+                break;
+            default:
+                break;
+        }
+
+        SQLSMALLINT nullability = SQL_NULLABLE_UNKNOWN;
+        SQLSMALLINT precision = static_cast<SQLSMALLINT>(column_size <= 32767 ? column_size : 32767);
+        SQLSMALLINT scale = decimal_digits;
+        SQLSMALLINT searchable = SQL_SEARCHABLE;
+        if (desc->setField(0, SQL_DESC_COUNT, &count, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_TYPE, &parameter_type, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_CONCISE_TYPE, &parameter_type, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_DATA_PTR, parameter_value, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_INDICATOR_PTR, str_len_or_ind, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_OCTET_LENGTH_PTR, str_len_or_ind, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_LENGTH, &buffer_length, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_OCTET_LENGTH, &buffer_length, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_PRECISION, &precision, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_SCALE, &scale, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_UNSIGNED, &unsigned_flag, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_NULLABLE, &nullability, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+        if (desc->setField(parameter_number, SQL_DESC_SEARCHABLE, &searchable, 0) != SQL_SUCCESS) {
+            return SQL_ERROR;
+        }
+
+        return SQL_SUCCESS;
+    };
+
+    if (update_param_descriptor(app_param_desc_) != SQL_SUCCESS ||
+        update_param_descriptor(ipd_desc_) != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to update descriptor metadata");
+        return SQL_ERROR;
+    }
+
     return SQL_SUCCESS;
 }
 
@@ -2787,6 +3480,76 @@ SQLRETURN OdbcStatement::bindCol(SQLUSMALLINT column_number,
     binding.str_len_or_ind = str_len_or_ind;
 
     col_bindings_[column_number] = binding;
+
+    if (!app_row_desc_) {
+        setError("HY024", 0, "Statement not initialized");
+        return SQL_ERROR;
+    }
+
+    if (column_number > 0) {
+        SQLSMALLINT desc_count = static_cast<SQLSMALLINT>(column_number);
+        auto* col = column_number <= columns_.size() ? &columns_[column_number - 1] : nullptr;
+
+        auto update_row_descriptor = [&](OdbcDescriptor* desc) -> SQLRETURN {
+            if (!desc) {
+                return SQL_SUCCESS;
+            }
+
+            if (desc->setField(0, SQL_DESC_COUNT, &desc_count, 0) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            if (desc->setField(column_number, SQL_DESC_DATA_PTR, target_value, 0) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            if (desc->setField(column_number, SQL_DESC_OCTET_LENGTH_PTR, nullptr, 0) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            if (desc->setField(column_number, SQL_DESC_INDICATOR_PTR, str_len_or_ind, 0) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            if (desc->setField(column_number, SQL_DESC_OCTET_LENGTH, &buffer_length, 0) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            if (col) {
+                if (desc->setField(column_number, SQL_DESC_TYPE, &col->sql_type, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                SQLSMALLINT precision =
+                    static_cast<SQLSMALLINT>(col->column_size <= 32767 ? col->column_size : 32767);
+                SQLLEN length = static_cast<SQLLEN>(col->column_size);
+                SQLSMALLINT scale = col->decimal_digits;
+                SQLSMALLINT updatable = 0;  // SQL_ATTR_READONLY
+                if (desc->setField(column_number, SQL_DESC_PRECISION, &precision, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_SCALE, &scale, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_NULLABLE, &col->nullable, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_LENGTH, &length, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_DISPLAY_SIZE, &length, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_SEARCHABLE, &col->searchable, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+                if (desc->setField(column_number, SQL_DESC_UPDATABLE, &updatable, 0) != SQL_SUCCESS) {
+                    return SQL_ERROR;
+                }
+            }
+            return SQL_SUCCESS;
+        };
+
+        if (update_row_descriptor(app_row_desc_) != SQL_SUCCESS ||
+            update_row_descriptor(ird_desc_) != SQL_SUCCESS) {
+            setError("HY000", 0, "Failed to update row descriptor metadata");
+            return SQL_ERROR;
+        }
+    }
 
     return SQL_SUCCESS;
 }
@@ -3300,6 +4063,34 @@ SQLRETURN OdbcStatement::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
                                        SQLINTEGER /*string_length*/) {
     clearDiagnostics();
 
+    auto resolveDescriptorHandle = [&](SQLPOINTER descriptor_handle,
+                                      OdbcDescriptor::DescriptorType expected_type,
+                                      OdbcDescriptor*& destination) -> SQLRETURN {
+        if (!descriptor_handle) {
+            setError("HY024", 0, "Invalid descriptor handle");
+            return SQL_ERROR;
+        }
+
+        auto* candidate = asDescriptor(static_cast<SQLHDESC>(descriptor_handle));
+        if (!candidate) {
+            setError("HY024", 0, "Invalid descriptor handle");
+            return SQL_ERROR;
+        }
+
+        if (candidate->getConnection() != conn_) {
+            setError("HY024", 0, "Descriptor belongs to different connection");
+            return SQL_ERROR;
+        }
+
+        if (candidate->getDescriptorType() != expected_type) {
+            setError("HY024", 0, "Descriptor type mismatch");
+            return SQL_ERROR;
+        }
+
+        destination = candidate;
+        return SQL_SUCCESS;
+    };
+
     switch (attribute) {
         case SQL_ATTR_CURSOR_TYPE:
             cursor_type_ = ODBC_PTR_TO_ULEN(value);
@@ -3362,6 +4153,34 @@ SQLRETURN OdbcStatement::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
         case SQL_ATTR_CURSOR_SENSITIVITY:
             cursor_sensitivity_ = ODBC_PTR_TO_ULEN(value);
             break;
+        case SQL_ATTR_APP_ROW_DESC:
+            if (!value) {
+                app_row_desc_ = owned_app_row_desc_.get();
+            } else if (resolveDescriptorHandle(value, OdbcDescriptor::DescriptorType::ARD, app_row_desc_) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            break;
+        case SQL_ATTR_APP_PARAM_DESC:
+            if (!value) {
+                app_param_desc_ = owned_app_param_desc_.get();
+            } else if (resolveDescriptorHandle(value, OdbcDescriptor::DescriptorType::APD, app_param_desc_) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            break;
+        case SQL_ATTR_IMP_ROW_DESC:
+            if (!value) {
+                ird_desc_ = owned_ird_desc_.get();
+            } else if (resolveDescriptorHandle(value, OdbcDescriptor::DescriptorType::IRD, ird_desc_) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            break;
+        case SQL_ATTR_IMP_PARAM_DESC:
+            if (!value) {
+                ipd_desc_ = owned_imp_param_desc_.get();
+            } else if (resolveDescriptorHandle(value, OdbcDescriptor::DescriptorType::IPD, ipd_desc_) != SQL_SUCCESS) {
+                return SQL_ERROR;
+            }
+            break;
         default:
             setError("HY092", 0, "Invalid attribute identifier");
             return SQL_ERROR;
@@ -3413,11 +4232,35 @@ SQLRETURN OdbcStatement::getAttribute(SQLINTEGER attribute, SQLPOINTER value,
             setLen(sizeof(SQLULEN));
             break;
         case SQL_ATTR_IMP_ROW_DESC:
+            if (!value) {
+                setError("HY009", 0, "Invalid use of null pointer");
+                return SQL_ERROR;
+            }
+            *static_cast<SQLHDESC*>(value) = ird_desc_;
+            setLen(sizeof(SQLPOINTER));
+            break;
         case SQL_ATTR_IMP_PARAM_DESC:
+            if (!value) {
+                setError("HY009", 0, "Invalid use of null pointer");
+                return SQL_ERROR;
+            }
+            *static_cast<SQLHDESC*>(value) = ipd_desc_;
+            setLen(sizeof(SQLPOINTER));
+            break;
         case SQL_ATTR_APP_ROW_DESC:
+            if (!value) {
+                setError("HY009", 0, "Invalid use of null pointer");
+                return SQL_ERROR;
+            }
+            *static_cast<SQLHDESC*>(value) = app_row_desc_;
+            setLen(sizeof(SQLPOINTER));
+            break;
         case SQL_ATTR_APP_PARAM_DESC:
-            // TODO: Return actual descriptor handles
-            if (value) *static_cast<SQLPOINTER*>(value) = nullptr;
+            if (!value) {
+                setError("HY009", 0, "Invalid use of null pointer");
+                return SQL_ERROR;
+            }
+            *static_cast<SQLHDESC*>(value) = app_param_desc_;
             setLen(sizeof(SQLPOINTER));
             break;
         default:
@@ -4382,6 +5225,16 @@ SQLRETURN OdbcStatement::procedures(const SQLCHAR* catalog, SQLSMALLINT catalog_
                                      const SQLCHAR* proc, SQLSMALLINT proc_len) {
     clearDiagnostics();
 
+    if (!conn_ || !conn_->isConnected()) {
+        setError("08003", 0, "Connection not open");
+        return SQL_ERROR;
+    }
+
+    std::string catalog_pattern = sqlCharToString(catalog, catalog_len);
+    std::string schema_pattern = sqlCharToString(schema, schema_len);
+    std::string proc_pattern = sqlCharToString(proc, proc_len);
+    bool metadata_id = conn_->getMetadataId();
+
     std::vector<ColumnMetadata> cols;
     cols.push_back(makeCatalogColumn("PROCEDURE_CAT", SQL_VARCHAR, DriverConfig::MAX_CATALOG_NAME_LEN));
     cols.push_back(makeCatalogColumn("PROCEDURE_SCHEM", SQL_VARCHAR, DriverConfig::MAX_SCHEMA_NAME_LEN));
@@ -4392,14 +5245,105 @@ SQLRETURN OdbcStatement::procedures(const SQLCHAR* catalog, SQLSMALLINT catalog_
     cols.push_back(makeCatalogColumn("REMARKS", SQL_VARCHAR, 255));
     cols.push_back(makeCatalogColumn("PROCEDURE_TYPE", SQL_SMALLINT));
 
-    (void)catalog;
-    (void)catalog_len;
-    (void)schema;
-    (void)schema_len;
-    (void)proc;
-    (void)proc_len;
+    const std::string& current_catalog = conn_->getCurrentDatabase();
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
+        setCatalogResult(std::move(cols), {});
+        return SQL_SUCCESS;
+    }
 
-    setCatalogResult(std::move(cols), {});
+    struct ProcedureCounts {
+        int64_t input_count = 0;
+        int64_t output_count = 0;
+    };
+
+    using ProcedureKey = std::pair<std::string, std::string>;
+    std::map<ProcedureKey, ProcedureCounts> proc_counts;
+
+    std::vector<std::vector<std::string>> routine_rows;
+    std::vector<ColumnMetadata> routine_cols;
+    SQLLEN rows_affected = 0;
+    auto status = conn_->executeSQL(
+        "SELECT routine_schema, routine_name, routine_type, data_type "
+        "FROM information_schema.routines "
+        "ORDER BY routine_schema, routine_name",
+        routine_rows, routine_cols, rows_affected);
+    if (status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to query routines");
+        return status;
+    }
+
+    std::vector<std::vector<std::string>> parameter_rows;
+    std::vector<ColumnMetadata> parameter_cols;
+    status = conn_->executeSQL(
+        "SELECT routine_schema, routine_name, parameter_mode, parameter_name, data_type "
+        "FROM information_schema.parameters "
+        "ORDER BY routine_schema, routine_name, ordinal_position",
+        parameter_rows, parameter_cols, rows_affected);
+    if (status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to query parameters");
+        return status;
+    }
+
+    for (const auto& param_row : parameter_rows) {
+        if (param_row.size() < 5) {
+            continue;
+        }
+
+        const std::string& routine_schema = param_row[0];
+        const std::string& routine_name = param_row[1];
+        const std::string& mode_text = param_row[2];
+
+        if (!matchPattern(routine_schema, schema_pattern, metadata_id) ||
+            !matchPattern(routine_name, proc_pattern, metadata_id)) {
+            continue;
+        }
+
+        ProcedureKey key(routine_schema, routine_name);
+        auto& counters = proc_counts[key];
+        SQLSMALLINT mode = parseProcedureColumnMode(mode_text);
+        if (mode == SQL_PARAM_INPUT || mode == SQL_PARAM_INPUT_OUTPUT) {
+            ++counters.input_count;
+        }
+        if (mode == SQL_PARAM_OUTPUT || mode == SQL_PARAM_INPUT_OUTPUT) {
+            ++counters.output_count;
+        }
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    for (const auto& routine_row : routine_rows) {
+        if (routine_row.size() < 4) {
+            continue;
+        }
+
+        const std::string& routine_schema = routine_row[0];
+        const std::string& routine_name = routine_row[1];
+        const std::string& routine_type = routine_row[2];
+
+        if (!matchPattern(routine_schema, schema_pattern, metadata_id) ||
+            !matchPattern(routine_name, proc_pattern, metadata_id)) {
+            continue;
+        }
+
+        SQLSMALLINT proc_type = parseProcedureType(routine_type);
+        SQLSMALLINT result_set_count = (proc_type == SQL_PT_FUNCTION) ? 1 : 0;
+
+        auto it = proc_counts.find(ProcedureKey(routine_schema, routine_name));
+        int64_t num_input = it != proc_counts.end() ? it->second.input_count : 0;
+        int64_t num_output = it != proc_counts.end() ? it->second.output_count : 0;
+
+        rows.push_back({
+            current_catalog,
+            routine_schema,
+            routine_name,
+            std::to_string(num_input),
+            std::to_string(num_output),
+            std::to_string(result_set_count),
+            "",
+            std::to_string(proc_type)
+        });
+    }
+
+    setCatalogResult(std::move(cols), std::move(rows));
     return SQL_SUCCESS;
 }
 
@@ -4408,6 +5352,17 @@ SQLRETURN OdbcStatement::procedureColumns(const SQLCHAR* catalog, SQLSMALLINT ca
                                            const SQLCHAR* proc, SQLSMALLINT proc_len,
                                            const SQLCHAR* column, SQLSMALLINT column_len) {
     clearDiagnostics();
+
+    if (!conn_ || !conn_->isConnected()) {
+        setError("08003", 0, "Connection not open");
+        return SQL_ERROR;
+    }
+
+    std::string catalog_pattern = sqlCharToString(catalog, catalog_len);
+    std::string schema_pattern = sqlCharToString(schema, schema_len);
+    std::string proc_pattern = sqlCharToString(proc, proc_len);
+    std::string column_pattern = sqlCharToString(column, column_len);
+    bool metadata_id = conn_->getMetadataId();
 
     std::vector<ColumnMetadata> cols;
     cols.push_back(makeCatalogColumn("PROCEDURE_CAT", SQL_VARCHAR, DriverConfig::MAX_CATALOG_NAME_LEN));
@@ -4430,16 +5385,175 @@ SQLRETURN OdbcStatement::procedureColumns(const SQLCHAR* catalog, SQLSMALLINT ca
     cols.push_back(makeCatalogColumn("ORDINAL_POSITION", SQL_INTEGER));
     cols.push_back(makeCatalogColumn("IS_NULLABLE", SQL_VARCHAR, 3));
 
-    (void)catalog;
-    (void)catalog_len;
-    (void)schema;
-    (void)schema_len;
-    (void)proc;
-    (void)proc_len;
-    (void)column;
-    (void)column_len;
+    const std::string& current_catalog = conn_->getCurrentDatabase();
+    if (!matchPattern(current_catalog, catalog_pattern, metadata_id)) {
+        setCatalogResult(std::move(cols), {});
+        return SQL_SUCCESS;
+    }
 
-    setCatalogResult(std::move(cols), {});
+    using ProcKey = std::pair<std::string, std::string>;
+    std::map<ProcKey, std::string> function_return_types;
+
+    std::vector<std::vector<std::string>> routine_rows;
+    std::vector<ColumnMetadata> routine_cols;
+    SQLLEN rows_affected = 0;
+    auto status = conn_->executeSQL(
+        "SELECT routine_schema, routine_name, routine_type, data_type "
+        "FROM information_schema.routines "
+        "ORDER BY routine_schema, routine_name",
+        routine_rows, routine_cols, rows_affected);
+    if (status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to query routine types");
+        return status;
+    }
+
+    for (const auto& routine_row : routine_rows) {
+        if (routine_row.size() < 4) {
+            continue;
+        }
+
+        const std::string& routine_schema = routine_row[0];
+        const std::string& routine_name = routine_row[1];
+        if (!matchPattern(routine_schema, schema_pattern, metadata_id) ||
+            !matchPattern(routine_name, proc_pattern, metadata_id)) {
+            continue;
+        }
+        if (parseProcedureType(routine_row[2]) == SQL_PT_FUNCTION) {
+            function_return_types.emplace(ProcKey(routine_schema, routine_name), routine_row[3]);
+        }
+    }
+
+    std::vector<std::vector<std::string>> parameter_rows;
+    std::vector<ColumnMetadata> parameter_cols;
+    status = conn_->executeSQL(
+        "SELECT routine_schema, routine_name, ordinal_position, parameter_mode, "
+        "parameter_name, data_type, character_maximum_length, numeric_precision, numeric_scale "
+        "FROM information_schema.parameters "
+        "ORDER BY routine_schema, routine_name, ordinal_position",
+        parameter_rows, parameter_cols, rows_affected);
+    if (status != SQL_SUCCESS) {
+        setError("HY000", 0, "Failed to query procedure parameters");
+        return status;
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    std::map<ProcKey, bool> return_row_emitted;
+    for (const auto& param_row : parameter_rows) {
+        if (param_row.size() < 9) {
+            continue;
+        }
+
+        const std::string& routine_schema = param_row[0];
+        const std::string& routine_name = param_row[1];
+        const std::string& ordinal_position = param_row[2];
+        const std::string& parameter_mode = param_row[3];
+        const std::string& parameter_name = param_row[4];
+        const std::string& data_type = param_row[5];
+        const std::string& character_max_length = param_row[6];
+        const std::string& numeric_precision = param_row[7];
+        const std::string& numeric_scale = param_row[8];
+
+        if (!matchPattern(routine_schema, schema_pattern, metadata_id) ||
+            !matchPattern(routine_name, proc_pattern, metadata_id) ||
+            !matchPattern(parameter_name, column_pattern, metadata_id)) {
+            continue;
+        }
+
+        ProcKey proc_key(routine_schema, routine_name);
+        ParsedTypeInfo type_info = parseTypeString(trimString(data_type));
+        if (type_info.column_size == 0) {
+            int64_t tmp = 0;
+            if (parseInt64(character_max_length, tmp) && tmp > 0) {
+                type_info.column_size = static_cast<SQLULEN>(tmp);
+            } else if (parseInt64(numeric_precision, tmp) && tmp > 0) {
+                type_info.column_size = static_cast<SQLULEN>(tmp);
+            }
+        }
+
+        int64_t parsed_scale = 0;
+        if (parseInt64(numeric_scale, parsed_scale)) {
+            type_info.decimal_digits = static_cast<SQLSMALLINT>(parsed_scale);
+        }
+
+        std::string column_size = type_info.column_size > 0 ? std::to_string(type_info.column_size) : "";
+        std::string decimal_digits = type_info.decimal_digits > 0 ? std::to_string(type_info.decimal_digits) : "";
+        std::string radix = type_info.num_prec_radix > 0 ? std::to_string(type_info.num_prec_radix) : "";
+        std::string char_octet = (isCharacterSqlType(type_info.sql_type) || isBinarySqlType(type_info.sql_type))
+                                ? column_size : "";
+        SQLSMALLINT column_type = parseProcedureColumnMode(parameter_mode);
+
+        if (column_type == kOdbcProcedureColumnReturn) {
+            return_row_emitted[proc_key] = true;
+        }
+
+        rows.push_back({
+            current_catalog,
+            routine_schema,
+            routine_name,
+            parameter_name,
+            std::to_string(column_type),
+            std::to_string(type_info.sql_type),
+            type_info.type_name,
+            column_size,
+            column_size,
+            decimal_digits,
+            radix,
+            std::to_string(SQL_NULLABLE),
+            "",
+            "",
+            std::to_string(type_info.sql_type),
+            "",
+            char_octet,
+            ordinal_position,
+            "YES"
+        });
+    }
+
+    for (const auto& function_item : function_return_types) {
+        const ProcKey& proc_key = function_item.first;
+        const std::string& routine_schema = proc_key.first;
+        const std::string& routine_name = proc_key.second;
+
+        if (!matchPattern(routine_schema, schema_pattern, metadata_id) ||
+            !matchPattern(routine_name, proc_pattern, metadata_id) ||
+            !matchPattern("RETURN_VALUE", column_pattern, metadata_id)) {
+            continue;
+        }
+
+        if (return_row_emitted[proc_key]) {
+            continue;
+        }
+
+        ParsedTypeInfo type_info = parseTypeString(trimString(function_item.second));
+        std::string column_size = type_info.column_size > 0 ? std::to_string(type_info.column_size) : "";
+        std::string radix = type_info.num_prec_radix > 0 ? std::to_string(type_info.num_prec_radix) : "";
+        std::string char_octet = (isCharacterSqlType(type_info.sql_type) || isBinarySqlType(type_info.sql_type))
+                                ? column_size : "";
+
+        rows.push_back({
+            current_catalog,
+            routine_schema,
+            routine_name,
+            "RETURN_VALUE",
+            std::to_string(kOdbcProcedureColumnReturn),
+            std::to_string(type_info.sql_type),
+            type_info.type_name,
+            column_size,
+            column_size,
+            "",
+            radix,
+            std::to_string(SQL_NULLABLE),
+            "",
+            "",
+            std::to_string(type_info.sql_type),
+            "",
+            char_octet,
+            "0",
+            "YES"
+        });
+    }
+
+    setCatalogResult(std::move(cols), std::move(rows));
     return SQL_SUCCESS;
 }
 
@@ -4503,7 +5617,7 @@ SQLRETURN OdbcStatement::columnPrivileges(const SQLCHAR* catalog, SQLSMALLINT ca
 
 OdbcDescriptor::OdbcDescriptor(OdbcConnection* conn, DescriptorType type, bool implicit)
     : conn_(conn), desc_type_(type), implicit_(implicit) {
-    alloc_type_ = implicit ? 0 : 1;  // SQL_DESC_ALLOC_AUTO or SQL_DESC_ALLOC_USER
+    alloc_type_ = implicit ? SQL_DESC_ALLOC_AUTO : SQL_DESC_ALLOC_USER;
 }
 
 OdbcDescriptor::~OdbcDescriptor() = default;
@@ -4512,14 +5626,35 @@ SQLRETURN OdbcDescriptor::setField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
                                     SQLPOINTER value, SQLINTEGER buffer_length) {
     clearDiagnostics();
 
-    // Ensure record exists
-    if (rec_number >= 0) {
-        while (records_.size() <= static_cast<size_t>(rec_number)) {
+    if (rec_number < 0) {
+        setError("07009", 0, "Invalid descriptor index");
+        return SQL_ERROR;
+    }
+
+    auto copyStringField = [&](std::string& target) {
+        if (!value) {
+            target.clear();
+            return;
+        }
+        if (buffer_length < 0 || buffer_length == SQL_NTS) {
+            target = static_cast<const char*>(value);
+        } else {
+            target.assign(static_cast<const char*>(value),
+                          static_cast<const char*>(value) + buffer_length);
+        }
+    };
+
+    if (rec_number > 0) {
+        auto rec_index = static_cast<size_t>(rec_number - 1);
+        while (records_.size() <= rec_index) {
             records_.emplace_back();
+        }
+        if (rec_number > count_) {
+            count_ = rec_number;
         }
     }
 
-    // Header fields (rec_number == 0 or negative)
+    // Header fields
     if (rec_number == 0) {
         switch (field_identifier) {
             case SQL_DESC_COUNT:
@@ -4528,14 +5663,29 @@ SQLRETURN OdbcDescriptor::setField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
             case SQL_DESC_ALLOC_TYPE:
                 // Read-only
                 break;
-            default:
+            case SQL_DESC_ARRAY_SIZE:
+                array_size_ = *static_cast<SQLULEN*>(value);
                 break;
+            case SQL_DESC_ARRAY_STATUS_PTR:
+                array_status_ptr_ = static_cast<SQLULEN*>(value);
+                break;
+            case SQL_DESC_BIND_OFFSET_PTR:
+                bind_offset_ptr_ = static_cast<SQLLEN*>(value);
+                break;
+            case SQL_DESC_BIND_TYPE:
+                bind_type_ = *static_cast<SQLULEN*>(value);
+                break;
+            case SQL_DESC_ROWS_PROCESSED_PTR:
+                rows_processed_ptr_ = static_cast<SQLULEN*>(value);
+                break;
+            default:
+                setError("HY091", 0, "Invalid descriptor field identifier");
+                return SQL_ERROR;
         }
         return SQL_SUCCESS;
     }
 
-    auto& rec = records_[rec_number];
-    (void)buffer_length;
+    auto& rec = records_[rec_number - 1];
 
     switch (field_identifier) {
         case SQL_DESC_TYPE:
@@ -4547,11 +5697,86 @@ SQLRETURN OdbcDescriptor::setField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
         case SQL_DESC_LENGTH:
             rec.length = *static_cast<SQLLEN*>(value);
             break;
+        case SQL_DESC_OCTET_LENGTH:
+            rec.octet_length = *static_cast<SQLLEN*>(value);
+            break;
         case SQL_DESC_PRECISION:
             rec.precision = *static_cast<SQLSMALLINT*>(value);
             break;
         case SQL_DESC_SCALE:
             rec.scale = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_UNSIGNED:
+            rec.unsigned_ = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_FIXED_PREC_SCALE:
+            rec.fixed_prec_scale = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_AUTO_UNIQUE_VALUE:
+            rec.auto_unique_value = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_CASE_SENSITIVE:
+            rec.case_sensitive = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_SEARCHABLE:
+            rec.searchable = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_NUM_PREC_RADIX:
+            rec.num_prec_radix = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_DISPLAY_SIZE:
+            rec.display_size = *static_cast<SQLLEN*>(value);
+            break;
+        case SQL_DESC_DATETIME_INTERVAL_CODE:
+            rec.datetime_interval_code = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_DATETIME_INTERVAL_PRECISION:
+            rec.datetime_interval_precision = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_MAXIMUM_SCALE:
+            rec.maximum_scale = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_MINIMUM_SCALE:
+            rec.minimum_scale = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_PARAMETER_TYPE:
+            rec.concise_type = *static_cast<SQLSMALLINT*>(value);
+            break;
+        case SQL_DESC_NAME:
+            copyStringField(rec.name);
+            break;
+        case SQL_DESC_LABEL:
+            copyStringField(rec.label);
+            break;
+        case SQL_DESC_TYPE_NAME:
+            copyStringField(rec.type_name);
+            break;
+        case SQL_DESC_TABLE_NAME:
+            copyStringField(rec.table_name);
+            break;
+        case SQL_DESC_SCHEMA_NAME:
+            copyStringField(rec.schema_name);
+            break;
+        case SQL_DESC_CATALOG_NAME:
+            copyStringField(rec.catalog_name);
+            break;
+        case SQL_DESC_BASE_COLUMN_NAME:
+            copyStringField(rec.base_column_name);
+            break;
+        case SQL_DESC_BASE_TABLE_NAME:
+            copyStringField(rec.base_table_name);
+            break;
+        case SQL_DESC_LITERAL_PREFIX:
+            copyStringField(rec.literal_prefix);
+            break;
+        case SQL_DESC_LITERAL_SUFFIX:
+            copyStringField(rec.literal_suffix);
+            break;
+        case SQL_DESC_LOCAL_TYPE_NAME:
+            copyStringField(rec.local_type_name);
+            break;
+        case SQL_DESC_UNNAMED:
+            rec.unnamed = *static_cast<SQLSMALLINT*>(value);
             break;
         case SQL_DESC_DATA_PTR:
             rec.data_ptr = value;
@@ -4561,9 +5786,6 @@ SQLRETURN OdbcDescriptor::setField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
             break;
         case SQL_DESC_OCTET_LENGTH_PTR:
             rec.octet_length_ptr = static_cast<SQLLEN*>(value);
-            break;
-        case SQL_DESC_OCTET_LENGTH:
-            rec.octet_length = *static_cast<SQLLEN*>(value);
             break;
         case SQL_DESC_NULLABLE:
             rec.nullable = *static_cast<SQLSMALLINT*>(value);
@@ -4581,7 +5803,26 @@ SQLRETURN OdbcDescriptor::getField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
                                     SQLINTEGER* string_length) {
     clearDiagnostics();
 
-    // Header fields
+    auto copyString = [&](const std::string& source) -> SQLRETURN {
+        if (string_length) {
+            *string_length = static_cast<SQLINTEGER>(source.size());
+        }
+        if (!value || buffer_length <= 0) {
+            return SQL_SUCCESS;
+        }
+        auto copy_len = static_cast<size_t>(buffer_length - 1);
+        auto actual_len = std::min(copy_len, source.size());
+        if (actual_len > 0) {
+            std::memcpy(value, source.data(), actual_len);
+        }
+        static_cast<char*>(value)[actual_len] = '\0';
+        if (source.size() >= static_cast<size_t>(buffer_length)) {
+            setError("01004", 0, "String data, right truncated");
+            return SQL_SUCCESS_WITH_INFO;
+        }
+        return SQL_SUCCESS;
+    };
+
     if (rec_number == 0) {
         switch (field_identifier) {
             case SQL_DESC_COUNT:
@@ -4592,6 +5833,28 @@ SQLRETURN OdbcDescriptor::getField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
                 if (value) *static_cast<SQLSMALLINT*>(value) = alloc_type_;
                 if (string_length) *string_length = sizeof(SQLSMALLINT);
                 break;
+            case SQL_DESC_ARRAY_SIZE:
+                if (value) *static_cast<SQLULEN*>(value) = array_size_;
+                if (string_length) *string_length = sizeof(SQLULEN);
+                break;
+            case SQL_DESC_ARRAY_STATUS_PTR:
+                if (value) *static_cast<SQLULEN*>(value) =
+                    reinterpret_cast<SQLULEN>(array_status_ptr_);
+                if (string_length) *string_length = sizeof(SQLPOINTER);
+                break;
+            case SQL_DESC_BIND_OFFSET_PTR:
+                if (value) *static_cast<SQLLEN*>(value) = bind_offset_ptr_ ? *bind_offset_ptr_ : 0;
+                if (string_length) *string_length = sizeof(SQLLEN);
+                break;
+            case SQL_DESC_BIND_TYPE:
+                if (value) *static_cast<SQLULEN*>(value) = bind_type_;
+                if (string_length) *string_length = sizeof(SQLULEN);
+                break;
+            case SQL_DESC_ROWS_PROCESSED_PTR:
+                if (value) *static_cast<SQLULEN*>(value) =
+                    reinterpret_cast<SQLULEN>(rows_processed_ptr_);
+                if (string_length) *string_length = sizeof(SQLPOINTER);
+                break;
             default:
                 setError("HY091", 0, "Invalid descriptor field identifier");
                 return SQL_ERROR;
@@ -4599,13 +5862,13 @@ SQLRETURN OdbcDescriptor::getField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
         return SQL_SUCCESS;
     }
 
-    if (static_cast<size_t>(rec_number) > records_.size()) {
+    if (rec_number < 1 || rec_number > count_ ||
+        static_cast<size_t>(rec_number) > records_.size()) {
         setError("07009", 0, "Invalid descriptor index");
         return SQL_ERROR;
     }
 
     const auto& rec = records_[rec_number - 1];
-    (void)buffer_length;
 
     switch (field_identifier) {
         case SQL_DESC_TYPE:
@@ -4628,6 +5891,100 @@ SQLRETURN OdbcDescriptor::getField(SQLSMALLINT rec_number, SQLSMALLINT field_ide
             if (value) *static_cast<SQLSMALLINT*>(value) = rec.scale;
             if (string_length) *string_length = sizeof(SQLSMALLINT);
             break;
+        case SQL_DESC_OCTET_LENGTH:
+            if (value) *static_cast<SQLLEN*>(value) = rec.octet_length;
+            if (string_length) *string_length = sizeof(SQLLEN);
+            break;
+        case SQL_DESC_UNSIGNED:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.unsigned_;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_FIXED_PREC_SCALE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.fixed_prec_scale;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_AUTO_UNIQUE_VALUE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.auto_unique_value;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_CASE_SENSITIVE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.case_sensitive;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_SEARCHABLE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.searchable;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_UPDATABLE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.searchable;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_DISPLAY_SIZE:
+            if (value) *static_cast<SQLLEN*>(value) = rec.display_size;
+            if (string_length) *string_length = sizeof(SQLLEN);
+            break;
+        case SQL_DESC_NUM_PREC_RADIX:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.num_prec_radix;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_DATETIME_INTERVAL_CODE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.datetime_interval_code;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_DATETIME_INTERVAL_PRECISION:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.datetime_interval_precision;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_MAXIMUM_SCALE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.maximum_scale;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_MINIMUM_SCALE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.minimum_scale;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_PARAMETER_TYPE:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.concise_type;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
+        case SQL_DESC_NAME:
+            return copyString(rec.name);
+        case SQL_DESC_LABEL:
+            return copyString(rec.label);
+        case SQL_DESC_TYPE_NAME:
+            return copyString(rec.type_name);
+        case SQL_DESC_TABLE_NAME:
+            return copyString(rec.table_name);
+        case SQL_DESC_SCHEMA_NAME:
+            return copyString(rec.schema_name);
+        case SQL_DESC_CATALOG_NAME:
+            return copyString(rec.catalog_name);
+        case SQL_DESC_BASE_COLUMN_NAME:
+            return copyString(rec.base_column_name);
+        case SQL_DESC_BASE_TABLE_NAME:
+            return copyString(rec.base_table_name);
+        case SQL_DESC_LITERAL_PREFIX:
+            return copyString(rec.literal_prefix);
+        case SQL_DESC_LITERAL_SUFFIX:
+            return copyString(rec.literal_suffix);
+        case SQL_DESC_LOCAL_TYPE_NAME:
+            return copyString(rec.local_type_name);
+        case SQL_DESC_DATA_PTR:
+            if (value) *static_cast<SQLPOINTER*>(value) = rec.data_ptr;
+            if (string_length) *string_length = sizeof(SQLPOINTER);
+            break;
+        case SQL_DESC_INDICATOR_PTR:
+            if (value) *static_cast<SQLLEN*>(value) = rec.indicator_ptr ? *rec.indicator_ptr : 0;
+            if (string_length) *string_length = sizeof(SQLLEN);
+            break;
+        case SQL_DESC_OCTET_LENGTH_PTR:
+            if (value) *static_cast<SQLLEN*>(value) = rec.octet_length_ptr ? *rec.octet_length_ptr : 0;
+            if (string_length) *string_length = sizeof(SQLLEN);
+            break;
+        case SQL_DESC_UNNAMED:
+            if (value) *static_cast<SQLSMALLINT*>(value) = rec.unnamed;
+            if (string_length) *string_length = sizeof(SQLSMALLINT);
+            break;
         case SQL_DESC_NULLABLE:
             if (value) *static_cast<SQLSMALLINT*>(value) = rec.nullable;
             if (string_length) *string_length = sizeof(SQLSMALLINT);
@@ -4645,29 +6002,30 @@ SQLRETURN OdbcDescriptor::setRec(SQLSMALLINT rec_number, SQLSMALLINT type, SQLSM
                                   SQLPOINTER data, SQLLEN* string_length, SQLLEN* indicator) {
     clearDiagnostics();
 
-    if (rec_number < 0) {
+    if (rec_number < 1) {
         setError("07009", 0, "Invalid descriptor index");
         return SQL_ERROR;
     }
 
-    while (records_.size() <= static_cast<size_t>(rec_number)) {
+    auto rec_index = static_cast<size_t>(rec_number - 1);
+    while (records_.size() <= rec_index) {
         records_.emplace_back();
     }
+    if (rec_number > count_) {
+        count_ = rec_number;
+    }
 
-    auto& rec = records_[rec_number];
+    auto& rec = records_[rec_index];
     rec.type = type;
     rec.concise_type = type;
     rec.datetime_interval_code = sub_type;
     rec.length = length;
+    rec.octet_length = length;
     rec.precision = precision;
     rec.scale = scale;
     rec.data_ptr = data;
     rec.octet_length_ptr = string_length;
     rec.indicator_ptr = indicator;
-
-    if (rec_number >= count_) {
-        count_ = rec_number + 1;
-    }
 
     return SQL_SUCCESS;
 }
@@ -4678,7 +6036,8 @@ SQLRETURN OdbcDescriptor::getRec(SQLSMALLINT rec_number, SQLCHAR* name, SQLSMALL
                                   SQLSMALLINT* scale, SQLSMALLINT* nullable) {
     clearDiagnostics();
 
-    if (rec_number < 1 || static_cast<size_t>(rec_number) > records_.size()) {
+    if (rec_number < 1 || rec_number > count_ ||
+        static_cast<size_t>(rec_number) > records_.size()) {
         setError("07009", 0, "Invalid descriptor index");
         return SQL_ERROR;
     }
@@ -4720,6 +6079,11 @@ SQLRETURN OdbcDescriptor::copyDesc(OdbcDescriptor* target) {
 
     target->count_ = count_;
     target->array_size_ = array_size_;
+    target->alloc_type_ = alloc_type_;
+    target->array_status_ptr_ = array_status_ptr_;
+    target->bind_offset_ptr_ = bind_offset_ptr_;
+    target->bind_type_ = bind_type_;
+    target->rows_processed_ptr_ = rows_processed_ptr_;
     target->records_ = records_;
 
     return SQL_SUCCESS;

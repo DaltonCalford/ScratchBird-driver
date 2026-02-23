@@ -70,6 +70,36 @@ public:
             };
             return SQL_SUCCESS;
         }
+        if (sql == "SELECT routine_schema, routine_name, routine_type, data_type "
+                   "FROM information_schema.routines "
+                   "ORDER BY routine_schema, routine_name") {
+            results = {
+                {"public", "fn_total", "FUNCTION", "BIGINT"},
+                {"analytics", "sp_cleanup", "PROCEDURE", "VOID"}
+            };
+            return SQL_SUCCESS;
+        }
+        if (sql == "SELECT routine_schema, routine_name, parameter_mode, parameter_name, data_type "
+                   "FROM information_schema.parameters "
+                   "ORDER BY routine_schema, routine_name, ordinal_position") {
+            results = {
+                {"public", "fn_total", "IN", "a", "INTEGER"},
+                {"public", "fn_total", "IN", "b", "INTEGER"},
+                {"analytics", "sp_cleanup", "OUT", "status", "VARCHAR"},
+            };
+            return SQL_SUCCESS;
+        }
+        if (sql == "SELECT routine_schema, routine_name, ordinal_position, parameter_mode, "
+                   "parameter_name, data_type, character_maximum_length, numeric_precision, numeric_scale "
+                   "FROM information_schema.parameters "
+                   "ORDER BY routine_schema, routine_name, ordinal_position") {
+            results = {
+                {"public", "fn_total", "1", "IN", "a", "INTEGER", "0", "0", "0"},
+                {"public", "fn_total", "2", "IN", "b", "INTEGER", "0", "0", "0"},
+                {"analytics", "sp_cleanup", "1", "OUT", "status", "VARCHAR", "24", "0", "0"},
+            };
+            return SQL_SUCCESS;
+        }
 
         return SQL_ERROR;
     }
@@ -157,6 +187,41 @@ TEST_F(OdbcCatalogTest, ColumnsParseTypesAndPrimaryKeys) {
     EXPECT_EQ(stmt_.rows_[0][2], "users");
     EXPECT_EQ(stmt_.rows_[0][3], "id");
     EXPECT_EQ(stmt_.rows_[0][5], "PRIMARY");
+}
+
+TEST_F(OdbcCatalogTest, ProceduresExposeInputOutputAndResultCounts) {
+    SQLRETURN rc = stmt_.procedures(nullptr, 0, toSqlChar("public"), SQL_NTS,
+                                    toSqlChar("fn%"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+
+    const auto* row = findRow(stmt_.rows_, 2, "fn_total");
+    ASSERT_NE(row, nullptr);
+    EXPECT_EQ((*row)[1], "public");
+    EXPECT_EQ((*row)[3], "2");  // two IN parameters
+    EXPECT_EQ((*row)[4], "0");  // no OUT parameters
+    EXPECT_EQ((*row)[5], "1");  // function returns result set count in this implementation
+    EXPECT_EQ((*row)[7], "2");
+}
+
+TEST_F(OdbcCatalogTest, ProcedureColumnsExposeFunctionAndProcedurePaths) {
+    SQLRETURN rc = stmt_.procedureColumns(nullptr, 0, toSqlChar("public"), SQL_NTS,
+                                          toSqlChar("fn_total"), SQL_NTS,
+                                          nullptr, 0);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 3u);  // two inputs + synthetic return value row
+    const auto* return_row = findRow(stmt_.rows_, 3, "RETURN_VALUE");
+    ASSERT_NE(return_row, nullptr);
+    EXPECT_EQ((*return_row)[4], std::to_string(5));
+    EXPECT_EQ((*return_row)[17], "0");
+
+    rc = stmt_.procedureColumns(nullptr, 0, toSqlChar("analytics"), SQL_NTS,
+                                toSqlChar("sp_cleanup"), SQL_NTS,
+                                toSqlChar("status"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 1u);
+    EXPECT_EQ(stmt_.rows_[0][3], "status");
+    EXPECT_EQ(stmt_.rows_[0][4], std::to_string(SQL_PARAM_OUTPUT));
 }
 
 TEST_F(OdbcCatalogTest, StatisticsAndSpecialColumnsUsePrimaryKey) {

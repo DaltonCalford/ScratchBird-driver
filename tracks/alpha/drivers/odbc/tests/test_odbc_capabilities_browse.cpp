@@ -1,0 +1,201 @@
+#include <gtest/gtest.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
+
+#define private public
+#include "scratchbird/odbc/metadata_helpers.h"
+#include "scratchbird/odbc/odbc_handles.h"
+#include "scratchbird/odbc/odbc_client_bridge.h"
+#undef private
+
+namespace {
+
+class FakeBrowseClientBridge : public scratchbird::odbc::OdbcClientBridge {
+public:
+    SQLRETURN executeSQL(const std::string& sql,
+                         std::vector<std::vector<std::string>>& results,
+                         std::vector<scratchbird::odbc::ColumnMetadata>& columns,
+                         SQLLEN& rows_affected) override {
+        (void)columns;
+        results.clear();
+        rows_affected = 0;
+
+        if (sql == "SHOW DATABASES") {
+            results = {{"db_main"}, {"db_reporting"}};
+            return SQL_SUCCESS;
+        }
+        if (sql == scratchbird::odbc::metadata::kSchemasQuery) {
+            results = {{"public"}, {"analytics"}};
+            return SQL_SUCCESS;
+        }
+        if (sql == scratchbird::odbc::metadata::kTablesQuery) {
+            results = {
+                {"users", "public", "TABLE"},
+                {"orders", "public", "TABLE"},
+                {"events", "analytics", "TABLE"}
+            };
+            return SQL_SUCCESS;
+        }
+        if (sql == scratchbird::odbc::metadata::kColumnsQuery) {
+            results = {
+                {"id", "users", "public", "INTEGER", "1", "NO", "PRI"},
+                {"name", "users", "public", "VARCHAR", "2", "YES", ""},
+                {"created_at", "users", "public", "TIMESTAMP", "3", "YES", ""},
+                {"event_id", "events", "analytics", "INTEGER", "1", "NO", "PRI"},
+                {"payload", "events", "analytics", "JSON", "2", "YES", ""}
+            };
+            return SQL_SUCCESS;
+        }
+        return SQL_ERROR;
+    }
+};
+
+class ScopedOdbcIni {
+public:
+    explicit ScopedOdbcIni(const std::string& path) : path_(path) {
+        const char* existing = std::getenv("ODBCINI");
+        if (existing) {
+            had_existing_ = true;
+            old_value_ = existing;
+        }
+        setenv("ODBCINI", path_.c_str(), 1);
+    }
+
+    ~ScopedOdbcIni() {
+        if (had_existing_) {
+            setenv("ODBCINI", old_value_.c_str(), 1);
+        } else {
+            unsetenv("ODBCINI");
+        }
+    }
+
+private:
+    std::string path_;
+    bool had_existing_{false};
+    std::string old_value_;
+};
+
+class OdbcCapabilityBrowseTest : public ::testing::Test {
+protected:
+    scratchbird::odbc::OdbcEnvironment env_{};
+    scratchbird::odbc::OdbcConnection conn_{&env_};
+
+    void SetUp() override {
+        conn_.connected_ = true;
+        conn_.current_database_ = "db_main";
+        conn_.current_schema_ = "public";
+        conn_.params_.dsn = "MainDSN";
+        conn_.client_bridge_ = std::make_unique<FakeBrowseClientBridge>();
+    }
+
+    static std::string writeIniFile() {
+        char path_template[] = "/tmp/sb_odbc_ini_XXXXXX";
+        int fd = mkstemp(path_template);
+        if (fd < 0) {
+            return {};
+        }
+        std::ofstream out(path_template);
+        out << "[odbc data sources]\n";
+        out << "AlphaDSN=ScratchBird\n";
+        out << "BetaDSN=ScratchBird\n";
+        out << "\n[AlphaDSN]\nDriver=ScratchBird\n";
+        out.close();
+        std::close(fd);
+        return path_template;
+    }
+};
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectListsAvailableDsnsWhenNotYetConnected) {
+    auto ini_path = writeIniFile();
+    ASSERT_FALSE(ini_path.empty());
+    ScopedOdbcIni scoped(ini_path);
+
+    SQLCHAR out_conn[256] = {};
+    SQLSMALLINT out_len = 0;
+
+    auto rc = conn_.browseConnect(nullptr, SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    EXPECT_GT(out_len, 0);
+    std::string out = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(out.find("DSN=AlphaDSN"), std::string::npos);
+    EXPECT_NE(out.find("DSN=BetaDSN"), std::string::npos);
+    EXPECT_TRUE(std::remove(ini_path.c_str()) == 0);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectTraversesCatalogSchemaTableColumns) {
+    std::string input;
+    SQLCHAR out_conn[256] = {};
+    SQLSMALLINT out_len = 0;
+    SQLRETURN rc;
+
+    input = "DSN=MainDSN;CATALOG=db_main;";
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string schema_level = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(schema_level.find("SCHEMA=public"), std::string::npos);
+    EXPECT_NE(schema_level.find("SCHEMA=analytics"), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=public;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string table_level = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(table_level.find("TABLE=users"), std::string::npos);
+    EXPECT_NE(table_level.find("TABLE=orders"), std::string::npos);
+    EXPECT_NE(table_level.find("TABLE=events"), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=public;TABLE=users;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string column_level = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(column_level.find("COLUMN=id"), std::string::npos);
+    EXPECT_NE(column_level.find("COLUMN=name"), std::string::npos);
+    EXPECT_NE(column_level.find("COLUMN=created_at"), std::string::npos);
+    EXPECT_EQ(column_level.find("COLUMN=payload"), std::string::npos);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
+    char value[8] = {};
+    SQLSMALLINT len = 0;
+    EXPECT_EQ(conn_.getInfo(SQL_MULT_RESULT_SETS, value, sizeof(value), &len), SQL_SUCCESS);
+    EXPECT_STREQ(value, "N");
+    EXPECT_EQ(conn_.getInfo(SQL_MULTIPLE_ACTIVE_TXN, value, sizeof(value), &len), SQL_SUCCESS);
+    EXPECT_STREQ(value, "N");
+
+    SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    EXPECT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
+    auto isAdvertised = [](const SQLUSMALLINT* map, SQLUSMALLINT id) {
+        if (id >= 250 * 16) {
+            return false;
+        }
+        std::size_t word = id >> 4;
+        std::size_t bit = id & 0x0F;
+        return ((map[word] >> bit) & 1u) != 0;
+    };
+
+    EXPECT_FALSE(isAdvertised(function_map, SQLGetCursorName));
+    EXPECT_FALSE(isAdvertised(function_map, SQLNativeSql));
+    EXPECT_FALSE(isAdvertised(function_map, SQLParamData));
+    EXPECT_FALSE(isAdvertised(function_map, SQLPutData));
+    EXPECT_FALSE(isAdvertised(function_map, SQLSetCursorName));
+    EXPECT_TRUE(isAdvertised(function_map, SQLConnect));
+    EXPECT_TRUE(isAdvertised(function_map, SQLTables));
+
+    SQLUSMALLINT unsupported = 0;
+    EXPECT_EQ(conn_.getFunctions(SQLGetCursorName, &unsupported), SQL_SUCCESS);
+    EXPECT_EQ(unsupported, 0);
+    EXPECT_EQ(conn_.getFunctions(SQLGetFunctions, &unsupported), SQL_SUCCESS);
+    EXPECT_EQ(unsupported, 1);
+}
+
+}  // namespace

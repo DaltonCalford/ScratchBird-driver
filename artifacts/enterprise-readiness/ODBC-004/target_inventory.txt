@@ -1,0 +1,2 @@
+40:... scratchbird_client
+42:... scratchbird_odbc
