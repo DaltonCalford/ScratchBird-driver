@@ -381,6 +381,19 @@ jobs:
           cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
           cmake --build build-odbc --config Release
 
+      - name: ODBC enterprise readiness gate (in-tree)
+        if: matrix.language == 'odbc' && runner.os == 'Linux'
+        run: ./artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh
+
+      - name: Upload ODBC enterprise gate log
+        if: matrix.language == 'odbc' && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: odbc-enterprise-gate-${{ github.run_id }}-${{ matrix.language }}-${{ matrix.os }}
+          path: artifacts/enterprise-readiness/ODBC-009/latest_verification.log
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: CLI build (Linux)
         if: matrix.language == 'cli' && runner.os == 'Linux'
         run: |

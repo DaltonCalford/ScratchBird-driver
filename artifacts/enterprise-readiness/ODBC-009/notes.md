@@ -14,12 +14,12 @@ Operationalize the enterprise ODBC release gate for BI and conformance readiness
 - `artifacts/enterprise-readiness/ODBC-009/gates.md`
 - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh`
 - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.log`
-- `artifacts/enterprise-readiness/ODBC-009/verification_20260223T023045Z.log`
+- `artifacts/enterprise-readiness/ODBC-009/verification_20260223T023717Z.log`
 - `artifacts/enterprise-readiness/ODBC-009/latest_verification.log` (41 tests)
 
 Latest verification run:
 
-- `2026-02-23T02:30:45Z` stored at `artifacts/enterprise-readiness/ODBC-009/verification_20260223T023045Z.log`
+- `2026-02-23T02:37:17Z` stored at `artifacts/enterprise-readiness/ODBC-009/verification_20260223T023717Z.log`
 
 ## Blockers
 - BI native/connector-side runbook invocation is currently a placeholder until a hosted BI fixture is integrated in CI.
@@ -28,4 +28,5 @@ Latest verification run:
   - documented gate checklist and run artifacts
 
 ## Next Step
-- Add CI job wiring for this same gate script and route BI smoke placeholders to an approved harness.
+- CI job wiring is now in place on the Linux ODBC workflow path.
+- Add memory/perf trend baselines and route BI smoke placeholders to an approved harness.

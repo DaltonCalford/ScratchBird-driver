@@ -211,7 +211,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Define strict pass criteria and artifacts for each required category.
   - [x] Define fail criteria and rollback conditions.
   - [x] Add release approval checklist requiring closed gate logs.
-  - [ ] Create CI workflow integration for the ODBC gate checks.
+  - [x] Create CI workflow integration for the ODBC gate checks.
   - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (placeholder until external fixture is available).
   - [ ] Add memory and performance trend checks with preserved baselines.
   - [ ] Replace placeholder with hosted BI fixture in CI and enable repeatable runbook assertions.
