@@ -90,7 +90,7 @@ ETA: 2 weeks
 ### ODBC-009
 Title: Define and enforce ODBC enterprise release gate  
 Priority: P0  
-Status: Not yet defined  
+Status: In progress (release gate defined; execution evidence pending)  
 Gap: No explicit release criteria for enterprise readiness  
 Acceptance Test: End-to-end BI runbook (`Tableau`/`Power BI`/`Excel`/connectivity tools) passes on CI, plus ODBC conformance suite and memory-leak/perf sanity checks  
 Owner: Platform Lead + ODBC Team  
