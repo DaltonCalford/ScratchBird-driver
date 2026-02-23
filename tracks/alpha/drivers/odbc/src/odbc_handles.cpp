@@ -2443,58 +2443,81 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
 
     // All ODBC 3.x core functions are supported
     static const SQLUSMALLINT supported_functions[] = {
-        1,   // SQLAllocHandle
-        2,   // SQLBindCol
-        3,   // SQLBindParameter
-        7,   // SQLCloseCursor
-        8,   // SQLColAttribute
-        9,   // SQLColumnPrivileges
-        10,  // SQLColumns
-        11,  // SQLConnect
-        12,  // SQLCopyDesc
-        13,  // SQLDescribeCol
-        14,  // SQLDescribeParam
-        15,  // SQLDisconnect
-        16,  // SQLDriverConnect
-        17,  // SQLEndTran
-        18,  // SQLExecDirect
-        19,  // SQLExecute
-        20,  // SQLFetch
-        21,  // SQLFetchScroll
-        22,  // SQLForeignKeys
-        23,  // SQLFreeHandle
-        24,  // SQLFreeStmt
-        25,  // SQLGetConnectAttr
-        27,  // SQLGetData
-        28,  // SQLGetDescField
-        29,  // SQLGetDescRec
-        30,  // SQLGetDiagField
-        31,  // SQLGetDiagRec
-        32,  // SQLGetEnvAttr
-        33,  // SQLGetFunctions
-        34,  // SQLGetInfo
-        35,  // SQLGetStmtAttr
-        36,  // SQLGetTypeInfo
-        37,  // SQLMoreResults
-        39,  // SQLNumParams
-        40,  // SQLNumResultCols
-        42,  // SQLPrepare
-        43,  // SQLPrimaryKeys
-        44,  // SQLProcedureColumns
-        45,  // SQLProcedures
-        48,  // SQLParamData
-        49,  // SQLPutData
-        68,  // SQLSetPos
-        47,  // SQLRowCount
-        48,  // SQLSetConnectAttr
-        50,  // SQLSetDescField
-        51,  // SQLSetDescRec
-        52,  // SQLSetEnvAttr
-        54,  // SQLSetStmtAttr
-        55,  // SQLSpecialColumns
-        56,  // SQLStatistics
-        57,  // SQLTablePrivileges
-        58,  // SQLTables
+        // Allocation and handle management
+        SQL_API_SQLALLOCCONNECT,
+        SQL_API_SQLALLOCENV,
+        SQL_API_SQLALLOCSTMT,
+        SQL_API_SQLALLOCHANDLE,
+        SQL_API_SQLFREECONNECT,
+        SQL_API_SQLFREEENV,
+        SQL_API_SQLFREESTMT,
+        SQL_API_SQLFREEHANDLE,
+        SQL_API_SQLENDTRAN,
+
+        // Connection and transaction management
+        SQL_API_SQLCONNECT,
+        SQL_API_SQLDRIVERCONNECT,
+        SQL_API_SQLBROWSECONNECT,
+        SQL_API_SQLDISCONNECT,
+        SQL_API_SQLSETCONNECTATTR,
+        SQL_API_SQLGETCONNECTATTR,
+        SQL_API_SQLSETENVATTR,
+        SQL_API_SQLGETENVATTR,
+
+        // Statement management and execution
+        SQL_API_SQLSETSTMTATTR,
+        SQL_API_SQLGETSTMTATTR,
+        SQL_API_SQLPREPARE,
+        SQL_API_SQLEXECUTE,
+        SQL_API_SQLEXECDIRECT,
+        SQL_API_SQLCANCEL,
+        SQL_API_SQLCLOSECURSOR,
+        SQL_API_SQLBULKOPERATIONS,
+        SQL_API_SQLSETPOS,
+        SQL_API_SQLFETCH,
+        SQL_API_SQLFETCHSCROLL,
+        SQL_API_SQLMORERESULTS,
+
+        // Parameter and column binding
+        SQL_API_SQLBINDCOL,
+        SQL_API_SQLBINDPARAM,
+        SQL_API_SQLBINDPARAMETER,
+        SQL_API_SQLNUMPARAMS,
+        SQL_API_SQLDESCRIBEPARAM,
+        SQL_API_SQLDESCRIBECOL,
+        SQL_API_SQLNUMRESULTCOLS,
+        SQL_API_SQLCOLATTRIBUTE,
+        SQL_API_SQLSETDESCREC,
+        SQL_API_SQLGETDESCREC,
+        SQL_API_SQLSETDESCFIELD,
+        SQL_API_SQLGETDESCFIELD,
+        SQL_API_SQLCOPYDESC,
+
+        // Data retrieval and LOB streaming
+        SQL_API_SQLROWCOUNT,
+        SQL_API_SQLGETDATA,
+        SQL_API_SQLPARAMDATA,
+        SQL_API_SQLPUTDATA,
+        SQL_API_SQLGETDIAGFIELD,
+        SQL_API_SQLGETDIAGREC,
+        SQL_API_SQLERROR,
+
+        // Catalog and metadata helpers
+        SQL_API_SQLTABLES,
+        SQL_API_SQLCOLUMNS,
+        SQL_API_SQLPRIMARYKEYS,
+        SQL_API_SQLFOREIGNKEYS,
+        SQL_API_SQLSTATISTICS,
+        SQL_API_SQLSPECIALCOLUMNS,
+        SQL_API_SQLPROCEDURES,
+        SQL_API_SQLPROCEDURECOLUMNS,
+        SQL_API_SQLTABLEPRIVILEGES,
+        SQL_API_SQLCOLUMNPRIVILEGES,
+
+        // Capability/introspection
+        SQL_API_SQLGETFUNCTIONS,
+        SQL_API_SQLGETINFO,
+        SQL_API_SQLGETTYPEINFO
     };
 
     if (function_id == 0) {
