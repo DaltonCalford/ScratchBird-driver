@@ -44,11 +44,12 @@ Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryC
 - Command: `bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
 - Result: blocked in non-strict mode due missing runtime/cancel vars; summary file
   `latest_contract_summary.json` and `latest_verification.log` capture the active blocker state and reproduce the run conditions.
+- The script now enforces both endpoint URLs and cancel-SQL statements before starting each runtime phase to avoid false-positive passes.
 
 ## Local Verification (in-tree only)
 - `cd tracks/alpha/drivers/jdbc && ./gradlew test --tests com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest`
   - Result: pass (tests skipped when env vars are missing)
 - `cd tracks/alpha/drivers/jdbc && ./gradlew test`
   - Result: pass
-- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests"`
+- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest"`
   - Result: pass (5 scenarios, environment-gated by `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL`; currently skipped locally when envs missing)
