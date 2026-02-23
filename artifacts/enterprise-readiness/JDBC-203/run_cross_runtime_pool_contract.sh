@@ -57,11 +57,11 @@ write_summary() {
   local freeze_reasons_json="[]"
   if (( ${#release_freeze_reasons[@]} > 0 )); then
     freeze_reasons_json='['
-    for reason in "${release_freeze_reasons[@]}"; do
+    for freeze_reason in "${release_freeze_reasons[@]}"; do
       if [[ "${freeze_reasons_json}" != "[" ]]; then
         freeze_reasons_json+=","
       fi
-      freeze_reasons_json+="\"${reason}\""
+      freeze_reasons_json+="\"${freeze_reason}\""
     done
     freeze_reasons_json+="]"
   fi
