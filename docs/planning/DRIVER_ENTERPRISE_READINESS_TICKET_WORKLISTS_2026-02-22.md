@@ -355,7 +355,7 @@ subtasks, artifact paths, and verification gates.
 - [x] Define cross-runtime pooling semantics and expected failures/retries.
 - [x] Implement shared test harness with deterministic expectations.
 - [x] Add CI gate with pass/fail artifacts and baseline comparison (strict-mode path implemented; baseline files now captured as JSON summary + logs).
-- [ ] Add release freeze rules for contract failures.
+- [x] Add release freeze rules for contract failures.
 - **Artifacts path:** `artifacts/enterprise-readiness/JDBC-203`
 - **Latest evidence:** `artifacts/enterprise-readiness/JDBC-203/notes.md`
 - **Blocking conditions:** Runtime-specific exception normalization differences and absence of both runtimes in one CI run.
