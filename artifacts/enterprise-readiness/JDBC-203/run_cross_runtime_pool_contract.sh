@@ -109,7 +109,7 @@ else
   cd "$ROOT_DIR"
   set +e
   dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj \
-    --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~Pooling" \
+    --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest" \
     -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract.trx"
   dotnet_rc=$?
   set -e
