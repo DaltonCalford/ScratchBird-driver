@@ -50,17 +50,17 @@ ETA: 2–4 weeks
 ### ODBC-005
 Title: Expand cursor behavior support and positioned operations  
 Priority: P0  
-Status: Partial  
+Status: In progress (verification blocked by missing ODBC in-tree test harness and GTest dependency)  
 Gap: Scroll and positioned semantics are limited  
 Acceptance Test: Scrollable and forward-only cursor tests plus positioned update/delete pass under concurrent load  
 Owner: ODBC Team  
 Risk: High  
-ETA: 2–4 weeks
+ETA: 2–4 weeks  
 
 ### ODBC-006
 Title: Implement bulk operation APIs (`SQLBulkOperations` and array binding)  
 Priority: P1  
-Status: Not implemented  
+Status: In progress (code complete; verification blocked by missing GoogleTest in-tree dependency)  
 Gap: Bulk DML/array handling not available  
 Acceptance Test: Bulk insert/update performance and correctness suite (10k+ rows, multi-type columns)  
 Owner: ODBC Team  

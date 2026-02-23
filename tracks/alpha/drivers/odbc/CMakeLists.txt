@@ -38,6 +38,8 @@ set_target_properties(scratchbird_odbc PROPERTIES
     C_STANDARD_REQUIRED ON
 )
 
+include(CTest)
+
 # Include directories
 target_include_directories(scratchbird_odbc
     PUBLIC
@@ -181,6 +183,29 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/scratchbird_odbc-config-version.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scratchbird_odbc
 )
+
+if (BUILD_TESTING)
+    find_package(GTest)
+    if (GTest_FOUND)
+        add_executable(scratchbird_odbc_tests
+            tests/test_odbc_cursor_operations.cpp
+            tests/test_odbc_bulk_operations.cpp
+            tests/test_odbc_capabilities_browse.cpp
+            tests/test_odbc_catalog_and_types.cpp
+        )
+
+        target_link_libraries(scratchbird_odbc_tests
+            PRIVATE
+                scratchbird_odbc
+                GTest::gtest
+                GTest::gtest_main
+        )
+
+        add_test(NAME scratchbird_odbc_tests COMMAND scratchbird_odbc_tests)
+    else()
+        message(STATUS "Skipping ODBC tests: GoogleTest not found")
+    endif()
+endif()
 
 # Print summary
 message(STATUS "")

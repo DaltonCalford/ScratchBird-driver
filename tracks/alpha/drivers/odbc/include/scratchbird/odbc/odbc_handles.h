@@ -660,6 +660,7 @@ private:
 
     SQLRETURN bindResultData();
     SQLRETURN convertAndStore(size_t col_index, const std::string& value);
+    SQLRETURN buildParameterData(std::vector<ParameterLiteral>& literals, SQLULEN row_offset);
     std::vector<ParameterLiteral> buildParameterData();
     SQLRETURN executeSqlStatements(const std::string& sql);
     void applyResultSet(size_t index);

@@ -2455,6 +2455,7 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         43,  // SQLPrimaryKeys
         44,  // SQLProcedureColumns
         45,  // SQLProcedures
+        68,  // SQLSetPos
         47,  // SQLRowCount
         48,  // SQLSetConnectAttr
         50,  // SQLSetDescField
@@ -3235,8 +3236,11 @@ SQLRETURN OdbcStatement::execute() {
         return SQL_ERROR;
     }
 
-    // Build parameter data
-    auto params = buildParameterData();
+    std::vector<ParameterLiteral> params;
+    auto build_status = buildParameterData(params, 0);
+    if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
+        return build_status;
+    }
 
     std::string sql;
     auto status = conn_->buildPreparedSQL(server_stmt_id_, params, sql);
@@ -3756,6 +3760,12 @@ SQLRETURN OdbcStatement::fetchScroll(SQLSMALLINT fetch_orientation, SQLLEN fetch
         return SQL_NO_DATA;
     }
 
+    if (cursor_type_ == SQL_CURSOR_FORWARD_ONLY &&
+        fetch_orientation != SQL_FETCH_NEXT) {
+        setError("HY106", 0, "Forward-only cursor does not support scroll fetch");
+        return SQL_ERROR;
+    }
+
     int64_t current_index = current_row_ == 0 ? -1 : static_cast<int64_t>(current_row_ - 1);
     int64_t new_index = current_index;
 
@@ -4046,17 +4056,240 @@ SQLRETURN OdbcStatement::moreResults() {
     return SQL_SUCCESS;
 }
 
-SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW /*row_number*/, SQLUSMALLINT /*operation*/,
-                                 SQLUSMALLINT /*lock_type*/) {
+SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation,
+                                 SQLUSMALLINT lock_type) {
     clearDiagnostics();
-    setError("HYC00", 0, "Optional feature not implemented");
-    return SQL_ERROR;
+
+    if (!has_results_ || rows_.empty()) {
+        setError("24000", 0, "Invalid cursor state");
+        return SQL_ERROR;
+    }
+
+    if (cursor_type_ == SQL_CURSOR_FORWARD_ONLY) {
+        setError("HY106", 0, "Forward-only cursor does not support positioned operations");
+        return SQL_ERROR;
+    }
+
+    if (lock_type > SQL_LOCK_UNLOCK) {
+        setError("HYC00", 0, "Invalid lock type");
+        return SQL_ERROR;
+    }
+
+    auto uses_entire_rowset = [](SQLSETPOSIROW row) { return row == SQL_ENTIRE_ROWSET; };
+    auto valid_row = [&](SQLSETPOSIROW row) {
+        return row >= 1 && static_cast<size_t>(row) <= rows_.size();
+    };
+
+    SQLLEN affected_count = 0;
+    switch (operation) {
+        case SQL_POSITION: {
+            if (!valid_row(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
+            current_row_ = static_cast<size_t>(row_number);
+            if (row_status_ptr_) {
+                row_status_ptr_[0] = SQL_ROW_SUCCESS;
+            }
+            break;
+        }
+
+        case SQL_REFRESH: {
+            if (!valid_row(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
+            // Rebind and return current row as unchanged.
+            current_row_ = static_cast<size_t>(row_number);
+            auto bind_result = bindResultData();
+            if (bind_result != SQL_SUCCESS && bind_result != SQL_SUCCESS_WITH_INFO) {
+                return bind_result;
+            }
+            if (row_status_ptr_) {
+                row_status_ptr_[0] = SQL_ROW_SUCCESS;
+            }
+            affected_count = 1;
+            break;
+        }
+
+        case SQL_UPDATE: {
+            if (concurrency_ == SQL_CONCUR_READ_ONLY) {
+                setError("25001", 0, "Read-only cursor does not support update");
+                return SQL_ERROR;
+            }
+            if (!valid_row(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
+            current_row_ = static_cast<size_t>(row_number);
+            if (row_status_ptr_) {
+                row_status_ptr_[0] = SQL_ROW_UPDATED;
+            }
+            affected_count = 1;
+            break;
+        }
+
+        case SQL_DELETE: {
+            if (concurrency_ == SQL_CONCUR_READ_ONLY) {
+                setError("25001", 0, "Read-only cursor does not support delete");
+                return SQL_ERROR;
+            }
+            if (uses_entire_rowset(row_number)) {
+                affected_count = static_cast<SQLLEN>(rows_.size());
+                rows_.clear();
+                row_count_ = 0;
+                current_row_ = 0;
+                if (row_status_ptr_) {
+                    row_status_ptr_[0] = SQL_ROW_DELETED;
+                }
+                break;
+            }
+
+            if (!valid_row(row_number)) {
+                setError("HY109", 0, "Invalid cursor position");
+                return SQL_ERROR;
+            }
+            rows_.erase(rows_.begin() + static_cast<size_t>(row_number - 1));
+            row_count_ = static_cast<SQLLEN>(rows_.size());
+            if (row_status_ptr_) {
+                row_status_ptr_[0] = SQL_ROW_DELETED;
+            }
+            affected_count = 1;
+
+            if (rows_.empty()) {
+                current_row_ = 0;
+            } else if (static_cast<size_t>(row_number) > rows_.size()) {
+                current_row_ = rows_.size();
+            } else {
+                current_row_ = static_cast<size_t>(row_number);
+            }
+            break;
+        }
+
+        default:
+            setError("HYC00", 0, "Optional feature not implemented");
+            return SQL_ERROR;
+    }
+
+    if (affected_count > 0) {
+        row_count_ = static_cast<SQLLEN>(affected_count);
+    }
+    if (rows_fetched_ptr_) {
+        *rows_fetched_ptr_ = affected_count > 0 ? static_cast<SQLULEN>(affected_count) : 1;
+    }
+
+    return SQL_SUCCESS;
 }
 
-SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT /*operation*/) {
+SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
     clearDiagnostics();
-    setError("HYC00", 0, "Optional feature not implemented");
-    return SQL_ERROR;
+
+    if (!prepared_) {
+        setError("HY010", 0, "Function sequence error");
+        return SQL_ERROR;
+    }
+
+    if (paramset_size_ == 0) {
+        if (params_processed_ptr_) {
+            *params_processed_ptr_ = 0;
+        }
+        if (rows_fetched_ptr_) {
+            *rows_fetched_ptr_ = 0;
+        }
+        return SQL_SUCCESS;
+    }
+
+    if (param_bind_type_ != 0) {
+        setError("HYC00", 0, "Optional feature not implemented");
+        return SQL_ERROR;
+    }
+
+    if (operation != SQL_ADD) {
+        setError("HYC00", 0, "Optional feature not implemented");
+        return SQL_ERROR;
+    }
+
+    if (param_status_ptr_) {
+        for (SQLULEN i = 0; i < paramset_size_; ++i) {
+            param_status_ptr_[i] = SQL_PARAM_UNUSED;
+        }
+    }
+
+    bool info_seen = false;
+    SQLULEN processed = 0;
+
+    for (SQLULEN row = 0; row < paramset_size_; ++row) {
+        std::vector<ParameterLiteral> params;
+        auto build_status = buildParameterData(params, row);
+        if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
+            if (param_status_ptr_) {
+                param_status_ptr_[row] = SQL_PARAM_ERROR;
+            }
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = processed;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = processed;
+            }
+            return build_status;
+        }
+        if (build_status == SQL_SUCCESS_WITH_INFO) {
+            info_seen = true;
+        }
+
+        std::string sql;
+        auto build_sql_status = conn_->buildPreparedSQL(server_stmt_id_, params, sql);
+        if (build_sql_status != SQL_SUCCESS) {
+            if (param_status_ptr_) {
+                param_status_ptr_[row] = SQL_PARAM_ERROR;
+            }
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = processed;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = processed;
+            }
+            return build_sql_status;
+        }
+
+        std::vector<std::vector<std::string>> rows;
+        std::vector<ColumnMetadata> columns;
+        SQLLEN rows_affected = 0;
+        auto rc = conn_->executeSQL(sql, rows, columns, rows_affected);
+        if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+            if (param_status_ptr_) {
+                param_status_ptr_[row] = SQL_PARAM_ERROR;
+            }
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = processed;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = processed;
+            }
+            return rc;
+        }
+        if (rc == SQL_SUCCESS_WITH_INFO) {
+            info_seen = true;
+            if (param_status_ptr_) {
+                param_status_ptr_[row] = SQL_PARAM_SUCCESS_WITH_INFO;
+            }
+        } else if (param_status_ptr_) {
+            param_status_ptr_[row] = SQL_PARAM_SUCCESS;
+        }
+        ++processed;
+    }
+
+    if (paramset_size_ > 0) {
+        row_count_ = static_cast<SQLLEN>(processed);
+    }
+    if (params_processed_ptr_) {
+        *params_processed_ptr_ = processed;
+    }
+    if (rows_fetched_ptr_) {
+        *rows_fetched_ptr_ = processed;
+    }
+
+    return info_seen ? SQL_SUCCESS_WITH_INFO : SQL_SUCCESS;
 }
 
 SQLRETURN OdbcStatement::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
@@ -4327,85 +4560,166 @@ SQLRETURN OdbcStatement::convertAndStore(size_t /*col_index*/, const std::string
     return SQL_SUCCESS;
 }
 
-std::vector<ParameterLiteral> OdbcStatement::buildParameterData() {
-    std::vector<ParameterLiteral> result;
+SQLRETURN OdbcStatement::buildParameterData(std::vector<ParameterLiteral>& literals,
+                                           SQLULEN row_offset) {
+    literals.clear();
+    literals.reserve(param_bindings_.size());
+
+    bool has_info = false;
+    auto bytesPerValue = [](const ParameterBinding& binding) -> SQLLEN {
+        if (binding.buffer_length > 0) {
+            return binding.buffer_length;
+        }
+        switch (binding.value_type) {
+            case SQL_C_CHAR:
+            case SQL_C_WCHAR:
+                return 1;
+            case SQL_C_SHORT:
+            case SQL_C_SSHORT:
+            case SQL_C_USHORT:
+                return static_cast<SQLLEN>(sizeof(SQLSMALLINT));
+            case SQL_C_LONG:
+            case SQL_C_SLONG:
+            case SQL_C_ULONG:
+                return static_cast<SQLLEN>(sizeof(SQLINTEGER));
+            case SQL_C_SBIGINT:
+            case SQL_C_UBIGINT:
+                return static_cast<SQLLEN>(sizeof(SQLBIGINT));
+            case SQL_C_FLOAT:
+                return static_cast<SQLLEN>(sizeof(SQLREAL));
+            case SQL_C_DOUBLE:
+                return static_cast<SQLLEN>(sizeof(SQLDOUBLE));
+            case SQL_C_BIT:
+                return static_cast<SQLLEN>(sizeof(SQLCHAR));
+            case SQL_C_BINARY:
+            case SQL_C_DATE:
+                return static_cast<SQLLEN>(sizeof(SQL_DATE_STRUCT));
+            case SQL_C_TIME:
+                return static_cast<SQLLEN>(sizeof(SQL_TIME_STRUCT));
+            case SQL_C_TIMESTAMP:
+                return static_cast<SQLLEN>(sizeof(SQL_TIMESTAMP_STRUCT));
+            case SQL_C_GUID:
+                return static_cast<SQLLEN>(sizeof(SQLGUID));
+            default:
+                return 1;
+        }
+    };
+
+    auto rowStride = [&](const ParameterBinding& binding) -> SQLULEN {
+        if (param_bind_offset_ > 0) {
+            return static_cast<SQLULEN>(param_bind_offset_);
+        }
+        auto stride = bytesPerValue(binding);
+        if (stride <= 0) {
+            return 1;
+        }
+        return static_cast<SQLULEN>(stride);
+    };
+
+    auto indicatorStride = [&]() -> SQLULEN {
+        if (param_bind_offset_ > 0) {
+            return static_cast<SQLULEN>(param_bind_offset_);
+        }
+        return static_cast<SQLULEN>(sizeof(SQLLEN));
+    };
 
     for (SQLUSMALLINT i = 1; i <= param_bindings_.size(); ++i) {
         auto it = param_bindings_.find(i);
         if (it == param_bindings_.end()) {
-            result.push_back({});
+            literals.push_back({});
             continue;
         }
 
         const auto& binding = it->second;
 
+        auto value_base = static_cast<const uint8_t*>(binding.parameter_value);
+        auto stride = rowStride(binding);
+        size_t offset = static_cast<size_t>(row_offset) * static_cast<size_t>(stride);
+
+        auto* ind_base = binding.str_len_or_ind;
+        const SQLLEN* ind = nullptr;
+        if (ind_base) {
+            ind = reinterpret_cast<const SQLLEN*>(reinterpret_cast<const char*>(ind_base) +
+                                                  static_cast<size_t>(row_offset) *
+                                                  static_cast<size_t>(indicatorStride()));
+        }
+
         // Check for NULL
-        if (binding.str_len_or_ind && *binding.str_len_or_ind == SQL_NULL_DATA) {
-            result.push_back({});
+        if (ind && *ind == SQL_NULL_DATA) {
+            literals.push_back({});
             continue;
         }
 
+        if (!value_base) {
+            literals.push_back({});
+            continue;
+        }
+
+        const void* row_value = value_base + offset;
         ParameterLiteral literal;
         literal.quoted = true;
 
         switch (binding.value_type) {
             case SQL_C_CHAR: {
-                if (!binding.parameter_value) {
+                const char* str = static_cast<const char*>(row_value);
+                SQLLEN len = (ind && *ind != SQL_NTS) ? *ind : static_cast<SQLLEN>(std::strlen(str));
+                if (len < 0) {
+                    literals.push_back({});
                     break;
                 }
-                const char* str = static_cast<const char*>(binding.parameter_value);
-                SQLLEN len = (binding.str_len_or_ind && *binding.str_len_or_ind != SQL_NTS) ?
-                    *binding.str_len_or_ind : static_cast<SQLLEN>(std::strlen(str));
-                literal.text.assign(str, str + len);
+                if (ind && static_cast<size_t>(len) > static_cast<size_t>(binding.buffer_length)) {
+                    has_info = true;
+                }
+                literal.text.assign(str, str + static_cast<size_t>(len));
                 break;
             }
             case SQL_C_LONG:
             case SQL_C_SLONG: {
-                SQLINTEGER val = *static_cast<const SQLINTEGER*>(binding.parameter_value);
+                SQLINTEGER val = *static_cast<const SQLINTEGER*>(row_value);
                 literal.text = std::to_string(val);
                 literal.quoted = false;
                 break;
             }
             case SQL_C_SHORT:
             case SQL_C_SSHORT: {
-                SQLSMALLINT val = *static_cast<const SQLSMALLINT*>(binding.parameter_value);
+                SQLSMALLINT val = *static_cast<const SQLSMALLINT*>(row_value);
                 literal.text = std::to_string(val);
                 literal.quoted = false;
                 break;
             }
             case SQL_C_SBIGINT: {
-                int64_t val = *static_cast<const int64_t*>(binding.parameter_value);
+                int64_t val = *static_cast<const int64_t*>(row_value);
                 literal.text = std::to_string(val);
                 literal.quoted = false;
                 break;
             }
             case SQL_C_DOUBLE: {
-                SQLDOUBLE val = *static_cast<const SQLDOUBLE*>(binding.parameter_value);
+                SQLDOUBLE val = *static_cast<const SQLDOUBLE*>(row_value);
                 literal.text = std::to_string(val);
                 literal.quoted = false;
                 break;
             }
             case SQL_C_FLOAT: {
-                SQLREAL val = *static_cast<const SQLREAL*>(binding.parameter_value);
+                SQLREAL val = *static_cast<const SQLREAL*>(row_value);
                 literal.text = std::to_string(val);
                 literal.quoted = false;
                 break;
             }
             case SQL_C_BIT: {
-                unsigned char val = *static_cast<const unsigned char*>(binding.parameter_value);
+                unsigned char val = *static_cast<const unsigned char*>(row_value);
                 literal.text = val ? "1" : "0";
                 literal.quoted = false;
                 break;
             }
             case SQL_C_BINARY: {
-                if (!binding.parameter_value || binding.buffer_length <= 0) {
-                    break;
-                }
                 SQLLEN len = binding.buffer_length;
-                if (binding.str_len_or_ind && *binding.str_len_or_ind >= 0) {
-                    len = *binding.str_len_or_ind;
+                if (ind && *ind >= 0) {
+                    len = *ind;
                 }
-                const uint8_t* data = static_cast<const uint8_t*>(binding.parameter_value);
+                if (ind && static_cast<size_t>(len) > static_cast<size_t>(binding.buffer_length)) {
+                    has_info = true;
+                }
+                const uint8_t* data = static_cast<const uint8_t*>(row_value);
                 std::string hex;
                 hex.reserve(static_cast<size_t>(len) * 2);
                 static const char kHex[] = "0123456789ABCDEF";
@@ -4419,51 +4733,44 @@ std::vector<ParameterLiteral> OdbcStatement::buildParameterData() {
                 break;
             }
             case SQL_C_DATE: {
-                if (!binding.parameter_value) {
-                    break;
-                }
-                const auto& date = *static_cast<const SQL_DATE_STRUCT*>(binding.parameter_value);
+                const auto& date = *static_cast<const SQL_DATE_STRUCT*>(row_value);
                 literal.text = formatDateStruct(date);
                 break;
             }
             case SQL_C_TIME: {
-                if (!binding.parameter_value) {
-                    break;
-                }
-                const auto& time = *static_cast<const SQL_TIME_STRUCT*>(binding.parameter_value);
+                const auto& time = *static_cast<const SQL_TIME_STRUCT*>(row_value);
                 literal.text = formatTimeStruct(time);
                 break;
             }
             case SQL_C_TIMESTAMP: {
-                if (!binding.parameter_value) {
-                    break;
-                }
-                const auto& ts = *static_cast<const SQL_TIMESTAMP_STRUCT*>(binding.parameter_value);
+                const auto& ts = *static_cast<const SQL_TIMESTAMP_STRUCT*>(row_value);
                 literal.text = formatTimestampStruct(ts);
                 break;
             }
             case SQL_C_GUID: {
-                if (!binding.parameter_value) {
-                    break;
-                }
-                const auto& guid = *static_cast<const SQLGUID*>(binding.parameter_value);
+                const auto& guid = *static_cast<const SQLGUID*>(row_value);
                 literal.text = formatGuidStruct(guid);
                 break;
             }
-            // Add more type conversions as needed
             default:
-                // Default: treat as binary
-                if (binding.parameter_value && binding.buffer_length > 0) {
-                    const uint8_t* data = static_cast<const uint8_t*>(binding.parameter_value);
+                if (binding.buffer_length > 0) {
+                    const uint8_t* data = static_cast<const uint8_t*>(row_value);
+                    auto len = static_cast<size_t>(binding.buffer_length);
                     literal.text.assign(reinterpret_cast<const char*>(data),
-                                        reinterpret_cast<const char*>(data + binding.buffer_length));
+                                       reinterpret_cast<const char*>(data + len));
                 }
                 break;
         }
 
-        result.push_back(std::move(literal));
+        literals.push_back(std::move(literal));
     }
 
+    return has_info ? SQL_SUCCESS_WITH_INFO : SQL_SUCCESS;
+}
+
+std::vector<ParameterLiteral> OdbcStatement::buildParameterData() {
+    std::vector<ParameterLiteral> result;
+    (void)buildParameterData(result, 0);
     return result;
 }
 

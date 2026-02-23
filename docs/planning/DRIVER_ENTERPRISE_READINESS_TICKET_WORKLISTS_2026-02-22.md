@@ -120,7 +120,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Expand cursor behavior support and positioned operations  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Partial  
+**Status:** In progress (code complete; verification blocked by missing in-tree ODBC GTest harness)  
 **ETA:** 2–4 weeks  
 **Acceptance:** Scrollable and forward-only cursor tests plus positioned operations pass under concurrent load.
 
@@ -138,7 +138,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement bulk operation APIs (`SQLBulkOperations` and array binding)  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Not implemented  
+**Status:** In progress (code complete; verification blocked by missing GoogleTest)  
 **ETA:** 3–5 weeks  
 **Acceptance:** 10k+ row multi-type bulk correctness and throughput tests pass.
 
