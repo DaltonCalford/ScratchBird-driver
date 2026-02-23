@@ -39,6 +39,7 @@ set_target_properties(scratchbird_odbc PROPERTIES
 )
 
 include(CTest)
+option(ODBC_FETCH_GTEST "Fetch GoogleTest from source when not found locally." OFF)
 
 # Include directories
 target_include_directories(scratchbird_odbc
@@ -185,21 +186,56 @@ install(FILES
 )
 
 if (BUILD_TESTING)
-    find_package(GTest)
+    find_package(GTest QUIET)
+
+    if (NOT GTest_FOUND AND ODBC_FETCH_GTEST)
+        message(STATUS "GoogleTest not found. Fetching GoogleTest from source.")
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        )
+        FetchContent_GetProperties(googletest)
+        if (NOT googletest_POPULATED)
+            FetchContent_Populate(googletest)
+            add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR})
+        endif()
+        find_package(GTest CONFIG QUIET)
+    endif()
+
+    set(_sb_odbc_gtest FALSE)
+    set(_sb_odbc_gtest_target "")
+    set(_sb_odbc_gtest_main_target "")
     if (GTest_FOUND)
+        if (TARGET GTest::gtest AND TARGET GTest::gtest_main)
+            set(_sb_odbc_gtest TRUE)
+            set(_sb_odbc_gtest_target GTest::gtest)
+            set(_sb_odbc_gtest_main_target GTest::gtest_main)
+        endif()
+    endif()
+    if (NOT _sb_odbc_gtest AND TARGET gtest AND TARGET gtest_main)
+        set(_sb_odbc_gtest TRUE)
+        set(_sb_odbc_gtest_target gtest)
+        set(_sb_odbc_gtest_main_target gtest_main)
+    endif()
+
+    if (_sb_odbc_gtest)
         add_executable(scratchbird_odbc_tests
             tests/test_odbc_cursor_operations.cpp
             tests/test_odbc_bulk_operations.cpp
             tests/test_odbc_capabilities_browse.cpp
             tests/test_odbc_catalog_and_types.cpp
+            tests/test_odbc_capabilities_descriptors.cpp
             tests/test_odbc_lob_streaming.cpp
         )
 
         target_link_libraries(scratchbird_odbc_tests
             PRIVATE
                 scratchbird_odbc
-                GTest::gtest
-                GTest::gtest_main
+                scratchbird_client
+                ${_sb_odbc_gtest_target}
+                ${_sb_odbc_gtest_main_target}
         )
 
         add_test(NAME scratchbird_odbc_tests COMMAND scratchbird_odbc_tests)

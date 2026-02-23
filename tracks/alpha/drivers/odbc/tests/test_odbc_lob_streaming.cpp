@@ -8,6 +8,7 @@
 
 #define private public
 #include "scratchbird/odbc/odbc_handles.h"
+#include "scratchbird/odbc/odbc_client_bridge.h"
 #undef private
 
 namespace {
@@ -139,15 +140,13 @@ TEST_F(OdbcLobStreamingTest, StreamStateResetsOnPositionChange) {
 }
 
 TEST_F(OdbcLobStreamingTest, SQLPutDataUnknownLengthStreamsTextAndExecutes) {
-    ASSERT_EQ(stmt_.prepare(
-        reinterpret_cast<SQLCHAR*>(
-            const_cast<char*>("INSERT INTO audit_log (message) VALUES (?)")),
-        SQL_SUCCESS);
+    const char* sql = "INSERT INTO audit_log (message) VALUES (?)";
+    ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
 
-    const char payload_part_one[] = "alpha-";
-    const char payload_part_two[] = "payload";
+    char payload_part_one[] = "alpha-";
+    char payload_part_two[] = "payload";
     SQLLEN ind = SQL_DATA_AT_EXEC;
-    const char* ignored_buffer = "";
+    char ignored_buffer[] = "";
 
     ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR,
                                  0, 0, ignored_buffer, 0, &ind), SQL_SUCCESS);
@@ -158,10 +157,10 @@ TEST_F(OdbcLobStreamingTest, SQLPutDataUnknownLengthStreamsTextAndExecutes) {
     EXPECT_EQ(stmt_.paramData(&token), SQL_NEED_DATA);
     ASSERT_NE(token, nullptr);
 
-    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(payload_part_one),
+    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(const_cast<char*>(payload_part_one)),
                            static_cast<SQLLEN>(sizeof(payload_part_one) - 1)),
               SQL_SUCCESS);
-    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(payload_part_two),
+    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(const_cast<char*>(payload_part_two)),
                            static_cast<SQLLEN>(sizeof(payload_part_two) - 1)),
               SQL_SUCCESS);
     EXPECT_EQ(stmt_.putData(nullptr, 0), SQL_SUCCESS);
@@ -174,20 +173,18 @@ TEST_F(OdbcLobStreamingTest, SQLPutDataUnknownLengthStreamsTextAndExecutes) {
 }
 
 TEST_F(OdbcLobStreamingTest, SQLPutDataKnownLengthBinaryAutoCompletes) {
-    ASSERT_EQ(stmt_.prepare(
-        reinterpret_cast<SQLCHAR*>(
-            const_cast<char*>("INSERT INTO audit_blob (payload) VALUES (?)")),
-        SQL_SUCCESS);
+    const char* sql = "INSERT INTO audit_blob (payload) VALUES (?)";
+    ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
 
-    const unsigned char chunk_one[] = {0x01, 0xFE};
-    const unsigned char chunk_two[] = {0x10, 0x7F};
+    unsigned char chunk_one[] = {0x01, 0xFE};
+    unsigned char chunk_two[] = {0x10, 0x7F};
     std::string binary_payload(
         reinterpret_cast<const char*>(chunk_one),
         reinterpret_cast<const char*>(chunk_one) + sizeof(chunk_one));
     binary_payload.append(reinterpret_cast<const char*>(chunk_two),
                          reinterpret_cast<const char*>(chunk_two) + sizeof(chunk_two));
     SQLLEN ind = -100 - static_cast<SQLLEN>(binary_payload.size());
-    const unsigned char* ignored_buffer = chunk_one;
+    unsigned char ignored_buffer[] = {0x01, 0xFE};
 
     ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_BINARY, SQL_VARBINARY,
                                  0, 0, ignored_buffer, 0, &ind), SQL_SUCCESS);
@@ -196,7 +193,7 @@ TEST_F(OdbcLobStreamingTest, SQLPutDataKnownLengthBinaryAutoCompletes) {
     SQLPOINTER token = nullptr;
     EXPECT_EQ(stmt_.paramData(&token), SQL_NEED_DATA);
     ASSERT_NE(token, nullptr);
-    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(chunk_one), sizeof(chunk_one)),
+    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(ignored_buffer), sizeof(ignored_buffer)),
               SQL_SUCCESS);
     EXPECT_EQ(stmt_.paramData(&token), SQL_NEED_DATA);
     ASSERT_NE(token, nullptr);

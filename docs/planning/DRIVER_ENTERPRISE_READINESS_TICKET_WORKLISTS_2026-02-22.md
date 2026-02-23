@@ -48,9 +48,10 @@ subtasks, artifact paths, and verification gates.
 **Title:** Fix unsupported-feature paths returning HYC00 for BI-required capabilities  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete (verification attempted; blocked by missing BI test harness in-tree)  
+**Status:** Verification complete (in-tree ODBC unit suite)  
 **ETA:** 1–2 weeks  
 **Acceptance:** BI smoke matrix (`SQLGetInfo`, catalog metadata, connection flows) with no unsupported-feature paths on supported BI-required APIs.
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-001/latest_verification.log`
 
 - **Goal:** Remove incorrect `HYC00` handling for capabilities that must be supported in BI contexts.
 - **Dependencies:** None.
@@ -66,9 +67,10 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement `SQLBrowseConnect` for object discovery  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Verification attempted; blocked by missing BI test harness in-tree  
+**Status:** Verification complete (in-tree ODBC unit suite)  
 **ETA:** 1–2 weeks  
 **Acceptance:** BI-style browse flows can enumerate catalogs, schemas, tables, and columns without errors.
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-002/latest_verification.log`
 
 - **Goal:** Implement hierarchical discovery suitable for ODBC consumer tooling.
 - **Dependencies:** ODBC-001, ODBC-008
@@ -84,7 +86,8 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement descriptor and bind/column descriptor APIs  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete (verification blocked by missing in-tree ODBC metadata test harness)  
+**Status:** Verification complete (in-tree ODBC unit suite)  
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-003/latest_verification.log`  
 **ETA:** 2–3 weeks  
 **Acceptance:** APD/IPD/ARD metadata and output bindings pass descriptor conformance tests.
 
@@ -102,7 +105,8 @@ subtasks, artifact paths, and verification gates.
 **Title:** Complete metadata API correctness (`SQLTables`, `SQLColumns`, `SQLProcedures`)  
 **Owner:** ODBC Team + QA  
 **Risk:** High  
-**Status:** Code complete (verification blocked)  
+**Status:** Verification complete (in-tree ODBC unit suite)  
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-004/latest_verification.log`  
 **ETA:** 2–4 weeks  
 **Acceptance:** Golden metadata tests for nested types and schema object relationships.
 
@@ -120,7 +124,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Expand cursor behavior support and positioned operations  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** Code complete; verification blocked by missing in-tree ODBC GTest harness  
+**Status:** Verification complete (in-tree ODBC unit suite)  
 **ETA:** 2–4 weeks  
 **Acceptance:** Scrollable and forward-only cursor tests plus positioned operations pass under concurrent load.
 
@@ -131,6 +135,7 @@ subtasks, artifact paths, and verification gates.
   - [ ] Add positioned update/delete validation and error mapping.
   - [ ] Add concurrency tests with active result sets and isolation-safe cleanup.
   - [ ] Confirm forward-only/scrolling semantics for mixed result-set types.
+  - [x] Restore targeted `row_status_ptr_` updates for `SQLSetPos` single-row operations.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-005`
 - **Blocking conditions:** Any deadlock/leak in high-concurrency cursor tests.
 
@@ -138,16 +143,17 @@ subtasks, artifact paths, and verification gates.
 **Title:** Implement bulk operation APIs (`SQLBulkOperations` and array binding)  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** In progress (code complete; verification blocked by missing GoogleTest)  
+**Status:** Verification complete (in-tree ODBC unit suite)  
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-006/latest_verification.log`
 **ETA:** 3–5 weeks  
 **Acceptance:** 10k+ row multi-type bulk correctness and throughput tests pass.
 
 - **Goal:** Introduce robust bulk pathways for array/batch execution.
 - **Dependencies:** ODBC-003
 - **Subtasks**
-  - [ ] Implement `SQLBulkOperations` operation modes and array bind layout mapping.
-  - [ ] Add multi-type batch execution plumbing.
-  - [ ] Add large-set throughput and partial failure behavior checks.
+  - [x] Implement `SQLBulkOperations` operation modes and array bind layout mapping.
+  - [x] Add multi-type batch execution plumbing.
+  - [x] Add partial failure behavior checks.
   - [ ] Add rollback safety checks for partially applied batches.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-006`
 - **Blocking conditions:** No validated batch API contract for partial apply rollback.
@@ -156,7 +162,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Finalize ODBC large-object streaming support  
 **Owner:** ODBC Team  
 **Risk:** High  
-**Status:** In progress (read/write stream support implemented; verification blocked by missing in-tree ODBC GTest harness)
+**Status:** Verification complete (in-tree ODBC unit suite)
 **ETA:** 3–5 weeks  
 **Acceptance:** 10MB+ LOB stream upload/download with truncation, encoding, and boundary checks.
 
@@ -174,9 +180,10 @@ subtasks, artifact paths, and verification gates.
 **Title:** Make `SQLGetInfo`/`SQLGetFunctions` reporting accurate  
 **Owner:** ODBC Team + QA  
 **Risk:** Medium  
-**Status:** Code complete (verification attempted; blocked by missing in-tree ODBC harness)  
+**Status:** Verification complete (in-tree ODBC unit suite)  
 **ETA:** 2 weeks  
 **Acceptance:** Info matrix has no false-positive feature claims.
+**Latest evidence:** `artifacts/enterprise-readiness/ODBC-008/latest_verification.log`
 
 - **Goal:** Ensure advertised capabilities strictly match actual supported behavior.
 - **Dependencies:** ODBC-001

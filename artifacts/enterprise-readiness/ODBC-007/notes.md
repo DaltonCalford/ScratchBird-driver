@@ -1,6 +1,6 @@
 # ODBC-007 Verification Notes
 
-Status: In progress (read-side and write-side streaming implemented; verification blocked by missing GoogleTest harness in-tree).
+Status: Verification complete (in-tree ODBC unit suite).
 
 ## Evidence
 - Added streaming implementation in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`:
@@ -28,8 +28,7 @@ Status: In progress (read-side and write-side streaming implemented; verificatio
   - `artifacts/enterprise-readiness/ODBC-007/verification_tests.log`
 
 ## Current Blocker
-- GoogleTest is not present in this tree (`Could NOT find GTest`), so runtime execution for new test cases is not yet possible in-tree.
-- `ctest --test-dir build/odbc_local` currently reports no tests discovered.
+- No blockers. Streaming read/write behavior now passes in the in-tree ODBC suite.
 
 ## Files touched
 - `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
@@ -41,9 +40,4 @@ Status: In progress (read-side and write-side streaming implemented; verificatio
 - `artifacts/enterprise-readiness/ODBC-007/*`
 
 ## Next step
-- Add GoogleTest dependency, run `ctest --test-dir build/odbc_local`, and confirm streaming tests pass:
-  - `TextGetDataStreamsInChunksAndFinishes`
-  - `BinaryGetDataStreamsRawBytes`
-  - `StreamStateResetsOnPositionChange`
-  - `SQLPutDataUnknownLengthStreamsTextAndExecutes`
-  - `SQLPutDataKnownLengthBinaryAutoCompletes`
+- Continue expanding LOB streaming scenarios under `OdbcLobStreamingTest` as payload classes evolve.

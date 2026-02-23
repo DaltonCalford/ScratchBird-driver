@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <unistd.h>
 
 #define private public
 #include "scratchbird/odbc/metadata_helpers.h"
@@ -106,7 +108,7 @@ protected:
         out << "BetaDSN=ScratchBird\n";
         out << "\n[AlphaDSN]\nDriver=ScratchBird\n";
         out.close();
-        std::close(fd);
+        ::close(fd);
         return path_template;
     }
 };
@@ -175,7 +177,7 @@ TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
     SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
     EXPECT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
     auto isAdvertised = [](const SQLUSMALLINT* map, SQLUSMALLINT id) {
-        if (id >= 250 * 16) {
+        if (id >= SQL_API_ODBC3_ALL_FUNCTIONS_SIZE * 16) {
             return false;
         }
         std::size_t word = id >> 4;
@@ -183,19 +185,55 @@ TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
         return ((map[word] >> bit) & 1u) != 0;
     };
 
-    EXPECT_FALSE(isAdvertised(function_map, SQLGetCursorName));
-    EXPECT_FALSE(isAdvertised(function_map, SQLNativeSql));
-    EXPECT_TRUE(isAdvertised(function_map, SQLParamData));
-    EXPECT_TRUE(isAdvertised(function_map, SQLPutData));
-    EXPECT_FALSE(isAdvertised(function_map, SQLSetCursorName));
-    EXPECT_TRUE(isAdvertised(function_map, SQLConnect));
-    EXPECT_TRUE(isAdvertised(function_map, SQLTables));
+    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLGETCURSORNAME));
+    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLNATIVESQL));
+    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLPARAMDATA));
+    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLPUTDATA));
+    EXPECT_FALSE(isAdvertised(function_map, SQL_API_SQLSETCURSORNAME));
+    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLCONNECT));
+    EXPECT_TRUE(isAdvertised(function_map, SQL_API_SQLTABLES));
 
     SQLUSMALLINT unsupported = 0;
-    EXPECT_EQ(conn_.getFunctions(SQLGetCursorName, &unsupported), SQL_SUCCESS);
+    EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETCURSORNAME, &unsupported), SQL_SUCCESS);
     EXPECT_EQ(unsupported, 0);
-    EXPECT_EQ(conn_.getFunctions(SQLGetFunctions, &unsupported), SQL_SUCCESS);
+    EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETFUNCTIONS, &unsupported), SQL_SUCCESS);
     EXPECT_EQ(unsupported, 1);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetFunctionsSupportsAllFunctionsBitmapAlias) {
+    SQLUSMALLINT all_functions_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    SQLUSMALLINT legacy_function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    ASSERT_EQ(conn_.getFunctions(0, all_functions_map), SQL_SUCCESS);
+    ASSERT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, legacy_function_map), SQL_SUCCESS);
+    EXPECT_TRUE(std::equal(std::begin(all_functions_map),
+                           std::end(all_functions_map),
+                           std::begin(legacy_function_map)));
+}
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectPathFallbackParsesHierarchicalPath) {
+    SQLCHAR out_conn[256] = {};
+    SQLSMALLINT out_len = 0;
+    auto input = std::string("PATH=MainDSN/db_main/public/users;");
+    auto rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                                 SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string row_columns = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(row_columns.find("COLUMN=id"), std::string::npos);
+    EXPECT_NE(row_columns.find("COLUMN=name"), std::string::npos);
+    EXPECT_NE(row_columns.find("COLUMN=created_at"), std::string::npos);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectRawPathWithoutKeyFallsBackToPath) {
+    SQLCHAR out_conn[256] = {};
+    SQLSMALLINT out_len = 0;
+    auto input = std::string("MainDSN/db_main/public/users;");
+    auto rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                                 SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string row_columns = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(row_columns.find("COLUMN=id"), std::string::npos);
+    EXPECT_NE(row_columns.find("COLUMN=name"), std::string::npos);
+    EXPECT_NE(row_columns.find("COLUMN=created_at"), std::string::npos);
 }
 
 }  // namespace

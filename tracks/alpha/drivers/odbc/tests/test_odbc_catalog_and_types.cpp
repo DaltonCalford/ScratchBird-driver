@@ -151,7 +151,7 @@ TEST_F(OdbcCatalogTest, TablesHonorsPatterns) {
                                 toSqlChar(table_pattern), SQL_NTS,
                                 nullptr, 0);
     ASSERT_EQ(rc, SQL_SUCCESS);
-    ASSERT_EQ(stmt_.columns_.size(), 5u);
+    ASSERT_EQ(stmt_.columns_.size(), 10u);
     ASSERT_EQ(stmt_.rows_.size(), 1u);
     EXPECT_EQ(stmt_.columns_[0].name, "TABLE_CAT");
     EXPECT_EQ(stmt_.columns_[1].name, "TABLE_SCHEM");
@@ -160,6 +160,12 @@ TEST_F(OdbcCatalogTest, TablesHonorsPatterns) {
     EXPECT_EQ(stmt_.rows_[0][1], "public");
     EXPECT_EQ(stmt_.rows_[0][2], "users");
     EXPECT_EQ(stmt_.rows_[0][3], "TABLE");
+    EXPECT_EQ(stmt_.rows_[0][4], "");
+    EXPECT_EQ(stmt_.rows_[0][5], "");
+    EXPECT_EQ(stmt_.rows_[0][6], "");
+    EXPECT_EQ(stmt_.rows_[0][7], "");
+    EXPECT_EQ(stmt_.rows_[0][8], "");
+    EXPECT_EQ(stmt_.rows_[0][9], "");
 
     std::string view_type = "'VIEW'";
     rc = stmt_.tables(nullptr, 0, nullptr, 0, nullptr, 0,
@@ -364,21 +370,21 @@ TEST(OdbcGetDataTest, TemporalAndGuidConversions) {
     };
 
     stmt.current_row_ = 1;
-    SQL_DATE_STRUCT date_struct{};
+    scratchbird::odbc::SQL_DATE_STRUCT date_struct{};
     SQLLEN ind = 0;
     ASSERT_EQ(stmt.getData(1, SQL_C_DATE, &date_struct, sizeof(date_struct), &ind), SQL_SUCCESS);
     EXPECT_EQ(date_struct.year, 2025);
     EXPECT_EQ(date_struct.month, 1);
     EXPECT_EQ(date_struct.day, 2);
-    EXPECT_EQ(ind, static_cast<SQLLEN>(sizeof(SQL_DATE_STRUCT)));
+    EXPECT_EQ(ind, static_cast<SQLLEN>(sizeof(scratchbird::odbc::SQL_DATE_STRUCT)));
 
-    SQL_TIME_STRUCT time_struct{};
+    scratchbird::odbc::SQL_TIME_STRUCT time_struct{};
     ASSERT_EQ(stmt.getData(2, SQL_C_TIME, &time_struct, sizeof(time_struct), &ind), SQL_SUCCESS);
     EXPECT_EQ(time_struct.hour, 13);
     EXPECT_EQ(time_struct.minute, 14);
     EXPECT_EQ(time_struct.second, 15);
 
-    SQL_TIMESTAMP_STRUCT ts_struct{};
+    scratchbird::odbc::SQL_TIMESTAMP_STRUCT ts_struct{};
     ASSERT_EQ(stmt.getData(3, SQL_C_TIMESTAMP, &ts_struct, sizeof(ts_struct), &ind), SQL_SUCCESS);
     EXPECT_EQ(ts_struct.year, 2025);
     EXPECT_EQ(ts_struct.month, 1);
@@ -388,7 +394,7 @@ TEST(OdbcGetDataTest, TemporalAndGuidConversions) {
     EXPECT_EQ(ts_struct.second, 15);
     EXPECT_EQ(ts_struct.fraction, 654321000u);
 
-    SQLGUID guid{};
+    scratchbird::odbc::SQLGUID guid{};
     ASSERT_EQ(stmt.getData(4, SQL_C_GUID, &guid, sizeof(guid), &ind), SQL_SUCCESS);
     EXPECT_EQ(guid.Data1, 0x00112233u);
     EXPECT_EQ(guid.Data2, 0x4455u);
@@ -397,7 +403,7 @@ TEST(OdbcGetDataTest, TemporalAndGuidConversions) {
     EXPECT_EQ(guid.Data4[7], 0xffu);
 
     stmt.current_row_ = 2;
-    SQLGUID guid_bin{};
+    scratchbird::odbc::SQLGUID guid_bin{};
     ASSERT_EQ(stmt.getData(4, SQL_C_GUID, &guid_bin, sizeof(guid_bin), &ind), SQL_SUCCESS);
     EXPECT_EQ(guid_bin.Data1, 0x00112233u);
     EXPECT_EQ(guid_bin.Data2, 0x4455u);

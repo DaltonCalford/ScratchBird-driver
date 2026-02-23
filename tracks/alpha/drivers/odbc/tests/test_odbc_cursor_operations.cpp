@@ -68,6 +68,7 @@ TEST_F(OdbcCursorOperationTest, SetPosSupportsPositionRefreshUpdateDelete) {
 
     stmt_.cursor_type_ = SQL_CURSOR_STATIC;
     stmt_.concurrency_ = SQL_CONCUR_READ_ONLY;
+    stmt_.row_array_size_ = 3;
     stmt_.row_status_ptr_ = status_buffer;
     stmt_.rows_fetched_ptr_ = &rows_fetched;
 
@@ -77,6 +78,8 @@ TEST_F(OdbcCursorOperationTest, SetPosSupportsPositionRefreshUpdateDelete) {
     EXPECT_EQ(stmt_.setPos(1, SQL_REFRESH, SQL_LOCK_NO_CHANGE), SQL_SUCCESS);
     EXPECT_EQ(stmt_.current_row_, 1u);
     EXPECT_EQ(stmt_.row_status_ptr_[0], SQL_ROW_SUCCESS);
+    EXPECT_EQ(stmt_.row_status_ptr_[1], 0u);
+    EXPECT_EQ(stmt_.row_status_ptr_[2], 0u);
     EXPECT_EQ(stmt_.rows_fetched_ptr_, &rows_fetched);
 
     EXPECT_EQ(stmt_.setPos(3, SQL_UPDATE, SQL_LOCK_NO_CHANGE), SQL_ERROR);
@@ -84,11 +87,14 @@ TEST_F(OdbcCursorOperationTest, SetPosSupportsPositionRefreshUpdateDelete) {
     stmt_.concurrency_ = SQL_CONCUR_LOCK;
     EXPECT_EQ(stmt_.setPos(2, SQL_UPDATE, SQL_LOCK_NO_CHANGE), SQL_SUCCESS);
     EXPECT_EQ(stmt_.row_status_ptr_[0], SQL_ROW_UPDATED);
+    EXPECT_EQ(stmt_.row_status_ptr_[1], SQL_ROW_UPDATED);
+    EXPECT_EQ(stmt_.row_status_ptr_[2], 0u);
 
     EXPECT_EQ(stmt_.setPos(1, SQL_DELETE, SQL_LOCK_NO_CHANGE), SQL_SUCCESS);
     ASSERT_EQ(stmt_.rows_.size(), 2u);
     EXPECT_EQ(stmt_.current_row_, 1u);
     EXPECT_EQ(stmt_.row_status_ptr_[0], SQL_ROW_DELETED);
+    EXPECT_EQ(stmt_.row_status_ptr_[1], SQL_ROW_UPDATED);
 }
 
 TEST_F(OdbcCursorOperationTest, SetPosSupportsDeleteEntireRowset) {
@@ -98,6 +104,7 @@ TEST_F(OdbcCursorOperationTest, SetPosSupportsDeleteEntireRowset) {
 
     stmt_.cursor_type_ = SQL_CURSOR_STATIC;
     stmt_.concurrency_ = SQL_CONCUR_LOCK;
+    stmt_.row_array_size_ = 4;
     stmt_.row_status_ptr_ = status_buffer;
     stmt_.rows_fetched_ptr_ = &rows_fetched;
 
@@ -106,6 +113,9 @@ TEST_F(OdbcCursorOperationTest, SetPosSupportsDeleteEntireRowset) {
     EXPECT_EQ(stmt_.current_row_, 0u);
     EXPECT_EQ(stmt_.row_count_, 4);
     EXPECT_EQ(stmt_.row_status_ptr_[0], SQL_ROW_DELETED);
+    EXPECT_EQ(stmt_.row_status_ptr_[1], SQL_ROW_DELETED);
+    EXPECT_EQ(stmt_.row_status_ptr_[2], SQL_ROW_DELETED);
+    EXPECT_EQ(stmt_.row_status_ptr_[3], SQL_ROW_DELETED);
     EXPECT_EQ(stmt_.rows_fetched_ptr_[0], 4u);
 }
 
@@ -118,6 +128,45 @@ TEST_F(OdbcCursorOperationTest, SetPosRejectsInvalidRowsAndUnsupportedOps) {
     EXPECT_EQ(stmt_.setPos(2, SQL_POSITION, SQL_LOCK_NO_CHANGE), SQL_ERROR);
     EXPECT_EQ(stmt_.setPos(1, 99, SQL_LOCK_NO_CHANGE), SQL_ERROR);
     EXPECT_EQ(stmt_.setPos(1, SQL_DELETE_BY_BOOKMARK, SQL_LOCK_NO_CHANGE), SQL_ERROR);
+}
+
+TEST_F(OdbcCursorOperationTest, SetAttributeValidatesCursorAndConcurrencyOptions) {
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_TYPE, reinterpret_cast<SQLPOINTER>(
+                  static_cast<SQLULEN>(SQL_CURSOR_FORWARD_ONLY)), 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.cursor_type_, SQL_CURSOR_FORWARD_ONLY);
+
+    SQLULEN cursor_type_value = 0;
+    EXPECT_EQ(stmt_.getAttribute(SQL_ATTR_CURSOR_TYPE, &cursor_type_value, 0, nullptr), SQL_SUCCESS);
+    EXPECT_EQ(cursor_type_value, SQL_CURSOR_FORWARD_ONLY);
+
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_TYPE, reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1234)), 0),
+              SQL_ERROR);
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CONCURRENCY, reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(SQL_CONCUR_VALUES)),
+                                0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.getAttribute(SQL_ATTR_CONCURRENCY, &stmt_.concurrency_, 0, nullptr), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.concurrency_, SQL_CONCUR_VALUES);
+
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CONCURRENCY, reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1234)), 0),
+              SQL_ERROR);
+}
+
+TEST_F(OdbcCursorOperationTest, SetAttributeCursorScrollabilityAndSensitivity) {
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_SCROLLABLE,
+                  reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(SQL_SCROLLABLE)), 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.cursor_scrollable_, SQL_SCROLLABLE);
+
+    SQLULEN value = 0;
+    EXPECT_EQ(stmt_.getAttribute(SQL_ATTR_CURSOR_SCROLLABLE, &value, 0, nullptr), SQL_SUCCESS);
+    EXPECT_EQ(value, SQL_SCROLLABLE);
+
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_SENSITIVITY,
+                  reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(SQL_SENSITIVE)), 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.cursor_sensitivity_, SQL_SENSITIVE);
+
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_SCROLLABLE,
+                  reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1234)), 0), SQL_ERROR);
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_CURSOR_SENSITIVITY,
+                  reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1234)), 0), SQL_ERROR);
 }
 
 }  // namespace

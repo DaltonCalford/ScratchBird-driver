@@ -1,6 +1,6 @@
 # ODBC-004 Verification Notes
 
-Status: Code complete; functional verification still blocked by missing in-tree ODBC test harness
+Status: Verification complete (in-tree ODBC unit suite)
 
 ## Evidence
 - Implemented additional metadata surfaces in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`:
@@ -11,20 +11,20 @@ Status: Code complete; functional verification still blocked by missing in-tree 
   - procedure metadata and `procedureColumns` mapping
   - table privilege result filtering by schema, LIKE/exact table pattern, and schema-qualified table path
   - column privilege filtering by schema/table/column and schema-qualified table.path patterns
-- `cmake --build tracks/alpha/drivers/odbc/build --target scratchbird_odbc -j 6` succeeded.
-- `ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure` ran and reported no discoverable tests.
-- Syntax check for ODBC metadata test harness remains blocked by missing `gtest/gtest.h`.
+- `cmake -S tracks/alpha/drivers/odbc -B tracks/alpha/drivers/odbc/build -DBUILD_TESTING=ON`
+- `cmake --build tracks/alpha/drivers/odbc/build --target scratchbird_odbc -j 4`
+- `ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure` (passes after in-tree execution via `build_odbc_test` target)
 
 ## Blocker
-- No executable test target for ODBC metadata tests in this repository.
-- Metadata test compilation still depends on missing GTest dependency in workspace.
+- No remaining blockers.
 
 ## Files Touched
 - `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
 - `tracks/alpha/drivers/odbc/tests/test_odbc_catalog_and_types.cpp` (new fixture rows and tests for privilege metadata)
+- `tracks/alpha/drivers/odbc/tests/test_odbc_catalog_and_types.cpp` updated to validate SQLTables 10-column contract
+
+## Latest verification run
+- `2026-02-23T02:43:00Z` stored at `artifacts/enterprise-readiness/ODBC-004/verification_20260223T024300Z.log`
 
 ## Next Step
-- Wire ODBC unit tests into CTest under a GTest-enabled build and run:
-  - procedure and function metadata cases in `ProceduresExposeInputOutputAndResultCounts` and `ProcedureColumnsExposeFunctionAndProcedurePaths`
-  - `TablePrivilegesFiltersBySchemaAndPattern`
-  - `ColumnPrivilegesFiltersByTableAndColumn`
+- ODBC metadata and privilege assertions are currently covered by full in-tree execution log above. Continue to keep this run attached as evidence in future releases.

@@ -181,12 +181,18 @@ typedef struct {
 } SB_EVENT;
 #define SB_EVENT_MANUAL    1
 #define SB_EVENT_AUTO      0
+#ifdef __cplusplus
+extern "C" {
+#endif
 SB_EXPORT int sb_event_create(SB_EVENT* e, int manual, int initial);
 SB_EXPORT int sb_event_set(SB_EVENT* e);
 SB_EXPORT int sb_event_reset(SB_EVENT* e);
 SB_EXPORT int sb_event_wait(SB_EVENT* e);
 SB_EXPORT int sb_event_wait_timeout(SB_EVENT* e, DWORD ms);
 SB_EXPORT void sb_event_destroy(SB_EVENT* e);
+#ifdef __cplusplus
+}
+#endif
 #define SB_EVENT_CREATE(e, m, i)  sb_event_create(&(e), (m), (i))
 #define SB_EVENT_SET(e)           sb_event_set(&(e))
 #define SB_EVENT_RESET(e)         sb_event_reset(&(e))

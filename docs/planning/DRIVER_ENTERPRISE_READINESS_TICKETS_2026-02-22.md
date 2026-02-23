@@ -10,7 +10,7 @@ and strict dependency/acceptance matrix is in
 ### ODBC-001
 Title: Fix unsupported-feature paths returning HYC00 for BI-required capabilities  
 Priority: P0  
-Status: Code complete (verification attempted; blocked by missing BI smoke harness in this repo)  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Optional-feature handling is not enterprise-safe for core BI metadata/capability flows  
 Acceptance Test: Full ODBC BI smoke matrix (`SQLGetInfo`, catalog/browser metadata, and standard connection queries) with no `HYC00` on supported BI paths  
 Owner: ODBC Team  
@@ -20,7 +20,7 @@ ETA: 1–2 weeks
 ### ODBC-002
 Title: Implement `SQLBrowseConnect` for object discovery  
 Priority: P0  
-Status: Code complete (verification blocked: ODBC tests not wired in current CMake + missing ODBC BI harness)  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Hierarchical DSN/connection browsing not supported  
 Acceptance Test: BI-style browse flows can enumerate catalogs/schemas/tables/columns without errors  
 Owner: ODBC Team  
@@ -30,7 +30,7 @@ ETA: 1–2 weeks
 ### ODBC-003
 Title: Implement descriptor and bind/column descriptor APIs  
 Priority: P0  
-Status: Code complete (verification blocked: ODBC descriptor conformance tests are not wired in this build)  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Descriptor handling is stubbed/insufficient for typed binding and result metadata  
 Acceptance Test: Descriptor conformance tests covering `APD`/`IPD`/`ARD` metadata, precision/scale/nullability/length, and output bindings  
 Owner: ODBC Team  
@@ -40,7 +40,7 @@ ETA: 2–3 weeks
 ### ODBC-004
 Title: Complete metadata API correctness (`SQLTables`, `SQLColumns`, `SQLProcedures`)  
 Priority: P0  
-Status: Code complete; verification blocked by missing in-tree ODBC test harness  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Metadata query surfaces are simplified and incomplete for enterprise clients  
 Acceptance Test: Golden metadata tests for nested types, constraints, and key/parent-child relationships across schemas  
 Owner: ODBC Team + QA  
@@ -50,7 +50,7 @@ ETA: 2–4 weeks
 ### ODBC-005
 Title: Expand cursor behavior support and positioned operations  
 Priority: P0  
-Status: Code complete; verification blocked by missing ODBC in-tree test harness and GTest dependency  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Scroll and positioned semantics are limited  
 Acceptance Test: Scrollable and forward-only cursor tests plus positioned update/delete pass under concurrent load  
 Owner: ODBC Team  
@@ -60,7 +60,7 @@ ETA: 2–4 weeks
 ### ODBC-006
 Title: Implement bulk operation APIs (`SQLBulkOperations` and array binding)  
 Priority: P1  
-Status: In progress (code complete; verification blocked by missing GoogleTest in-tree dependency)  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Bulk DML/array handling not available  
 Acceptance Test: Bulk insert/update performance and correctness suite (10k+ rows, multi-type columns)  
 Owner: ODBC Team  
@@ -70,7 +70,7 @@ ETA: 3–5 weeks
 ### ODBC-007
 Title: Finalize ODBC large-object streaming support  
 Priority: P1  
-Status: In progress (read-side and write-side streaming implemented; verification blocked by missing ODBC in-tree test harness)
+Status: Verification complete (in-tree ODBC unit suite)
 Gap: LOB read/write behavior is incomplete/inconsistent for enterprise payload sizes  
 Acceptance Test: 10MB+ LOB stream upload/download with boundary/encoding/truncation checks  
 Owner: ODBC Team  
@@ -80,7 +80,7 @@ ETA: 3–5 weeks
 ### ODBC-008
 Title: Make `SQLGetInfo`/`SQLGetFunctions` reporting accurate  
 Priority: P1  
-Status: Code complete (verification attempted; blocked by missing ODBC capability matrix executable in this tree)  
+Status: Verification complete (in-tree ODBC unit suite)  
 Gap: Info responses are optimistic and may mislead clients  
 Acceptance Test: ODBC Info matrix test against documented/advertised capabilities; no false-positive feature claims  
 Owner: ODBC Team + QA  

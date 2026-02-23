@@ -680,6 +680,12 @@ private:
     SQLRETURN buildParameterData(std::vector<ParameterLiteral>& literals, SQLULEN row_offset);
     std::vector<ParameterLiteral> buildParameterData();
     SQLRETURN executeSqlStatements(const std::string& sql);
+    SQLRETURN getDataInternal(SQLUSMALLINT column_number,
+                              SQLSMALLINT target_type,
+                              SQLPOINTER target_value,
+                              SQLLEN buffer_length,
+                              SQLLEN* str_len_or_ind,
+                              bool stream_chunks);
     void applyResultSet(size_t index);
     void resetResults();
 
@@ -833,6 +839,11 @@ public:
     // Accessors
     // =========================================================================
 
+    /**
+     * @brief Clear descriptor records and header count
+     */
+    void resetDescriptor();
+
     OdbcConnection* getConnection() { return conn_; }
     DescriptorType getDescriptorType() const { return desc_type_; }
     bool isImplicit() const { return implicit_; }
@@ -854,6 +865,7 @@ private:
         SQLSMALLINT auto_unique_value{0};
         SQLSMALLINT case_sensitive{1};
         SQLSMALLINT searchable{2};  // SQL_SEARCHABLE
+        SQLSMALLINT updatable{0};
         SQLSMALLINT num_prec_radix{10};
         SQLLEN length{0};
         SQLLEN octet_length{0};
