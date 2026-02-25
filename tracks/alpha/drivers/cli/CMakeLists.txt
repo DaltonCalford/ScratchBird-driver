@@ -40,15 +40,29 @@ if (SB_BUILD_CLI_FDW)
     list(APPEND cli_targets sb_pg_isql sb_my_isql sb_fb_isql)
 
     set(fdw_cli_targets sb_pg_isql sb_my_isql sb_fb_isql)
+    set(fdw_basic_cli_targets sb_pg_isql sb_my_isql)
     set(SB_ENGINE_INCLUDE_DIR "${SB_ENGINE_SOURCE_DIR}/include")
     set(SB_ENGINE_LIB_DIR "${SB_ENGINE_BUILD_DIR}/src")
     set(SB_ENGINE_FDW_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_fdw.a")
     set(SB_ENGINE_SBLR_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_sblr.a")
     set(SB_ENGINE_PARSER_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_parser.a")
+    set(SB_ENGINE_COMPILER_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_compiler.a")
     set(SB_ENGINE_CORE_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_core.a")
+    set(SB_ENGINE_OPTIMIZER_RUNTIME_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_optimizer_runtime.a")
+    set(SB_ENGINE_OPTIMIZER_COMPILER_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_optimizer_compiler.a")
+    set(SB_ENGINE_SECURITY_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_security.a")
+    set(SB_ENGINE_IPC_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_ipc.a")
 
     set(sb_engine_libs_ready TRUE)
-    foreach(required_path IN LISTS SB_ENGINE_FDW_LIB SB_ENGINE_SBLR_LIB SB_ENGINE_PARSER_LIB SB_ENGINE_CORE_LIB)
+    foreach(required_path IN LISTS
+            SB_ENGINE_FDW_LIB
+            SB_ENGINE_SBLR_LIB
+            SB_ENGINE_PARSER_LIB
+            SB_ENGINE_COMPILER_LIB
+            SB_ENGINE_CORE_LIB
+            SB_ENGINE_OPTIMIZER_RUNTIME_LIB
+            SB_ENGINE_SECURITY_LIB
+            SB_ENGINE_IPC_LIB)
         if (NOT EXISTS "${required_path}")
             message(WARNING "Missing required ScratchBird engine artifact: ${required_path}")
             set(sb_engine_libs_ready FALSE)
@@ -66,9 +80,34 @@ if (SB_BUILD_CLI_FDW)
             "Build ScratchBird first or override SB_ENGINE_SOURCE_DIR/SB_ENGINE_BUILD_DIR.")
     endif()
 
+    set(SB_FB_LINK_ARCHIVES
+        "${SB_ENGINE_COMPILER_LIB}"
+        "${SB_ENGINE_PARSER_LIB}"
+        "${SB_ENGINE_SBLR_LIB}"
+        "${SB_ENGINE_CORE_LIB}"
+        "${SB_ENGINE_OPTIMIZER_RUNTIME_LIB}"
+        "${SB_ENGINE_SECURITY_LIB}"
+        "${SB_ENGINE_IPC_LIB}"
+    )
+    if (EXISTS "${SB_ENGINE_OPTIMIZER_COMPILER_LIB}")
+        list(APPEND SB_FB_LINK_ARCHIVES "${SB_ENGINE_OPTIMIZER_COMPILER_LIB}")
+    endif()
+
     find_package(OpenSSL REQUIRED)
     find_package(Threads REQUIRED)
-    foreach(target IN LISTS fdw_cli_targets)
+    find_package(LibXml2 REQUIRED)
+    find_package(ZLIB REQUIRED)
+    find_package(GEOS QUIET)
+    find_package(PROJ QUIET)
+    find_package(PkgConfig QUIET)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(LZ4 QUIET liblz4)
+        pkg_check_modules(ZSTD QUIET libzstd)
+    endif()
+    find_library(CRYPT_LIBRARY crypt)
+    find_library(GEOS_C_LIBRARY NAMES geos_c)
+
+    foreach(target IN LISTS fdw_basic_cli_targets)
         target_include_directories(${target} BEFORE PRIVATE "${SB_ENGINE_INCLUDE_DIR}")
         target_link_libraries(${target}
             PRIVATE
@@ -81,6 +120,63 @@ if (SB_BUILD_CLI_FDW)
                 Threads::Threads
         )
     endforeach()
+
+    target_include_directories(sb_fb_isql BEFORE PRIVATE "${SB_ENGINE_INCLUDE_DIR}")
+    if (CMAKE_CXX_LINK_GROUP_USING_RESCAN_SUPPORTED)
+        string(JOIN "," SB_FB_LINK_ARCHIVES_CSV ${SB_FB_LINK_ARCHIVES})
+        target_link_libraries(sb_fb_isql PRIVATE "$<LINK_GROUP:RESCAN,${SB_FB_LINK_ARCHIVES_CSV}>")
+    elseif(UNIX AND NOT APPLE)
+        target_link_libraries(sb_fb_isql
+            PRIVATE
+                -Wl,--start-group
+                ${SB_FB_LINK_ARCHIVES}
+                -Wl,--end-group
+        )
+    else()
+        target_link_libraries(sb_fb_isql PRIVATE ${SB_FB_LINK_ARCHIVES})
+    endif()
+
+    set(SB_FB_EXTERNAL_LIBS
+        "${SB_ENGINE_FDW_LIB}"
+        LibXml2::LibXml2
+        ZLIB::ZLIB
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        Threads::Threads
+    )
+    if (GEOS_C_LIBRARY)
+        list(APPEND SB_FB_EXTERNAL_LIBS "${GEOS_C_LIBRARY}")
+    elseif (GEOS_FOUND)
+        list(APPEND SB_FB_EXTERNAL_LIBS ${GEOS_LIBRARIES})
+    else()
+        list(APPEND SB_FB_EXTERNAL_LIBS geos_c)
+    endif()
+    if (PROJ_FOUND)
+        list(APPEND SB_FB_EXTERNAL_LIBS ${PROJ_LIBRARIES})
+    else()
+        list(APPEND SB_FB_EXTERNAL_LIBS proj)
+    endif()
+    if (LZ4_FOUND)
+        target_link_directories(sb_fb_isql PRIVATE ${LZ4_LIBRARY_DIRS})
+        target_compile_options(sb_fb_isql PRIVATE ${LZ4_CFLAGS_OTHER})
+        list(APPEND SB_FB_EXTERNAL_LIBS ${LZ4_LIBRARIES})
+    else()
+        list(APPEND SB_FB_EXTERNAL_LIBS lz4)
+    endif()
+    if (ZSTD_FOUND)
+        target_link_directories(sb_fb_isql PRIVATE ${ZSTD_LIBRARY_DIRS})
+        target_compile_options(sb_fb_isql PRIVATE ${ZSTD_CFLAGS_OTHER})
+        list(APPEND SB_FB_EXTERNAL_LIBS ${ZSTD_LIBRARIES})
+    else()
+        list(APPEND SB_FB_EXTERNAL_LIBS zstd)
+    endif()
+    if (CRYPT_LIBRARY)
+        list(APPEND SB_FB_EXTERNAL_LIBS "${CRYPT_LIBRARY}")
+    endif()
+    if (UNIX AND NOT APPLE)
+        list(APPEND SB_FB_EXTERNAL_LIBS dl m)
+    endif()
+    target_link_libraries(sb_fb_isql PRIVATE ${SB_FB_EXTERNAL_LIBS})
 endif()
 
 foreach(target IN LISTS cli_targets)
