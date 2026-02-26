@@ -1626,6 +1626,10 @@ Meta-commands:
   \echo <text>      Print text
   \plan             Show last query plan (SBWP QUERY_PLAN)
   \sblr             Show last compiled SBLR bytecode (SBWP SBLR_COMPILED)
+  \jit compile <object_uuid>  Queue JIT compile for a routine/member object
+  \jit rebuild <object_uuid>  Rebuild all JIT artifacts for an object
+  \jit inspect <object_uuid>  Inspect JIT artifacts for an object
+  \jit retire <artifact_uuid> Retire a specific JIT artifact
   \set              Show all settings and variables
   \pset <opt> <val> Set output formatting option
     format          Output format (aligned, unaligned, csv, html, json)
@@ -2436,6 +2440,56 @@ bool handleMetaCommand(const std::string& cmd) {
         out << "  Hash: (not available)\n";
         out << "  Version: (not available)\n";
         out << "  Bytecode: (not available)\n";
+        return true;
+    }
+
+    // \jit - JIT artifact lifecycle controls
+    if (command == "jit") {
+        if (!g_connection || !g_connection->isConnected()) {
+            std::cerr << "Error: Not connected to database\n";
+            return true;
+        }
+        if (arg.empty()) {
+            std::cerr << "Usage: \\jit <compile|rebuild|inspect|retire> <uuid>\n";
+            return true;
+        }
+
+        auto escapeLiteral = [](const std::string& value) -> std::string {
+            std::string out;
+            out.reserve(value.size() + 8);
+            for (char ch : value) {
+                if (ch == '\'') {
+                    out.push_back('\'');
+                }
+                out.push_back(ch);
+            }
+            return out;
+        };
+
+        std::istringstream iss(arg);
+        std::string action;
+        std::string uuid;
+        iss >> action >> uuid;
+        if (action.empty() || uuid.empty()) {
+            std::cerr << "Usage: \\jit <compile|rebuild|inspect|retire> <uuid>\n";
+            return true;
+        }
+
+        std::string sql;
+        std::string escaped_uuid = escapeLiteral(uuid);
+        if (action == "compile") {
+            sql = "ALTER SYSTEM JIT COMPILE OBJECT '" + escaped_uuid + "'";
+        } else if (action == "rebuild") {
+            sql = "ALTER SYSTEM JIT REBUILD OBJECT '" + escaped_uuid + "'";
+        } else if (action == "inspect") {
+            sql = "SHOW JIT ARTIFACTS FOR OBJECT '" + escaped_uuid + "'";
+        } else if (action == "retire") {
+            sql = "ALTER SYSTEM JIT RETIRE ARTIFACT '" + escaped_uuid + "'";
+        } else {
+            std::cerr << "Unknown JIT action: " << action << "\n";
+            return true;
+        }
+        executeSQL(sql);
         return true;
     }
 

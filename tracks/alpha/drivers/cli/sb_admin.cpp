@@ -7,6 +7,8 @@
  *   sb_admin <database> job list [--like <pattern>]
  *   sb_admin <database> job runs <job_name>
  *   sb_admin <database> metrics
+ *   sb_admin <database> jit <compile|rebuild|inspect> <object_uuid>
+ *   sb_admin <database> jit retire <artifact_uuid>
  *
  * Options:
  *   -U, --user=<username>    Admin username
@@ -40,7 +42,11 @@ enum class AdminCommand {
     NONE,
     JOB_LIST,
     JOB_RUNS,
-    METRICS
+    METRICS,
+    JIT_COMPILE,
+    JIT_REBUILD,
+    JIT_INSPECT,
+    JIT_RETIRE
 };
 
 struct AdminConfig {
@@ -67,6 +73,8 @@ struct AdminConfig {
     bool quiet = false;
     std::string job_name;
     std::string like_pattern;
+    std::string jit_object_uuid;
+    std::string jit_artifact_uuid;
 };
 
 static AdminConfig g_config;
@@ -77,7 +85,9 @@ void printUsage(const char* program) {
               << "Usage:\n"
               << "  " << program << " <database> job list [--like <pattern>]\n"
               << "  " << program << " <database> job runs <job_name>\n"
-              << "  " << program << " <database> metrics\n\n"
+              << "  " << program << " <database> metrics\n"
+              << "  " << program << " <database> jit <compile|rebuild|inspect> <object_uuid>\n"
+              << "  " << program << " <database> jit retire <artifact_uuid>\n\n"
               << "Options:\n"
               << "  -U, --user=<username>    Admin username\n"
               << "  -P, --password=<pass>    Admin password\n"
@@ -355,6 +365,51 @@ bool metrics() {
     return true;
 }
 
+bool jitCompile() {
+    if (g_config.jit_object_uuid.empty()) {
+        printError("Object UUID is required for jit compile");
+        return false;
+    }
+    std::string sql = "ALTER SYSTEM JIT COMPILE OBJECT '" +
+                      escapeSqlLiteral(g_config.jit_object_uuid) + "'";
+    return executeSQL(sql);
+}
+
+bool jitRebuild() {
+    if (g_config.jit_object_uuid.empty()) {
+        printError("Object UUID is required for jit rebuild");
+        return false;
+    }
+    std::string sql = "ALTER SYSTEM JIT REBUILD OBJECT '" +
+                      escapeSqlLiteral(g_config.jit_object_uuid) + "'";
+    return executeSQL(sql);
+}
+
+bool jitInspect() {
+    if (g_config.jit_object_uuid.empty()) {
+        printError("Object UUID is required for jit inspect");
+        return false;
+    }
+    ResultSet rs;
+    std::string sql = "SHOW JIT ARTIFACTS FOR OBJECT '" +
+                      escapeSqlLiteral(g_config.jit_object_uuid) + "'";
+    if (!executeSQL(sql, &rs)) {
+        return false;
+    }
+    printResultSet(rs, true);
+    return true;
+}
+
+bool jitRetire() {
+    if (g_config.jit_artifact_uuid.empty()) {
+        printError("Artifact UUID is required for jit retire");
+        return false;
+    }
+    std::string sql = "ALTER SYSTEM JIT RETIRE ARTIFACT '" +
+                      escapeSqlLiteral(g_config.jit_artifact_uuid) + "'";
+    return executeSQL(sql);
+}
+
 bool parseArgs(int argc, char* argv[]) {
     std::vector<std::string> positional;
     for (int i = 1; i < argc; ++i) {
@@ -473,7 +528,7 @@ bool parseArgs(int argc, char* argv[]) {
     }
 
     size_t idx = 0;
-    if (positional[0] != "job" && positional[0] != "metrics") {
+    if (positional[0] != "job" && positional[0] != "metrics" && positional[0] != "jit") {
         if (g_config.database_path.empty()) {
             g_config.database_path = positional[0];
         }
@@ -505,6 +560,36 @@ bool parseArgs(int argc, char* argv[]) {
         }
     } else if (command == "metrics") {
         g_config.command = AdminCommand::METRICS;
+    } else if (command == "jit") {
+        if (idx >= positional.size()) {
+            printError("Missing jit subcommand (compile|rebuild|inspect|retire)");
+            return false;
+        }
+        std::string sub = positional[idx++];
+        if (sub == "compile") {
+            g_config.command = AdminCommand::JIT_COMPILE;
+            if (idx < positional.size()) {
+                g_config.jit_object_uuid = positional[idx++];
+            }
+        } else if (sub == "rebuild") {
+            g_config.command = AdminCommand::JIT_REBUILD;
+            if (idx < positional.size()) {
+                g_config.jit_object_uuid = positional[idx++];
+            }
+        } else if (sub == "inspect") {
+            g_config.command = AdminCommand::JIT_INSPECT;
+            if (idx < positional.size()) {
+                g_config.jit_object_uuid = positional[idx++];
+            }
+        } else if (sub == "retire") {
+            g_config.command = AdminCommand::JIT_RETIRE;
+            if (idx < positional.size()) {
+                g_config.jit_artifact_uuid = positional[idx++];
+            }
+        } else {
+            printError("Unknown jit subcommand: " + sub);
+            return false;
+        }
     } else {
         printError("Unknown command: " + command);
         return false;
@@ -551,6 +636,18 @@ int main(int argc, char* argv[]) {
             break;
         case AdminCommand::METRICS:
             ok = metrics();
+            break;
+        case AdminCommand::JIT_COMPILE:
+            ok = jitCompile();
+            break;
+        case AdminCommand::JIT_REBUILD:
+            ok = jitRebuild();
+            break;
+        case AdminCommand::JIT_INSPECT:
+            ok = jitInspect();
+            break;
+        case AdminCommand::JIT_RETIRE:
+            ok = jitRetire();
             break;
         default:
             printError("No command specified");
