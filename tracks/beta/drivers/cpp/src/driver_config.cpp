@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <set>
 #include <sstream>
 
 namespace scratchbird {
@@ -74,6 +75,82 @@ bool parseFrontDoorMode(const std::string& value, std::string& normalized) {
         normalized = "manager_proxy";
         return true;
     }
+    return false;
+}
+
+bool parseTransportMode(const std::string& value, std::string& normalized) {
+    std::string lower = toLower(trim(value));
+    if (lower.empty() || lower == "inet" || lower == "inet_listener" ||
+        lower == "listener" || lower == "tcp" || lower == "tcp_listener" ||
+        lower == "network") {
+        normalized = "inet_listener";
+        return true;
+    }
+    if (lower == "local" || lower == "ipc" || lower == "local_ipc" ||
+        lower == "local-ipc" || lower == "unix" || lower == "unix_socket" ||
+        lower == "pipe" || lower == "named_pipe") {
+        normalized = "local_ipc";
+        return true;
+    }
+    if (lower == "managed" || lower == "manager" || lower == "manager_proxy" ||
+        lower == "manager-proxy" || lower == "mcp") {
+        normalized = "managed";
+        return true;
+    }
+    if (lower == "embedded" || lower == "inproc" || lower == "in-process" ||
+        lower == "in_process") {
+        normalized = "embedded";
+        return true;
+    }
+    return false;
+}
+
+bool parseIPCMethod(const std::string& value, server::IPCMethod& method) {
+    std::string lower = toLower(trim(value));
+    if (lower.empty() || lower == "auto") {
+        method = server::IPCMethod::AUTO;
+        return true;
+    }
+    if (lower == "unix" || lower == "unix_socket" || lower == "socket") {
+        method = server::IPCMethod::UNIX_SOCKET;
+        return true;
+    }
+    if (lower == "pipe" || lower == "named_pipe" || lower == "named-pipe") {
+        method = server::IPCMethod::NAMED_PIPE;
+        return true;
+    }
+    if (lower == "tcp" || lower == "tcp_localhost" || lower == "localhost" ||
+        lower == "inet") {
+        method = server::IPCMethod::TCP_LOCALHOST;
+        return true;
+    }
+    return false;
+}
+
+std::vector<std::string> parseMethodList(const std::string& value) {
+    std::vector<std::string> methods;
+    std::string token;
+    std::stringstream ss(value);
+    while (std::getline(ss, token, ',')) {
+        std::string normalized = toLower(trim(token));
+        if (!normalized.empty()) {
+            methods.push_back(normalized);
+        }
+    }
+    return methods;
+}
+
+bool hasOverlappingMethods(const std::vector<std::string>& required,
+                           const std::vector<std::string>& forbidden,
+                           std::string& overlap) {
+    std::set<std::string> required_set(required.begin(), required.end());
+    for (const auto& method : forbidden) {
+        if (required_set.find(method) != required_set.end()) {
+            overlap = method;
+            return true;
+        }
+    }
+    overlap.clear();
     return false;
 }
 
@@ -285,7 +362,13 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
         const std::string& key = entry.first;
         const std::string& value = entry.second;
         if (key == "server" || key == "host") {
-            config.host = value;
+            if (value.rfind("unix:", 0) == 0) {
+                config.transport_mode = "local_ipc";
+                config.ipc_method = server::IPCMethod::UNIX_SOCKET;
+                config.ipc_path = value.substr(5);
+            } else {
+                config.host = value;
+            }
         } else if (key == "port") {
             uint32_t parsed = 0;
             if (!parseUint32(value, parsed) || parsed > 65535) {
@@ -305,6 +388,37 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             config.role = value;
         } else if (key == "schema") {
             config.schema = value;
+        } else if (key == "transport" || key == "transport_mode" || key == "mode") {
+            std::string normalized;
+            if (!parseTransportMode(value, normalized)) {
+                if (ctx) {
+                    ctx->message = "transport_mode must be embedded, local_ipc, inet_listener, or managed";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.transport_mode = normalized;
+            if (normalized == "managed") {
+                config.front_door_mode = "manager_proxy";
+            } else if (normalized == "inet_listener" && config.front_door_mode.empty()) {
+                config.front_door_mode = "direct";
+            }
+        } else if (key == "ipc_method") {
+            server::IPCMethod parsed = server::IPCMethod::AUTO;
+            if (!parseIPCMethod(value, parsed)) {
+                if (ctx) {
+                    ctx->message = "Invalid ipc_method (expected auto|unix|pipe|tcp)";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.ipc_method = parsed;
+            if (parsed != server::IPCMethod::TCP_LOCALHOST) {
+                config.transport_mode = "local_ipc";
+            }
+        } else if (key == "ipc_path" || key == "socket_path" || key == "pipe_name") {
+            config.ipc_path = value;
+            if (!value.empty()) {
+                config.transport_mode = "local_ipc";
+            }
         } else if (key == "protocol" || key == "parser" || key == "dialect") {
             std::string normalized;
             if (!parseProtocol(value, normalized)) {
@@ -324,6 +438,9 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
                 return core::Status::INVALID_ARGUMENT;
             }
             config.front_door_mode = normalized;
+            if (normalized == "manager_proxy") {
+                config.transport_mode = "managed";
+            }
         } else if (key == "manager_auth_token" || key == "mcp_auth_token" ||
                    key == "managerauthtoken") {
             config.manager_auth_token = value;
@@ -349,6 +466,43 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             if (parseBool(value, parsed)) {
                 config.manager_auth_fast_path = parsed;
             }
+        } else if (key == "client_flags" || key == "connect_client_flags") {
+            uint32_t parsed = 0;
+            if (!parseUint32(value, parsed) || parsed > 65535u) {
+                if (ctx) {
+                    ctx->message = "Invalid connect_client_flags";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.connect_client_flags = static_cast<uint16_t>(parsed);
+        } else if (key == "auth_method_id" || key == "authmethodid") {
+            config.auth_method_id = trim(value);
+        } else if (key == "auth_method_payload" || key == "authmethodpayload") {
+            config.auth_method_payload = value;
+        } else if (key == "auth_payload_json" || key == "authpayloadjson") {
+            config.auth_payload_json = value;
+        } else if (key == "auth_payload_b64" || key == "authpayloadb64") {
+            config.auth_payload_b64 = value;
+        } else if (key == "auth_provider_profile" || key == "authproviderprofile") {
+            config.auth_provider_profile = trim(value);
+        } else if (key == "auth_required_methods" || key == "authrequiredmethods") {
+            config.auth_required_methods = parseMethodList(value);
+        } else if (key == "auth_forbidden_methods" || key == "authforbiddenmethods") {
+            config.auth_forbidden_methods = parseMethodList(value);
+        } else if (key == "auth_require_channel_binding" || key == "authrequirechannelbinding") {
+            bool parsed = false;
+            if (!parseBool(value, parsed)) {
+                if (ctx) {
+                    ctx->message = "Invalid auth_require_channel_binding (expected true/false)";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.auth_require_channel_binding = parsed;
+        } else if (key == "workload_identity_token" || key == "workloadidentitytoken") {
+            config.workload_identity_token = value;
+        } else if (key == "proxy_principal_assertion" || key == "proxyprincipalassertion" ||
+                   key == "proxy_assertion") {
+            config.proxy_principal_assertion = value;
         } else if (key == "applicationname" || key == "application_name" || key == "app") {
             config.application_name = value;
         } else if (key == "ssl" || key == "sslmode") {
@@ -399,6 +553,17 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
         }
     }
 
+    std::string overlap_method;
+    if (hasOverlappingMethods(config.auth_required_methods,
+                              config.auth_forbidden_methods,
+                              overlap_method)) {
+        if (ctx) {
+            ctx->message = "Auth pinning profile is invalid: method appears in both required and forbidden sets (" +
+                           overlap_method + ")";
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+
     return core::Status::OK;
 }
 
@@ -424,10 +589,25 @@ core::Status parseDriverConnectionString(const std::string& conn_str,
     }
 
     applyDriverDefaults(config);
+
+    std::string overlap_method;
+    if (hasOverlappingMethods(config.auth_required_methods,
+                              config.auth_forbidden_methods,
+                              overlap_method)) {
+        if (ctx) {
+            ctx->message =
+                "Auth pinning profile is invalid: method appears in both required and forbidden sets (" +
+                overlap_method + ")";
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
     return core::Status::OK;
 }
 
 void applyDriverDefaults(NetworkClientConfig& config) {
+    if (config.transport_mode.empty()) {
+        config.transport_mode = "inet_listener";
+    }
     if (config.host.empty()) {
         config.host = "127.0.0.1";
     }
@@ -435,8 +615,29 @@ void applyDriverDefaults(NetworkClientConfig& config) {
         config.application_name = "scratchbird_driver";
     }
     if (config.front_door_mode.empty()) {
-        config.front_door_mode = "direct";
+        config.front_door_mode = (toLower(config.transport_mode) == "managed") ? "manager_proxy" : "direct";
     }
+    applyDriverDefaultsFromEnv(config);
+
+    std::string normalized_transport;
+    if (!parseTransportMode(config.transport_mode, normalized_transport)) {
+        normalized_transport = "inet_listener";
+    }
+    config.transport_mode = normalized_transport;
+
+    std::string normalized_front_door;
+    if (!parseFrontDoorMode(config.front_door_mode, normalized_front_door)) {
+        normalized_front_door = "direct";
+    }
+    config.front_door_mode = normalized_front_door;
+
+    if (config.front_door_mode == "manager_proxy") {
+        config.transport_mode = "managed";
+    }
+    if (config.transport_mode == "managed") {
+        config.front_door_mode = "manager_proxy";
+    }
+
     if (config.manager_username.empty()) {
         config.manager_username = config.username.empty() ? "admin" : config.username;
     }
@@ -449,7 +650,6 @@ void applyDriverDefaults(NetworkClientConfig& config) {
     if (config.manager_client_intent.empty()) {
         config.manager_client_intent = "native_v3";
     }
-    applyDriverDefaultsFromEnv(config);
 }
 
 void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
@@ -507,6 +707,30 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
         } else {
             config.protocol = "native";
         }
+    }
+    if (const char* transport = getEnv("SCRATCHBIRD_TRANSPORT_MODE")) {
+        std::string normalized;
+        if (parseTransportMode(transport, normalized)) {
+            config.transport_mode = normalized;
+        }
+    }
+    if (const char* transport = getEnv("SCRATCHBIRD_MODE")) {
+        std::string normalized;
+        if (parseTransportMode(transport, normalized)) {
+            config.transport_mode = normalized;
+        }
+    }
+    if (const char* ipc_method = getEnv("SCRATCHBIRD_IPC_METHOD")) {
+        server::IPCMethod parsed = server::IPCMethod::AUTO;
+        if (parseIPCMethod(ipc_method, parsed)) {
+            config.ipc_method = parsed;
+        }
+    }
+    if (const char* ipc_path = getEnv("SCRATCHBIRD_IPC_PATH")) {
+        config.ipc_path = ipc_path;
+    }
+    if (const char* socket_path = getEnv("SCRATCHBIRD_SOCKET_PATH")) {
+        config.ipc_path = socket_path;
     }
     if (const char* role = getEnv("SCRATCHBIRD_ROLE")) {
         config.role = role;
@@ -568,6 +792,45 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
             config.auth_method = method;
         }
     }
+    if (const char* client_flags = getEnv("SCRATCHBIRD_CONNECT_CLIENT_FLAGS")) {
+        uint32_t parsed = 0;
+        if (parseU32(client_flags, parsed) && parsed <= 65535u) {
+            config.connect_client_flags = static_cast<uint16_t>(parsed);
+        }
+    }
+    if (const char* method_id = getEnv("SCRATCHBIRD_AUTH_METHOD_ID")) {
+        config.auth_method_id = trim(method_id);
+    }
+    if (const char* method_payload = getEnv("SCRATCHBIRD_AUTH_METHOD_PAYLOAD")) {
+        config.auth_method_payload = method_payload;
+    }
+    if (const char* payload_json = getEnv("SCRATCHBIRD_AUTH_PAYLOAD_JSON")) {
+        config.auth_payload_json = payload_json;
+    }
+    if (const char* payload_b64 = getEnv("SCRATCHBIRD_AUTH_PAYLOAD_B64")) {
+        config.auth_payload_b64 = payload_b64;
+    }
+    if (const char* provider_profile = getEnv("SCRATCHBIRD_AUTH_PROVIDER_PROFILE")) {
+        config.auth_provider_profile = trim(provider_profile);
+    }
+    if (const char* required = getEnv("SCRATCHBIRD_AUTH_REQUIRED_METHODS")) {
+        config.auth_required_methods = parseMethodList(required);
+    }
+    if (const char* forbidden = getEnv("SCRATCHBIRD_AUTH_FORBIDDEN_METHODS")) {
+        config.auth_forbidden_methods = parseMethodList(forbidden);
+    }
+    if (const char* require_cb = getEnv("SCRATCHBIRD_AUTH_REQUIRE_CHANNEL_BINDING")) {
+        bool parsed = false;
+        if (parseBool(require_cb, parsed)) {
+            config.auth_require_channel_binding = parsed;
+        }
+    }
+    if (const char* workload_token = getEnv("SCRATCHBIRD_WORKLOAD_IDENTITY_TOKEN")) {
+        config.workload_identity_token = workload_token;
+    }
+    if (const char* proxy_assertion = getEnv("SCRATCHBIRD_PROXY_PRINCIPAL_ASSERTION")) {
+        config.proxy_principal_assertion = proxy_assertion;
+    }
     if (const char* allow_pw = getEnv("SCRATCHBIRD_ALLOW_PASSWORD_FALLBACK")) {
         config.allow_password_fallback = (std::string(allow_pw) == "1" ||
                                           std::string(allow_pw) == "true" ||
@@ -592,6 +855,44 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
     }
     if (const char* copy_chunk = getEnv("SCRATCHBIRD_COPY_CHUNK_BYTES")) {
         parseU32(copy_chunk, config.copy_chunk_bytes);
+    }
+
+    // Backward-compatible driver-prefixed environment names.
+    if (const char* driver_host = getEnv("SCRATCHBIRD_DRIVER_HOST")) {
+        if (config.host.empty() || config.host == "127.0.0.1") {
+            config.host = driver_host;
+        }
+    }
+    if (const char* driver_port = getEnv("SCRATCHBIRD_DRIVER_PORT")) {
+        if (config.port == network::DEFAULT_NATIVE_PORT) {
+            parseU16(driver_port, config.port);
+        }
+    }
+    if (const char* driver_db = getEnv("SCRATCHBIRD_DRIVER_DATABASE")) {
+        if (config.database.empty()) {
+            config.database = driver_db;
+        }
+    }
+    if (const char* driver_app = getEnv("SCRATCHBIRD_DRIVER_APPLICATION_NAME")) {
+        if (config.application_name.empty() || config.application_name == "scratchbird_odbc" ||
+            config.application_name == "scratchbird_driver") {
+            config.application_name = driver_app;
+        }
+    }
+    if (const char* driver_sslmode = getEnv("SCRATCHBIRD_DRIVER_SSLMODE")) {
+        config.ssl_mode = parseSslMode(driver_sslmode);
+    }
+    if (const char* driver_connect_to = getEnv("SCRATCHBIRD_DRIVER_CONNECT_TIMEOUT_MS")) {
+        parseU32(driver_connect_to, config.connect_timeout_ms);
+    }
+    if (const char* driver_ssl_cert = getEnv("SCRATCHBIRD_DRIVER_SSL_CERT")) {
+        config.ssl_cert = driver_ssl_cert;
+    }
+    if (const char* driver_ssl_key = getEnv("SCRATCHBIRD_DRIVER_SSL_KEY")) {
+        config.ssl_key = driver_ssl_key;
+    }
+    if (const char* driver_ssl_root = getEnv("SCRATCHBIRD_DRIVER_SSL_ROOT_CERT")) {
+        config.ssl_root_cert = driver_ssl_root;
     }
 }
 

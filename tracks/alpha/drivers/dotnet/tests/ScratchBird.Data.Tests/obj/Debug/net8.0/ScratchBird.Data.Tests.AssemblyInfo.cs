@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ScratchBird.Data.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+04f6255ce5524518600a9a2798936b700f2641c0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b4033679075cf1cbae3b258b848746a58f1a8973")]
 [assembly: System.Reflection.AssemblyProductAttribute("ScratchBird.Data.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ScratchBird.Data.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -20,11 +20,20 @@ sb_admin [OPTIONS] <command> [command options]
 
 ## Connection Options
 
-Use standard SBWP v1.1 connection flags:
+Use standard SBWP v1.1 connection flags and mode selectors:
 
 ```
 sb_admin -H host -p 3092 -U admin -d scratchbird <command>
+sb_admin --mode=managed --manager-auth-token=... <database> <command>
+sb_admin --mode=local-ipc --ipc-method=unix --ipc-path=build/ipc/scratchbird-main.sock <database> <command>
 ```
+
+Supported connection modes:
+
+- `--mode=inet` (listener TCP)
+- `--mode=managed` (manager proxy front-door)
+- `--mode=local-ipc` (`--ipc-method` / `--ipc-path`)
+- `--mode=embedded` (currently routed through local IPC in beta C++ client runtime)
 
 ## Notes
 

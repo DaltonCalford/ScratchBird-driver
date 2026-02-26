@@ -204,9 +204,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (config.database.empty()) {
-        config.database = "default";
-    }
     if (config.prompt_password && config.password.empty()) {
         config.password = promptHidden("Enter password: ");
     }

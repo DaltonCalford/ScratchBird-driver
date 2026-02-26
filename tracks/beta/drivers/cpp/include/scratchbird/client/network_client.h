@@ -18,13 +18,19 @@
 #include "scratchbird/network/network.h"
 #include "scratchbird/protocol/sbwp_protocol.h"
 #include "scratchbird/security/tls_config.h"
+#include "scratchbird/server/ipc_server.h"
 
 namespace scratchbird {
 namespace client {
 
 struct NetworkClientConfig {
+    // embedded | local_ipc | inet_listener | managed
+    std::string transport_mode{"inet_listener"};
     std::string host{"127.0.0.1"};
     uint16_t port{network::DEFAULT_NATIVE_PORT};
+    server::IPCMethod ipc_method{server::IPCMethod::AUTO};
+    std::string ipc_path;
+
     std::string protocol{"native"};
     std::string front_door_mode{"direct"};  // direct | manager_proxy
     std::string database;
@@ -54,7 +60,18 @@ struct NetworkClientConfig {
     std::string ssl_key;
     std::string ssl_root_cert;
 
+    uint16_t connect_client_flags{0x0100};
     protocol::AuthMethod auth_method{protocol::AuthMethod::ScramSha256};
+    std::string auth_method_id;
+    std::string auth_method_payload;
+    std::string auth_payload_json;
+    std::string auth_payload_b64;
+    std::string auth_provider_profile;
+    std::vector<std::string> auth_required_methods;
+    std::vector<std::string> auth_forbidden_methods;
+    bool auth_require_channel_binding{false};
+    std::string workload_identity_token;
+    std::string proxy_principal_assertion;
     bool allow_password_fallback{false};
     bool enable_compression{false};
 };

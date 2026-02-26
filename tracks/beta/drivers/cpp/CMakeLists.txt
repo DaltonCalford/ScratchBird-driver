@@ -38,6 +38,8 @@ endif()
 
 include(CTest)
 if (BUILD_TESTING)
+    target_compile_definitions(scratchbird_client PRIVATE SCRATCHBIRD_TEST_HOOKS)
+
     find_package(GTest)
     if (GTest_FOUND)
         add_executable(scratchbird_client_tests
@@ -46,7 +48,6 @@ if (BUILD_TESTING)
             tests/test_type_mapping.cpp
             tests/test_paging_payload.cpp
         )
-        target_compile_definitions(scratchbird_client_tests PRIVATE SCRATCHBIRD_TEST_HOOKS)
         target_link_libraries(scratchbird_client_tests
             PRIVATE
                 scratchbird_client

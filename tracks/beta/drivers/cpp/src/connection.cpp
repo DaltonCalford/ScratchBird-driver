@@ -654,22 +654,36 @@ core::Status Connection::connect(const std::string& database,
 
 core::Status Connection::connect(const ConnectionConfig& config,
                                  core::ErrorContext* ctx) {
-    if (config.ipc_method != server::IPCMethod::AUTO &&
-        config.ipc_method != server::IPCMethod::TCP_LOCALHOST) {
-        if (ctx) {
-            ctx->message = "Only TCP connections are supported in the driver client.";
-        }
-        return core::Status::NOT_SUPPORTED;
-    }
-
     NetworkClientConfig net_cfg;
     applyDriverDefaults(net_cfg);
     net_cfg.database = config.database_name;
     net_cfg.username = config.username;
     net_cfg.password = config.password;
     net_cfg.protocol = config.protocol.empty() ? "native" : config.protocol;
+    net_cfg.transport_mode = config.transport_mode.empty() ? "inet_listener" : config.transport_mode;
     net_cfg.host = config.host.empty() ? "127.0.0.1" : config.host;
     net_cfg.port = config.tcp_port;
+    net_cfg.ipc_method = config.ipc_method;
+    net_cfg.ipc_path = config.ipc_path;
+    net_cfg.front_door_mode = config.front_door_mode.empty() ? "direct" : config.front_door_mode;
+    net_cfg.manager_auth_token = config.manager_auth_token;
+    net_cfg.manager_username = config.manager_username;
+    net_cfg.manager_database = config.manager_database;
+    net_cfg.manager_connection_profile = config.manager_connection_profile;
+    net_cfg.manager_client_intent = config.manager_client_intent;
+    net_cfg.manager_client_flags = config.manager_client_flags;
+    net_cfg.manager_auth_fast_path = config.manager_auth_fast_path;
+    net_cfg.connect_client_flags = config.connect_client_flags;
+    net_cfg.auth_method_id = config.auth_method_id;
+    net_cfg.auth_method_payload = config.auth_method_payload;
+    net_cfg.auth_payload_json = config.auth_payload_json;
+    net_cfg.auth_payload_b64 = config.auth_payload_b64;
+    net_cfg.auth_provider_profile = config.auth_provider_profile;
+    net_cfg.auth_required_methods = config.auth_required_methods;
+    net_cfg.auth_forbidden_methods = config.auth_forbidden_methods;
+    net_cfg.auth_require_channel_binding = config.auth_require_channel_binding;
+    net_cfg.workload_identity_token = config.workload_identity_token;
+    net_cfg.proxy_principal_assertion = config.proxy_principal_assertion;
     net_cfg.connect_timeout_ms = config.connect_timeout_ms;
     net_cfg.read_timeout_ms = config.read_timeout_ms;
     net_cfg.write_timeout_ms = config.write_timeout_ms;

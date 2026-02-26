@@ -22,7 +22,16 @@ sb_security [OPTIONS] <command>
 
 ```
 sb_security -H host -p 3092 -U admin -d scratchbird <command>
+sb_security --mode=managed --manager-auth-token=... <command> <database>
+sb_security --mode=local-ipc --ipc-method=unix --ipc-path=build/ipc/scratchbird-main.sock <command> <database>
 ```
+
+Supported connection modes:
+
+- `--mode=inet` (listener TCP)
+- `--mode=managed` (manager proxy front-door)
+- `--mode=local-ipc` (`--ipc-method` / `--ipc-path`)
+- `--mode=embedded` (currently routed through local IPC in beta C++ client runtime)
 
 ## Notes
 

@@ -149,6 +149,40 @@ export const SUB_TYPE_TABLE = 1;
 export const SUB_TYPE_QUERY = 2;
 export const SUB_TYPE_EVENT = 3;
 
+export const AUTH_PARAM_METHOD_ID = "auth_method_id";
+export const AUTH_PARAM_PAYLOAD_JSON = "auth_payload_json";
+export const AUTH_PARAM_PAYLOAD_B64 = "auth_payload_b64";
+export const AUTH_PARAM_PROVIDER_PROFILE = "auth_provider_profile";
+
+export interface AuthPluginSelection {
+  methodId?: string;
+  payloadJson?: string;
+  payloadB64?: string;
+  providerProfile?: string;
+}
+
+export function applyAuthPluginSelection(
+  params: Record<string, string>,
+  selection: AuthPluginSelection,
+): void {
+  const methodId = (selection.methodId ?? "").trim();
+  if (methodId && !methodId.startsWith("scratchbird.auth.")) {
+    throw new Error("Invalid auth_method_id namespace");
+  }
+  if (methodId) {
+    params[AUTH_PARAM_METHOD_ID] = methodId;
+  }
+  if (selection.payloadJson) {
+    params[AUTH_PARAM_PAYLOAD_JSON] = selection.payloadJson;
+  }
+  if (selection.payloadB64) {
+    params[AUTH_PARAM_PAYLOAD_B64] = selection.payloadB64;
+  }
+  if (selection.providerProfile) {
+    params[AUTH_PARAM_PROVIDER_PROFILE] = selection.providerProfile;
+  }
+}
+
 export interface MessageHeader {
   type: number;
   flags: number;

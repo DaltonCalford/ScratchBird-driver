@@ -52,6 +52,7 @@ if (SB_BUILD_CLI_FDW)
     set(SB_ENGINE_OPTIMIZER_COMPILER_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_optimizer_compiler.a")
     set(SB_ENGINE_SECURITY_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_security.a")
     set(SB_ENGINE_IPC_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_ipc.a")
+    set(SB_ENGINE_UDR_LIB "${SB_ENGINE_LIB_DIR}/libscratchbird_udr.a")
 
     set(sb_engine_libs_ready TRUE)
     foreach(required_path IN LISTS
@@ -62,7 +63,8 @@ if (SB_BUILD_CLI_FDW)
             SB_ENGINE_CORE_LIB
             SB_ENGINE_OPTIMIZER_RUNTIME_LIB
             SB_ENGINE_SECURITY_LIB
-            SB_ENGINE_IPC_LIB)
+            SB_ENGINE_IPC_LIB
+            SB_ENGINE_UDR_LIB)
         if (NOT EXISTS "${required_path}")
             message(WARNING "Missing required ScratchBird engine artifact: ${required_path}")
             set(sb_engine_libs_ready FALSE)
@@ -88,6 +90,7 @@ if (SB_BUILD_CLI_FDW)
         "${SB_ENGINE_OPTIMIZER_RUNTIME_LIB}"
         "${SB_ENGINE_SECURITY_LIB}"
         "${SB_ENGINE_IPC_LIB}"
+        "${SB_ENGINE_UDR_LIB}"
     )
     if (EXISTS "${SB_ENGINE_OPTIMIZER_COMPILER_LIB}")
         list(APPEND SB_FB_LINK_ARCHIVES "${SB_ENGINE_OPTIMIZER_COMPILER_LIB}")
@@ -115,6 +118,7 @@ if (SB_BUILD_CLI_FDW)
                 "${SB_ENGINE_SBLR_LIB}"
                 "${SB_ENGINE_PARSER_LIB}"
                 "${SB_ENGINE_CORE_LIB}"
+                "${SB_ENGINE_UDR_LIB}"
                 OpenSSL::SSL
                 OpenSSL::Crypto
                 Threads::Threads

@@ -18,9 +18,33 @@ struct ConnectionConfig {
     std::string password;
     std::string protocol{"native"};
 
+    // embedded | local_ipc | inet_listener | managed
+    std::string transport_mode{"inet_listener"};
     std::string host{"127.0.0.1"};
     uint16_t tcp_port{3092};
     server::IPCMethod ipc_method{server::IPCMethod::AUTO};
+    std::string ipc_path;
+    std::string front_door_mode{"direct"};
+
+    std::string manager_auth_token;
+    std::string manager_username;
+    std::string manager_database;
+    std::string manager_connection_profile{"native_v3"};
+    std::string manager_client_intent{"native_v3"};
+    uint16_t manager_client_flags{0};
+    bool manager_auth_fast_path{true};
+
+    uint16_t connect_client_flags{0x0100};
+    std::string auth_method_id;
+    std::string auth_method_payload;
+    std::string auth_payload_json;
+    std::string auth_payload_b64;
+    std::string auth_provider_profile;
+    std::vector<std::string> auth_required_methods;
+    std::vector<std::string> auth_forbidden_methods;
+    bool auth_require_channel_binding{false};
+    std::string workload_identity_token;
+    std::string proxy_principal_assertion;
 
     uint32_t connect_timeout_ms{5000};
     uint32_t query_timeout_ms{30000};

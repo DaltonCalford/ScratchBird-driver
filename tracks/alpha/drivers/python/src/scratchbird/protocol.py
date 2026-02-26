@@ -161,6 +161,33 @@ SUB_TYPE_TABLE = 1
 SUB_TYPE_QUERY = 2
 SUB_TYPE_EVENT = 3
 
+AUTH_PARAM_METHOD_ID = "auth_method_id"
+AUTH_PARAM_PAYLOAD_JSON = "auth_payload_json"
+AUTH_PARAM_PAYLOAD_B64 = "auth_payload_b64"
+AUTH_PARAM_PROVIDER_PROFILE = "auth_provider_profile"
+
+
+@dataclass
+class AuthPluginSelection:
+    method_id: str = ""
+    payload_json: str = ""
+    payload_b64: str = ""
+    provider_profile: str = ""
+
+
+def apply_auth_plugin_selection(params: Dict[str, str], selection: AuthPluginSelection) -> None:
+    method_id = selection.method_id.strip()
+    if method_id and not method_id.startswith("scratchbird.auth."):
+        raise ValueError("invalid auth_method_id namespace")
+    if method_id:
+        params[AUTH_PARAM_METHOD_ID] = method_id
+    if selection.payload_json:
+        params[AUTH_PARAM_PAYLOAD_JSON] = selection.payload_json
+    if selection.payload_b64:
+        params[AUTH_PARAM_PAYLOAD_B64] = selection.payload_b64
+    if selection.provider_profile:
+        params[AUTH_PARAM_PROVIDER_PROFILE] = selection.provider_profile
+
 
 @dataclass
 class MessageHeader:

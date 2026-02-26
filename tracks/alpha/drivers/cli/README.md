@@ -4,6 +4,20 @@ Native CLI tools for ScratchBird operations and conformance workflows:
 `sb_isql`, `sb_admin`, `sb_backup`, `sb_security`, `sb_verify`, and
 `sbdriver_conformance`.
 
+## Connection Modes
+
+Network-backed CLIs (`sb_isql`, `sb_admin`, `sb_security`) now support the
+current ScratchBird connection protocol surface:
+
+- `--mode=embedded` (mapped to local IPC transport in the current beta C++
+  network client implementation)
+- `--mode=local-ipc` (`ipc_method` + optional `ipc_path`)
+- `--mode=inet` (listener TCP mode)
+- `--mode=managed` (manager proxy front-door mode)
+
+Use `--connection=<connection_string>` for full explicit control, or combine
+mode flags with `--conn-opt key=value` for additional driver parameters.
+
 ## Platform Support
 
 | Platform | Status | Notes |

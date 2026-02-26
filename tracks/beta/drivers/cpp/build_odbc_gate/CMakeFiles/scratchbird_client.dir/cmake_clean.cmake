@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/scratchbird_client.dir/src/circuit_breaker.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/circuit_breaker.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/connection.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/connection.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/core/sqlstate.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/core/sqlstate.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/core/type_extractor.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/core/type_extractor.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/driver_config.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/driver_config.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/keepalive.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/keepalive.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/leak_detector.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/leak_detector.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/network/network.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/network/network.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/network/socket.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/network/socket.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/network/socket_types.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/network/socket_types.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/network_client.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/network_client.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/protocol/sbwp_protocol.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/protocol/sbwp_protocol.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/scratchbird_client_c.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/scratchbird_client_c.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/security/tls_context.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/security/tls_context.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/statement_cache.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/statement_cache.cpp.o.d"
+  "CMakeFiles/scratchbird_client.dir/src/telemetry.cpp.o"
+  "CMakeFiles/scratchbird_client.dir/src/telemetry.cpp.o.d"
+  "libscratchbird_client.a"
+  "libscratchbird_client.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/scratchbird_client.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

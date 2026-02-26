@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"strings"
 )
 
 const (
@@ -21,6 +22,43 @@ const (
 	headerSize    = 40
 	maxMessageSize = 1024 * 1024 * 1024
 )
+
+const (
+	authParamMethodID        = "auth_method_id"
+	authParamPayloadJSON     = "auth_payload_json"
+	authParamPayloadB64      = "auth_payload_b64"
+	authParamProviderProfile = "auth_provider_profile"
+)
+
+type AuthPluginSelection struct {
+	MethodID        string
+	PayloadJSON     string
+	PayloadB64      string
+	ProviderProfile string
+}
+
+func ApplyAuthPluginSelection(params map[string]string, selection AuthPluginSelection) error {
+	if params == nil {
+		return errors.New("params map is nil")
+	}
+	methodID := strings.TrimSpace(selection.MethodID)
+	if methodID != "" && !strings.HasPrefix(methodID, "scratchbird.auth.") {
+		return errors.New("invalid auth_method_id namespace")
+	}
+	if methodID != "" {
+		params[authParamMethodID] = methodID
+	}
+	if selection.PayloadJSON != "" {
+		params[authParamPayloadJSON] = selection.PayloadJSON
+	}
+	if selection.PayloadB64 != "" {
+		params[authParamPayloadB64] = selection.PayloadB64
+	}
+	if selection.ProviderProfile != "" {
+		params[authParamProviderProfile] = selection.ProviderProfile
+	}
+	return nil
+}
 
 type messageType byte
 

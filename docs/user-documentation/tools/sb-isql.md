@@ -33,6 +33,19 @@ sb_isql [OPTIONS] [DATABASE]
 | `-U, --user USER` | Username |
 | `-P, --password` | Prompt for password |
 | `-d, --database DB` | Database name |
+| `--connection STR` | Full driver connection string |
+| `--mode MODE` | `embedded`, `local-ipc`, `inet`, or `managed` |
+| `--ipc-method METHOD` | Local IPC method (`auto`, `unix`, `pipe`, `tcp`) |
+| `--ipc-path PATH` | Local IPC endpoint override |
+| `--front-door-mode MODE` | `direct` or `manager_proxy` |
+| `--manager-auth-token TOKEN` | Managed front-door token |
+| `--conn-opt KEY=VALUE` | Extra driver connection option (repeatable) |
+
+Mode notes:
+
+- `inet` and `managed` are fully network-backed.
+- `local-ipc` supports Unix socket/TCP-local IPC routing through the beta C++ client.
+- `embedded` is currently routed through local IPC transport in the beta C++ client.
 
 ---
 

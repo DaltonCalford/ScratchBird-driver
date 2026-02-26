@@ -69,6 +69,161 @@ bool isManagerProxyMode(const std::string& value) {
     return lower == "manager_proxy" || lower == "manager-proxy" || lower == "managed";
 }
 
+bool isLocalIpcTransport(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower == "local_ipc" || lower == "local-ipc" || lower == "ipc" ||
+           lower == "local";
+}
+
+bool isManagedTransport(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower == "managed" || lower == "manager" ||
+           lower == "manager_proxy" || lower == "manager-proxy";
+}
+
+bool isInetTransport(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower.empty() || lower == "inet_listener" || lower == "inet" ||
+           lower == "listener" || lower == "tcp" || lower == "tcp_listener" ||
+           lower == "network";
+}
+
+bool isEmbeddedTransport(const std::string& value) {
+    std::string lower = toLower(value);
+    return lower == "embedded" || lower == "inproc" ||
+           lower == "in-process" || lower == "in_process";
+}
+
+std::string joinMethodList(const std::vector<std::string>& methods) {
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& method : methods) {
+        if (method.empty()) {
+            continue;
+        }
+        if (!first) {
+            out << ",";
+        }
+        out << method;
+        first = false;
+    }
+    return out.str();
+}
+
+bool hasPinningOverlap(const std::vector<std::string>& required,
+                       const std::vector<std::string>& forbidden,
+                       std::string& overlap_out) {
+    for (const auto& req : required) {
+        const std::string req_norm = toLower(req);
+        if (req_norm.empty()) {
+            continue;
+        }
+        for (const auto& forbidden_method : forbidden) {
+            if (req_norm == toLower(forbidden_method)) {
+                overlap_out = req_norm;
+                return true;
+            }
+        }
+    }
+    overlap_out.clear();
+    return false;
+}
+
+std::string sanitizeDatabaseName(std::string value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char ch : value) {
+        if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-') {
+            out.push_back(ch);
+        }
+    }
+    if (out.empty()) {
+        out = "default";
+    }
+    return out;
+}
+
+std::string defaultIpcPathForDatabase(const std::string& database_name,
+                                      server::IPCMethod method) {
+    std::string safe_name = sanitizeDatabaseName(database_name);
+    if (method == server::IPCMethod::NAMED_PIPE) {
+        return "\\\\.\\pipe\\scratchbird-" + safe_name;
+    }
+    return "build/ipc/scratchbird-" + safe_name + ".sock";
+}
+
+server::IPCMethod resolveLocalIpcMethod(server::IPCMethod requested) {
+    if (requested != server::IPCMethod::AUTO) {
+        return requested;
+    }
+#ifdef _WIN32
+    return server::IPCMethod::TCP_LOCALHOST;
+#else
+    return server::IPCMethod::UNIX_SOCKET;
+#endif
+}
+
+core::Status resolveConnectionAddress(const NetworkClientConfig& config,
+                                      network::NetworkAddress& address_out,
+                                      bool& local_ipc_transport,
+                                      core::ErrorContext* ctx) {
+    local_ipc_transport = false;
+    std::string transport = toLower(config.transport_mode);
+    if (transport.empty()) {
+        transport = "inet_listener";
+    }
+
+    if (isEmbeddedTransport(transport)) {
+        // The beta client does not have an in-process engine entry-point yet.
+        // Route embedded mode through local IPC transport for compatibility.
+        transport = "local_ipc";
+    }
+
+    if (isLocalIpcTransport(transport)) {
+        server::IPCMethod method = resolveLocalIpcMethod(config.ipc_method);
+        if (method == server::IPCMethod::UNIX_SOCKET) {
+#ifdef _WIN32
+            return setError(ctx,
+                            core::Status::NOT_SUPPORTED,
+                            "transport_mode=local_ipc with ipc_method=unix is not supported on Windows");
+#else
+            std::string socket_path = config.ipc_path.empty()
+                ? defaultIpcPathForDatabase(config.database, method)
+                : config.ipc_path;
+            if (socket_path.empty()) {
+                return setError(ctx, core::Status::INVALID_ARGUMENT, "IPC socket path is required");
+            }
+            address_out = network::NetworkAddress(socket_path);
+            local_ipc_transport = true;
+            return core::Status::OK;
+#endif
+        }
+
+        if (method == server::IPCMethod::NAMED_PIPE) {
+            return setError(ctx,
+                            core::Status::NOT_SUPPORTED,
+                            "transport_mode=local_ipc with ipc_method=pipe is not implemented in this client");
+        }
+
+        address_out.family = network::AddressFamily::IPV4;
+        address_out.host = "127.0.0.1";
+        address_out.port = config.port;
+        local_ipc_transport = true;
+        return core::Status::OK;
+    }
+
+    if (isManagedTransport(transport) || isInetTransport(transport)) {
+        address_out.family = network::AddressFamily::IPV4;
+        address_out.host = config.host.empty() ? "127.0.0.1" : config.host;
+        address_out.port = config.port;
+        return core::Status::OK;
+    }
+
+    return setError(ctx,
+                    core::Status::INVALID_ARGUMENT,
+                    "transport_mode must be embedded, local_ipc, inet_listener, or managed");
+}
+
 void appendU16(std::vector<uint8_t>& out, uint16_t value) {
     out.push_back(static_cast<uint8_t>(value & 0xFF));
     out.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
@@ -366,6 +521,11 @@ core::Status mapProtocolError(const protocol::ProtocolMessage& msg,
         return status;
     }
     core::Status mapped = core::Status::INTERNAL_ERROR;
+    if (message.find("AUTH_CLIENT_PINNING_VIOLATION") != std::string::npos ||
+        message.find("AUTH_METHOD_NOT_ALLOWED") != std::string::npos ||
+        message.find("AUTH_NO_LOGIN_DIRECT") != std::string::npos) {
+        mapped = core::Status::INVALID_AUTHORIZATION;
+    } else
     if (sqlstate.rfind("08", 0) == 0) {
         mapped = core::Status::CONNECTION_FAILURE;
     } else if (sqlstate == "28P01" || sqlstate == "28000") {
@@ -751,15 +911,23 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
                         "front_door_mode must be direct or manager_proxy");
     }
     config_ = config;
+    if (isManagedTransport(config_.transport_mode) && !isManagerProxyMode(config_.front_door_mode)) {
+        config_.front_door_mode = "manager_proxy";
+    }
+    if (isManagerProxyMode(config_.front_door_mode) && !isManagedTransport(config_.transport_mode)) {
+        config_.transport_mode = "managed";
+    }
     network::NetworkInitGuard guard;
     if (!guard.isInitialized()) {
         return setError(ctx, core::Status::CONNECTION_FAILURE, "Network init failed");
     }
 
     network::NetworkAddress address;
-    address.family = network::AddressFamily::IPV4;
-    address.host = config_.host;
-    address.port = config_.port;
+    bool local_ipc_transport = false;
+    core::Status status = resolveConnectionAddress(config_, address, local_ipc_transport, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
 
     network::SocketOptions options;
     options.connect_timeout_ms = config_.connect_timeout_ms;
@@ -769,6 +937,10 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
     socket_ = network::Socket::connect(address, options, ctx);
     if (!socket_) {
         return setError(ctx, core::Status::CONNECTION_FAILURE, "Connection failed");
+    }
+
+    if (local_ipc_transport) {
+        config_.ssl_mode = network::SSLMode::DISABLED;
     }
 
     if (config_.ssl_mode != network::SSLMode::DISABLED) {
@@ -798,10 +970,14 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
         }
         tls_active_ = true;
     } else {
-        return setError(ctx, core::Status::CONNECTION_FAILURE, "TLS is required");
+        if (!local_ipc_transport) {
+            return setError(ctx,
+                            core::Status::CONNECTION_FAILURE,
+                            "TLS is required for inet_listener/managed transport");
+        }
     }
 
-    core::Status status = core::Status::OK;
+    status = core::Status::OK;
     if (isManagerProxyMode(config_.front_door_mode)) {
         status = performManagerConnect(ctx);
         if (status != core::Status::OK) {
@@ -2003,6 +2179,17 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
     next_sequence_ = 1;
     parameter_status_.clear();
     session_id_.fill(0);
+
+    std::string overlap_method;
+    if (hasPinningOverlap(config_.auth_required_methods,
+                          config_.auth_forbidden_methods,
+                          overlap_method)) {
+        return setError(ctx,
+                        core::Status::INVALID_ARGUMENT,
+                        "Invalid auth pinning profile: method appears in both required and forbidden sets (" +
+                            overlap_method + ")");
+    }
+
     uint64_t features = protocol::kFeatureSblr | protocol::kFeatureNotifications | protocol::kFeatureQueryPlan;
     if (config_.enable_compression) {
         features |= protocol::kFeatureCompression;
@@ -2015,6 +2202,39 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
     }
     if (!config_.application_name.empty()) {
         params["application_name"] = config_.application_name;
+    }
+    params["client_flags"] = std::to_string(config_.connect_client_flags);
+    if (!config_.auth_method_id.empty()) {
+        params["auth_method_id"] = config_.auth_method_id;
+    }
+    if (!config_.auth_method_payload.empty()) {
+        params["auth_method_payload"] = config_.auth_method_payload;
+    }
+    if (!config_.auth_payload_json.empty()) {
+        params["auth_payload_json"] = config_.auth_payload_json;
+    }
+    if (!config_.auth_payload_b64.empty()) {
+        params["auth_payload_b64"] = config_.auth_payload_b64;
+    }
+    if (!config_.auth_provider_profile.empty()) {
+        params["auth_provider_profile"] = config_.auth_provider_profile;
+    }
+    const std::string required_methods = joinMethodList(config_.auth_required_methods);
+    if (!required_methods.empty()) {
+        params["auth_required_methods"] = required_methods;
+    }
+    const std::string forbidden_methods = joinMethodList(config_.auth_forbidden_methods);
+    if (!forbidden_methods.empty()) {
+        params["auth_forbidden_methods"] = forbidden_methods;
+    }
+    if (config_.auth_require_channel_binding) {
+        params["auth_require_channel_binding"] = "1";
+    }
+    if (!config_.workload_identity_token.empty()) {
+        params["workload_identity_token"] = config_.workload_identity_token;
+    }
+    if (!config_.proxy_principal_assertion.empty()) {
+        params["proxy_principal_assertion"] = config_.proxy_principal_assertion;
     }
 
     auto payload = protocol::buildStartupPayload(features, params);

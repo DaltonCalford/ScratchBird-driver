@@ -144,6 +144,24 @@ defmodule ScratchBird.Protocol do
   def subscribe_type(:query), do: 2
   def subscribe_type(:event), do: 3
 
+  @auth_param_method_id "auth_method_id"
+  @auth_param_payload_json "auth_payload_json"
+  @auth_param_payload_b64 "auth_payload_b64"
+  @auth_param_provider_profile "auth_provider_profile"
+
+  def apply_auth_plugin_selection(params, selection) when is_map(params) and is_map(selection) do
+    method_id = selection |> Map.get(:method_id, "") |> to_string() |> String.trim()
+    if method_id != "" and not String.starts_with?(method_id, "scratchbird.auth.") do
+      raise ArgumentError, "invalid auth_method_id namespace"
+    end
+
+    params
+    |> maybe_put(@auth_param_method_id, method_id)
+    |> maybe_put(@auth_param_payload_json, Map.get(selection, :payload_json, ""))
+    |> maybe_put(@auth_param_payload_b64, Map.get(selection, :payload_b64, ""))
+    |> maybe_put(@auth_param_provider_profile, Map.get(selection, :provider_profile, ""))
+  end
+
   def encode_message(%{type: type, flags: flags, length: length, sequence: sequence, attachment_id: attachment_id, txn_id: txn_id}, payload) do
     attachment_id = attachment_id || <<0::128>>
     <<
@@ -312,6 +330,9 @@ defmodule ScratchBird.Protocol do
   def build_stream_control_payload(control_type, window_size, timeout_ms) do
     <<control_type::8, 0::24, window_size::little-32, timeout_ms::little-32>>
   end
+
+  defp maybe_put(map, _key, ""), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, to_string(value))
 
   def build_attach_create_payload(emulation_mode, db_name) do
     mode_bytes = emulation_mode || ""

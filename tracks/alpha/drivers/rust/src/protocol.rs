@@ -133,6 +133,11 @@ pub const SUB_TYPE_TABLE: u8 = 1;
 pub const SUB_TYPE_QUERY: u8 = 2;
 pub const SUB_TYPE_EVENT: u8 = 3;
 
+pub const AUTH_PARAM_METHOD_ID: &str = "auth_method_id";
+pub const AUTH_PARAM_PAYLOAD_JSON: &str = "auth_payload_json";
+pub const AUTH_PARAM_PAYLOAD_B64: &str = "auth_payload_b64";
+pub const AUTH_PARAM_PROVIDER_PROFILE: &str = "auth_provider_profile";
+
 pub const AUTH_OK: u8 = 0;
 pub const AUTH_PASSWORD: u8 = 1;
 pub const AUTH_MD5: u8 = 2;
@@ -191,6 +196,49 @@ pub struct ColumnValue {
 pub struct ParamValue {
     pub format: u16,
     pub data: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuthPluginSelection {
+    pub method_id: String,
+    pub payload_json: String,
+    pub payload_b64: String,
+    pub provider_profile: String,
+}
+
+pub fn apply_auth_plugin_selection(
+    params: &mut HashMap<String, String>,
+    selection: &AuthPluginSelection,
+) -> Result<()> {
+    let method_id = selection.method_id.trim();
+    if !method_id.is_empty() && !method_id.starts_with("scratchbird.auth.") {
+        return Err(Error::new(
+            ErrorKind::Auth,
+            "invalid auth_method_id namespace",
+        ));
+    }
+    if !method_id.is_empty() {
+        params.insert(AUTH_PARAM_METHOD_ID.to_string(), method_id.to_string());
+    }
+    if !selection.payload_json.is_empty() {
+        params.insert(
+            AUTH_PARAM_PAYLOAD_JSON.to_string(),
+            selection.payload_json.clone(),
+        );
+    }
+    if !selection.payload_b64.is_empty() {
+        params.insert(
+            AUTH_PARAM_PAYLOAD_B64.to_string(),
+            selection.payload_b64.clone(),
+        );
+    }
+    if !selection.provider_profile.is_empty() {
+        params.insert(
+            AUTH_PARAM_PROVIDER_PROFILE.to_string(),
+            selection.provider_profile.clone(),
+        );
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

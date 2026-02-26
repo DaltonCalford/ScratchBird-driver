@@ -129,3 +129,76 @@ TEST(DriverDefaultsEnvTest, ParsesManagerProxyConnectionParams) {
     EXPECT_EQ(cfg.manager_client_flags, 7);
     EXPECT_FALSE(cfg.manager_auth_fast_path);
 }
+
+TEST(DriverDefaultsEnvTest, ParsesLocalIpcTransportParams) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "database=main;transport_mode=local_ipc;ipc_method=unix;ipc_path=build/ipc/scratchbird-main.sock",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.transport_mode, "local_ipc");
+    EXPECT_EQ(cfg.ipc_method, scratchbird::server::IPCMethod::UNIX_SOCKET);
+    EXPECT_EQ(cfg.ipc_path, "build/ipc/scratchbird-main.sock");
+}
+
+TEST(DriverDefaultsEnvTest, ManagedTransportSetsManagerProxyFrontDoor) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "database=main;transport_mode=managed",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.transport_mode, "managed");
+    EXPECT_EQ(cfg.front_door_mode, "manager_proxy");
+}
+
+TEST(DriverDefaultsEnvTest, ParsesAuthPluginAndPinningParams) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "database=main;"
+        "auth_method_id=scratchbird.auth.proxy_assertion;"
+        "auth_method_payload=assertion.jwt;"
+        "auth_payload_json=principal_proxy;"
+        "auth_payload_b64=cHJveHk=;"
+        "auth_provider_profile=corp_ldap_primary;"
+        "auth_required_methods=scratchbird.auth.proxy_assertion,scratchbird.auth.factor_chain_2fa;"
+        "auth_forbidden_methods=scratchbird.auth.password_compat;"
+        "auth_require_channel_binding=true;"
+        "workload_identity_token=workload.jwt;"
+        "proxy_principal_assertion=proxy.jwt;"
+        "connect_client_flags=256",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.auth_method_id, "scratchbird.auth.proxy_assertion");
+    EXPECT_EQ(cfg.auth_method_payload, "assertion.jwt");
+    EXPECT_EQ(cfg.auth_payload_json, "principal_proxy");
+    EXPECT_EQ(cfg.auth_payload_b64, "cHJveHk=");
+    EXPECT_EQ(cfg.auth_provider_profile, "corp_ldap_primary");
+    ASSERT_EQ(cfg.auth_required_methods.size(), 2U);
+    EXPECT_EQ(cfg.auth_required_methods[0], "scratchbird.auth.proxy_assertion");
+    EXPECT_EQ(cfg.auth_required_methods[1], "scratchbird.auth.factor_chain_2fa");
+    ASSERT_EQ(cfg.auth_forbidden_methods.size(), 1U);
+    EXPECT_EQ(cfg.auth_forbidden_methods[0], "scratchbird.auth.password_compat");
+    EXPECT_TRUE(cfg.auth_require_channel_binding);
+    EXPECT_EQ(cfg.workload_identity_token, "workload.jwt");
+    EXPECT_EQ(cfg.proxy_principal_assertion, "proxy.jwt");
+    EXPECT_EQ(cfg.connect_client_flags, 256);
+}
+
+TEST(DriverDefaultsEnvTest, RejectsOverlappingPinningProfiles) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "database=main;"
+        "auth_required_methods=scratchbird.auth.scram_sha_256;"
+        "auth_forbidden_methods=scratchbird.auth.scram_sha_256",
+        cfg,
+        &ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
+    EXPECT_NE(ctx.message.find("required and forbidden"), std::string::npos);
+}

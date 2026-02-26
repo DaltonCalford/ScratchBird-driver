@@ -96,6 +96,20 @@ struct IsqlConfig {
     std::string password;
     std::string host = "localhost";
     uint16_t port = 3092;
+    std::string connection_string;
+    std::string mode = "inet_listener";  // embedded|local_ipc|inet_listener|managed
+    std::string ipc_method = "auto";     // auto|unix|pipe|tcp
+    std::string ipc_path;
+    std::string front_door_mode = "direct";
+    std::string manager_auth_token;
+    std::string manager_username;
+    std::string manager_database;
+    std::string manager_connection_profile = "native_v3";
+    std::string manager_client_intent = "native_v3";
+    std::string manager_client_flags;
+    std::string manager_auth_fast_path;
+    std::string ssl_mode;
+    std::vector<std::pair<std::string, std::string>> conn_options;
 
     std::string command;           // -c: single command
     std::string input_file;        // -f: input file
@@ -182,6 +196,8 @@ static IsqlConfig g_config;
 static std::ofstream* g_output_file = nullptr;
 static std::ofstream* g_error_file = nullptr;
 static std::streambuf* g_original_cerr = nullptr;  // To restore stderr
+
+std::string buildConnectionTarget(const std::string& database_override = "");
 
 // =============================================================================
 // Signal handling
@@ -1807,8 +1823,9 @@ bool handleMetaCommand(const std::string& cmd) {
         }
 
         g_config.database_path = arg;
+        std::string target = buildConnectionTarget(arg);
         core::ErrorContext ctx;
-        core::Status status = g_connection->connect(arg, g_config.username, g_config.password, &ctx);
+        core::Status status = g_connection->connect(target, g_config.username, g_config.password, &ctx);
         if (status != core::Status::OK) {
             std::cerr << "Connection failed: " << ctx.message << "\n";
         } else {
@@ -2902,6 +2919,16 @@ void printUsage(const char* program) {
     std::cout << "  -P, --password=<pass>     Password (prompted if not given)\n";
     std::cout << "  -p, --port=<n>            TCP port (default: 3092)\n";
     std::cout << "  -H, --host=<host>         Host (default: localhost)\n";
+    std::cout << "      --connection=<str>    Full driver connection string\n";
+    std::cout << "      --mode=<m>            embedded|local-ipc|inet|managed\n";
+    std::cout << "      --ipc-method=<m>      auto|unix|pipe|tcp\n";
+    std::cout << "      --ipc-path=<path>     Local IPC socket/pipe path\n";
+    std::cout << "      --front-door-mode=<m> direct|manager_proxy\n";
+    std::cout << "      --manager-auth-token=<token>  Manager auth token\n";
+    std::cout << "      --manager-user=<name> Manager user (optional)\n";
+    std::cout << "      --manager-db=<name>   Manager target database\n";
+    std::cout << "      --sslmode=<mode>      disable|allow|prefer|require|verify-ca|verify-full\n";
+    std::cout << "      --conn-opt key=value  Extra connection option (repeatable)\n";
     std::cout << "  -c, --command=<sql>       Execute single command and exit\n";
     std::cout << "  -f, --file=<file>         Execute commands from file and exit\n";
     std::cout << "  -i, --input=<file>        Alias for -f (Firebird compatible)\n";
@@ -2966,6 +2993,8 @@ void printUsage(const char* program) {
     std::cout << "  " << program << " mydb.sbdb -b -f script.sql   # Stop on error\n";
     std::cout << "  " << program << " mydb.sbdb -x -o schema.sql   # Extract DDL to file\n";
     std::cout << "  " << program << " mydb.sbdb -ex > backup.sql   # Extract with CREATE DATABASE\n";
+    std::cout << "  " << program << " mydb.sbdb --mode=local-ipc --ipc-path=build/ipc/scratchbird-mydb.sock\n";
+    std::cout << "  " << program << " mydb.sbdb --mode=managed --manager-auth-token=token123\n";
 }
 
 void printVersion() {
@@ -2983,6 +3012,126 @@ std::string normalizeParserName(const std::string& input) {
     }
 
     return {};
+}
+
+std::string normalizeConnectionMode(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (value == "embedded" || value == "inproc" || value == "in-process" || value == "in_process") {
+        return "embedded";
+    }
+    if (value == "local" || value == "ipc" || value == "local-ipc" || value == "local_ipc" ||
+        value == "unix" || value == "pipe") {
+        return "local_ipc";
+    }
+    if (value == "inet" || value == "listener" || value == "inet_listener" ||
+        value == "tcp" || value == "network" || value.empty()) {
+        return "inet_listener";
+    }
+    if (value == "managed" || value == "manager" || value == "manager_proxy" || value == "manager-proxy") {
+        return "managed";
+    }
+    return {};
+}
+
+bool isLikelyConnectionString(const std::string& value) {
+    if (value.rfind("scratchbird://", 0) == 0) {
+        return true;
+    }
+    return value.find('=') != std::string::npos && value.find(';') != std::string::npos;
+}
+
+bool splitConnOption(const std::string& value, std::string& key, std::string& out_value) {
+    size_t eq = value.find('=');
+    if (eq == std::string::npos || eq == 0 || eq + 1 >= value.size()) {
+        return false;
+    }
+    key = value.substr(0, eq);
+    out_value = value.substr(eq + 1);
+    return !key.empty();
+}
+
+std::string encodeConnectionValue(const std::string& value) {
+    if (value.find(';') != std::string::npos || value.find(' ') != std::string::npos) {
+        return "{" + value + "}";
+    }
+    return value;
+}
+
+void appendConnParam(std::vector<std::pair<std::string, std::string>>& params,
+                     const std::string& key,
+                     const std::string& value) {
+    if (!key.empty() && !value.empty()) {
+        params.emplace_back(key, value);
+    }
+}
+
+std::string buildConnectionTarget(const std::string& database_override) {
+    if (!database_override.empty() && isLikelyConnectionString(database_override)) {
+        return database_override;
+    }
+    if (!g_config.connection_string.empty()) {
+        return g_config.connection_string;
+    }
+    if (database_override.empty() && isLikelyConnectionString(g_config.database_path)) {
+        return g_config.database_path;
+    }
+
+    std::string mode = normalizeConnectionMode(g_config.mode);
+    if (mode.empty()) {
+        mode = "inet_listener";
+    }
+
+    std::vector<std::pair<std::string, std::string>> params;
+    appendConnParam(params, "database", database_override.empty() ? g_config.database_path : database_override);
+    appendConnParam(params, "protocol", "native");
+    appendConnParam(params, "transport_mode", mode);
+
+    if (mode == "local_ipc") {
+        std::string ipc_method = g_config.ipc_method.empty() ? "auto" : g_config.ipc_method;
+        appendConnParam(params, "ipc_method", ipc_method);
+        appendConnParam(params, "ipc_path", g_config.ipc_path);
+        // local_ipc over TCP still needs an explicit port override when non-default.
+        std::string ipc_method_lower = ipc_method;
+        std::transform(ipc_method_lower.begin(), ipc_method_lower.end(), ipc_method_lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (ipc_method_lower == "tcp") {
+            appendConnParam(params, "port", std::to_string(g_config.port));
+        }
+    } else {
+        appendConnParam(params, "host", g_config.host.empty() ? "127.0.0.1" : g_config.host);
+        appendConnParam(params, "port", std::to_string(g_config.port));
+    }
+
+    std::string front_door = g_config.front_door_mode;
+    if (mode == "managed") {
+        front_door = "manager_proxy";
+    }
+    appendConnParam(params, "front_door_mode", front_door);
+    appendConnParam(params, "manager_auth_token", g_config.manager_auth_token);
+    appendConnParam(params, "manager_username", g_config.manager_username);
+    appendConnParam(params, "manager_database", g_config.manager_database);
+    appendConnParam(params, "manager_connection_profile", g_config.manager_connection_profile);
+    appendConnParam(params, "manager_client_intent", g_config.manager_client_intent);
+    appendConnParam(params, "manager_client_flags", g_config.manager_client_flags);
+    appendConnParam(params, "manager_auth_fast_path", g_config.manager_auth_fast_path);
+    appendConnParam(params, "sslmode", g_config.ssl_mode);
+
+    for (const auto& kv : g_config.conn_options) {
+        appendConnParam(params, kv.first, kv.second);
+    }
+
+    std::ostringstream conn;
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) {
+            conn << ';';
+        }
+        conn << params[i].first << '=' << encodeConnectionValue(params[i].second);
+    }
+    return conn.str();
 }
 
 bool parseArgs(int argc, char* argv[]) {
@@ -3013,6 +3162,74 @@ bool parseArgs(int argc, char* argv[]) {
             g_config.host = argv[++i];
         } else if (arg.find("--host=") == 0) {
             g_config.host = arg.substr(7);
+        } else if (arg == "--connection" && i + 1 < argc) {
+            g_config.connection_string = argv[++i];
+        } else if (arg.rfind("--connection=", 0) == 0) {
+            g_config.connection_string = arg.substr(13);
+        } else if (arg == "--mode" && i + 1 < argc) {
+            g_config.mode = argv[++i];
+        } else if (arg.rfind("--mode=", 0) == 0) {
+            g_config.mode = arg.substr(7);
+        } else if (arg == "--ipc-method" && i + 1 < argc) {
+            g_config.ipc_method = argv[++i];
+        } else if (arg.rfind("--ipc-method=", 0) == 0) {
+            g_config.ipc_method = arg.substr(13);
+        } else if (arg == "--ipc-path" && i + 1 < argc) {
+            g_config.ipc_path = argv[++i];
+        } else if (arg.rfind("--ipc-path=", 0) == 0) {
+            g_config.ipc_path = arg.substr(11);
+        } else if (arg == "--front-door-mode" && i + 1 < argc) {
+            g_config.front_door_mode = argv[++i];
+        } else if (arg.rfind("--front-door-mode=", 0) == 0) {
+            g_config.front_door_mode = arg.substr(18);
+        } else if (arg == "--manager-auth-token" && i + 1 < argc) {
+            g_config.manager_auth_token = argv[++i];
+        } else if (arg.rfind("--manager-auth-token=", 0) == 0) {
+            g_config.manager_auth_token = arg.substr(21);
+        } else if (arg == "--manager-user" && i + 1 < argc) {
+            g_config.manager_username = argv[++i];
+        } else if (arg.rfind("--manager-user=", 0) == 0) {
+            g_config.manager_username = arg.substr(15);
+        } else if (arg == "--manager-db" && i + 1 < argc) {
+            g_config.manager_database = argv[++i];
+        } else if (arg.rfind("--manager-db=", 0) == 0) {
+            g_config.manager_database = arg.substr(13);
+        } else if (arg == "--manager-profile" && i + 1 < argc) {
+            g_config.manager_connection_profile = argv[++i];
+        } else if (arg.rfind("--manager-profile=", 0) == 0) {
+            g_config.manager_connection_profile = arg.substr(18);
+        } else if (arg == "--manager-intent" && i + 1 < argc) {
+            g_config.manager_client_intent = argv[++i];
+        } else if (arg.rfind("--manager-intent=", 0) == 0) {
+            g_config.manager_client_intent = arg.substr(17);
+        } else if (arg == "--manager-client-flags" && i + 1 < argc) {
+            g_config.manager_client_flags = argv[++i];
+        } else if (arg.rfind("--manager-client-flags=", 0) == 0) {
+            g_config.manager_client_flags = arg.substr(23);
+        } else if (arg == "--manager-auth-fast-path" && i + 1 < argc) {
+            g_config.manager_auth_fast_path = argv[++i];
+        } else if (arg.rfind("--manager-auth-fast-path=", 0) == 0) {
+            g_config.manager_auth_fast_path = arg.substr(25);
+        } else if (arg == "--sslmode" && i + 1 < argc) {
+            g_config.ssl_mode = argv[++i];
+        } else if (arg.rfind("--sslmode=", 0) == 0) {
+            g_config.ssl_mode = arg.substr(10);
+        } else if (arg == "--conn-opt" && i + 1 < argc) {
+            std::string key;
+            std::string value;
+            if (!splitConnOption(argv[++i], key, value)) {
+                std::cerr << "Error: --conn-opt expects key=value\n";
+                return false;
+            }
+            g_config.conn_options.emplace_back(key, value);
+        } else if (arg.rfind("--conn-opt=", 0) == 0) {
+            std::string key;
+            std::string value;
+            if (!splitConnOption(arg.substr(11), key, value)) {
+                std::cerr << "Error: --conn-opt expects key=value\n";
+                return false;
+            }
+            g_config.conn_options.emplace_back(key, value);
         } else if (arg == "-c" && i + 1 < argc) {
             g_config.command = argv[++i];
         } else if (arg.find("--command=") == 0) {
@@ -3082,6 +3299,13 @@ bool parseArgs(int argc, char* argv[]) {
             return false;
         }
     }
+
+    std::string normalized_mode = normalizeConnectionMode(g_config.mode);
+    if (normalized_mode.empty()) {
+        std::cerr << "Error: Invalid --mode value (expected embedded|local-ipc|inet|managed)\n";
+        return false;
+    }
+    g_config.mode = normalized_mode;
 
     return true;
 }
@@ -3237,8 +3461,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (g_config.database_path.empty()) {
-        std::cerr << "Error: No database specified\n";
+    if (g_config.database_path.empty() && g_config.connection_string.empty()) {
+        std::cerr << "Error: No database or --connection specified\n";
         printUsage(argv[0]);
         return 1;
     }
@@ -3264,15 +3488,9 @@ int main(int argc, char* argv[]) {
     Connection conn;
     g_connection = &conn;
 
-    ConnectionConfig conn_config;
-    conn_config.database_name = g_config.database_path;
-    conn_config.username = g_config.username;
-    conn_config.password = g_config.password;
-    conn_config.tcp_port = g_config.port;
-    conn_config.ipc_method = server::IPCMethod::TCP_LOCALHOST;
-
+    std::string conn_target = buildConnectionTarget();
     core::ErrorContext ctx;
-    core::Status status = conn.connect(conn_config, &ctx);
+    core::Status status = conn.connect(conn_target, g_config.username, g_config.password, &ctx);
 
     if (status != core::Status::OK) {
         std::cerr << "Connection failed: " << ctx.message << "\n";
@@ -3291,7 +3509,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         if (g_config.verbose) {
-            std::cout << "Using native parser listener on configured host/port\n";
+            std::cout << "Using native parser listener on configured transport\n";
         }
     }
 

@@ -10,7 +10,8 @@
 
 namespace scratchbird::protocol {
 
-constexpr uint32_t kProtocolMagic = 0x50574253; // "SBWP" (little-endian bytes)
+// Encoded little-endian this yields bytes "SBWP".
+constexpr uint32_t kProtocolMagic = 0x50574253;
 constexpr uint8_t kProtocolMajor = 1;
 constexpr uint8_t kProtocolMinor = 1;
 constexpr uint16_t kProtocolVersion = (static_cast<uint16_t>(kProtocolMajor) << 8) | kProtocolMinor;
@@ -108,6 +109,14 @@ constexpr uint64_t kFeatureBinaryCopy = 1ULL << 8;
 constexpr uint64_t kFeatureSavepoints = 1ULL << 9;
 constexpr uint64_t kFeatureTwoPhase = 1ULL << 10;
 constexpr uint64_t kFeatureChecksums = 1ULL << 11;
+
+// Client capability flags carried via startup metadata (client_flags).
+constexpr uint16_t FEATURE_AUTH_PLUGIN_REGISTRY = 0x0100;
+
+constexpr const char* kAuthParamMethodId = "auth_method_id";
+constexpr const char* kAuthParamPayloadJson = "auth_payload_json";
+constexpr const char* kAuthParamPayloadB64 = "auth_payload_b64";
+constexpr const char* kAuthParamProviderProfile = "auth_provider_profile";
 
 constexpr uint32_t kQueryFlagDescribeOnly = 0x01;
 constexpr uint32_t kQueryFlagNoPortal = 0x02;
@@ -227,6 +236,33 @@ struct ParamValue {
     bool is_null{false};
     uint32_t type_oid{0};
 };
+
+struct AuthPluginSelection {
+    std::string method_id;
+    std::string payload_json;
+    std::string payload_b64;
+    std::string provider_profile;
+};
+
+inline bool isValidAuthMethodId(const std::string& method_id) {
+    return method_id.empty() || method_id.rfind("scratchbird.auth.", 0) == 0;
+}
+
+inline void applyAuthPluginSelection(const AuthPluginSelection& selection,
+                                     std::map<std::string, std::string>& params) {
+    if (!selection.method_id.empty() && isValidAuthMethodId(selection.method_id)) {
+        params[kAuthParamMethodId] = selection.method_id;
+    }
+    if (!selection.payload_json.empty()) {
+        params[kAuthParamPayloadJson] = selection.payload_json;
+    }
+    if (!selection.payload_b64.empty()) {
+        params[kAuthParamPayloadB64] = selection.payload_b64;
+    }
+    if (!selection.provider_profile.empty()) {
+        params[kAuthParamProviderProfile] = selection.provider_profile;
+    }
+}
 
 struct Notification {
     uint32_t process_id{0};
