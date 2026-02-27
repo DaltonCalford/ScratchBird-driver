@@ -106,10 +106,21 @@ public class SBConnection implements Connection {
         try {
             properties.setProtocol(properties.getProtocol());
             if (!properties.isBinaryTransfer()) {
-                throw new SQLException("binary_transfer=false is not supported", "0A000");
+                appendWarning(new SQLWarning(
+                    "binary_transfer=false requested; using text result format for query rows",
+                    "01000"
+                ));
             }
-            if ("zstd".equalsIgnoreCase(properties.getCompression())) {
-                throw new SQLException("compression=zstd is not supported", "0A000");
+            String compression = properties.getCompression();
+            if (compression != null
+                && !compression.isBlank()
+                && !"off".equalsIgnoreCase(compression)
+                && !"none".equalsIgnoreCase(compression)) {
+                appendWarning(new SQLWarning(
+                    "compression=" + compression
+                        + " requested; native JDBC path is running without negotiated compression",
+                    "01S02"
+                ));
             }
             protocol = new SBProtocolHandler(properties);
             protocol.connect();
@@ -117,6 +128,10 @@ public class SBConnection implements Connection {
             // Set initial connection parameters
             if (schema != null && !schema.equals("public")) {
                 protocol.execute("SET SCHEMA '" + schema.replace("'", "''") + "'");
+            }
+            protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
+            if (!autoCommit) {
+                protocol.beginTransaction();
             }
 
             catalog = properties.getDatabase();
@@ -128,6 +143,17 @@ public class SBConnection implements Connection {
                 ":" + properties.getPort() + "/" + properties.getDatabase() +
                 ": " + e.getMessage(), "08001", e);
         }
+    }
+
+    private void appendWarning(SQLWarning warning) {
+        if (warning == null) {
+            return;
+        }
+        if (warnings == null) {
+            warnings = warning;
+            return;
+        }
+        warnings.setNextWarning(warning);
     }
 
     @Override

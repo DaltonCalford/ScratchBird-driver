@@ -21,11 +21,13 @@ import java.util.*;
 import java.util.Calendar;
 import java.time.*;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * JDBC PreparedStatement implementation for ScratchBird.
  */
 public class SBPreparedStatement extends SBStatement implements PreparedStatement {
+    private static final AtomicLong INLINE_QUERY_NONCE = new AtomicLong();
 
     // Original SQL
     protected final String originalSQL;
@@ -48,6 +50,9 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     // Batch parameters
     protected final List<List<Object>> batchParams = new ArrayList<>();
+
+    // Named parameter mapping for :name / @name placeholders
+    protected final Map<String, Integer> namedParameterIndexes = new HashMap<>();
 
     /**
      * Creates a new prepared statement.
@@ -83,6 +88,19 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                 sb.append('$').append(paramIndex);
                 parameters.add(null);
                 parameterTypes.add(Types.NULL);
+            } else if (!inQuote && !inDoubleQuote && isNamedParameterStart(c, i)) {
+                int nameStart = i + 1;
+                int nameEnd = nameStart;
+                while (nameEnd < originalSQL.length() && isNamedParameterPart(originalSQL.charAt(nameEnd))) {
+                    nameEnd++;
+                }
+                String parameterName = originalSQL.substring(nameStart, nameEnd);
+                paramIndex++;
+                sb.append('$').append(paramIndex);
+                parameters.add(null);
+                parameterTypes.add(Types.NULL);
+                registerNamedParameter(parameterName, paramIndex);
+                i = nameEnd - 1;
             } else {
                 sb.append(c);
             }
@@ -90,6 +108,49 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
         this.parsedSQL = sb.toString();
         this.parameterCount = paramIndex;
+    }
+
+    private boolean isNamedParameterStart(char token, int index) {
+        if (token != ':' && token != '@') {
+            return false;
+        }
+        if (token == ':' && index + 1 < originalSQL.length() && originalSQL.charAt(index + 1) == ':') {
+            return false;
+        }
+        if (index + 1 >= originalSQL.length()) {
+            return false;
+        }
+        return isNamedParameterPart(originalSQL.charAt(index + 1));
+    }
+
+    private boolean isNamedParameterPart(char ch) {
+        return Character.isLetterOrDigit(ch) || ch == '_';
+    }
+
+    private void registerNamedParameter(String parameterName, int index) {
+        if (parameterName == null || parameterName.isBlank()) {
+            return;
+        }
+        String normalized = parameterName.trim().toLowerCase(Locale.ROOT);
+        namedParameterIndexes.putIfAbsent(normalized, index);
+    }
+
+    protected Integer resolveNamedParameterIndex(String parameterName) {
+        if (parameterName == null || parameterName.isBlank()) {
+            return null;
+        }
+        String normalized = parameterName.trim().toLowerCase(Locale.ROOT);
+        Integer direct = namedParameterIndexes.get(normalized);
+        if (direct != null) {
+            return direct;
+        }
+        if (normalized.startsWith(":") || normalized.startsWith("@")) {
+            direct = namedParameterIndexes.get(normalized.substring(1));
+            if (direct != null) {
+                return direct;
+            }
+        }
+        return null;
     }
 
     /**
@@ -115,6 +176,14 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         }
 
         return sql;
+    }
+
+    protected int logicalParameterCount() {
+        return parameterCount;
+    }
+
+    protected int mapParameterIndex(int parameterIndex) throws SQLException {
+        return parameterIndex;
     }
 
     /**
@@ -164,13 +233,19 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
         if (value instanceof Boolean) {
             return (Boolean) value ? "TRUE" : "FALSE";
+        } else if (value instanceof Ref) {
+            Object refValue = ((Ref) value).getObject();
+            if (refValue == null) {
+                return "NULL";
+            }
+            return "'" + refValue.toString().replace("'", "''") + "'";
         } else if (value instanceof Number) {
             return value.toString();
         } else if (value instanceof String) {
             return "'" + ((String) value).replace("'", "''") + "'";
         } else if (value instanceof byte[]) {
             byte[] bytes = (byte[]) value;
-            StringBuilder sb = new StringBuilder("E'\\\\x");
+            StringBuilder sb = new StringBuilder("X'");
             for (byte b : bytes) {
                 sb.append(String.format("%02x", b & 0xff));
             }
@@ -234,19 +309,29 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = getFinalSQL();
+        boolean inlineLiterals = shouldInlineLiteralExecution();
+        String sql = inlineLiterals ? buildInlineQuerySQL() : getFinalSQL();
+        lastExecutedSql = sql;
         int pageSize = fetchSize > 0 ? fetchSize : 0;
         if (maxRows > 0 && pageSize > 0) {
             pageSize = Math.min(pageSize, maxRows);
         }
 
-        if (pageSize > 0) {
+        if (pageSize > 0 && shouldUseStreamingResultSet()) {
             final int streamPageSize = pageSize;
-            SBQueryResult result = connection.withResilience("query_stream", sql, () ->
-                connection.getProtocol().executeStreaming(sql, parameters, parameterTypes,
-                    streamPageSize, queryTimeout * 1000)
-                , true
-            );
+            SBQueryResult result;
+            if (inlineLiterals) {
+                result = connection.withResilience("query_stream", sql, () ->
+                    connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
+                    , true
+                );
+            } else {
+                result = connection.withResilience("query_stream", sql, () ->
+                    connection.getProtocol().executeStreaming(sql, parameters, parameterTypes,
+                        streamPageSize, queryTimeout * 1000)
+                    , true
+                );
+            }
             if (result.getStream() == null) {
                 throw new SQLException("Query did not return a result set", "02000");
             }
@@ -254,11 +339,19 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             return currentResultSet;
         }
 
-        SBQueryResult result = connection.withResilience("query", sql, () ->
-            connection.getProtocol().execute(sql, parameters, parameterTypes,
-                maxRows, queryTimeout * 1000)
-            , true
-        );
+        SBQueryResult result;
+        if (inlineLiterals) {
+            result = connection.withResilience("query", sql, () ->
+                connection.getProtocol().executeNoCache(sql, maxRows, queryTimeout * 1000)
+                , true
+            );
+        } else {
+            result = connection.withResilience("query", sql, () ->
+                connection.getProtocol().execute(sql, parameters, parameterTypes,
+                    maxRows, queryTimeout * 1000)
+                , true
+            );
+        }
         if (result.getColumns() == null || result.getColumns().isEmpty()) {
             throw new SQLException("Query did not return a result set", "02000");
         }
@@ -276,11 +369,20 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = getFinalSQL();
-        SBQueryResult result = connection.withResilience("update", sql, () ->
-            connection.getProtocol().execute(sql, parameters, parameterTypes,
-                maxRows, queryTimeout * 1000)
-        );
+        boolean inlineLiterals = shouldInlineLiteralExecution();
+        String sql = inlineLiterals ? buildFinalSQL() : getFinalSQL();
+        lastExecutedSql = sql;
+        SBQueryResult result;
+        if (inlineLiterals) {
+            result = connection.withResilience("update", sql, () ->
+                connection.getProtocol().executeNoCache(sql, maxRows, queryTimeout * 1000)
+            );
+        } else {
+            result = connection.withResilience("update", sql, () ->
+                connection.getProtocol().execute(sql, parameters, parameterTypes,
+                    maxRows, queryTimeout * 1000)
+            );
+        }
 
         if (returnGeneratedKeys && result.getColumns() != null && !result.getColumns().isEmpty()) {
             generatedKeys = new SBResultSet(this, result.getColumns(), result.getRows());
@@ -295,11 +397,20 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         checkClosed();
         clearResults();
 
-        String sql = getFinalSQL();
-        SBQueryResult result = connection.withResilience("execute", sql, () ->
-            connection.getProtocol().execute(sql, parameters, parameterTypes,
-                maxRows, queryTimeout * 1000)
-        );
+        boolean inlineLiterals = shouldInlineLiteralExecution();
+        String sql = inlineLiterals ? buildFinalSQL() : getFinalSQL();
+        lastExecutedSql = sql;
+        SBQueryResult result;
+        if (inlineLiterals) {
+            result = connection.withResilience("execute", sql, () ->
+                connection.getProtocol().executeNoCache(sql, maxRows, queryTimeout * 1000)
+            );
+        } else {
+            result = connection.withResilience("execute", sql, () ->
+                connection.getProtocol().execute(sql, parameters, parameterTypes,
+                    maxRows, queryTimeout * 1000)
+            );
+        }
 
         if (result.getColumns() != null && !result.getColumns().isEmpty()) {
             if (returnGeneratedKeys) {
@@ -317,6 +428,73 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         }
     }
 
+    private boolean shouldInlineLiteralExecution() {
+        SBProtocolHandler protocol = connection.getProtocol();
+        if (protocol == null || !protocol.isConnected()) {
+            return false;
+        }
+        return true;
+    }
+
+    private String buildInlineQuerySQL() throws SQLException {
+        String sql = buildFinalSQL().trim();
+        if (sql.endsWith(";")) {
+            sql = sql.substring(0, sql.length() - 1).trim();
+        }
+        if (sql.regionMatches(true, 0, "SELECT", 0, 6)) {
+            long nonce = INLINE_QUERY_NONCE.incrementAndGet();
+            String noncePredicate = nonce + " = " + nonce;
+            String upper = sql.toUpperCase(Locale.ROOT);
+            int wherePos = upper.indexOf(" WHERE ");
+            if (wherePos >= 0) {
+                return sql + " AND " + noncePredicate;
+            }
+
+            int insertPos = firstClausePosition(upper,
+                " GROUP BY ",
+                " ORDER BY ",
+                " LIMIT ",
+                " OFFSET ",
+                " FETCH ",
+                " FOR "
+            );
+            if (insertPos >= 0) {
+                return sql.substring(0, insertPos) + " WHERE " + noncePredicate + sql.substring(insertPos);
+            }
+            return sql + " WHERE " + noncePredicate;
+        }
+        return sql;
+    }
+
+    private int firstClausePosition(String upperSql, String... clauses) {
+        int best = -1;
+        for (String clause : clauses) {
+            int idx = upperSql.indexOf(clause);
+            if (idx >= 0 && (best < 0 || idx < best)) {
+                best = idx;
+            }
+        }
+        return best;
+    }
+
+    private boolean requiresInlineLiteral(int sqlType, Object value) {
+        switch (sqlType) {
+            case Types.CLOB:
+            case Types.NCLOB:
+            case Types.LONGVARCHAR:
+            case Types.LONGNVARCHAR:
+                return true;
+            default:
+                break;
+        }
+
+        // Avoid oversized bind payloads for very large text/binary parameters.
+        if (value instanceof String) {
+            return ((String) value).length() >= (64 * 1024);
+        }
+        return false;
+    }
+
     @Override
     public void clearParameters() throws SQLException {
         checkClosed();
@@ -330,12 +508,18 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     private void setParameter(int parameterIndex, Object value, int sqlType) throws SQLException {
         checkClosed();
-        if (parameterIndex < 1 || parameterIndex > parameterCount) {
+        int logicalCount = logicalParameterCount();
+        if (parameterIndex < 1 || parameterIndex > logicalCount) {
             throw new SQLException("Parameter index out of range: " + parameterIndex +
-                " (expected 1-" + parameterCount + ")", "07001");
+                " (expected 1-" + logicalCount + ")", "07001");
         }
-        parameters.set(parameterIndex - 1, value);
-        parameterTypes.set(parameterIndex - 1, sqlType);
+        int mappedIndex = mapParameterIndex(parameterIndex);
+        if (mappedIndex < 1 || mappedIndex > parameterCount) {
+            throw new SQLException("Parameter index out of range: " + parameterIndex +
+                " (expected 1-" + logicalCount + ")", "07001");
+        }
+        parameters.set(mappedIndex - 1, value);
+        parameterTypes.set(mappedIndex - 1, sqlType);
     }
 
     @Override
@@ -661,6 +845,8 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             setBlob(parameterIndex, (Blob) x);
         } else if (x instanceof Clob) {
             setClob(parameterIndex, (Clob) x);
+        } else if (x instanceof Ref) {
+            setRef(parameterIndex, (Ref) x);
         } else if (x instanceof java.util.UUID) {
             setParameter(parameterIndex, x, Types.OTHER);
         } else if (x instanceof java.time.LocalDate) {
@@ -735,9 +921,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         if (length > Integer.MAX_VALUE) {
             throw new SQLException("Stream length out of range", "HY024");
         }
-        if (parameterIndex < 1 || parameterIndex > parameterCount) {
+        int logicalCount = logicalParameterCount();
+        if (parameterIndex < 1 || parameterIndex > logicalCount) {
             throw new SQLException("Parameter index out of range: " + parameterIndex +
-                " (expected 1-" + parameterCount + ")", "07001");
+                " (expected 1-" + logicalCount + ")", "07001");
         }
     }
 
@@ -797,7 +984,11 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setRef(int parameterIndex, Ref x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        if (x == null) {
+            setNull(parameterIndex, Types.REF);
+            return;
+        }
+        setParameter(parameterIndex, x.getObject(), Types.REF);
     }
 
     @Override
@@ -850,7 +1041,11 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     @Override
     public void setRowId(int parameterIndex, RowId x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        if (x == null) {
+            setNull(parameterIndex, Types.ROWID);
+            return;
+        }
+        setObject(parameterIndex, new String(x.getBytes(), StandardCharsets.UTF_8), Types.ROWID);
     }
 
     @Override

@@ -30,12 +30,12 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean allProceduresAreCallable() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override
     public boolean allTablesAreSelectable() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override
@@ -281,7 +281,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsMultipleResultSets() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -306,7 +306,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsExtendedSQLGrammar() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -316,7 +316,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsANSI92IntermediateSQL() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -431,7 +431,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsSelectForUpdate() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override
@@ -481,7 +481,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsOpenCursorsAcrossRollback() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -828,62 +828,106 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         Set<String> typeFilter = normalizeTypes(types);
         List<Object[]> rows = new ArrayList<>();
 
-        for (Object[] row : queryRows(
-            "SELECT t.table_name, t.table_type, s.schema_name " +
-            "FROM sys.tables t " +
-            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
-            "WHERE t.is_valid = 1 AND s.is_valid = 1"
-        )) {
-            String tableName = toStringValue(row, 0);
-            String schemaName = toStringValue(row, 2);
-            if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(tableName, tableNamePattern)) {
-                continue;
+        boolean loadedBaseTables = false;
+        try {
+            for (Object[] row : queryRows(
+                "SELECT t.table_name, t.table_type, s.schema_name " +
+                "FROM sys.tables t " +
+                "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+                "WHERE t.is_valid = 1 AND s.is_valid = 1"
+            )) {
+                String tableName = toStringValue(row, 0);
+                String schemaName = toStringValue(row, 2);
+                if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(tableName, tableNamePattern)) {
+                    continue;
+                }
+                String tableType = mapTableType(row[1], schemaName, false);
+                if (!matchesTypeFilter(tableType, typeFilter)) {
+                    continue;
+                }
+                loadedBaseTables = true;
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    tableName,
+                    tableType,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                });
             }
-            String tableType = mapTableType(row[1], schemaName, false);
-            if (!matchesTypeFilter(tableType, typeFilter)) {
-                continue;
-            }
-            rows.add(new Object[]{
-                currentCatalog,
-                schemaName,
-                tableName,
-                tableType,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            });
+        } catch (SQLException ignored) {
+            // Fall back to information_schema for older/minimal runtime builds.
         }
 
-        for (Object[] row : queryRows(
-            "SELECT v.view_name, v.is_materialized, s.schema_name " +
-            "FROM sys.views v " +
-            "JOIN sys.schemas s ON s.schema_id = v.schema_id " +
-            "WHERE v.is_valid = 1 AND s.is_valid = 1"
-        )) {
-            String viewName = toStringValue(row, 0);
-            String schemaName = toStringValue(row, 2);
-            if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(viewName, tableNamePattern)) {
-                continue;
+        if (!loadedBaseTables) {
+            try {
+                for (Object[] row : queryRows(
+                    "SELECT table_name, table_type, table_schema " +
+                    "FROM information_schema.tables"
+                )) {
+                    String tableName = toStringValue(row, 0);
+                    String schemaName = toStringValue(row, 2);
+                    if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(tableName, tableNamePattern)) {
+                        continue;
+                    }
+                    String tableType = mapInfoSchemaTableType(row[1], schemaName);
+                    if (!matchesTypeFilter(tableType, typeFilter)) {
+                        continue;
+                    }
+                    rows.add(new Object[]{
+                        currentCatalog,
+                        schemaName,
+                        tableName,
+                        tableType,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                    });
+                }
+            } catch (SQLException ignored) {
+                // Leave result empty; caller receives stable metadata shape.
             }
-            String tableType = mapTableType(row[1], schemaName, true);
-            if (!matchesTypeFilter(tableType, typeFilter)) {
-                continue;
+        }
+
+        try {
+            for (Object[] row : queryRows(
+                "SELECT v.view_name, v.is_materialized, s.schema_name " +
+                "FROM sys.views v " +
+                "JOIN sys.schemas s ON s.schema_id = v.schema_id " +
+                "WHERE v.is_valid = 1 AND s.is_valid = 1"
+            )) {
+                String viewName = toStringValue(row, 0);
+                String schemaName = toStringValue(row, 2);
+                if (!matchesPattern(schemaName, schemaPattern) || !matchesPattern(viewName, tableNamePattern)) {
+                    continue;
+                }
+                String tableType = mapTableType(row[1], schemaName, true);
+                if (!matchesTypeFilter(tableType, typeFilter)) {
+                    continue;
+                }
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    viewName,
+                    tableType,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                });
             }
-            rows.add(new Object[]{
-                currentCatalog,
-                schemaName,
-                viewName,
-                tableType,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-            });
+        } catch (SQLException ignored) {
+            // Older/minimal runtime builds may not expose sys.views. Keep table
+            // metadata available and fall back to synthetic monitoring views below.
         }
 
         if (matchesTypeFilter("SYSTEM VIEW", typeFilter)) {
@@ -992,7 +1036,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getColumns(String catalog, String schemaPattern, String tableNamePattern,
             String columnNamePattern) throws SQLException {
-        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        String currentCatalog = currentCatalogName();
         if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
             return createEmptyResultSet(
                 new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE",
@@ -1010,60 +1054,134 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         }
 
         List<Object[]> rows = new ArrayList<>();
-        for (Object[] row : queryRows(
-            "SELECT c.column_name, c.data_type_id, c.ordinal_position, c.is_nullable, c.default_value, " +
-            "t.table_name, s.schema_name " +
-            "FROM sys.columns c " +
-            "JOIN sys.tables t ON t.table_id = c.table_id " +
-            "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
-            "WHERE c.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
-        )) {
-            String columnName = toStringValue(row, 0);
-            String tableName = toStringValue(row, 5);
-            String schemaName = toStringValue(row, 6);
-            if (!matchesPattern(schemaName, schemaPattern) ||
-                !matchesPattern(tableName, tableNamePattern) ||
-                !matchesPattern(columnName, columnNamePattern)) {
-                continue;
+        boolean loadedColumns = false;
+        try {
+            for (Object[] row : queryRows(
+                "SELECT c.column_name, c.data_type_id, c.ordinal_position, c.is_nullable, c.default_value, " +
+                "t.table_name, s.schema_name " +
+                "FROM sys.columns c " +
+                "JOIN sys.tables t ON t.table_id = c.table_id " +
+                "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+                "WHERE c.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1"
+            )) {
+                String columnName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 5);
+                String schemaName = toStringValue(row, 6);
+                if (!matchesPattern(schemaName, schemaPattern) ||
+                    !matchesPattern(tableName, tableNamePattern) ||
+                    !matchesPattern(columnName, columnNamePattern)) {
+                    continue;
+                }
+
+                Object typeValue = row[1];
+                Integer oid = parseOid(typeValue);
+                String typeName = oid != null ? typeNameFromOid(oid) : toStringValue(typeValue);
+                int jdbcType = oid != null ? jdbcTypeFromOid(oid) : jdbcTypeFromTypeName(typeName);
+                int columnSize = columnSizeForType(typeName, jdbcType);
+                Integer decimalDigits = decimalDigitsForType(typeName, jdbcType);
+                Integer numPrecRadix = numPrecRadixForType(jdbcType);
+                Integer charOctetLength = charOctetLengthForType(typeName, jdbcType, columnSize);
+
+                int ordinal = toIntValue(row[2], 0);
+                boolean nullable = toBooleanValue(row[3]);
+                String nullableText = nullable ? "YES" : "NO";
+                int nullableFlag = nullable ? DatabaseMetaData.columnNullable : DatabaseMetaData.columnNoNulls;
+                String defaultValue = toStringValue(row, 4);
+
+                loadedColumns = true;
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    tableName,
+                    columnName,
+                    jdbcType,
+                    typeName,
+                    columnSize,
+                    0,
+                    decimalDigits,
+                    numPrecRadix,
+                    nullableFlag,
+                    null,
+                    defaultValue,
+                    null,
+                    null,
+                    charOctetLength,
+                    ordinal,
+                    nullableText,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "NO",
+                    "NO"
+                });
             }
+        } catch (SQLException ignored) {
+            // Fall back to information_schema for older/minimal runtime builds.
+        }
 
-            Object typeValue = row[1];
-            Integer oid = parseOid(typeValue);
-            String typeName = oid != null ? typeNameFromOid(oid) : toStringValue(typeValue);
-            int jdbcType = oid != null ? jdbcTypeFromOid(oid) : jdbcTypeFromTypeName(typeName);
+        if (!loadedColumns) {
+            try {
+                for (Object[] row : queryRows(
+                    "SELECT column_name, data_type, ordinal_position, is_nullable, column_default, " +
+                    "table_name, table_schema " +
+                    "FROM information_schema.columns"
+                )) {
+                    String columnName = toStringValue(row, 0);
+                    String tableName = toStringValue(row, 5);
+                    String schemaName = toStringValue(row, 6);
+                    if (!matchesPattern(schemaName, schemaPattern) ||
+                        !matchesPattern(tableName, tableNamePattern) ||
+                        !matchesPattern(columnName, columnNamePattern)) {
+                        continue;
+                    }
 
-            int ordinal = toIntValue(row[2], 0);
-            boolean nullable = toBooleanValue(row[3]);
-            String nullableText = nullable ? "YES" : "NO";
-            int nullableFlag = nullable ? DatabaseMetaData.columnNullable : DatabaseMetaData.columnNoNulls;
-            String defaultValue = toStringValue(row, 4);
+                    String typeName = toStringValue(row, 1);
+                    int jdbcType = jdbcTypeFromTypeName(typeName);
+                    int columnSize = columnSizeForType(typeName, jdbcType);
+                    Integer decimalDigits = decimalDigitsForType(typeName, jdbcType);
+                    Integer numPrecRadix = numPrecRadixForType(jdbcType);
+                    Integer charOctetLength = charOctetLengthForType(typeName, jdbcType, columnSize);
 
-            rows.add(new Object[]{
-                currentCatalog,
-                schemaName,
-                tableName,
-                columnName,
-                jdbcType,
-                typeName,
-                0,
-                0,
-                0,
-                10,
-                nullableFlag,
-                null,
-                defaultValue,
-                null,
-                null,
-                0,
-                ordinal,
-                nullableText,
-                null,
-                null,
-                null,
-                null,
-                "NO",
-                "NO"
-            });
+                    int ordinal = toIntValue(row[2], 0);
+                    String nullableToken = toStringValue(row, 3);
+                    boolean nullable = nullableToken == null
+                        || "YES".equalsIgnoreCase(nullableToken)
+                        || "TRUE".equalsIgnoreCase(nullableToken);
+                    String nullableText = nullable ? "YES" : "NO";
+                    int nullableFlag = nullable ? DatabaseMetaData.columnNullable : DatabaseMetaData.columnNoNulls;
+                    String defaultValue = toStringValue(row, 4);
+
+                    rows.add(new Object[]{
+                        currentCatalog,
+                        schemaName,
+                        tableName,
+                        columnName,
+                        jdbcType,
+                        typeName,
+                        columnSize,
+                        0,
+                        decimalDigits,
+                        numPrecRadix,
+                        nullableFlag,
+                        null,
+                        defaultValue,
+                        null,
+                        null,
+                        charOctetLength,
+                        ordinal,
+                        nullableText,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "NO",
+                        "NO"
+                    });
+                }
+            } catch (SQLException ignored) {
+                // Leave empty on fallback failure; metadata shape remains valid.
+            }
         }
 
         List<SBColumnInfo> cols = new ArrayList<>();
@@ -1097,38 +1215,208 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getColumnPrivileges(String catalog, String schema, String table,
             String columnNamePattern) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "GRANTOR",
-                         "GRANTEE", "PRIVILEGE", "IS_GRANTABLE"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return emptyColumnPrivilegesResultSet();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT table_schema, table_name, column_name, grantor, grantee, privilege_type, is_grantable " +
+                "FROM information_schema.column_privileges"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 1);
+                String columnName = toStringValue(row, 2);
+                if (!matchesPattern(schemaName, schema)
+                        || !matchesPattern(tableName, table)
+                        || !matchesPattern(columnName, columnNamePattern)) {
+                    continue;
+                }
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    tableName,
+                    columnName,
+                    toStringValue(row, 3),
+                    toStringValue(row, 4),
+                    toStringValue(row, 5),
+                    normalizeGrantableValue(toStringValue(row, 6))
+                });
+            }
+        } catch (SQLException ex) {
+            return emptyColumnPrivilegesResultSet();
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("GRANTOR", 25));
+        cols.add(column("GRANTEE", 25));
+        cols.add(column("PRIVILEGE", 25));
+        cols.add(column("IS_GRANTABLE", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getTablePrivileges(String catalog, String schemaPattern, String tableNamePattern)
             throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "GRANTOR", "GRANTEE",
-                         "PRIVILEGE", "IS_GRANTABLE"},
-            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                      Types.VARCHAR, Types.VARCHAR}
-        );
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return emptyTablePrivilegesResultSet();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT table_schema, table_name, grantor, grantee, privilege_type, is_grantable " +
+                "FROM information_schema.table_privileges"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schemaPattern)
+                        || !matchesPattern(tableName, tableNamePattern)) {
+                    continue;
+                }
+                rows.add(new Object[]{
+                    currentCatalog,
+                    schemaName,
+                    tableName,
+                    toStringValue(row, 2),
+                    toStringValue(row, 3),
+                    toStringValue(row, 4),
+                    normalizeGrantableValue(toStringValue(row, 5))
+                });
+            }
+        } catch (SQLException ex) {
+            return emptyTablePrivilegesResultSet();
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("TABLE_CAT", 25));
+        cols.add(column("TABLE_SCHEM", 25));
+        cols.add(column("TABLE_NAME", 25));
+        cols.add(column("GRANTOR", 25));
+        cols.add(column("GRANTEE", 25));
+        cols.add(column("PRIVILEGE", 25));
+        cols.add(column("IS_GRANTABLE", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getBestRowIdentifier(String catalog, String schema, String table,
             int scope, boolean nullable) throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
-                         "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
-            new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
-                      Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
-        );
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
+                             "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
+                new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
+            );
+        }
+
+        short rowScope = switch (scope) {
+            case DatabaseMetaData.bestRowTemporary,
+                 DatabaseMetaData.bestRowTransaction,
+                 DatabaseMetaData.bestRowSession -> (short) scope;
+            default -> DatabaseMetaData.bestRowSession;
+        };
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT tc.table_schema, tc.table_name, kcu.column_name, c.data_type, " +
+                "       c.character_maximum_length, c.numeric_precision, c.numeric_scale, c.is_nullable " +
+                "FROM information_schema.table_constraints tc " +
+                "JOIN information_schema.key_column_usage kcu " +
+                "  ON tc.constraint_name = kcu.constraint_name " +
+                " AND tc.table_schema = kcu.table_schema " +
+                " AND tc.table_name = kcu.table_name " +
+                "LEFT JOIN information_schema.columns c " +
+                "  ON c.table_schema = tc.table_schema " +
+                " AND c.table_name = tc.table_name " +
+                " AND c.column_name = kcu.column_name " +
+                "WHERE tc.constraint_type = 'PRIMARY KEY' " +
+                "ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schema) || !matchesPattern(tableName, table)) {
+                    continue;
+                }
+
+                String nullableText = toStringValue(row, 7);
+                boolean isNullable = nullableText != null && nullableText.equalsIgnoreCase("YES");
+                if (!nullable && isNullable) {
+                    continue;
+                }
+
+                String columnName = toStringValue(row, 2);
+                String typeName = normalizeTypeName(toStringValue(row, 3));
+                int jdbcType = jdbcTypeFromTypeName(typeName);
+                int columnSize = toIntValue(row[4], 0);
+                if (columnSize <= 0) {
+                    columnSize = toIntValue(row[5], 0);
+                }
+                if (columnSize <= 0) {
+                    columnSize = columnSizeForType(typeName, jdbcType);
+                }
+                short decimalDigits = toShortValue(row[6]);
+                if (decimalDigits < 0) {
+                    decimalDigits = 0;
+                }
+                Integer defaultScale = decimalDigitsForType(typeName, jdbcType);
+                if (decimalDigits == 0 && defaultScale != null) {
+                    decimalDigits = defaultScale.shortValue();
+                }
+
+                rows.add(new Object[]{
+                    rowScope,
+                    columnName,
+                    jdbcType,
+                    typeName,
+                    columnSize,
+                    0,
+                    decimalDigits,
+                    DatabaseMetaData.bestRowNotPseudo
+                });
+            }
+        } catch (SQLException ex) {
+            return createEmptyResultSet(
+                new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
+                             "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
+                new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
+            );
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("SCOPE", 21));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("COLUMN_SIZE", 23));
+        cols.add(column("BUFFER_LENGTH", 23));
+        cols.add(column("DECIMAL_DIGITS", 21));
+        cols.add(column("PSEUDO_COLUMN", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
     public ResultSet getVersionColumns(String catalog, String schema, String table) throws SQLException {
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return createEmptyResultSet(
+                new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
+                             "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
+                new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
+                          Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
+            );
+        }
         return createEmptyResultSet(
             new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
                          "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
@@ -1139,7 +1427,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
-        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        String currentCatalog = currentCatalogName();
         List<Object[]> source;
         try {
             source = queryRows(
@@ -1180,33 +1468,12 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
-        String currentCatalog = connection.getConnectionProperties().getDatabase();
-        List<Object[]> source;
-        try {
-            source = queryRows(
-                "SELECT tc.table_schema AS fk_schema, tc.table_name AS fk_table, " +
-                    "kcu.column_name AS fk_column, ccu.table_schema AS pk_schema, " +
-                    "ccu.table_name AS pk_table, ccu.column_name AS pk_column, " +
-                    "kcu.ordinal_position AS key_seq, rc.update_rule, rc.delete_rule, " +
-                    "tc.constraint_name AS fk_name, rc.unique_constraint_name AS pk_name, " +
-                    "rc.deferrable AS deferrable " +
-                    "FROM information_schema.table_constraints tc " +
-                    "JOIN information_schema.key_column_usage kcu " +
-                    "  ON tc.constraint_name = kcu.constraint_name " +
-                    " AND tc.table_schema = kcu.table_schema " +
-                    " AND tc.table_name = kcu.table_name " +
-                    "JOIN information_schema.constraint_column_usage ccu " +
-                    "  ON ccu.constraint_name = tc.constraint_name " +
-                    " AND ccu.constraint_schema = tc.table_schema " +
-                    "LEFT JOIN information_schema.referential_constraints rc " +
-                    "  ON rc.constraint_name = tc.constraint_name " +
-                    " AND rc.constraint_schema = tc.table_schema " +
-                    "WHERE tc.constraint_type = 'FOREIGN KEY'"
-            );
-        } catch (SQLException e) {
-            source = Collections.emptyList();
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return emptyForeignKeysResultSet();
         }
 
+        List<Object[]> source = foreignKeyRows();
         List<Object[]> rows = new ArrayList<>();
         for (Object[] row : source) {
             String fkSchema = toStringValue(row, 0);
@@ -1252,13 +1519,75 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
-        return getImportedKeys(catalog, schema, table);
+        String currentCatalog = currentCatalogName();
+        if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
+            return emptyForeignKeysResultSet();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : foreignKeyRows()) {
+            String fkSchema = toStringValue(row, 0);
+            String fkTable = toStringValue(row, 1);
+            String fkColumn = toStringValue(row, 2);
+            String pkSchema = toStringValue(row, 3);
+            String pkTable = toStringValue(row, 4);
+            if (!matchesPattern(pkSchema, schema) || !matchesPattern(pkTable, table)) {
+                continue;
+            }
+            String pkColumn = toStringValue(row, 5);
+            short keySeq = toShortValue(row, 6);
+            short updateRule = mapRule(toStringValue(row, 7));
+            short deleteRule = mapRule(toStringValue(row, 8));
+            String fkName = toStringValue(row, 9);
+            String pkName = toStringValue(row, 10);
+            short deferrability = mapDeferrable(toStringValue(row, 11));
+
+            rows.add(new Object[]{
+                currentCatalog, pkSchema, pkTable, pkColumn,
+                currentCatalog, fkSchema, fkTable, fkColumn,
+                keySeq, updateRule, deleteRule, fkName, pkName, deferrability
+            });
+        }
+
+        return foreignKeysResultSet(rows);
     }
 
     @Override
     public ResultSet getCrossReference(String parentCatalog, String parentSchema, String parentTable,
             String foreignCatalog, String foreignSchema, String foreignTable) throws SQLException {
-        return getImportedKeys(foreignCatalog, foreignSchema, foreignTable);
+        String currentCatalog = currentCatalogName();
+        if ((parentCatalog != null && currentCatalog != null && !parentCatalog.equalsIgnoreCase(currentCatalog))
+                || (foreignCatalog != null && currentCatalog != null && !foreignCatalog.equalsIgnoreCase(currentCatalog))) {
+            return emptyForeignKeysResultSet();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] row : foreignKeyRows()) {
+            String fkSchema = toStringValue(row, 0);
+            String fkTable = toStringValue(row, 1);
+            String fkColumn = toStringValue(row, 2);
+            String pkSchema = toStringValue(row, 3);
+            String pkTable = toStringValue(row, 4);
+            if (!matchesPattern(pkSchema, parentSchema) || !matchesPattern(pkTable, parentTable)
+                    || !matchesPattern(fkSchema, foreignSchema) || !matchesPattern(fkTable, foreignTable)) {
+                continue;
+            }
+            String pkColumn = toStringValue(row, 5);
+            short keySeq = toShortValue(row, 6);
+            short updateRule = mapRule(toStringValue(row, 7));
+            short deleteRule = mapRule(toStringValue(row, 8));
+            String fkName = toStringValue(row, 9);
+            String pkName = toStringValue(row, 10);
+            short deferrability = mapDeferrable(toStringValue(row, 11));
+
+            rows.add(new Object[]{
+                currentCatalog, pkSchema, pkTable, pkColumn,
+                currentCatalog, fkSchema, fkTable, fkColumn,
+                keySeq, updateRule, deleteRule, fkName, pkName, deferrability
+            });
+        }
+
+        return foreignKeysResultSet(rows);
     }
 
     @Override
@@ -1309,7 +1638,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique,
             boolean approximate) throws SQLException {
-        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        String currentCatalog = currentCatalogName();
         if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
             return createEmptyResultSet(
                 new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER",
@@ -1322,12 +1651,12 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         }
 
         List<Object[]> rows = new ArrayList<>();
-        boolean hasColumnInfo = true;
         Iterable<Object[]> resultRows;
         try {
             resultRows = queryRows(
                 "SELECT i.index_name, i.index_type, i.is_unique, " +
-                "t.table_name, s.schema_name, ic.ordinal_position, c.column_name " +
+                "t.table_name, s.schema_name, ic.ordinal_position, c.column_name, " +
+                "ic.is_descending, i.estimated_cardinality, i.estimated_pages, i.filter_condition " +
                 "FROM sys.indexes i " +
                 "JOIN sys.tables t ON t.table_id = i.table_id " +
                 "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
@@ -1337,7 +1666,6 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 "ORDER BY i.index_name, ic.ordinal_position"
             );
         } catch (SQLException ex) {
-            hasColumnInfo = false;
             resultRows = queryRows(
                 "SELECT i.index_name, i.index_type, i.is_unique, " +
                 "t.table_name, s.schema_name " +
@@ -1360,11 +1688,22 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 continue;
             }
 
-            Short ordinal = 0;
-            String columnName = null;
-            if (hasColumnInfo && row.length > 6) {
-                ordinal = toShortValue(row, 5);
-                columnName = toStringValue(row, 6);
+            Short ordinal = row.length > 5 ? toShortValue(row, 5) : 0;
+            String columnName = row.length > 6 ? toStringValue(row, 6) : null;
+            String ascOrDesc = row.length > 7 ? normalizeIndexSortDirection(row[7]) : null;
+            Long cardinality = row.length > 8 ? toLongValue(row[8], 0L) : 0L;
+            Long pages = row.length > 9 ? toLongValue(row[9], 0L) : 0L;
+            String filterCondition = row.length > 10 ? toStringValue(row, 10) : null;
+            short indexType = mapIndexType(row[1]);
+
+            if (!approximate) {
+                // No exact-count lane available yet; keep conservative zeros when estimates are absent.
+                if (cardinality == null) {
+                    cardinality = 0L;
+                }
+                if (pages == null) {
+                    pages = 0L;
+                }
             }
 
             rows.add(new Object[]{
@@ -1374,13 +1713,13 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 !isUnique,
                 null,
                 indexName,
-                DatabaseMetaData.tableIndexOther,
+                indexType,
                 ordinal,
                 columnName,
-                null,
-                0,
-                0,
-                null
+                ascOrDesc,
+                cardinality,
+                pages,
+                filterCondition
             });
         }
 
@@ -1401,7 +1740,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         return new SBResultSet(null, cols, rows);
     }
 
-    private List<Object[]> queryRows(String sql) throws SQLException {
+    protected List<Object[]> queryRows(String sql) throws SQLException {
         SBQueryResult result = connection.withResilience("metadata_query", sql, () ->
             connection.getProtocol().execute(sql), true
         );
@@ -1409,6 +1748,90 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             return Collections.emptyList();
         }
         return result.getRows();
+    }
+
+    protected String currentCatalogName() {
+        if (connection == null || connection.getConnectionProperties() == null) {
+            return null;
+        }
+        return connection.getConnectionProperties().getDatabase();
+    }
+
+    private List<Object[]> foreignKeyRows() {
+        try {
+            return queryRows(
+                "SELECT tc.table_schema AS fk_schema, tc.table_name AS fk_table, " +
+                    "kcu.column_name AS fk_column, ccu.table_schema AS pk_schema, " +
+                    "ccu.table_name AS pk_table, ccu.column_name AS pk_column, " +
+                    "kcu.ordinal_position AS key_seq, rc.update_rule, rc.delete_rule, " +
+                    "tc.constraint_name AS fk_name, rc.unique_constraint_name AS pk_name, " +
+                    "rc.deferrable AS deferrable " +
+                    "FROM information_schema.table_constraints tc " +
+                    "JOIN information_schema.key_column_usage kcu " +
+                    "  ON tc.constraint_name = kcu.constraint_name " +
+                    " AND tc.table_schema = kcu.table_schema " +
+                    " AND tc.table_name = kcu.table_name " +
+                    "JOIN information_schema.constraint_column_usage ccu " +
+                    "  ON ccu.constraint_name = tc.constraint_name " +
+                    " AND ccu.constraint_schema = tc.table_schema " +
+                    "LEFT JOIN information_schema.referential_constraints rc " +
+                    "  ON rc.constraint_name = tc.constraint_name " +
+                    " AND rc.constraint_schema = tc.table_schema " +
+                    "WHERE tc.constraint_type = 'FOREIGN KEY'"
+            );
+        } catch (SQLException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private ResultSet emptyForeignKeysResultSet() throws SQLException {
+        return createEmptyResultSet(
+            new String[]{"PKTABLE_CAT", "PKTABLE_SCHEM", "PKTABLE_NAME", "PKCOLUMN_NAME",
+                         "FKTABLE_CAT", "FKTABLE_SCHEM", "FKTABLE_NAME", "FKCOLUMN_NAME",
+                         "KEY_SEQ", "UPDATE_RULE", "DELETE_RULE", "FK_NAME", "PK_NAME",
+                         "DEFERRABILITY"},
+            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                      Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.SMALLINT,
+                      Types.SMALLINT, Types.SMALLINT, Types.VARCHAR, Types.VARCHAR,
+                      Types.SMALLINT}
+        );
+    }
+
+    private ResultSet emptyTablePrivilegesResultSet() throws SQLException {
+        return createEmptyResultSet(
+            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "GRANTOR", "GRANTEE",
+                         "PRIVILEGE", "IS_GRANTABLE"},
+            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                      Types.VARCHAR, Types.VARCHAR}
+        );
+    }
+
+    private ResultSet emptyColumnPrivilegesResultSet() throws SQLException {
+        return createEmptyResultSet(
+            new String[]{"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "GRANTOR",
+                         "GRANTEE", "PRIVILEGE", "IS_GRANTABLE"},
+            new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
+                      Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
+        );
+    }
+
+    private ResultSet foreignKeysResultSet(List<Object[]> rows) throws SQLException {
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("PKTABLE_CAT", 25));
+        cols.add(column("PKTABLE_SCHEM", 25));
+        cols.add(column("PKTABLE_NAME", 25));
+        cols.add(column("PKCOLUMN_NAME", 25));
+        cols.add(column("FKTABLE_CAT", 25));
+        cols.add(column("FKTABLE_SCHEM", 25));
+        cols.add(column("FKTABLE_NAME", 25));
+        cols.add(column("FKCOLUMN_NAME", 25));
+        cols.add(column("KEY_SEQ", 21));
+        cols.add(column("UPDATE_RULE", 21));
+        cols.add(column("DELETE_RULE", 21));
+        cols.add(column("FK_NAME", 25));
+        cols.add(column("PK_NAME", 25));
+        cols.add(column("DEFERRABILITY", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     private boolean matchesPattern(String value, String pattern) {
@@ -1521,6 +1944,78 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             return false;
         }
         return Boolean.parseBoolean(text);
+    }
+
+    private long toLongValue(Object value, long fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private String normalizeGrantableValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "NO";
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if ("YES".equals(normalized) || "Y".equals(normalized) || "TRUE".equals(normalized) ||
+                "1".equals(normalized)) {
+            return "YES";
+        }
+        return "NO";
+    }
+
+    private String normalizeIndexSortDirection(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        if (rawValue instanceof Boolean) {
+            return ((Boolean) rawValue) ? "D" : "A";
+        }
+        if (rawValue instanceof Number) {
+            return ((Number) rawValue).intValue() != 0 ? "D" : "A";
+        }
+        String normalized = rawValue.toString().trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if ("D".equals(normalized) || "DESC".equals(normalized) || "DESCENDING".equals(normalized) ||
+                "TRUE".equals(normalized) || "Y".equals(normalized) || "1".equals(normalized)) {
+            return "D";
+        }
+        if ("A".equals(normalized) || "ASC".equals(normalized) || "ASCENDING".equals(normalized) ||
+                "FALSE".equals(normalized) || "N".equals(normalized) || "0".equals(normalized)) {
+            return "A";
+        }
+        return null;
+    }
+
+    private short mapIndexType(Object rawType) {
+        if (rawType instanceof Number) {
+            int type = ((Number) rawType).intValue();
+            return switch (type) {
+                case 1 -> DatabaseMetaData.tableIndexClustered;
+                case 2 -> DatabaseMetaData.tableIndexHashed;
+                default -> DatabaseMetaData.tableIndexOther;
+            };
+        }
+        if (rawType != null) {
+            String normalized = rawType.toString().trim().toUpperCase(Locale.ROOT);
+            if (normalized.contains("CLUSTER")) {
+                return DatabaseMetaData.tableIndexClustered;
+            }
+            if (normalized.contains("HASH")) {
+                return DatabaseMetaData.tableIndexHashed;
+            }
+        }
+        return DatabaseMetaData.tableIndexOther;
     }
 
     private short mapRule(String rule) {
@@ -1812,14 +2307,14 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         if (normalized.contains("varchar") || normalized.contains("text")) {
             return Types.VARCHAR;
         }
+        if (normalized.contains("timestamp")) {
+            return Types.TIMESTAMP;
+        }
         if (normalized.contains("date")) {
             return Types.DATE;
         }
         if (normalized.contains("time")) {
             return Types.TIME;
-        }
-        if (normalized.contains("timestamp")) {
-            return Types.TIMESTAMP;
         }
         if (normalized.contains("bytea") || normalized.contains("blob")) {
             return Types.BINARY;
@@ -1871,6 +2366,78 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         return type;
     }
 
+    private String mapInfoSchemaTableType(Object rawType, String schemaName) {
+        String normalized = rawType == null
+            ? ""
+            : rawType.toString().trim().toUpperCase(Locale.ROOT);
+        String mapped;
+        if (normalized.contains("VIEW")) {
+            mapped = "VIEW";
+        } else if (normalized.contains("SYSTEM")) {
+            mapped = "SYSTEM TABLE";
+        } else {
+            mapped = "TABLE";
+        }
+        if ("sys".equalsIgnoreCase(schemaName) && "VIEW".equals(mapped)) {
+            return "SYSTEM VIEW";
+        }
+        return mapped;
+    }
+
+    private int columnSizeForType(String typeName, int jdbcType) {
+        String normalized = normalizeTypeName(typeName);
+        return switch (jdbcType) {
+            case Types.BOOLEAN, Types.BIT -> 1;
+            case Types.SMALLINT -> 5;
+            case Types.INTEGER -> 10;
+            case Types.BIGINT -> 19;
+            case Types.REAL -> 24;
+            case Types.FLOAT, Types.DOUBLE -> 53;
+            case Types.NUMERIC, Types.DECIMAL -> 38;
+            case Types.DATE -> 10;
+            case Types.TIME -> 15;
+            case Types.TIMESTAMP -> 29;
+            case Types.CHAR -> 255;
+            case Types.VARCHAR -> normalized.contains("text") ? Integer.MAX_VALUE : 65535;
+            case Types.LONGVARCHAR -> Integer.MAX_VALUE;
+            case Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY -> Integer.MAX_VALUE;
+            default -> {
+                if (normalized.contains("uuid")) {
+                    yield 36;
+                }
+                yield 0;
+            }
+        };
+    }
+
+    private Integer decimalDigitsForType(String typeName, int jdbcType) {
+        String normalized = normalizeTypeName(typeName);
+        return switch (jdbcType) {
+            case Types.SMALLINT, Types.INTEGER, Types.BIGINT -> 0;
+            case Types.NUMERIC, Types.DECIMAL -> 0;
+            case Types.REAL -> 6;
+            case Types.FLOAT, Types.DOUBLE -> 15;
+            default -> normalized.contains("numeric") || normalized.contains("decimal") ? 0 : null;
+        };
+    }
+
+    private Integer numPrecRadixForType(int jdbcType) {
+        return switch (jdbcType) {
+            case Types.SMALLINT, Types.INTEGER, Types.BIGINT,
+                 Types.NUMERIC, Types.DECIMAL, Types.REAL,
+                 Types.FLOAT, Types.DOUBLE -> 10;
+            default -> null;
+        };
+    }
+
+    private Integer charOctetLengthForType(String typeName, int jdbcType, int columnSize) {
+        String normalized = normalizeTypeName(typeName);
+        return switch (jdbcType) {
+            case Types.CHAR, Types.VARCHAR, Types.LONGVARCHAR -> columnSize;
+            default -> (normalized.contains("char") || normalized.contains("text")) ? columnSize : null;
+        };
+    }
+
     private Set<String> normalizeTypes(String[] types) {
         if (types == null || types.length == 0) {
             return Collections.emptySet();
@@ -1917,22 +2484,26 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsResultSetConcurrency(int type, int concurrency) throws SQLException {
-        return concurrency == ResultSet.CONCUR_READ_ONLY;
+        if (!supportsResultSetType(type)) {
+            return false;
+        }
+        return concurrency == ResultSet.CONCUR_READ_ONLY
+            || concurrency == ResultSet.CONCUR_UPDATABLE;
     }
 
     @Override
     public boolean ownUpdatesAreVisible(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
     public boolean ownDeletesAreVisible(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
     public boolean ownInsertsAreVisible(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
@@ -1952,17 +2523,17 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean updatesAreDetected(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
     public boolean deletesAreDetected(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
     public boolean insertsAreDetected(int type) throws SQLException {
-        return false;
+        return supportsResultSetType(type);
     }
 
     @Override
@@ -2046,7 +2617,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsMultipleOpenResults() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -2316,17 +2887,17 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean locatorsUpdateCopy() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override
     public boolean supportsStatementPooling() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override
     public RowIdLifetime getRowIdLifetime() throws SQLException {
-        return RowIdLifetime.ROWID_UNSUPPORTED;
+        return RowIdLifetime.ROWID_VALID_OTHER;
     }
 
     @Override
@@ -2654,7 +3225,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean generatedKeyAlwaysReturned() throws SQLException {
-        return true;
+        return false;
     }
 
     @Override

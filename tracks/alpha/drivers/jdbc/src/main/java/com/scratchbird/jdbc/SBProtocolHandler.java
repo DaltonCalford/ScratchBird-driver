@@ -278,7 +278,7 @@ public class SBProtocolHandler {
         return lastSblr;
     }
 
-    public void connect() throws SQLException {
+    public synchronized void connect() throws SQLException {
         try {
             socket = new Socket();
             socket.setTcpNoDelay(true);
@@ -289,15 +289,16 @@ public class SBProtocolHandler {
 
             InetSocketAddress address = new InetSocketAddress(props.getHost(), props.getPort());
             socket.connect(address, props.getConnectTimeout() * 1000);
+            inputStream = new BufferedInputStream(socket.getInputStream(), 65536);
+            outputStream = new BufferedOutputStream(socket.getOutputStream(), 65536);
 
             String sslMode = props.getSslMode();
             if (sslMode == null || sslMode.isEmpty()) {
                 sslMode = "require";
             }
-            if ("disable".equalsIgnoreCase(sslMode)) {
-                throw createSQLException("TLS is required for ScratchBird connections", "08001");
+            if (!"disable".equalsIgnoreCase(sslMode)) {
+                upgradeToSSL(sslMode);
             }
-            upgradeToSSL(sslMode);
 
             if ("manager_proxy".equalsIgnoreCase(props.getFrontDoorMode())) {
                 performManagerConnect();
@@ -306,21 +307,41 @@ public class SBProtocolHandler {
             handleAuthentication();
             connected = true;
 
+        } catch (SQLException e) {
+            close();
+            throw e;
         } catch (IOException e) {
             close();
             throw createSQLException("Failed to connect: " + e.getMessage(), "08001", e);
         }
     }
 
-    public SBQueryResult execute(String sql) throws SQLException {
+    public synchronized SBQueryResult execute(String sql) throws SQLException {
         return execute(sql, Collections.emptyList(), Collections.emptyList(), 0, 0);
     }
 
-    public SBQueryResult execute(String sql, int maxRows, int timeoutMs) throws SQLException {
+    public synchronized SBQueryResult execute(String sql, int maxRows, int timeoutMs) throws SQLException {
         return execute(sql, Collections.emptyList(), Collections.emptyList(), maxRows, timeoutMs);
     }
 
-    public SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
+    public synchronized SBQueryResult executeNoCache(String sql, int maxRows, int timeoutMs) throws SQLException {
+        ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
+        try {
+            if (isSchemaMutation(sql)) {
+                clearPreparedStatements();
+            }
+            sendSimpleQuery(sql, maxRows, timeoutMs, QUERY_FLAG_NO_CACHE);
+            return readQueryResult();
+        } catch (IOException e) {
+            throw createSQLException("Query execution failed: " + e.getMessage(), "08006", e);
+        } finally {
+            if (cancelTask != null) {
+                cancelTask.cancel(false);
+            }
+        }
+    }
+
+    public synchronized SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
                                  int maxRows, int timeoutMs) throws SQLException {
         ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
         try {
@@ -328,7 +349,7 @@ public class SBProtocolHandler {
                 if (isSchemaMutation(sql)) {
                     clearPreparedStatements();
                 }
-                sendSimpleQuery(sql, maxRows, timeoutMs);
+                sendSimpleQuery(sql, maxRows, timeoutMs, 0);
                 return readQueryResult();
             }
 
@@ -354,16 +375,16 @@ public class SBProtocolHandler {
         }
     }
 
-    public SBQueryResult executeStreaming(String sql, int pageSize, int timeoutMs) throws SQLException {
+    public synchronized SBQueryResult executeStreaming(String sql, int pageSize, int timeoutMs) throws SQLException {
         return executeStreaming(sql, Collections.emptyList(), Collections.emptyList(), pageSize, timeoutMs);
     }
 
-    public SBQueryResult executeStreaming(String sql, List<Object> params, List<Integer> paramTypes,
+    public synchronized SBQueryResult executeStreaming(String sql, List<Object> params, List<Integer> paramTypes,
                                           int pageSize, int timeoutMs) throws SQLException {
         ScheduledFuture<?> cancelTask = scheduleCancel(timeoutMs);
         try {
             if (params == null || params.isEmpty()) {
-                sendSimpleQuery(sql, pageSize, timeoutMs);
+                sendSimpleQuery(sql, pageSize, timeoutMs, 0);
             } else {
                 sendExtendedQuery(sql, params, paramTypes, pageSize);
             }
@@ -378,11 +399,11 @@ public class SBProtocolHandler {
         }
     }
 
-    public void beginTransaction() throws SQLException {
+    public synchronized void beginTransaction() throws SQLException {
         beginTransaction(ISOLATION_READ_COMMITTED, (byte) 0, false, false, 0, (byte) 0, (byte) 0);
     }
 
-    public void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
+    public synchronized void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
                                  boolean wait, int timeoutMs, byte autocommitMode, byte conflictAction) throws SQLException {
         try {
             short flags = TXN_FLAG_HAS_ISOLATION;
@@ -400,7 +421,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void commitTransaction(byte flags) throws SQLException {
+    public synchronized void commitTransaction(byte flags) throws SQLException {
         try {
             sendMessage(MSG_TXN_COMMIT, buildTxnCommitPayload(flags), (byte) 0, false);
             drainUntilReady();
@@ -409,7 +430,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void rollbackTransaction(byte flags) throws SQLException {
+    public synchronized void rollbackTransaction(byte flags) throws SQLException {
         try {
             sendMessage(MSG_TXN_ROLLBACK, buildTxnRollbackPayload(flags), (byte) 0, false);
             drainUntilReady();
@@ -418,7 +439,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void savepoint(String name) throws SQLException {
+    public synchronized void savepoint(String name) throws SQLException {
         try {
             sendMessage(MSG_TXN_SAVEPOINT, buildTxnSavepointPayload(name), (byte) 0, false);
             drainUntilReady();
@@ -427,7 +448,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void releaseSavepoint(String name) throws SQLException {
+    public synchronized void releaseSavepoint(String name) throws SQLException {
         try {
             sendMessage(MSG_TXN_RELEASE, buildTxnReleasePayload(name), (byte) 0, false);
             drainUntilReady();
@@ -436,7 +457,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void rollbackToSavepoint(String name) throws SQLException {
+    public synchronized void rollbackToSavepoint(String name) throws SQLException {
         try {
             sendMessage(MSG_TXN_ROLLBACK_TO, buildTxnRollbackToPayload(name), (byte) 0, false);
             drainUntilReady();
@@ -445,7 +466,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void setOption(String name, String value) throws SQLException {
+    public synchronized void setOption(String name, String value) throws SQLException {
         try {
             sendMessage(MSG_SET_OPTION, buildSetOptionPayload(name, value), (byte) 0, false);
             drainUntilReady();
@@ -454,7 +475,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void ping() throws SQLException {
+    public synchronized void ping() throws SQLException {
         try {
             sendMessage(MSG_PING, new byte[0], (byte) 0, false);
             while (true) {
@@ -481,7 +502,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void subscribe(byte subscribeType, String channel, String filterExpr) throws SQLException {
+    public synchronized void subscribe(byte subscribeType, String channel, String filterExpr) throws SQLException {
         try {
             sendMessage(MSG_SUBSCRIBE, buildSubscribePayload(subscribeType, channel, filterExpr), (byte) 0, false);
             drainUntilReady();
@@ -490,7 +511,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void unsubscribe(String channel) throws SQLException {
+    public synchronized void unsubscribe(String channel) throws SQLException {
         try {
             sendMessage(MSG_UNSUBSCRIBE, buildUnsubscribePayload(channel), (byte) 0, false);
             drainUntilReady();
@@ -499,7 +520,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public SBQueryResult executeSblr(long sblrHash, byte[] bytecode, List<Object> params, List<Integer> paramTypes)
+    public synchronized SBQueryResult executeSblr(long sblrHash, byte[] bytecode, List<Object> params, List<Integer> paramTypes)
         throws SQLException {
         try {
             List<SBTypeCodec.ParamEncoding> encoded = new ArrayList<>();
@@ -518,7 +539,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void streamControl(byte controlType, int windowSize, int timeoutMs) throws SQLException {
+    public synchronized void streamControl(byte controlType, int windowSize, int timeoutMs) throws SQLException {
         try {
             sendMessage(MSG_STREAM_CONTROL, buildStreamControlPayload(controlType, windowSize, timeoutMs), (byte) 0, false);
         } catch (IOException e) {
@@ -526,7 +547,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void attachCreate(String emulationMode, String dbName) throws SQLException {
+    public synchronized void attachCreate(String emulationMode, String dbName) throws SQLException {
         try {
             sendMessage(MSG_ATTACH_CREATE, buildAttachCreatePayload(emulationMode, dbName), (byte) 0, false);
             drainUntilReady();
@@ -535,7 +556,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void attachDetach() throws SQLException {
+    public synchronized void attachDetach() throws SQLException {
         try {
             sendMessage(MSG_ATTACH_DETACH, new byte[0], (byte) 0, false);
             drainUntilReady();
@@ -544,7 +565,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public SBQueryResult attachList() throws SQLException {
+    public synchronized SBQueryResult attachList() throws SQLException {
         try {
             sendMessage(MSG_ATTACH_LIST, new byte[0], (byte) 0, false);
             sendMessage(MSG_SYNC, new byte[0], (byte) 0, false);
@@ -554,7 +575,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void cancelCurrentQuery() throws SQLException {
+    public synchronized void cancelCurrentQuery() throws SQLException {
         if (!connected) return;
         try {
             sendMessage(MSG_CANCEL, buildCancelPayload(0, lastQuerySequence), MSG_FLAG_URGENT, false);
@@ -576,7 +597,7 @@ public class SBProtocolHandler {
         }, timeoutMs, TimeUnit.MILLISECONDS);
     }
 
-    public boolean isAlive(int timeout) {
+    public synchronized boolean isAlive(int timeout) {
         if (!connected || socket == null || socket.isClosed()) {
             return false;
         }
@@ -611,7 +632,7 @@ public class SBProtocolHandler {
         }
     }
 
-    public void abort() {
+    public synchronized void abort() {
         try {
             if (socket != null) {
                 socket.close();
@@ -622,7 +643,7 @@ public class SBProtocolHandler {
         connected = false;
     }
 
-    public void close() {
+    public synchronized void close() {
         try {
             if (socket != null) {
                 socket.close();
@@ -633,7 +654,11 @@ public class SBProtocolHandler {
         connected = false;
     }
 
-    public void setNetworkTimeout(int milliseconds) {
+    public synchronized boolean isConnected() {
+        return connected && socket != null && !socket.isClosed() && inputStream != null && outputStream != null;
+    }
+
+    public synchronized void setNetworkTimeout(int milliseconds) {
         this.networkTimeout = milliseconds;
         try {
             if (socket != null) {
@@ -965,6 +990,9 @@ public class SBProtocolHandler {
                 }
                 case MSG_ERROR: {
                     ProtocolError error = parseErrorMessage(msg.payload);
+                    // Drain back to READY so the connection stays synchronized after
+                    // server-side SQL errors and can be safely reused/pool-returned.
+                    drainToReadyAfterError();
                     throw createSQLException(buildErrorMessage(error),
                         error.sqlState != null ? error.sqlState : "42000");
                 }
@@ -1007,8 +1035,35 @@ public class SBProtocolHandler {
         }
     }
 
-    private void sendSimpleQuery(String sql, int maxRows, int timeoutMs) throws IOException {
+    private void drainToReadyAfterError() {
+        try {
+            while (true) {
+                ProtocolMessage msg = readMessage();
+                try {
+                    if (handleAsyncMessage(msg)) {
+                        continue;
+                    }
+                } catch (SQLException ignored) {
+                    // Ignore async parsing errors while trying to resynchronize.
+                }
+                if (msg.type == MSG_READY) {
+                    ReadyStatus ready = parseReady(msg.payload);
+                    txnId = ready.txnId;
+                    return;
+                }
+                if (msg.type == MSG_ERROR) {
+                    // Continue draining until READY.
+                    continue;
+                }
+            }
+        } catch (IOException ignored) {
+            // Connection is likely no longer usable; caller will surface the SQL error.
+        }
+    }
+
+    private void sendSimpleQuery(String sql, int maxRows, int timeoutMs, int extraFlags) throws IOException {
         int flags = props.isBinaryTransfer() ? QUERY_FLAG_BINARY_RESULT : 0;
+        flags |= extraFlags;
         byte[] payload = buildQueryPayload(sql, flags, maxRows, timeoutMs);
         lastPlan = null;
         lastSblr = null;
@@ -1052,11 +1107,12 @@ public class SBProtocolHandler {
         String statementName = "sb_stmt_" + preparedStatementSequence++;
         byte[] parsePayload = buildParsePayload(statementName, sql, parameterTypes);
         sendMessage(MSG_PARSE, parsePayload, (byte) 0, false);
-        int described = describeStatement(statementName);
-        if (described >= 0 && described != parameterTypes.size()) {
-            throw createSQLException("parameter count mismatch", "07001");
+        if (!isConnected()) {
+            int described = describeStatement(statementName);
+            if (described >= 0 && described != parameterTypes.size()) {
+                throw createSQLException("parameter count mismatch", "07001");
+            }
         }
-
         preparedStatements.put(key, new PreparedStatementCacheEntry(statementName, parameterTypes));
         while (preparedStatements.size() > MAX_PREPARED_STATEMENTS) {
             String oldestKey = preparedStatements.keySet().iterator().next();
@@ -1972,6 +2028,7 @@ public class SBProtocolHandler {
                     }
                     case MSG_ERROR: {
                         ProtocolError error = protocol.parseErrorMessage(msg.payload);
+                        protocol.drainToReadyAfterError();
                         if (cancelTask != null) {
                             cancelTask.cancel(false);
                         }
