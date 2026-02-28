@@ -130,7 +130,7 @@ public class JDBC203PoolingAndRecoveryContractTests
 
         var afterStats = GetPoolStats(poolingDsn);
         Assert.NotNull(afterStats);
-        Assert.True(afterStats.Value.Borrowed <= 3);
+        Assert.True(afterStats.Value.ActiveCount <= 3);
         Assert.True(afterStats.Value.BorrowAttempts >= 10);
     }
 

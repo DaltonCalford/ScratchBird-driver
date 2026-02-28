@@ -174,12 +174,18 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override object? ExecuteScalar()
     {
-        using var reader = ExecuteReader(CommandBehavior.SingleRow);
+        using var reader = ExecuteReader(CommandBehavior.SingleResult);
+        object? first = null;
         if (reader.Read())
         {
-            return reader.GetValue(0);
+            first = reader.GetValue(0);
         }
-        return null;
+
+        while (reader.Read())
+        {
+        }
+
+        return first;
     }
 
     public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)

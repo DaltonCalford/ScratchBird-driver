@@ -56,6 +56,7 @@ internal sealed class ProtocolClient
     private (ulong Hash, uint Version, byte[] Bytecode)? _lastSblr;
     private readonly Dictionary<string, PreparedStatement> _preparedStatements = new(StringComparer.Ordinal);
     private uint _preparedStatementSequence;
+    private uint _portalSequence;
     private ScratchBirdConfig? _config;
     private record struct PreparedStatement(string Name, string Sql, uint[] ParamTypes, DateTimeOffset LastUsedUtc);
 
@@ -101,6 +102,7 @@ internal sealed class ProtocolClient
         _parameters.Clear();
         _preparedStatements.Clear();
         _preparedStatementSequence = 0;
+        _portalSequence = 0;
         _attachmentId = new byte[16];
         _config = config;
 
@@ -525,13 +527,16 @@ internal sealed class ProtocolClient
             paramValues.Add(encoded.Param);
             paramTypes.Add(encoded.Oid);
         }
-        var statementName = GetOrPrepareStatement(sql, parameterTypes: paramTypes, forceReprepare: true).Name;
+        var prepared = GetOrPrepareStatement(sql, parameterTypes: paramTypes, forceReprepare: false);
+        MarkPreparedStatementUsed(sql, paramTypes);
+        var statementName = prepared.Name;
 
+        var portalName = $"sb_portal_{_portalSequence++}";
         var resultFormats = ConfigBinaryTransfer() ? new[] { TypeDecoder.FormatBinary } : Array.Empty<ushort>();
-        var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, statementName, paramValues, resultFormats);
+        var bindPayload = ProtocolCodec.BuildBindPayload(portalName, statementName, paramValues, resultFormats);
         SendMessage(MessageType.BIND, bindPayload, 0, false);
 
-        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)Math.Max(0, maxRows));
+        var execPayload = ProtocolCodec.BuildExecutePayload(portalName, (uint)Math.Max(0, maxRows));
         _lastQuerySequence = SendMessage(MessageType.EXECUTE, execPayload, 0, false);
         if (maxRows <= 0)
         {
@@ -1275,6 +1280,7 @@ internal sealed class ProtocolClient
             try
             {
                 _client.Cancel();
+                _client.Close();
             }
             catch
             {

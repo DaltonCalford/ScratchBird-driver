@@ -346,7 +346,25 @@ public sealed class ScratchBirdDataReader : DbDataReader
         }
         if (!_done)
         {
-            _stream.Cancel();
+            if (_behavior.HasFlag(CommandBehavior.SingleRow))
+            {
+                try
+                {
+                    while (_stream.ReadNextRow() != null)
+                    {
+                    }
+                    _done = true;
+                    _recordsAffected = (int)_stream.RowsAffected;
+                }
+                catch
+                {
+                    _stream.Cancel();
+                }
+            }
+            else
+            {
+                _stream.Cancel();
+            }
         }
         _stream.Dispose();
         _closed = true;
