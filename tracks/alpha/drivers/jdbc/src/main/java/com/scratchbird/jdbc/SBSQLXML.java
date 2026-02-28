@@ -31,6 +31,8 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLEventWriter;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 import javax.xml.transform.Result;
@@ -50,6 +52,7 @@ import javax.xml.transform.stream.StreamSource;
 import org.w3c.dom.Node;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
+import org.xml.sax.XMLReader;
 import org.xml.sax.helpers.DefaultHandler;
 
 /**
@@ -253,14 +256,50 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Source> T instantiateStreamSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
         try {
-            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
-            if (!(instance instanceof StreamSource streamSource)) {
-                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            Constructor<T> ctor;
+
+            ctor = findConstructor(sourceClass);
+            if (ctor != null) {
+                T instance = ctor.newInstance();
+                if (!(instance instanceof StreamSource streamSource)) {
+                    throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+                }
+                streamSource.setReader(new StringReader(xml));
+                return instance;
             }
-            streamSource.setReader(new StringReader(xml));
-            return instance;
+
+            ctor = findConstructor(sourceClass, Reader.class);
+            if (ctor != null) {
+                return ctor.newInstance(new StringReader(xml));
+            }
+
+            ctor = findConstructor(sourceClass, InputStream.class);
+            if (ctor != null) {
+                return ctor.newInstance(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+            }
+
+            ctor = findConstructor(sourceClass, Reader.class, String.class);
+            if (ctor != null) {
+                return ctor.newInstance(new StringReader(xml), "sb:sqlxml");
+            }
+
+            ctor = findConstructor(sourceClass, InputStream.class, String.class);
+            if (ctor != null) {
+                return ctor.newInstance(
+                    new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)),
+                    "sb:sqlxml");
+            }
+
+            ctor = findConstructor(sourceClass, String.class);
+            if (ctor != null) {
+                T instance = ctor.newInstance("sb:sqlxml");
+                if (instance instanceof StreamSource streamSource) {
+                    streamSource.setReader(new StringReader(xml));
+                    return instance;
+                }
+            }
+
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -270,14 +309,30 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Source> T instantiateDomSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
         try {
-            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
-            if (!(instance instanceof DOMSource domSource)) {
-                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            Node node = parseDom(xml);
+            Constructor<T> ctor;
+
+            ctor = findConstructor(sourceClass);
+            if (ctor != null) {
+                T instance = ctor.newInstance();
+                if (!(instance instanceof DOMSource domSource)) {
+                    throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+                }
+                domSource.setNode(node);
+                return instance;
             }
-            domSource.setNode(parseDom(xml));
-            return instance;
+
+            ctor = findConstructor(sourceClass, Node.class);
+            if (ctor != null) {
+                return ctor.newInstance(node);
+            }
+
+            ctor = findConstructor(sourceClass, Node.class, String.class);
+            if (ctor != null) {
+                return ctor.newInstance(node, "sb:sqlxml");
+            }
+
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -287,14 +342,30 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Source> T instantiateSaxSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
         try {
-            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
-            if (!(instance instanceof SAXSource saxSource)) {
-                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            InputSource inputSource = new InputSource(new StringReader(xml));
+            Constructor<T> ctor;
+
+            ctor = findConstructor(sourceClass);
+            if (ctor != null) {
+                T instance = ctor.newInstance();
+                if (!(instance instanceof SAXSource saxSource)) {
+                    throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+                }
+                saxSource.setInputSource(inputSource);
+                return instance;
             }
-            saxSource.setInputSource(new InputSource(new StringReader(xml)));
-            return instance;
+
+            ctor = findConstructor(sourceClass, InputSource.class);
+            if (ctor != null) {
+                return ctor.newInstance(inputSource);
+            }
+
+            ctor = findConstructor(sourceClass, XMLReader.class, InputSource.class);
+            if (ctor != null) {
+                return ctor.newInstance(null, inputSource);
+            }
+
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -305,14 +376,17 @@ public class SBSQLXML implements SQLXML {
     private <T extends Source> T instantiateStaxSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
         try {
             XMLInputFactory factory = XMLInputFactory.newFactory();
-            XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xml));
-            try {
-                Constructor<T> ctor = sourceClass.getDeclaredConstructor(XMLStreamReader.class);
-                ctor.setAccessible(true);
+            Constructor<T> ctor = findConstructor(sourceClass, XMLStreamReader.class);
+            if (ctor != null) {
+                XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xml));
                 return ctor.newInstance(reader);
-            } catch (NoSuchMethodException ex) {
-                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
             }
+            ctor = findConstructor(sourceClass, XMLEventReader.class);
+            if (ctor != null) {
+                XMLEventReader reader = factory.createXMLEventReader(new StringReader(xml));
+                return ctor.newInstance(reader);
+            }
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -322,16 +396,44 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Result> T instantiateStreamResultSubclass(Class<T> resultClass) throws SQLException {
         try {
-            Constructor<T> ctor = resultClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
-            if (!(instance instanceof StreamResult streamResult)) {
-                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
-            }
+            Constructor<T> ctor;
             StringWriter writer = new StringWriter();
-            streamResult.setWriter(writer);
-            pendingMaterializer = writer::toString;
-            return instance;
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+            ctor = findConstructor(resultClass);
+            if (ctor != null) {
+                T instance = ctor.newInstance();
+                if (!(instance instanceof StreamResult streamResult)) {
+                    throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+                }
+                streamResult.setWriter(writer);
+                pendingMaterializer = writer::toString;
+                return instance;
+            }
+
+            ctor = findConstructor(resultClass, Writer.class);
+            if (ctor != null) {
+                pendingMaterializer = writer::toString;
+                return ctor.newInstance(writer);
+            }
+
+            ctor = findConstructor(resultClass, OutputStream.class);
+            if (ctor != null) {
+                pendingMaterializer = () -> output.toString(StandardCharsets.UTF_8);
+                return ctor.newInstance(output);
+            }
+
+            ctor = findConstructor(resultClass, String.class);
+            if (ctor != null) {
+                T instance = ctor.newInstance("sb:sqlxml");
+                if (instance instanceof StreamResult streamResult) {
+                    streamResult.setWriter(writer);
+                    pendingMaterializer = writer::toString;
+                    return instance;
+                }
+            }
+
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -341,14 +443,37 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Result> T instantiateDomResultSubclass(Class<T> resultClass) throws SQLException {
         try {
-            Constructor<T> ctor = resultClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
-            if (!(instance instanceof DOMResult domResult)) {
-                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+            Constructor<T> ctor;
+
+            ctor = findConstructor(resultClass);
+            if (ctor != null) {
+                T instance = ctor.newInstance();
+                if (!(instance instanceof DOMResult domResult)) {
+                    throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+                }
+                pendingMaterializer = () -> serializeDom(domResult.getNode());
+                return instance;
             }
-            pendingMaterializer = () -> serializeDom(domResult.getNode());
-            return instance;
+
+            ctor = findConstructor(resultClass, Node.class);
+            if (ctor != null) {
+                DOMResult domResult = (DOMResult) ctor.newInstance((Node) null);
+                pendingMaterializer = () -> serializeDom(domResult.getNode());
+                @SuppressWarnings("unchecked")
+                T instance = (T) domResult;
+                return instance;
+            }
+
+            ctor = findConstructor(resultClass, Node.class, String.class);
+            if (ctor != null) {
+                DOMResult domResult = (DOMResult) ctor.newInstance(null, "sb:sqlxml");
+                pendingMaterializer = () -> serializeDom(domResult.getNode());
+                @SuppressWarnings("unchecked")
+                T instance = (T) domResult;
+                return instance;
+            }
+
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
         } catch (SQLFeatureNotSupportedException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -358,9 +483,30 @@ public class SBSQLXML implements SQLXML {
 
     private <T extends Result> T instantiateSaxResultSubclass(Class<T> resultClass) throws SQLException {
         try {
-            Constructor<T> ctor = resultClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            T instance = ctor.newInstance();
+            Constructor<T> ctor;
+            T instance;
+
+            ctor = findConstructor(resultClass);
+            if (ctor != null) {
+                instance = ctor.newInstance();
+            } else {
+                ctor = findConstructor(resultClass, org.xml.sax.ContentHandler.class);
+                if (ctor != null) {
+                    TransformerFactory transformerFactory = TransformerFactory.newInstance();
+                    if (transformerFactory instanceof SAXTransformerFactory saxFactory) {
+                        TransformerHandler handler = saxFactory.newTransformerHandler();
+                        StringWriter writer = new StringWriter();
+                        handler.setResult(new StreamResult(writer));
+                        pendingMaterializer = writer::toString;
+                        return ctor.newInstance(handler);
+                    }
+                    SaxCaptureHandler handler = new SaxCaptureHandler();
+                    pendingMaterializer = handler::toXml;
+                    return ctor.newInstance(handler);
+                }
+                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+            }
+
             if (!(instance instanceof SAXResult saxResult)) {
                 throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
             }
@@ -389,18 +535,43 @@ public class SBSQLXML implements SQLXML {
             StringWriter writer = new StringWriter();
             XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
             XMLStreamWriter streamWriter = outputFactory.createXMLStreamWriter(writer);
-            pendingMaterializer = () -> {
-                streamWriter.flush();
-                streamWriter.close();
-                return writer.toString();
-            };
-            Constructor<T> ctor = resultClass.getDeclaredConstructor(XMLStreamWriter.class);
-            ctor.setAccessible(true);
-            return ctor.newInstance(streamWriter);
-        } catch (NoSuchMethodException ex) {
+            Constructor<T> ctor = findConstructor(resultClass, XMLStreamWriter.class);
+            if (ctor != null) {
+                pendingMaterializer = () -> {
+                    streamWriter.flush();
+                    streamWriter.close();
+                    return writer.toString();
+                };
+                return ctor.newInstance(streamWriter);
+            }
+
+            XMLEventWriter eventWriter = outputFactory.createXMLEventWriter(writer);
+            ctor = findConstructor(resultClass, XMLEventWriter.class);
+            if (ctor != null) {
+                pendingMaterializer = () -> {
+                    eventWriter.flush();
+                    eventWriter.close();
+                    return writer.toString();
+                };
+                return ctor.newInstance(eventWriter);
+            }
+
             throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
         } catch (Exception ex) {
+            if (ex instanceof SQLFeatureNotSupportedException) {
+                throw (SQLFeatureNotSupportedException) ex;
+            }
             throw new SQLException("Failed to initialize StAXResult for SQLXML", "HY000", ex);
+        }
+    }
+
+    private static <T> Constructor<T> findConstructor(Class<T> type, Class<?>... parameterTypes) {
+        try {
+            Constructor<T> ctor = type.getDeclaredConstructor(parameterTypes);
+            ctor.setAccessible(true);
+            return ctor;
+        } catch (NoSuchMethodException ex) {
+            return null;
         }
     }
 

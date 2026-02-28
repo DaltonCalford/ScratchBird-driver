@@ -772,8 +772,55 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             case Types.LONGVARBINARY:
                 if (x instanceof byte[]) {
                     setBytes(parameterIndex, (byte[]) x);
+                } else if (x instanceof Blob) {
+                    setBlob(parameterIndex, (Blob) x);
                 } else {
                     throw new SQLException("Cannot convert to binary", "HY000");
+                }
+                break;
+            case Types.BLOB:
+                if (x instanceof Blob) {
+                    setBlob(parameterIndex, (Blob) x);
+                } else if (x instanceof byte[]) {
+                    setBytes(parameterIndex, (byte[]) x);
+                } else {
+                    throw new SQLException("Cannot convert to blob", "HY000");
+                }
+                break;
+            case Types.CLOB:
+            case Types.NCLOB:
+                if (x instanceof Clob) {
+                    setClob(parameterIndex, (Clob) x);
+                } else {
+                    setString(parameterIndex, x.toString());
+                }
+                break;
+            case Types.ROWID:
+                if (x instanceof RowId) {
+                    setRowId(parameterIndex, (RowId) x);
+                } else {
+                    setParameter(parameterIndex, x.toString(), Types.ROWID);
+                }
+                break;
+            case Types.REF:
+                if (x instanceof Ref) {
+                    setRef(parameterIndex, (Ref) x);
+                } else {
+                    setParameter(parameterIndex, x, Types.REF);
+                }
+                break;
+            case Types.STRUCT:
+                if (x instanceof Struct) {
+                    setParameter(parameterIndex, x, Types.STRUCT);
+                } else {
+                    throw new SQLException("Cannot convert to struct", "HY000");
+                }
+                break;
+            case Types.SQLXML:
+                if (x instanceof SQLXML) {
+                    setSQLXML(parameterIndex, (SQLXML) x);
+                } else {
+                    setString(parameterIndex, x.toString());
                 }
                 break;
             case Types.DATE:
@@ -841,12 +888,18 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             setTimestamp(parameterIndex, (java.sql.Timestamp) x);
         } else if (x instanceof Array) {
             setArray(parameterIndex, (Array) x);
+        } else if (x instanceof Struct) {
+            setParameter(parameterIndex, x, Types.STRUCT);
         } else if (x instanceof Blob) {
             setBlob(parameterIndex, (Blob) x);
         } else if (x instanceof Clob) {
             setClob(parameterIndex, (Clob) x);
+        } else if (x instanceof SQLXML) {
+            setSQLXML(parameterIndex, (SQLXML) x);
         } else if (x instanceof Ref) {
             setRef(parameterIndex, (Ref) x);
+        } else if (x instanceof RowId) {
+            setRowId(parameterIndex, (RowId) x);
         } else if (x instanceof java.util.UUID) {
             setParameter(parameterIndex, x, Types.OTHER);
         } else if (x instanceof java.time.LocalDate) {
@@ -865,6 +918,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             Object[] elements = ((Collection<?>) x).toArray();
             setArray(parameterIndex, new SBArray("text", elements));
         } else if (x instanceof java.net.URL) {
+            setString(parameterIndex, x.toString());
+        } else if (x instanceof Enum<?>) {
+            setString(parameterIndex, ((Enum<?>) x).name());
+        } else if (x instanceof CharSequence) {
             setString(parameterIndex, x.toString());
         } else {
             setParameter(parameterIndex, x, Types.OTHER);
@@ -1083,7 +1140,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         if (xmlObject == null) {
             setNull(parameterIndex, Types.SQLXML);
         } else {
-            setString(parameterIndex, xmlObject.getString());
+            setParameter(parameterIndex, xmlObject.getString(), Types.SQLXML);
         }
     }
 

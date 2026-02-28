@@ -417,27 +417,27 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsCatalogsInDataManipulation() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsCatalogsInProcedureCalls() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsCatalogsInTableDefinitions() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsCatalogsInIndexDefinitions() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsCatalogsInPrivilegeDefinitions() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override

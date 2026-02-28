@@ -19,7 +19,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Array;
+import java.sql.Blob;
+import java.sql.Clob;
+import java.sql.Ref;
+import java.sql.RowId;
 import java.sql.SQLException;
+import java.sql.SQLXML;
 import java.sql.Struct;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -29,7 +34,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.time.Period;
+import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -163,6 +170,45 @@ public final class SBTypeCodec {
             RangeEncoding encoded = encodeRange((SBRange<?>) value);
             return new ParamEncoding(FORMAT_BINARY, encoded.oid, encoded.data, false);
         }
+        if (value instanceof Ref) {
+            Object refValue = ((Ref) value).getObject();
+            if (refValue == null) {
+                return new ParamEncoding(FORMAT_BINARY, OID_TEXT, null, true);
+            }
+            return encodeParam(refValue, sqlType != null ? sqlType : java.sql.Types.REF);
+        }
+        if (value instanceof RowId) {
+            byte[] raw = ((RowId) value).getBytes();
+            if (raw == null) {
+                return new ParamEncoding(FORMAT_BINARY, OID_BYTEA, null, true);
+            }
+            return new ParamEncoding(FORMAT_BINARY, OID_BYTEA, encodeLengthPrefixed(raw), false);
+        }
+        if (value instanceof Blob) {
+            Blob blob = (Blob) value;
+            byte[] raw = blob.getBytes(1, (int) blob.length());
+            return new ParamEncoding(FORMAT_BINARY, OID_BYTEA, encodeLengthPrefixed(raw), false);
+        }
+        if (value instanceof Clob) {
+            Clob clob = (Clob) value;
+            String text = clob.getSubString(1, (int) clob.length());
+            return new ParamEncoding(
+                FORMAT_BINARY,
+                OID_TEXT,
+                encodeLengthPrefixed(text.getBytes(StandardCharsets.UTF_8)),
+                false);
+        }
+        if (value instanceof SQLXML) {
+            String text = ((SQLXML) value).getString();
+            if (text == null) {
+                return new ParamEncoding(FORMAT_BINARY, OID_XML, null, true);
+            }
+            return new ParamEncoding(
+                FORMAT_BINARY,
+                OID_XML,
+                encodeLengthPrefixed(text.getBytes(StandardCharsets.UTF_8)),
+                false);
+        }
         if (value instanceof Struct) {
             return encodeComposite((Struct) value);
         }
@@ -234,8 +280,20 @@ public final class SBTypeCodec {
             return new ParamEncoding(FORMAT_BINARY, OID_TIMESTAMPTZ,
                 encodeTimestamp(((OffsetDateTime) value).toInstant()), false);
         }
+        if (value instanceof ZonedDateTime) {
+            return new ParamEncoding(FORMAT_BINARY, OID_TIMESTAMPTZ,
+                encodeTimestamp(((ZonedDateTime) value).toInstant()), false);
+        }
+        if (value instanceof OffsetTime) {
+            long micros = ((OffsetTime) value).toLocalTime().toNanoOfDay() / 1000;
+            return new ParamEncoding(FORMAT_BINARY, OID_TIMETZ, toBytesLE(micros), false);
+        }
         if (value instanceof Instant) {
             return new ParamEncoding(FORMAT_BINARY, OID_TIMESTAMPTZ, encodeTimestamp((Instant) value), false);
+        }
+        if (value instanceof java.util.Date) {
+            return new ParamEncoding(FORMAT_BINARY, OID_TIMESTAMP,
+                encodeTimestamp(((java.util.Date) value).toInstant()), false);
         }
         if (value instanceof Duration) {
             return new ParamEncoding(FORMAT_BINARY, OID_INTERVAL, encodeInterval((Duration) value), false);
@@ -271,6 +329,14 @@ public final class SBTypeCodec {
             }
             byte[] raw = ((String) value).getBytes(StandardCharsets.UTF_8);
             return new ParamEncoding(FORMAT_BINARY, oid, encodeLengthPrefixed(raw), false);
+        }
+        if (value instanceof CharSequence) {
+            byte[] raw = value.toString().getBytes(StandardCharsets.UTF_8);
+            return new ParamEncoding(FORMAT_BINARY, OID_TEXT, encodeLengthPrefixed(raw), false);
+        }
+        if (value instanceof Enum<?>) {
+            byte[] raw = ((Enum<?>) value).name().getBytes(StandardCharsets.UTF_8);
+            return new ParamEncoding(FORMAT_BINARY, OID_TEXT, encodeLengthPrefixed(raw), false);
         }
 
         int mappedOid = mapSqlTypeToOid(sqlType);
@@ -684,6 +750,12 @@ public final class SBTypeCodec {
                 if (value instanceof java.sql.Date) {
                     return encodeDate(((java.sql.Date) value).toLocalDate());
                 }
+                if (value instanceof java.util.Date) {
+                    return encodeDate(((java.util.Date) value).toInstant().atZone(ZoneOffset.UTC).toLocalDate());
+                }
+                if (value instanceof CharSequence) {
+                    return encodeDate(LocalDate.parse(value.toString().trim()));
+                }
                 return encodeDate((LocalDate) value);
             case OID_TSRANGE:
                 if (value instanceof Timestamp) {
@@ -692,6 +764,15 @@ public final class SBTypeCodec {
                 if (value instanceof LocalDateTime) {
                     return encodeTimestamp(((LocalDateTime) value).toInstant(ZoneOffset.UTC));
                 }
+                if (value instanceof OffsetDateTime) {
+                    return encodeTimestamp(((OffsetDateTime) value).toInstant());
+                }
+                if (value instanceof java.util.Date) {
+                    return encodeTimestamp(((java.util.Date) value).toInstant());
+                }
+                if (value instanceof CharSequence) {
+                    return encodeTimestamp(parseRangeTimestamp(value.toString()));
+                }
                 return encodeTimestamp(((Instant) value));
             case OID_TSTZRANGE:
                 if (value instanceof OffsetDateTime) {
@@ -699,6 +780,15 @@ public final class SBTypeCodec {
                 }
                 if (value instanceof Instant) {
                     return encodeTimestamp((Instant) value);
+                }
+                if (value instanceof LocalDateTime) {
+                    return encodeTimestamp(((LocalDateTime) value).toInstant(ZoneOffset.UTC));
+                }
+                if (value instanceof java.util.Date) {
+                    return encodeTimestamp(((java.util.Date) value).toInstant());
+                }
+                if (value instanceof CharSequence) {
+                    return encodeTimestamp(parseRangeTimestamp(value.toString()));
                 }
                 return encodeTimestamp(((Timestamp) value).toInstant());
             default:
@@ -1258,8 +1348,40 @@ public final class SBTypeCodec {
             case java.sql.Types.LONGVARBINARY:
             case java.sql.Types.BLOB:
                 return OID_BYTEA;
+            case java.sql.Types.CLOB:
+            case java.sql.Types.NCLOB:
+                return OID_TEXT;
+            case java.sql.Types.REF:
+                return OID_TEXT;
+            case java.sql.Types.ROWID:
+                return OID_BYTEA;
             default:
                 return 0;
+        }
+    }
+
+    private static Instant parseRangeTimestamp(String text) throws SQLException {
+        if (text == null) {
+            throw new SQLException("Range timestamp bound is null", "22023");
+        }
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) {
+            throw new SQLException("Range timestamp bound is empty", "22023");
+        }
+        try {
+            return Instant.parse(trimmed);
+        } catch (Exception ignored) {
+            // Fall through to local datetime parse.
+        }
+        try {
+            return OffsetDateTime.parse(trimmed).toInstant();
+        } catch (Exception ignored) {
+            // Fall through to local datetime parse.
+        }
+        try {
+            return LocalDateTime.parse(trimmed.replace(' ', 'T')).toInstant(ZoneOffset.UTC);
+        } catch (Exception ex) {
+            throw new SQLException("Unsupported range timestamp bound: " + text, "22023", ex);
         }
     }
 

@@ -33,6 +33,11 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsANSI92EntryLevelSQL());
         assertTrue(meta.supportsANSI92IntermediateSQL());
         assertTrue(meta.supportsANSI92FullSQL());
+        assertTrue(meta.supportsCatalogsInDataManipulation());
+        assertTrue(meta.supportsCatalogsInProcedureCalls());
+        assertTrue(meta.supportsCatalogsInTableDefinitions());
+        assertTrue(meta.supportsCatalogsInIndexDefinitions());
+        assertTrue(meta.supportsCatalogsInPrivilegeDefinitions());
         assertFalse(meta.locatorsUpdateCopy());
         assertTrue(meta.supportsStatementPooling());
         assertTrue(meta.supportsNamedParameters());

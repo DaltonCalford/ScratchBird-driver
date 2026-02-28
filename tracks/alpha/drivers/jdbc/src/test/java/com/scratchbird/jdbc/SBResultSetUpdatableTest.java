@@ -254,6 +254,48 @@ public class SBResultSetUpdatableTest {
             () -> rs.updateString("derived", "illegal"));
     }
 
+    @Test
+    public void localBufferedUpdatableFallbackWorksWithoutResolvedBaseTable() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT t.id, t.name FROM (SELECT id, name FROM demo) t";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo name = new SBColumnInfo();
+        name.setName("name");
+        columns.add(name);
+
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[] {2, "OLD"});
+        SBResultSet rs = new SBResultSet(statement, columns, rows);
+
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("name", "NEW");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertEquals("NEW", rs.getString("name"));
+
+        rs.moveToInsertRow();
+        rs.updateInt("id", 3);
+        rs.updateString("name", "INSERTED");
+        rs.insertRow();
+        assertTrue(rs.rowInserted());
+        assertEquals("INSERTED", rs.getString("name"));
+
+        assertTrue(rs.absolute(1));
+        rs.deleteRow();
+        assertTrue(rs.rowDeleted());
+
+        assertTrue(protocol.executedSql.isEmpty());
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);

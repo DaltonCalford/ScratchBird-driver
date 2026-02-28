@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Field;
 import java.sql.Ref;
 import java.sql.ResultSet;
@@ -79,6 +80,26 @@ public class SBRefSupportTest {
         assertNotNull(out);
         assertEquals("rid-out", out.getObject());
         assertNull(statement.getRef(2));
+    }
+
+    @Test
+    public void setObjectRoutesSqlXmlAndRowIdThroughTypedBindings() throws Exception {
+        CaptureProtocol protocol = new CaptureProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBPreparedStatement statement = new SBPreparedStatement(connection,
+            "INSERT INTO demo(xml_col, rowid_col) VALUES (?, ?)",
+            ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_READ_ONLY,
+            ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        statement.setObject(1, new SBSQLXML("<xml/>"), Types.SQLXML);
+        statement.setObject(2, new SBRowId("rid-200".getBytes(StandardCharsets.UTF_8)));
+        statement.executeUpdate();
+
+        assertEquals("<xml/>", protocol.lastParams.get(0));
+        assertEquals(Types.SQLXML, protocol.lastTypes.get(0));
+        assertEquals("rid-200", protocol.lastParams.get(1));
+        assertEquals(Types.ROWID, protocol.lastTypes.get(1));
     }
 
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {

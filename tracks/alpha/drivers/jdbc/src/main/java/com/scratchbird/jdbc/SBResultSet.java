@@ -61,6 +61,7 @@ public class SBResultSet implements ResultSet {
 
     // Updatable result set state
     private final boolean updatable;
+    private final boolean localOnlyUpdatable;
     private final boolean bufferedRowsMutable;
     private final UpdateTarget updateTarget;
     private final Map<Integer, Object> pendingUpdates = new LinkedHashMap<>();
@@ -94,9 +95,14 @@ public class SBResultSet implements ResultSet {
         rebuildColumnIndex();
         this.updateTarget = resolveUpdateTarget(statement, this.columns);
         this.bufferedRowsMutable = stream instanceof ListRowStream;
+        this.localOnlyUpdatable = statement != null
+            && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
+            && this.updateTarget == null
+            && hasWritableLocalProjection(statement, this.columns)
+            && this.bufferedRowsMutable;
         this.updatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
-            && this.updateTarget != null;
+            && (this.updateTarget != null || this.localOnlyUpdatable);
     }
 
     // ==================== Navigation ====================
@@ -1648,6 +1654,37 @@ public class SBResultSet implements ResultSet {
         return resolveUpdateTargetFromSql(statement, columns);
     }
 
+    private static boolean hasWritableLocalProjection(SBStatement statement, List<SBColumnInfo> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return false;
+        }
+        if (statement == null) {
+            return false;
+        }
+        String sql = statement.getLastExecutedSql();
+        if (sql == null || sql.isBlank()) {
+            return true;
+        }
+        String collapsed = collapseWhitespace(sql);
+        if (collapsed.isBlank()) {
+            return true;
+        }
+        String normalized = collapsed.toLowerCase(Locale.ROOT);
+        if (!normalized.startsWith("select ")) {
+            return true;
+        }
+        int fromIndex = findTopLevelKeyword(normalized, " from ");
+        if (fromIndex < 0) {
+            return true;
+        }
+        String projectionSql = collapsed.substring("select ".length(), fromIndex).trim();
+        if (projectionSql.isEmpty()) {
+            return false;
+        }
+        Map<Integer, String> projectionMapping = resolveProjectionMapping(projectionSql, columns);
+        return projectionMapping != null && !projectionMapping.isEmpty();
+    }
+
     private static UpdateTarget resolveUpdateTargetFromSql(SBStatement statement, List<SBColumnInfo> columns) {
         String sql = statement.getLastExecutedSql();
         if (sql == null || sql.isBlank()) {
@@ -2214,7 +2251,7 @@ public class SBResultSet implements ResultSet {
 
     private boolean canMutateColumn(int columnIndex) {
         if (updateTarget == null) {
-            return false;
+            return localOnlyUpdatable;
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             return true;
@@ -2224,7 +2261,7 @@ public class SBResultSet implements ResultSet {
 
     private String targetColumnNameOrNull(int columnIndex) {
         if (updateTarget == null) {
-            return null;
+            return localOnlyUpdatable ? columnName(columnIndex) : null;
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             return columnName(columnIndex);
@@ -2266,6 +2303,9 @@ public class SBResultSet implements ResultSet {
     }
 
     private void executeInsert(Map<Integer, Object> values) throws SQLException {
+        if (updateTarget == null) {
+            return;
+        }
         StringBuilder columnSql = new StringBuilder();
         StringBuilder valueSql = new StringBuilder();
         boolean first = true;
@@ -2284,6 +2324,9 @@ public class SBResultSet implements ResultSet {
     }
 
     private void executeUpdate(Object[] beforeRow, Map<Integer, Object> updates) throws SQLException {
+        if (updateTarget == null) {
+            return;
+        }
         StringBuilder setSql = new StringBuilder();
         boolean first = true;
         for (Map.Entry<Integer, Object> entry : updates.entrySet()) {
@@ -2302,12 +2345,18 @@ public class SBResultSet implements ResultSet {
     }
 
     private void executeDelete(Object[] beforeRow) throws SQLException {
+        if (updateTarget == null) {
+            return;
+        }
         String sql = "DELETE FROM " + updateTarget.tableSql
             + " WHERE " + buildWhereClause(beforeRow);
         executeMutation(sql);
     }
 
     private Object[] executeRefresh(Object[] beforeRow) throws SQLException {
+        if (updateTarget == null) {
+            return currentRowData == null ? null : currentRowData.clone();
+        }
         StringBuilder selectCols = new StringBuilder();
         for (int i = 1; i <= columns.size(); i++) {
             if (i > 1) {

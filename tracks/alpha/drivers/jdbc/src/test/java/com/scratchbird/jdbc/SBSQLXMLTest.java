@@ -13,8 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.OutputStream;
+import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
+import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
@@ -28,6 +31,9 @@ import javax.xml.transform.stax.StAXSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import org.junit.jupiter.api.Test;
+import org.w3c.dom.Node;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
 
 class SBSQLXMLTest {
 
@@ -41,6 +47,60 @@ class SBSQLXMLTest {
     }
 
     public static class CustomDomResult extends DOMResult {
+    }
+
+    public static class CustomReaderCtorStreamSource extends StreamSource {
+        public CustomReaderCtorStreamSource(Reader reader) {
+            super(reader);
+        }
+    }
+
+    public static class CustomInputSourceCtorSaxSource extends SAXSource {
+        public CustomInputSourceCtorSaxSource(InputSource inputSource) {
+            super(inputSource);
+        }
+    }
+
+    public static class CustomNodeCtorDomSource extends DOMSource {
+        public CustomNodeCtorDomSource(Node node) {
+            super(node);
+        }
+    }
+
+    public static class CustomXmlStreamReaderCtorStaxSource extends StAXSource {
+        public CustomXmlStreamReaderCtorStaxSource(XMLStreamReader reader) {
+            super(reader);
+        }
+    }
+
+    public static class CustomWriterCtorStreamResult extends StreamResult {
+        public CustomWriterCtorStreamResult(Writer writer) {
+            super(writer);
+        }
+    }
+
+    public static class CustomOutputStreamCtorStreamResult extends StreamResult {
+        public CustomOutputStreamCtorStreamResult(OutputStream outputStream) {
+            super(outputStream);
+        }
+    }
+
+    public static class CustomNodeCtorDomResult extends DOMResult {
+        public CustomNodeCtorDomResult(Node node) {
+            super(node);
+        }
+    }
+
+    public static class CustomContentHandlerCtorSaxResult extends SAXResult {
+        public CustomContentHandlerCtorSaxResult(ContentHandler handler) {
+            super(handler);
+        }
+    }
+
+    public static class CustomXmlStreamWriterCtorStaxResult extends StAXResult {
+        public CustomXmlStreamWriterCtorStaxResult(XMLStreamWriter writer) {
+            super(writer);
+        }
     }
 
     @Test
@@ -131,5 +191,58 @@ class SBSQLXMLTest {
         TransformerFactory.newInstance().newTransformer().transform(
             new StreamSource(new StringReader("<d/>")), customDomResult);
         assertTrue(domTarget.getString().contains("d"));
+    }
+
+    @Test
+    void supportsSubclassConstructorsWithoutDefaultCtorAcrossSourceAndResultFamilies() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>11</value></root>");
+        CustomReaderCtorStreamSource streamSource = sourceXml.getSource(CustomReaderCtorStreamSource.class);
+        assertNotNull(streamSource.getReader());
+        CustomInputSourceCtorSaxSource saxSource = sourceXml.getSource(CustomInputSourceCtorSaxSource.class);
+        assertNotNull(saxSource.getInputSource());
+        CustomNodeCtorDomSource domSource = sourceXml.getSource(CustomNodeCtorDomSource.class);
+        assertNotNull(domSource.getNode());
+        CustomXmlStreamReaderCtorStaxSource staxSource =
+            sourceXml.getSource(CustomXmlStreamReaderCtorStaxSource.class);
+        assertNotNull(staxSource.getXMLStreamReader());
+
+        SBSQLXML streamWriterTarget = new SBSQLXML();
+        CustomWriterCtorStreamResult writerResult =
+            streamWriterTarget.setResult(CustomWriterCtorStreamResult.class);
+        assertNotNull(writerResult.getWriter());
+        writerResult.getWriter().write("<writer/>");
+        writerResult.getWriter().close();
+        assertTrue(streamWriterTarget.getString().contains("writer"));
+
+        SBSQLXML streamBinaryTarget = new SBSQLXML();
+        CustomOutputStreamCtorStreamResult outputResult =
+            streamBinaryTarget.setResult(CustomOutputStreamCtorStreamResult.class);
+        assertNotNull(outputResult.getOutputStream());
+        outputResult.getOutputStream().write("<binary/>".getBytes());
+        outputResult.getOutputStream().close();
+        assertTrue(streamBinaryTarget.getString().contains("binary"));
+
+        SBSQLXML domTarget = new SBSQLXML();
+        CustomNodeCtorDomResult customDomResult = domTarget.setResult(CustomNodeCtorDomResult.class);
+        TransformerFactory.newInstance().newTransformer().transform(
+            new StreamSource(new StringReader("<dom/>")), customDomResult);
+        assertTrue(domTarget.getString().contains("dom"));
+
+        SBSQLXML saxTarget = new SBSQLXML();
+        CustomContentHandlerCtorSaxResult customSaxResult =
+            saxTarget.setResult(CustomContentHandlerCtorSaxResult.class);
+        TransformerFactory.newInstance().newTransformer().transform(
+            new StreamSource(new StringReader("<saxctor/>")), customSaxResult);
+        assertTrue(saxTarget.getString().contains("saxctor"));
+
+        SBSQLXML staxTarget = new SBSQLXML();
+        CustomXmlStreamWriterCtorStaxResult customStaxResult =
+            staxTarget.setResult(CustomXmlStreamWriterCtorStaxResult.class);
+        XMLStreamWriter writer = customStaxResult.getXMLStreamWriter();
+        writer.writeStartDocument();
+        writer.writeStartElement("staxctor");
+        writer.writeEndElement();
+        writer.writeEndDocument();
+        assertTrue(staxTarget.getString().contains("staxctor"));
     }
 }
