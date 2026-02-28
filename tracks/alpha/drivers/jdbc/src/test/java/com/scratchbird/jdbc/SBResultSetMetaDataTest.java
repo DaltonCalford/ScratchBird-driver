@@ -89,4 +89,32 @@ class SBResultSetMetaDataTest {
         assertEquals(20, meta.getColumnDisplaySize(1));
         assertEquals(65535, meta.getColumnDisplaySize(2));
     }
+
+    @Test
+    void precisionUsesTypeFallbacksWhenTypemodIsUnavailable() throws Exception {
+        SBColumnInfo intValue = new SBColumnInfo();
+        intValue.setName("id");
+        intValue.setTypeOid(23); // int4
+
+        SBColumnInfo numericValue = new SBColumnInfo();
+        numericValue.setName("amount");
+        numericValue.setTypeOid(1700); // numeric
+
+        SBColumnInfo varcharWithTypemod = new SBColumnInfo();
+        varcharWithTypemod.setName("short_name");
+        varcharWithTypemod.setTypeOid(1043); // varchar
+        varcharWithTypemod.setTypeModifier(44); // typmod = declared length + 4 => 40
+
+        SBColumnInfo xidValue = new SBColumnInfo();
+        xidValue.setName("xmin");
+        xidValue.setTypeOid(28); // xid
+
+        SBResultSetMetaData meta = new SBResultSetMetaData(
+            List.of(intValue, numericValue, varcharWithTypemod, xidValue));
+
+        assertEquals(10, meta.getPrecision(1));
+        assertEquals(38, meta.getPrecision(2));
+        assertEquals(40, meta.getPrecision(3));
+        assertEquals(10, meta.getPrecision(4));
+    }
 }

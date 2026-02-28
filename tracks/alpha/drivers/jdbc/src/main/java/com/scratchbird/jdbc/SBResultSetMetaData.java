@@ -198,19 +198,21 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     @Override
     public int getPrecision(int column) throws SQLException {
         SBColumnInfo col = getColumn(column);
+        int oid = col.getTypeOid();
         int modifier = col.getTypeModifier();
         if (modifier <= 4) {
-            return 0;
+            return defaultPrecisionForType(oid);
         }
         int baseModifier = modifier - 4;
-        switch (col.getTypeOid()) {
+        switch (oid) {
             case 1043: // varchar(n)
             case 1042: // bpchar(n)
                 return baseModifier;
             case 1700: // numeric(p,s)
-                return (baseModifier >> 16) & 0xFFFF;
+                int precision = (baseModifier >> 16) & 0xFFFF;
+                return precision > 0 ? precision : defaultPrecisionForType(oid);
             default:
-                return 0;
+                return defaultPrecisionForType(oid);
         }
     }
 
@@ -388,5 +390,26 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 829: return "macaddr";
             default: return "unknown";
         }
+    }
+
+    private int defaultPrecisionForType(int oid) {
+        return switch (oid) {
+            case 16 -> 1;        // bool
+            case 21 -> 5;        // int2
+            case 23 -> 10;       // int4
+            case 20 -> 19;       // int8
+            case 700 -> 24;      // float4
+            case 701 -> 53;      // float8
+            case 1700, 790 -> 38; // numeric, money
+            case 18 -> 1;        // char
+            case 25 -> 65535;    // text
+            case 1042, 1043 -> 255; // bpchar, varchar (when typmod absent)
+            case 1082 -> 10;     // date
+            case 1083 -> 8;      // time
+            case 1114, 1184 -> 29; // timestamp
+            case 28 -> 10;       // xid
+            case 2950 -> 36;     // uuid
+            default -> 0;
+        };
     }
 }
