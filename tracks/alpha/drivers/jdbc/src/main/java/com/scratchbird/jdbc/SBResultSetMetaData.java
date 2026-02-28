@@ -223,7 +223,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
         if (modifier > 4 && col.getTypeOid() == 1700) {
             return (modifier - 4) & 0xFFFF;
         }
-        return 0;
+        return defaultScaleForType(col.getTypeOid());
     }
 
     @Override
@@ -409,6 +409,16 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 1114, 1184 -> 29; // timestamp
             case 28 -> 10;       // xid
             case 2950 -> 36;     // uuid
+            default -> 0;
+        };
+    }
+
+    private int defaultScaleForType(int oid) {
+        return switch (oid) {
+            case 1700 -> 0;      // numeric
+            case 790 -> 2;       // money
+            case 700 -> 6;       // float4
+            case 701 -> 15;      // float8
             default -> 0;
         };
     }

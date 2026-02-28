@@ -117,4 +117,32 @@ class SBResultSetMetaDataTest {
         assertEquals(40, meta.getPrecision(3));
         assertEquals(10, meta.getPrecision(4));
     }
+
+    @Test
+    void scaleUsesTypemodForNumericAndFallbackForFloatingPointAndMoney() throws Exception {
+        SBColumnInfo numericWithTypemod = new SBColumnInfo();
+        numericWithTypemod.setName("amount");
+        numericWithTypemod.setTypeOid(1700); // numeric
+        numericWithTypemod.setTypeModifier((12 << 16) + 4 + 4); // precision=12, scale=4
+
+        SBColumnInfo realValue = new SBColumnInfo();
+        realValue.setName("ratio");
+        realValue.setTypeOid(700); // float4
+
+        SBColumnInfo doubleValue = new SBColumnInfo();
+        doubleValue.setName("score");
+        doubleValue.setTypeOid(701); // float8
+
+        SBColumnInfo moneyValue = new SBColumnInfo();
+        moneyValue.setName("price");
+        moneyValue.setTypeOid(790); // money
+
+        SBResultSetMetaData meta = new SBResultSetMetaData(
+            List.of(numericWithTypemod, realValue, doubleValue, moneyValue));
+
+        assertEquals(4, meta.getScale(1));
+        assertEquals(6, meta.getScale(2));
+        assertEquals(15, meta.getScale(3));
+        assertEquals(2, meta.getScale(4));
+    }
 }
