@@ -2612,17 +2612,17 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean othersUpdatesAreVisible(int type) throws SQLException {
-        return false;
+        return type == ResultSet.TYPE_SCROLL_SENSITIVE;
     }
 
     @Override
     public boolean othersDeletesAreVisible(int type) throws SQLException {
-        return false;
+        return type == ResultSet.TYPE_SCROLL_SENSITIVE;
     }
 
     @Override
     public boolean othersInsertsAreVisible(int type) throws SQLException {
-        return false;
+        return type == ResultSet.TYPE_SCROLL_SENSITIVE;
     }
 
     @Override
