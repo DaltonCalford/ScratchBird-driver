@@ -193,6 +193,67 @@ public class SBResultSetUpdatableTest {
             sql.contains("\"derived\"")));
     }
 
+    @Test
+    public void sqlFallbackProjectionMappingUsesSourceColumnsAndRejectsDerivedMutations() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT id AS identifier, payload AS payload_alias, payload || '-x' AS derived FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo identifier = new SBColumnInfo();
+        identifier.setName("identifier");
+        columns.add(identifier);
+
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload_alias");
+        columns.add(payload);
+
+        SBColumnInfo derived = new SBColumnInfo();
+        derived.setName("derived");
+        columns.add(derived);
+
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[] {1, "before", "before-x"});
+        SBResultSet rs = new SBResultSet(statement, columns, rows);
+
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload_alias", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.contains("\"payload\" = 'after'")));
+
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
+            () -> rs.updateString("derived", "illegal"));
+    }
+
+    @Test
+    public void sqlFallbackWithoutWritableProjectionColumnsRemainsReadOnly() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT payload || '-x' AS derived FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo derived = new SBColumnInfo();
+        derived.setName("derived");
+        columns.add(derived);
+
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[] {"before-x"});
+        SBResultSet rs = new SBResultSet(statement, columns, rows);
+
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
+            () -> rs.updateString("derived", "illegal"));
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);

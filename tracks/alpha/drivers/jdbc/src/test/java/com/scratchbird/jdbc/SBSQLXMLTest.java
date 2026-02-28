@@ -31,6 +31,18 @@ import org.junit.jupiter.api.Test;
 
 class SBSQLXMLTest {
 
+    public static class CustomStreamSource extends StreamSource {
+    }
+
+    public static class CustomDomSource extends DOMSource {
+    }
+
+    public static class CustomStreamResult extends StreamResult {
+    }
+
+    public static class CustomDomResult extends DOMResult {
+    }
+
     @Test
     void supportsDomSourceAndDomResultRoundTrip() throws Exception {
         SBSQLXML sourceXml = new SBSQLXML("<root><value>1</value></root>");
@@ -96,5 +108,28 @@ class SBSQLXMLTest {
         writer.write("<generic/>");
         writer.close();
         assertEquals("<generic/>", target.getString());
+    }
+
+    @Test
+    void supportsSubclassedSourceAndResultTypes() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>9</value></root>");
+        CustomStreamSource customStreamSource = sourceXml.getSource(CustomStreamSource.class);
+        assertNotNull(customStreamSource.getReader());
+
+        CustomDomSource customDomSource = sourceXml.getSource(CustomDomSource.class);
+        assertNotNull(customDomSource.getNode());
+
+        SBSQLXML streamTarget = new SBSQLXML();
+        CustomStreamResult customStreamResult = streamTarget.setResult(CustomStreamResult.class);
+        Writer streamWriter = customStreamResult.getWriter();
+        streamWriter.write("<s/>");
+        streamWriter.close();
+        assertEquals("<s/>", streamTarget.getString());
+
+        SBSQLXML domTarget = new SBSQLXML();
+        CustomDomResult customDomResult = domTarget.setResult(CustomDomResult.class);
+        TransformerFactory.newInstance().newTransformer().transform(
+            new StreamSource(new StringReader("<d/>")), customDomResult);
+        assertTrue(domTarget.getString().contains("d"));
     }
 }

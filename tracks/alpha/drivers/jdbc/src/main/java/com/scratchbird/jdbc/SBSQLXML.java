@@ -22,6 +22,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Constructor;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLXML;
@@ -139,24 +140,22 @@ public class SBSQLXML implements SQLXML {
         materializeIfPending();
 
         String xml = data == null ? "" : data;
-        if (sourceClass == null
-            || sourceClass == Source.class
-            || sourceClass.isAssignableFrom(StreamSource.class)) {
+        if (sourceClass == null || sourceClass == Source.class || sourceClass == StreamSource.class) {
             @SuppressWarnings("unchecked")
             T streamSource = (T) new StreamSource(new StringReader(xml));
             return streamSource;
         }
-        if (sourceClass.isAssignableFrom(DOMSource.class)) {
+        if (sourceClass == DOMSource.class) {
             @SuppressWarnings("unchecked")
             T domSource = (T) new DOMSource(parseDom(xml));
             return domSource;
         }
-        if (sourceClass.isAssignableFrom(SAXSource.class)) {
+        if (sourceClass == SAXSource.class) {
             @SuppressWarnings("unchecked")
             T saxSource = (T) new SAXSource(new InputSource(new StringReader(xml)));
             return saxSource;
         }
-        if (sourceClass.isAssignableFrom(StAXSource.class)) {
+        if (sourceClass == StAXSource.class) {
             try {
                 XMLInputFactory factory = XMLInputFactory.newFactory();
                 XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xml));
@@ -167,29 +166,39 @@ public class SBSQLXML implements SQLXML {
                 throw new SQLException("Failed to build StAXSource from SQLXML", "HY000", ex);
             }
         }
+        if (sourceClass != null && StreamSource.class.isAssignableFrom(sourceClass)) {
+            return instantiateStreamSourceSubclass(sourceClass, xml);
+        }
+        if (sourceClass != null && DOMSource.class.isAssignableFrom(sourceClass)) {
+            return instantiateDomSourceSubclass(sourceClass, xml);
+        }
+        if (sourceClass != null && SAXSource.class.isAssignableFrom(sourceClass)) {
+            return instantiateSaxSourceSubclass(sourceClass, xml);
+        }
+        if (sourceClass != null && StAXSource.class.isAssignableFrom(sourceClass)) {
+            return instantiateStaxSourceSubclass(sourceClass, xml);
+        }
         throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
     }
 
     @Override
     public <T extends Result> T setResult(Class<T> resultClass) throws SQLException {
         checkFreed();
-        if (resultClass == null
-            || resultClass == Result.class
-            || resultClass.isAssignableFrom(StreamResult.class)) {
+        if (resultClass == null || resultClass == Result.class || resultClass == StreamResult.class) {
             StringWriter writer = new StringWriter();
             pendingMaterializer = writer::toString;
             @SuppressWarnings("unchecked")
             T streamResult = (T) new StreamResult(writer);
             return streamResult;
         }
-        if (resultClass.isAssignableFrom(DOMResult.class)) {
+        if (resultClass == DOMResult.class) {
             DOMResult domResult = new DOMResult();
             pendingMaterializer = () -> serializeDom(domResult.getNode());
             @SuppressWarnings("unchecked")
             T result = (T) domResult;
             return result;
         }
-        if (resultClass.isAssignableFrom(SAXResult.class)) {
+        if (resultClass == SAXResult.class) {
             try {
                 TransformerFactory transformerFactory = TransformerFactory.newInstance();
                 if (transformerFactory instanceof SAXTransformerFactory saxFactory) {
@@ -210,7 +219,7 @@ public class SBSQLXML implements SQLXML {
                 throw new SQLException("Failed to initialize SAXResult for SQLXML", "HY000", ex);
             }
         }
-        if (resultClass.isAssignableFrom(StAXResult.class)) {
+        if (resultClass == StAXResult.class) {
             try {
                 StringWriter writer = new StringWriter();
                 XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
@@ -227,7 +236,172 @@ public class SBSQLXML implements SQLXML {
                 throw new SQLException("Failed to initialize StAXResult for SQLXML", "HY000", ex);
             }
         }
+        if (resultClass != null && StreamResult.class.isAssignableFrom(resultClass)) {
+            return instantiateStreamResultSubclass(resultClass);
+        }
+        if (resultClass != null && DOMResult.class.isAssignableFrom(resultClass)) {
+            return instantiateDomResultSubclass(resultClass);
+        }
+        if (resultClass != null && SAXResult.class.isAssignableFrom(resultClass)) {
+            return instantiateSaxResultSubclass(resultClass);
+        }
+        if (resultClass != null && StAXResult.class.isAssignableFrom(resultClass)) {
+            return instantiateStaxResultSubclass(resultClass);
+        }
         throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+    }
+
+    private <T extends Source> T instantiateStreamSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
+        try {
+            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof StreamSource streamSource)) {
+                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            }
+            streamSource.setReader(new StringReader(xml));
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+        }
+    }
+
+    private <T extends Source> T instantiateDomSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
+        try {
+            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof DOMSource domSource)) {
+                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            }
+            domSource.setNode(parseDom(xml));
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+        }
+    }
+
+    private <T extends Source> T instantiateSaxSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
+        try {
+            Constructor<T> ctor = sourceClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof SAXSource saxSource)) {
+                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            }
+            saxSource.setInputSource(new InputSource(new StringReader(xml)));
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+        }
+    }
+
+    private <T extends Source> T instantiateStaxSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
+        try {
+            XMLInputFactory factory = XMLInputFactory.newFactory();
+            XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xml));
+            try {
+                Constructor<T> ctor = sourceClass.getDeclaredConstructor(XMLStreamReader.class);
+                ctor.setAccessible(true);
+                return ctor.newInstance(reader);
+            } catch (NoSuchMethodException ex) {
+                throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
+            }
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLException("Failed to build StAXSource from SQLXML", "HY000", ex);
+        }
+    }
+
+    private <T extends Result> T instantiateStreamResultSubclass(Class<T> resultClass) throws SQLException {
+        try {
+            Constructor<T> ctor = resultClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof StreamResult streamResult)) {
+                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+            }
+            StringWriter writer = new StringWriter();
+            streamResult.setWriter(writer);
+            pendingMaterializer = writer::toString;
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+        }
+    }
+
+    private <T extends Result> T instantiateDomResultSubclass(Class<T> resultClass) throws SQLException {
+        try {
+            Constructor<T> ctor = resultClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof DOMResult domResult)) {
+                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+            }
+            pendingMaterializer = () -> serializeDom(domResult.getNode());
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+        }
+    }
+
+    private <T extends Result> T instantiateSaxResultSubclass(Class<T> resultClass) throws SQLException {
+        try {
+            Constructor<T> ctor = resultClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            T instance = ctor.newInstance();
+            if (!(instance instanceof SAXResult saxResult)) {
+                throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+            }
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            if (transformerFactory instanceof SAXTransformerFactory saxFactory) {
+                TransformerHandler handler = saxFactory.newTransformerHandler();
+                StringWriter writer = new StringWriter();
+                handler.setResult(new StreamResult(writer));
+                saxResult.setHandler(handler);
+                pendingMaterializer = writer::toString;
+                return instance;
+            }
+            SaxCaptureHandler handler = new SaxCaptureHandler();
+            saxResult.setHandler(handler);
+            pendingMaterializer = handler::toXml;
+            return instance;
+        } catch (SQLFeatureNotSupportedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+        }
+    }
+
+    private <T extends Result> T instantiateStaxResultSubclass(Class<T> resultClass) throws SQLException {
+        try {
+            StringWriter writer = new StringWriter();
+            XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
+            XMLStreamWriter streamWriter = outputFactory.createXMLStreamWriter(writer);
+            pendingMaterializer = () -> {
+                streamWriter.flush();
+                streamWriter.close();
+                return writer.toString();
+            };
+            Constructor<T> ctor = resultClass.getDeclaredConstructor(XMLStreamWriter.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(streamWriter);
+        } catch (NoSuchMethodException ex) {
+            throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+        } catch (Exception ex) {
+            throw new SQLException("Failed to initialize StAXResult for SQLXML", "HY000", ex);
+        }
     }
 
     private void materializeIfPending() throws SQLException {

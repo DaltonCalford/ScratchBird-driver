@@ -34,10 +34,10 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsANSI92IntermediateSQL());
         assertTrue(meta.supportsANSI92FullSQL());
         assertFalse(meta.locatorsUpdateCopy());
-        assertFalse(meta.supportsStatementPooling());
+        assertTrue(meta.supportsStatementPooling());
         assertTrue(meta.supportsNamedParameters());
         assertTrue(meta.supportsStoredFunctionsUsingCallSyntax());
-        assertFalse(meta.generatedKeyAlwaysReturned());
+        assertTrue(meta.generatedKeyAlwaysReturned());
         assertTrue(meta.supportsResultSetType(ResultSet.TYPE_SCROLL_INSENSITIVE));
     }
 

@@ -1645,16 +1645,17 @@ public class SBResultSet implements ResultSet {
         if (fromMetadata != null) {
             return fromMetadata;
         }
-        return resolveUpdateTargetFromSql(statement);
+        return resolveUpdateTargetFromSql(statement, columns);
     }
 
-    private static UpdateTarget resolveUpdateTargetFromSql(SBStatement statement) {
+    private static UpdateTarget resolveUpdateTargetFromSql(SBStatement statement, List<SBColumnInfo> columns) {
         String sql = statement.getLastExecutedSql();
         if (sql == null || sql.isBlank()) {
             return null;
         }
 
-        String normalized = collapseWhitespace(sql).toLowerCase(Locale.ROOT);
+        String collapsed = collapseWhitespace(sql);
+        String normalized = collapsed.toLowerCase(Locale.ROOT);
         if (!normalized.startsWith("select ")) {
             return null;
         }
@@ -1668,12 +1669,16 @@ public class SBResultSet implements ResultSet {
             return null;
         }
 
-        int fromIndex = normalized.indexOf(" from ");
+        int fromIndex = findTopLevelKeyword(normalized, " from ");
         if (fromIndex < 0) {
             return null;
         }
+        String projectionSql = collapsed.substring("select ".length(), fromIndex).trim();
+        if (projectionSql.isEmpty()) {
+            return null;
+        }
 
-        String afterFromOriginal = collapseWhitespace(sql).substring(fromIndex + 6).trim();
+        String afterFromOriginal = collapsed.substring(fromIndex + 6).trim();
         if (afterFromOriginal.isEmpty()) {
             return null;
         }
@@ -1684,7 +1689,11 @@ public class SBResultSet implements ResultSet {
         if (tableToken.startsWith("(")) {
             return null;
         }
-        return new UpdateTarget(tableToken, Collections.emptyMap());
+        Map<Integer, String> projectionMapping = resolveProjectionMapping(projectionSql, columns);
+        if (projectionMapping == null || projectionMapping.isEmpty()) {
+            return null;
+        }
+        return new UpdateTarget(tableToken, projectionMapping);
     }
 
     private static UpdateTarget resolveUpdateTargetFromMetadata(SBStatement statement, List<SBColumnInfo> columns) {
@@ -1863,6 +1872,306 @@ public class SBResultSet implements ResultSet {
             return firstToken(remaining);
         }
         return token;
+    }
+
+    private static int findTopLevelKeyword(String normalizedSql, String keyword) {
+        if (normalizedSql == null || keyword == null || keyword.isEmpty()) {
+            return -1;
+        }
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i <= normalizedSql.length() - keyword.length(); i++) {
+            char c = normalizedSql.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble) {
+                continue;
+            }
+            if (c == '(') {
+                depth++;
+                continue;
+            }
+            if (c == ')') {
+                depth = Math.max(0, depth - 1);
+                continue;
+            }
+            if (depth == 0 && normalizedSql.startsWith(keyword, i)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static Map<Integer, String> resolveProjectionMapping(String projectionSql, List<SBColumnInfo> columns) {
+        String trimmedProjection = projectionSql == null ? "" : projectionSql.trim();
+        if (trimmedProjection.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        if (isStarProjection(trimmedProjection)) {
+            return mapColumnsByIndex(columns);
+        }
+
+        List<String> projectionItems = splitTopLevel(projectionSql, ',');
+        if (projectionItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // Mixed star + explicit expressions are ambiguous without catalog metadata.
+        for (String item : projectionItems) {
+            if (isStarProjection(stripAlias(item))) {
+                return null;
+            }
+        }
+
+        int resultColumnCount = columns == null ? 0 : columns.size();
+        int maxIndex = resultColumnCount == 0
+            ? projectionItems.size()
+            : Math.min(resultColumnCount, projectionItems.size());
+
+        Map<Integer, String> mapping = new LinkedHashMap<>();
+        for (int i = 0; i < maxIndex; i++) {
+            String mapped = mappedColumnFromProjectionItem(projectionItems.get(i));
+            if (mapped != null && !mapped.isBlank()) {
+                mapping.put(i + 1, mapped);
+            }
+        }
+        return mapping;
+    }
+
+    private static Map<Integer, String> mapColumnsByIndex(List<SBColumnInfo> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, String> mapping = new LinkedHashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            SBColumnInfo column = columns.get(i);
+            if (column == null || column.getName() == null || column.getName().isBlank()) {
+                continue;
+            }
+            mapping.put(i + 1, column.getName());
+        }
+        return mapping;
+    }
+
+    private static String mappedColumnFromProjectionItem(String item) {
+        String core = stripAlias(item).trim();
+        if (core.isEmpty() || isStarProjection(core) || !isSimpleColumnReference(core)) {
+            return null;
+        }
+        List<String> parts = splitIdentifierParts(core);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        return unquoteIdentifier(parts.get(parts.size() - 1));
+    }
+
+    private static String stripAlias(String item) {
+        String trimmed = item == null ? "" : item.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        int asIndex = findTopLevelKeyword(normalized, " as ");
+        if (asIndex >= 0) {
+            return trimmed.substring(0, asIndex).trim();
+        }
+
+        int split = findTopLevelTrailingTokenBoundary(trimmed);
+        if (split <= 0 || split >= trimmed.length() - 1) {
+            return trimmed;
+        }
+        String left = trimmed.substring(0, split).trim();
+        String right = trimmed.substring(split).trim();
+        if (isSimpleIdentifierToken(right)) {
+            return left;
+        }
+        return trimmed;
+    }
+
+    private static int findTopLevelTrailingTokenBoundary(String value) {
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = value.length() - 1; i >= 0; i--) {
+            char c = value.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble) {
+                continue;
+            }
+            if (c == ')') {
+                depth++;
+                continue;
+            }
+            if (c == '(') {
+                depth = Math.max(0, depth - 1);
+                continue;
+            }
+            if (depth == 0 && Character.isWhitespace(c)) {
+                int j = i;
+                while (j >= 0 && Character.isWhitespace(value.charAt(j))) {
+                    j--;
+                }
+                return j + 1;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isStarProjection(String projectionItem) {
+        String trimmed = projectionItem == null ? "" : projectionItem.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        if ("*".equals(trimmed)) {
+            return true;
+        }
+        if (trimmed.endsWith(".*")) {
+            String prefix = trimmed.substring(0, trimmed.length() - 2).trim();
+            return isSimpleColumnReference(prefix);
+        }
+        return false;
+    }
+
+    private static boolean isSimpleColumnReference(String token) {
+        return !splitIdentifierParts(token).isEmpty();
+    }
+
+    private static List<String> splitIdentifierParts(String token) {
+        String trimmed = token == null ? "" : token.trim();
+        if (trimmed.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> parts = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inDouble = false;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (inDouble) {
+                current.append(c);
+                if (c == '"') {
+                    if (i + 1 < trimmed.length() && trimmed.charAt(i + 1) == '"') {
+                        current.append('"');
+                        i++;
+                    } else {
+                        inDouble = false;
+                    }
+                }
+                continue;
+            }
+            if (c == '"') {
+                inDouble = true;
+                current.append(c);
+                continue;
+            }
+            if (c == '.') {
+                String segment = current.toString().trim();
+                if (!isSimpleIdentifierToken(segment)) {
+                    return Collections.emptyList();
+                }
+                parts.add(segment);
+                current.setLength(0);
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                return Collections.emptyList();
+            }
+            if ("(),+-/*%<>=!|&[]{}:?".indexOf(c) >= 0) {
+                return Collections.emptyList();
+            }
+            current.append(c);
+        }
+        String segment = current.toString().trim();
+        if (!isSimpleIdentifierToken(segment)) {
+            return Collections.emptyList();
+        }
+        parts.add(segment);
+        return parts;
+    }
+
+    private static boolean isSimpleIdentifierToken(String token) {
+        String trimmed = token == null ? "" : token.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
+            return true;
+        }
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (!(Character.isLetterOrDigit(c) || c == '_' || c == '$')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String unquoteIdentifier(String identifier) {
+        if (identifier == null) {
+            return null;
+        }
+        String trimmed = identifier.trim();
+        if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1).replace("\"\"", "\"");
+        }
+        return trimmed;
+    }
+
+    private static List<String> splitTopLevel(String value, char delimiter) {
+        List<String> items = new ArrayList<>();
+        if (value == null || value.isBlank()) {
+            return items;
+        }
+        StringBuilder current = new StringBuilder();
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                current.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth = Math.max(0, depth - 1);
+                } else if (c == delimiter && depth == 0) {
+                    items.add(current.toString().trim());
+                    current.setLength(0);
+                    continue;
+                }
+            }
+            current.append(c);
+        }
+        String trailing = current.toString().trim();
+        if (!trailing.isEmpty()) {
+            items.add(trailing);
+        }
+        return items;
     }
 
     private void clearRowActionFlags() {

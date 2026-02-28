@@ -2913,7 +2913,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsStatementPooling() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -3246,7 +3246,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean generatedKeyAlwaysReturned() throws SQLException {
-        return false;
+        return true;
     }
 
     private static boolean isNumericType(int sqlType) {
