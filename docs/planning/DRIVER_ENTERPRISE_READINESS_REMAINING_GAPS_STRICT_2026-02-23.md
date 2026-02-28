@@ -1,20 +1,22 @@
-# Driver Enterprise Readiness - Remaining Gaps (Strict) 2026-02-23
+# Driver Enterprise Readiness - Remaining Gaps (Strict) 2026-02-28
 
 ## Scope
 This list reflects only executable gaps still open after current implementation work.
 Each gap is tied to a release blocker and includes owners, risk, and acceptance condition.
 
-## Verification Snapshot (2026-02-23)
+## Verification Snapshot (2026-02-28)
 
 - Full-suite command log: `artifacts/enterprise-readiness/verification-sprint-20260223/full_suite_final.log`
 - R corrected integration command: `artifacts/enterprise-readiness/verification-sprint-20260223/r_test_corrected.log`
+- 2026-02-28 local verification additions:
+  - `npm install && npm test` passes for Node (integration tests skip when `SCRATCHBIRD_NODE_URL` is unset).
+  - `ruby -Ilib:test test/*.rb` passes for Ruby.
+  - `composer install && ./vendor/bin/phpunit tests` passes for PHP (integration tests skip in offline mode).
+  - `pytest -q` now runs from the Python driver directory without requiring an editable install first.
 - Current blocker posture:
   - `.NET and JVM paths: in-tree suites pass`
-  - `Node`: `tsc` missing in runtime image (`npm run build` fails)
-  - `PHP`: `test` script is not defined
-  - `Ruby`: no runnable tests discovered
   - `Elixir`: runtime environment has Elixir `~> 1.15` requirement mismatch (1.14 available)
-  - `Mojo`, `CLI`, `Python` (partial/optional checks): no dedicated suite or unsupported commands for this environment
+  - `Mojo`, `CLI` (partial/optional checks): no dedicated suite or unsupported commands for this environment
 
 | Area | Gap | Severity | Owner | Status | ETA | Required Evidence |
 |---|---|---|---|---|---|---|
