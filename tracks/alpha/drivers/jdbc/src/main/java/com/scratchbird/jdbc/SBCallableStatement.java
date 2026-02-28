@@ -745,8 +745,79 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     @Override
     public <T> T getObject(int parameterIndex, Class<T> type) throws SQLException {
         Object value = getObject(parameterIndex);
-        if (value == null) return null;
-        if (type.isInstance(value)) return type.cast(value);
+        if (type == null) {
+            throw new SQLException("Target type cannot be null", "HY004");
+        }
+        if (value == null) {
+            return null;
+        }
+        if (type.isInstance(value)) {
+            return type.cast(value);
+        }
+
+        if (type == String.class) {
+            return type.cast(value.toString());
+        } else if (type == Integer.class || type == int.class) {
+            Integer converted = Integer.valueOf(getInt(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Long.class || type == long.class) {
+            Long converted = Long.valueOf(getLong(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Double.class || type == double.class) {
+            Double converted = Double.valueOf(getDouble(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Float.class || type == float.class) {
+            Float converted = Float.valueOf(getFloat(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Short.class || type == short.class) {
+            Short converted = Short.valueOf(getShort(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Byte.class || type == byte.class) {
+            Byte converted = Byte.valueOf(getByte(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Boolean.class || type == boolean.class) {
+            Boolean converted = Boolean.valueOf(getBoolean(parameterIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == BigDecimal.class) {
+            return type.cast(getBigDecimal(parameterIndex));
+        } else if (type == java.sql.Date.class) {
+            return type.cast(getDate(parameterIndex));
+        } else if (type == Time.class) {
+            return type.cast(getTime(parameterIndex));
+        } else if (type == Timestamp.class) {
+            return type.cast(getTimestamp(parameterIndex));
+        } else if (type == byte[].class) {
+            return type.cast(getBytes(parameterIndex));
+        } else if (type == Ref.class) {
+            return type.cast(getRef(parameterIndex));
+        } else if (type == Blob.class) {
+            return type.cast(getBlob(parameterIndex));
+        } else if (type == Clob.class) {
+            return type.cast(getClob(parameterIndex));
+        } else if (type == RowId.class) {
+            Object raw = readOutParameter(parameterIndex);
+            return raw == null ? null : type.cast(SBRowId.fromObject(raw));
+        } else if (type == SQLXML.class) {
+            Object raw = readOutParameter(parameterIndex);
+            return raw == null ? null : type.cast(new SBSQLXML(raw.toString()));
+        } else if (type == URL.class) {
+            return type.cast(getURL(parameterIndex));
+        }
+
         throw new SQLException("Cannot convert to " + type.getName(), "HY000");
     }
 

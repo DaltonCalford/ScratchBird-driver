@@ -696,6 +696,25 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
     }
 
     @Override
+    public void setObject(int parameterIndex, Object x, SQLType targetSqlType, int scaleOrLength)
+            throws SQLException {
+        if (targetSqlType == null) {
+            setObject(parameterIndex, x);
+            return;
+        }
+        setObject(parameterIndex, x, targetSqlType.getVendorTypeNumber(), scaleOrLength);
+    }
+
+    @Override
+    public void setObject(int parameterIndex, Object x, SQLType targetSqlType) throws SQLException {
+        if (targetSqlType == null) {
+            setObject(parameterIndex, x);
+            return;
+        }
+        setObject(parameterIndex, x, targetSqlType.getVendorTypeNumber());
+    }
+
+    @Override
     public void setObject(int parameterIndex, Object x, int targetSqlType, int scaleOrLength)
             throws SQLException {
         if (x == null) {

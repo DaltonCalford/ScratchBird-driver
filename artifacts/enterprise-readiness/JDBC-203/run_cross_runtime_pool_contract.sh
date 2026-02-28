@@ -17,12 +17,6 @@ fi
 if [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
   required_env+=("SCRATCHBIRD_DOTNET_CANCEL_SQL")
 fi
-if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
-  required_env+=("SCRATCHBIRD_JDBC_URL")
-fi
-if [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
-  required_env+=("SCRATCHBIRD_JDBC_CANCEL_SQL")
-fi
 
 strict_gate="${JDBC203_STRICT_GATE:-${GITHUB_ACTIONS:-false}}"
 strict_gate="${strict_gate,,}"
@@ -208,19 +202,21 @@ else
 fi
 
 echo
-if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
-  echo "[warn] SCRATCHBIRD_JDBC_URL not set; JDBC phase cannot run"
-  jdbc_status="env_missing"
-elif [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
-  echo "[warn] SCRATCHBIRD_JDBC_CANCEL_SQL not set; JDBC phase cannot run required cancel-reuse scenarios"
-  jdbc_status="env_missing"
-elif [[ "${SCRATCHBIRD_JDBC_URL}" != jdbc:scratchbird:* ]]; then
+if [[ -n "${SCRATCHBIRD_JDBC_URL:-}" && "${SCRATCHBIRD_JDBC_URL}" != jdbc:scratchbird:* ]]; then
   echo "[warn] SCRATCHBIRD_JDBC_URL must start with jdbc:scratchbird:. Got '${SCRATCHBIRD_JDBC_URL}'"
   jdbc_status="failed"
   release_freeze="true"
   release_freeze_reasons+=("jdbc_contract_failed")
   exit_code=1
 else
+  if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
+    echo "[info] SCRATCHBIRD_JDBC_URL not set; JDBC phase will use local runtime bootstrap from test harness"
+  else
+    echo "[info] using JDBC URL: ${SCRATCHBIRD_JDBC_URL}"
+  fi
+  if [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
+    echo "[info] SCRATCHBIRD_JDBC_CANCEL_SQL not set; JDBC runtime harness will select a default cancel probe"
+  fi
   echo "[step] JDBC pooling phase"
   cd "$ROOT_DIR/tracks/alpha/drivers/jdbc"
   set +e

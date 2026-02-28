@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Field;
+import java.sql.JDBCType;
 import java.sql.Ref;
 import java.sql.ResultSet;
 import java.sql.Types;
@@ -99,6 +100,26 @@ public class SBRefSupportTest {
         assertEquals("<xml/>", protocol.lastParams.get(0));
         assertEquals(Types.SQLXML, protocol.lastTypes.get(0));
         assertEquals("rid-200", protocol.lastParams.get(1));
+        assertEquals(Types.ROWID, protocol.lastTypes.get(1));
+    }
+
+    @Test
+    public void setObjectSqlTypeOverloadsUseJdbcTypeVendorIds() throws Exception {
+        CaptureProtocol protocol = new CaptureProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBPreparedStatement statement = new SBPreparedStatement(connection,
+            "INSERT INTO demo(xml_col, rowid_col) VALUES (?, ?)",
+            ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_READ_ONLY,
+            ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        statement.setObject(1, new SBSQLXML("<typed/>"), JDBCType.SQLXML);
+        statement.setObject(2, new SBRowId("rid-typed".getBytes(StandardCharsets.UTF_8)), JDBCType.ROWID, 0);
+        statement.executeUpdate();
+
+        assertEquals("<typed/>", protocol.lastParams.get(0));
+        assertEquals(Types.SQLXML, protocol.lastTypes.get(0));
+        assertEquals("rid-typed", protocol.lastParams.get(1));
         assertEquals(Types.ROWID, protocol.lastTypes.get(1));
     }
 

@@ -506,7 +506,12 @@ public class SBResultSet implements ResultSet {
     @Override
     public <T> T getObject(int columnIndex, Class<T> type) throws SQLException {
         Object value = getObject(columnIndex);
-        if (value == null) return null;
+        if (type == null) {
+            throw new SQLException("Target type cannot be null", "HY004");
+        }
+        if (value == null) {
+            return null;
+        }
 
         if (type.isInstance(value)) {
             return type.cast(value);
@@ -516,15 +521,40 @@ public class SBResultSet implements ResultSet {
         if (type == String.class) {
             return type.cast(value.toString());
         } else if (type == Integer.class || type == int.class) {
-            return type.cast(getInt(columnIndex));
+            Integer converted = Integer.valueOf(getInt(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
         } else if (type == Long.class || type == long.class) {
-            return type.cast(getLong(columnIndex));
+            Long converted = Long.valueOf(getLong(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
         } else if (type == Double.class || type == double.class) {
-            return type.cast(getDouble(columnIndex));
+            Double converted = Double.valueOf(getDouble(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
         } else if (type == Float.class || type == float.class) {
-            return type.cast(getFloat(columnIndex));
+            Float converted = Float.valueOf(getFloat(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Short.class || type == short.class) {
+            Short converted = Short.valueOf(getShort(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
+        } else if (type == Byte.class || type == byte.class) {
+            Byte converted = Byte.valueOf(getByte(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
         } else if (type == Boolean.class || type == boolean.class) {
-            return type.cast(getBoolean(columnIndex));
+            Boolean converted = Boolean.valueOf(getBoolean(columnIndex));
+            @SuppressWarnings("unchecked")
+            T casted = (T) converted;
+            return casted;
         } else if (type == BigDecimal.class) {
             return type.cast(getBigDecimal(columnIndex));
         } else if (type == java.sql.Date.class) {
@@ -533,11 +563,42 @@ public class SBResultSet implements ResultSet {
             return type.cast(getTime(columnIndex));
         } else if (type == Timestamp.class) {
             return type.cast(getTimestamp(columnIndex));
+        } else if (type == LocalDate.class) {
+            java.sql.Date date = getDate(columnIndex);
+            return date == null ? null : type.cast(date.toLocalDate());
+        } else if (type == LocalTime.class) {
+            Time time = getTime(columnIndex);
+            return time == null ? null : type.cast(time.toLocalTime());
+        } else if (type == LocalDateTime.class) {
+            Timestamp ts = getTimestamp(columnIndex);
+            return ts == null ? null : type.cast(ts.toLocalDateTime());
+        } else if (type == OffsetDateTime.class) {
+            Timestamp ts = getTimestamp(columnIndex);
+            return ts == null ? null : type.cast(ts.toInstant().atOffset(ZoneOffset.UTC));
+        } else if (type == Instant.class) {
+            Timestamp ts = getTimestamp(columnIndex);
+            return ts == null ? null : type.cast(ts.toInstant());
         } else if (type == byte[].class) {
             return type.cast(getBytes(columnIndex));
         } else if (type == UUID.class) {
             String s = getString(columnIndex);
             return s == null ? null : type.cast(UUID.fromString(s));
+        } else if (type == Array.class) {
+            return type.cast(getArray(columnIndex));
+        } else if (type == Blob.class) {
+            return type.cast(getBlob(columnIndex));
+        } else if (type == Clob.class) {
+            return type.cast(getClob(columnIndex));
+        } else if (type == NClob.class) {
+            return type.cast(getNClob(columnIndex));
+        } else if (type == Ref.class) {
+            return type.cast(getRef(columnIndex));
+        } else if (type == RowId.class) {
+            return type.cast(getRowId(columnIndex));
+        } else if (type == SQLXML.class) {
+            return type.cast(getSQLXML(columnIndex));
+        } else if (type == URL.class) {
+            return type.cast(getURL(columnIndex));
         }
 
         throw new SQLException("Cannot convert to " + type.getName(), "HY000");
