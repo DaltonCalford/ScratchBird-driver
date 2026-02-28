@@ -20,6 +20,7 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
   - Set `JDBC203_STRICT_GATE=true` to block when any required endpoint/cancel environment is missing.
   - The default CI path in `ci.yml` sets `JDBC203_STRICT_GATE` explicitly from repository variable (fallback `false`) to avoid mandatory blocking in environments without both runtimes.
   - Non-strict mode records partial results when only one runtime is reachable.
+  - `.NET` contract scenarios run in isolated per-case invocations with a runtime-stack refresh boundary between cases to avoid cross-test listener state carryover.
 - Summary file: `contract_gate_summary_<timestamp>.json`.
 
 ## Mandatory Rules

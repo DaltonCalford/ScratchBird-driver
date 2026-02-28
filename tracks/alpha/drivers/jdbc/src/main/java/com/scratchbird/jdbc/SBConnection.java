@@ -123,9 +123,7 @@ public class SBConnection implements Connection {
             }
 
             // Set initial connection parameters
-            if (schema != null && !schema.equals("public")) {
-                protocol.execute("SET SCHEMA '" + schema.replace("'", "''") + "'");
-            }
+            applySchemaSetting(schema);
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
             if (!autoCommit) {
                 protocol.beginTransaction();
@@ -592,10 +590,7 @@ public class SBConnection implements Connection {
     @Override
     public void setSchema(String schema) throws SQLException {
         checkClosed();
-        if (schema != null && !schema.isEmpty()) {
-            protocol.execute("SET SCHEMA '" + schema.replace("'", "''") + "'");
-            this.schema = schema;
-        }
+        applySchemaSetting(schema);
     }
 
     @Override
@@ -815,9 +810,7 @@ public class SBConnection implements Connection {
         protocol.close();
         protocol.connect();
 
-        if (schema != null && !schema.isBlank()) {
-            protocol.execute("SET SCHEMA '" + schema.replace("'", "''") + "'");
-        }
+        applySchemaSetting(schema);
 
         if (!autoCommit) {
             protocol.execute("SET AUTOCOMMIT OFF");
@@ -838,6 +831,113 @@ public class SBConnection implements Connection {
         }
         return state.startsWith("08")
             || ex instanceof SQLTransientConnectionException;
+    }
+
+    private void applySchemaSetting(String schemaValue) throws SQLException {
+        if (schemaValue == null || schemaValue.isBlank()) {
+            return;
+        }
+        String normalized = schemaValue.trim();
+        if ("public".equalsIgnoreCase(normalized)) {
+            this.schema = normalized;
+            return;
+        }
+        String statement = buildSchemaStatement(normalized);
+        if (statement.isBlank()) {
+            return;
+        }
+        protocol.execute(statement);
+        this.schema = normalized;
+    }
+
+    static String buildSchemaStatement(String schemaValue) {
+        if (schemaValue == null) {
+            return "";
+        }
+        String trimmed = schemaValue.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+
+        List<String> paths = splitTopLevel(trimmed, ',');
+        if (paths.size() > 1) {
+            StringBuilder sql = new StringBuilder("SET SEARCH_PATH TO ");
+            boolean first = true;
+            for (String path : paths) {
+                if (path == null || path.isBlank()) {
+                    continue;
+                }
+                if (!first) {
+                    sql.append(", ");
+                }
+                first = false;
+                sql.append(formatSchemaPath(path.trim()));
+            }
+            return first ? "" : sql.toString();
+        }
+        return "SET SCHEMA " + formatSchemaPath(trimmed);
+    }
+
+    private static String formatSchemaPath(String schemaPath) {
+        List<String> segments = splitTopLevel(schemaPath, '.');
+        if (segments.isEmpty()) {
+            return quoteIdentifier(schemaPath);
+        }
+        StringBuilder out = new StringBuilder();
+        boolean first = true;
+        for (String rawSegment : segments) {
+            String segment = rawSegment == null ? "" : rawSegment.trim();
+            if (segment.isEmpty()) {
+                continue;
+            }
+            if (!first) {
+                out.append('.');
+            }
+            first = false;
+            out.append(normalizeIdentifierSegment(segment));
+        }
+        return out.length() == 0 ? quoteIdentifier(schemaPath.trim()) : out.toString();
+    }
+
+    private static String normalizeIdentifierSegment(String segment) {
+        if (segment.startsWith("\"") && segment.endsWith("\"") && segment.length() >= 2) {
+            return segment;
+        }
+        return quoteIdentifier(segment);
+    }
+
+    private static String quoteIdentifier(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
+
+    private static List<String> splitTopLevel(String value, char delimiter) {
+        List<String> tokens = new ArrayList<>();
+        if (value == null || value.isBlank()) {
+            return tokens;
+        }
+        StringBuilder current = new StringBuilder();
+        boolean inDouble = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '"') {
+                current.append(c);
+                if (inDouble && i + 1 < value.length() && value.charAt(i + 1) == '"') {
+                    current.append('"');
+                    i++;
+                    continue;
+                }
+                inDouble = !inDouble;
+                continue;
+            }
+            if (!inDouble && c == delimiter) {
+                tokens.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(c);
+        }
+        tokens.add(current.toString());
+        return tokens;
     }
 
     /**

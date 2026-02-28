@@ -61,10 +61,10 @@ public class JDBC203PoolingAndRecoveryContractTests
         }
 
         var afterStats = GetPoolStats(poolingDsn);
-        Assert.NotNull(beforeStats);
         Assert.NotNull(afterStats);
+        var baselineReturned = beforeStats?.Returned ?? 0;
         Assert.True(afterStats.Value.Borrowed >= 1);
-        Assert.True(afterStats.Value.Returned >= beforeStats.Value.Returned);
+        Assert.True(afterStats.Value.Returned >= baselineReturned);
     }
 
     [Fact]

@@ -47,6 +47,69 @@ if (( ${#required_env[@]} > 0 )); then
   missing_env_json+="]"
 fi
 
+dotnet_contract_tests=(
+  "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioA_BorrowReuseAfterExplicitCancel"
+  "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioB_TimeoutCancellationReuse"
+  "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioC_ConcurrentPoolStress10Workers"
+  "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioD_ReconnectRecoveryAfterFailure"
+  "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioE_MetadataAndStreamReuseAfterRecovery"
+)
+
+run_dotnet_contract_phase() {
+  local project_path="$ROOT_DIR/tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj"
+  local first_run="true"
+  local failures=0
+  local idx=0
+
+  for test_name in "${dotnet_contract_tests[@]}"; do
+    idx=$((idx + 1))
+    echo "[step] .NET pooling case ${idx}/${#dotnet_contract_tests[@]}: ${test_name}"
+
+    if [[ -x "$ROOT_DIR/scripts/driver_runtime_stack.sh" ]]; then
+      set +e
+      "$ROOT_DIR/scripts/driver_runtime_stack.sh" refresh --mode static >/dev/null 2>&1
+      local refresh_rc=$?
+      set -e
+      if [[ "$refresh_rc" -eq 0 ]]; then
+        set +e
+        # shellcheck disable=SC1090
+        eval "$("$ROOT_DIR/scripts/driver_runtime_stack.sh" env --mode static)"
+        local env_rc=$?
+        set -e
+        if [[ "$env_rc" -ne 0 ]]; then
+          echo "[warn] failed to load refreshed runtime env before ${test_name}; continuing with current environment"
+        fi
+      else
+        echo "[warn] runtime stack refresh failed before ${test_name}; continuing with current environment"
+      fi
+    fi
+
+    local args=(
+      dotnet test "$project_path"
+      --filter "FullyQualifiedName=${test_name}"
+      -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract_case_${idx}.trx"
+    )
+    if [[ "$first_run" == "false" ]]; then
+      args+=(--no-build)
+    fi
+
+    set +e
+    (cd "$ROOT_DIR" && "${args[@]}")
+    local case_rc=$?
+    set -e
+    if [[ "$case_rc" -ne 0 ]]; then
+      failures=$((failures + 1))
+      echo "[fail] .NET pooling case failed: ${test_name} (exit=${case_rc})"
+    fi
+    first_run="false"
+  done
+
+  if [[ "$failures" -ne 0 ]]; then
+    return 1
+  fi
+  return 0
+}
+
 write_summary() {
   local summary_file="$1"
   local dotnet_note
@@ -127,12 +190,9 @@ else
     echo "[info] using .NET DSN: $SCRATCHBIRD_DOTNET_URL"
   fi
   if [[ "${can_run_dotnet:-false}" == "true" ]]; then
-    echo "[step] .NET pooling phase"
-    cd "$ROOT_DIR"
+    echo "[step] .NET pooling phase (isolated per case)"
     set +e
-    dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj \
-      --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest" \
-      -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract.trx"
+    run_dotnet_contract_phase
     dotnet_rc=$?
     set -e
     if [[ "$dotnet_rc" -eq 0 ]]; then

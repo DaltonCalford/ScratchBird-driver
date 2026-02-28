@@ -7,7 +7,9 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data;
 using System.Data.Common;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 namespace ScratchBird.Data;
@@ -311,8 +313,10 @@ public sealed class ScratchBirdConnection : DbConnection
         }
         if (trimmed.Contains(',', StringComparison.Ordinal))
         {
-            var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(QuoteIdentifier)
+            var parts = SplitTopLevel(trimmed, ',')
+                .Select(part => part.Trim())
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(FormatSchemaPath)
                 .ToArray();
             if (parts.Length == 0)
             {
@@ -320,11 +324,71 @@ public sealed class ScratchBirdConnection : DbConnection
             }
             return $"SET SEARCH_PATH TO {string.Join(", ", parts)}";
         }
-        return $"SET SCHEMA {QuoteIdentifier(trimmed)}";
+        return $"SET SCHEMA {FormatSchemaPath(trimmed)}";
+    }
+
+    private static string FormatSchemaPath(string schemaPath)
+    {
+        var segments = SplitTopLevel(schemaPath, '.')
+            .Select(segment => segment.Trim())
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .Select(NormalizeIdentifierSegment)
+            .ToArray();
+        if (segments.Length == 0)
+        {
+            return QuoteIdentifier(schemaPath.Trim());
+        }
+        return string.Join(".", segments);
+    }
+
+    private static string NormalizeIdentifierSegment(string segment)
+    {
+        if (segment.Length >= 2 && segment.StartsWith('"') && segment.EndsWith('"'))
+        {
+            return segment;
+        }
+        return QuoteIdentifier(segment);
     }
 
     private static string QuoteIdentifier(string name)
     {
         return $"\"{name.Replace("\"", "\"\"")}\"";
+    }
+
+    private static IReadOnlyList<string> SplitTopLevel(string value, char delimiter)
+    {
+        var tokens = new List<string>();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return tokens;
+        }
+
+        var sb = new StringBuilder();
+        var inDouble = false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '"')
+            {
+                sb.Append(c);
+                if (inDouble && i + 1 < value.Length && value[i + 1] == '"')
+                {
+                    sb.Append('"');
+                    i++;
+                    continue;
+                }
+                inDouble = !inDouble;
+                continue;
+            }
+            if (!inDouble && c == delimiter)
+            {
+                tokens.Add(sb.ToString());
+                sb.Clear();
+                continue;
+            }
+            sb.Append(c);
+        }
+        tokens.Add(sb.ToString());
+        return tokens;
     }
 }
