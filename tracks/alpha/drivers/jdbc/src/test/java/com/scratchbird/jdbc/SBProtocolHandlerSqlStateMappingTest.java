@@ -38,6 +38,30 @@ public class SBProtocolHandlerSqlStateMappingTest {
     }
 
     @Test
+    public void privilegeViolationMapsToAuthorizationCategory() throws Exception {
+        var ex = createSQLExceptionFromState("42501");
+        assertInstanceOf(java.sql.SQLInvalidAuthorizationSpecException.class, ex);
+    }
+
+    @Test
+    public void lockNotAvailableMapsToTransientCategory() throws Exception {
+        var ex = createSQLExceptionFromState("55P03");
+        assertInstanceOf(java.sql.SQLTransientException.class, ex);
+    }
+
+    @Test
+    public void invalidCatalogMapsToNonTransientCategory() throws Exception {
+        var ex = createSQLExceptionFromState("3D000");
+        assertInstanceOf(java.sql.SQLNonTransientException.class, ex);
+    }
+
+    @Test
+    public void failedTransactionStateMapsToRollbackCategory() throws Exception {
+        var ex = createSQLExceptionFromState("25P02");
+        assertInstanceOf(java.sql.SQLTransactionRollbackException.class, ex);
+    }
+
+    @Test
     public void unknownClassReturnsGenericSqlException() throws Exception {
         var ex = createSQLExceptionFromState("ZZ123");
         assertInstanceOf(java.sql.SQLException.class, ex);

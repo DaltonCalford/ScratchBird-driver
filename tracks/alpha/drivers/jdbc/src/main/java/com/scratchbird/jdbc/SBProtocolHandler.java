@@ -2145,8 +2145,15 @@ public class SBProtocolHandler {
                 new SQLIntegrityConstraintViolationException(message, state);
             case "28000", "28P01" -> new SQLInvalidAuthorizationSpecException(message, state);
             case "40001", "40P01" -> new SQLTransactionRollbackException(message, state);
-            case "42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07" ->
+            case "25P02" -> new SQLTransactionRollbackException(message, state);
+            case "25006" -> new SQLNonTransientException(message, state);
+            case "34000" -> new SQLNonTransientException(message, state);
+            case "3D000" -> new SQLNonTransientException(message, state);
+            case "42501" -> new SQLInvalidAuthorizationSpecException(message, state);
+            case "42601", "42703", "42704", "42710", "42883", "42P01", "42P07" ->
                 new SQLSyntaxErrorException(message, state);
+            case "55P03" -> new SQLTransientException(message, state);
+            case "55000", "55006" -> new SQLNonTransientException(message, state);
             case "53P00", "53100", "53200", "53300" -> new SQLTransientException(message, state);
             case "54000" -> new SQLNonTransientException(message, state);
             case "57014" -> new SQLTimeoutException(message, state);
@@ -2166,11 +2173,15 @@ public class SBProtocolHandler {
             case "0A" -> new SQLFeatureNotSupportedException(message, state);
             case "22" -> new SQLDataException(message, state);
             case "23" -> new SQLIntegrityConstraintViolationException(message, state);
+            case "25" -> new SQLNonTransientException(message, state);
             case "28" -> new SQLInvalidAuthorizationSpecException(message, state);
+            case "34" -> new SQLNonTransientException(message, state);
+            case "3D" -> new SQLNonTransientException(message, state);
             case "40" -> new SQLTransactionRollbackException(message, state);
             case "42" -> new SQLSyntaxErrorException(message, state);
             case "53" -> new SQLTransientException(message, state);
             case "54" -> new SQLNonTransientException(message, state);
+            case "55" -> new SQLNonTransientException(message, state);
             case "57" -> new SQLNonTransientException(message, state);
             case "58" -> new SQLNonTransientException(message, state);
             default -> null;
