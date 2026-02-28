@@ -830,6 +830,7 @@ public class SBConnection implements Connection {
         if (cursorMap == null) {
             return;
         }
+        resultSet.assignCursorName(key);
         cursorMap.put(key, resultSet);
     }
 
@@ -846,7 +847,9 @@ public class SBConnection implements Connection {
             cursorMap.remove(key);
             return;
         }
-        cursorMap.remove(key, resultSet);
+        if (cursorMap.remove(key, resultSet)) {
+            resultSet.assignCursorName(null);
+        }
     }
 
     SBResultSet resolveNamedCursor(String cursorName) {
