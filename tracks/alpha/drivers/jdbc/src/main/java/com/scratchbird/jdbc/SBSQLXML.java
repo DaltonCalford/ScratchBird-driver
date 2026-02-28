@@ -181,6 +181,10 @@ public class SBSQLXML implements SQLXML {
         if (sourceClass != null && StAXSource.class.isAssignableFrom(sourceClass)) {
             return instantiateStaxSourceSubclass(sourceClass, xml);
         }
+        T delegated = instantiateSourceFromDelegate(sourceClass, xml);
+        if (delegated != null) {
+            return delegated;
+        }
         throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
     }
 
@@ -251,8 +255,167 @@ public class SBSQLXML implements SQLXML {
         if (resultClass != null && StAXResult.class.isAssignableFrom(resultClass)) {
             return instantiateStaxResultSubclass(resultClass);
         }
+        T delegated = instantiateResultFromDelegate(resultClass);
+        if (delegated != null) {
+            return delegated;
+        }
         throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
     }
+
+    private <T extends Source> T instantiateSourceFromDelegate(Class<T> sourceClass, String xml) throws SQLException {
+        if (sourceClass == null) {
+            return null;
+        }
+        try {
+            Source streamCandidate = new StreamSource(new StringReader(xml));
+            T delegated = instantiateSourceWithDelegate(sourceClass, streamCandidate);
+            if (delegated != null) {
+                return delegated;
+            }
+
+            Source domCandidate = new DOMSource(parseDom(xml));
+            delegated = instantiateSourceWithDelegate(sourceClass, domCandidate);
+            if (delegated != null) {
+                return delegated;
+            }
+
+            Source saxCandidate = new SAXSource(new InputSource(new StringReader(xml)));
+            delegated = instantiateSourceWithDelegate(sourceClass, saxCandidate);
+            if (delegated != null) {
+                return delegated;
+            }
+
+            XMLInputFactory inputFactory = XMLInputFactory.newFactory();
+            Source staxCandidate = new StAXSource(inputFactory.createXMLStreamReader(new StringReader(xml)));
+            return instantiateSourceWithDelegate(sourceClass, staxCandidate);
+        } catch (SQLException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new SQLException("Failed to build delegated SQLXML source", "HY000", ex);
+        }
+    }
+
+    private <T extends Source> T instantiateSourceWithDelegate(Class<T> sourceClass, Source delegate)
+            throws SQLException {
+        if (sourceClass == null || delegate == null) {
+            return null;
+        }
+        if (sourceClass.isInstance(delegate)) {
+            return sourceClass.cast(delegate);
+        }
+        Constructor<T> ctor = findCompatibleSingleArgConstructor(sourceClass, delegate.getClass());
+        if (ctor == null) {
+            ctor = findCompatibleSingleArgConstructor(sourceClass, Source.class);
+        }
+        if (ctor == null) {
+            return null;
+        }
+        try {
+            return ctor.newInstance(delegate);
+        } catch (Exception ex) {
+            throw new SQLException("Failed to instantiate delegated SQLXML source class: " + sourceClass,
+                "HY000", ex);
+        }
+    }
+
+    private <T extends Result> T instantiateResultFromDelegate(Class<T> resultClass) throws SQLException {
+        if (resultClass == null) {
+            return null;
+        }
+        CandidateResult streamCandidate = streamDelegateResult();
+        T delegated = instantiateResultWithDelegate(resultClass, streamCandidate);
+        if (delegated != null) {
+            return delegated;
+        }
+
+        CandidateResult domCandidate = domDelegateResult();
+        delegated = instantiateResultWithDelegate(resultClass, domCandidate);
+        if (delegated != null) {
+            return delegated;
+        }
+
+        CandidateResult saxCandidate = saxDelegateResult();
+        delegated = instantiateResultWithDelegate(resultClass, saxCandidate);
+        if (delegated != null) {
+            return delegated;
+        }
+
+        CandidateResult staxCandidate = staxDelegateResult();
+        return instantiateResultWithDelegate(resultClass, staxCandidate);
+    }
+
+    private <T extends Result> T instantiateResultWithDelegate(Class<T> resultClass, CandidateResult candidate)
+            throws SQLException {
+        if (resultClass == null || candidate == null || candidate.result() == null) {
+            return null;
+        }
+        if (resultClass.isInstance(candidate.result())) {
+            pendingMaterializer = candidate.materializer();
+            return resultClass.cast(candidate.result());
+        }
+        Constructor<T> ctor = findCompatibleSingleArgConstructor(resultClass, candidate.result().getClass());
+        if (ctor == null) {
+            ctor = findCompatibleSingleArgConstructor(resultClass, Result.class);
+        }
+        if (ctor == null) {
+            return null;
+        }
+        try {
+            T instance = ctor.newInstance(candidate.result());
+            pendingMaterializer = candidate.materializer();
+            return instance;
+        } catch (Exception ex) {
+            throw new SQLException("Failed to instantiate delegated SQLXML result class: " + resultClass,
+                "HY000", ex);
+        }
+    }
+
+    private CandidateResult streamDelegateResult() {
+        StringWriter writer = new StringWriter();
+        StreamResult result = new StreamResult(writer);
+        return new CandidateResult(result, writer::toString);
+    }
+
+    private CandidateResult domDelegateResult() {
+        DOMResult result = new DOMResult();
+        return new CandidateResult(result, () -> serializeDom(result.getNode()));
+    }
+
+    private CandidateResult saxDelegateResult() throws SQLException {
+        try {
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            if (transformerFactory instanceof SAXTransformerFactory saxFactory) {
+                TransformerHandler handler = saxFactory.newTransformerHandler();
+                StringWriter writer = new StringWriter();
+                handler.setResult(new StreamResult(writer));
+                SAXResult result = new SAXResult(handler);
+                return new CandidateResult(result, writer::toString);
+            }
+            SaxCaptureHandler handler = new SaxCaptureHandler();
+            SAXResult result = new SAXResult(handler);
+            return new CandidateResult(result, handler::toXml);
+        } catch (Exception ex) {
+            throw new SQLException("Failed to initialize delegated SAXResult for SQLXML", "HY000", ex);
+        }
+    }
+
+    private CandidateResult staxDelegateResult() throws SQLException {
+        try {
+            StringWriter writer = new StringWriter();
+            XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
+            XMLStreamWriter streamWriter = outputFactory.createXMLStreamWriter(writer);
+            StAXResult result = new StAXResult(streamWriter);
+            return new CandidateResult(result, () -> {
+                streamWriter.flush();
+                streamWriter.close();
+                return writer.toString();
+            });
+        } catch (Exception ex) {
+            throw new SQLException("Failed to initialize delegated StAXResult for SQLXML", "HY000", ex);
+        }
+    }
+
+    private record CandidateResult(Result result, Materializer materializer) {}
 
     private <T extends Source> T instantiateStreamSourceSubclass(Class<T> sourceClass, String xml) throws SQLException {
         try {
@@ -573,6 +736,24 @@ public class SBSQLXML implements SQLXML {
         } catch (NoSuchMethodException ex) {
             return null;
         }
+    }
+
+    private static <T> Constructor<T> findCompatibleSingleArgConstructor(Class<T> type, Class<?> argType) {
+        Constructor<?>[] constructors = type.getDeclaredConstructors();
+        for (Constructor<?> constructor : constructors) {
+            Class<?>[] params = constructor.getParameterTypes();
+            if (params.length != 1) {
+                continue;
+            }
+            if (!params[0].isAssignableFrom(argType)) {
+                continue;
+            }
+            constructor.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Constructor<T> compatible = (Constructor<T>) constructor;
+            return compatible;
+        }
+        return null;
     }
 
     private void materializeIfPending() throws SQLException {

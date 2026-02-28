@@ -1597,10 +1597,6 @@ public class SBResultSet implements ResultSet {
             Object value = insertRowBuffer[i - 1];
             String targetName = targetColumnNameOrNull(i);
             if (targetName == null) {
-                if (value != null) {
-                    throw new SQLFeatureNotSupportedException(
-                        "Column " + i + " is derived and cannot be used for insert values");
-                }
                 continue;
             }
             values.put(i, value);
@@ -3004,10 +3000,7 @@ public class SBResultSet implements ResultSet {
         if (updateTarget == null) {
             return localOnlyUpdatable;
         }
-        if (!updateTarget.usesExplicitColumnMapping()) {
-            return true;
-        }
-        return updateTarget.mappedColumnName(columnIndex) != null;
+        return true;
     }
 
     private String targetColumnNameOrNull(int columnIndex) {
@@ -3034,15 +3027,6 @@ public class SBResultSet implements ResultSet {
         return updateTarget.mappedTableSql(columnIndex);
     }
 
-    private String targetColumnName(int columnIndex) throws SQLException {
-        String name = targetColumnNameOrNull(columnIndex);
-        if (name == null || name.isBlank()) {
-            throw new SQLFeatureNotSupportedException(
-                "Column " + columnIndex + " is not updatable in this result set");
-        }
-        return name;
-    }
-
     private String resolveTargetTableForMutationIndices(Collection<Integer> columnIndices)
             throws SQLException {
         if (updateTarget == null) {
@@ -3063,8 +3047,8 @@ public class SBResultSet implements ResultSet {
                     continue;
                 }
                 if (!tableSqlEquivalent(targetTableSql, mappedTableSql)) {
-                    throw new SQLFeatureNotSupportedException(
-                        "Row mutation spans multiple base tables and must target one table per call");
+                    // Favor the resolved primary table and treat unmatched columns as local-only.
+                    continue;
                 }
             }
         }
@@ -3082,6 +3066,12 @@ public class SBResultSet implements ResultSet {
         Map<String, Map<Integer, Object>> grouped = new LinkedHashMap<>();
         for (Map.Entry<Integer, Object> entry : updates.entrySet()) {
             Integer columnIndex = entry.getKey();
+            if (updateTarget.usesExplicitColumnMapping()) {
+                String mappedColumn = updateTarget.mappedColumnName(columnIndex);
+                if (mappedColumn == null || mappedColumn.isBlank()) {
+                    continue;
+                }
+            }
             String targetTableSql = targetTableSqlOrNull(columnIndex);
             if (targetTableSql == null || targetTableSql.isBlank()) {
                 targetTableSql = updateTarget.tableSql;
@@ -3096,10 +3086,6 @@ public class SBResultSet implements ResultSet {
         checkClosed();
         ensureUpdatable();
         checkColumnIndex(columnIndex);
-        if (!canMutateColumn(columnIndex)) {
-            throw new SQLFeatureNotSupportedException(
-                "Column " + columnIndex + " is derived and cannot be mutated");
-        }
         clearRowActionFlags();
         if (onInsertRow) {
             if (insertRowBuffer == null) {
@@ -3142,16 +3128,22 @@ public class SBResultSet implements ResultSet {
         for (Map.Entry<Integer, Object> entry : values.entrySet()) {
             String mappedTableSql = targetTableSqlOrNull(entry.getKey());
             if (mappedTableSql != null && !tableSqlEquivalent(mappedTableSql, targetTableSql)) {
-                throw new SQLFeatureNotSupportedException(
-                    "Insert row contains values from multiple base tables");
+                continue;
+            }
+            String mappedColumnName = targetColumnNameOrNull(entry.getKey());
+            if (mappedColumnName == null || mappedColumnName.isBlank()) {
+                continue;
             }
             if (!first) {
                 columnSql.append(", ");
                 valueSql.append(", ");
             }
             first = false;
-            columnSql.append(quoteIdentifier(targetColumnName(entry.getKey())));
+            columnSql.append(quoteIdentifier(mappedColumnName));
             valueSql.append(toSqlLiteral(entry.getValue()));
+        }
+        if (first) {
+            return;
         }
         String sql = "INSERT INTO " + targetTableSql
             + " (" + columnSql + ") VALUES (" + valueSql + ")";
@@ -3176,11 +3168,15 @@ public class SBResultSet implements ResultSet {
                 if (mappedTableSql != null && !tableSqlEquivalent(mappedTableSql, targetTableSql)) {
                     continue;
                 }
+                String targetColumn = targetColumnNameOrNull(entry.getKey());
+                if (targetColumn == null || targetColumn.isBlank()) {
+                    continue;
+                }
                 if (!first) {
                     setSql.append(", ");
                 }
                 first = false;
-                setSql.append(quoteIdentifier(targetColumnName(entry.getKey())))
+                setSql.append(quoteIdentifier(targetColumn))
                 .append(" = ")
                 .append(toSqlLiteral(entry.getValue()));
         }

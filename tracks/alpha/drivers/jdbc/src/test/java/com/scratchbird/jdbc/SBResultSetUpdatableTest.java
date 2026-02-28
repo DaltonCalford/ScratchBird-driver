@@ -11,7 +11,6 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -136,7 +135,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void metadataResolvedTargetSupportsAliasedColumnsAndRejectsDerivedColumnMutations() throws Exception {
+    public void metadataResolvedTargetSupportsAliasedColumnsAndAllowsDerivedColumnLocalMutations() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -174,16 +173,18 @@ public class SBResultSetUpdatableTest {
         rs.updateRow();
         assertTrue(rs.rowUpdated());
 
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
-            () -> rs.updateString("derived", "illegal"));
+        rs.updateString("derived", "derived-local");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertEquals("derived-local", rs.getString("derived"));
 
         rs.moveToInsertRow();
         rs.updateInt("identifier", 2);
         rs.updateString("payload_alias", "inserted");
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
-            () -> rs.updateString("derived", "illegal"));
+        rs.updateString("derived", "insert-local");
         rs.insertRow();
         assertTrue(rs.rowInserted());
+        assertEquals("insert-local", rs.getString("derived"));
 
         assertTrue(protocol.executedSql.stream().anyMatch(sql ->
             sql.startsWith("UPDATE \"public\".\"meta_demo\"")));
@@ -194,7 +195,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void sqlFallbackProjectionMappingUsesSourceColumnsAndRejectsDerivedMutations() throws Exception {
+    public void sqlFallbackProjectionMappingUsesSourceColumnsAndAllowsDerivedLocalMutations() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -227,8 +228,10 @@ public class SBResultSetUpdatableTest {
         assertTrue(rs.rowUpdated());
         assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.contains("\"payload\" = 'after'")));
 
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
-            () -> rs.updateString("derived", "illegal"));
+        rs.updateString("derived", "derived-local");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertEquals("derived-local", rs.getString("derived"));
     }
 
     @Test

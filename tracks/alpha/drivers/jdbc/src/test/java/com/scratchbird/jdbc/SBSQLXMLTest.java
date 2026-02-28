@@ -117,6 +117,54 @@ class SBSQLXMLTest {
         }
     }
 
+    public static class CustomDelegatingSource implements Source {
+        private final Source delegate;
+        private String systemId;
+
+        public CustomDelegatingSource(Source delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class CustomDelegatingResult implements Result {
+        private final Result delegate;
+        private String systemId;
+
+        public CustomDelegatingResult(Result delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
     @Test
     void supportsDomSourceAndDomResultRoundTrip() throws Exception {
         SBSQLXML sourceXml = new SBSQLXML("<root><value>1</value></root>");
@@ -270,5 +318,24 @@ class SBSQLXMLTest {
         String staxEventXml = staxEventTarget.getString();
         assertNotNull(staxEventXml);
         assertTrue(staxEventXml.contains("staxevent"));
+    }
+
+    @Test
+    void supportsDelegatingConstructorsForGenericSourceAndResultWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>13</value></root>");
+        CustomDelegatingSource source = sourceXml.getSource(CustomDelegatingSource.class);
+        assertNotNull(source);
+        assertTrue(source.delegate() instanceof StreamSource);
+        assertNotNull(((StreamSource) source.delegate()).getReader());
+
+        SBSQLXML target = new SBSQLXML();
+        CustomDelegatingResult result = target.setResult(CustomDelegatingResult.class);
+        assertNotNull(result);
+        assertTrue(result.delegate() instanceof StreamResult);
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<delegated/>");
+        writer.close();
+        assertEquals("<delegated/>", target.getString());
     }
 }
