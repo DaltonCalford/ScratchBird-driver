@@ -43,7 +43,7 @@ class SBDatabaseMetaDataColumnsTest {
         SBDatabaseMetaData meta = new HarnessMetaData(Arrays.asList(
             new Object[]{"id", "int4", 1, 0, "nextval('orders_id_seq'::regclass)", "orders", "public"},
             new Object[]{"price", "numeric", 2, 1, "0", "orders", "public"},
-            new Object[]{"name", "varchar", 3, 1, null, "orders", "public"},
+            new Object[]{"name", "varchar", 3, 1, "GENERATED ALWAYS AS (upper(payload)) STORED", "orders", "public"},
             new Object[]{"created_at", "timestamp", 4, 1, null, "orders", "public"}
         ));
 
@@ -70,10 +70,12 @@ class SBDatabaseMetaDataColumnsTest {
                 assertEquals(65535, rs.getInt("COLUMN_SIZE"));
                 assertEquals(65535, rs.getInt("CHAR_OCTET_LENGTH"));
                 assertEquals("NO", rs.getString("IS_AUTOINCREMENT"));
+                assertEquals("YES", rs.getString("IS_GENERATEDCOLUMN"));
             } else if ("created_at".equals(column)) {
                 assertEquals(Types.TIMESTAMP, rs.getInt("DATA_TYPE"));
                 assertEquals(29, rs.getInt("COLUMN_SIZE"));
                 assertEquals("NO", rs.getString("IS_AUTOINCREMENT"));
+                assertEquals("NO", rs.getString("IS_GENERATEDCOLUMN"));
             }
         }
 

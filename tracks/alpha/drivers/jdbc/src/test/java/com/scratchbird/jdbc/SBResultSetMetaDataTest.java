@@ -72,4 +72,21 @@ class SBResultSetMetaDataTest {
         SBResultSetMetaData meta = new SBResultSetMetaData(List.of(id));
         assertEquals(java.util.UUID.class.getName(), meta.getColumnClassName(1));
     }
+
+    @Test
+    void displaySizeUsesTypemodForVarcharAndTextFallbackForTextType() throws Exception {
+        SBColumnInfo shortVarchar = new SBColumnInfo();
+        shortVarchar.setName("short_name");
+        shortVarchar.setTypeOid(1043); // varchar
+        shortVarchar.setTypeModifier(24); // typmod = declared length + 4 => 20
+
+        SBColumnInfo textValue = new SBColumnInfo();
+        textValue.setName("notes");
+        textValue.setTypeOid(25); // text
+        textValue.setTypeModifier(-1);
+
+        SBResultSetMetaData meta = new SBResultSetMetaData(List.of(shortVarchar, textValue));
+        assertEquals(20, meta.getColumnDisplaySize(1));
+        assertEquals(65535, meta.getColumnDisplaySize(2));
+    }
 }

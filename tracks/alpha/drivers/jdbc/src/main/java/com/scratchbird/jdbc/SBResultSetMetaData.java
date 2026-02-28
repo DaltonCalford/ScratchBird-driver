@@ -154,6 +154,8 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     @Override
     public int getColumnDisplaySize(int column) throws SQLException {
         int type = getColumnType(column);
+        int precision = getPrecision(column);
+        String typeName = getColumnTypeName(column).toLowerCase(Locale.ROOT);
         switch (type) {
             case Types.BOOLEAN: return 5;
             case Types.SMALLINT: return 6;
@@ -166,6 +168,13 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case Types.DATE: return 10;
             case Types.TIME: return 8;
             case Types.TIMESTAMP: return 29;
+            case Types.CHAR:
+            case Types.VARCHAR:
+            case Types.LONGVARCHAR:
+                if (precision > 0) {
+                    return precision;
+                }
+                return typeName.contains("text") ? 65535 : 255;
             default: return 255;
         }
     }
@@ -190,17 +199,26 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     public int getPrecision(int column) throws SQLException {
         SBColumnInfo col = getColumn(column);
         int modifier = col.getTypeModifier();
-        if (modifier > 4) {
-            return ((modifier - 4) >> 16) & 0xFFFF;
+        if (modifier <= 4) {
+            return 0;
         }
-        return 0;
+        int baseModifier = modifier - 4;
+        switch (col.getTypeOid()) {
+            case 1043: // varchar(n)
+            case 1042: // bpchar(n)
+                return baseModifier;
+            case 1700: // numeric(p,s)
+                return (baseModifier >> 16) & 0xFFFF;
+            default:
+                return 0;
+        }
     }
 
     @Override
     public int getScale(int column) throws SQLException {
         SBColumnInfo col = getColumn(column);
         int modifier = col.getTypeModifier();
-        if (modifier > 4) {
+        if (modifier > 4 && col.getTypeOid() == 1700) {
             return (modifier - 4) & 0xFFFF;
         }
         return 0;
