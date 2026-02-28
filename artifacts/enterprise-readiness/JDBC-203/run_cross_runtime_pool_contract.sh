@@ -11,12 +11,64 @@ LATEST_LOG="$OUTDIR/latest_verification.log"
 LATEST_SUMMARY="$OUTDIR/latest_contract_summary.json"
 
 required_env=()
-if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
-  required_env+=("SCRATCHBIRD_DOTNET_URL")
-fi
-if [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
-  required_env+=("SCRATCHBIRD_DOTNET_CANCEL_SQL")
-fi
+
+refresh_required_env() {
+  required_env=()
+  if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
+    required_env+=("SCRATCHBIRD_DOTNET_URL")
+  fi
+  if [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
+    required_env+=("SCRATCHBIRD_DOTNET_CANCEL_SQL")
+  fi
+}
+
+required_env_json() {
+  local missing_env_json="[]"
+  if (( ${#required_env[@]} > 0 )); then
+    missing_env_json='['
+    local env_name
+    for env_name in "${required_env[@]}"; do
+      if [[ "${missing_env_json}" != "[" ]]; then
+        missing_env_json+=","
+      fi
+      missing_env_json+="\"${env_name}\""
+    done
+    missing_env_json+="]"
+  fi
+  printf '%s' "${missing_env_json}"
+}
+
+attempt_dotnet_env_autoload() {
+  if [[ -n "${SCRATCHBIRD_DOTNET_URL:-}" && -n "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -x "$ROOT_DIR/scripts/driver_runtime_stack.sh" ]]; then
+    return 1
+  fi
+
+  echo "[info] SCRATCHBIRD_DOTNET_* not fully set; attempting static runtime refresh"
+  set +e
+  "$ROOT_DIR/scripts/driver_runtime_stack.sh" refresh --mode static >/dev/null 2>&1
+  local refresh_rc=$?
+  set -e
+  if [[ "$refresh_rc" -ne 0 ]]; then
+    echo "[warn] runtime stack refresh failed; continuing with current environment"
+    return 1
+  fi
+
+  set +e
+  # shellcheck disable=SC1090
+  eval "$("$ROOT_DIR/scripts/driver_runtime_stack.sh" env --mode static)"
+  local env_rc=$?
+  set -e
+  if [[ "$env_rc" -ne 0 ]]; then
+    echo "[warn] runtime stack env export failed; continuing with current environment"
+    return 1
+  fi
+  return 0
+}
+
+refresh_required_env
 
 strict_gate="${JDBC203_STRICT_GATE:-${GITHUB_ACTIONS:-false}}"
 strict_gate="${strict_gate,,}"
@@ -28,18 +80,6 @@ release_freeze_reasons=()
 overall_status="partial"
 reason="runtime_tests_executed_with_expected_skips"
 exit_code=0
-
-missing_env_json="[]"
-if (( ${#required_env[@]} > 0 )); then
-  missing_env_json='['
-  for env_name in "${required_env[@]}"; do
-    if [[ "${missing_env_json}" != "[" ]]; then
-      missing_env_json+=","
-    fi
-    missing_env_json+="\"${env_name}\""
-  done
-  missing_env_json+="]"
-fi
 
 dotnet_contract_tests=(
   "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioA_BorrowReuseAfterExplicitCancel"
@@ -106,6 +146,9 @@ run_dotnet_contract_phase() {
 
 write_summary() {
   local summary_file="$1"
+  refresh_required_env
+  local missing_env_json
+  missing_env_json="$(required_env_json)"
   local dotnet_note
   local jdbc_note
   dotnet_note="$dotnet_status"
@@ -158,6 +201,8 @@ echo "root: $ROOT_DIR"
 echo "strict_gate: $strict_gate"
 
 echo
+attempt_dotnet_env_autoload || true
+refresh_required_env
 if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
   echo "[warn] SCRATCHBIRD_DOTNET_URL not set; .NET phase cannot run"
   dotnet_status="env_missing"
@@ -235,6 +280,7 @@ else
   fi
 fi
 
+refresh_required_env
 if [[ "${dotnet_status}" == "passed" && "${jdbc_status}" == "passed" ]]; then
   overall_status="pass"
   reason="both_runtimes_executed"

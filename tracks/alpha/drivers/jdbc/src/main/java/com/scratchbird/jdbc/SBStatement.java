@@ -23,6 +23,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.logging.Level;
@@ -50,6 +51,7 @@ public class SBStatement implements Statement {
         "(?is)^\\s*update\\s+(.+?)\\s+set\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
     private static final Pattern POSITIONED_DELETE_PATTERN = Pattern.compile(
         "(?is)^\\s*delete\\s+from\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
+    private static final AtomicLong CURSOR_SEQUENCE = new AtomicLong(0);
 
     // Parent connection
     protected final SBConnection connection;
@@ -446,8 +448,8 @@ public class SBStatement implements Statement {
     @Override
     public void setCursorName(String name) throws SQLException {
         checkClosed();
-        if (this.cursorName != null && currentResultSet != null) {
-            connection.unregisterNamedCursor(this.cursorName, currentResultSet);
+        if (currentResultSet != null) {
+            unbindCurrentResultSetCursor(currentResultSet);
         }
         this.cursorName = name;
         bindCurrentResultSetCursor();
@@ -750,17 +752,27 @@ public class SBStatement implements Statement {
     }
 
     private void bindCurrentResultSetCursor() {
-        if (cursorName == null || currentResultSet == null) {
+        if (currentResultSet == null) {
             return;
         }
-        connection.registerNamedCursor(cursorName, currentResultSet);
+        String effectiveCursorName = cursorName;
+        if (effectiveCursorName == null || effectiveCursorName.isBlank()) {
+            effectiveCursorName = "sb_cursor_" + CURSOR_SEQUENCE.incrementAndGet();
+        }
+        currentResultSet.assignCursorName(effectiveCursorName);
+        connection.registerNamedCursor(effectiveCursorName, currentResultSet);
     }
 
     private void unbindCurrentResultSetCursor(SBResultSet resultSet) {
-        if (cursorName == null || resultSet == null) {
+        if (resultSet == null) {
             return;
         }
-        connection.unregisterNamedCursor(cursorName, resultSet);
+        String boundCursorName = resultSet.assignedCursorName();
+        if (boundCursorName == null || boundCursorName.isBlank()) {
+            return;
+        }
+        connection.unregisterNamedCursor(boundCursorName, resultSet);
+        resultSet.assignCursorName(null);
     }
 
     void onResultSetClosed(SBResultSet resultSet) {

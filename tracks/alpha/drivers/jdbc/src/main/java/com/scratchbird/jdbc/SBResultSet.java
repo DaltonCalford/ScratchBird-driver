@@ -58,6 +58,7 @@ public class SBResultSet implements ResultSet {
     // Fetch direction and size
     private int fetchDirection = ResultSet.FETCH_FORWARD;
     private int fetchSize = 0;
+    private String cursorName;
 
     // Updatable result set state
     private final boolean updatable;
@@ -625,7 +626,7 @@ public class SBResultSet implements ResultSet {
     @Override
     public String getCursorName() throws SQLException {
         checkClosed();
-        return null;  // Not supported
+        return cursorName;
     }
 
     @Override
@@ -1807,8 +1808,15 @@ public class SBResultSet implements ResultSet {
         if (parts.size() == 1) {
             return new String[]{"", unquoteIdentifier(parts.get(0))};
         }
+        StringBuilder schema = new StringBuilder();
+        for (int i = 0; i < parts.size() - 1; i++) {
+            if (i > 0) {
+                schema.append('.');
+            }
+            schema.append(unquoteIdentifier(parts.get(i)));
+        }
         return new String[]{
-            unquoteIdentifier(parts.get(parts.size() - 2)),
+            schema.toString(),
             unquoteIdentifier(parts.get(parts.size() - 1))
         };
     }
@@ -2301,6 +2309,14 @@ public class SBResultSet implements ResultSet {
         if (onInsertRow) {
             throw new SQLException("Cursor is on insert row", "HY109");
         }
+    }
+
+    void assignCursorName(String cursorName) {
+        this.cursorName = cursorName;
+    }
+
+    String assignedCursorName() {
+        return cursorName;
     }
 
     private void ensureUpdatable() throws SQLException {

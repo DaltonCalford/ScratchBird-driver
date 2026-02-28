@@ -50,6 +50,9 @@ public class SBConnection implements Connection {
     private String schema;
     private int holdability = ResultSet.HOLD_CURSORS_OVER_COMMIT;
     private Map<String, Class<?>> typeMap = new HashMap<>();
+    private ShardingKey shardingKey;
+    private ShardingKey superShardingKey;
+    private boolean requestScopeActive = false;
 
     // Network protocol handler
     private SBProtocolHandler protocol;
@@ -632,6 +635,67 @@ public class SBConnection implements Connection {
     }
 
     @Override
+    public void beginRequest() throws SQLException {
+        checkClosed();
+        requestScopeActive = true;
+    }
+
+    @Override
+    public void endRequest() throws SQLException {
+        checkClosed();
+        requestScopeActive = false;
+    }
+
+    @Override
+    public boolean setShardingKeyIfValid(ShardingKey shardingKey, int timeout) throws SQLException {
+        checkClosed();
+        if (timeout < 0) {
+            throw new SQLException("Timeout must be >= 0", "HY024");
+        }
+        if (shardingKey == null) {
+            return false;
+        }
+        this.shardingKey = shardingKey;
+        this.superShardingKey = null;
+        return true;
+    }
+
+    @Override
+    public boolean setShardingKeyIfValid(ShardingKey shardingKey, ShardingKey superShardingKey, int timeout)
+            throws SQLException {
+        checkClosed();
+        if (timeout < 0) {
+            throw new SQLException("Timeout must be >= 0", "HY024");
+        }
+        if (shardingKey == null) {
+            return false;
+        }
+        this.shardingKey = shardingKey;
+        this.superShardingKey = superShardingKey;
+        return true;
+    }
+
+    @Override
+    public void setShardingKey(ShardingKey shardingKey) throws SQLException {
+        checkClosed();
+        if (shardingKey == null) {
+            throw new SQLException("Sharding key cannot be null", "HY024");
+        }
+        this.shardingKey = shardingKey;
+        this.superShardingKey = null;
+    }
+
+    @Override
+    public void setShardingKey(ShardingKey shardingKey, ShardingKey superShardingKey) throws SQLException {
+        checkClosed();
+        if (shardingKey == null) {
+            throw new SQLException("Sharding key cannot be null", "HY024");
+        }
+        this.shardingKey = shardingKey;
+        this.superShardingKey = superShardingKey;
+    }
+
+    @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
         if (iface.isAssignableFrom(getClass())) {
             return iface.cast(this);
@@ -762,7 +826,11 @@ public class SBConnection implements Connection {
         if (key == null || resultSet == null) {
             return;
         }
-        namedCursors.put(key, resultSet);
+        Map<String, SBResultSet> cursorMap = namedCursors;
+        if (cursorMap == null) {
+            return;
+        }
+        cursorMap.put(key, resultSet);
     }
 
     void unregisterNamedCursor(String cursorName, SBResultSet resultSet) {
@@ -770,11 +838,15 @@ public class SBConnection implements Connection {
         if (key == null) {
             return;
         }
-        if (resultSet == null) {
-            namedCursors.remove(key);
+        Map<String, SBResultSet> cursorMap = namedCursors;
+        if (cursorMap == null) {
             return;
         }
-        namedCursors.remove(key, resultSet);
+        if (resultSet == null) {
+            cursorMap.remove(key);
+            return;
+        }
+        cursorMap.remove(key, resultSet);
     }
 
     SBResultSet resolveNamedCursor(String cursorName) {
@@ -782,7 +854,11 @@ public class SBConnection implements Connection {
         if (key == null) {
             return null;
         }
-        return namedCursors.get(key);
+        Map<String, SBResultSet> cursorMap = namedCursors;
+        if (cursorMap == null) {
+            return null;
+        }
+        return cursorMap.get(key);
     }
 
     // ==================== Private Methods ====================
