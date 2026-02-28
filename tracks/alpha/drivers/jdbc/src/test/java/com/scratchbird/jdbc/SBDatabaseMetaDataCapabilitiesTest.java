@@ -1,6 +1,7 @@
 package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.sql.ResultSet;
@@ -42,6 +43,9 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsStatementPooling());
         assertTrue(meta.supportsNamedParameters());
         assertTrue(meta.supportsStoredFunctionsUsingCallSyntax());
+        assertTrue(meta.supportsRefCursors());
+        assertTrue(meta.supportsSharding());
+        assertEquals(1073741823L, meta.getMaxLogicalLobSize());
         assertTrue(meta.generatedKeyAlwaysReturned());
         assertTrue(meta.supportsResultSetType(ResultSet.TYPE_SCROLL_INSENSITIVE));
     }

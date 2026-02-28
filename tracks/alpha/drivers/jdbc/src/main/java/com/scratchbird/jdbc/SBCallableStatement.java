@@ -31,6 +31,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
         Pattern.compile("(?is)^call\\s+(.+)$");
 
     private final Map<Integer, Object> outParameters = new HashMap<>();
+    private final Map<Integer, Integer> outParameterSqlTypes = new HashMap<>();
     private final Map<String, Integer> namedParameters = new HashMap<>();
     private final boolean functionReturnCallSyntax;
     private boolean lastOutParameterWasNull = false;
@@ -104,6 +105,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     @Override
     public void registerOutParameter(int parameterIndex, int sqlType) throws SQLException {
         outParameters.put(parameterIndex, null);
+        outParameterSqlTypes.put(parameterIndex, sqlType);
     }
 
     @Override
@@ -153,6 +155,11 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
             return;
         }
         for (Integer index : new TreeSet<>(outParameters.keySet())) {
+            Integer sqlType = outParameterSqlTypes.get(index);
+            if (sqlType != null && sqlType == Types.REF_CURSOR) {
+                outParameters.put(index, currentResultSet);
+                continue;
+            }
             try {
                 outParameters.put(index, currentResultSet.getObject(index));
             } catch (SQLException ex) {
@@ -814,6 +821,15 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
         } else if (type == SQLXML.class) {
             Object raw = readOutParameter(parameterIndex);
             return raw == null ? null : type.cast(new SBSQLXML(raw.toString()));
+        } else if (type == ResultSet.class) {
+            Object raw = readOutParameter(parameterIndex);
+            if (raw == null) {
+                return null;
+            }
+            if (raw instanceof ResultSet resultSet) {
+                return type.cast(resultSet);
+            }
+            throw new SQLException("Cannot convert to " + type.getName(), "HY000");
         } else if (type == URL.class) {
             return type.cast(getURL(parameterIndex));
         }

@@ -3249,6 +3249,21 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
         return true;
     }
 
+    @Override
+    public long getMaxLogicalLobSize() throws SQLException {
+        return 1073741823L;
+    }
+
+    @Override
+    public boolean supportsRefCursors() throws SQLException {
+        return true;
+    }
+
+    @Override
+    public boolean supportsSharding() throws SQLException {
+        return true;
+    }
+
     private static boolean isNumericType(int sqlType) {
         return switch (sqlType) {
             case Types.BIT, Types.TINYINT, Types.SMALLINT, Types.INTEGER, Types.BIGINT,

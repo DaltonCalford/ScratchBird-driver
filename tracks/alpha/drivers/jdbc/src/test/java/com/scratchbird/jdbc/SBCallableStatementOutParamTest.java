@@ -11,6 +11,7 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -79,6 +80,23 @@ public class SBCallableStatementOutParamTest {
 
         assertEquals(7, statement.getInt("out_a"));
         assertEquals("done", statement.getString("out_b"));
+    }
+
+    @Test
+    public void refCursorOutParameterReturnsResultSetHandle() throws Exception {
+        OutParamProtocol protocol = new OutParamProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection, "CALL demo(?)",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        statement.registerOutParameter(1, Types.REF_CURSOR);
+        assertTrue(statement.execute());
+
+        ResultSet fromOutObject = (ResultSet) statement.getObject(1);
+        ResultSet fromTyped = statement.getObject(1, ResultSet.class);
+        ResultSet fromResultSet = statement.getResultSet();
+        assertSame(fromResultSet, fromOutObject);
+        assertSame(fromResultSet, fromTyped);
     }
 
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
