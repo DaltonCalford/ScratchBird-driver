@@ -266,6 +266,77 @@ public class SBIntegrationTest {
     }
 
     @Test
+    public void metadataVersionColumnsReportsExpectedShapeAndXminWhenAvailable() throws Exception {
+        String table = "jdbc_version_cols_" + System.currentTimeMillis();
+        try (Connection conn = openConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, note TEXT)");
+            DatabaseMetaData metadata = conn.getMetaData();
+            try (ResultSet versionColumns = metadata.getVersionColumns(null, "public", table)) {
+                assertMetadataColumns(versionColumns,
+                    "SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
+                    "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN");
+                if (versionColumns.next()) {
+                    assertEquals("xmin", versionColumns.getString("COLUMN_NAME"));
+                    assertTrue(versionColumns.getInt("COLUMN_SIZE") > 0);
+                }
+            }
+        } finally {
+            try (Connection conn = openConnection();
+                 Statement cleanup = conn.createStatement()) {
+                cleanup.execute("DROP TABLE IF EXISTS " + table);
+            } catch (SQLException ignored) {
+                // best effort cleanup
+            }
+        }
+    }
+
+    @Test
+    public void aliasedProjectionResultSetSupportsServerBackedUpdatableMutations() throws Exception {
+        String table = "jdbc_nested_upd_" + System.currentTimeMillis();
+        try (Connection conn = openConnection();
+             Statement setup = conn.createStatement()) {
+            setup.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, note TEXT)");
+            setup.execute("INSERT INTO " + table + " (id, note) VALUES (1, 'before')");
+
+            try (Statement stmt = conn.createStatement(
+                ResultSet.TYPE_SCROLL_INSENSITIVE,
+                ResultSet.CONCUR_UPDATABLE);
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT t.id, t.note FROM " + table + " t")) {
+                assertTrue(rs.next());
+                rs.updateString("note", "after");
+                rs.updateRow();
+                assertTrue(rs.rowUpdated());
+
+                rs.moveToInsertRow();
+                rs.updateInt("id", 2);
+                rs.updateString("note", "inserted");
+                rs.insertRow();
+                assertTrue(rs.rowInserted());
+
+                assertTrue(rs.absolute(1));
+                rs.deleteRow();
+                assertTrue(rs.rowDeleted());
+            }
+
+            try (ResultSet verify = setup.executeQuery("SELECT id, note FROM " + table + " ORDER BY id")) {
+                assertTrue(verify.next());
+                assertEquals(2, verify.getInt(1));
+                assertEquals("inserted", verify.getString(2));
+                assertFalse(verify.next());
+            }
+        } finally {
+            try (Connection conn = openConnection();
+                 Statement cleanup = conn.createStatement()) {
+                cleanup.execute("DROP TABLE IF EXISTS " + table);
+            } catch (SQLException ignored) {
+                // best effort cleanup
+            }
+        }
+    }
+
+    @Test
     public void preparedStatementReplayAfterSchemaRecreate() throws Exception {
         String table = "jdbc_stmt_replay_" + System.currentTimeMillis();
 
