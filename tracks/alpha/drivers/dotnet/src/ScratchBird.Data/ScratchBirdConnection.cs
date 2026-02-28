@@ -122,7 +122,10 @@ public sealed class ScratchBirdConnection : DbConnection
         _clientLease = lease;
         try
         {
-            _client.Connect(_config);
+            if (!_client.IsHealthy)
+            {
+                _client.Connect(_config);
+            }
             _state = ConnectionState.Open;
             ApplySchema();
         }
@@ -193,11 +196,11 @@ public sealed class ScratchBirdConnection : DbConnection
             return;
         }
 
-        _disposed = true;
         if (disposing)
         {
             Close();
         }
+        _disposed = true;
         base.Dispose(disposing);
     }
 
@@ -260,6 +263,7 @@ public sealed class ScratchBirdConnection : DbConnection
         using var cmd = CreateDbCommand();
         cmd.CommandText = query;
         using var reader = cmd.ExecuteReader();
+        _ = reader.HasRows; // Prime row-description metadata before FieldCount/column enumeration.
 
         var table = new System.Data.DataTable(collectionName);
         for (var i = 0; i < reader.FieldCount; i++)

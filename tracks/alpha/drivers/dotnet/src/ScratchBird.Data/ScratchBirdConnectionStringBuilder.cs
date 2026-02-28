@@ -59,6 +59,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["SSLMode"] = value;
     }
 
+    public bool AllowInsecure
+    {
+        get => GetBool("AllowInsecure", false);
+        set => this["AllowInsecure"] = value;
+    }
+
     public int Timeout
     {
         get => GetInt("Timeout", 30);

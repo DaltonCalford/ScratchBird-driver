@@ -261,6 +261,6 @@ internal sealed class ProtocolClientPool
 
     private static string BuildPoolKey(ScratchBirdConfig config)
     {
-        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}|{config.SslMode}|{config.SslRootCert}|{config.SslCert}|{config.ManagerAuthFastPath}|{config.ManagerClientFlags}|{config.MaxPoolSize}|{config.MinPoolSize}|{config.ConnectionLifetime}";
+        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}|{config.SslMode}|{config.AllowInsecureDisable}|{config.SslRootCert}|{config.SslCert}|{config.ManagerAuthFastPath}|{config.ManagerClientFlags}|{config.MaxPoolSize}|{config.MinPoolSize}|{config.ConnectionLifetime}";
     }
 }

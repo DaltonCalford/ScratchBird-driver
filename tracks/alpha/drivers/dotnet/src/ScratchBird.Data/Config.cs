@@ -21,6 +21,7 @@ public sealed class ScratchBirdConfig
     public string Schema { get; set; } = "";
     public string Role { get; set; } = "";
     public string SslMode { get; set; } = "require";
+    public bool AllowInsecureDisable { get; set; } = false;
     public string? SslRootCert { get; set; }
     public string? SslCert { get; set; }
     public string? SslKey { get; set; }
@@ -31,7 +32,7 @@ public sealed class ScratchBirdConfig
     public bool BinaryTransfer { get; set; } = true;
     public string Compression { get; set; } = "off";
     public int DefaultFetchSize { get; set; } = 0;
-    public bool Pooling { get; set; } = true;
+    public bool Pooling { get; set; } = false;
     public int MinPoolSize { get; set; } = 0;
     public int MaxPoolSize { get; set; } = 100;
     public int ConnectionLifetime { get; set; } = 0;
@@ -199,6 +200,15 @@ internal static class DsnParser
             case "sslmode":
             case "ssl mode":
                 cfg.SslMode = value;
+                break;
+            case "allow_insecure":
+            case "allowinsecure":
+            case "allow_insecure_disable":
+            case "allowinsecuredisable":
+                cfg.AllowInsecureDisable = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
                 break;
             case "sslrootcert":
                 cfg.SslRootCert = value;

@@ -11,8 +11,8 @@ namespace ScratchBird.Data;
 public static class ScratchBirdMetadata
 {
     public const string SchemasQuery = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
-    public const string TablesQuery = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
-    public const string ColumnsQuery = "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+    public const string TablesQuery = "SELECT table_schema, table_name, table_type FROM information_schema.tables ORDER BY table_schema, table_name";
+    public const string ColumnsQuery = "SELECT table_schema, table_name, column_name, data_type, ordinal_position, is_nullable FROM information_schema.columns ORDER BY table_schema, table_name, ordinal_position";
     public const string IndexesQuery = "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name";
     public const string IndexColumnsQuery = "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position";
     public const string ConstraintsQuery = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";

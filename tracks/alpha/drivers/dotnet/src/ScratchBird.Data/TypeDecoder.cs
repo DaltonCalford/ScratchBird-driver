@@ -631,17 +631,83 @@ internal static class TypeDecoder
         switch (typeOid)
         {
             case OidBool:
-                return data.Length > 0 && data[0] == 1;
+            {
+                if (TryDecodeBoolPayload(data, out var boolValue))
+                {
+                    return boolValue;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedBool) &&
+                    TryDecodeBoolPayload(prefixedBool, out boolValue))
+                {
+                    return boolValue;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "BOOL payload is empty");
+            }
             case OidInt2:
-                return ReadInt16(data);
+            {
+                if (TryDecodeInt16Payload(data, out var int16Value))
+                {
+                    return int16Value;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedInt16) &&
+                    TryDecodeInt16Payload(prefixedInt16, out int16Value))
+                {
+                    return int16Value;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "INT2 payload is empty");
+            }
             case OidInt4:
-                return ReadInt32(data);
+            {
+                if (TryDecodeInt32Payload(data, out var int32Value))
+                {
+                    return int32Value;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedInt32) &&
+                    TryDecodeInt32Payload(prefixedInt32, out int32Value))
+                {
+                    return int32Value;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "INT4 payload is empty");
+            }
             case OidInt8:
-                return ReadInt64(data);
+            {
+                if (TryDecodeInt64Payload(data, out var int64Value))
+                {
+                    return int64Value;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedInt64) &&
+                    TryDecodeInt64Payload(prefixedInt64, out int64Value))
+                {
+                    return int64Value;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "INT8 payload is empty");
+            }
             case OidFloat4:
-                return ReadFloat(data);
+            {
+                if (TryDecodeFloatPayload(data, out var floatValue))
+                {
+                    return floatValue;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedFloat) &&
+                    TryDecodeFloatPayload(prefixedFloat, out floatValue))
+                {
+                    return floatValue;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "FLOAT4 payload is empty");
+            }
             case OidFloat8:
-                return ReadDouble(data);
+            {
+                if (TryDecodeDoublePayload(data, out var doubleValue))
+                {
+                    return doubleValue;
+                }
+                if (TryGetLengthPrefixedPayload(data, out var prefixedDouble) &&
+                    TryDecodeDoublePayload(prefixedDouble, out doubleValue))
+                {
+                    return doubleValue;
+                }
+                throw new ArgumentOutOfRangeException(nameof(data), "FLOAT8 payload is empty");
+            }
             case OidNumeric:
                 return ParseDecimal(StripLengthPrefix(data));
             case OidMoney:
@@ -670,7 +736,7 @@ internal static class TypeDecoder
             case OidInterval:
                 return DecodeInterval(data);
             case OidUuid:
-                return Guid.Parse(BytesToUuid(data));
+                return DecodeUuidBinary(data);
             case OidInet:
             case OidCidr:
             case OidMacaddr:
@@ -1031,6 +1097,231 @@ internal static class TypeDecoder
             return hex;
         }
         return $"{hex[..8]}-{hex.Substring(8, 4)}-{hex.Substring(12, 4)}-{hex.Substring(16, 4)}-{hex.Substring(20)}";
+    }
+
+    private static Guid DecodeUuidBinary(byte[] data)
+    {
+        var payload = StripLengthPrefix(data);
+        if (payload.Length == 16)
+        {
+            return Guid.Parse(BytesToUuid(payload));
+        }
+
+        if (payload.Length > 0 && LooksLikeText(payload))
+        {
+            var text = Encoding.UTF8.GetString(payload).TrimEnd('\0');
+            if (Guid.TryParse(text, out var parsedText))
+            {
+                return parsedText;
+            }
+        }
+
+        if (Guid.TryParse(BytesToUuid(payload), out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new FormatException($"Invalid UUID binary payload length {payload.Length}.");
+    }
+
+    private static bool TryParseIntegralText(byte[] data, out long value)
+    {
+        value = 0;
+        var trimmed = StripTrailingNulls(data);
+        if (trimmed.Length == 0 || !LooksLikeText(trimmed))
+        {
+            return false;
+        }
+
+        var text = Encoding.UTF8.GetString(trimmed).Trim();
+        return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryParseFloatingText(byte[] data, out double value)
+    {
+        value = 0;
+        var trimmed = StripTrailingNulls(data);
+        if (trimmed.Length == 0 || !LooksLikeText(trimmed))
+        {
+            return false;
+        }
+
+        var text = Encoding.UTF8.GetString(trimmed).Trim();
+        return double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryParseBooleanText(byte[] data, out bool value)
+    {
+        value = false;
+        var trimmed = StripTrailingNulls(data);
+        if (trimmed.Length == 0 || !LooksLikeText(trimmed))
+        {
+            return false;
+        }
+
+        var text = Encoding.UTF8.GetString(trimmed).Trim();
+        if (string.Equals(text, "true", StringComparison.OrdinalIgnoreCase) || text == "1" || string.Equals(text, "t", StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+        if (string.Equals(text, "false", StringComparison.OrdinalIgnoreCase) || text == "0" || string.Equals(text, "f", StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryDecodeBoolPayload(byte[] payload, out bool value)
+    {
+        if (payload.Length > 0 && (payload[0] == 0 || payload[0] == 1))
+        {
+            value = payload[0] == 1;
+            return true;
+        }
+        return TryParseBooleanText(payload, out value);
+    }
+
+    private static bool TryDecodeInt16Payload(byte[] payload, out short value)
+    {
+        value = 0;
+        if (TryParseIntegralText(payload, out var parsedInt16) &&
+            parsedInt16 >= short.MinValue && parsedInt16 <= short.MaxValue)
+        {
+            value = (short)parsedInt16;
+            return true;
+        }
+
+        if (payload.Length == 2)
+        {
+            value = ReadInt16(payload);
+            return true;
+        }
+        if (payload.Length == 1)
+        {
+            value = (short)(sbyte)payload[0];
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryDecodeInt32Payload(byte[] payload, out int value)
+    {
+        value = 0;
+        if (TryParseIntegralText(payload, out var parsedInt32) &&
+            parsedInt32 >= int.MinValue && parsedInt32 <= int.MaxValue)
+        {
+            value = (int)parsedInt32;
+            return true;
+        }
+
+        if (payload.Length == 4)
+        {
+            value = ReadInt32(payload);
+            return true;
+        }
+        if (payload.Length == 2)
+        {
+            value = ReadInt16(payload);
+            return true;
+        }
+        if (payload.Length == 1)
+        {
+            value = (sbyte)payload[0];
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryDecodeInt64Payload(byte[] payload, out long value)
+    {
+        value = 0;
+        if (TryParseIntegralText(payload, out var parsedInt64))
+        {
+            value = parsedInt64;
+            return true;
+        }
+
+        if (payload.Length == 8)
+        {
+            value = ReadInt64(payload);
+            return true;
+        }
+        if (payload.Length == 4)
+        {
+            value = ReadInt32(payload);
+            return true;
+        }
+        if (payload.Length == 2)
+        {
+            value = ReadInt16(payload);
+            return true;
+        }
+        if (payload.Length == 1)
+        {
+            value = (sbyte)payload[0];
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryDecodeFloatPayload(byte[] payload, out float value)
+    {
+        value = 0;
+        if (TryParseFloatingText(payload, out var parsedFloat))
+        {
+            value = (float)parsedFloat;
+            return true;
+        }
+
+        if (payload.Length == 4)
+        {
+            value = ReadFloat(payload);
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryDecodeDoublePayload(byte[] payload, out double value)
+    {
+        value = 0;
+        if (TryParseFloatingText(payload, out var parsedDouble))
+        {
+            value = parsedDouble;
+            return true;
+        }
+
+        if (payload.Length == 8)
+        {
+            value = ReadDouble(payload);
+            return true;
+        }
+        if (payload.Length == 4)
+        {
+            value = ReadFloat(payload);
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryGetLengthPrefixedPayload(byte[] data, out byte[] payload)
+    {
+        payload = Array.Empty<byte>();
+        if (data.Length < 4)
+        {
+            return false;
+        }
+
+        var declaredLength = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, 4));
+        if (declaredLength != data.Length - 4)
+        {
+            return false;
+        }
+
+        payload = data.AsSpan(4, (int)declaredLength).ToArray();
+        return true;
     }
 
     private static byte[] GuidToBytes(Guid guid)

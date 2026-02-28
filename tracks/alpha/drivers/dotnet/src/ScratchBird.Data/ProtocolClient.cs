@@ -15,6 +15,9 @@ using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ScratchBird.Data;
 
@@ -27,6 +30,7 @@ internal sealed class ProtocolClient
     private const ushort McpProtocolVersion = 0x0100;
     private const int ManagerHeaderSize = 12;
     private const int ManagerMaxPayloadSize = 16 * 1024 * 1024;
+    private static readonly Regex PositionalParamRegex = new(@"\$(\d+)\b", RegexOptions.Compiled);
 
     private const byte McpMsgConnectResponse = 0x02;
     private const byte McpMsgAuthChallenge = 0x12;
@@ -56,7 +60,7 @@ internal sealed class ProtocolClient
     private record struct PreparedStatement(string Name, string Sql, uint[] ParamTypes, DateTimeOffset LastUsedUtc);
 
     public bool Connected => _connected;
-    internal bool IsHealthy => _connected && _stream != null && (_client?.Connected ?? false);
+    internal bool IsHealthy => _connected && _stream != null;
 
     internal void EnsureHealthy()
     {
@@ -84,6 +88,12 @@ internal sealed class ProtocolClient
             throw new ScratchBirdNotSupportedException("compression=zstd is not supported", "0A000");
         }
 
+        // Ensure reconnect does not leak prior transport handles.
+        if (_client != null || _stream != null)
+        {
+            Close();
+        }
+
         _connected = false;
         _sequence = 0;
         _lastQuerySequence = 0;
@@ -108,16 +118,32 @@ internal sealed class ProtocolClient
         var sslMode = (config.SslMode ?? "require").ToLowerInvariant();
         if (sslMode == "disable")
         {
-            throw new ScratchBirdConnectionException("TLS is required for ScratchBird connections", "08001");
+            if (!config.AllowInsecureDisable)
+            {
+                throw new ScratchBirdConnectionException("TLS is required for ScratchBird connections", "08001");
+            }
+        }
+        else
+        {
+            _stream = UpgradeToTls(_stream, config, sslMode);
         }
 
-        _stream = UpgradeToTls(_stream, config, sslMode);
-        if (string.Equals(config.FrontDoorMode, "manager_proxy", StringComparison.OrdinalIgnoreCase))
-        {
-            PerformManagerConnect(config);
-        }
-        Handshake(config);
         _connected = true;
+        try
+        {
+            if (string.Equals(config.FrontDoorMode, "manager_proxy", StringComparison.OrdinalIgnoreCase))
+            {
+                PerformManagerConnect(config);
+            }
+            Handshake(config);
+        }
+        catch
+        {
+            _connected = false;
+            _stream?.Dispose();
+            _client?.Close();
+            throw;
+        }
     }
 
     public QueryStream ExecuteQuery(string sql)
@@ -137,6 +163,10 @@ internal sealed class ProtocolClient
         if (parameters.Count == 0)
         {
             SendSimpleQuery(sql, timeoutMs, maxRows);
+        }
+        else if (ShouldInlineParameterizedSql(sql))
+        {
+            SendSimpleQuery(InlineSqlParameters(sql, parameters), timeoutMs, maxRows);
         }
         else
         {
@@ -495,11 +525,7 @@ internal sealed class ProtocolClient
             paramValues.Add(encoded.Param);
             paramTypes.Add(encoded.Oid);
         }
-        var statementName = GetOrPrepareStatement(sql, parameterTypes: paramTypes, forceReprepare: false).Name;
-        if (statementName != null)
-        {
-            MarkPreparedStatementUsed(sql, paramTypes);
-        }
+        var statementName = GetOrPrepareStatement(sql, parameterTypes: paramTypes, forceReprepare: true).Name;
 
         var resultFormats = ConfigBinaryTransfer() ? new[] { TypeDecoder.FormatBinary } : Array.Empty<ushort>();
         var bindPayload = ProtocolCodec.BuildBindPayload(string.Empty, statementName, paramValues, resultFormats);
@@ -535,12 +561,8 @@ internal sealed class ProtocolClient
         var statementName = $"sb_stmt_{_preparedStatementSequence++}";
         var parsePayload = ProtocolCodec.BuildParsePayload(statementName, sql, parameterTypes);
         SendMessage(MessageType.PARSE, parsePayload, 0, false);
-
-        var described = DescribeStatement(statementName);
-        if (described >= 0 && described != parameterTypes.Count)
-        {
-            throw new ScratchBirdSyntaxException("parameter count mismatch", "07001");
-        }
+        // Keep parse/bind/execute pipelined for direct native mode.
+        // A dedicated DESCRIBE round-trip can desynchronize or stall on some listener builds.
 
         var prepared = new PreparedStatement(statementName, sql, parameterTypes.ToArray(), DateTimeOffset.UtcNow);
         if (forceReprepare)
@@ -609,6 +631,98 @@ internal sealed class ProtocolClient
         }
 
         return sb.ToString();
+    }
+
+    private static bool ShouldInlineParameterizedSql(string sql)
+    {
+        var keyword = GetLeadingKeyword(sql);
+        return keyword is "INSERT"
+            or "UPDATE"
+            or "DELETE"
+            or "MERGE"
+            or "CREATE"
+            or "ALTER"
+            or "DROP"
+            or "TRUNCATE"
+            or "COMMENT"
+            or "ANALYZE";
+    }
+
+    private static string GetLeadingKeyword(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = sql.TrimStart();
+        var i = 0;
+        while (i < trimmed.Length && (char.IsLetterOrDigit(trimmed[i]) || trimmed[i] == '_'))
+        {
+            i++;
+        }
+
+        return i == 0 ? string.Empty : trimmed[..i].ToUpperInvariant();
+    }
+
+    private static string InlineSqlParameters(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    {
+        return PositionalParamRegex.Replace(sql, match =>
+        {
+            if (!int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ordinal))
+            {
+                return match.Value;
+            }
+
+            var index = ordinal - 1;
+            if (index < 0 || index >= parameters.Count)
+            {
+                throw new ScratchBirdSyntaxException($"missing parameter value for {match.Value}", "07001");
+            }
+
+            return ToSqlLiteral(parameters[index].Value);
+        });
+    }
+
+    private static string ToSqlLiteral(object? value)
+    {
+        if (value == null || value is DBNull)
+        {
+            return "NULL";
+        }
+
+        return value switch
+        {
+            bool boolean => boolean ? "TRUE" : "FALSE",
+            byte numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            sbyte numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            short numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            ushort numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            int numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            uint numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            long numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            ulong numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            float numeric => numeric.ToString("R", CultureInfo.InvariantCulture),
+            double numeric => numeric.ToString("R", CultureInfo.InvariantCulture),
+            decimal numeric => numeric.ToString(CultureInfo.InvariantCulture),
+            Guid guid => $"'{guid:D}'",
+            DateOnly date => $"'{date:yyyy-MM-dd}'",
+            TimeOnly time => $"'{time:HH:mm:ss.fffffff}'",
+            DateTime dateTime => $"'{dateTime.ToUniversalTime():yyyy-MM-dd HH:mm:ss.fffffff}'",
+            DateTimeOffset dateTimeOffset => $"'{dateTimeOffset:yyyy-MM-dd HH:mm:ss.fffffff zzz}'",
+            byte[] bytes => $"'\\x{Convert.ToHexString(bytes).ToLowerInvariant()}'",
+            _ => $"'{EscapeSqlLiteral(value.ToString() ?? string.Empty)}'"
+        };
+    }
+
+    private static string EscapeSqlLiteral(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
     private void RemovePreparedStatement(string key)

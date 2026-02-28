@@ -117,8 +117,17 @@ emit_driver_env() {
   native_url="scratchbird://${SCRATCHBIRD_NATIVE_USER}:${SCRATCHBIRD_NATIVE_PASSWORD}@${SCRATCHBIRD_NATIVE_HOST}:${SCRATCHBIRD_NATIVE_PORT}/${SCRATCHBIRD_NATIVE_DB}?sslmode=${native_sslmode}"
   local jdbc_url
   jdbc_url="jdbc:scratchbird://${SCRATCHBIRD_NATIVE_HOST}:${SCRATCHBIRD_NATIVE_PORT}/${SCRATCHBIRD_NATIVE_DB}?sslmode=${native_sslmode}"
+  local dotnet_url
+  dotnet_url="${native_url}"
+  if [[ "${native_sslmode}" == "disable" ]]; then
+    dotnet_url="${dotnet_url}&allow_insecure=true"
+  fi
   local odbc_conn
   odbc_conn="Driver={ScratchBird};Server=${SCRATCHBIRD_NATIVE_HOST};Port=${SCRATCHBIRD_NATIVE_PORT};Database=${SCRATCHBIRD_NATIVE_DB};UID=${SCRATCHBIRD_NATIVE_USER};PWD=${SCRATCHBIRD_NATIVE_PASSWORD};SSLMode=${native_sslmode}"
+  local cancel_sql
+  cancel_sql="${SCRATCHBIRD_DRIVER_CANCEL_SQL:-SELECT pg_sleep(5)}"
+  local escaped_cancel_sql
+  escaped_cancel_sql="${cancel_sql//\'/\'\"\'\"\'}"
 
   cat <<EOF
 export SCRATCHBIRD_TEST_DSN='${native_url}'
@@ -127,7 +136,7 @@ export SCRATCHBIRD_NODE_URL='${native_url}'
 export SCRATCHBIRD_RUST_URL='${native_url}'
 export SCRATCHBIRD_RUBY_URL='${native_url}'
 export SCRATCHBIRD_PHP_URL='${native_url}'
-export SCRATCHBIRD_DOTNET_URL='${native_url}'
+export SCRATCHBIRD_DOTNET_URL='${dotnet_url}'
 export SCRATCHBIRD_R_URL='${native_url}'
 export SCRATCHBIRD_PASCAL_URL='${native_url}'
 export SCRATCHBIRD_MOJO_URL='${native_url}'
@@ -135,6 +144,18 @@ export SCRATCHBIRD_MOJO_URL='${native_url}'
 export SCRATCHBIRD_JDBC_URL='${jdbc_url}'
 export SCRATCHBIRD_JDBC_USER='${SCRATCHBIRD_NATIVE_USER}'
 export SCRATCHBIRD_JDBC_PASSWORD='${SCRATCHBIRD_NATIVE_PASSWORD}'
+export SCRATCHBIRD_JDBC_CANCEL_SQL='${escaped_cancel_sql}'
+
+export SCRATCHBIRD_TEST_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_GO_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_NODE_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_RUST_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_RUBY_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_PHP_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_DOTNET_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_R_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_PASCAL_CANCEL_SQL='${escaped_cancel_sql}'
+export SCRATCHBIRD_MOJO_CANCEL_SQL='${escaped_cancel_sql}'
 
 export SCRATCHBIRD_ODBC_TEST_CONNSTR='${odbc_conn}'
 EOF

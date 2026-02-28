@@ -130,10 +130,14 @@ public sealed class ScratchBirdCommand : DbCommand
         }
 
         _preparedQuery = NormalizeParameters();
-        _connection.GetConnectedClient().EnsurePreparedStatement(_preparedQuery.Sql, _preparedQuery.Parameters);
     }
 
     public override int ExecuteNonQuery()
+    {
+        return ExecuteNonQueryCore();
+    }
+
+    private int ExecuteNonQueryCore()
     {
         using var reader = ExecuteReader(CommandBehavior.SingleResult);
         while (reader.Read())
@@ -273,7 +277,18 @@ public sealed class ScratchBirdCommand : DbCommand
             return;
         }
 
-        _connection.GetConnectedClient().Cancel();
+        try
+        {
+            var client = _connection.GetConnectedClient();
+            client.Cancel();
+
+            // A canceled stream can leave unread protocol frames; force reconnect on next use.
+            client.Close();
+        }
+        catch
+        {
+            // best effort; caller requested cancellation and does not need transport details here
+        }
     }
 
     protected override DbParameter CreateDbParameter()
