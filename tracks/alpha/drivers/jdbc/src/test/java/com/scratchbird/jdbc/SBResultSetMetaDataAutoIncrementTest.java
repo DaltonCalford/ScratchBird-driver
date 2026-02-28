@@ -88,11 +88,46 @@ class SBResultSetMetaDataAutoIncrementTest {
         assertEquals("main", meta.getCatalogName(2));
     }
 
+    @Test
+    void tableMetadataCacheIsIsolatedPerConnectionNamespace() throws Exception {
+        SBColumnInfo col = new SBColumnInfo();
+        col.setName("id");
+        col.setTableOid(500);
+        col.setColumnNumber((short) 1);
+
+        SBConnection connA = newConnectionForTest(new AutoIncrementCatalogProtocol("demo_a"), "main_a");
+        SBStatement stmtA = new SBStatement(connA, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        stmtA.lastExecutedSql = "SELECT id FROM public.demo_a";
+        SBResultSet rsA = new SBResultSet(
+            stmtA,
+            Collections.singletonList(col),
+            new ArrayList<>(Collections.singletonList(new Object[] {1}))
+        );
+
+        SBConnection connB = newConnectionForTest(new AutoIncrementCatalogProtocol("demo_b"), "main_b");
+        SBStatement stmtB = new SBStatement(connB, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        stmtB.lastExecutedSql = "SELECT id FROM public.demo_b";
+        SBResultSet rsB = new SBResultSet(
+            stmtB,
+            Collections.singletonList(col),
+            new ArrayList<>(Collections.singletonList(new Object[] {1}))
+        );
+
+        assertEquals("demo_a", rsA.getMetaData().getTableName(1));
+        assertEquals("demo_b", rsB.getMetaData().getTableName(1));
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
+        return newConnectionForTest(protocol, "main");
+    }
+
+    private static SBConnection newConnectionForTest(SBProtocolHandler protocol, String databaseName) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
         SBConnectionProperties properties = new SBConnectionProperties();
-        properties.setDatabase("main");
+        properties.setDatabase(databaseName);
         setField(connection, "properties", properties);
         setField(connection, "closed", new java.util.concurrent.atomic.AtomicBoolean(false));
         setField(connection, "circuitBreaker", new CircuitBreaker());
@@ -100,7 +135,7 @@ class SBResultSetMetaDataAutoIncrementTest {
         setField(connection, "readOnly", false);
         setField(connection, "autoCommit", true);
         setField(connection, "schema", "public");
-        setField(connection, "catalog", "main");
+        setField(connection, "catalog", databaseName);
         return connection;
     }
 
@@ -117,8 +152,15 @@ class SBResultSetMetaDataAutoIncrementTest {
     }
 
     private static final class AutoIncrementCatalogProtocol extends SBProtocolHandler {
+        private final String defaultTableName;
+
         AutoIncrementCatalogProtocol() {
+            this("demo");
+        }
+
+        AutoIncrementCatalogProtocol(String defaultTableName) {
             super(new SBConnectionProperties());
+            this.defaultTableName = defaultTableName;
         }
 
         @Override
@@ -130,7 +172,7 @@ class SBResultSetMetaDataAutoIncrementTest {
                 String tableName = switch (oid) {
                     case 100 -> "left_demo";
                     case 200 -> "right_demo";
-                    default -> "demo";
+                    default -> defaultTableName;
                 };
                 result.setRows(Collections.singletonList(new Object[] {"public", tableName}));
                 return result;
