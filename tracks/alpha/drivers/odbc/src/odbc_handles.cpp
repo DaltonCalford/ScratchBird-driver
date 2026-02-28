@@ -4997,7 +4997,7 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
         case SQL_LOCK_UNLOCK:
             break;
         default:
-            setError("HYC00", 0, "Invalid lock type");
+            setError("HY024", 0, "Invalid lock type");
             return SQL_ERROR;
     }
 
@@ -5126,7 +5126,7 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
         }
 
         default:
-            setError("HYC00", 0, "Optional feature not implemented");
+            setError("HY092", 0, "Invalid SQLSetPos operation");
             return SQL_ERROR;
     }
 
@@ -5149,6 +5149,58 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
         return rc;
     };
 
+    bool supported_operation = (operation == SQL_ADD ||
+                                operation == SQL_UPDATE_BY_BOOKMARK ||
+                                operation == SQL_DELETE_BY_BOOKMARK);
+#ifdef SQL_FETCH_BY_BOOKMARK
+    supported_operation = supported_operation || (operation == SQL_FETCH_BY_BOOKMARK);
+#endif
+    if (!supported_operation) {
+        setError("HY092", 0, "Invalid SQLBulkOperations operation");
+        return finish(SQL_ERROR);
+    }
+
+#ifdef SQL_FETCH_BY_BOOKMARK
+    if (operation == SQL_FETCH_BY_BOOKMARK) {
+        if (!has_results_ || rows_.empty()) {
+            setError("24000", 0, "Invalid cursor state");
+            return finish(SQL_ERROR);
+        }
+        if (!fetch_bookmark_ptr_) {
+            setError("HY024", 0, "Fetch bookmark pointer not set");
+            return finish(SQL_ERROR);
+        }
+        SQLLEN bookmark_index = static_cast<SQLLEN>(*fetch_bookmark_ptr_);
+        if (bookmark_index <= 0) {
+            setError("HY109", 0, "Invalid cursor position");
+            return finish(SQL_ERROR);
+        }
+        if (static_cast<size_t>(bookmark_index) > rows_.size()) {
+            if (row_status_ptr_) {
+                row_status_ptr_[0] = SQL_ROW_NOROW;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = 0;
+            }
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = 0;
+            }
+            return finish(SQL_NO_DATA);
+        }
+
+        current_row_ = static_cast<size_t>(bookmark_index);
+        SQLRETURN bind_rc = bindResultData();
+        if (bind_rc != SQL_SUCCESS && bind_rc != SQL_SUCCESS_WITH_INFO) {
+            return finish(bind_rc);
+        }
+        row_count_ = 1;
+        if (params_processed_ptr_) {
+            *params_processed_ptr_ = 0;
+        }
+        return finish(bind_rc);
+    }
+#endif
+
     if (!prepared_) {
         setError("HY010", 0, "Function sequence error");
         return finish(SQL_ERROR);
@@ -5162,17 +5214,6 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
             *rows_fetched_ptr_ = 0;
         }
         return finish(SQL_SUCCESS);
-    }
-
-    // ODBC defines SQL_ADD, SQL_UPDATE_BY_BOOKMARK, and SQL_DELETE_BY_BOOKMARK
-    // for bulk execution. The driver executes the prepared statement per row for
-    // all supported operations, which allows client-side bulk emulation for both
-    // insert and update/delete statement patterns.
-    if (operation != SQL_ADD &&
-        operation != SQL_UPDATE_BY_BOOKMARK &&
-        operation != SQL_DELETE_BY_BOOKMARK) {
-        setError("HYC00", 0, "Optional feature not implemented");
-        return finish(SQL_ERROR);
     }
 
     if (param_status_ptr_) {

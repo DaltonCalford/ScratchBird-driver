@@ -11,6 +11,9 @@
       "ScratchBird\\PDO\\": "src/"
     }
   },
+  "scripts": {
+    "test": "phpunit tests"
+  },
   "require-dev": {
     "phpunit/phpunit": "^10.5"
   }

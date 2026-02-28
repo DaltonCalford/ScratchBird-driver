@@ -189,6 +189,42 @@ TEST_F(OdbcBulkOperationsTest, BulkOperationsSupportsUpdateAndDeleteByBookmarkCo
     EXPECT_EQ(bridge_->statements.size(), 4u);
 }
 
+TEST_F(OdbcBulkOperationsTest, BulkOperationsSupportsFetchByBookmarkWhenAvailable) {
+#ifdef SQL_FETCH_BY_BOOKMARK
+    stmt_.rows_ = {
+        {"one"},
+        {"two"},
+        {"three"}
+    };
+    stmt_.columns_ = {
+        {"id", "INTEGER", "", "", "", "", SQL_INTEGER, 10, 0, SQL_NO_NULLS,
+         false, false, true, SQL_PRED_BASIC, 10, 10}
+    };
+    stmt_.has_results_ = true;
+    stmt_.current_row_ = 0;
+
+    BOOKMARK bookmark = 2;
+    SQLULEN rows_fetched = 0;
+    SQLUSMALLINT row_status[1] = {0};
+
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_FETCH_BOOKMARK_PTR, &bookmark, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_ROWS_FETCHED_PTR, &rows_fetched, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_ROW_STATUS_PTR, row_status, 0), SQL_SUCCESS);
+
+    EXPECT_EQ(stmt_.bulkOperations(SQL_FETCH_BY_BOOKMARK), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.current_row_, 2u);
+    EXPECT_EQ(rows_fetched, 1u);
+    EXPECT_EQ(row_status[0], SQL_ROW_SUCCESS);
+
+    bookmark = 100;
+    EXPECT_EQ(stmt_.bulkOperations(SQL_FETCH_BY_BOOKMARK), SQL_NO_DATA);
+    EXPECT_EQ(rows_fetched, 0u);
+    EXPECT_EQ(row_status[0], SQL_ROW_NOROW);
+#else
+    GTEST_SKIP() << "SQL_FETCH_BY_BOOKMARK is not available in this ODBC header set";
+#endif
+}
+
 TEST_F(OdbcBulkOperationsTest, BulkOperationsNoRowsIsNoOp) {
     const char* sql = "DELETE FROM bulk_load WHERE id = ?";
     ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);

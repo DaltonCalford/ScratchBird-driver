@@ -65,7 +65,7 @@ own native client drivers against ScratchBird's emulation listeners.
 - Dart (`tracks/beta/drivers/dart/`) - in development
 - Mojo (`tracks/alpha/drivers/mojo/`) - in development
 
-### Driver Status Matrix (Snapshot: 2026-02-23)
+### Driver Status Matrix (Snapshot: 2026-02-28)
 
 Build/test snapshot from the latest local verification sweep. This is not a release certification.
 
@@ -74,10 +74,10 @@ Build/test snapshot from the latest local verification sweep. This is not a rele
 | C/C++ | Pass | `cmake --build` (core client tests not run as part of the latest sweep) |
 | ODBC | Pass | `cmake --build` (`scratchbird_odbc_tests`) |
 | Go | Pass | `go test ./...` |
-| Node.js | Blocked | `npm test` blocked (missing `tsc` tool in this environment) |
+| Node.js | Pass | `npm install && npm test` (4 integration tests skipped: `SCRATCHBIRD_NODE_URL` not set) |
 | Python | Pass | `pytest -q` |
-| PHP | Blocked | `composer test` script is not defined |
-| Ruby | Blocked | no runnable tests discovered in this environment |
+| PHP | Pass | `composer install && ./vendor/bin/phpunit tests` (4 integration tests skipped) |
+| Ruby | Pass | `ruby -Ilib:test test/*.rb` |
 | Rust | Pass | `cargo test` |
 | R | Pass* | `R -q -e ...` (`C` extension tests pass, integration skipped) |
 | Pascal | Partial | compile pass; runtime tests are environment-specific |
@@ -97,7 +97,7 @@ Build/test snapshot from the latest local verification sweep. This is not a rele
 - `DRIVER_ENTERPRISE_READINESS_TICKETS_2026-02-22.md` holds ownership and acceptance criteria.
 - `DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_2026-02-23.md` contains current unresolved gaps.
 
-Snapshot date for this table is February 23, 2026.
+Snapshot date for this table is February 28, 2026.
 
 ### Cross-Platform CI Coverage
 
