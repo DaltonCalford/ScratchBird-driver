@@ -345,6 +345,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 1083: return Types.TIME;        // time
             case 1114: return Types.TIMESTAMP;   // timestamp
             case 1184: return Types.TIMESTAMP_WITH_TIMEZONE; // timestamptz
+            case 28: return Types.BIGINT;        // xid
             case 2950: return Types.OTHER;       // uuid
             case 114: return Types.OTHER;        // json
             case 3802: return Types.OTHER;       // jsonb
@@ -376,6 +377,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 1083: return "time";
             case 1114: return "timestamp";
             case 1184: return "timestamptz";
+            case 28: return "xid";
             case 2950: return "uuid";
             case 114: return "json";
             case 3802: return "jsonb";

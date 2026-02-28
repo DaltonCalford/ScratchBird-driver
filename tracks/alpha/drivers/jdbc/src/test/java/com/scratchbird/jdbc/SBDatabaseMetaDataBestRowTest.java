@@ -18,10 +18,12 @@ class SBDatabaseMetaDataBestRowTest {
 
     private static final class HarnessMetaData extends SBDatabaseMetaData {
         private final List<Object[]> primaryKeyRows;
+        private final List<Object[]> versionRows;
 
-        private HarnessMetaData(List<Object[]> primaryKeyRows) {
+        private HarnessMetaData(List<Object[]> primaryKeyRows, List<Object[]> versionRows) {
             super(null);
             this.primaryKeyRows = primaryKeyRows;
+            this.versionRows = versionRows;
         }
 
         @Override
@@ -34,6 +36,9 @@ class SBDatabaseMetaDataBestRowTest {
             if (sql != null && sql.contains("WHERE tc.constraint_type = 'PRIMARY KEY'")) {
                 return primaryKeyRows;
             }
+            if (sql != null && sql.contains("a.attname = 'xmin'")) {
+                return versionRows;
+            }
             return Collections.emptyList();
         }
     }
@@ -45,7 +50,7 @@ class SBDatabaseMetaDataBestRowTest {
             new Object[]{"public", "orders", "tenant_id", "varchar", 64, null, null, "NO"},
             new Object[]{"public", "orders", "nullable_pk", "integer", null, 10, 0, "YES"},
             new Object[]{"public", "users", "id", "integer", null, 10, 0, "NO"}
-        ));
+        ), Collections.emptyList());
 
         ResultSet rs = meta.getBestRowIdentifier(null, "public", "orders",
             DatabaseMetaData.bestRowSession, false);
@@ -69,7 +74,7 @@ class SBDatabaseMetaDataBestRowTest {
 
     @Test
     void bestRowIdentifierCatalogMismatchReturnsEmptyShape() throws SQLException {
-        SBDatabaseMetaData meta = new HarnessMetaData(Collections.emptyList());
+        SBDatabaseMetaData meta = new HarnessMetaData(Collections.emptyList(), Collections.emptyList());
         ResultSet rs = meta.getBestRowIdentifier("other", "public", "orders",
             DatabaseMetaData.bestRowSession, true);
         ResultSetMetaData md = rs.getMetaData();
@@ -82,13 +87,34 @@ class SBDatabaseMetaDataBestRowTest {
 
     @Test
     void versionColumnsCatalogMismatchReturnsEmptyShape() throws SQLException {
-        SBDatabaseMetaData meta = new HarnessMetaData(Collections.emptyList());
+        SBDatabaseMetaData meta = new HarnessMetaData(Collections.emptyList(), Collections.emptyList());
         ResultSet rs = meta.getVersionColumns("other", "public", "orders");
         ResultSetMetaData md = rs.getMetaData();
 
         assertEquals(8, md.getColumnCount());
         assertEquals("SCOPE", md.getColumnName(1));
         assertEquals("PSEUDO_COLUMN", md.getColumnName(8));
+        assertFalse(rs.next());
+    }
+
+    @Test
+    void versionColumnsUsesXminPseudoColumnWhenAvailable() throws SQLException {
+        SBDatabaseMetaData meta = new HarnessMetaData(
+            Collections.emptyList(),
+            Arrays.asList(
+                new Object[]{"public", "orders", 28},
+                new Object[]{"public", "users", 28}
+            )
+        );
+        ResultSet rs = meta.getVersionColumns(null, "public", "orders");
+
+        assertTrue(rs.next());
+        assertEquals(DatabaseMetaData.versionColumnUnknown, rs.getShort("SCOPE"));
+        assertEquals("xmin", rs.getString("COLUMN_NAME"));
+        assertEquals(Types.BIGINT, rs.getInt("DATA_TYPE"));
+        assertEquals("xid", rs.getString("TYPE_NAME"));
+        assertEquals(10, rs.getInt("COLUMN_SIZE"));
+        assertEquals(DatabaseMetaData.versionColumnPseudo, rs.getShort("PSEUDO_COLUMN"));
         assertFalse(rs.next());
     }
 }

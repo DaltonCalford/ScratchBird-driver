@@ -1435,19 +1435,62 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     public ResultSet getVersionColumns(String catalog, String schema, String table) throws SQLException {
         String currentCatalog = currentCatalogName();
         if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
-            return createEmptyResultSet(
-                new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
-                             "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
-                new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
-                          Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
-            );
+            return emptyVersionColumnsResultSet();
         }
-        return createEmptyResultSet(
-            new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
-                         "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
-            new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
-                      Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
-        );
+        if (table == null || table.isBlank()) {
+            return emptyVersionColumnsResultSet();
+        }
+
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            for (Object[] row : queryRows(
+                "SELECT ns.nspname, c.relname, a.atttypid " +
+                "FROM pg_catalog.pg_class c " +
+                "JOIN pg_catalog.pg_namespace ns ON ns.oid = c.relnamespace " +
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid " +
+                "WHERE c.relkind IN ('r','p') " +
+                "  AND ns.nspname NOT IN ('pg_catalog','pg_toast','information_schema') " +
+                "  AND a.attnum < 0 " +
+                "  AND a.attname = 'xmin' " +
+                "ORDER BY ns.nspname, c.relname"
+            )) {
+                String schemaName = toStringValue(row, 0);
+                String tableName = toStringValue(row, 1);
+                if (!matchesPattern(schemaName, schema) || !matchesPattern(tableName, table)) {
+                    continue;
+                }
+
+                Integer typeOid = parseOid(row[2]);
+                int dataType = typeOid != null ? jdbcTypeFromOid(typeOid) : Types.BIGINT;
+                String typeName = typeOid != null ? typeNameFromOid(typeOid) : "xid";
+                int columnSize = columnSizeForType(typeName, dataType);
+                short decimalDigits = 0;
+
+                rows.add(new Object[]{
+                    DatabaseMetaData.versionColumnUnknown,
+                    "xmin",
+                    dataType,
+                    typeName,
+                    columnSize,
+                    0,
+                    decimalDigits,
+                    DatabaseMetaData.versionColumnPseudo
+                });
+            }
+        } catch (SQLException ex) {
+            return emptyVersionColumnsResultSet();
+        }
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("SCOPE", 21));
+        cols.add(column("COLUMN_NAME", 25));
+        cols.add(column("DATA_TYPE", 23));
+        cols.add(column("TYPE_NAME", 25));
+        cols.add(column("COLUMN_SIZE", 23));
+        cols.add(column("BUFFER_LENGTH", 23));
+        cols.add(column("DECIMAL_DIGITS", 21));
+        cols.add(column("PSEUDO_COLUMN", 21));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override
@@ -1837,6 +1880,15 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                          "GRANTEE", "PRIVILEGE", "IS_GRANTABLE"},
             new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
                       Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}
+        );
+    }
+
+    private ResultSet emptyVersionColumnsResultSet() throws SQLException {
+        return createEmptyResultSet(
+            new String[]{"SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE",
+                         "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN"},
+            new int[]{Types.SMALLINT, Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.INTEGER,
+                      Types.INTEGER, Types.SMALLINT, Types.SMALLINT}
         );
     }
 
@@ -2250,6 +2302,8 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
                 return "macaddr8";
             case SBTypeCodec.OID_RECORD:
                 return "record";
+            case 28:
+                return "xid";
             default:
                 return "unknown";
         }
@@ -2288,6 +2342,8 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             case SBTypeCodec.OID_TIMESTAMP:
             case SBTypeCodec.OID_TIMESTAMPTZ:
                 return Types.TIMESTAMP;
+            case 28:
+                return Types.BIGINT;
             case SBTypeCodec.OID_UUID:
             case SBTypeCodec.OID_JSON:
             case SBTypeCodec.OID_JSONB:
@@ -2411,6 +2467,9 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     private int columnSizeForType(String typeName, int jdbcType) {
         String normalized = normalizeTypeName(typeName);
+        if (normalized.contains("xid")) {
+            return 10;
+        }
         return switch (jdbcType) {
             case Types.BOOLEAN, Types.BIT -> 1;
             case Types.SMALLINT -> 5;
