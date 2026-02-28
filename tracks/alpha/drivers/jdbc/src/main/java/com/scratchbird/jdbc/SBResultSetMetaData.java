@@ -164,7 +164,16 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case Types.REAL: return 14;
             case Types.DOUBLE: return 24;
             case Types.NUMERIC:
-            case Types.DECIMAL: return 40;
+            case Types.DECIMAL:
+                if (precision > 0) {
+                    int scale = getScale(column);
+                    int size = precision;
+                    if (scale > 0) {
+                        size += 1; // decimal point
+                    }
+                    return size + 1; // sign
+                }
+                return 40;
             case Types.DATE: return 10;
             case Types.TIME: return 8;
             case Types.TIMESTAMP: return 29;

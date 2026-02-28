@@ -145,4 +145,15 @@ class SBResultSetMetaDataTest {
         assertEquals(15, meta.getScale(3));
         assertEquals(2, meta.getScale(4));
     }
+
+    @Test
+    void displaySizeUsesNumericPrecisionAndScaleWhenTypemodIsPresent() throws Exception {
+        SBColumnInfo numericValue = new SBColumnInfo();
+        numericValue.setName("total");
+        numericValue.setTypeOid(1700); // numeric
+        numericValue.setTypeModifier((12 << 16) + 4 + 2); // precision=12, scale=2
+
+        SBResultSetMetaData meta = new SBResultSetMetaData(List.of(numericValue));
+        assertEquals(14, meta.getColumnDisplaySize(1)); // sign + precision + decimal point
+    }
 }
