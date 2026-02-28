@@ -18,19 +18,87 @@ import java.math.*;
 import java.net.*;
 import java.sql.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * JDBC CallableStatement implementation for ScratchBird.
  */
 public class SBCallableStatement extends SBPreparedStatement implements CallableStatement {
 
+    private static final Pattern FUNCTION_ESCAPE_PATTERN =
+        Pattern.compile("(?is)^\\?\\s*=\\s*call\\s+(.+)$");
+    private static final Pattern PROCEDURE_ESCAPE_PATTERN =
+        Pattern.compile("(?is)^call\\s+(.+)$");
+
     private final Map<Integer, Object> outParameters = new HashMap<>();
     private final Map<String, Integer> namedParameters = new HashMap<>();
+    private final boolean functionReturnCallSyntax;
+    private boolean lastOutParameterWasNull = false;
 
     public SBCallableStatement(SBConnection connection, String sql, int resultSetType,
                                int resultSetConcurrency, int resultSetHoldability)
             throws SQLException {
-        super(connection, sql, resultSetType, resultSetConcurrency, resultSetHoldability);
+        this(connection, rewriteCallableSql(sql), resultSetType, resultSetConcurrency, resultSetHoldability);
+    }
+
+    private SBCallableStatement(SBConnection connection, CallableSqlRewrite rewrite,
+                                int resultSetType, int resultSetConcurrency, int resultSetHoldability)
+            throws SQLException {
+        super(connection, rewrite.sql(), resultSetType, resultSetConcurrency, resultSetHoldability);
+        this.functionReturnCallSyntax = rewrite.functionReturnCall();
+    }
+
+    private record CallableSqlRewrite(String sql, boolean functionReturnCall) {}
+
+    private static CallableSqlRewrite rewriteCallableSql(String sql) {
+        if (sql == null) {
+            return new CallableSqlRewrite(null, false);
+        }
+        String trimmed = sql.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return new CallableSqlRewrite(sql, false);
+        }
+
+        String inner = trimmed.substring(1, trimmed.length() - 1).trim();
+        var functionMatch = FUNCTION_ESCAPE_PATTERN.matcher(inner);
+        if (functionMatch.matches()) {
+            String target = functionMatch.group(1).trim();
+            return new CallableSqlRewrite("SELECT " + target, true);
+        }
+
+        var procedureMatch = PROCEDURE_ESCAPE_PATTERN.matcher(inner);
+        if (procedureMatch.matches()) {
+            String target = procedureMatch.group(1).trim();
+            return new CallableSqlRewrite("CALL " + target, false);
+        }
+
+        return new CallableSqlRewrite(sql, false);
+    }
+
+    @Override
+    protected int logicalParameterCount() {
+        if (functionReturnCallSyntax) {
+            return parameterCount + 1;
+        }
+        return parameterCount;
+    }
+
+    @Override
+    protected int mapParameterIndex(int parameterIndex) throws SQLException {
+        if (!functionReturnCallSyntax) {
+            return parameterIndex;
+        }
+        if (parameterIndex == 1) {
+            throw new SQLException("Parameter 1 is function return value and cannot be bound", "07009");
+        }
+        return parameterIndex - 1;
+    }
+
+    @Override
+    public boolean execute() throws SQLException {
+        boolean hasResultSet = super.execute();
+        hydrateRegisteredOutParameters();
+        return hasResultSet;
     }
 
     @Override
@@ -67,19 +135,47 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     @Override
     public boolean wasNull() throws SQLException {
         checkClosed();
-        return false;
+        return lastOutParameterWasNull;
+    }
+
+    private Object readOutParameter(int parameterIndex) {
+        Object value = outParameters.get(parameterIndex);
+        lastOutParameterWasNull = (value == null);
+        return value;
+    }
+
+    private void hydrateRegisteredOutParameters() throws SQLException {
+        if (outParameters.isEmpty() || currentResultSet == null) {
+            return;
+        }
+        boolean hasRow = currentResultSet.next();
+        if (!hasRow) {
+            return;
+        }
+        for (Integer index : new TreeSet<>(outParameters.keySet())) {
+            try {
+                outParameters.put(index, currentResultSet.getObject(index));
+            } catch (SQLException ex) {
+                outParameters.put(index, null);
+            }
+        }
+        try {
+            currentResultSet.beforeFirst();
+        } catch (SQLException ignored) {
+            // Forward-only result sets cannot be rewound.
+        }
     }
 
     // Getters by index
     @Override
     public String getString(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         return value != null ? value.toString() : null;
     }
 
     @Override
     public boolean getBoolean(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return false;
         if (value instanceof Boolean) return (Boolean) value;
         return Boolean.parseBoolean(value.toString());
@@ -87,7 +183,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public byte getByte(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).byteValue();
         return Byte.parseByte(value.toString());
@@ -95,7 +191,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public short getShort(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).shortValue();
         return Short.parseShort(value.toString());
@@ -103,7 +199,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public int getInt(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).intValue();
         return Integer.parseInt(value.toString());
@@ -111,7 +207,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public long getLong(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).longValue();
         return Long.parseLong(value.toString());
@@ -119,7 +215,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public float getFloat(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).floatValue();
         return Float.parseFloat(value.toString());
@@ -127,7 +223,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public double getDouble(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return 0;
         if (value instanceof Number) return ((Number) value).doubleValue();
         return Double.parseDouble(value.toString());
@@ -142,7 +238,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public byte[] getBytes(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return null;
         if (value instanceof byte[]) return (byte[]) value;
         return value.toString().getBytes();
@@ -150,7 +246,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public java.sql.Date getDate(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return null;
         if (value instanceof java.sql.Date) return (java.sql.Date) value;
         return java.sql.Date.valueOf(value.toString());
@@ -158,7 +254,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Time getTime(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return null;
         if (value instanceof Time) return (Time) value;
         return Time.valueOf(value.toString());
@@ -166,7 +262,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Timestamp getTimestamp(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return null;
         if (value instanceof Timestamp) return (Timestamp) value;
         return Timestamp.valueOf(value.toString());
@@ -174,12 +270,12 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Object getObject(int parameterIndex) throws SQLException {
-        return outParameters.get(parameterIndex);
+        return readOutParameter(parameterIndex);
     }
 
     @Override
     public BigDecimal getBigDecimal(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value == null) return null;
         if (value instanceof BigDecimal) return (BigDecimal) value;
         return new BigDecimal(value.toString());
@@ -192,7 +288,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Ref getRef(int parameterIndex) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        return SBRef.fromObject(readOutParameter(parameterIndex));
     }
 
     @Override
@@ -209,7 +305,7 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Array getArray(int parameterIndex) throws SQLException {
-        Object value = outParameters.get(parameterIndex);
+        Object value = readOutParameter(parameterIndex);
         if (value instanceof Array) return (Array) value;
         return null;
     }
@@ -484,17 +580,17 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public RowId getRowId(int parameterIndex) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        return SBRowId.fromObject(getObject(parameterIndex));
     }
 
     @Override
     public RowId getRowId(String parameterName) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        return getRowId(getParameterIndex(parameterName));
     }
 
     @Override
     public void setRowId(String parameterName, RowId x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        setRowId(getParameterIndex(parameterName), x);
     }
 
     @Override
@@ -660,10 +756,45 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     }
 
     private int getParameterIndex(String parameterName) throws SQLException {
-        Integer index = namedParameters.get(parameterName);
-        if (index == null) {
+        if (parameterName == null || parameterName.isBlank()) {
+            throw new SQLException("Parameter name cannot be empty", "07009");
+        }
+        Integer mapped = namedParameters.get(parameterName);
+        if (mapped != null) {
+            return mapped;
+        }
+
+        Integer parsedNamed = resolveNamedParameterIndex(parameterName);
+        if (parsedNamed != null) {
+            int logicalIndex = functionReturnCallSyntax ? parsedNamed + 1 : parsedNamed;
+            namedParameters.put(parameterName, logicalIndex);
+            return logicalIndex;
+        }
+
+        String normalized = parameterName.trim().toLowerCase(Locale.ROOT);
+        String numericToken = normalized;
+        if (numericToken.startsWith("@")) {
+            numericToken = numericToken.substring(1);
+        }
+        if (numericToken.startsWith(":")) {
+            numericToken = numericToken.substring(1);
+        }
+        if (numericToken.startsWith("param")) {
+            numericToken = numericToken.substring(5);
+        } else if (numericToken.startsWith("p")) {
+            numericToken = numericToken.substring(1);
+        }
+
+        try {
+            int index = Integer.parseInt(numericToken);
+            int logicalCount = logicalParameterCount();
+            if (index < 1 || index > logicalCount) {
+                throw new SQLException("Parameter index out of range: " + parameterName, "07009");
+            }
+            namedParameters.put(parameterName, index);
+            return index;
+        } catch (NumberFormatException ex) {
             throw new SQLException("Parameter not found: " + parameterName, "07009");
         }
-        return index;
     }
 }

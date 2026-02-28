@@ -517,6 +517,17 @@ public:
                            SQLSMALLINT* string_length,
                            SQLLEN* numeric_attr);
 
+    /**
+     * @brief Set cursor name used by positioned operations.
+     */
+    SQLRETURN setCursorName(const SQLCHAR* cursor_name, SQLSMALLINT name_length);
+
+    /**
+     * @brief Get current cursor name.
+     */
+    SQLRETURN getCursorName(SQLCHAR* cursor_name, SQLSMALLINT buffer_length,
+                            SQLSMALLINT* name_length);
+
     // =========================================================================
     // Data Retrieval
     // =========================================================================
@@ -675,9 +686,12 @@ private:
     void clearPutDataState();
     bool isDataAtExecIndicator(SQLLEN indicator) const;
     SQLRETURN validateOrInitDataAtExecState();
+    SQLRETURN validateOrInitDataAtExecStateForRow(SQLULEN row_offset);
     SQLUSMALLINT getCurrentDataAtExecParameter() const;
     SQLPOINTER putDataTokenToPointer(SQLUSMALLINT parameter_number) const;
     SQLUSMALLINT pointerToPutDataToken(SQLPOINTER token) const;
+    uint64_t putDataStreamKey(SQLUSMALLINT parameter_number, SQLULEN row_offset) const;
+    const SQLLEN* indicatorForRow(const ParameterBinding& binding, SQLULEN row_offset) const;
     SQLRETURN buildParameterData(std::vector<ParameterLiteral>& literals, SQLULEN row_offset);
     std::vector<ParameterLiteral> buildParameterData();
     SQLRETURN executeSqlStatements(const std::string& sql);
@@ -709,11 +723,14 @@ private:
 
     // Column bindings
     std::unordered_map<SQLUSMALLINT, ColumnBinding> col_bindings_;
+    ColumnBinding bookmark_binding_{};
+    bool bookmark_bound_{false};
     SQLULEN row_array_size_{1};
     SQLULEN* rows_fetched_ptr_{nullptr};
     SQLUSMALLINT* row_status_ptr_{nullptr};
     SQLLEN row_bind_offset_{0};
     SQLULEN row_bind_type_{0};  // SQL_BIND_BY_COLUMN
+    BOOKMARK* fetch_bookmark_ptr_{nullptr};
 
     // Statement descriptor handles
     std::unique_ptr<OdbcDescriptor> owned_app_param_desc_;
@@ -746,6 +763,7 @@ private:
     bool noscan_{false};
     bool use_bookmarks_{false};
     bool retrieve_data_{true};
+    std::string cursor_name_;
 
     // SQLGetData streaming state for long-data chunked retrieval
     struct GetDataStreamState {
@@ -762,10 +780,11 @@ private:
         bool complete{false};
         bool truncated{false};
     };
-    std::unordered_map<SQLUSMALLINT, PutDataStreamState> put_data_stream_;
+    std::unordered_map<uint64_t, PutDataStreamState> put_data_stream_;
     std::vector<SQLUSMALLINT> data_at_exec_params_;
     size_t data_at_exec_index_{0};
     bool data_at_exec_active_{false};
+    SQLULEN data_at_exec_row_offset_{0};
 };
 
 // =============================================================================

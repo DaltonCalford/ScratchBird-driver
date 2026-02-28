@@ -23,6 +23,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -44,6 +46,10 @@ public class SBStatement implements Statement {
             t.setDaemon(true);
             return t;
         });
+    private static final Pattern POSITIONED_UPDATE_PATTERN = Pattern.compile(
+        "(?is)^\\s*update\\s+(.+?)\\s+set\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
+    private static final Pattern POSITIONED_DELETE_PATTERN = Pattern.compile(
+        "(?is)^\\s*delete\\s+from\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
 
     // Parent connection
     protected final SBConnection connection;
@@ -77,6 +83,9 @@ public class SBStatement implements Statement {
     // Generated keys
     protected SBResultSet generatedKeys;
     protected final Object executionLock = new Object();
+    protected String lastExecutedSql;
+    protected final Deque<SBQueryResult> pendingResults = new ArrayDeque<>();
+    protected final List<SBResultSet> retainedResults = new ArrayList<>();
 
     /**
      * Creates a new statement.
@@ -95,12 +104,13 @@ public class SBStatement implements Statement {
         synchronized (executionLock) {
             checkClosed();
             clearResults();
+            lastExecutedSql = sql;
             int pageSize = fetchSize > 0 ? fetchSize : 0;
             if (maxRows > 0 && pageSize > 0) {
                 pageSize = Math.min(pageSize, maxRows);
             }
 
-            if (pageSize > 0) {
+            if (pageSize > 0 && shouldUseStreamingResultSet()) {
                 final int streamPageSize = pageSize;
                 SBQueryResult result = connection.withResilience("query_stream", sql, () ->
                     connection.getProtocol().executeStreaming(sql, streamPageSize, queryTimeout * 1000)
@@ -110,6 +120,7 @@ public class SBStatement implements Statement {
                     throw new SQLException("Query did not return a result set", "02000");
                 }
                 currentResultSet = new SBResultSet(this, result.getStream(), maxRows);
+                bindCurrentResultSetCursor();
                 return currentResultSet;
             }
 
@@ -121,6 +132,7 @@ public class SBStatement implements Statement {
                 throw new SQLException("Query did not return a result set", "02000");
             }
             currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
+            bindCurrentResultSetCursor();
             return currentResultSet;
         }
     }
@@ -153,9 +165,11 @@ public class SBStatement implements Statement {
         synchronized (executionLock) {
             checkClosed();
             clearResults();
+            lastExecutedSql = sql;
+            String effectiveSql = rewritePositionedMutationSql(sql);
 
-            SBQueryResult result = connection.withResilience("update", sql, () ->
-                connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
+            SBQueryResult result = connection.withResilience("update", effectiveSql, () ->
+                connection.getProtocol().execute(effectiveSql, maxRows, queryTimeout * 1000)
             );
 
             if (result.getColumns() != null && !result.getColumns().isEmpty()) {
@@ -169,16 +183,47 @@ public class SBStatement implements Statement {
 
     @Override
     public boolean execute(String sql) throws SQLException {
+        return executeInternal(sql, false);
+    }
+
+    private boolean executeInternal(String sql, boolean generatedKeysRequested) throws SQLException {
         synchronized (executionLock) {
             checkClosed();
             clearResults();
+            lastExecutedSql = sql;
 
-            SBQueryResult result = connection.withResilience("execute", sql, () ->
-                connection.getProtocol().execute(sql, maxRows, queryTimeout * 1000)
-            );
+            List<String> statements = splitStatements(sql);
+            if (statements.isEmpty()) {
+                throw new SQLException("No executable SQL statements", "42601");
+            }
+
+            SBQueryResult result = null;
+            for (String statementSql : statements) {
+                String effectiveSql = rewritePositionedMutationSql(statementSql);
+                SBQueryResult segment = connection.withResilience("execute", statementSql, () ->
+                    connection.getProtocol().execute(effectiveSql, maxRows, queryTimeout * 1000)
+                );
+                if (result == null) {
+                    result = segment;
+                } else {
+                    pendingResults.addLast(segment);
+                }
+            }
+
+            if (result == null) {
+                throw new SQLException("No executable SQL statements", "42601");
+            }
+
+            moreResults = !pendingResults.isEmpty();
 
             if (result.getColumns() != null && !result.getColumns().isEmpty()) {
+                if (generatedKeysRequested && result.getUpdateCount() >= 0) {
+                    generatedKeys = new SBResultSet(this, result.getColumns(), result.getRows());
+                    updateCount = result.getUpdateCount();
+                    return false;
+                }
                 currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
+                bindCurrentResultSetCursor();
                 updateCount = -1;
                 return true;
             } else {
@@ -190,13 +235,13 @@ public class SBStatement implements Statement {
 
     @Override
     public boolean execute(String sql, int autoGeneratedKeys) throws SQLException {
-        if (autoGeneratedKeys == Statement.RETURN_GENERATED_KEYS) {
-            // Append RETURNING clause if not present
-            if (!sql.toUpperCase().contains("RETURNING")) {
-                sql = sql + " RETURNING *";
-            }
+        if (autoGeneratedKeys != Statement.RETURN_GENERATED_KEYS) {
+            return execute(sql);
         }
-        return execute(sql);
+        if (!sql.toUpperCase().contains("RETURNING")) {
+            sql = sql + " RETURNING *";
+        }
+        return executeInternal(sql, true);
     }
 
     @Override
@@ -213,7 +258,10 @@ public class SBStatement implements Statement {
                 if (i > 0) returning.append(", ");
                 returning.append(columnNames[i]);
             }
-            sql = sql + returning.toString();
+            if (!sql.toUpperCase().contains("RETURNING")) {
+                sql = sql + returning.toString();
+            }
+            return executeInternal(sql, true);
         }
         return execute(sql);
     }
@@ -239,10 +287,7 @@ public class SBStatement implements Statement {
     @Override
     public void close() throws SQLException {
         if (closed.compareAndSet(false, true)) {
-            if (currentResultSet != null) {
-                currentResultSet.close();
-                currentResultSet = null;
-            }
+            clearResults();
             batchStatements.clear();
         }
     }
@@ -401,7 +446,11 @@ public class SBStatement implements Statement {
     @Override
     public void setCursorName(String name) throws SQLException {
         checkClosed();
+        if (this.cursorName != null && currentResultSet != null) {
+            connection.unregisterNamedCursor(this.cursorName, currentResultSet);
+        }
         this.cursorName = name;
+        bindCurrentResultSetCursor();
     }
 
     @Override
@@ -431,16 +480,35 @@ public class SBStatement implements Statement {
     public boolean getMoreResults(int current) throws SQLException {
         checkClosed();
 
-        if (current == Statement.CLOSE_CURRENT_RESULT ||
-            current == Statement.CLOSE_ALL_RESULTS) {
-            if (currentResultSet != null) {
-                currentResultSet.close();
-                currentResultSet = null;
-            }
+        if (current == Statement.CLOSE_ALL_RESULTS) {
+            closeRetainedResults();
         }
 
-        // ScratchBird doesn't support multiple result sets from single query yet
-        updateCount = -1;
+        if (currentResultSet != null) {
+            if (current == Statement.KEEP_CURRENT_RESULT) {
+                retainedResults.add(currentResultSet);
+            } else {
+                currentResultSet.close();
+            }
+            currentResultSet = null;
+        }
+
+        if (pendingResults.isEmpty()) {
+            updateCount = -1;
+            moreResults = false;
+            return false;
+        }
+
+        SBQueryResult next = pendingResults.removeFirst();
+        moreResults = !pendingResults.isEmpty();
+        if (next.getColumns() != null && !next.getColumns().isEmpty()) {
+            currentResultSet = new SBResultSet(this, next.getColumns(), next.getRows());
+            bindCurrentResultSetCursor();
+            updateCount = -1;
+            return true;
+        }
+
+        updateCount = next.getUpdateCount();
         return false;
     }
 
@@ -641,7 +709,10 @@ public class SBStatement implements Statement {
     }
 
     protected void clearResults() {
+        closeRetainedResults();
+
         if (currentResultSet != null) {
+            unbindCurrentResultSetCursor(currentResultSet);
             try {
                 currentResultSet.close();
             } catch (SQLException e) {
@@ -649,9 +720,211 @@ public class SBStatement implements Statement {
             }
             currentResultSet = null;
         }
+        pendingResults.clear();
         updateCount = -1;
         moreResults = false;
+        if (generatedKeys != null) {
+            try {
+                generatedKeys.close();
+            } catch (SQLException e) {
+                // Ignore generated-keys cleanup errors.
+            }
+        }
         generatedKeys = null;
+    }
+
+    private void closeRetainedResults() {
+        if (retainedResults.isEmpty()) {
+            return;
+        }
+        List<SBResultSet> snapshot = new ArrayList<>(retainedResults);
+        retainedResults.clear();
+        for (SBResultSet retained : snapshot) {
+            unbindCurrentResultSetCursor(retained);
+            try {
+                retained.close();
+            } catch (SQLException e) {
+                // Ignore retained result cleanup errors.
+            }
+        }
+    }
+
+    private void bindCurrentResultSetCursor() {
+        if (cursorName == null || currentResultSet == null) {
+            return;
+        }
+        connection.registerNamedCursor(cursorName, currentResultSet);
+    }
+
+    private void unbindCurrentResultSetCursor(SBResultSet resultSet) {
+        if (cursorName == null || resultSet == null) {
+            return;
+        }
+        connection.unregisterNamedCursor(cursorName, resultSet);
+    }
+
+    void onResultSetClosed(SBResultSet resultSet) {
+        if (resultSet == null) {
+            return;
+        }
+        synchronized (executionLock) {
+            unbindCurrentResultSetCursor(resultSet);
+            if (currentResultSet == resultSet) {
+                currentResultSet = null;
+            }
+            retainedResults.remove(resultSet);
+        }
+    }
+
+    private String rewritePositionedMutationSql(String sql) throws SQLException {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        Matcher update = POSITIONED_UPDATE_PATTERN.matcher(sql);
+        if (update.matches()) {
+            String targetTable = update.group(1).trim();
+            String setClause = update.group(2).trim();
+            String cursor = update.group(3).trim();
+            SBResultSet cursorResult = requireCursorResultSet(cursor);
+            String cursorTable = cursorResult.positionedTargetTableSql();
+            if (!tableSqlEquivalent(targetTable, cursorTable)) {
+                throw new SQLException("Positioned UPDATE table does not match cursor target", "34000");
+            }
+            String whereClause = cursorResult.positionedWhereClause();
+            return "UPDATE " + targetTable + " SET " + setClause + " WHERE " + whereClause;
+        }
+
+        Matcher delete = POSITIONED_DELETE_PATTERN.matcher(sql);
+        if (delete.matches()) {
+            String targetTable = delete.group(1).trim();
+            String cursor = delete.group(2).trim();
+            SBResultSet cursorResult = requireCursorResultSet(cursor);
+            String cursorTable = cursorResult.positionedTargetTableSql();
+            if (!tableSqlEquivalent(targetTable, cursorTable)) {
+                throw new SQLException("Positioned DELETE table does not match cursor target", "34000");
+            }
+            String whereClause = cursorResult.positionedWhereClause();
+            return "DELETE FROM " + targetTable + " WHERE " + whereClause;
+        }
+
+        return sql;
+    }
+
+    private SBResultSet requireCursorResultSet(String cursorName) throws SQLException {
+        SBResultSet resultSet = connection.resolveNamedCursor(cursorName);
+        if (resultSet == null) {
+            throw new SQLException("Cursor not found: " + cursorName, "34000");
+        }
+        if (resultSet.isClosed()) {
+            connection.unregisterNamedCursor(cursorName, resultSet);
+            throw new SQLException("Cursor is closed: " + cursorName, "34000");
+        }
+        return resultSet;
+    }
+
+    private static boolean tableSqlEquivalent(String sqlA, String sqlB) {
+        if (sqlA == null || sqlB == null) {
+            return false;
+        }
+        String a = canonicalizeTableSql(sqlA);
+        String b = canonicalizeTableSql(sqlB);
+        return a.equals(b);
+    }
+
+    private static String canonicalizeTableSql(String sql) {
+        String trimmed = sql.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        String noQuotes = trimmed.replace("\"", "");
+        return noQuotes.toLowerCase(Locale.ROOT);
+    }
+
+    private List<String> splitStatements(String sql) {
+        if (sql == null) {
+            return Collections.emptyList();
+        }
+
+        List<String> statements = new ArrayList<>();
+        StringBuilder current = new StringBuilder(sql.length());
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            char next = (i + 1) < sql.length() ? sql.charAt(i + 1) : '\0';
+
+            if (inLineComment) {
+                current.append(c);
+                if (c == '\n' || c == '\r') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                current.append(c);
+                if (c == '*' && next == '/') {
+                    current.append(next);
+                    i++;
+                    inBlockComment = false;
+                }
+                continue;
+            }
+            if (!inSingleQuote && !inDoubleQuote) {
+                if (c == '-' && next == '-') {
+                    current.append(c).append(next);
+                    i++;
+                    inLineComment = true;
+                    continue;
+                }
+                if (c == '/' && next == '*') {
+                    current.append(c).append(next);
+                    i++;
+                    inBlockComment = true;
+                    continue;
+                }
+            }
+
+            if (c == '\'' && !inDoubleQuote) {
+                if (inSingleQuote && next == '\'') {
+                    current.append(c).append(next);
+                    i++;
+                    continue;
+                }
+                inSingleQuote = !inSingleQuote;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingleQuote) {
+                if (inDoubleQuote && next == '"') {
+                    current.append(c).append(next);
+                    i++;
+                    continue;
+                }
+                inDoubleQuote = !inDoubleQuote;
+                current.append(c);
+                continue;
+            }
+
+            if (c == ';' && !inSingleQuote && !inDoubleQuote) {
+                String trimmed = current.toString().trim();
+                if (!trimmed.isEmpty()) {
+                    statements.add(trimmed);
+                }
+                current.setLength(0);
+                continue;
+            }
+
+            current.append(c);
+        }
+
+        String trailing = current.toString().trim();
+        if (!trailing.isEmpty()) {
+            statements.add(trailing);
+        }
+        return statements;
     }
 
     protected void addWarning(SQLWarning warning) {
@@ -660,6 +933,18 @@ public class SBStatement implements Statement {
         } else {
             warnings.setNextWarning(warning);
         }
+    }
+
+    /**
+     * Streaming cursors are forward-only. Scroll-insensitive statements must
+     * materialize results to preserve absolute/relative cursor semantics.
+     */
+    protected boolean shouldUseStreamingResultSet() {
+        return resultSetType == ResultSet.TYPE_FORWARD_ONLY;
+    }
+
+    protected String getLastExecutedSql() {
+        return lastExecutedSql;
     }
 
     /**

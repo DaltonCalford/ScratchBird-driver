@@ -426,46 +426,50 @@ public class SBConnectionPool {
         if (closed) {
             throw new SQLException("Pool is closed");
         }
-        
-        try {
-            PooledConnection conn = availableConnections.poll(
-                config.getAcquireTimeoutMillis(), TimeUnit.MILLISECONDS
-            );
-            
-            if (conn != null) {
-                ConnectionState state = connectionStates.get(conn.delegate);
-                
-                // Check if connection is still valid
-                if (config.isTestOnCheckout()) {
-                    if (!isConnectionValid(conn.delegate, state)) {
-                        // Connection expired or invalid, close it
-                        closeConnection(conn.delegate);
-                        missCount.incrementAndGet();
-                        return createNewPooledConnection();
-                    }
+
+        final long deadline = System.currentTimeMillis() + config.getAcquireTimeoutMillis();
+        while (true) {
+            PooledConnection pooled = availableConnections.poll();
+            if (pooled != null) {
+                Connection leased = checkoutIfValid(pooled);
+                if (leased != null) {
+                    hitCount.incrementAndGet();
+                    return leased;
                 }
-                
-                state.lastUsedAt = System.currentTimeMillis();
-                state.useCount++;
-                hitCount.incrementAndGet();
-                conn.attachLeakGuard(leakDetector.checkout(conn.delegate.getConnectionId()));
-                return conn;
+                // Discarded invalid lease; retry immediately.
+                continue;
             }
-            
-            // No available connection, try to create new one
-            missCount.incrementAndGet();
-            if (totalConnections.get() < config.getMaxConnections()) {
-                PooledConnection created = createNewPooledConnection();
+
+            PooledConnection created = tryCreateNewPooledConnection();
+            if (created != null) {
+                missCount.incrementAndGet();
                 created.attachLeakGuard(leakDetector.checkout(created.delegate.getConnectionId()));
                 return created;
             }
 
-            throw new SQLException("Connection pool exhausted. "
-                + "Increase MaxPoolSize or reduce concurrent usage, then retry.");
-            
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new SQLException("Interrupted while acquiring connection", e);
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) {
+                throw new SQLException("Connection pool exhausted. "
+                    + "Increase MaxPoolSize or reduce concurrent usage, then retry.");
+            }
+
+            try {
+                pooled = availableConnections.poll(remaining, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new SQLException("Interrupted while acquiring connection", e);
+            }
+
+            if (pooled == null) {
+                throw new SQLException("Connection pool exhausted. "
+                    + "Increase MaxPoolSize or reduce concurrent usage, then retry.");
+            }
+
+            Connection leased = checkoutIfValid(pooled);
+            if (leased != null) {
+                hitCount.incrementAndGet();
+                return leased;
+            }
         }
     }
     
@@ -496,27 +500,74 @@ public class SBConnectionPool {
         throw lastException;
     }
     
+    private Connection checkoutIfValid(PooledConnection pooled) {
+        ConnectionState state = connectionStates.get(pooled.delegate);
+        if (state == null) {
+            closeConnection(pooled.delegate);
+            return null;
+        }
+
+        if (config.isTestOnCheckout() && !isConnectionValid(pooled.delegate, state)) {
+            closeConnection(pooled.delegate);
+            return null;
+        }
+
+        state.lastUsedAt = System.currentTimeMillis();
+        state.useCount++;
+        pooled.attachLeakGuard(leakDetector.checkout(pooled.delegate.getConnectionId()));
+        return pooled;
+    }
+
+    private boolean reserveConnectionSlot() {
+        while (true) {
+            int current = totalConnections.get();
+            if (current >= config.getMaxConnections()) {
+                return false;
+            }
+            if (totalConnections.compareAndSet(current, current + 1)) {
+                return true;
+            }
+        }
+    }
+
+    private PooledConnection tryCreateNewPooledConnection() throws SQLException {
+        if (!reserveConnectionSlot()) {
+            return null;
+        }
+
+        boolean success = false;
+        SBConnection conn = null;
+        try {
+            conn = new SBConnection(properties);
+            ConnectionState state = new ConnectionState();
+            connectionStates.put(conn, state);
+            keepaliveManager.register(conn.getConnectionId(), conn);
+            success = true;
+            return new PooledConnection(conn, state);
+        } finally {
+            if (!success) {
+                if (conn != null) {
+                    try {
+                        conn.close();
+                    } catch (SQLException e) {
+                        LOGGER.log(Level.FINE, "Error closing failed connection attempt", e);
+                    }
+                }
+                totalConnections.decrementAndGet();
+            }
+        }
+    }
+
     private PooledConnection createNewPooledConnection() throws SQLException {
-        if (totalConnections.get() >= config.getMaxConnections()) {
+        PooledConnection created = tryCreateNewPooledConnection();
+        if (created == null) {
             throw new SQLException("Connection pool exhausted");
         }
-        
-        SBConnection conn = new SBConnection(properties);
-        ConnectionState state = new ConnectionState();
-        connectionStates.put(conn, state);
-        totalConnections.incrementAndGet();
-        keepaliveManager.register(conn.getConnectionId(), conn);
-        
-        return new PooledConnection(conn, state);
+        return created;
     }
-    
+
     private void createNewConnection() throws SQLException {
-        SBConnection conn = new SBConnection(properties);
-        ConnectionState state = new ConnectionState();
-        connectionStates.put(conn, state);
-        totalConnections.incrementAndGet();
-        keepaliveManager.register(conn.getConnectionId(), conn);
-        availableConnections.offer(new PooledConnection(conn, state));
+        availableConnections.offer(createNewPooledConnection());
     }
     
     private void returnConnection(SBConnection conn, ConnectionState state) {

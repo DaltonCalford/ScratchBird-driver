@@ -16,15 +16,20 @@ package com.scratchbird.jdbc;
 import java.io.*;
 import java.math.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 import java.time.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * JDBC ResultSet implementation for ScratchBird.
  */
 public class SBResultSet implements ResultSet {
+    private static final Map<Integer, String> TABLE_SQL_BY_OID = new ConcurrentHashMap<>();
+    private static final Map<Integer, Map<Integer, String>> TABLE_COLUMN_BY_OID_AND_ATTNUM =
+        new ConcurrentHashMap<>();
 
     // Parent statement
     private final SBStatement statement;
@@ -54,6 +59,20 @@ public class SBResultSet implements ResultSet {
     private int fetchDirection = ResultSet.FETCH_FORWARD;
     private int fetchSize = 0;
 
+    // Updatable result set state
+    private final boolean updatable;
+    private final boolean bufferedRowsMutable;
+    private final UpdateTarget updateTarget;
+    private final Map<Integer, Object> pendingUpdates = new LinkedHashMap<>();
+    private Object[] originalRowSnapshot;
+    private boolean onInsertRow = false;
+    private Object[] insertRowBuffer;
+    private int savedCurrentRow = -1;
+    private Object[] savedCurrentRowData;
+    private boolean rowUpdatedFlag = false;
+    private boolean rowInsertedFlag = false;
+    private boolean rowDeletedFlag = false;
+
     /**
      * Creates a new result set from a buffered row list.
      */
@@ -73,6 +92,11 @@ public class SBResultSet implements ResultSet {
 
         this.columnNameIndex = new HashMap<>();
         rebuildColumnIndex();
+        this.updateTarget = resolveUpdateTarget(statement, this.columns);
+        this.bufferedRowsMutable = stream instanceof ListRowStream;
+        this.updatable = statement != null
+            && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
+            && this.updateTarget != null;
     }
 
     // ==================== Navigation ====================
@@ -80,20 +104,26 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean next() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (maxRowsLimit > 0 && rowsRead >= maxRowsLimit) {
             currentRow = rowsRead;
             currentRowData = null;
+            clearRowActionFlags();
             return false;
         }
         Object[] row = stream != null ? stream.nextRow() : null;
         if (row == null) {
             currentRow = rowsRead;
             currentRowData = null;
+            clearRowActionFlags();
             return false;
         }
         currentRowData = row;
         rowsRead++;
         currentRow = rowsRead - 1;
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
         syncColumns();
         return true;
     }
@@ -102,6 +132,7 @@ public class SBResultSet implements ResultSet {
     public void close() throws SQLException {
         if (closed.compareAndSet(false, true)) {
             if (statement != null) {
+                statement.onResultSetClosed(this);
                 statement.checkCloseOnCompletion();
             }
         }
@@ -437,10 +468,17 @@ public class SBResultSet implements ResultSet {
     @Override
     public Object getObject(int columnIndex) throws SQLException {
         checkClosed();
-        checkRow();
         checkColumnIndex(columnIndex);
-
-        Object value = currentRowData[columnIndex - 1];
+        Object value;
+        if (onInsertRow) {
+            if (insertRowBuffer == null) {
+                throw new SQLException("Cursor not on a valid row", "HY109");
+            }
+            value = insertRowBuffer[columnIndex - 1];
+        } else {
+            checkRow();
+            value = currentRowData[columnIndex - 1];
+        }
         wasNull = (value == null);
         return value;
     }
@@ -582,50 +620,85 @@ public class SBResultSet implements ResultSet {
     @Override
     public void beforeFirst() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         currentRow = -1;
         currentRowData = null;
+        rowsRead = 0;
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(0);
+        }
     }
 
     @Override
     public void afterLast() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         currentRow = rows.size();
         currentRowData = null;
+        rowsRead = rows.size();
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(rows.size());
+        }
     }
 
     @Override
     public boolean first() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (rows.isEmpty()) return false;
         currentRow = 0;
         currentRowData = rows.get(0);
+        rowsRead = 1;
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(1);
+        }
         return true;
     }
 
     @Override
     public boolean last() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (rows.isEmpty()) return false;
         currentRow = rows.size() - 1;
         currentRowData = rows.get(currentRow);
+        rowsRead = rows.size();
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(rows.size());
+        }
         return true;
     }
 
     @Override
     public int getRow() throws SQLException {
         checkClosed();
+        if (onInsertRow) {
+            return 0;
+        }
         if (currentRowData == null) return 0;
         return currentRow + 1;  // 1-indexed for JDBC
     }
@@ -633,6 +706,7 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean absolute(int row) throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
@@ -647,9 +721,23 @@ public class SBResultSet implements ResultSet {
         }
         if (currentRow >= 0 && currentRow < rows.size()) {
             currentRowData = rows.get(currentRow);
+            rowsRead = currentRow + 1;
+            clearRowActionFlags();
+            pendingUpdates.clear();
+            originalRowSnapshot = null;
+            if (stream instanceof ListRowStream) {
+                ((ListRowStream) stream).setIndex(currentRow + 1);
+            }
             return true;
         }
         currentRowData = null;
+        rowsRead = currentRow < 0 ? 0 : rows.size();
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(currentRow < 0 ? 0 : rows.size());
+        }
         return false;
     }
 
@@ -662,14 +750,31 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean previous() throws SQLException {
         checkClosed();
+        ensureNotOnInsertRow();
         if (rows.isEmpty()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (currentRow > 0) {
             currentRow--;
+            currentRowData = rows.get(currentRow);
+            rowsRead = currentRow + 1;
+            clearRowActionFlags();
+            pendingUpdates.clear();
+            originalRowSnapshot = null;
+            if (stream instanceof ListRowStream) {
+                ((ListRowStream) stream).setIndex(currentRow + 1);
+            }
             return true;
         }
         currentRow = -1;
+        currentRowData = null;
+        rowsRead = 0;
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(0);
+        }
         return false;
     }
 
@@ -700,13 +805,13 @@ public class SBResultSet implements ResultSet {
     @Override
     public int getType() throws SQLException {
         checkClosed();
-        return ResultSet.TYPE_SCROLL_INSENSITIVE;
+        return stream instanceof ListRowStream ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY;
     }
 
     @Override
     public int getConcurrency() throws SQLException {
         checkClosed();
-        return ResultSet.CONCUR_READ_ONLY;
+        return updatable ? ResultSet.CONCUR_UPDATABLE : ResultSet.CONCUR_READ_ONLY;
     }
 
     // ==================== Update Methods (Read-Only) ====================
@@ -714,114 +819,114 @@ public class SBResultSet implements ResultSet {
     @Override
     public boolean rowUpdated() throws SQLException {
         checkClosed();
-        return false;
+        return rowUpdatedFlag;
     }
 
     @Override
     public boolean rowInserted() throws SQLException {
         checkClosed();
-        return false;
+        return rowInsertedFlag;
     }
 
     @Override
     public boolean rowDeleted() throws SQLException {
         checkClosed();
-        return false;
+        return rowDeletedFlag;
     }
 
     @Override
     public void updateNull(int columnIndex) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, null);
     }
 
     @Override
     public void updateBoolean(int columnIndex, boolean x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateByte(int columnIndex, byte x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateShort(int columnIndex, short x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateInt(int columnIndex, int x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateLong(int columnIndex, long x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateFloat(int columnIndex, float x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateDouble(int columnIndex, double x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateBigDecimal(int columnIndex, BigDecimal x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateString(int columnIndex, String x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateBytes(int columnIndex, byte[] x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateDate(int columnIndex, java.sql.Date x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateTime(int columnIndex, Time x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateTimestamp(int columnIndex, Timestamp x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateAsciiStream(int columnIndex, InputStream x, int length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readAsciiStreamValue(x, length));
     }
 
     @Override
     public void updateBinaryStream(int columnIndex, InputStream x, int length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readBinaryStreamValue(x, length));
     }
 
     @Override
     public void updateCharacterStream(int columnIndex, Reader x, int length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(x, length));
     }
 
     @Override
     public void updateObject(int columnIndex, Object x, int scaleOrLength) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     @Override
     public void updateObject(int columnIndex, Object x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x);
     }
 
     // String column variants - delegate to index versions
@@ -922,37 +1027,211 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public void insertRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        if (!onInsertRow) {
+            throw new SQLException("Cursor is not on insert row", "HY109");
+        }
+        Map<Integer, Object> values = new LinkedHashMap<>();
+        for (int i = 1; i <= columns.size(); i++) {
+            Object value = insertRowBuffer[i - 1];
+            String targetName = targetColumnNameOrNull(i);
+            if (targetName == null) {
+                if (value != null) {
+                    throw new SQLFeatureNotSupportedException(
+                        "Column " + i + " is derived and cannot be used for insert values");
+                }
+                continue;
+            }
+            values.put(i, value);
+        }
+        if (values.isEmpty()) {
+            throw new SQLException("Insert row has no writable columns", "HY000");
+        }
+        executeInsert(values);
+        Object[] inserted = insertRowBuffer.clone();
+        if (bufferedRowsMutable) {
+            try {
+                rows.add(inserted);
+                currentRow = rows.size() - 1;
+            } catch (UnsupportedOperationException ex) {
+                currentRow = rowsRead;
+            }
+        } else {
+            currentRow = rowsRead;
+        }
+        currentRowData = inserted;
+        rowsRead = Math.max(rowsRead, currentRow + 1);
+        onInsertRow = false;
+        insertRowBuffer = null;
+        rowInsertedFlag = true;
+        rowUpdatedFlag = false;
+        rowDeletedFlag = false;
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
     }
 
     @Override
     public void updateRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        ensureNotOnInsertRow();
+        checkRow();
+        if (pendingUpdates.isEmpty()) {
+            return;
+        }
+        Object[] before = originalRowSnapshot != null ? originalRowSnapshot.clone() : currentRowData.clone();
+        Object[] updated = currentRowData.clone();
+        for (Map.Entry<Integer, Object> entry : pendingUpdates.entrySet()) {
+            updated[entry.getKey() - 1] = entry.getValue();
+        }
+        executeUpdate(before, pendingUpdates);
+        currentRowData = updated;
+        if (bufferedRowsMutable && currentRow >= 0 && currentRow < rows.size()) {
+            try {
+                rows.set(currentRow, updated);
+            } catch (UnsupportedOperationException ignored) {
+                // Non-buffered semantics continue with current row only.
+            }
+        }
+        rowUpdatedFlag = true;
+        rowInsertedFlag = false;
+        rowDeletedFlag = false;
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
     }
 
     @Override
     public void deleteRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        ensureNotOnInsertRow();
+        checkRow();
+        Object[] before = currentRowData.clone();
+        executeDelete(before);
+        if (bufferedRowsMutable && currentRow >= 0 && currentRow < rows.size()) {
+            try {
+                rows.remove(currentRow);
+            } catch (UnsupportedOperationException ignored) {
+                // Continue using non-buffered cursor semantics.
+            }
+        }
+        if (!bufferedRowsMutable) {
+            currentRowData = null;
+            currentRow = rowsRead;
+            rowDeletedFlag = true;
+            rowUpdatedFlag = false;
+            rowInsertedFlag = false;
+            pendingUpdates.clear();
+            originalRowSnapshot = null;
+            return;
+        }
+        rowDeletedFlag = true;
+        rowUpdatedFlag = false;
+        rowInsertedFlag = false;
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+
+        if (currentRow >= rows.size()) {
+            currentRow = rows.size();
+            currentRowData = null;
+            rowsRead = rows.size();
+            if (stream instanceof ListRowStream) {
+                ((ListRowStream) stream).setIndex(rows.size());
+            }
+            return;
+        }
+        if (currentRow >= 0 && currentRow < rows.size()) {
+            currentRowData = rows.get(currentRow);
+            rowsRead = currentRow + 1;
+            if (stream instanceof ListRowStream) {
+                ((ListRowStream) stream).setIndex(currentRow + 1);
+            }
+            return;
+        }
+        currentRowData = null;
+        rowsRead = 0;
+        if (stream instanceof ListRowStream) {
+            ((ListRowStream) stream).setIndex(0);
+        }
     }
 
     @Override
     public void refreshRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        ensureNotOnInsertRow();
+        checkRow();
+        Object[] keyRow = originalRowSnapshot != null ? originalRowSnapshot : currentRowData;
+        Object[] reloaded = executeRefresh(keyRow);
+        if (reloaded != null) {
+            currentRowData = reloaded;
+            if (bufferedRowsMutable && currentRow >= 0 && currentRow < rows.size()) {
+                try {
+                    rows.set(currentRow, reloaded);
+                } catch (UnsupportedOperationException ignored) {
+                    // Non-buffered semantics continue with current row only.
+                }
+            }
+            pendingUpdates.clear();
+            originalRowSnapshot = null;
+            clearRowActionFlags();
+        }
     }
 
     @Override
     public void cancelRowUpdates() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        if (!onInsertRow && originalRowSnapshot != null) {
+            currentRowData = originalRowSnapshot.clone();
+            if (bufferedRowsMutable && currentRow >= 0 && currentRow < rows.size()) {
+                try {
+                    rows.set(currentRow, currentRowData);
+                } catch (UnsupportedOperationException ignored) {
+                    // Non-buffered semantics continue with current row only.
+                }
+            }
+        }
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        if (onInsertRow && insertRowBuffer != null) {
+            Arrays.fill(insertRowBuffer, null);
+        }
+        clearRowActionFlags();
     }
 
     @Override
     public void moveToInsertRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        ensureUpdatable();
+        if (onInsertRow) {
+            return;
+        }
+        savedCurrentRow = currentRow;
+        savedCurrentRowData = currentRowData;
+        onInsertRow = true;
+        insertRowBuffer = new Object[columns.size()];
+        clearRowActionFlags();
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
     }
 
     @Override
     public void moveToCurrentRow() throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        checkClosed();
+        if (!onInsertRow) {
+            return;
+        }
+        onInsertRow = false;
+        insertRowBuffer = null;
+        currentRow = savedCurrentRow;
+        currentRowData = savedCurrentRowData;
+        savedCurrentRow = -1;
+        savedCurrentRowData = null;
+        pendingUpdates.clear();
+        originalRowSnapshot = null;
+        clearRowActionFlags();
     }
 
     @Override
@@ -965,12 +1244,12 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public Ref getRef(int columnIndex) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        return SBRef.fromObject(getObject(columnIndex));
     }
 
     @Override
     public Ref getRef(String columnLabel) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        return getRef(findColumn(columnLabel));
     }
 
     @Override
@@ -1002,7 +1281,18 @@ public class SBResultSet implements ResultSet {
         Object value = getObject(columnIndex);
         if (value == null) return null;
         if (value instanceof Array) return (Array) value;
-        // Parse array string if needed
+        if (value instanceof Object[]) {
+            Object[] elements = (Object[]) value;
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        if (value instanceof Collection<?>) {
+            Object[] elements = ((Collection<?>) value).toArray();
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        if (value instanceof String) {
+            Object[] elements = parseArrayLiteral((String) value);
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
         throw new SQLException("Not an array type", "HY000");
     }
 
@@ -1029,62 +1319,62 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public void updateRef(int columnIndex, Ref x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        updateColumn(columnIndex, x == null ? null : x.getObject());
     }
 
     @Override
     public void updateRef(String columnLabel, Ref x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Ref not supported");
+        updateRef(findColumn(columnLabel), x);
     }
 
     @Override
     public void updateBlob(int columnIndex, Blob x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x == null ? null : x.getBytes(1, (int) x.length()));
     }
 
     @Override
     public void updateBlob(String columnLabel, Blob x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateBlob(findColumn(columnLabel), x);
     }
 
     @Override
     public void updateClob(int columnIndex, Clob x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x == null ? null : x.getSubString(1, (int) x.length()));
     }
 
     @Override
     public void updateClob(String columnLabel, Clob x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateClob(findColumn(columnLabel), x);
     }
 
     @Override
     public void updateArray(int columnIndex, Array x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, x == null ? null : x.getArray());
     }
 
     @Override
     public void updateArray(String columnLabel, Array x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateArray(findColumn(columnLabel), x);
     }
 
     @Override
     public RowId getRowId(int columnIndex) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        return SBRowId.fromObject(getObject(columnIndex));
     }
 
     @Override
     public RowId getRowId(String columnLabel) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        return getRowId(findColumn(columnLabel));
     }
 
     @Override
     public void updateRowId(int columnIndex, RowId x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        updateColumn(columnIndex, x == null ? null : new String(x.getBytes(), StandardCharsets.UTF_8));
     }
 
     @Override
     public void updateRowId(String columnLabel, RowId x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("RowId not supported");
+        updateRowId(findColumn(columnLabel), x);
     }
 
     @Override
@@ -1100,22 +1390,22 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public void updateNString(int columnIndex, String nString) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, nString);
     }
 
     @Override
     public void updateNString(String columnLabel, String nString) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNString(findColumn(columnLabel), nString);
     }
 
     @Override
     public void updateNClob(int columnIndex, NClob nClob) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, nClob == null ? null : nClob.getSubString(1, (int) nClob.length()));
     }
 
     @Override
     public void updateNClob(String columnLabel, NClob nClob) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNClob(findColumn(columnLabel), nClob);
     }
 
     @Override
@@ -1144,12 +1434,12 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, xmlObject == null ? null : xmlObject.getString());
     }
 
     @Override
     public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateSQLXML(findColumn(columnLabel), xmlObject);
     }
 
     @Override
@@ -1174,142 +1464,142 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public void updateNCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(x, length));
     }
 
     @Override
     public void updateNCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNCharacterStream(findColumn(columnLabel), reader, length);
     }
 
     @Override
     public void updateAsciiStream(int columnIndex, InputStream x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readAsciiStreamValue(x, length));
     }
 
     @Override
     public void updateBinaryStream(int columnIndex, InputStream x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readBinaryStreamValue(x, length));
     }
 
     @Override
     public void updateCharacterStream(int columnIndex, Reader x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(x, length));
     }
 
     @Override
     public void updateAsciiStream(String columnLabel, InputStream x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateAsciiStream(findColumn(columnLabel), x, length);
     }
 
     @Override
     public void updateBinaryStream(String columnLabel, InputStream x, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateBinaryStream(findColumn(columnLabel), x, length);
     }
 
     @Override
     public void updateCharacterStream(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateCharacterStream(findColumn(columnLabel), reader, length);
     }
 
     @Override
     public void updateBlob(int columnIndex, InputStream inputStream, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readBinaryStreamValue(inputStream, length));
     }
 
     @Override
     public void updateBlob(String columnLabel, InputStream inputStream, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateBlob(findColumn(columnLabel), inputStream, length);
     }
 
     @Override
     public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(reader, length));
     }
 
     @Override
     public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateClob(findColumn(columnLabel), reader, length);
     }
 
     @Override
     public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(reader, length));
     }
 
     @Override
     public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNClob(findColumn(columnLabel), reader, length);
     }
 
     @Override
     public void updateNCharacterStream(int columnIndex, Reader x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(x));
     }
 
     @Override
     public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNCharacterStream(findColumn(columnLabel), reader);
     }
 
     @Override
     public void updateAsciiStream(int columnIndex, InputStream x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readAsciiStreamValue(x));
     }
 
     @Override
     public void updateBinaryStream(int columnIndex, InputStream x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readBinaryStreamValue(x));
     }
 
     @Override
     public void updateCharacterStream(int columnIndex, Reader x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(x));
     }
 
     @Override
     public void updateAsciiStream(String columnLabel, InputStream x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateAsciiStream(findColumn(columnLabel), x);
     }
 
     @Override
     public void updateBinaryStream(String columnLabel, InputStream x) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateBinaryStream(findColumn(columnLabel), x);
     }
 
     @Override
     public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateCharacterStream(findColumn(columnLabel), reader);
     }
 
     @Override
     public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readBinaryStreamValue(inputStream));
     }
 
     @Override
     public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateBlob(findColumn(columnLabel), inputStream);
     }
 
     @Override
     public void updateClob(int columnIndex, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(reader));
     }
 
     @Override
     public void updateClob(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateClob(findColumn(columnLabel), reader);
     }
 
     @Override
     public void updateNClob(int columnIndex, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateColumn(columnIndex, readCharacterStreamValue(reader));
     }
 
     @Override
     public void updateNClob(String columnLabel, Reader reader) throws SQLException {
-        throw new SQLFeatureNotSupportedException("Result set is read-only");
+        updateNClob(findColumn(columnLabel), reader);
     }
 
     @Override
@@ -1326,6 +1616,823 @@ public class SBResultSet implements ResultSet {
     }
 
     // ==================== Helper Methods ====================
+
+    private static final class UpdateTarget {
+        private final String tableSql;
+        private final Map<Integer, String> columnNamesByIndex;
+
+        private UpdateTarget(String tableSql, Map<Integer, String> columnNamesByIndex) {
+            this.tableSql = tableSql;
+            this.columnNamesByIndex = columnNamesByIndex == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(columnNamesByIndex));
+        }
+
+        private boolean usesExplicitColumnMapping() {
+            return !columnNamesByIndex.isEmpty();
+        }
+
+        private String mappedColumnName(int columnIndex) {
+            return columnNamesByIndex.get(columnIndex);
+        }
+    }
+
+    private static UpdateTarget resolveUpdateTarget(SBStatement statement, List<SBColumnInfo> columns) {
+        if (statement == null) {
+            return null;
+        }
+        UpdateTarget fromMetadata = resolveUpdateTargetFromMetadata(statement, columns);
+        if (fromMetadata != null) {
+            return fromMetadata;
+        }
+        return resolveUpdateTargetFromSql(statement);
+    }
+
+    private static UpdateTarget resolveUpdateTargetFromSql(SBStatement statement) {
+        String sql = statement.getLastExecutedSql();
+        if (sql == null || sql.isBlank()) {
+            return null;
+        }
+
+        String normalized = collapseWhitespace(sql).toLowerCase(Locale.ROOT);
+        if (!normalized.startsWith("select ")) {
+            return null;
+        }
+        if (normalized.contains(" join ")
+            || normalized.contains(" union ")
+            || normalized.contains(" intersect ")
+            || normalized.contains(" except ")
+            || normalized.contains(" group by ")
+            || normalized.contains(" having ")
+            || normalized.contains(" distinct ")) {
+            return null;
+        }
+
+        int fromIndex = normalized.indexOf(" from ");
+        if (fromIndex < 0) {
+            return null;
+        }
+
+        String afterFromOriginal = collapseWhitespace(sql).substring(fromIndex + 6).trim();
+        if (afterFromOriginal.isEmpty()) {
+            return null;
+        }
+        String tableToken = firstToken(afterFromOriginal);
+        if (tableToken == null || tableToken.isBlank()) {
+            return null;
+        }
+        if (tableToken.startsWith("(")) {
+            return null;
+        }
+        return new UpdateTarget(tableToken, Collections.emptyMap());
+    }
+
+    private static UpdateTarget resolveUpdateTargetFromMetadata(SBStatement statement, List<SBColumnInfo> columns) {
+        if (statement == null || statement.connection == null || columns == null || columns.isEmpty()) {
+            return null;
+        }
+        Integer tableOid = null;
+        for (SBColumnInfo column : columns) {
+            if (column == null || column.getTableOid() <= 0 || column.getColumnNumber() <= 0) {
+                continue;
+            }
+            if (tableOid == null) {
+                tableOid = column.getTableOid();
+                continue;
+            }
+            if (tableOid.intValue() != column.getTableOid()) {
+                return null;
+            }
+        }
+        if (tableOid == null) {
+            return null;
+        }
+        String tableSql = resolveTableSql(statement, tableOid);
+        if (tableSql == null) {
+            return null;
+        }
+        Map<Integer, String> namesByAttNum = resolveAttnumNames(statement, tableOid);
+        if (namesByAttNum.isEmpty()) {
+            return null;
+        }
+        Map<Integer, String> namesByIndex = new LinkedHashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            SBColumnInfo column = columns.get(i);
+            if (column == null
+                || column.getTableOid() != tableOid
+                || column.getColumnNumber() <= 0) {
+                continue;
+            }
+            String mapped = namesByAttNum.get((int) column.getColumnNumber());
+            if (mapped != null && !mapped.isBlank()) {
+                namesByIndex.put(i + 1, mapped);
+            }
+        }
+        if (namesByIndex.isEmpty()) {
+            return null;
+        }
+        return new UpdateTarget(tableSql, namesByIndex);
+    }
+
+    private static String resolveTableSql(SBStatement statement, int tableOid) {
+        if (tableOid <= 0) {
+            return null;
+        }
+        String cached = TABLE_SQL_BY_OID.get(tableOid);
+        if (cached != null && !cached.isBlank()) {
+            return cached;
+        }
+        String sql = "SELECT n.nspname, c.relname "
+            + "FROM pg_catalog.pg_class c "
+            + "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            + "WHERE c.oid = " + tableOid;
+        try {
+            SBQueryResult result = statement.connection.getProtocol().execute(sql, 1, 0);
+            if (result.getRows() == null || result.getRows().isEmpty()) {
+                return null;
+            }
+            Object[] row = result.getRows().get(0);
+            String schema = row != null && row.length > 0 && row[0] != null ? row[0].toString() : null;
+            String name = row != null && row.length > 1 && row[1] != null ? row[1].toString() : null;
+            if (schema == null || schema.isBlank() || name == null || name.isBlank()) {
+                return null;
+            }
+            String tableSql = quoteIdentifier(schema) + "." + quoteIdentifier(name);
+            TABLE_SQL_BY_OID.put(tableOid, tableSql);
+            return tableSql;
+        } catch (SQLException ex) {
+            return null;
+        }
+    }
+
+    private static Map<Integer, String> resolveAttnumNames(SBStatement statement, int tableOid) {
+        if (tableOid <= 0) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, String> cached = TABLE_COLUMN_BY_OID_AND_ATTNUM.get(tableOid);
+        if (cached != null && !cached.isEmpty()) {
+            return cached;
+        }
+        String sql = "SELECT attnum, attname "
+            + "FROM pg_catalog.pg_attribute "
+            + "WHERE attrelid = " + tableOid + " "
+            + "  AND attnum > 0 "
+            + "  AND NOT attisdropped";
+        try {
+            SBQueryResult result = statement.connection.getProtocol().execute(sql, 0, 0);
+            Map<Integer, String> mapped = new HashMap<>();
+            if (result.getRows() != null) {
+                for (Object[] row : result.getRows()) {
+                    if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                        continue;
+                    }
+                    int attNum;
+                    try {
+                        attNum = Integer.parseInt(row[0].toString());
+                    } catch (NumberFormatException ex) {
+                        continue;
+                    }
+                    String attName = row[1].toString();
+                    if (!attName.isBlank()) {
+                        mapped.put(attNum, attName);
+                    }
+                }
+            }
+            if (!mapped.isEmpty()) {
+                TABLE_COLUMN_BY_OID_AND_ATTNUM.put(tableOid, mapped);
+            }
+            return mapped;
+        } catch (SQLException ex) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static String collapseWhitespace(String sql) {
+        StringBuilder out = new StringBuilder(sql.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean sawWhitespace = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                out.append(c);
+                sawWhitespace = false;
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                out.append(c);
+                sawWhitespace = false;
+                continue;
+            }
+            if (!inSingle && !inDouble && Character.isWhitespace(c)) {
+                if (!sawWhitespace) {
+                    out.append(' ');
+                    sawWhitespace = true;
+                }
+                continue;
+            }
+            out.append(c);
+            sawWhitespace = false;
+        }
+        return out.toString().trim();
+    }
+
+    private static String firstToken(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return null;
+        }
+        int idx = 0;
+        boolean inDouble = false;
+        while (idx < sql.length()) {
+            char c = sql.charAt(idx);
+            if (c == '"') {
+                inDouble = !inDouble;
+                idx++;
+                continue;
+            }
+            if (!inDouble && (Character.isWhitespace(c) || c == ',' || c == ';')) {
+                break;
+            }
+            idx++;
+        }
+        String token = sql.substring(0, idx);
+        if ("only".equalsIgnoreCase(token)) {
+            String remaining = sql.substring(Math.min(sql.length(), idx)).trim();
+            return firstToken(remaining);
+        }
+        return token;
+    }
+
+    private void clearRowActionFlags() {
+        rowUpdatedFlag = false;
+        rowInsertedFlag = false;
+        rowDeletedFlag = false;
+    }
+
+    private void ensureNotOnInsertRow() throws SQLException {
+        if (onInsertRow) {
+            throw new SQLException("Cursor is on insert row", "HY109");
+        }
+    }
+
+    private void ensureUpdatable() throws SQLException {
+        if (!updatable) {
+            throw new SQLFeatureNotSupportedException("Result set is read-only");
+        }
+    }
+
+    String positionedTargetTableSql() throws SQLException {
+        ensurePositionedCursorReady();
+        return updateTarget.tableSql;
+    }
+
+    String positionedWhereClause() throws SQLException {
+        ensurePositionedCursorReady();
+        Object[] keyRow = originalRowSnapshot != null ? originalRowSnapshot : currentRowData;
+        return buildWhereClause(keyRow);
+    }
+
+    private void ensurePositionedCursorReady() throws SQLException {
+        checkClosed();
+        ensureNotOnInsertRow();
+        if (updateTarget == null) {
+            throw new SQLException("Cursor is not positioned on an updatable base table", "34000");
+        }
+        checkRow();
+    }
+
+    private boolean canMutateColumn(int columnIndex) {
+        if (updateTarget == null) {
+            return false;
+        }
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            return true;
+        }
+        return updateTarget.mappedColumnName(columnIndex) != null;
+    }
+
+    private String targetColumnNameOrNull(int columnIndex) {
+        if (updateTarget == null) {
+            return null;
+        }
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            return columnName(columnIndex);
+        }
+        return updateTarget.mappedColumnName(columnIndex);
+    }
+
+    private String targetColumnName(int columnIndex) throws SQLException {
+        String name = targetColumnNameOrNull(columnIndex);
+        if (name == null || name.isBlank()) {
+            throw new SQLFeatureNotSupportedException(
+                "Column " + columnIndex + " is not updatable in this result set");
+        }
+        return name;
+    }
+
+    private void updateColumn(int columnIndex, Object value) throws SQLException {
+        checkClosed();
+        ensureUpdatable();
+        checkColumnIndex(columnIndex);
+        if (!canMutateColumn(columnIndex)) {
+            throw new SQLFeatureNotSupportedException(
+                "Column " + columnIndex + " is derived and cannot be mutated");
+        }
+        clearRowActionFlags();
+        if (onInsertRow) {
+            if (insertRowBuffer == null) {
+                insertRowBuffer = new Object[columns.size()];
+            }
+            insertRowBuffer[columnIndex - 1] = value;
+            return;
+        }
+        checkRow();
+        if (originalRowSnapshot == null) {
+            originalRowSnapshot = currentRowData.clone();
+        }
+        currentRowData[columnIndex - 1] = value;
+        pendingUpdates.put(columnIndex, value);
+    }
+
+    private void executeInsert(Map<Integer, Object> values) throws SQLException {
+        StringBuilder columnSql = new StringBuilder();
+        StringBuilder valueSql = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<Integer, Object> entry : values.entrySet()) {
+            if (!first) {
+                columnSql.append(", ");
+                valueSql.append(", ");
+            }
+            first = false;
+            columnSql.append(quoteIdentifier(targetColumnName(entry.getKey())));
+            valueSql.append(toSqlLiteral(entry.getValue()));
+        }
+        String sql = "INSERT INTO " + updateTarget.tableSql
+            + " (" + columnSql + ") VALUES (" + valueSql + ")";
+        executeMutation(sql);
+    }
+
+    private void executeUpdate(Object[] beforeRow, Map<Integer, Object> updates) throws SQLException {
+        StringBuilder setSql = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<Integer, Object> entry : updates.entrySet()) {
+            if (!first) {
+                setSql.append(", ");
+            }
+            first = false;
+            setSql.append(quoteIdentifier(targetColumnName(entry.getKey())))
+                .append(" = ")
+                .append(toSqlLiteral(entry.getValue()));
+        }
+        String sql = "UPDATE " + updateTarget.tableSql
+            + " SET " + setSql
+            + " WHERE " + buildWhereClause(beforeRow);
+        executeMutation(sql);
+    }
+
+    private void executeDelete(Object[] beforeRow) throws SQLException {
+        String sql = "DELETE FROM " + updateTarget.tableSql
+            + " WHERE " + buildWhereClause(beforeRow);
+        executeMutation(sql);
+    }
+
+    private Object[] executeRefresh(Object[] beforeRow) throws SQLException {
+        StringBuilder selectCols = new StringBuilder();
+        for (int i = 1; i <= columns.size(); i++) {
+            if (i > 1) {
+                selectCols.append(", ");
+            }
+            if (updateTarget != null && updateTarget.usesExplicitColumnMapping()) {
+                String mapped = targetColumnNameOrNull(i);
+                if (mapped == null || mapped.isBlank()) {
+                    return null;
+                }
+                selectCols.append(quoteIdentifier(mapped))
+                    .append(" AS ")
+                    .append(quoteIdentifier(columnName(i)));
+                continue;
+            }
+            selectCols.append(quoteIdentifier(columnName(i)));
+        }
+        String sql = "SELECT " + selectCols
+            + " FROM " + updateTarget.tableSql
+            + " WHERE " + buildWhereClause(beforeRow)
+            + " LIMIT 1";
+        SBQueryResult result = executeQuery(sql);
+        if (result.getRows() == null || result.getRows().isEmpty()) {
+            return null;
+        }
+        return result.getRows().get(0);
+    }
+
+    private SBQueryResult executeMutation(String sql) throws SQLException {
+        SBQueryResult result = executeQuery(sql);
+        if (result.getUpdateCount() == 0) {
+            throw new SQLException("No rows affected by updatable ResultSet operation", "02000");
+        }
+        return result;
+    }
+
+    private SBQueryResult executeQuery(String sql) throws SQLException {
+        if (statement == null || statement.connection == null) {
+            throw new SQLException("ResultSet is not associated with a live statement", "HY010");
+        }
+        return statement.connection.withResilience("resultset_mutation", sql,
+            () -> statement.connection.getProtocol().execute(sql, 0, 0));
+    }
+
+    private String buildWhereClause(Object[] row) throws SQLException {
+        List<String> mappedPredicates = new ArrayList<>(columns.size());
+        List<String> fallbackPredicates = new ArrayList<>(columns.size());
+        for (int i = 0; i < columns.size(); i++) {
+            Object value = i < row.length ? row[i] : null;
+            String fallbackName = quoteIdentifier(columnName(i + 1));
+            if (value == null) {
+                fallbackPredicates.add(fallbackName + " IS NULL");
+            } else {
+                fallbackPredicates.add(fallbackName + " = " + toSqlLiteral(value));
+            }
+
+            String mappedName = targetColumnNameOrNull(i + 1);
+            if (mappedName == null || mappedName.isBlank()) {
+                continue;
+            }
+            String mapped = quoteIdentifier(mappedName);
+            if (value == null) {
+                mappedPredicates.add(mapped + " IS NULL");
+            } else {
+                mappedPredicates.add(mapped + " = " + toSqlLiteral(value));
+            }
+        }
+        if (!mappedPredicates.isEmpty()) {
+            return String.join(" AND ", mappedPredicates);
+        }
+        if (fallbackPredicates.isEmpty()) {
+            throw new SQLException("Cannot build row identity predicate", "HY000");
+        }
+        return String.join(" AND ", fallbackPredicates);
+    }
+
+    private String columnName(int columnIndex) {
+        return columns.get(columnIndex - 1).getName();
+    }
+
+    private static String quoteIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            return "\"\"";
+        }
+        if (identifier.indexOf('.') >= 0) {
+            String[] parts = identifier.split("\\.");
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < parts.length; i++) {
+                if (i > 0) {
+                    out.append('.');
+                }
+                out.append(quoteIdentifier(parts[i]));
+            }
+            return out.toString();
+        }
+        String unquoted = identifier;
+        if (unquoted.startsWith("\"") && unquoted.endsWith("\"") && unquoted.length() >= 2) {
+            return unquoted;
+        }
+        return "\"" + unquoted.replace("\"", "\"\"") + "\"";
+    }
+
+    private static String toSqlLiteral(Object value) throws SQLException {
+        if (value == null) {
+            return "NULL";
+        }
+        if (value instanceof Ref) {
+            return toSqlLiteral(((Ref) value).getObject());
+        }
+        if (value instanceof RowId) {
+            return "'" + new String(((RowId) value).getBytes(), StandardCharsets.UTF_8)
+                .replace("'", "''") + "'";
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value ? "TRUE" : "FALSE";
+        }
+        if (value instanceof Number) {
+            return value.toString();
+        }
+        if (value instanceof byte[]) {
+            byte[] bytes = (byte[]) value;
+            StringBuilder sb = new StringBuilder("E'\\\\x");
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            sb.append("'");
+            return sb.toString();
+        }
+        if (value instanceof java.sql.Date) {
+            return "DATE '" + value + "'";
+        }
+        if (value instanceof java.sql.Time) {
+            return "TIME '" + value + "'";
+        }
+        if (value instanceof java.sql.Timestamp) {
+            return "TIMESTAMP '" + value + "'";
+        }
+        if (value instanceof LocalDate) {
+            return "DATE '" + value + "'";
+        }
+        if (value instanceof LocalTime) {
+            return "TIME '" + value + "'";
+        }
+        if (value instanceof LocalDateTime) {
+            return "TIMESTAMP '" + value.toString().replace('T', ' ') + "'";
+        }
+        if (value instanceof OffsetDateTime) {
+            return "TIMESTAMPTZ '" + value + "'";
+        }
+        if (value instanceof Instant) {
+            return "TIMESTAMPTZ '" + OffsetDateTime.ofInstant((Instant) value, ZoneOffset.UTC) + "'";
+        }
+        if (value instanceof Array) {
+            Object arrayValue = ((Array) value).getArray();
+            if (arrayValue instanceof Object[]) {
+                return toSqlArrayLiteral((Object[]) arrayValue);
+            }
+            return "'" + arrayValue.toString().replace("'", "''") + "'";
+        }
+        if (value instanceof Object[]) {
+            return toSqlArrayLiteral((Object[]) value);
+        }
+        if (value instanceof Collection<?>) {
+            return toSqlArrayLiteral(((Collection<?>) value).toArray());
+        }
+        return "'" + value.toString().replace("'", "''") + "'";
+    }
+
+    private static String toSqlArrayLiteral(Object[] elements) throws SQLException {
+        StringBuilder sb = new StringBuilder("ARRAY[");
+        for (int i = 0; i < elements.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(toSqlLiteral(elements[i]));
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static String readCharacterStreamValue(Reader reader, int length) throws SQLException {
+        if (reader == null) {
+            return null;
+        }
+        if (length < 0) {
+            throw new SQLException("Invalid stream length", "HY024");
+        }
+        try {
+            char[] chars = new char[length];
+            int totalRead = 0;
+            while (totalRead < length) {
+                int read = reader.read(chars, totalRead, length - totalRead);
+                if (read < 0) {
+                    break;
+                }
+                totalRead += read;
+            }
+            return new String(chars, 0, totalRead);
+        } catch (IOException e) {
+            throw new SQLException("Failed to read character stream", "HY000", e);
+        }
+    }
+
+    private static String readCharacterStreamValue(Reader reader, long length) throws SQLException {
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new SQLException("Invalid stream length", "HY024");
+        }
+        return readCharacterStreamValue(reader, (int) length);
+    }
+
+    private static String readCharacterStreamValue(Reader reader) throws SQLException {
+        if (reader == null) {
+            return null;
+        }
+        try {
+            StringBuilder sb = new StringBuilder();
+            char[] buffer = new char[8192];
+            int read;
+            while ((read = reader.read(buffer)) >= 0) {
+                sb.append(buffer, 0, read);
+            }
+            return sb.toString();
+        } catch (IOException e) {
+            throw new SQLException("Failed to read character stream", "HY000", e);
+        }
+    }
+
+    private static String readAsciiStreamValue(InputStream input, int length) throws SQLException {
+        byte[] bytes = readBinaryStreamValue(input, length);
+        return bytes == null ? null : new String(bytes, StandardCharsets.US_ASCII);
+    }
+
+    private static String readAsciiStreamValue(InputStream input, long length) throws SQLException {
+        byte[] bytes = readBinaryStreamValue(input, length);
+        return bytes == null ? null : new String(bytes, StandardCharsets.US_ASCII);
+    }
+
+    private static String readAsciiStreamValue(InputStream input) throws SQLException {
+        byte[] bytes = readBinaryStreamValue(input);
+        return bytes == null ? null : new String(bytes, StandardCharsets.US_ASCII);
+    }
+
+    private static byte[] readBinaryStreamValue(InputStream input, int length) throws SQLException {
+        if (input == null) {
+            return null;
+        }
+        if (length < 0) {
+            throw new SQLException("Invalid stream length", "HY024");
+        }
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(length, 0));
+            byte[] buffer = new byte[Math.max(1, Math.min(length, 8192))];
+            int remaining = length;
+            while (remaining > 0) {
+                int read = input.read(buffer, 0, Math.min(buffer.length, remaining));
+                if (read < 0) {
+                    break;
+                }
+                out.write(buffer, 0, read);
+                remaining -= read;
+            }
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new SQLException("Failed to read binary stream", "HY000", e);
+        }
+    }
+
+    private static byte[] readBinaryStreamValue(InputStream input, long length) throws SQLException {
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new SQLException("Invalid stream length", "HY024");
+        }
+        return readBinaryStreamValue(input, (int) length);
+    }
+
+    private static byte[] readBinaryStreamValue(InputStream input) throws SQLException {
+        if (input == null) {
+            return null;
+        }
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new SQLException("Failed to read binary stream", "HY000", e);
+        }
+    }
+
+    private static String inferArrayBaseType(Object[] elements) {
+        if (elements == null) {
+            return "text";
+        }
+        for (Object element : elements) {
+            if (element == null) {
+                continue;
+            }
+            if (element instanceof Boolean) return "boolean";
+            if (element instanceof Short) return "smallint";
+            if (element instanceof Integer) return "integer";
+            if (element instanceof Long) return "bigint";
+            if (element instanceof Float) return "real";
+            if (element instanceof Double || element instanceof BigDecimal) return "numeric";
+            if (element instanceof byte[]) return "bytea";
+            if (element instanceof java.sql.Date || element instanceof LocalDate) return "date";
+            if (element instanceof java.sql.Time || element instanceof LocalTime) return "time";
+            if (element instanceof java.sql.Timestamp || element instanceof LocalDateTime) return "timestamp";
+            return "text";
+        }
+        return "text";
+    }
+
+    private static Object[] parseArrayLiteral(String raw) throws SQLException {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty()) {
+            return new Object[0];
+        }
+        if (text.regionMatches(true, 0, "ARRAY[", 0, 6) && text.endsWith("]")) {
+            text = text.substring(6, text.length() - 1).trim();
+        } else if ((text.startsWith("{") && text.endsWith("}")) ||
+                   (text.startsWith("[") && text.endsWith("]"))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return new Object[0];
+        }
+
+        List<String> tokens = splitArrayTokens(text);
+        List<Object> values = new ArrayList<>(tokens.size());
+        for (String token : tokens) {
+            values.add(parseArrayToken(token));
+        }
+        return values.toArray(new Object[0]);
+    }
+
+    private static List<String> splitArrayTokens(String text) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int nesting = 0;
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+                continue;
+            }
+            if ((inSingle || inDouble) && c == '\\') {
+                current.append(c);
+                escaped = true;
+                continue;
+            }
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                current.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble) {
+                if (c == '{' || c == '[' || c == '(') {
+                    nesting++;
+                } else if (c == '}' || c == ']' || c == ')') {
+                    if (nesting > 0) nesting--;
+                } else if (c == ',' && nesting == 0) {
+                    tokens.add(current.toString().trim());
+                    current.setLength(0);
+                    continue;
+                }
+            }
+            current.append(c);
+        }
+        tokens.add(current.toString().trim());
+        return tokens;
+    }
+
+    private static Object parseArrayToken(String token) throws SQLException {
+        if (token == null) {
+            return null;
+        }
+        String value = token.trim();
+        if (value.isEmpty()) {
+            return "";
+        }
+        if ("NULL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        if ((value.startsWith("{") && value.endsWith("}")) ||
+            (value.startsWith("[") && value.endsWith("]")) ||
+            (value.regionMatches(true, 0, "ARRAY[", 0, 6) && value.endsWith("]"))) {
+            return parseArrayLiteral(value);
+        }
+        if ((value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) ||
+            (value.length() >= 2 && value.startsWith("'") && value.endsWith("'"))) {
+            return unquoteArrayToken(value);
+        }
+        if ("true".equalsIgnoreCase(value) || "t".equalsIgnoreCase(value)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(value) || "f".equalsIgnoreCase(value)) {
+            return Boolean.FALSE;
+        }
+        try {
+            long asLong = Long.parseLong(value);
+            if (asLong <= Integer.MAX_VALUE && asLong >= Integer.MIN_VALUE) {
+                return (int) asLong;
+            }
+            return asLong;
+        } catch (NumberFormatException ignored) {
+            // Fall through to floating point/string parsing.
+        }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    private static String unquoteArrayToken(String value) {
+        String inner = value.substring(1, value.length() - 1);
+        inner = inner.replace("\\\\", "\\");
+        inner = inner.replace("\\\"", "\"");
+        inner = inner.replace("\\'", "'");
+        inner = inner.replace("''", "'");
+        return inner;
+    }
 
     private void checkClosed() throws SQLException {
         if (closed.get()) {
@@ -1407,6 +2514,16 @@ public class SBResultSet implements ResultSet {
 
         List<Object[]> getRows() {
             return rows;
+        }
+
+        void setIndex(int index) {
+            if (index < 0) {
+                this.index = 0;
+            } else if (index > rows.size()) {
+                this.index = rows.size();
+            } else {
+                this.index = index;
+            }
         }
     }
 }

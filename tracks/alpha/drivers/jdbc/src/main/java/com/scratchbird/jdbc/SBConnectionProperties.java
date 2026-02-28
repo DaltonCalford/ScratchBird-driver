@@ -207,6 +207,7 @@ public class SBConnectionProperties {
                 this.prepareThreshold = Integer.parseInt(value);
                 break;
             case "binarytransfer":
+            case "binary_transfer":
                 this.binaryTransfer = Boolean.parseBoolean(value);
                 break;
             case "pooling":
@@ -230,7 +231,7 @@ public class SBConnectionProperties {
                 this.acquireTimeout = Integer.parseInt(value);
                 break;
             case "compression":
-                this.compression = value;
+                this.compression = normalizeCompression(value);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":
@@ -265,6 +266,7 @@ public class SBConnectionProperties {
                     "on".equalsIgnoreCase(value);
                 break;
             case "rewritebatchedinserts":
+            case "rewrite_batched_inserts":
                 this.reWriteBatchedInserts = Boolean.parseBoolean(value);
                 break;
             case "loggerlevel":
@@ -353,6 +355,7 @@ public class SBConnectionProperties {
             case "preparethreshold":
                 return String.valueOf(prepareThreshold);
             case "binarytransfer":
+            case "binary_transfer":
                 return String.valueOf(binaryTransfer);
             case "pooling":
                 return String.valueOf(pooling);
@@ -393,6 +396,7 @@ public class SBConnectionProperties {
             case "mcp_auth_fast_path":
                 return String.valueOf(managerAuthFastPath);
             case "rewritebatchedinserts":
+            case "rewrite_batched_inserts":
                 return String.valueOf(reWriteBatchedInserts);
             case "loggerlevel":
                 return loggerLevel;
@@ -650,7 +654,7 @@ public class SBConnectionProperties {
     }
 
     public void setCompression(String compression) {
-        this.compression = compression;
+        this.compression = normalizeCompression(compression);
     }
 
     public String getManagerAuthToken() {
@@ -850,6 +854,20 @@ public class SBConnectionProperties {
                 return "manager_proxy";
             default:
                 throw new IllegalArgumentException("front_door_mode must be direct or manager_proxy.");
+        }
+    }
+
+    private static String normalizeCompression(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase();
+        switch (normalized) {
+            case "":
+            case "off":
+            case "none":
+                return "off";
+            case "zstd":
+                return "zstd";
+            default:
+                throw new IllegalArgumentException("compression must be off or zstd.");
         }
     }
 }

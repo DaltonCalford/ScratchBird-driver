@@ -169,4 +169,42 @@ TEST_F(OdbcCursorOperationTest, SetAttributeCursorScrollabilityAndSensitivity) {
                   reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1234)), 0), SQL_ERROR);
 }
 
+TEST_F(OdbcCursorOperationTest, BookmarkBindingReturnsStableRowBookmarks) {
+    seedRows(3);
+    stmt_.cursor_type_ = SQL_CURSOR_STATIC;
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_USE_BOOKMARKS,
+                                 reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1)), 0),
+              SQL_SUCCESS);
+
+    BOOKMARK bookmark = 0;
+    SQLLEN bookmark_len = 0;
+    EXPECT_EQ(stmt_.bindCol(0, SQL_C_UBIGINT, &bookmark,
+                            static_cast<SQLLEN>(sizeof(bookmark)), &bookmark_len),
+              SQL_SUCCESS);
+
+    EXPECT_EQ(stmt_.fetch(), SQL_SUCCESS);
+    EXPECT_EQ(bookmark, static_cast<BOOKMARK>(1));
+    EXPECT_EQ(bookmark_len, static_cast<SQLLEN>(sizeof(bookmark)));
+
+    EXPECT_EQ(stmt_.fetch(), SQL_SUCCESS);
+    EXPECT_EQ(bookmark, static_cast<BOOKMARK>(2));
+}
+
+TEST_F(OdbcCursorOperationTest, FetchScrollSupportsBookmarkOrientation) {
+    seedRows(5);
+    stmt_.cursor_type_ = SQL_CURSOR_STATIC;
+
+    BOOKMARK bookmark = 4;
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_FETCH_BOOKMARK_PTR, &bookmark, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.fetchScroll(SQL_FETCH_BOOKMARK, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.current_row_, 4u);
+
+    bookmark = 2;
+    EXPECT_EQ(stmt_.fetchScroll(SQL_FETCH_BOOKMARK, 1), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.current_row_, 3u);
+
+    EXPECT_EQ(stmt_.setAttribute(SQL_ATTR_FETCH_BOOKMARK_PTR, nullptr, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.fetchScroll(SQL_FETCH_BOOKMARK, 0), SQL_ERROR);
+}
+
 }  // namespace

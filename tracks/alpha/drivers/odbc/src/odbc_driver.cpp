@@ -9,8 +9,14 @@
 
 #include "scratchbird/odbc/odbc_driver.h"
 
+#include <algorithm>
 #include <atomic>
+#include <codecvt>
 #include <cstring>
+#include <cwchar>
+#include <locale>
+#include <string>
+#include <vector>
 
 using namespace scratchbird::odbc;
 
@@ -18,6 +24,101 @@ namespace {
 // Connection-pooling mode set via SQLSetEnvAttr with SQL_NULL_HENV applies to
 // subsequent environment allocations.
 std::atomic<SQLUINTEGER> g_default_connection_pooling{SQL_CP_OFF};
+
+std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> g_utf16_codec;
+
+std::string wideToUtf8(const ::SQLWCHAR* text, SQLINTEGER length) {
+    if (!text) {
+        return {};
+    }
+    std::u16string wide;
+    if (length == SQL_NTS) {
+        const auto* p = text;
+        while (*p) {
+            wide.push_back(static_cast<char16_t>(*p));
+            ++p;
+        }
+    } else if (length >= 0) {
+        wide.reserve(static_cast<size_t>(length));
+        for (SQLINTEGER i = 0; i < length; ++i) {
+            wide.push_back(static_cast<char16_t>(text[i]));
+        }
+    } else {
+        return {};
+    }
+    return g_utf16_codec.to_bytes(wide);
+}
+
+std::u16string utf8ToWide(const std::string& text) {
+    return g_utf16_codec.from_bytes(text);
+}
+
+SQLRETURN copyWideString(const std::u16string& text,
+                         ::SQLWCHAR* out_buffer,
+                         SQLSMALLINT out_capacity,
+                         SQLSMALLINT* out_length) {
+    if (out_length) {
+        *out_length = static_cast<SQLSMALLINT>(text.size());
+    }
+    if (!out_buffer) {
+        return SQL_SUCCESS;
+    }
+    if (out_capacity <= 0) {
+        return SQL_ERROR;
+    }
+    size_t copy_len = std::min(static_cast<size_t>(out_capacity - 1), text.size());
+    for (size_t i = 0; i < copy_len; ++i) {
+        out_buffer[i] = static_cast<::SQLWCHAR>(text[i]);
+    }
+    out_buffer[copy_len] = 0;
+    if (text.size() >= static_cast<size_t>(out_capacity)) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return SQL_SUCCESS;
+}
+
+bool isStringInfoType(SQLUSMALLINT info_type) {
+    switch (info_type) {
+        case SQL_DRIVER_NAME:
+        case SQL_DRIVER_VER:
+        case SQL_DRIVER_ODBC_VER:
+        case SQL_ODBC_VER:
+        case SQL_DBMS_NAME:
+        case SQL_DBMS_VER:
+        case SQL_DATABASE_NAME:
+        case SQL_SERVER_NAME:
+        case SQL_USER_NAME:
+        case SQL_DATA_SOURCE_NAME:
+        case SQL_DATA_SOURCE_READ_ONLY:
+        case SQL_ACCESSIBLE_TABLES:
+        case SQL_ACCESSIBLE_PROCEDURES:
+        case SQL_MULT_RESULT_SETS:
+        case SQL_MULTIPLE_ACTIVE_TXN:
+        case SQL_PROCEDURES:
+        case SQL_CATALOG_NAME:
+        case SQL_COLUMN_ALIAS:
+        case SQL_LIKE_ESCAPE_CLAUSE:
+        case SQL_ORDER_BY_COLUMNS_IN_SELECT:
+        case SQL_OUTER_JOINS:
+        case SQL_ROW_UPDATES:
+        case SQL_EXPRESSIONS_IN_ORDERBY:
+        case SQL_INTEGRITY:
+        case SQL_IDENTIFIER_QUOTE_CHAR:
+        case SQL_CATALOG_NAME_SEPARATOR:
+        case SQL_CATALOG_TERM:
+        case SQL_SCHEMA_TERM:
+        case SQL_TABLE_TERM:
+        case SQL_PROCEDURE_TERM:
+        case SQL_SEARCH_PATTERN_ESCAPE:
+        case SQL_SPECIAL_CHARACTERS:
+        case SQL_NEED_LONG_DATA_LEN:
+        case SQL_DESCRIBE_PARAMETER:
+        case SQL_DM_VER:
+            return true;
+        default:
+            return false;
+    }
+}
 }  // namespace
 
 // =============================================================================
@@ -1144,4 +1245,686 @@ extern "C" SQLRETURN ODBC_API SQLFreeConnect(
     SQLHDBC ConnectionHandle) {
 
     return SQLFreeHandle(SQL_HANDLE_DBC, ConnectionHandle);
+}
+
+extern "C" SQLRETURN ODBC_API SQLSetConnectOption(
+    SQLHDBC ConnectionHandle,
+    SQLUSMALLINT Option,
+    SQLULEN Value) {
+    return SQLSetConnectAttr(ConnectionHandle,
+                             static_cast<SQLINTEGER>(Option),
+                             reinterpret_cast<SQLPOINTER>(static_cast<uintptr_t>(Value)),
+                             0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetConnectOption(
+    SQLHDBC ConnectionHandle,
+    SQLUSMALLINT Option,
+    SQLPOINTER ValuePtr) {
+    return SQLGetConnectAttr(ConnectionHandle,
+                             static_cast<SQLINTEGER>(Option),
+                             ValuePtr,
+                             0,
+                             nullptr);
+}
+
+extern "C" SQLRETURN ODBC_API SQLSetStmtOption(
+    SQLHSTMT StatementHandle,
+    SQLUSMALLINT Option,
+    SQLULEN Value) {
+    return SQLSetStmtAttr(StatementHandle,
+                          static_cast<SQLINTEGER>(Option),
+                          reinterpret_cast<SQLPOINTER>(static_cast<uintptr_t>(Value)),
+                          0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetStmtOption(
+    SQLHSTMT StatementHandle,
+    SQLUSMALLINT Option,
+    SQLPOINTER ValuePtr) {
+    return SQLGetStmtAttr(StatementHandle,
+                          static_cast<SQLINTEGER>(Option),
+                          ValuePtr,
+                          0,
+                          nullptr);
+}
+
+extern "C" SQLRETURN ODBC_API SQLNativeSql(
+    SQLHDBC ConnectionHandle,
+    SQLCHAR* InStatementText,
+    SQLINTEGER TextLength1,
+    SQLCHAR* OutStatementText,
+    SQLINTEGER BufferLength,
+    SQLINTEGER* TextLength2Ptr) {
+    auto* conn = asConnection(ConnectionHandle);
+    if (!conn) {
+        return SQL_INVALID_HANDLE;
+    }
+    if (!InStatementText) {
+        conn->setError("HY009", 0, "Invalid use of null pointer");
+        return SQL_ERROR;
+    }
+
+    std::string sql = (TextLength1 == SQL_NTS)
+        ? std::string(reinterpret_cast<const char*>(InStatementText))
+        : std::string(reinterpret_cast<const char*>(InStatementText),
+                      static_cast<size_t>(TextLength1));
+    if (TextLength2Ptr) {
+        *TextLength2Ptr = static_cast<SQLINTEGER>(sql.size());
+    }
+    if (!OutStatementText) {
+        return SQL_SUCCESS;
+    }
+    if (BufferLength <= 0) {
+        conn->setError("HY090", 0, "Invalid string or buffer length");
+        return SQL_ERROR;
+    }
+
+    size_t copy_len = std::min(static_cast<size_t>(BufferLength - 1), sql.size());
+    std::memcpy(OutStatementText, sql.data(), copy_len);
+    OutStatementText[copy_len] = '\0';
+    if (sql.size() >= static_cast<size_t>(BufferLength)) {
+        conn->setError("01004", 0, "String data, right truncated");
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return SQL_SUCCESS;
+}
+
+extern "C" SQLRETURN ODBC_API SQLSetCursorName(
+    SQLHSTMT StatementHandle,
+    SQLCHAR* CursorName,
+    SQLSMALLINT NameLength) {
+    auto* stmt = asStatement(StatementHandle);
+    if (!stmt) {
+        return SQL_INVALID_HANDLE;
+    }
+    return stmt->setCursorName(CursorName, NameLength);
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetCursorName(
+    SQLHSTMT StatementHandle,
+    SQLCHAR* CursorName,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* NameLengthPtr) {
+    auto* stmt = asStatement(StatementHandle);
+    if (!stmt) {
+        return SQL_INVALID_HANDLE;
+    }
+    return stmt->getCursorName(CursorName, BufferLength, NameLengthPtr);
+}
+
+extern "C" SQLRETURN ODBC_API SQLCancelHandle(
+    SQLSMALLINT HandleType,
+    SQLHANDLE Handle) {
+    if (HandleType == SQL_HANDLE_STMT) {
+        return SQLCancel(static_cast<SQLHSTMT>(Handle));
+    }
+    if (HandleType == SQL_HANDLE_DBC) {
+        auto* conn = asConnection(static_cast<SQLHDBC>(Handle));
+        if (!conn) {
+            return SQL_INVALID_HANDLE;
+        }
+        return conn->cancel();
+    }
+    return SQL_INVALID_HANDLE;
+}
+
+extern "C" SQLRETURN ODBC_API SQLConnectW(
+    SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* ServerName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* UserName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* Authentication,
+    SQLSMALLINT NameLength3) {
+    std::string server = wideToUtf8(ServerName, NameLength1);
+    std::string user = wideToUtf8(UserName, NameLength2);
+    std::string auth = wideToUtf8(Authentication, NameLength3);
+
+    SQLCHAR* server_ptr = ServerName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(server.c_str())) : nullptr;
+    SQLCHAR* user_ptr = UserName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(user.c_str())) : nullptr;
+    SQLCHAR* auth_ptr = Authentication ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(auth.c_str())) : nullptr;
+    return SQLConnect(ConnectionHandle,
+                      server_ptr, ServerName ? SQL_NTS : 0,
+                      user_ptr, UserName ? SQL_NTS : 0,
+                      auth_ptr, Authentication ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLDriverConnectW(
+    SQLHDBC ConnectionHandle,
+    HWND WindowHandle,
+    ::SQLWCHAR* InConnectionString,
+    SQLSMALLINT StringLength1,
+    ::SQLWCHAR* OutConnectionString,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* StringLength2Ptr,
+    SQLUSMALLINT DriverCompletion) {
+    std::string in = wideToUtf8(InConnectionString, StringLength1);
+    std::vector<SQLCHAR> out_ansi(std::max(1, static_cast<int>(BufferLength) * 4 + 1), 0);
+    SQLSMALLINT out_ansi_len = 0;
+    SQLRETURN rc = SQLDriverConnect(
+        ConnectionHandle,
+        WindowHandle,
+        InConnectionString ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(in.c_str())) : nullptr,
+        InConnectionString ? SQL_NTS : 0,
+        OutConnectionString ? out_ansi.data() : nullptr,
+        OutConnectionString ? static_cast<SQLSMALLINT>(out_ansi.size()) : 0,
+        OutConnectionString ? &out_ansi_len : nullptr,
+        DriverCompletion);
+    if (rc == SQL_ERROR || rc == SQL_INVALID_HANDLE || rc == SQL_NO_DATA) {
+        return rc;
+    }
+    if (OutConnectionString) {
+        std::string out_text(reinterpret_cast<char*>(out_ansi.data()),
+                             out_ansi_len >= 0 ? static_cast<size_t>(out_ansi_len)
+                                               : std::strlen(reinterpret_cast<char*>(out_ansi.data())));
+        SQLSMALLINT wide_len = 0;
+        SQLRETURN wide_rc = copyWideString(utf8ToWide(out_text), OutConnectionString, BufferLength, &wide_len);
+        if (StringLength2Ptr) {
+            *StringLength2Ptr = wide_len;
+        }
+        if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+            return SQL_SUCCESS_WITH_INFO;
+        }
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLBrowseConnectW(
+    SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* InConnectionString,
+    SQLSMALLINT StringLength1,
+    ::SQLWCHAR* OutConnectionString,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* StringLength2Ptr) {
+    std::string in = wideToUtf8(InConnectionString, StringLength1);
+    std::vector<SQLCHAR> out_ansi(std::max(1, static_cast<int>(BufferLength) * 4 + 1), 0);
+    SQLSMALLINT out_ansi_len = 0;
+    SQLRETURN rc = SQLBrowseConnect(
+        ConnectionHandle,
+        InConnectionString ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(in.c_str())) : nullptr,
+        InConnectionString ? SQL_NTS : 0,
+        OutConnectionString ? out_ansi.data() : nullptr,
+        OutConnectionString ? static_cast<SQLSMALLINT>(out_ansi.size()) : 0,
+        OutConnectionString ? &out_ansi_len : nullptr);
+    if (rc == SQL_ERROR || rc == SQL_INVALID_HANDLE || rc == SQL_NO_DATA) {
+        return rc;
+    }
+    if (OutConnectionString) {
+        std::string out_text(reinterpret_cast<char*>(out_ansi.data()),
+                             out_ansi_len >= 0 ? static_cast<size_t>(out_ansi_len)
+                                               : std::strlen(reinterpret_cast<char*>(out_ansi.data())));
+        SQLSMALLINT wide_len = 0;
+        SQLRETURN wide_rc = copyWideString(utf8ToWide(out_text), OutConnectionString, BufferLength, &wide_len);
+        if (StringLength2Ptr) {
+            *StringLength2Ptr = wide_len;
+        }
+        if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+            return SQL_SUCCESS_WITH_INFO;
+        }
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLPrepareW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* StatementText,
+    SQLINTEGER TextLength) {
+    std::string sql = wideToUtf8(StatementText, TextLength);
+    return SQLPrepare(StatementHandle,
+                      StatementText ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql.c_str())) : nullptr,
+                      StatementText ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLExecDirectW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* StatementText,
+    SQLINTEGER TextLength) {
+    std::string sql = wideToUtf8(StatementText, TextLength);
+    return SQLExecDirect(StatementHandle,
+                         StatementText ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql.c_str())) : nullptr,
+                         StatementText ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetInfoW(
+    SQLHDBC ConnectionHandle,
+    SQLUSMALLINT InfoType,
+    SQLPOINTER InfoValuePtr,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* StringLengthPtr) {
+    if (!isStringInfoType(InfoType)) {
+        return SQLGetInfo(ConnectionHandle, InfoType, InfoValuePtr, BufferLength, StringLengthPtr);
+    }
+
+    std::vector<SQLCHAR> ansi_value(2048, 0);
+    SQLSMALLINT ansi_len = 0;
+    SQLRETURN rc = SQLGetInfo(ConnectionHandle, InfoType, ansi_value.data(),
+                              static_cast<SQLSMALLINT>(ansi_value.size()), &ansi_len);
+    if (rc == SQL_ERROR || rc == SQL_INVALID_HANDLE) {
+        return rc;
+    }
+
+    std::string text(reinterpret_cast<char*>(ansi_value.data()),
+                     ansi_len >= 0 ? static_cast<size_t>(ansi_len)
+                                   : std::strlen(reinterpret_cast<char*>(ansi_value.data())));
+    SQLSMALLINT wide_len = 0;
+    SQLRETURN wide_rc = copyWideString(utf8ToWide(text),
+                                       static_cast<::SQLWCHAR*>(InfoValuePtr),
+                                       BufferLength,
+                                       &wide_len);
+    if (StringLengthPtr) {
+        *StringLengthPtr = wide_len;
+    }
+    if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetDiagRecW(
+    SQLSMALLINT HandleType,
+    SQLHANDLE Handle,
+    SQLSMALLINT RecNumber,
+    ::SQLWCHAR* SQLState,
+    SQLINTEGER* NativeErrorPtr,
+    ::SQLWCHAR* MessageText,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* TextLengthPtr) {
+    SQLCHAR ansi_state[6] = {};
+    std::vector<SQLCHAR> ansi_message(2048, 0);
+    SQLSMALLINT ansi_msg_len = 0;
+    SQLRETURN rc = SQLGetDiagRec(HandleType, Handle, RecNumber, ansi_state,
+                                 NativeErrorPtr, ansi_message.data(),
+                                 static_cast<SQLSMALLINT>(ansi_message.size()),
+                                 &ansi_msg_len);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        return rc;
+    }
+
+    if (SQLState) {
+        std::u16string wide_state = utf8ToWide(reinterpret_cast<char*>(ansi_state));
+        for (size_t i = 0; i < 5; ++i) {
+            SQLState[i] = (i < wide_state.size()) ? static_cast<::SQLWCHAR>(wide_state[i]) : 0;
+        }
+        SQLState[5] = 0;
+    }
+
+    std::string msg_text(reinterpret_cast<char*>(ansi_message.data()),
+                         ansi_msg_len >= 0 ? static_cast<size_t>(ansi_msg_len)
+                                           : std::strlen(reinterpret_cast<char*>(ansi_message.data())));
+    SQLSMALLINT wide_len = 0;
+    SQLRETURN wide_rc = copyWideString(utf8ToWide(msg_text), MessageText, BufferLength, &wide_len);
+    if (TextLengthPtr) {
+        *TextLengthPtr = wide_len;
+    }
+    if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLDescribeColW(
+    SQLHSTMT StatementHandle,
+    SQLUSMALLINT ColumnNumber,
+    ::SQLWCHAR* ColumnName,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* NameLengthPtr,
+    SQLSMALLINT* DataTypePtr,
+    SQLULEN* ColumnSizePtr,
+    SQLSMALLINT* DecimalDigitsPtr,
+    SQLSMALLINT* NullablePtr) {
+    SQLCHAR ansi_name[1024] = {};
+    SQLSMALLINT ansi_len = 0;
+    SQLRETURN rc = SQLDescribeCol(StatementHandle, ColumnNumber, ansi_name,
+                                  static_cast<SQLSMALLINT>(sizeof(ansi_name)),
+                                  &ansi_len, DataTypePtr, ColumnSizePtr,
+                                  DecimalDigitsPtr, NullablePtr);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        return rc;
+    }
+    std::string name_text(reinterpret_cast<char*>(ansi_name),
+                          ansi_len >= 0 ? static_cast<size_t>(ansi_len)
+                                        : std::strlen(reinterpret_cast<char*>(ansi_name)));
+    SQLSMALLINT wide_len = 0;
+    SQLRETURN wide_rc = copyWideString(utf8ToWide(name_text), ColumnName, BufferLength, &wide_len);
+    if (NameLengthPtr) {
+        *NameLengthPtr = wide_len;
+    }
+    if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLTablesW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3,
+    ::SQLWCHAR* TableType,
+    SQLSMALLINT NameLength4) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    std::string type = wideToUtf8(TableType, NameLength4);
+    return SQLTables(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0,
+        TableType ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(type.c_str())) : nullptr,
+        TableType ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLColumnsW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    SQLSMALLINT NameLength4) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    std::string column = wideToUtf8(ColumnName, NameLength4);
+    return SQLColumns(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0,
+        ColumnName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(column.c_str())) : nullptr,
+        ColumnName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLNativeSqlW(
+    SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* InStatementText,
+    SQLINTEGER TextLength1,
+    ::SQLWCHAR* OutStatementText,
+    SQLINTEGER BufferLength,
+    SQLINTEGER* TextLength2Ptr) {
+    std::string in = wideToUtf8(InStatementText, TextLength1);
+    std::vector<SQLCHAR> out_ansi(std::max(1, static_cast<int>(BufferLength) * 4 + 1), 0);
+    SQLINTEGER out_ansi_len = 0;
+    SQLRETURN rc = SQLNativeSql(
+        ConnectionHandle,
+        InStatementText ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(in.c_str())) : nullptr,
+        InStatementText ? SQL_NTS : 0,
+        OutStatementText ? out_ansi.data() : nullptr,
+        OutStatementText ? static_cast<SQLINTEGER>(out_ansi.size()) : 0,
+        OutStatementText ? &out_ansi_len : nullptr);
+    if (rc == SQL_ERROR || rc == SQL_INVALID_HANDLE) {
+        return rc;
+    }
+    if (OutStatementText) {
+        std::string out_text(reinterpret_cast<char*>(out_ansi.data()),
+                             out_ansi_len >= 0 ? static_cast<size_t>(out_ansi_len)
+                                               : std::strlen(reinterpret_cast<char*>(out_ansi.data())));
+        SQLSMALLINT wide_len = 0;
+        SQLRETURN wide_rc = copyWideString(utf8ToWide(out_text),
+                                           OutStatementText,
+                                           static_cast<SQLSMALLINT>(BufferLength),
+                                           &wide_len);
+        if (TextLength2Ptr) {
+            *TextLength2Ptr = wide_len;
+        }
+        if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+            return SQL_SUCCESS_WITH_INFO;
+        }
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLSetCursorNameW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CursorName,
+    SQLSMALLINT NameLength) {
+    std::string name = wideToUtf8(CursorName, NameLength);
+    return SQLSetCursorName(
+        StatementHandle,
+        CursorName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(name.c_str())) : nullptr,
+        CursorName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLGetCursorNameW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CursorName,
+    SQLSMALLINT BufferLength,
+    SQLSMALLINT* NameLengthPtr) {
+    SQLCHAR ansi_name[1024] = {};
+    SQLSMALLINT ansi_len = 0;
+    SQLRETURN rc = SQLGetCursorName(StatementHandle,
+                                    ansi_name,
+                                    static_cast<SQLSMALLINT>(sizeof(ansi_name)),
+                                    &ansi_len);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        return rc;
+    }
+    std::string name_text(reinterpret_cast<char*>(ansi_name),
+                          ansi_len >= 0 ? static_cast<size_t>(ansi_len)
+                                        : std::strlen(reinterpret_cast<char*>(ansi_name)));
+    SQLSMALLINT wide_len = 0;
+    SQLRETURN wide_rc = copyWideString(utf8ToWide(name_text), CursorName, BufferLength, &wide_len);
+    if (NameLengthPtr) {
+        *NameLengthPtr = wide_len;
+    }
+    if (wide_rc == SQL_SUCCESS_WITH_INFO && rc == SQL_SUCCESS) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return rc;
+}
+
+extern "C" SQLRETURN ODBC_API SQLPrimaryKeysW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    return SQLPrimaryKeys(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLForeignKeysW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* PKCatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* PKSchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* PKTableName,
+    SQLSMALLINT NameLength3,
+    ::SQLWCHAR* FKCatalogName,
+    SQLSMALLINT NameLength4,
+    ::SQLWCHAR* FKSchemaName,
+    SQLSMALLINT NameLength5,
+    ::SQLWCHAR* FKTableName,
+    SQLSMALLINT NameLength6) {
+    std::string pk_catalog = wideToUtf8(PKCatalogName, NameLength1);
+    std::string pk_schema = wideToUtf8(PKSchemaName, NameLength2);
+    std::string pk_table = wideToUtf8(PKTableName, NameLength3);
+    std::string fk_catalog = wideToUtf8(FKCatalogName, NameLength4);
+    std::string fk_schema = wideToUtf8(FKSchemaName, NameLength5);
+    std::string fk_table = wideToUtf8(FKTableName, NameLength6);
+    return SQLForeignKeys(
+        StatementHandle,
+        PKCatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(pk_catalog.c_str())) : nullptr,
+        PKCatalogName ? SQL_NTS : 0,
+        PKSchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(pk_schema.c_str())) : nullptr,
+        PKSchemaName ? SQL_NTS : 0,
+        PKTableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(pk_table.c_str())) : nullptr,
+        PKTableName ? SQL_NTS : 0,
+        FKCatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(fk_catalog.c_str())) : nullptr,
+        FKCatalogName ? SQL_NTS : 0,
+        FKSchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(fk_schema.c_str())) : nullptr,
+        FKSchemaName ? SQL_NTS : 0,
+        FKTableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(fk_table.c_str())) : nullptr,
+        FKTableName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLStatisticsW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3,
+    SQLUSMALLINT Unique,
+    SQLUSMALLINT Reserved) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    return SQLStatistics(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0,
+        Unique,
+        Reserved);
+}
+
+extern "C" SQLRETURN ODBC_API SQLSpecialColumnsW(
+    SQLHSTMT StatementHandle,
+    SQLUSMALLINT IdentifierType,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3,
+    SQLUSMALLINT Scope,
+    SQLUSMALLINT Nullable) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    return SQLSpecialColumns(
+        StatementHandle,
+        IdentifierType,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0,
+        Scope,
+        Nullable);
+}
+
+extern "C" SQLRETURN ODBC_API SQLProceduresW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* ProcName,
+    SQLSMALLINT NameLength3) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string procedure = wideToUtf8(ProcName, NameLength3);
+    return SQLProcedures(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        ProcName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(procedure.c_str())) : nullptr,
+        ProcName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLProcedureColumnsW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* ProcName,
+    SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    SQLSMALLINT NameLength4) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string procedure = wideToUtf8(ProcName, NameLength3);
+    std::string column = wideToUtf8(ColumnName, NameLength4);
+    return SQLProcedureColumns(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        ProcName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(procedure.c_str())) : nullptr,
+        ProcName ? SQL_NTS : 0,
+        ColumnName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(column.c_str())) : nullptr,
+        ColumnName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLTablePrivilegesW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    return SQLTablePrivileges(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0);
+}
+
+extern "C" SQLRETURN ODBC_API SQLColumnPrivilegesW(
+    SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    SQLSMALLINT NameLength4) {
+    std::string catalog = wideToUtf8(CatalogName, NameLength1);
+    std::string schema = wideToUtf8(SchemaName, NameLength2);
+    std::string table = wideToUtf8(TableName, NameLength3);
+    std::string column = wideToUtf8(ColumnName, NameLength4);
+    return SQLColumnPrivileges(
+        StatementHandle,
+        CatalogName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(catalog.c_str())) : nullptr,
+        CatalogName ? SQL_NTS : 0,
+        SchemaName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(schema.c_str())) : nullptr,
+        SchemaName ? SQL_NTS : 0,
+        TableName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(table.c_str())) : nullptr,
+        TableName ? SQL_NTS : 0,
+        ColumnName ? reinterpret_cast<SQLCHAR*>(const_cast<char*>(column.c_str())) : nullptr,
+        ColumnName ? SQL_NTS : 0);
 }

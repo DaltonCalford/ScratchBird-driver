@@ -10,6 +10,17 @@ fixtures and a manifest.
 
 See [DRIVER_CONFORMANCE_TEST_HARNESS.md](../specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md).
 
+## Runtime Setup Helper
+
+Use the bundled runtime helper to start ScratchBird server/parser/listener and
+load shared fixtures before running language-specific integration tests:
+
+```bash
+scripts/driver_runtime_stack.sh up
+scripts/driver_runtime_stack.sh fixtures
+eval "$(scripts/driver_runtime_stack.sh env)"
+```
+
 ## Go Harness
 
 The Go driver includes a harness runner:

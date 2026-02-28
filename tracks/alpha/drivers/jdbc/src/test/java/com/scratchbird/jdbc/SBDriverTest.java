@@ -14,6 +14,7 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.sql.SQLException;
 import java.util.Properties;
@@ -53,5 +54,19 @@ public class SBDriverTest {
         assertEquals(3092, props.getPort());
         assertEquals("testdb", props.getDatabase());
         assertNotNull(props);
+    }
+
+    @Test
+    public void parsesCompressionAndRejectsUnsupportedAlgorithms() throws SQLException {
+        SBConnectionProperties zstd = SBDriver.parseURL(
+            "jdbc:scratchbird://localhost:3092/demo?compression=zstd", null);
+        assertEquals("zstd", zstd.getCompression());
+
+        SBConnectionProperties off = SBDriver.parseURL(
+            "jdbc:scratchbird://localhost:3092/demo?compression=none", null);
+        assertEquals("off", off.getCompression());
+
+        assertThrows(SQLException.class, () ->
+            SBDriver.parseURL("jdbc:scratchbird://localhost:3092/demo?compression=gzip", null));
     }
 }

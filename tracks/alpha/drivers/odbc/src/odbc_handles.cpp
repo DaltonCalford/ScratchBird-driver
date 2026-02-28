@@ -2626,6 +2626,174 @@ SQLRETURN OdbcConnection::getInfo(SQLUSMALLINT info_type, SQLPOINTER info_value,
         case SQL_NEED_LONG_DATA_LEN:
             return copyString("N");
 
+        // Additional capability/feature probes frequently used by BI and driver managers.
+        case SQL_ASYNC_MODE:
+            setUInteger(0);  // SQL_AM_NONE
+            break;
+        case SQL_BATCH_ROW_COUNT:
+            setUInteger(0);
+            break;
+        case SQL_BATCH_SUPPORT:
+            setUInteger(0);
+            break;
+        case SQL_CATALOG_LOCATION:
+            setUSmallInt(1);  // SQL_CL_START
+            break;
+        case SQL_CATALOG_USAGE:
+            setUInteger(0);
+            break;
+        case SQL_SCHEMA_USAGE:
+            setUInteger(0);
+            break;
+        case SQL_COLLATION_SEQ:
+            return copyString("");
+        case SQL_AGGREGATE_FUNCTIONS:
+        case SQL_NUMERIC_FUNCTIONS:
+        case SQL_STRING_FUNCTIONS:
+        case SQL_SYSTEM_FUNCTIONS:
+        case SQL_TIMEDATE_FUNCTIONS:
+        case SQL_TIMEDATE_ADD_INTERVALS:
+        case SQL_TIMEDATE_DIFF_INTERVALS:
+        case SQL_CONVERT_FUNCTIONS:
+        case SQL_CONVERT_BIGINT:
+        case SQL_CONVERT_BINARY:
+        case SQL_CONVERT_BIT:
+        case SQL_CONVERT_CHAR:
+        case SQL_CONVERT_DATE:
+        case SQL_CONVERT_DECIMAL:
+        case SQL_CONVERT_DOUBLE:
+        case SQL_CONVERT_FLOAT:
+        case SQL_CONVERT_INTEGER:
+        case SQL_CONVERT_LONGVARBINARY:
+        case SQL_CONVERT_LONGVARCHAR:
+        case SQL_CONVERT_NUMERIC:
+        case SQL_CONVERT_REAL:
+        case SQL_CONVERT_SMALLINT:
+        case SQL_CONVERT_TIME:
+        case SQL_CONVERT_TIMESTAMP:
+        case SQL_CONVERT_TINYINT:
+        case SQL_CONVERT_VARBINARY:
+        case SQL_CONVERT_VARCHAR:
+        case SQL_ALTER_DOMAIN:
+        case SQL_ALTER_TABLE:
+        case SQL_CREATE_ASSERTION:
+        case SQL_CREATE_CHARACTER_SET:
+        case SQL_CREATE_COLLATION:
+        case SQL_CREATE_DOMAIN:
+        case SQL_CREATE_SCHEMA:
+        case SQL_CREATE_TABLE:
+        case SQL_CREATE_TRANSLATION:
+        case SQL_CREATE_VIEW:
+        case SQL_DROP_ASSERTION:
+        case SQL_DROP_CHARACTER_SET:
+        case SQL_DROP_COLLATION:
+        case SQL_DROP_DOMAIN:
+        case SQL_DROP_SCHEMA:
+        case SQL_DROP_TABLE:
+        case SQL_DROP_TRANSLATION:
+        case SQL_DROP_VIEW:
+        case SQL_DATETIME_LITERALS:
+        case SQL_DDL_INDEX:
+        case SQL_OJ_CAPABILITIES:
+        case SQL_SQL92_DATETIME_FUNCTIONS:
+        case SQL_SQL92_FOREIGN_KEY_DELETE_RULE:
+        case SQL_SQL92_FOREIGN_KEY_UPDATE_RULE:
+        case SQL_SQL92_GRANT:
+        case SQL_SQL92_NUMERIC_VALUE_FUNCTIONS:
+        case SQL_SQL92_PREDICATES:
+        case SQL_SQL92_RELATIONAL_JOIN_OPERATORS:
+        case SQL_SQL92_REVOKE:
+        case SQL_SQL92_ROW_VALUE_CONSTRUCTOR:
+        case SQL_SQL92_STRING_FUNCTIONS:
+        case SQL_SQL92_VALUE_EXPRESSIONS:
+        case SQL_STANDARD_CLI_CONFORMANCE:
+        case SQL_SUBQUERIES:
+        case SQL_UNION:
+        case SQL_INFO_SCHEMA_VIEWS:
+        case SQL_INSERT_STATEMENT:
+            setUInteger(0);
+            break;
+        case SQL_KEYWORDS:
+            return copyString("");
+        case SQL_XOPEN_CLI_YEAR:
+            return copyString("1995");
+
+        // Limit probes where 0 indicates "no fixed limit".
+        case SQL_MAX_BINARY_LITERAL_LEN:
+        case SQL_MAX_CHAR_LITERAL_LEN:
+        case SQL_MAX_INDEX_SIZE:
+        case SQL_MAX_ROW_SIZE:
+        case SQL_MAX_ASYNC_CONCURRENT_STATEMENTS:
+            setUInteger(0);
+            break;
+        case SQL_MAX_COLUMNS_IN_GROUP_BY:
+        case SQL_MAX_COLUMNS_IN_ORDER_BY:
+        case SQL_MAX_COLUMNS_IN_SELECT:
+        case SQL_MAX_TABLES_IN_SELECT:
+            setUSmallInt(0);
+            break;
+        case SQL_MAX_PROCEDURE_NAME_LEN:
+        case SQL_MAX_USER_NAME_LEN:
+            setUSmallInt(128);
+            break;
+        case SQL_MAX_ROW_SIZE_INCLUDES_LONG:
+            return copyString("Y");
+        case SQL_FILE_USAGE:
+            setUSmallInt(0);
+            break;
+        case SQL_DRIVER_AWARE_POOLING_SUPPORTED:
+            setUInteger(0);
+            break;
+
+        // Additional commonly probed capability flags.
+        case SQL_BOOKMARK_PERSISTENCE:
+            setUInteger(0);
+            break;
+        case SQL_SCROLL_OPTIONS:
+            setUInteger(0);
+            break;
+        case SQL_POS_OPERATIONS:
+            setUInteger(0);
+            break;
+        case SQL_POSITIONED_STATEMENTS:
+            setUInteger(0);
+            break;
+        case SQL_DYNAMIC_CURSOR_ATTRIBUTES1:
+        case SQL_DYNAMIC_CURSOR_ATTRIBUTES2:
+        case SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES1:
+        case SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES2:
+        case SQL_KEYSET_CURSOR_ATTRIBUTES1:
+        case SQL_KEYSET_CURSOR_ATTRIBUTES2:
+        case SQL_STATIC_CURSOR_ATTRIBUTES1:
+        case SQL_STATIC_CURSOR_ATTRIBUTES2:
+            setUInteger(0);
+            break;
+        case SQL_GETDATA_EXTENSIONS:
+            setUInteger(0);
+            break;
+        case SQL_PARAM_ARRAY_ROW_COUNTS:
+            setUSmallInt(0);
+            break;
+        case SQL_PARAM_ARRAY_SELECTS:
+            setUSmallInt(0);
+            break;
+        case SQL_CURSOR_SENSITIVITY_VAL:
+            setUInteger(SQL_UNSPECIFIED);
+            break;
+        case SQL_MAX_CURSOR_NAME_LEN:
+            setUSmallInt(128);
+            break;
+        case SQL_DESCRIBE_PARAMETER:
+            return copyString("Y");
+        case SQL_ODBC_INTERFACE_CONFORMANCE:
+            setUSmallInt(1);
+            break;
+        case SQL_ACTIVE_ENVIRONMENTS:
+            setUSmallInt(1);
+            break;
+        case SQL_DM_VER:
+            return copyString("03.80.0000");
+
         default:
             setError("HY096", 0, "Information type out of range");
             return SQL_ERROR;
@@ -2662,17 +2830,25 @@ SQLRETURN OdbcConnection::getFunctions(SQLUSMALLINT function_id, SQLUSMALLINT* s
         SQL_API_SQLDISCONNECT,
         SQL_API_SQLSETCONNECTATTR,
         SQL_API_SQLGETCONNECTATTR,
+        SQL_API_SQLSETCONNECTOPTION,
+        SQL_API_SQLGETCONNECTOPTION,
         SQL_API_SQLSETENVATTR,
         SQL_API_SQLGETENVATTR,
 
         // Statement management and execution
         SQL_API_SQLSETSTMTATTR,
         SQL_API_SQLGETSTMTATTR,
+        SQL_API_SQLSETSTMTOPTION,
+        SQL_API_SQLGETSTMTOPTION,
         SQL_API_SQLPREPARE,
         SQL_API_SQLEXECUTE,
         SQL_API_SQLEXECDIRECT,
         SQL_API_SQLCANCEL,
+        SQL_API_SQLCANCELHANDLE,
         SQL_API_SQLCLOSECURSOR,
+        SQL_API_SQLGETCURSORNAME,
+        SQL_API_SQLSETCURSORNAME,
+        SQL_API_SQLNATIVESQL,
         SQL_API_SQLBULKOPERATIONS,
         SQL_API_SQLSETPOS,
         SQL_API_SQLFETCH,
@@ -3459,6 +3635,7 @@ OdbcStatement::OdbcStatement(OdbcConnection* conn)
     ipd_desc_ = owned_imp_param_desc_.get();
     app_row_desc_ = owned_app_row_desc_.get();
     ird_desc_ = owned_ird_desc_.get();
+    cursor_name_ = "SB_CUR_" + std::to_string(kConnectionIdCounter.fetch_add(1) + 1);
 }
 
 OdbcStatement::~OdbcStatement() = default;
@@ -3763,9 +3940,17 @@ SQLRETURN OdbcStatement::bindCol(SQLUSMALLINT column_number,
     clearDiagnostics();
 
     if (column_number == 0) {
-        // Bookmark column - not supported
-        setError("HYC00", 0, "Optional feature not implemented");
-        return SQL_ERROR;
+        if (!target_value && !str_len_or_ind) {
+            bookmark_bound_ = false;
+            bookmark_binding_ = ColumnBinding{};
+            return SQL_SUCCESS;
+        }
+        bookmark_binding_.target_type = target_type;
+        bookmark_binding_.target_value = target_value;
+        bookmark_binding_.buffer_length = buffer_length;
+        bookmark_binding_.str_len_or_ind = str_len_or_ind;
+        bookmark_bound_ = true;
+        return SQL_SUCCESS;
     }
 
     ColumnBinding binding;
@@ -4020,6 +4205,59 @@ SQLRETURN OdbcStatement::colAttribute(SQLUSMALLINT column_number,
     return SQL_SUCCESS;
 }
 
+SQLRETURN OdbcStatement::setCursorName(const SQLCHAR* cursor_name, SQLSMALLINT name_length) {
+    clearDiagnostics();
+
+    if (!cursor_name) {
+        setError("HY009", 0, "Invalid use of null pointer");
+        return SQL_ERROR;
+    }
+
+    std::string requested_name;
+    if (name_length == SQL_NTS) {
+        requested_name = reinterpret_cast<const char*>(cursor_name);
+    } else if (name_length < 0) {
+        setError("HY090", 0, "Invalid string or buffer length");
+        return SQL_ERROR;
+    } else {
+        requested_name.assign(reinterpret_cast<const char*>(cursor_name),
+                              static_cast<size_t>(name_length));
+    }
+
+    if (requested_name.empty()) {
+        setError("34000", 0, "Invalid cursor name");
+        return SQL_ERROR;
+    }
+
+    cursor_name_ = requested_name;
+    return SQL_SUCCESS;
+}
+
+SQLRETURN OdbcStatement::getCursorName(SQLCHAR* cursor_name, SQLSMALLINT buffer_length,
+                                       SQLSMALLINT* name_length) {
+    clearDiagnostics();
+
+    if (name_length) {
+        *name_length = static_cast<SQLSMALLINT>(cursor_name_.size());
+    }
+    if (!cursor_name) {
+        return SQL_SUCCESS;
+    }
+    if (buffer_length <= 0) {
+        setError("HY090", 0, "Invalid string or buffer length");
+        return SQL_ERROR;
+    }
+
+    size_t copy_len = std::min(static_cast<size_t>(buffer_length - 1), cursor_name_.size());
+    std::memcpy(cursor_name, cursor_name_.data(), copy_len);
+    cursor_name[copy_len] = '\0';
+    if (cursor_name_.size() >= static_cast<size_t>(buffer_length)) {
+        setError("01004", 0, "String data, right truncated");
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return SQL_SUCCESS;
+}
+
 SQLRETURN OdbcStatement::fetch() {
     clearDiagnostics();
 
@@ -4086,6 +4324,18 @@ SQLRETURN OdbcStatement::fetchScroll(SQLSMALLINT fetch_orientation, SQLLEN fetch
         case SQL_FETCH_RELATIVE:
             new_index = current_index + fetch_offset;
             break;
+        case SQL_FETCH_BOOKMARK: {
+            if (!fetch_bookmark_ptr_) {
+                setError("HY024", 0, "Fetch bookmark pointer not set");
+                return SQL_ERROR;
+            }
+            SQLLEN bookmark_index = static_cast<SQLLEN>(*fetch_bookmark_ptr_);
+            if (bookmark_index <= 0) {
+                return SQL_NO_DATA;
+            }
+            new_index = static_cast<int64_t>(bookmark_index - 1) + fetch_offset;
+            break;
+        }
         default:
             setError("HY106", 0, "Fetch type out of range");
             return SQL_ERROR;
@@ -4107,6 +4357,7 @@ void OdbcStatement::clearPutDataState() {
     data_at_exec_params_.clear();
     data_at_exec_index_ = 0;
     data_at_exec_active_ = false;
+    data_at_exec_row_offset_ = 0;
 }
 
 bool OdbcStatement::isDataAtExecIndicator(SQLLEN indicator) const {
@@ -4114,13 +4365,18 @@ bool OdbcStatement::isDataAtExecIndicator(SQLLEN indicator) const {
 }
 
 SQLRETURN OdbcStatement::validateOrInitDataAtExecState() {
+    return validateOrInitDataAtExecStateForRow(0);
+}
+
+SQLRETURN OdbcStatement::validateOrInitDataAtExecStateForRow(SQLULEN row_offset) {
     if (!prepared_) {
         setError("HY010", 0, "Function sequence error");
         return SQL_ERROR;
     }
 
     if (data_at_exec_active_ && !data_at_exec_params_.empty() &&
-        data_at_exec_index_ < data_at_exec_params_.size()) {
+        data_at_exec_index_ < data_at_exec_params_.size() &&
+        data_at_exec_row_offset_ == row_offset) {
         data_at_exec_active_ = true;
         return SQL_NEED_DATA;
     }
@@ -4128,17 +4384,19 @@ SQLRETURN OdbcStatement::validateOrInitDataAtExecState() {
     data_at_exec_active_ = false;
     data_at_exec_params_.clear();
     data_at_exec_index_ = 0;
+    data_at_exec_row_offset_ = row_offset;
 
     std::vector<SQLUSMALLINT> pending_params;
     pending_params.reserve(param_bindings_.size());
 
     for (const auto& [parameter_number, binding] : param_bindings_) {
-        auto* ind = binding.str_len_or_ind;
+        auto* ind = indicatorForRow(binding, row_offset);
         if (!ind || !isDataAtExecIndicator(*ind)) {
             continue;
         }
 
-        auto stream_it = put_data_stream_.find(parameter_number);
+        auto key = putDataStreamKey(parameter_number, row_offset);
+        auto stream_it = put_data_stream_.find(key);
         if (stream_it != put_data_stream_.end() && stream_it->second.complete) {
             continue;
         }
@@ -4153,7 +4411,7 @@ SQLRETURN OdbcStatement::validateOrInitDataAtExecState() {
             PutDataStreamState state;
             state.expected_length = expected;
             state.expected_length_known = expected_known;
-            put_data_stream_.emplace(parameter_number, state);
+            put_data_stream_.emplace(key, state);
         } else if (expected_known) {
             auto& state = stream_it->second;
             state.expected_length = expected;
@@ -4163,7 +4421,7 @@ SQLRETURN OdbcStatement::validateOrInitDataAtExecState() {
         if (stream_it == put_data_stream_.end()) {
             // If insertion created a new stream iterator above, avoid another lookup
             // in the next condition by checking completion again with a fresh lookup.
-            stream_it = put_data_stream_.find(parameter_number);
+            stream_it = put_data_stream_.find(key);
         }
         if (stream_it != put_data_stream_.end() && !stream_it->second.complete) {
             pending_params.push_back(parameter_number);
@@ -4203,6 +4461,39 @@ SQLUSMALLINT OdbcStatement::pointerToPutDataToken(SQLPOINTER token) const {
         return 0;
     }
     return static_cast<SQLUSMALLINT>(raw);
+}
+
+uint64_t OdbcStatement::putDataStreamKey(SQLUSMALLINT parameter_number,
+                                         SQLULEN row_offset) const {
+    return (static_cast<uint64_t>(row_offset) << 16) |
+           static_cast<uint64_t>(parameter_number);
+}
+
+const SQLLEN* OdbcStatement::indicatorForRow(const ParameterBinding& binding,
+                                             SQLULEN row_offset) const {
+    auto* ind_base = binding.str_len_or_ind;
+    if (!ind_base) {
+        return nullptr;
+    }
+
+    SQLULEN indicator_stride = 0;
+    if (param_bind_type_ != 0) {
+        indicator_stride = param_bind_type_;
+    } else if (param_bind_offset_ > 0) {
+        indicator_stride = static_cast<SQLULEN>(param_bind_offset_);
+    } else {
+        indicator_stride = static_cast<SQLULEN>(sizeof(SQLLEN));
+    }
+
+    SQLULEN indicator_base_offset = 0;
+    if (param_bind_type_ != 0 && param_bind_offset_ > 0) {
+        indicator_base_offset = static_cast<SQLULEN>(param_bind_offset_);
+    }
+
+    return reinterpret_cast<const SQLLEN*>(
+        reinterpret_cast<const char*>(ind_base) +
+        static_cast<size_t>(indicator_base_offset) +
+        static_cast<size_t>(row_offset) * static_cast<size_t>(indicator_stride));
 }
 
 SQLRETURN OdbcStatement::paramData(SQLPOINTER* token) {
@@ -4271,7 +4562,7 @@ SQLRETURN OdbcStatement::putData(SQLPOINTER data, SQLLEN len) {
         return SQL_ERROR;
     }
 
-    auto ind_ptr = binding_it->second.str_len_or_ind;
+    auto ind_ptr = indicatorForRow(binding_it->second, data_at_exec_row_offset_);
     if (!ind_ptr) {
         setError("HY000", 0, "Missing parameter indicator for SQL_DATA_AT_EXEC");
         return SQL_ERROR;
@@ -4281,7 +4572,8 @@ SQLRETURN OdbcStatement::putData(SQLPOINTER data, SQLLEN len) {
         return SQL_ERROR;
     }
 
-    auto stream_it = put_data_stream_.find(current_param);
+    auto stream_it = put_data_stream_.find(
+        putDataStreamKey(current_param, data_at_exec_row_offset_));
     if (stream_it == put_data_stream_.end()) {
         setError("HY000", 0, "Invalid SQL_DATA_AT_EXEC parameter state");
         return SQL_ERROR;
@@ -4850,10 +5142,16 @@ SQLRETURN OdbcStatement::setPos(SQLSETPOSIROW row_number, SQLUSMALLINT operation
 
 SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
     clearDiagnostics();
+    auto finish = [&](SQLRETURN rc) -> SQLRETURN {
+        if (rc != SQL_NEED_DATA) {
+            clearPutDataState();
+        }
+        return rc;
+    };
 
     if (!prepared_) {
         setError("HY010", 0, "Function sequence error");
-        return SQL_ERROR;
+        return finish(SQL_ERROR);
     }
 
     if (paramset_size_ == 0) {
@@ -4863,12 +5161,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
         if (rows_fetched_ptr_) {
             *rows_fetched_ptr_ = 0;
         }
-        return SQL_SUCCESS;
-    }
-
-    if (param_bind_type_ != 0) {
-        setError("HYC00", 0, "Optional feature not implemented");
-        return SQL_ERROR;
+        return finish(SQL_SUCCESS);
     }
 
     // ODBC defines SQL_ADD, SQL_UPDATE_BY_BOOKMARK, and SQL_DELETE_BY_BOOKMARK
@@ -4879,12 +5172,39 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
         operation != SQL_UPDATE_BY_BOOKMARK &&
         operation != SQL_DELETE_BY_BOOKMARK) {
         setError("HYC00", 0, "Optional feature not implemented");
-        return SQL_ERROR;
+        return finish(SQL_ERROR);
     }
 
     if (param_status_ptr_) {
         for (SQLULEN i = 0; i < paramset_size_; ++i) {
             param_status_ptr_[i] = 0;
+        }
+    }
+
+    // Preflight all rows first so SQL_DATA_AT_EXEC is collected before any row executes.
+    for (SQLULEN row = 0; row < paramset_size_; ++row) {
+        std::vector<ParameterLiteral> params;
+        auto build_status = buildParameterData(params, row);
+        if (build_status == SQL_NEED_DATA) {
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = 0;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = 0;
+            }
+            return finish(SQL_NEED_DATA);
+        }
+        if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
+            if (param_status_ptr_) {
+                param_status_ptr_[row] = SQL_PARAM_ERROR;
+            }
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = 0;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = 0;
+            }
+            return finish(build_status);
         }
     }
 
@@ -4894,6 +5214,15 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
     for (SQLULEN row = 0; row < paramset_size_; ++row) {
         std::vector<ParameterLiteral> params;
         auto build_status = buildParameterData(params, row);
+        if (build_status == SQL_NEED_DATA) {
+            if (params_processed_ptr_) {
+                *params_processed_ptr_ = processed;
+            }
+            if (rows_fetched_ptr_) {
+                *rows_fetched_ptr_ = processed;
+            }
+            return finish(SQL_NEED_DATA);
+        }
         const bool row_has_info = (build_status == SQL_SUCCESS_WITH_INFO);
         if (build_status != SQL_SUCCESS && build_status != SQL_SUCCESS_WITH_INFO) {
             if (param_status_ptr_) {
@@ -4905,7 +5234,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
             if (rows_fetched_ptr_) {
                 *rows_fetched_ptr_ = processed;
             }
-            return build_status;
+            return finish(build_status);
         }
         if (build_status == SQL_SUCCESS_WITH_INFO) {
             info_seen = true;
@@ -4923,7 +5252,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
             if (rows_fetched_ptr_) {
                 *rows_fetched_ptr_ = processed;
             }
-            return build_sql_status;
+            return finish(build_sql_status);
         }
 
         std::vector<std::vector<std::string>> rows;
@@ -4940,7 +5269,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
             if (rows_fetched_ptr_) {
                 *rows_fetched_ptr_ = processed;
             }
-            return rc;
+            return finish(rc);
         }
         if (param_status_ptr_) {
             if (row_has_info || rc == SQL_SUCCESS_WITH_INFO) {
@@ -4966,7 +5295,7 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
         *rows_fetched_ptr_ = processed;
     }
 
-    return info_seen ? SQL_SUCCESS_WITH_INFO : SQL_SUCCESS;
+    return finish(info_seen ? SQL_SUCCESS_WITH_INFO : SQL_SUCCESS);
 }
 
 SQLRETURN OdbcStatement::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
@@ -5074,6 +5403,9 @@ SQLRETURN OdbcStatement::setAttribute(SQLINTEGER attribute, SQLPOINTER value,
         case SQL_ATTR_USE_BOOKMARKS:
             use_bookmarks_ = (ODBC_PTR_TO_ULEN(value) != 0);
             break;
+        case SQL_ATTR_FETCH_BOOKMARK_PTR:
+            fetch_bookmark_ptr_ = static_cast<BOOKMARK*>(value);
+            break;
         case SQL_ATTR_RETRIEVE_DATA:
             retrieve_data_ = (ODBC_PTR_TO_ULEN(value) != 0);
             break;
@@ -5166,6 +5498,14 @@ SQLRETURN OdbcStatement::getAttribute(SQLINTEGER attribute, SQLPOINTER value,
             if (value) *static_cast<SQLULEN*>(value) = max_length_;
             setLen(sizeof(SQLULEN));
             break;
+        case SQL_ATTR_USE_BOOKMARKS:
+            if (value) *static_cast<SQLULEN*>(value) = use_bookmarks_ ? 1 : 0;
+            setLen(sizeof(SQLULEN));
+            break;
+        case SQL_ATTR_FETCH_BOOKMARK_PTR:
+            if (value) *static_cast<BOOKMARK**>(value) = fetch_bookmark_ptr_;
+            setLen(sizeof(SQLPOINTER));
+            break;
         case SQL_ATTR_CURSOR_SCROLLABLE:
             if (value) *static_cast<SQLULEN*>(value) = cursor_scrollable_;
             setLen(sizeof(SQLULEN));
@@ -5234,7 +5574,69 @@ SQLRETURN OdbcStatement::bindResultData() {
     const auto& row = rows_[current_row_ - 1];
     SQLRETURN result = SQL_SUCCESS;
 
+    if (bookmark_bound_) {
+        SQLPOINTER bookmark_target = bookmark_binding_.target_value;
+        SQLLEN* bookmark_ind = bookmark_binding_.str_len_or_ind;
+        if (row_bind_offset_ != 0 && bookmark_target) {
+            bookmark_target = static_cast<char*>(bookmark_target) + row_bind_offset_;
+            if (bookmark_ind) {
+                bookmark_ind = reinterpret_cast<SQLLEN*>(
+                    reinterpret_cast<char*>(bookmark_ind) + row_bind_offset_);
+            }
+        }
+
+        BOOKMARK bookmark_value = static_cast<BOOKMARK>(current_row_);
+        switch (bookmark_binding_.target_type) {
+            case SQL_C_SBIGINT:
+            case SQL_C_UBIGINT:
+                if (bookmark_target) {
+                    *static_cast<BOOKMARK*>(bookmark_target) = bookmark_value;
+                }
+                if (bookmark_ind) {
+                    *bookmark_ind = static_cast<SQLLEN>(sizeof(BOOKMARK));
+                }
+                break;
+            case SQL_C_LONG:
+            case SQL_C_SLONG:
+            case SQL_C_ULONG:
+                if (bookmark_target) {
+                    *static_cast<SQLINTEGER*>(bookmark_target) = static_cast<SQLINTEGER>(bookmark_value);
+                }
+                if (bookmark_ind) {
+                    *bookmark_ind = static_cast<SQLLEN>(sizeof(SQLINTEGER));
+                }
+                break;
+            case SQL_C_CHAR:
+            case SQL_C_DEFAULT: {
+                std::string bookmark_text = std::to_string(bookmark_value);
+                if (bookmark_target && bookmark_binding_.buffer_length > 0) {
+                    size_t copy_len = std::min(
+                        static_cast<size_t>(bookmark_binding_.buffer_length - 1),
+                        bookmark_text.size());
+                    std::memcpy(bookmark_target, bookmark_text.data(), copy_len);
+                    static_cast<char*>(bookmark_target)[copy_len] = '\0';
+                    if (bookmark_ind) {
+                        *bookmark_ind = static_cast<SQLLEN>(bookmark_text.size());
+                    }
+                    if (bookmark_text.size() >= static_cast<size_t>(bookmark_binding_.buffer_length)) {
+                        setError("01004", 0, "String data, right truncated");
+                        result = SQL_SUCCESS_WITH_INFO;
+                    }
+                } else if (bookmark_ind) {
+                    *bookmark_ind = static_cast<SQLLEN>(bookmark_text.size());
+                }
+                break;
+            }
+            default:
+                setError("HY003", 0, "Program type out of range for bookmark");
+                return SQL_ERROR;
+        }
+    }
+
     for (const auto& [col_num, binding] : col_bindings_) {
+        if (col_num == 0) {
+            continue;
+        }
         if (col_num > row.size()) continue;
 
         const auto& value = row[col_num - 1];
@@ -5333,6 +5735,9 @@ SQLRETURN OdbcStatement::buildParameterData(std::vector<ParameterLiteral>& liter
     };
 
     auto rowStride = [&](const ParameterBinding& binding) -> SQLULEN {
+        if (param_bind_type_ != 0) {
+            return param_bind_type_;
+        }
         if (param_bind_offset_ > 0) {
             return static_cast<SQLULEN>(param_bind_offset_);
         }
@@ -5343,11 +5748,11 @@ SQLRETURN OdbcStatement::buildParameterData(std::vector<ParameterLiteral>& liter
         return static_cast<SQLULEN>(stride);
     };
 
-    auto indicatorStride = [&]() -> SQLULEN {
-        if (param_bind_offset_ > 0) {
+    auto rowBaseOffset = [&]() -> SQLULEN {
+        if (param_bind_type_ != 0 && param_bind_offset_ > 0) {
             return static_cast<SQLULEN>(param_bind_offset_);
         }
-        return static_cast<SQLULEN>(sizeof(SQLLEN));
+        return 0;
     };
 
     for (SQLUSMALLINT i = 1; i <= param_bindings_.size(); ++i) {
@@ -5361,26 +5766,24 @@ SQLRETURN OdbcStatement::buildParameterData(std::vector<ParameterLiteral>& liter
 
         auto value_base = static_cast<const uint8_t*>(binding.parameter_value);
         auto stride = rowStride(binding);
-        size_t offset = static_cast<size_t>(row_offset) * static_cast<size_t>(stride);
+        size_t offset = static_cast<size_t>(rowBaseOffset()) +
+                        static_cast<size_t>(row_offset) * static_cast<size_t>(stride);
 
-        auto* ind_base = binding.str_len_or_ind;
-        const SQLLEN* ind = nullptr;
-        if (ind_base) {
-            ind = reinterpret_cast<const SQLLEN*>(reinterpret_cast<const char*>(ind_base) +
-                                                  static_cast<size_t>(row_offset) *
-                                                  static_cast<size_t>(indicatorStride()));
-        }
+        const SQLLEN* ind = indicatorForRow(binding, row_offset);
 
         if (ind && isDataAtExecIndicator(*ind)) {
-            if (row_offset != 0) {
-                setError("HYC00", 0, "SQL_DATA_AT_EXEC with array binding not supported");
-                return SQL_ERROR;
-            }
-
-            auto stream_it = put_data_stream_.find(i);
+            auto key = putDataStreamKey(i, row_offset);
+            auto stream_it = put_data_stream_.find(key);
             if (stream_it == put_data_stream_.end() || !stream_it->second.complete) {
-                data_at_exec_active_ = true;
-                return SQL_NEED_DATA;
+                auto init_status = validateOrInitDataAtExecStateForRow(row_offset);
+                if (init_status != SQL_SUCCESS) {
+                    return init_status;
+                }
+                stream_it = put_data_stream_.find(key);
+                if (stream_it == put_data_stream_.end() || !stream_it->second.complete) {
+                    data_at_exec_active_ = true;
+                    return SQL_NEED_DATA;
+                }
             }
 
             const auto& stream = stream_it->second;

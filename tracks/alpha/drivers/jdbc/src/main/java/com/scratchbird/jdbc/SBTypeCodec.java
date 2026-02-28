@@ -13,6 +13,7 @@
  */
 package com.scratchbird.jdbc;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -331,7 +332,19 @@ public final class SBTypeCodec {
             case OID_JSONB:
                 return new SBJsonb(stripLengthPrefixed(data));
             case OID_BYTEA:
-                return stripLengthPrefixed(data);
+                byte[] rawBytea = stripLengthPrefixed(data);
+                if (rawBytea.length == 0) {
+                    return rawBytea;
+                }
+                String byteaText = new String(rawBytea, StandardCharsets.UTF_8);
+                if (byteaText.startsWith("\\x")
+                    || byteaText.startsWith("0x")
+                    || byteaText.indexOf('\\') >= 0
+                    || (((byteaText.length() & 1) == 0)
+                        && byteaText.matches("(?i)[0-9a-f]+"))) {
+                    return decodeBytea(byteaText);
+                }
+                return rawBytea;
             case OID_DATE:
                 return java.sql.Date.valueOf(decodeDate(data));
             case OID_TIME:
@@ -1058,14 +1071,56 @@ public final class SBTypeCodec {
         if (text == null) {
             return null;
         }
+        String hex = null;
         if (text.startsWith("\\x") || text.startsWith("0x")) {
-            String hex = text.substring(2);
+            hex = text.substring(2);
+        } else if ((text.length() & 1) == 0 && !text.isEmpty() && text.matches("(?i)[0-9a-f]+")) {
+            // Some servers return plain hex text for BYTEA expressions without a \x prefix.
+            hex = text;
+        }
+        if (hex != null) {
             int len = hex.length();
             byte[] out = new byte[len / 2];
             for (int i = 0; i < out.length; i++) {
                 out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
             }
             return out;
+        }
+        if (text.indexOf('\\') >= 0) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(text.length());
+            int i = 0;
+            while (i < text.length()) {
+                char ch = text.charAt(i);
+                if (ch != '\\') {
+                    out.write((byte) ch);
+                    i++;
+                    continue;
+                }
+                if (i + 1 >= text.length()) {
+                    out.write((byte) '\\');
+                    break;
+                }
+                char n1 = text.charAt(i + 1);
+                if (n1 == '\\') {
+                    out.write((byte) '\\');
+                    i += 2;
+                    continue;
+                }
+                if (i + 3 < text.length()
+                    && n1 >= '0' && n1 <= '7'
+                    && text.charAt(i + 2) >= '0' && text.charAt(i + 2) <= '7'
+                    && text.charAt(i + 3) >= '0' && text.charAt(i + 3) <= '7') {
+                    int value = ((n1 - '0') << 6)
+                        | ((text.charAt(i + 2) - '0') << 3)
+                        | (text.charAt(i + 3) - '0');
+                    out.write((byte) value);
+                    i += 4;
+                    continue;
+                }
+                out.write((byte) n1);
+                i += 2;
+            }
+            return out.toByteArray();
         }
         return text.getBytes(StandardCharsets.UTF_8);
     }

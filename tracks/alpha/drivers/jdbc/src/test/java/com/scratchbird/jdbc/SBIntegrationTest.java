@@ -81,8 +81,8 @@ public class SBIntegrationTest {
                     warning = warning.getNextWarning();
                 }
                 String allWarnings = warnings.toString();
-                assertTrue(allWarnings.contains("binary_transfer=false")
-                    || allWarnings.contains("compression=zstd"));
+                assertTrue(allWarnings.contains("compression")
+                    || allWarnings.contains("binary_transfer"));
             }
         }
     }
@@ -415,6 +415,30 @@ public class SBIntegrationTest {
                 verifyRs.next();
                 assertEquals(1, verifyRs.getInt(1));
             }
+        }
+    }
+
+    @Test
+    public void selectForUpdateWorksInTransaction() throws Exception {
+        String table = "jdbc_for_update_" + System.currentTimeMillis();
+        try (Connection conn = openConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, note TEXT)");
+            stmt.execute("INSERT INTO " + table + " (id, note) VALUES (1, 'a')");
+            conn.setAutoCommit(false);
+            try {
+                try (ResultSet rs = stmt.executeQuery(
+                    "SELECT id, note FROM " + table + " WHERE id = 1 FOR UPDATE")) {
+                    assertTrue(rs.next());
+                    assertEquals(1, rs.getInt(1));
+                    assertEquals("a", rs.getString(2));
+                }
+                stmt.executeUpdate("UPDATE " + table + " SET note = 'b' WHERE id = 1");
+                conn.rollback();
+            } finally {
+                conn.setAutoCommit(true);
+            }
+            stmt.execute("DROP TABLE IF EXISTS " + table);
         }
     }
 

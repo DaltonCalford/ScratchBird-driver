@@ -3,6 +3,29 @@
 This repository builds each driver independently. Use the commands below from
 repo root. Integration tests require a running ScratchBird server.
 
+## Driver Runtime Stack
+
+For integration checks against a real ScratchBird server + parser + listener
+stack (from sibling `../ScratchBird`):
+
+```bash
+scripts/driver_runtime_stack.sh up
+scripts/driver_runtime_stack.sh fixtures
+eval "$(scripts/driver_runtime_stack.sh env)"
+```
+
+Stop stack:
+
+```bash
+scripts/driver_runtime_stack.sh down
+```
+
+Combined JDBC + ODBC runtime checks:
+
+```bash
+scripts/run_jdbc_odbc_runtime_checks.sh
+```
+
 ## CI OS Coverage
 
 Windows and Linux in CI:
@@ -67,6 +90,14 @@ cmake --build build-cpp --config Release
 ```bash
 cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
 cmake --build build-odbc --config Release
+```
+
+Runtime verification command (after stack/env setup above):
+
+```bash
+cmake -S tracks/alpha/drivers/odbc -B build/odbc-runtime -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DODBC_FETCH_GTEST=ON
+cmake --build build/odbc-runtime --config Release
+ctest --test-dir build/odbc-runtime --output-on-failure -R '^scratchbird_odbc_tests$'
 ```
 
 ## CLI Tools
@@ -219,3 +250,10 @@ Integration env:
 - `SCRATCHBIRD_JDBC_USER`
 - `SCRATCHBIRD_JDBC_PASSWORD`
 - `SCRATCHBIRD_JDBC_CANCEL_SQL`
+
+Runtime verification command (after stack/env setup above):
+
+```bash
+cd tracks/alpha/drivers/jdbc
+./gradlew test
+```

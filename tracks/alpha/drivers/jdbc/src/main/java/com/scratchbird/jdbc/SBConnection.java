@@ -15,6 +15,7 @@ package com.scratchbird.jdbc;
 
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,6 +68,7 @@ public class SBConnection implements Connection {
     private final TelemetryCollector telemetry = new TelemetryCollector();
     private final KeepaliveManager keepaliveManager = new KeepaliveManager();
     private KeepaliveTracker keepaliveTracker;
+    private final Map<String, SBResultSet> namedCursors = new ConcurrentHashMap<>();
 
     @FunctionalInterface
     interface SqlSupplier<T> {
@@ -105,25 +107,20 @@ public class SBConnection implements Connection {
     private void connect() throws SQLException {
         try {
             properties.setProtocol(properties.getProtocol());
-            if (!properties.isBinaryTransfer()) {
-                appendWarning(new SQLWarning(
-                    "binary_transfer=false requested; using text result format for query rows",
-                    "01000"
-                ));
-            }
-            String compression = properties.getCompression();
-            if (compression != null
-                && !compression.isBlank()
-                && !"off".equalsIgnoreCase(compression)
-                && !"none".equalsIgnoreCase(compression)) {
-                appendWarning(new SQLWarning(
-                    "compression=" + compression
-                        + " requested; native JDBC path is running without negotiated compression",
-                    "01S02"
-                ));
-            }
             protocol = new SBProtocolHandler(properties);
             protocol.connect();
+            String compression = properties.getCompression();
+            if ("zstd".equalsIgnoreCase(compression)) {
+                String negotiated = protocol.getServerParameter("compression");
+                if (negotiated == null
+                    || negotiated.isBlank()
+                    || !"zstd".equalsIgnoreCase(negotiated)) {
+                    appendWarning(new SQLWarning(
+                        "compression=zstd requested but was not negotiated by server; continuing without compression",
+                        "01S02"
+                    ));
+                }
+            }
 
             // Set initial connection parameters
             if (schema != null && !schema.equals("public")) {
@@ -259,7 +256,7 @@ public class SBConnection implements Connection {
     public void setAutoCommit(boolean autoCommit) throws SQLException {
         checkClosed();
         if (this.autoCommit != autoCommit) {
-            if (!this.autoCommit) {
+            if (!this.autoCommit && protocol.hasActiveTransaction()) {
                 // Commit any pending transaction before changing mode
                 commit();
             }
@@ -283,6 +280,9 @@ public class SBConnection implements Connection {
         if (autoCommit) {
             throw new SQLException("Cannot commit when autoCommit is enabled", "25000");
         }
+        if (!protocol.hasActiveTransaction()) {
+            return;
+        }
         protocol.commitTransaction((byte) 0);
     }
 
@@ -291,6 +291,9 @@ public class SBConnection implements Connection {
         checkClosed();
         if (autoCommit) {
             throw new SQLException("Cannot rollback when autoCommit is enabled", "25000");
+        }
+        if (!protocol.hasActiveTransaction()) {
+            return;
         }
         protocol.rollbackTransaction((byte) 0);
     }
@@ -759,7 +762,50 @@ public class SBConnection implements Connection {
         }
     }
 
+    void registerNamedCursor(String cursorName, SBResultSet resultSet) {
+        String key = normalizeCursorName(cursorName);
+        if (key == null || resultSet == null) {
+            return;
+        }
+        namedCursors.put(key, resultSet);
+    }
+
+    void unregisterNamedCursor(String cursorName, SBResultSet resultSet) {
+        String key = normalizeCursorName(cursorName);
+        if (key == null) {
+            return;
+        }
+        if (resultSet == null) {
+            namedCursors.remove(key);
+            return;
+        }
+        namedCursors.remove(key, resultSet);
+    }
+
+    SBResultSet resolveNamedCursor(String cursorName) {
+        String key = normalizeCursorName(cursorName);
+        if (key == null) {
+            return null;
+        }
+        return namedCursors.get(key);
+    }
+
     // ==================== Private Methods ====================
+
+    private static String normalizeCursorName(String cursorName) {
+        if (cursorName == null) {
+            return null;
+        }
+        String trimmed = cursorName.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1).replace("\"\"", "\"");
+            return "\"" + trimmed + "\"";
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
 
     private void reconnectForFailover() throws SQLException {
         if (protocol == null) {

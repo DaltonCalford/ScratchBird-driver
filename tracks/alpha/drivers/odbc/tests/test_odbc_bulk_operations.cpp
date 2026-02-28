@@ -211,31 +211,101 @@ TEST_F(OdbcBulkOperationsTest, BulkOperationsNoRowsIsNoOp) {
     EXPECT_TRUE(bridge_->statements.empty());
 }
 
-TEST_F(OdbcBulkOperationsTest, BulkOperationsRejectsNonColumnWiseBindingMode) {
+TEST_F(OdbcBulkOperationsTest, BulkOperationsSupportsRowWiseBindingMode) {
     const char* sql = "UPDATE bulk_flags SET value = ? WHERE id = ?";
     ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
 
-    SQLINTEGER values[] = {1, 2};
-    SQLINTEGER ids[] = {10, 20};
-    SQLLEN ind_values[] = {0, 0};
-    SQLLEN ind_ids[] = {0, 0};
+    struct RowBinding {
+        SQLINTEGER value;
+        SQLINTEGER id;
+        SQLLEN value_ind;
+        SQLLEN id_ind;
+    };
+    RowBinding rows[] = {
+        {1, 10, 0, 0},
+        {2, 20, 0, 0},
+    };
 
     ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
-                                 0, 0, values, 0, ind_values), SQL_SUCCESS);
+                                 0, 0, &rows[0].value, 0, &rows[0].value_ind), SQL_SUCCESS);
     ASSERT_EQ(stmt_.bindParameter(2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
-                                 0, 0, ids, 0, ind_ids), SQL_SUCCESS);
+                                 0, 0, &rows[0].id, 0, &rows[0].id_ind), SQL_SUCCESS);
 
     SQLULEN paramset_size = 2;
     ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMSET_SIZE,
                                  reinterpret_cast<SQLPOINTER>(paramset_size), 0),
               SQL_SUCCESS);
-    // Use an unsupported parameter bind mode (non-zero) to verify required HYC00 handling.
+    // Row-wise parameter array binding uses a non-zero structure size stride.
     ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAM_BIND_TYPE,
-                                 reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1)),
+                                 reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(sizeof(RowBinding))),
                                  0),
               SQL_SUCCESS);
 
-    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_ERROR);
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_SUCCESS);
+    ASSERT_EQ(bridge_->statements.size(), 2u);
+    EXPECT_NE(bridge_->statements[0].find("UPDATE bulk_flags SET value = 1 WHERE id = 10"), std::string::npos);
+    EXPECT_NE(bridge_->statements[1].find("UPDATE bulk_flags SET value = 2 WHERE id = 20"), std::string::npos);
+}
+
+TEST_F(OdbcBulkOperationsTest, BulkOperationsSupportsDataAtExecAcrossArrayRows) {
+    const char* sql = "INSERT INTO bulk_stream (id, payload) VALUES (?, ?)";
+    ASSERT_EQ(stmt_.prepare(reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)), SQL_NTS), SQL_SUCCESS);
+
+    SQLINTEGER ids[] = {1, 2};
+    SQLLEN id_ind[] = {0, 0};
+    char payload_buffer[2][8] = {};
+    SQLLEN payload_ind[] = {SQL_DATA_AT_EXEC, SQL_DATA_AT_EXEC};
+
+    ASSERT_EQ(stmt_.bindParameter(1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
+                                 0, 0, ids, 0, id_ind), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.bindParameter(2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR,
+                                 sizeof(payload_buffer[0]), 0,
+                                 payload_buffer, sizeof(payload_buffer[0]), payload_ind),
+              SQL_SUCCESS);
+
+    SQLULEN paramset_size = 2;
+    SQLUSMALLINT param_status[2] = {0, 0};
+    SQLULEN processed = 0;
+    SQLULEN fetched = 0;
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMSET_SIZE, reinterpret_cast<SQLPOINTER>(paramset_size), 0),
+              SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAM_STATUS_PTR, param_status, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_PARAMS_PROCESSED_PTR, &processed, 0), SQL_SUCCESS);
+    ASSERT_EQ(stmt_.setAttribute(SQL_ATTR_ROWS_FETCHED_PTR, &fetched, 0), SQL_SUCCESS);
+
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_NEED_DATA);
+
+    SQLPOINTER token = nullptr;
+    EXPECT_EQ(stmt_.paramData(&token), SQL_NEED_DATA);
+    ASSERT_NE(token, nullptr);
+    const char row_one[] = "row-one";
+    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(const_cast<char*>(row_one)),
+                           static_cast<SQLLEN>(sizeof(row_one) - 1)),
+              SQL_SUCCESS);
+    EXPECT_EQ(stmt_.putData(nullptr, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.paramData(&token), SQL_SUCCESS);
+    EXPECT_EQ(token, nullptr);
+
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_NEED_DATA);
+    EXPECT_EQ(stmt_.paramData(&token), SQL_NEED_DATA);
+    ASSERT_NE(token, nullptr);
+    const char row_two[] = "row-two";
+    EXPECT_EQ(stmt_.putData(reinterpret_cast<SQLPOINTER>(const_cast<char*>(row_two)),
+                           static_cast<SQLLEN>(sizeof(row_two) - 1)),
+              SQL_SUCCESS);
+    EXPECT_EQ(stmt_.putData(nullptr, 0), SQL_SUCCESS);
+    EXPECT_EQ(stmt_.paramData(&token), SQL_SUCCESS);
+    EXPECT_EQ(token, nullptr);
+
+    EXPECT_EQ(stmt_.bulkOperations(SQL_ADD), SQL_SUCCESS);
+
+    ASSERT_EQ(bridge_->statements.size(), 2u);
+    EXPECT_NE(bridge_->statements[0].find("VALUES (1,'row-one')"), std::string::npos);
+    EXPECT_NE(bridge_->statements[1].find("VALUES (2,'row-two')"), std::string::npos);
+    EXPECT_EQ(param_status[0], SQL_PARAM_SUCCESS);
+    EXPECT_EQ(param_status[1], SQL_PARAM_SUCCESS);
+    EXPECT_EQ(processed, 2u);
+    EXPECT_EQ(fetched, 2u);
 }
 
 TEST_F(OdbcBulkOperationsTest, BulkOperationsPartialFailureStopsExecution) {

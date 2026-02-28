@@ -228,6 +228,9 @@ if (BUILD_TESTING)
             tests/test_odbc_catalog_and_types.cpp
             tests/test_odbc_capabilities_descriptors.cpp
             tests/test_odbc_lob_streaming.cpp
+            tests/test_odbc_unicode_compat.cpp
+            tests/test_odbc_statement_cache.cpp
+            tests/test_odbc_external_runtime.cpp
         )
 
         target_link_libraries(scratchbird_odbc_tests

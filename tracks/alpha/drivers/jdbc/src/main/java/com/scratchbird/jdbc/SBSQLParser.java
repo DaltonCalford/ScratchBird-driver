@@ -119,6 +119,18 @@ public class SBSQLParser {
             return "CALL " + proc;
         }
 
+        // Stored function call with return placeholder: {? = call func(args)}
+        if (lower.startsWith("?")) {
+            int eq = escape.indexOf('=');
+            if (eq > 0) {
+                String rhs = escape.substring(eq + 1).trim();
+                if (rhs.toLowerCase().startsWith("call ")) {
+                    String fn = rhs.substring(5).trim();
+                    return "SELECT " + fn;
+                }
+            }
+        }
+
         // Unknown escape, return as-is
         return "{" + escape + "}";
     }

@@ -209,6 +209,7 @@ public class SBProtocolHandler {
 
     private static final byte MSG_FLAG_URGENT = 0x08;
 
+    private static final long FEATURE_COMPRESSION = 1L << 0;
     private static final long FEATURE_STREAMING = 1L << 1;
 
     private static final int QUERY_FLAG_DESCRIBE_ONLY = 0x01;
@@ -673,6 +674,10 @@ public class SBProtocolHandler {
         return networkTimeout;
     }
 
+    public synchronized boolean hasActiveTransaction() {
+        return txnId != 0;
+    }
+
     public String getServerParameter(String name) {
         return serverParameters.get(name);
     }
@@ -830,6 +835,9 @@ public class SBProtocolHandler {
         }
 
         long features = 0;
+        if ("zstd".equalsIgnoreCase(props.getCompression())) {
+            features |= FEATURE_COMPRESSION;
+        }
         if (props.isBinaryTransfer()) {
             features |= FEATURE_STREAMING;
         }

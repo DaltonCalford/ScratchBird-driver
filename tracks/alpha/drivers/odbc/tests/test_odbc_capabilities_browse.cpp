@@ -132,15 +132,23 @@ static std::vector<SQLUSMALLINT> expectedSupportedFunctions() {
         SQL_API_SQLDISCONNECT,
         SQL_API_SQLSETCONNECTATTR,
         SQL_API_SQLGETCONNECTATTR,
+        SQL_API_SQLSETCONNECTOPTION,
+        SQL_API_SQLGETCONNECTOPTION,
         SQL_API_SQLSETENVATTR,
         SQL_API_SQLGETENVATTR,
         SQL_API_SQLSETSTMTATTR,
         SQL_API_SQLGETSTMTATTR,
+        SQL_API_SQLSETSTMTOPTION,
+        SQL_API_SQLGETSTMTOPTION,
         SQL_API_SQLPREPARE,
         SQL_API_SQLEXECUTE,
         SQL_API_SQLEXECDIRECT,
         SQL_API_SQLCANCEL,
+        SQL_API_SQLCANCELHANDLE,
         SQL_API_SQLCLOSECURSOR,
+        SQL_API_SQLGETCURSORNAME,
+        SQL_API_SQLSETCURSORNAME,
+        SQL_API_SQLNATIVESQL,
         SQL_API_SQLBULKOPERATIONS,
         SQL_API_SQLSETPOS,
         SQL_API_SQLFETCH,
@@ -257,17 +265,17 @@ TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
 
     SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
     EXPECT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
-    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLGETCURSORNAME));
-    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLNATIVESQL));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLGETCURSORNAME));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLNATIVESQL));
     EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLPARAMDATA));
     EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLPUTDATA));
-    EXPECT_FALSE(isFunctionAdvertised(function_map, SQL_API_SQLSETCURSORNAME));
+    EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLSETCURSORNAME));
     EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLCONNECT));
     EXPECT_TRUE(isFunctionAdvertised(function_map, SQL_API_SQLTABLES));
 
     SQLUSMALLINT unsupported = 0;
     EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETCURSORNAME, &unsupported), SQL_SUCCESS);
-    EXPECT_EQ(unsupported, 0);
+    EXPECT_EQ(unsupported, 1);
     EXPECT_EQ(conn_.getFunctions(SQL_API_SQLGETFUNCTIONS, &unsupported), SQL_SUCCESS);
     EXPECT_EQ(unsupported, 1);
 }
@@ -366,6 +374,48 @@ TEST_F(OdbcCapabilityBrowseTest, NullEnvConnectionPoolingDefaultsPropagateToNewE
     ASSERT_EQ(SQLSetEnvAttr(SQL_NULL_HENV, SQL_ATTR_CONNECTION_POOLING,
                            reinterpret_cast<SQLPOINTER>(SQL_CP_OFF), 0),
               SQL_SUCCESS);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetInfoSupportsCommonCapabilityProbeSet) {
+    SQLUINTEGER u32 = 1234;
+    SQLSMALLINT len = 0;
+
+    EXPECT_EQ(conn_.getInfo(SQL_ASYNC_MODE, &u32, sizeof(u32), &len), SQL_SUCCESS);
+    EXPECT_EQ(u32, 0u);
+    EXPECT_EQ(len, static_cast<SQLSMALLINT>(sizeof(u32)));
+
+    u32 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_BATCH_SUPPORT, &u32, sizeof(u32), &len), SQL_SUCCESS);
+    EXPECT_EQ(u32, 0u);
+
+    u32 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_BATCH_ROW_COUNT, &u32, sizeof(u32), &len), SQL_SUCCESS);
+    EXPECT_EQ(u32, 0u);
+
+    u32 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_OJ_CAPABILITIES, &u32, sizeof(u32), &len), SQL_SUCCESS);
+    EXPECT_EQ(u32, 0u);
+
+    u32 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_SQL92_PREDICATES, &u32, sizeof(u32), &len), SQL_SUCCESS);
+    EXPECT_EQ(u32, 0u);
+
+    SQLUSMALLINT u16 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_CATALOG_LOCATION, &u16, sizeof(u16), &len), SQL_SUCCESS);
+    EXPECT_EQ(u16, 1u);
+    EXPECT_EQ(len, static_cast<SQLSMALLINT>(sizeof(u16)));
+
+    u16 = 1234;
+    EXPECT_EQ(conn_.getInfo(SQL_MAX_COLUMNS_IN_SELECT, &u16, sizeof(u16), &len), SQL_SUCCESS);
+    EXPECT_EQ(u16, 0u);
+
+    char text[64] = {};
+    EXPECT_EQ(conn_.getInfo(SQL_XOPEN_CLI_YEAR, text, sizeof(text), &len), SQL_SUCCESS);
+    EXPECT_STREQ(text, "1995");
+
+    std::memset(text, 0, sizeof(text));
+    EXPECT_EQ(conn_.getInfo(SQL_MAX_ROW_SIZE_INCLUDES_LONG, text, sizeof(text), &len), SQL_SUCCESS);
+    EXPECT_STREQ(text, "Y");
 }
 
 }  // namespace

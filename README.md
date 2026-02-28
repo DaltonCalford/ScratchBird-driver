@@ -179,6 +179,19 @@ See individual driver directories for complete documentation and examples.
 Cross-platform build and test commands are captured in:
 - `docs/BUILD_MATRIX.md` (required tools + build/test matrix, Ubuntu 24.04 quick-install)
 
+## Driver Runtime Validation (JDBC + ODBC)
+
+To validate drivers against a live ScratchBird server/parser/listener stack:
+
+```bash
+scripts/driver_runtime_stack.sh up
+scripts/driver_runtime_stack.sh fixtures
+scripts/run_jdbc_odbc_runtime_checks.sh
+```
+
+This uses the sibling `../ScratchBird` repository runtime manager and shared
+fixtures under `docs/fixtures/`.
+
 ---
 
 ## Target Features (SBWP v1.1)

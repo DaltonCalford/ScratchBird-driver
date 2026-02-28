@@ -682,6 +682,266 @@ ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLFreeEnv(
 ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLFreeConnect(
     scratchbird::odbc::SQLHDBC ConnectionHandle);
 
+/**
+ * @brief Set connection option (ODBC 2.x compatibility)
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLSetConnectOption(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    scratchbird::odbc::SQLUSMALLINT Option,
+    scratchbird::odbc::SQLULEN Value);
+
+/**
+ * @brief Get connection option (ODBC 2.x compatibility)
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetConnectOption(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    scratchbird::odbc::SQLUSMALLINT Option,
+    scratchbird::odbc::SQLPOINTER ValuePtr);
+
+/**
+ * @brief Set statement option (ODBC 2.x compatibility)
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLSetStmtOption(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLUSMALLINT Option,
+    scratchbird::odbc::SQLULEN Value);
+
+/**
+ * @brief Get statement option (ODBC 2.x compatibility)
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetStmtOption(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLUSMALLINT Option,
+    scratchbird::odbc::SQLPOINTER ValuePtr);
+
+/**
+ * @brief Return native SQL text (escape processing no-op for now).
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLNativeSql(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    scratchbird::odbc::SQLCHAR* InStatementText,
+    scratchbird::odbc::SQLINTEGER TextLength1,
+    scratchbird::odbc::SQLCHAR* OutStatementText,
+    scratchbird::odbc::SQLINTEGER BufferLength,
+    scratchbird::odbc::SQLINTEGER* TextLength2Ptr);
+
+/**
+ * @brief Set and get cursor names for positioned operations.
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLSetCursorName(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLCHAR* CursorName,
+    scratchbird::odbc::SQLSMALLINT NameLength);
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetCursorName(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLCHAR* CursorName,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* NameLengthPtr);
+
+/**
+ * @brief ODBC 3.8 cancel by handle.
+ */
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLCancelHandle(
+    scratchbird::odbc::SQLSMALLINT HandleType,
+    scratchbird::odbc::SQLHANDLE Handle);
+
+// =============================================================================
+// Wide-character API variants
+// =============================================================================
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLConnectW(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* ServerName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* UserName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* Authentication,
+    scratchbird::odbc::SQLSMALLINT NameLength3);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLDriverConnectW(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    HWND WindowHandle,
+    ::SQLWCHAR* InConnectionString,
+    scratchbird::odbc::SQLSMALLINT StringLength1,
+    ::SQLWCHAR* OutConnectionString,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* StringLength2Ptr,
+    scratchbird::odbc::SQLUSMALLINT DriverCompletion);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLBrowseConnectW(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* InConnectionString,
+    scratchbird::odbc::SQLSMALLINT StringLength1,
+    ::SQLWCHAR* OutConnectionString,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* StringLength2Ptr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLPrepareW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* StatementText,
+    scratchbird::odbc::SQLINTEGER TextLength);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLExecDirectW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* StatementText,
+    scratchbird::odbc::SQLINTEGER TextLength);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetInfoW(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    scratchbird::odbc::SQLUSMALLINT InfoType,
+    scratchbird::odbc::SQLPOINTER InfoValuePtr,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* StringLengthPtr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetDiagRecW(
+    scratchbird::odbc::SQLSMALLINT HandleType,
+    scratchbird::odbc::SQLHANDLE Handle,
+    scratchbird::odbc::SQLSMALLINT RecNumber,
+    ::SQLWCHAR* SQLState,
+    scratchbird::odbc::SQLINTEGER* NativeErrorPtr,
+    ::SQLWCHAR* MessageText,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* TextLengthPtr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLDescribeColW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLUSMALLINT ColumnNumber,
+    ::SQLWCHAR* ColumnName,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* NameLengthPtr,
+    scratchbird::odbc::SQLSMALLINT* DataTypePtr,
+    scratchbird::odbc::SQLULEN* ColumnSizePtr,
+    scratchbird::odbc::SQLSMALLINT* DecimalDigitsPtr,
+    scratchbird::odbc::SQLSMALLINT* NullablePtr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLTablesW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    ::SQLWCHAR* TableType,
+    scratchbird::odbc::SQLSMALLINT NameLength4);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLColumnsW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    scratchbird::odbc::SQLSMALLINT NameLength4);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLNativeSqlW(
+    scratchbird::odbc::SQLHDBC ConnectionHandle,
+    ::SQLWCHAR* InStatementText,
+    scratchbird::odbc::SQLINTEGER TextLength1,
+    ::SQLWCHAR* OutStatementText,
+    scratchbird::odbc::SQLINTEGER BufferLength,
+    scratchbird::odbc::SQLINTEGER* TextLength2Ptr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLSetCursorNameW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CursorName,
+    scratchbird::odbc::SQLSMALLINT NameLength);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLGetCursorNameW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CursorName,
+    scratchbird::odbc::SQLSMALLINT BufferLength,
+    scratchbird::odbc::SQLSMALLINT* NameLengthPtr);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLPrimaryKeysW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLForeignKeysW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* PKCatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* PKSchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* PKTableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    ::SQLWCHAR* FKCatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength4,
+    ::SQLWCHAR* FKSchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength5,
+    ::SQLWCHAR* FKTableName,
+    scratchbird::odbc::SQLSMALLINT NameLength6);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLStatisticsW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    scratchbird::odbc::SQLUSMALLINT Unique,
+    scratchbird::odbc::SQLUSMALLINT Reserved);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLSpecialColumnsW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    scratchbird::odbc::SQLUSMALLINT IdentifierType,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    scratchbird::odbc::SQLUSMALLINT Scope,
+    scratchbird::odbc::SQLUSMALLINT Nullable);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLProceduresW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* ProcName,
+    scratchbird::odbc::SQLSMALLINT NameLength3);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLProcedureColumnsW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* ProcName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    scratchbird::odbc::SQLSMALLINT NameLength4);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLTablePrivilegesW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3);
+
+ODBC_EXPORT scratchbird::odbc::SQLRETURN ODBC_API SQLColumnPrivilegesW(
+    scratchbird::odbc::SQLHSTMT StatementHandle,
+    ::SQLWCHAR* CatalogName,
+    scratchbird::odbc::SQLSMALLINT NameLength1,
+    ::SQLWCHAR* SchemaName,
+    scratchbird::odbc::SQLSMALLINT NameLength2,
+    ::SQLWCHAR* TableName,
+    scratchbird::odbc::SQLSMALLINT NameLength3,
+    ::SQLWCHAR* ColumnName,
+    scratchbird::odbc::SQLSMALLINT NameLength4);
+
 }  // extern "C"
 
 #endif  // SCRATCHBIRD_ODBC_DRIVER_H

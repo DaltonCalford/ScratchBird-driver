@@ -109,6 +109,10 @@ typedef struct sb_odbc_batch_op {
     SQLPOINTER* params;
     SQLLEN* param_lens;
     SQLSMALLINT param_count;
+    const SQLSMALLINT* param_c_types;
+    const SQLSMALLINT* param_sql_types;
+    const SQLULEN* param_column_sizes;
+    const SQLSMALLINT* param_decimal_digits;
 } sb_odbc_batch_op;
 
 /**
@@ -140,6 +144,27 @@ SQLRETURN sb_odbc_bulk_insert(
     SQLSMALLINT column_count,
     SQLPOINTER* data,
     SQLLEN* data_lens,
+    SQLULEN row_count,
+    SQLULEN* rows_inserted
+);
+
+/**
+ * @brief Execute bulk insert using explicit parameter type metadata.
+ *
+ * The type arrays are indexed by column (0..column_count-1). Pass nullptr to
+ * use default string binding behavior for that type attribute.
+ */
+SQLRETURN sb_odbc_bulk_insert_ex(
+    scratchbird::odbc::SQLHSTMT hstmt,
+    SQLCHAR* table_name,
+    SQLCHAR** columns,
+    SQLSMALLINT column_count,
+    SQLPOINTER* data,
+    SQLLEN* data_lens,
+    const SQLSMALLINT* param_c_types,
+    const SQLSMALLINT* param_sql_types,
+    const SQLULEN* param_column_sizes,
+    const SQLSMALLINT* param_decimal_digits,
     SQLULEN row_count,
     SQLULEN* rows_inserted
 );

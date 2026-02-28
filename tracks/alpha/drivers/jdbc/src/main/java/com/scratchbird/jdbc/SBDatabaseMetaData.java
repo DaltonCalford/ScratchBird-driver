@@ -30,12 +30,12 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean allProceduresAreCallable() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean allTablesAreSelectable() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -231,11 +231,32 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsConvert() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsConvert(int fromType, int toType) throws SQLException {
+        if (fromType == toType) {
+            return true;
+        }
+        if (isNumericType(fromType) && isNumericType(toType)) {
+            return true;
+        }
+        if (isCharacterType(fromType) || isCharacterType(toType)) {
+            return true;
+        }
+        if (isTemporalType(fromType) && isTemporalType(toType)) {
+            return true;
+        }
+        if (isBinaryType(fromType) && isBinaryType(toType)) {
+            return true;
+        }
+        if (fromType == Types.BOOLEAN && (isNumericType(toType) || isCharacterType(toType))) {
+            return true;
+        }
+        if (toType == Types.BOOLEAN && (isNumericType(fromType) || isCharacterType(fromType))) {
+            return true;
+        }
         return false;
     }
 
@@ -246,7 +267,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsDifferentTableCorrelationNames() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -321,7 +342,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsANSI92FullSQL() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -421,17 +442,17 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsPositionedDelete() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsPositionedUpdate() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
     public boolean supportsSelectForUpdate() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -3226,6 +3247,37 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public boolean generatedKeyAlwaysReturned() throws SQLException {
         return false;
+    }
+
+    private static boolean isNumericType(int sqlType) {
+        return switch (sqlType) {
+            case Types.BIT, Types.TINYINT, Types.SMALLINT, Types.INTEGER, Types.BIGINT,
+                Types.FLOAT, Types.REAL, Types.DOUBLE, Types.NUMERIC, Types.DECIMAL -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isCharacterType(int sqlType) {
+        return switch (sqlType) {
+            case Types.CHAR, Types.VARCHAR, Types.LONGVARCHAR,
+                Types.NCHAR, Types.NVARCHAR, Types.LONGNVARCHAR, Types.CLOB, Types.NCLOB -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isTemporalType(int sqlType) {
+        return switch (sqlType) {
+            case Types.DATE, Types.TIME, Types.TIME_WITH_TIMEZONE,
+                Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isBinaryType(int sqlType) {
+        return switch (sqlType) {
+            case Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB -> true;
+            default -> false;
+        };
     }
 
     @Override

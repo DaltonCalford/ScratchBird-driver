@@ -6,11 +6,14 @@
 #include "scratchbird/odbc/statement_cache.h"
 #include "scratchbird/odbc/odbc_handles.h"
 
+#include <algorithm>
 #include <cstring>
+#include <cstdint>
 #include <unordered_map>
 #include <list>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 using namespace scratchbird::odbc;
 
@@ -81,6 +84,73 @@ static CacheState* get_state(SQLHDBC hdbc) {
         return nullptr;
     }
     return &it->second;
+}
+
+static SQLLEN fixed_size_for_c_type(SQLSMALLINT c_type) {
+    switch (c_type) {
+        case SQL_C_LONG:
+        case SQL_C_SLONG:
+            return static_cast<SQLLEN>(sizeof(SQLINTEGER));
+        case SQL_C_SHORT:
+        case SQL_C_SSHORT:
+            return static_cast<SQLLEN>(sizeof(SQLSMALLINT));
+        case SQL_C_SBIGINT:
+            return static_cast<SQLLEN>(sizeof(int64_t));
+        case SQL_C_DOUBLE:
+            return static_cast<SQLLEN>(sizeof(SQLDOUBLE));
+        case SQL_C_FLOAT:
+            return static_cast<SQLLEN>(sizeof(SQLREAL));
+        case SQL_C_BIT:
+            return static_cast<SQLLEN>(sizeof(SQLCHAR));
+        case SQL_C_DATE:
+            return static_cast<SQLLEN>(sizeof(scratchbird::odbc::SQL_DATE_STRUCT));
+        case SQL_C_TIME:
+            return static_cast<SQLLEN>(sizeof(scratchbird::odbc::SQL_TIME_STRUCT));
+        case SQL_C_TIMESTAMP:
+            return static_cast<SQLLEN>(sizeof(scratchbird::odbc::SQL_TIMESTAMP_STRUCT));
+        case SQL_C_GUID:
+            return static_cast<SQLLEN>(sizeof(scratchbird::odbc::SQLGUID));
+        default:
+            return -1;
+    }
+}
+
+static bool array_binding_supported_c_type(SQLSMALLINT c_type) {
+    return c_type == SQL_C_CHAR ||
+           c_type == SQL_C_BINARY ||
+           fixed_size_for_c_type(c_type) > 0;
+}
+
+static SQLSMALLINT default_sql_type_for_c_type(SQLSMALLINT c_type) {
+    switch (c_type) {
+        case SQL_C_LONG:
+        case SQL_C_SLONG:
+            return SQL_INTEGER;
+        case SQL_C_SHORT:
+        case SQL_C_SSHORT:
+            return SQL_SMALLINT;
+        case SQL_C_SBIGINT:
+            return SQL_BIGINT;
+        case SQL_C_DOUBLE:
+            return SQL_DOUBLE;
+        case SQL_C_FLOAT:
+            return SQL_REAL;
+        case SQL_C_BIT:
+            return SQL_BIT;
+        case SQL_C_BINARY:
+            return SQL_VARBINARY;
+        case SQL_C_DATE:
+            return SQL_TYPE_DATE;
+        case SQL_C_TIME:
+            return SQL_TYPE_TIME;
+        case SQL_C_TIMESTAMP:
+            return SQL_TYPE_TIMESTAMP;
+        case SQL_C_GUID:
+            return SQL_GUID;
+        case SQL_C_CHAR:
+        default:
+            return SQL_VARCHAR;
+    }
 }
 
 } // namespace
@@ -280,21 +350,111 @@ SQLRETURN sb_odbc_batch_execute(
     }
     auto* stmt = static_cast<OdbcStatement*>(hstmt);
     SQLULEN total_rows = 0;
+    bool info_seen = false;
     for (SQLULEN i = 0; i < operation_count; ++i) {
-        if (operations[i].param_count > 0) {
+        const auto& op = operations[i];
+        if (!op.sql) {
             if (error_index) {
                 *error_index = i;
             }
-            return SQL_ERROR; // Parameterized batch not implemented
+            return SQL_INVALID_HANDLE;
         }
-        SQLRETURN rc = stmt->execDirect(operations[i].sql, operations[i].sql_len);
-        if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+
+        SQLRETURN rc = SQL_ERROR;
+        if (op.param_count > 0) {
+            rc = stmt->freeStmt(SQL_RESET_PARAMS);
+            if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+                if (error_index) {
+                    *error_index = i;
+                }
+                return rc;
+            }
+
+            rc = stmt->prepare(op.sql, op.sql_len);
+            if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+                if (error_index) {
+                    *error_index = i;
+                }
+                return rc;
+            }
+
+            std::vector<SQLLEN> indicators(static_cast<size_t>(op.param_count), SQL_NTS);
+            for (SQLSMALLINT p = 0; p < op.param_count; ++p) {
+                SQLPOINTER param_value = op.params ? op.params[p] : nullptr;
+                SQLLEN indicator = SQL_NTS;
+                if (op.param_lens) {
+                    indicator = op.param_lens[p];
+                } else if (!param_value) {
+                    indicator = SQL_NULL_DATA;
+                }
+                indicators[static_cast<size_t>(p)] = indicator;
+
+                SQLSMALLINT value_type = SQL_C_CHAR;
+                SQLSMALLINT parameter_type = SQL_VARCHAR;
+                SQLULEN column_size = 0;
+                SQLSMALLINT decimal_digits = 0;
+                if (op.param_c_types) {
+                    value_type = op.param_c_types[p];
+                }
+                if (op.param_sql_types) {
+                    parameter_type = op.param_sql_types[p];
+                }
+                if (op.param_column_sizes) {
+                    column_size = op.param_column_sizes[p];
+                } else if (value_type == SQL_C_CHAR && indicator > 0) {
+                    column_size = static_cast<SQLULEN>(indicator);
+                }
+                if (op.param_decimal_digits) {
+                    decimal_digits = op.param_decimal_digits[p];
+                }
+
+                SQLLEN buffer_length = 0;
+                if (indicator > 0) {
+                    buffer_length = indicator;
+                }
+
+                rc = stmt->bindParameter(
+                    static_cast<SQLUSMALLINT>(p + 1),
+                    SQL_PARAM_INPUT,
+                    value_type,
+                    parameter_type,
+                    column_size,
+                    decimal_digits,
+                    param_value,
+                    buffer_length,
+                    &indicators[static_cast<size_t>(p)]);
+                if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+                    if (error_index) {
+                        *error_index = i;
+                    }
+                    return rc;
+                }
+            }
+
+            rc = stmt->execute();
+        } else {
+            rc = stmt->execDirect(op.sql, op.sql_len);
+        }
+
+        if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO && rc != SQL_NO_DATA) {
             if (error_index) {
                 *error_index = i;
+            }
+            if (rows_affected) {
+                *rows_affected = total_rows;
             }
             return rc;
         }
-        total_rows += 1;
+        if (rc == SQL_SUCCESS_WITH_INFO) {
+            info_seen = true;
+        }
+
+        SQLLEN row_count = stmt->getRowCount();
+        if (row_count > 0) {
+            total_rows += static_cast<SQLULEN>(row_count);
+        } else {
+            total_rows += 1;
+        }
     }
     if (rows_affected) {
         *rows_affected = total_rows;
@@ -302,7 +462,7 @@ SQLRETURN sb_odbc_batch_execute(
     if (error_index) {
         *error_index = 0;
     }
-    return SQL_SUCCESS;
+    return info_seen ? SQL_SUCCESS_WITH_INFO : SQL_SUCCESS;
 }
 
 SQLRETURN sb_odbc_bulk_insert(
@@ -315,18 +475,391 @@ SQLRETURN sb_odbc_bulk_insert(
     SQLULEN row_count,
     SQLULEN* rows_inserted
 ) {
-    (void)columns;
-    (void)column_count;
-    (void)data;
-    (void)data_lens;
-    if (!hstmt || !table_name || row_count == 0) {
+    return sb_odbc_bulk_insert_ex(
+        hstmt, table_name, columns, column_count, data, data_lens,
+        nullptr, nullptr, nullptr, nullptr, row_count, rows_inserted);
+}
+
+SQLRETURN sb_odbc_bulk_insert_ex(
+    SQLHSTMT hstmt,
+    SQLCHAR* table_name,
+    SQLCHAR** columns,
+    SQLSMALLINT column_count,
+    SQLPOINTER* data,
+    SQLLEN* data_lens,
+    const SQLSMALLINT* param_c_types,
+    const SQLSMALLINT* param_sql_types,
+    const SQLULEN* param_column_sizes,
+    const SQLSMALLINT* param_decimal_digits,
+    SQLULEN row_count,
+    SQLULEN* rows_inserted
+) {
+    if (!hstmt || !table_name || !columns || column_count <= 0 || !data) {
         return SQL_INVALID_HANDLE;
     }
-    // Array binding not implemented; return error to avoid false success.
     if (rows_inserted) {
         *rows_inserted = 0;
     }
-    return SQL_ERROR;
+    if (row_count == 0) {
+        return SQL_SUCCESS;
+    }
+
+    std::string sql = "INSERT INTO ";
+    sql += reinterpret_cast<const char*>(table_name);
+    sql += " (";
+    for (SQLSMALLINT col = 0; col < column_count; ++col) {
+        if (!columns[col]) {
+            return SQL_INVALID_HANDLE;
+        }
+        if (col > 0) {
+            sql += ", ";
+        }
+        sql += reinterpret_cast<const char*>(columns[col]);
+    }
+    sql += ") VALUES (";
+    for (SQLSMALLINT col = 0; col < column_count; ++col) {
+        if (col > 0) {
+            sql += ", ";
+        }
+        sql += "?";
+    }
+    sql += ")";
+
+    auto execute_via_batch = [&]() -> SQLRETURN {
+        std::vector<sb_odbc_batch_op> operations(static_cast<size_t>(row_count));
+        std::vector<std::vector<SQLPOINTER>> params(static_cast<size_t>(row_count));
+        std::vector<std::vector<SQLLEN>> lens(static_cast<size_t>(row_count));
+
+        for (SQLULEN row = 0; row < row_count; ++row) {
+            auto& row_params = params[static_cast<size_t>(row)];
+            auto& row_lens = lens[static_cast<size_t>(row)];
+            row_params.resize(static_cast<size_t>(column_count), nullptr);
+            row_lens.resize(static_cast<size_t>(column_count), SQL_NULL_DATA);
+
+            for (SQLSMALLINT col = 0; col < column_count; ++col) {
+                auto** col_values = reinterpret_cast<SQLPOINTER*>(data[col]);
+                if (!col_values) {
+                    row_params[static_cast<size_t>(col)] = nullptr;
+                    row_lens[static_cast<size_t>(col)] = SQL_NULL_DATA;
+                    continue;
+                }
+                SQLPOINTER value = col_values[row];
+                row_params[static_cast<size_t>(col)] = value;
+
+                SQLLEN len = SQL_NTS;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (!value) {
+                    len = SQL_NULL_DATA;
+                }
+                row_lens[static_cast<size_t>(col)] = len;
+            }
+
+            operations[static_cast<size_t>(row)].sql = reinterpret_cast<SQLCHAR*>(
+                const_cast<char*>(sql.c_str()));
+            operations[static_cast<size_t>(row)].sql_len = SQL_NTS;
+            operations[static_cast<size_t>(row)].params = row_params.data();
+            operations[static_cast<size_t>(row)].param_lens = row_lens.data();
+            operations[static_cast<size_t>(row)].param_count = column_count;
+            operations[static_cast<size_t>(row)].param_c_types = param_c_types;
+            operations[static_cast<size_t>(row)].param_sql_types = param_sql_types;
+            operations[static_cast<size_t>(row)].param_column_sizes = param_column_sizes;
+            operations[static_cast<size_t>(row)].param_decimal_digits = param_decimal_digits;
+        }
+
+        SQLULEN error_index = 0;
+        SQLRETURN rc = sb_odbc_batch_execute(
+            hstmt,
+            operations.data(),
+            row_count,
+            rows_inserted,
+            &error_index);
+        if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO && rows_inserted) {
+            *rows_inserted = error_index;
+        }
+        return rc;
+    };
+
+    struct ColumnArrayStorage {
+        SQLSMALLINT c_type{SQL_C_CHAR};
+        SQLSMALLINT sql_type{SQL_VARCHAR};
+        SQLULEN column_size{0};
+        SQLSMALLINT decimal_digits{0};
+        SQLLEN element_size{1};
+        std::vector<unsigned char> values;
+        std::vector<SQLLEN> indicators;
+    };
+
+    auto* stmt = static_cast<OdbcStatement*>(hstmt);
+    std::vector<ColumnArrayStorage> arrays(static_cast<size_t>(column_count));
+    bool truncated = false;
+
+    for (SQLSMALLINT col = 0; col < column_count; ++col) {
+        auto& column = arrays[static_cast<size_t>(col)];
+        column.c_type = param_c_types ? param_c_types[col] : SQL_C_CHAR;
+        if (!array_binding_supported_c_type(column.c_type)) {
+            return execute_via_batch();
+        }
+        column.sql_type = param_sql_types ? param_sql_types[col]
+                                          : default_sql_type_for_c_type(column.c_type);
+        column.column_size = param_column_sizes ? param_column_sizes[col] : 0;
+        column.decimal_digits = param_decimal_digits ? param_decimal_digits[col] : 0;
+        column.indicators.assign(static_cast<size_t>(row_count), SQL_NULL_DATA);
+
+        auto** row_values = reinterpret_cast<SQLPOINTER*>(data[col]);
+        if (!row_values) {
+            return SQL_INVALID_HANDLE;
+        }
+
+        if (column.c_type == SQL_C_CHAR) {
+            size_t max_len = 1;
+            for (SQLULEN row = 0; row < row_count; ++row) {
+                SQLPOINTER value = row_values[row];
+                SQLLEN len = SQL_NTS;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (!value) {
+                    len = SQL_NULL_DATA;
+                }
+                if (!value || len == SQL_NULL_DATA) {
+                    continue;
+                }
+                if (len == SQL_NTS) {
+                    len = static_cast<SQLLEN>(
+                        std::strlen(static_cast<const char*>(value)));
+                }
+                if (len < 0) {
+                    return execute_via_batch();
+                }
+                max_len = std::max(max_len, static_cast<size_t>(len) + 1);
+            }
+            column.element_size = static_cast<SQLLEN>(max_len);
+            if (column.column_size == 0 && max_len > 0) {
+                column.column_size = static_cast<SQLULEN>(max_len - 1);
+            }
+            column.values.assign(static_cast<size_t>(row_count) * max_len, 0);
+
+            for (SQLULEN row = 0; row < row_count; ++row) {
+                SQLPOINTER value = row_values[row];
+                SQLLEN len = SQL_NTS;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (!value) {
+                    len = SQL_NULL_DATA;
+                }
+                if (!value || len == SQL_NULL_DATA) {
+                    column.indicators[static_cast<size_t>(row)] = SQL_NULL_DATA;
+                    continue;
+                }
+                if (len == SQL_NTS) {
+                    len = static_cast<SQLLEN>(
+                        std::strlen(static_cast<const char*>(value)));
+                }
+                if (len < 0) {
+                    return execute_via_batch();
+                }
+
+                size_t offset = static_cast<size_t>(row) * max_len;
+                size_t copy_len = std::min(static_cast<size_t>(len), max_len - 1);
+                if (static_cast<size_t>(len) > copy_len) {
+                    truncated = true;
+                }
+                std::memcpy(column.values.data() + offset, value, copy_len);
+                column.values[offset + copy_len] = '\0';
+                column.indicators[static_cast<size_t>(row)] = static_cast<SQLLEN>(copy_len);
+            }
+        } else if (column.c_type == SQL_C_BINARY) {
+            size_t max_len = 1;
+            for (SQLULEN row = 0; row < row_count; ++row) {
+                SQLPOINTER value = row_values[row];
+                SQLLEN len = SQL_NULL_DATA;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (value && column.column_size > 0) {
+                    len = static_cast<SQLLEN>(column.column_size);
+                }
+                if (!value || len == SQL_NULL_DATA) {
+                    continue;
+                }
+                if (len < 0) {
+                    return execute_via_batch();
+                }
+                max_len = std::max(max_len, static_cast<size_t>(len));
+            }
+            column.element_size = static_cast<SQLLEN>(max_len);
+            if (column.column_size == 0) {
+                column.column_size = static_cast<SQLULEN>(max_len);
+            }
+            column.values.assign(static_cast<size_t>(row_count) * max_len, 0);
+
+            for (SQLULEN row = 0; row < row_count; ++row) {
+                SQLPOINTER value = row_values[row];
+                SQLLEN len = SQL_NULL_DATA;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (value && column.column_size > 0) {
+                    len = static_cast<SQLLEN>(column.column_size);
+                }
+                if (!value || len == SQL_NULL_DATA) {
+                    column.indicators[static_cast<size_t>(row)] = SQL_NULL_DATA;
+                    continue;
+                }
+                if (len < 0) {
+                    return execute_via_batch();
+                }
+
+                size_t offset = static_cast<size_t>(row) * max_len;
+                size_t copy_len = std::min(static_cast<size_t>(len), max_len);
+                if (static_cast<size_t>(len) > copy_len) {
+                    truncated = true;
+                }
+                std::memcpy(column.values.data() + offset, value, copy_len);
+                column.indicators[static_cast<size_t>(row)] = static_cast<SQLLEN>(copy_len);
+            }
+        } else {
+            SQLLEN fixed_size = fixed_size_for_c_type(column.c_type);
+            if (fixed_size <= 0) {
+                return execute_via_batch();
+            }
+            column.element_size = fixed_size;
+            if (column.column_size == 0) {
+                column.column_size = static_cast<SQLULEN>(fixed_size);
+            }
+            size_t stride = static_cast<size_t>(fixed_size);
+            column.values.assign(static_cast<size_t>(row_count) * stride, 0);
+
+            for (SQLULEN row = 0; row < row_count; ++row) {
+                SQLPOINTER value = row_values[row];
+                SQLLEN len = 0;
+                if (data_lens) {
+                    size_t idx = static_cast<size_t>(col) * static_cast<size_t>(row_count) +
+                                 static_cast<size_t>(row);
+                    len = data_lens[idx];
+                } else if (!value) {
+                    len = SQL_NULL_DATA;
+                }
+                if (!value || len == SQL_NULL_DATA) {
+                    column.indicators[static_cast<size_t>(row)] = SQL_NULL_DATA;
+                    continue;
+                }
+
+                size_t offset = static_cast<size_t>(row) * stride;
+                size_t copy_len = stride;
+                if (len > 0) {
+                    copy_len = std::min(copy_len, static_cast<size_t>(len));
+                    if (static_cast<size_t>(len) > copy_len) {
+                        truncated = true;
+                    }
+                }
+                std::memcpy(column.values.data() + offset, value, copy_len);
+                column.indicators[static_cast<size_t>(row)] = 0;
+            }
+        }
+    }
+
+    SQLRETURN rc = stmt->freeStmt(SQL_RESET_PARAMS);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        return rc;
+    }
+
+    rc = stmt->prepare(reinterpret_cast<const SQLCHAR*>(sql.c_str()), SQL_NTS);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        return rc;
+    }
+
+    SQLULEN processed = 0;
+    std::vector<SQLUSMALLINT> param_status(static_cast<size_t>(row_count), 0);
+    SQLLEN zero_bind_offset = 0;
+
+    auto cleanup = [&]() {
+        (void)stmt->setAttribute(SQL_ATTR_PARAMSET_SIZE,
+                                 reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(1)), 0);
+        (void)stmt->setAttribute(SQL_ATTR_PARAM_BIND_TYPE,
+                                 reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(SQL_PARAM_BIND_BY_COLUMN)),
+                                 0);
+        (void)stmt->setAttribute(SQL_ATTR_PARAM_BIND_OFFSET_PTR, &zero_bind_offset, 0);
+        (void)stmt->setAttribute(SQL_ATTR_PARAMS_PROCESSED_PTR, nullptr, 0);
+        (void)stmt->setAttribute(SQL_ATTR_PARAM_STATUS_PTR, nullptr, 0);
+        (void)stmt->freeStmt(SQL_RESET_PARAMS);
+    };
+
+    rc = stmt->setAttribute(SQL_ATTR_PARAM_BIND_TYPE,
+                            reinterpret_cast<SQLPOINTER>(static_cast<SQLULEN>(SQL_PARAM_BIND_BY_COLUMN)),
+                            0);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        cleanup();
+        return rc;
+    }
+    rc = stmt->setAttribute(SQL_ATTR_PARAM_BIND_OFFSET_PTR, &zero_bind_offset, 0);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        cleanup();
+        return rc;
+    }
+    rc = stmt->setAttribute(SQL_ATTR_PARAMSET_SIZE,
+                            reinterpret_cast<SQLPOINTER>(row_count), 0);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        cleanup();
+        return rc;
+    }
+    rc = stmt->setAttribute(SQL_ATTR_PARAMS_PROCESSED_PTR, &processed, 0);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        cleanup();
+        return rc;
+    }
+    rc = stmt->setAttribute(SQL_ATTR_PARAM_STATUS_PTR, param_status.data(), 0);
+    if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+        cleanup();
+        return rc;
+    }
+
+    for (SQLSMALLINT col = 0; col < column_count; ++col) {
+        auto& column = arrays[static_cast<size_t>(col)];
+        rc = stmt->bindParameter(
+            static_cast<SQLUSMALLINT>(col + 1),
+            SQL_PARAM_INPUT,
+            column.c_type,
+            column.sql_type,
+            column.column_size,
+            column.decimal_digits,
+            column.values.empty() ? nullptr : column.values.data(),
+            column.element_size,
+            column.indicators.data());
+        if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+            cleanup();
+            return rc;
+        }
+    }
+
+    rc = stmt->bulkOperations(SQL_ADD);
+    SQLULEN effective_processed = processed;
+    if (effective_processed == 0 &&
+        (rc == SQL_SUCCESS || rc == SQL_SUCCESS_WITH_INFO)) {
+        SQLLEN count = stmt->getRowCount();
+        if (count > 0) {
+            effective_processed = static_cast<SQLULEN>(count);
+        } else {
+            effective_processed = row_count;
+        }
+    }
+    cleanup();
+
+    if (rows_inserted) {
+        *rows_inserted = effective_processed;
+    }
+    if (truncated && rc == SQL_SUCCESS) {
+        return SQL_SUCCESS_WITH_INFO;
+    }
+    return rc;
 }
 
 SQLRETURN sb_odbc_with_retry(

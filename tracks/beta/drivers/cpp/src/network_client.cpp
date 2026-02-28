@@ -970,11 +970,8 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
         }
         tls_active_ = true;
     } else {
-        if (!local_ipc_transport) {
-            return setError(ctx,
-                            core::Status::CONNECTION_FAILURE,
-                            "TLS is required for inet_listener/managed transport");
-        }
+        // Explicit sslmode=disable allows plain inet transport for local/test deployments.
+        tls_active_ = false;
     }
 
     status = core::Status::OK;
