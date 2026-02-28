@@ -2226,7 +2226,13 @@ public class SBResultSet implements ResultSet {
         if (sql == null || sql.isBlank()) {
             return null;
         }
+        return resolveUpdateTargetFromSelectSql(sql, columns, 0);
+    }
 
+    private static UpdateTarget resolveUpdateTargetFromSelectSql(String sql, List<SBColumnInfo> columns, int depth) {
+        if (sql == null || sql.isBlank() || depth > 3) {
+            return null;
+        }
         String collapsed = collapseWhitespace(sql);
         String normalized = collapsed.toLowerCase(Locale.ROOT);
         if (!normalized.startsWith("select ")) {
@@ -2260,7 +2266,11 @@ public class SBResultSet implements ResultSet {
             return null;
         }
         if (tableToken.startsWith("(")) {
-            return null;
+            String nestedSelect = extractLeadingParenthesizedSelect(afterFromOriginal);
+            if (nestedSelect == null || nestedSelect.isBlank()) {
+                return null;
+            }
+            return resolveUpdateTargetFromSelectSql(nestedSelect, columns, depth + 1);
         }
         Map<Integer, String> projectionMapping = resolveProjectionMapping(projectionSql, columns);
         if (projectionMapping == null || projectionMapping.isEmpty()) {
@@ -2271,6 +2281,44 @@ public class SBResultSet implements ResultSet {
             tableByIndex.put(index, tableToken);
         }
         return new UpdateTarget(tableToken, projectionMapping, tableByIndex);
+    }
+
+    private static String extractLeadingParenthesizedSelect(String sql) {
+        if (sql == null) {
+            return null;
+        }
+        String trimmed = sql.trim();
+        if (trimmed.isEmpty() || trimmed.charAt(0) != '(') {
+            return null;
+        }
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble) {
+                continue;
+            }
+            if (c == '(') {
+                depth++;
+                continue;
+            }
+            if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return trimmed.substring(1, i).trim();
+                }
+            }
+        }
+        return null;
     }
 
     private Set<Integer> writableMetadataColumns() {

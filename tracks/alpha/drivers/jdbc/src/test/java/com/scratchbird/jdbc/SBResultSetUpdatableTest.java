@@ -349,7 +349,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void localBufferedUpdatableFallbackWorksWithoutResolvedBaseTable() throws Exception {
+    public void nestedSimpleSubqueryResolvesBaseTableForServerSideUpdatableMutations() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -387,7 +387,9 @@ public class SBResultSetUpdatableTest {
         rs.deleteRow();
         assertTrue(rs.rowDeleted());
 
-        assertTrue(protocol.executedSql.isEmpty());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("UPDATE demo")));
+        assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("INSERT INTO demo")));
+        assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("DELETE FROM demo")));
     }
 
     @Test
