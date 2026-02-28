@@ -300,6 +300,31 @@ public class SBResultSetUpdatableTest {
         assertTrue(protocol.executedSql.isEmpty());
     }
 
+    @Test
+    public void localStreamingUpdatableFallbackWorksWithoutResolvedBaseTable() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT payload || '-x' AS derived FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo derived = new SBColumnInfo();
+        derived.setName("derived");
+        columns.add(derived);
+
+        SBResultSet rs = new SBResultSet(statement,
+            new SingleRowStream(columns, new Object[] {"before-x"}), 0);
+
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+        rs.updateString("derived", "after-x");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertEquals("after-x", rs.getString("derived"));
+        assertTrue(protocol.executedSql.isEmpty());
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);

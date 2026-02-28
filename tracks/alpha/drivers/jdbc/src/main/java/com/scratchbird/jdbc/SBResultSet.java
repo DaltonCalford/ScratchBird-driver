@@ -97,8 +97,7 @@ public class SBResultSet implements ResultSet {
         this.bufferedRowsMutable = stream instanceof ListRowStream;
         this.localOnlyUpdatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
-            && this.updateTarget == null
-            && this.bufferedRowsMutable;
+            && this.updateTarget == null;
         this.updatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
             && (this.updateTarget != null || this.localOnlyUpdatable);
