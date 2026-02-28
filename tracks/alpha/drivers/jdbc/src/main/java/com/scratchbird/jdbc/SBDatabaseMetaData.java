@@ -2500,7 +2500,8 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
     @Override
     public boolean supportsResultSetType(int type) throws SQLException {
         return type == ResultSet.TYPE_FORWARD_ONLY ||
-               type == ResultSet.TYPE_SCROLL_INSENSITIVE;
+               type == ResultSet.TYPE_SCROLL_INSENSITIVE ||
+               type == ResultSet.TYPE_SCROLL_SENSITIVE;
     }
 
     @Override
@@ -2908,7 +2909,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean locatorsUpdateCopy() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -2933,10 +2934,55 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getClientInfoProperties() throws SQLException {
-        return createEmptyResultSet(
-            new String[]{"NAME", "MAX_LEN", "DEFAULT_VALUE", "DESCRIPTION"},
-            new int[]{Types.VARCHAR, Types.INTEGER, Types.VARCHAR, Types.VARCHAR}
-        );
+        String defaultApplicationName = null;
+        String defaultClientUser = null;
+        String defaultClientHostname = null;
+        if (connection != null) {
+            SBConnectionProperties props = connection.getConnectionProperties();
+            if (props != null) {
+                defaultApplicationName = props.getApplicationName();
+                defaultClientUser = props.getUser();
+                defaultClientHostname = props.getHost();
+            }
+        }
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[]{
+            "ApplicationName",
+            1024,
+            defaultApplicationName,
+            "Client application name propagated to server session metadata"
+        });
+        rows.add(new Object[]{
+            "ClientUser",
+            256,
+            defaultClientUser,
+            "Client user hint for auditing and observability tooling"
+        });
+        rows.add(new Object[]{
+            "ClientHostname",
+            256,
+            defaultClientHostname,
+            "Client host hint for telemetry and audit correlation"
+        });
+        rows.add(new Object[]{
+            "ClientPid",
+            32,
+            null,
+            "Client process identifier used in diagnostics"
+        });
+        rows.add(new Object[]{
+            "TraceTag",
+            256,
+            null,
+            "Opaque trace tag for distributed request correlation"
+        });
+
+        List<SBColumnInfo> cols = new ArrayList<>();
+        cols.add(column("NAME", 25));
+        cols.add(column("MAX_LEN", 23));
+        cols.add(column("DEFAULT_VALUE", 25));
+        cols.add(column("DESCRIPTION", 25));
+        return new SBResultSet(null, cols, rows);
     }
 
     @Override

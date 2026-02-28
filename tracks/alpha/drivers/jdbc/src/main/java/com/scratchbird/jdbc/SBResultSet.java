@@ -27,9 +27,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * JDBC ResultSet implementation for ScratchBird.
  */
 public class SBResultSet implements ResultSet {
-    private static final Map<Integer, String> TABLE_SQL_BY_OID = new ConcurrentHashMap<>();
-    private static final Map<Integer, Map<Integer, String>> TABLE_COLUMN_BY_OID_AND_ATTNUM =
+    private static final Map<TableCacheKey, String> TABLE_SQL_BY_KEY = new ConcurrentHashMap<>();
+    private static final Map<TableCacheKey, Map<Integer, String>> TABLE_COLUMN_BY_KEY_AND_ATTNUM =
         new ConcurrentHashMap<>();
+
+    private record TableCacheKey(String namespace, int tableOid) {}
 
     // Parent statement
     private final SBStatement statement;
@@ -59,6 +61,7 @@ public class SBResultSet implements ResultSet {
     private int fetchDirection = ResultSet.FETCH_FORWARD;
     private int fetchSize = 0;
     private String cursorName;
+    private final int resultSetType;
 
     // Updatable result set state
     private final boolean updatable;
@@ -96,6 +99,14 @@ public class SBResultSet implements ResultSet {
         rebuildColumnIndex();
         this.updateTarget = resolveUpdateTarget(statement, this.columns);
         this.bufferedRowsMutable = stream instanceof ListRowStream;
+        int requestedType = statement != null
+            ? statement.resultSetType
+            : (this.bufferedRowsMutable ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY);
+        if (requestedType != ResultSet.TYPE_FORWARD_ONLY && !this.bufferedRowsMutable) {
+            this.resultSetType = ResultSet.TYPE_FORWARD_ONLY;
+        } else {
+            this.resultSetType = requestedType;
+        }
         this.localOnlyUpdatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
             && this.updateTarget == null;
@@ -495,7 +506,37 @@ public class SBResultSet implements ResultSet {
 
     @Override
     public Object getObject(int columnIndex, Map<String, Class<?>> map) throws SQLException {
-        return getObject(columnIndex);
+        Object value = getObject(columnIndex);
+        if (value == null || map == null || map.isEmpty()) {
+            return value;
+        }
+
+        Struct structValue;
+        if (value instanceof Struct || value instanceof Object[] || value instanceof Collection<?>) {
+            structValue = toStructValue(value);
+        } else {
+            return value;
+        }
+
+        Class<?> mappedClass = findMappedStructClass(structValue.getSQLTypeName(), map);
+        if (mappedClass == null) {
+            return structValue;
+        }
+        if (Struct.class.isAssignableFrom(mappedClass)) {
+            return structValue;
+        }
+        if (!SQLData.class.isAssignableFrom(mappedClass)) {
+            return structValue;
+        }
+
+        try {
+            SQLData sqlData = (SQLData) mappedClass.getDeclaredConstructor().newInstance();
+            sqlData.readSQL(new StructSqlInput(structValue.getAttributes()), structValue.getSQLTypeName());
+            return sqlData;
+        } catch (ReflectiveOperationException ex) {
+            throw new SQLException("Failed to instantiate mapped SQLData class: " + mappedClass.getName(),
+                "HY000", ex);
+        }
     }
 
     @Override
@@ -585,6 +626,20 @@ public class SBResultSet implements ResultSet {
             return s == null ? null : type.cast(UUID.fromString(s));
         } else if (type == Array.class) {
             return type.cast(getArray(columnIndex));
+        } else if (type == Struct.class) {
+            return type.cast(toStructValue(value));
+        } else if (SQLData.class.isAssignableFrom(type)) {
+            Struct structValue = toStructValue(value);
+            try {
+                @SuppressWarnings("unchecked")
+                T instance = type.getDeclaredConstructor().newInstance();
+                SQLData sqlData = (SQLData) instance;
+                sqlData.readSQL(new StructSqlInput(structValue.getAttributes()), structValue.getSQLTypeName());
+                return instance;
+            } catch (ReflectiveOperationException ex) {
+                throw new SQLException("Failed to instantiate SQLData class: " + type.getName(),
+                    "HY000", ex);
+            }
         } else if (type == Blob.class) {
             return type.cast(getBlob(columnIndex));
         } else if (type == Clob.class) {
@@ -602,6 +657,372 @@ public class SBResultSet implements ResultSet {
         }
 
         throw new SQLException("Cannot convert to " + type.getName(), "HY000");
+    }
+
+    private Struct toStructValue(Object value) throws SQLException {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Struct structValue) {
+            return structValue;
+        }
+        if (value instanceof Object[] attrs) {
+            return new SBStruct("record", attrs);
+        }
+        if (value instanceof Collection<?> attrs) {
+            return new SBStruct("record", attrs.toArray());
+        }
+        throw new SQLException("Not a structured type", "HY000");
+    }
+
+    private static Class<?> findMappedStructClass(String sqlTypeName, Map<String, Class<?>> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        String normalized = sqlTypeName == null ? "" : sqlTypeName.trim();
+        if (!normalized.isEmpty()) {
+            Class<?> direct = map.get(normalized);
+            if (direct != null) {
+                return direct;
+            }
+        }
+
+        String unqualified = unqualifiedTypeName(normalized);
+        if (!unqualified.isEmpty()) {
+            Class<?> directUnqualified = map.get(unqualified);
+            if (directUnqualified != null) {
+                return directUnqualified;
+            }
+        }
+
+        for (Map.Entry<String, Class<?>> entry : map.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            if (!normalized.isEmpty() && key.equalsIgnoreCase(normalized)) {
+                return entry.getValue();
+            }
+            if (!unqualified.isEmpty() && key.equalsIgnoreCase(unqualified)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static String unqualifiedTypeName(String sqlTypeName) {
+        if (sqlTypeName == null || sqlTypeName.isBlank()) {
+            return "";
+        }
+        int dotIndex = sqlTypeName.lastIndexOf('.');
+        return dotIndex >= 0 ? sqlTypeName.substring(dotIndex + 1) : sqlTypeName;
+    }
+
+    private static final class StructSqlInput implements SQLInput {
+        private final Object[] values;
+        private int index;
+        private boolean wasNull;
+
+        private StructSqlInput(Object[] values) {
+            this.values = values == null ? new Object[0] : values.clone();
+            this.index = 0;
+            this.wasNull = false;
+        }
+
+        @Override
+        public String readString() throws SQLException {
+            Object value = nextValue();
+            return value == null ? null : value.toString();
+        }
+
+        @Override
+        public boolean readBoolean() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return false;
+            }
+            if (value instanceof Boolean booleanValue) {
+                return booleanValue;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.intValue() != 0;
+            }
+            String text = value.toString().trim();
+            return "1".equals(text)
+                || "t".equalsIgnoreCase(text)
+                || "true".equalsIgnoreCase(text)
+                || "yes".equalsIgnoreCase(text)
+                || "on".equalsIgnoreCase(text);
+        }
+
+        @Override
+        public byte readByte() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.byteValue();
+            }
+            return Byte.parseByte(value.toString());
+        }
+
+        @Override
+        public short readShort() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.shortValue();
+            }
+            return Short.parseShort(value.toString());
+        }
+
+        @Override
+        public int readInt() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.intValue();
+            }
+            return Integer.parseInt(value.toString());
+        }
+
+        @Override
+        public long readLong() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0L;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.longValue();
+            }
+            return Long.parseLong(value.toString());
+        }
+
+        @Override
+        public float readFloat() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0f;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.floatValue();
+            }
+            return Float.parseFloat(value.toString());
+        }
+
+        @Override
+        public double readDouble() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return 0d;
+            }
+            if (value instanceof Number numberValue) {
+                return numberValue.doubleValue();
+            }
+            return Double.parseDouble(value.toString());
+        }
+
+        @Override
+        public BigDecimal readBigDecimal() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof BigDecimal decimalValue) {
+                return decimalValue;
+            }
+            if (value instanceof Number numberValue) {
+                return BigDecimal.valueOf(numberValue.doubleValue());
+            }
+            return new BigDecimal(value.toString());
+        }
+
+        @Override
+        public byte[] readBytes() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof byte[] binaryValue) {
+                return binaryValue.clone();
+            }
+            return value.toString().getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public java.sql.Date readDate() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof java.sql.Date dateValue) {
+                return dateValue;
+            }
+            if (value instanceof java.util.Date dateValue) {
+                return new java.sql.Date(dateValue.getTime());
+            }
+            if (value instanceof LocalDate localDate) {
+                return java.sql.Date.valueOf(localDate);
+            }
+            return java.sql.Date.valueOf(value.toString());
+        }
+
+        @Override
+        public Time readTime() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof Time timeValue) {
+                return timeValue;
+            }
+            if (value instanceof LocalTime localTime) {
+                return Time.valueOf(localTime);
+            }
+            return Time.valueOf(value.toString());
+        }
+
+        @Override
+        public Timestamp readTimestamp() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof Timestamp timestampValue) {
+                return timestampValue;
+            }
+            if (value instanceof Instant instant) {
+                return Timestamp.from(instant);
+            }
+            if (value instanceof LocalDateTime localDateTime) {
+                return Timestamp.valueOf(localDateTime);
+            }
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return Timestamp.from(offsetDateTime.toInstant());
+            }
+            if (value instanceof java.util.Date dateValue) {
+                return new Timestamp(dateValue.getTime());
+            }
+            return Timestamp.valueOf(value.toString());
+        }
+
+        @Override
+        public Reader readCharacterStream() throws SQLException {
+            String value = readString();
+            return value == null ? null : new StringReader(value);
+        }
+
+        @Override
+        public InputStream readAsciiStream() throws SQLException {
+            String value = readString();
+            return value == null ? null : new ByteArrayInputStream(value.getBytes(StandardCharsets.US_ASCII));
+        }
+
+        @Override
+        public InputStream readBinaryStream() throws SQLException {
+            byte[] value = readBytes();
+            return value == null ? null : new ByteArrayInputStream(value);
+        }
+
+        @Override
+        public Object readObject() throws SQLException {
+            return nextValue();
+        }
+
+        @Override
+        public Ref readRef() throws SQLException {
+            return SBRef.fromObject(nextValue());
+        }
+
+        @Override
+        public Blob readBlob() throws SQLException {
+            byte[] value = readBytes();
+            return value == null ? null : new SBBlob(value);
+        }
+
+        @Override
+        public Clob readClob() throws SQLException {
+            String value = readString();
+            return value == null ? null : new SBClob(value);
+        }
+
+        @Override
+        public Array readArray() throws SQLException {
+            Object value = nextValue();
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof Array arrayValue) {
+                return arrayValue;
+            }
+            if (value instanceof Object[] arrayValues) {
+                return new SBArray(inferArrayBaseType(arrayValues), arrayValues);
+            }
+            if (value instanceof Collection<?> collectionValues) {
+                Object[] arrayValues = collectionValues.toArray();
+                return new SBArray(inferArrayBaseType(arrayValues), arrayValues);
+            }
+            if (value instanceof String textValue) {
+                Object[] arrayValues = parseArrayLiteral(textValue);
+                return new SBArray(inferArrayBaseType(arrayValues), arrayValues);
+            }
+            throw new SQLException("Not an array type", "HY000");
+        }
+
+        @Override
+        public boolean wasNull() throws SQLException {
+            return wasNull;
+        }
+
+        @Override
+        public URL readURL() throws SQLException {
+            String value = readString();
+            if (value == null) {
+                return null;
+            }
+            try {
+                return new URL(value);
+            } catch (MalformedURLException ex) {
+                throw new SQLException("Invalid URL value in SQLData mapping", "HY000", ex);
+            }
+        }
+
+        @Override
+        public NClob readNClob() throws SQLException {
+            String value = readString();
+            return value == null ? null : new SBNClob(value);
+        }
+
+        @Override
+        public String readNString() throws SQLException {
+            return readString();
+        }
+
+        @Override
+        public SQLXML readSQLXML() throws SQLException {
+            String value = readString();
+            return value == null ? null : new SBSQLXML(value);
+        }
+
+        @Override
+        public RowId readRowId() throws SQLException {
+            return SBRowId.fromObject(nextValue());
+        }
+
+        private Object nextValue() throws SQLException {
+            if (index >= values.length) {
+                wasNull = true;
+                return null;
+            }
+            Object value = values[index++];
+            wasNull = (value == null);
+            return value;
+        }
     }
 
     @Override
@@ -655,7 +1076,15 @@ public class SBResultSet implements ResultSet {
                 // Keep catalog blank when unavailable.
             }
         }
-        return new SBResultSetMetaData(columns, updatable, writableMetadataColumns(), schema, table, catalog);
+        return new SBResultSetMetaData(
+            columns,
+            updatable,
+            writableMetadataColumns(),
+            autoIncrementMetadataColumns(),
+            schema,
+            table,
+            catalog
+        );
     }
 
     @Override
@@ -709,7 +1138,7 @@ public class SBResultSet implements ResultSet {
     public void beforeFirst() throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         currentRow = -1;
@@ -727,7 +1156,7 @@ public class SBResultSet implements ResultSet {
     public void afterLast() throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         currentRow = rows.size();
@@ -745,7 +1174,7 @@ public class SBResultSet implements ResultSet {
     public boolean first() throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (rows.isEmpty()) return false;
@@ -765,7 +1194,7 @@ public class SBResultSet implements ResultSet {
     public boolean last() throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (rows.isEmpty()) return false;
@@ -795,7 +1224,7 @@ public class SBResultSet implements ResultSet {
     public boolean absolute(int row) throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
         }
         if (rows.isEmpty()) return false;
@@ -839,8 +1268,17 @@ public class SBResultSet implements ResultSet {
     public boolean previous() throws SQLException {
         checkClosed();
         ensureNotOnInsertRow();
-        if (rows.isEmpty()) {
+        if (!isScrollableCursor()) {
             throw new SQLException("ResultSet is forward-only", "0A000");
+        }
+        if (rows.isEmpty()) {
+            currentRow = -1;
+            currentRowData = null;
+            rowsRead = 0;
+            clearRowActionFlags();
+            pendingUpdates.clear();
+            originalRowSnapshot = null;
+            return false;
         }
         if (currentRow > 0) {
             currentRow--;
@@ -893,7 +1331,7 @@ public class SBResultSet implements ResultSet {
     @Override
     public int getType() throws SQLException {
         checkClosed();
-        return stream instanceof ListRowStream ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY;
+        return resultSetType;
     }
 
     @Override
@@ -1708,12 +2146,17 @@ public class SBResultSet implements ResultSet {
     private static final class UpdateTarget {
         private final String tableSql;
         private final Map<Integer, String> columnNamesByIndex;
+        private final Map<Integer, String> tableSqlByIndex;
 
-        private UpdateTarget(String tableSql, Map<Integer, String> columnNamesByIndex) {
+        private UpdateTarget(String tableSql, Map<Integer, String> columnNamesByIndex,
+                             Map<Integer, String> tableSqlByIndex) {
             this.tableSql = tableSql;
             this.columnNamesByIndex = columnNamesByIndex == null
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(columnNamesByIndex));
+            this.tableSqlByIndex = tableSqlByIndex == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(tableSqlByIndex));
         }
 
         private boolean usesExplicitColumnMapping() {
@@ -1722,6 +2165,14 @@ public class SBResultSet implements ResultSet {
 
         private String mappedColumnName(int columnIndex) {
             return columnNamesByIndex.get(columnIndex);
+        }
+
+        private String mappedTableSql(int columnIndex) {
+            String mapped = tableSqlByIndex.get(columnIndex);
+            if (mapped != null && !mapped.isBlank()) {
+                return mapped;
+            }
+            return tableSql;
         }
     }
 
@@ -1781,7 +2232,11 @@ public class SBResultSet implements ResultSet {
         if (projectionMapping == null || projectionMapping.isEmpty()) {
             return null;
         }
-        return new UpdateTarget(tableToken, projectionMapping);
+        Map<Integer, String> tableByIndex = new LinkedHashMap<>();
+        for (Integer index : projectionMapping.keySet()) {
+            tableByIndex.put(index, tableToken);
+        }
+        return new UpdateTarget(tableToken, projectionMapping, tableByIndex);
     }
 
     private Set<Integer> writableMetadataColumns() {
@@ -1795,6 +2250,64 @@ public class SBResultSet implements ResultSet {
             }
         }
         return writable;
+    }
+
+    private Set<Integer> autoIncrementMetadataColumns() {
+        if (statement == null || statement.connection == null || columns == null || columns.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Integer> autoIncrementColumns = new HashSet<>();
+        Map<String, Boolean> cache = new HashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            SBColumnInfo column = columns.get(i);
+            if (column == null || column.getTableOid() <= 0 || column.getColumnNumber() <= 0) {
+                continue;
+            }
+            int tableOid = column.getTableOid();
+            int columnNumber = column.getColumnNumber();
+            String cacheKey = tableOid + ":" + columnNumber;
+            Boolean autoIncrement = cache.get(cacheKey);
+            if (autoIncrement == null) {
+                autoIncrement = resolveAutoIncrementColumn(statement, tableOid, columnNumber);
+                cache.put(cacheKey, autoIncrement);
+            }
+            if (Boolean.TRUE.equals(autoIncrement)) {
+                autoIncrementColumns.add(i + 1);
+            }
+        }
+        return autoIncrementColumns;
+    }
+
+    private static boolean resolveAutoIncrementColumn(SBStatement statement, int tableOid, int columnNumber) {
+        String sql = "SELECT a.attidentity, pg_get_expr(ad.adbin, ad.adrelid) "
+            + "FROM pg_catalog.pg_attribute a "
+            + "LEFT JOIN pg_catalog.pg_attrdef ad "
+            + "  ON ad.adrelid = a.attrelid "
+            + " AND ad.adnum = a.attnum "
+            + "WHERE a.attrelid = " + tableOid + " "
+            + "  AND a.attnum = " + columnNumber;
+        try {
+            SBQueryResult result = statement.connection.getProtocol().execute(sql, 1, 0);
+            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+                return false;
+            }
+            Object[] row = result.getRows().get(0);
+            if (row == null || row.length == 0) {
+                return false;
+            }
+            String identity = row[0] != null ? row[0].toString().trim() : "";
+            if (!identity.isEmpty() && !"0".equals(identity)) {
+                return true;
+            }
+            if (row.length < 2 || row[1] == null) {
+                return false;
+            }
+            String defaultExpr = row[1].toString().toLowerCase(Locale.ROOT);
+            return defaultExpr.contains("nextval(")
+                || (defaultExpr.contains("generated") && defaultExpr.contains("identity"));
+        } catch (SQLException ex) {
+            return false;
+        }
     }
 
     private static String[] parseQualifiedTableSql(String tableSql) {
@@ -1825,17 +2338,22 @@ public class SBResultSet implements ResultSet {
         if (statement == null || statement.connection == null || columns == null || columns.isEmpty()) {
             return null;
         }
-        Integer tableOid = null;
+        Map<Integer, Integer> tableCounts = new LinkedHashMap<>();
         for (SBColumnInfo column : columns) {
             if (column == null || column.getTableOid() <= 0 || column.getColumnNumber() <= 0) {
                 continue;
             }
-            if (tableOid == null) {
-                tableOid = column.getTableOid();
-                continue;
-            }
-            if (tableOid.intValue() != column.getTableOid()) {
-                return null;
+            tableCounts.merge(column.getTableOid(), 1, Integer::sum);
+        }
+        if (tableCounts.isEmpty()) {
+            return null;
+        }
+        Integer tableOid = null;
+        int tableCount = -1;
+        for (Map.Entry<Integer, Integer> entry : tableCounts.entrySet()) {
+            if (entry.getValue() > tableCount) {
+                tableOid = entry.getKey();
+                tableCount = entry.getValue();
             }
         }
         if (tableOid == null) {
@@ -1850,29 +2368,45 @@ public class SBResultSet implements ResultSet {
             return null;
         }
         Map<Integer, String> namesByIndex = new LinkedHashMap<>();
+        Map<Integer, String> tableByIndex = new LinkedHashMap<>();
         for (int i = 0; i < columns.size(); i++) {
             SBColumnInfo column = columns.get(i);
             if (column == null
-                || column.getTableOid() != tableOid
                 || column.getColumnNumber() <= 0) {
                 continue;
             }
-            String mapped = namesByAttNum.get((int) column.getColumnNumber());
+            int mappedTableOid = column.getTableOid();
+            if (mappedTableOid <= 0) {
+                continue;
+            }
+            String mappedTableSql = resolveTableSql(statement, mappedTableOid);
+            if (mappedTableSql == null || mappedTableSql.isBlank()) {
+                continue;
+            }
+            Map<Integer, String> mappedAttnumNames = mappedTableOid == tableOid
+                ? namesByAttNum
+                : resolveAttnumNames(statement, mappedTableOid);
+            if (mappedAttnumNames.isEmpty()) {
+                continue;
+            }
+            String mapped = mappedAttnumNames.get((int) column.getColumnNumber());
             if (mapped != null && !mapped.isBlank()) {
                 namesByIndex.put(i + 1, mapped);
+                tableByIndex.put(i + 1, mappedTableSql);
             }
         }
         if (namesByIndex.isEmpty()) {
             return null;
         }
-        return new UpdateTarget(tableSql, namesByIndex);
+        return new UpdateTarget(tableSql, namesByIndex, tableByIndex);
     }
 
     private static String resolveTableSql(SBStatement statement, int tableOid) {
         if (tableOid <= 0) {
             return null;
         }
-        String cached = TABLE_SQL_BY_OID.get(tableOid);
+        TableCacheKey cacheKey = tableCacheKey(statement, tableOid);
+        String cached = TABLE_SQL_BY_KEY.get(cacheKey);
         if (cached != null && !cached.isBlank()) {
             return cached;
         }
@@ -1892,7 +2426,7 @@ public class SBResultSet implements ResultSet {
                 return null;
             }
             String tableSql = quoteIdentifier(schema) + "." + quoteIdentifier(name);
-            TABLE_SQL_BY_OID.put(tableOid, tableSql);
+            TABLE_SQL_BY_KEY.put(cacheKey, tableSql);
             return tableSql;
         } catch (SQLException ex) {
             return null;
@@ -1903,7 +2437,8 @@ public class SBResultSet implements ResultSet {
         if (tableOid <= 0) {
             return Collections.emptyMap();
         }
-        Map<Integer, String> cached = TABLE_COLUMN_BY_OID_AND_ATTNUM.get(tableOid);
+        TableCacheKey cacheKey = tableCacheKey(statement, tableOid);
+        Map<Integer, String> cached = TABLE_COLUMN_BY_KEY_AND_ATTNUM.get(cacheKey);
         if (cached != null && !cached.isEmpty()) {
             return cached;
         }
@@ -1933,12 +2468,25 @@ public class SBResultSet implements ResultSet {
                 }
             }
             if (!mapped.isEmpty()) {
-                TABLE_COLUMN_BY_OID_AND_ATTNUM.put(tableOid, mapped);
+                TABLE_COLUMN_BY_KEY_AND_ATTNUM.put(cacheKey, mapped);
             }
             return mapped;
         } catch (SQLException ex) {
             return Collections.emptyMap();
         }
+    }
+
+    private static TableCacheKey tableCacheKey(SBStatement statement, int tableOid) {
+        if (statement == null || statement.connection == null) {
+            return new TableCacheKey("", tableOid);
+        }
+        SBConnectionProperties properties = statement.connection.getConnectionProperties();
+        if (properties == null) {
+            return new TableCacheKey("", tableOid);
+        }
+        String namespace = (properties.getHost() + ":" + properties.getPort() + "/" + properties.getDatabase())
+            .toLowerCase(Locale.ROOT);
+        return new TableCacheKey(namespace, tableOid);
     }
 
     private static String collapseWhitespace(String sql) {
@@ -2311,6 +2859,10 @@ public class SBResultSet implements ResultSet {
         }
     }
 
+    private boolean isScrollableCursor() {
+        return resultSetType != ResultSet.TYPE_FORWARD_ONLY;
+    }
+
     void assignCursorName(String cursorName) {
         this.cursorName = cursorName;
     }
@@ -2319,21 +2871,42 @@ public class SBResultSet implements ResultSet {
         return cursorName;
     }
 
+    Object[] firstBufferedRowSnapshot() {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        Object[] first = rows.get(0);
+        return first == null ? null : first.clone();
+    }
+
     private void ensureUpdatable() throws SQLException {
         if (!updatable) {
             throw new SQLFeatureNotSupportedException("Result set is read-only");
         }
     }
 
-    String positionedTargetTableSql() throws SQLException {
-        ensurePositionedCursorReady();
-        return updateTarget.tableSql;
+    String positionedWhereClause() throws SQLException {
+        return positionedWhereClauseForTable(null);
     }
 
-    String positionedWhereClause() throws SQLException {
+    String positionedWhereClauseForTable(String targetTableSql) throws SQLException {
         ensurePositionedCursorReady();
         Object[] keyRow = originalRowSnapshot != null ? originalRowSnapshot : currentRowData;
-        return buildWhereClause(keyRow);
+        try {
+            if (targetTableSql == null || targetTableSql.isBlank()) {
+                return buildWhereClause(keyRow);
+            }
+            return buildWhereClause(keyRow, targetTableSql);
+        } catch (SQLException ex) {
+            if ("HY000".equals(ex.getSQLState()) || "42000".equals(ex.getSQLState())) {
+                throw new SQLException(
+                    "Cursor row cannot be mapped to target table for positioned mutation: " + targetTableSql,
+                    "34000",
+                    ex
+                );
+            }
+            throw ex;
+        }
     }
 
     private void ensurePositionedCursorReady() throws SQLException {
@@ -2365,6 +2938,20 @@ public class SBResultSet implements ResultSet {
         return updateTarget.mappedColumnName(columnIndex);
     }
 
+    private String targetTableSqlOrNull(int columnIndex) {
+        if (updateTarget == null) {
+            return null;
+        }
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            return updateTarget.tableSql;
+        }
+        String columnName = updateTarget.mappedColumnName(columnIndex);
+        if (columnName == null || columnName.isBlank()) {
+            return null;
+        }
+        return updateTarget.mappedTableSql(columnIndex);
+    }
+
     private String targetColumnName(int columnIndex) throws SQLException {
         String name = targetColumnNameOrNull(columnIndex);
         if (name == null || name.isBlank()) {
@@ -2372,6 +2959,55 @@ public class SBResultSet implements ResultSet {
                 "Column " + columnIndex + " is not updatable in this result set");
         }
         return name;
+    }
+
+    private String resolveTargetTableForMutationIndices(Collection<Integer> columnIndices)
+            throws SQLException {
+        if (updateTarget == null) {
+            return null;
+        }
+        String targetTableSql = null;
+        if (columnIndices != null) {
+            for (Integer columnIndex : columnIndices) {
+                if (columnIndex == null) {
+                    continue;
+                }
+                String mappedTableSql = targetTableSqlOrNull(columnIndex);
+                if (mappedTableSql == null || mappedTableSql.isBlank()) {
+                    continue;
+                }
+                if (targetTableSql == null) {
+                    targetTableSql = mappedTableSql;
+                    continue;
+                }
+                if (!tableSqlEquivalent(targetTableSql, mappedTableSql)) {
+                    throw new SQLFeatureNotSupportedException(
+                        "Row mutation spans multiple base tables and must target one table per call");
+                }
+            }
+        }
+        if (targetTableSql == null || targetTableSql.isBlank()) {
+            targetTableSql = updateTarget.tableSql;
+        }
+        return targetTableSql;
+    }
+
+    private Map<String, Map<Integer, Object>> partitionUpdatesByTargetTable(Map<Integer, Object> updates)
+            throws SQLException {
+        if (updateTarget == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Map<Integer, Object>> grouped = new LinkedHashMap<>();
+        for (Map.Entry<Integer, Object> entry : updates.entrySet()) {
+            Integer columnIndex = entry.getKey();
+            String targetTableSql = targetTableSqlOrNull(columnIndex);
+            if (targetTableSql == null || targetTableSql.isBlank()) {
+                targetTableSql = updateTarget.tableSql;
+            }
+            grouped.computeIfAbsent(targetTableSql, ignored -> new LinkedHashMap<>())
+                .put(columnIndex, entry.getValue());
+        }
+        return grouped;
     }
 
     private void updateColumn(int columnIndex, Object value) throws SQLException {
@@ -2402,10 +3038,31 @@ public class SBResultSet implements ResultSet {
         if (updateTarget == null) {
             return;
         }
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            String targetTableSql = resolveTargetTableForMutationIndices(values.keySet());
+            executeInsertForTargetTable(targetTableSql, values);
+            return;
+        }
+        Map<String, Map<Integer, Object>> grouped = partitionUpdatesByTargetTable(values);
+        if (grouped.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Map<Integer, Object>> entry : grouped.entrySet()) {
+            executeInsertForTargetTable(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void executeInsertForTargetTable(String targetTableSql, Map<Integer, Object> values)
+            throws SQLException {
         StringBuilder columnSql = new StringBuilder();
         StringBuilder valueSql = new StringBuilder();
         boolean first = true;
         for (Map.Entry<Integer, Object> entry : values.entrySet()) {
+            String mappedTableSql = targetTableSqlOrNull(entry.getKey());
+            if (mappedTableSql != null && !tableSqlEquivalent(mappedTableSql, targetTableSql)) {
+                throw new SQLFeatureNotSupportedException(
+                    "Insert row contains values from multiple base tables");
+            }
             if (!first) {
                 columnSql.append(", ");
                 valueSql.append(", ");
@@ -2414,7 +3071,7 @@ public class SBResultSet implements ResultSet {
             columnSql.append(quoteIdentifier(targetColumnName(entry.getKey())));
             valueSql.append(toSqlLiteral(entry.getValue()));
         }
-        String sql = "INSERT INTO " + updateTarget.tableSql
+        String sql = "INSERT INTO " + targetTableSql
             + " (" + columnSql + ") VALUES (" + valueSql + ")";
         executeMutation(sql);
     }
@@ -2423,62 +3080,168 @@ public class SBResultSet implements ResultSet {
         if (updateTarget == null) {
             return;
         }
-        StringBuilder setSql = new StringBuilder();
-        boolean first = true;
-        for (Map.Entry<Integer, Object> entry : updates.entrySet()) {
-            if (!first) {
-                setSql.append(", ");
-            }
-            first = false;
-            setSql.append(quoteIdentifier(targetColumnName(entry.getKey())))
+        Map<String, Map<Integer, Object>> groupedUpdates = partitionUpdatesByTargetTable(updates);
+        if (groupedUpdates.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Map<Integer, Object>> groupedEntry : groupedUpdates.entrySet()) {
+            String targetTableSql = groupedEntry.getKey();
+            Map<Integer, Object> tableUpdates = groupedEntry.getValue();
+            StringBuilder setSql = new StringBuilder();
+            boolean first = true;
+            for (Map.Entry<Integer, Object> entry : tableUpdates.entrySet()) {
+                String mappedTableSql = targetTableSqlOrNull(entry.getKey());
+                if (mappedTableSql != null && !tableSqlEquivalent(mappedTableSql, targetTableSql)) {
+                    continue;
+                }
+                if (!first) {
+                    setSql.append(", ");
+                }
+                first = false;
+                setSql.append(quoteIdentifier(targetColumnName(entry.getKey())))
                 .append(" = ")
                 .append(toSqlLiteral(entry.getValue()));
         }
-        String sql = "UPDATE " + updateTarget.tableSql
-            + " SET " + setSql
-            + " WHERE " + buildWhereClause(beforeRow);
-        executeMutation(sql);
+        if (first) {
+            continue;
+        }
+            String sql = "UPDATE " + targetTableSql
+                + " SET " + setSql
+                + " WHERE " + buildWhereClause(beforeRow, targetTableSql);
+            executeMutation(sql);
+        }
     }
 
     private void executeDelete(Object[] beforeRow) throws SQLException {
         if (updateTarget == null) {
             return;
         }
-        String sql = "DELETE FROM " + updateTarget.tableSql
-            + " WHERE " + buildWhereClause(beforeRow);
-        executeMutation(sql);
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            String sql = "DELETE FROM " + updateTarget.tableSql
+                + " WHERE " + buildWhereClause(beforeRow);
+            executeMutation(sql);
+            return;
+        }
+        Set<String> targetTables = mappedTargetTablesForRowMutation();
+        if (targetTables.isEmpty()) {
+            String sql = "DELETE FROM " + updateTarget.tableSql
+                + " WHERE " + buildWhereClause(beforeRow);
+            executeMutation(sql);
+            return;
+        }
+        for (String targetTable : targetTables) {
+            String sql = "DELETE FROM " + targetTable
+                + " WHERE " + buildWhereClause(beforeRow, targetTable);
+            executeMutation(sql);
+        }
+    }
+
+    private Set<String> mappedTargetTablesForRowMutation() {
+        if (updateTarget == null || !updateTarget.usesExplicitColumnMapping()) {
+            return Collections.emptySet();
+        }
+        Set<String> tables = new LinkedHashSet<>();
+        for (Integer columnIndex : updateTarget.columnNamesByIndex.keySet()) {
+            String mappedTable = targetTableSqlOrNull(columnIndex);
+            if (mappedTable == null || mappedTable.isBlank()) {
+                continue;
+            }
+            tables.add(mappedTable);
+        }
+        return tables;
     }
 
     private Object[] executeRefresh(Object[] beforeRow) throws SQLException {
         if (updateTarget == null) {
             return currentRowData == null ? null : currentRowData.clone();
         }
-        StringBuilder selectCols = new StringBuilder();
+        Object[] base = currentRowData == null ? null : currentRowData.clone();
+        if (base == null || base.length == 0) {
+            return base;
+        }
+
+        if (!updateTarget.usesExplicitColumnMapping()) {
+            return refreshColumnsForTable(beforeRow, base, updateTarget.tableSql, allColumnIndices());
+        }
+
+        Map<String, List<Integer>> tableColumns = new LinkedHashMap<>();
         for (int i = 1; i <= columns.size(); i++) {
-            if (i > 1) {
-                selectCols.append(", ");
-            }
-            if (updateTarget != null && updateTarget.usesExplicitColumnMapping()) {
-                String mapped = targetColumnNameOrNull(i);
-                if (mapped == null || mapped.isBlank()) {
-                    return null;
-                }
-                selectCols.append(quoteIdentifier(mapped))
-                    .append(" AS ")
-                    .append(quoteIdentifier(columnName(i)));
+            String mapped = targetColumnNameOrNull(i);
+            if (mapped == null || mapped.isBlank()) {
                 continue;
             }
-            selectCols.append(quoteIdentifier(columnName(i)));
+            String mappedTable = targetTableSqlOrNull(i);
+            if (mappedTable == null || mappedTable.isBlank()) {
+                mappedTable = updateTarget.tableSql;
+            }
+            tableColumns.computeIfAbsent(mappedTable, ignored -> new ArrayList<>()).add(i);
         }
+        if (tableColumns.isEmpty()) {
+            return base;
+        }
+
+        for (Map.Entry<String, List<Integer>> entry : tableColumns.entrySet()) {
+            Object[] refreshed = refreshColumnsForTable(beforeRow, base, entry.getKey(), entry.getValue());
+            if (refreshed == null) {
+                return null;
+            }
+            base = refreshed;
+        }
+        return base;
+    }
+
+    private List<Integer> allColumnIndices() {
+        List<Integer> indices = new ArrayList<>(columns.size());
+        for (int i = 1; i <= columns.size(); i++) {
+            indices.add(i);
+        }
+        return indices;
+    }
+
+    private Object[] refreshColumnsForTable(Object[] beforeRow, Object[] baseline, String tableSql,
+                                            List<Integer> columnIndices) throws SQLException {
+        if (columnIndices == null || columnIndices.isEmpty()) {
+            return baseline;
+        }
+        StringBuilder selectCols = new StringBuilder();
+        List<Integer> projectedIndices = new ArrayList<>(columnIndices.size());
+        for (Integer columnIndex : columnIndices) {
+            if (columnIndex == null || columnIndex < 1 || columnIndex > columns.size()) {
+                continue;
+            }
+            String mappedName = targetColumnNameOrNull(columnIndex);
+            if (mappedName == null || mappedName.isBlank()) {
+                mappedName = columnName(columnIndex);
+            }
+            if (selectCols.length() > 0) {
+                selectCols.append(", ");
+            }
+            selectCols.append(quoteIdentifier(mappedName))
+                .append(" AS ")
+                .append(quoteIdentifier(columnName(columnIndex)));
+            projectedIndices.add(columnIndex);
+        }
+        if (projectedIndices.isEmpty()) {
+            return baseline;
+        }
+
+        String effectiveTableSql = tableSql == null || tableSql.isBlank()
+            ? updateTarget.tableSql
+            : tableSql;
         String sql = "SELECT " + selectCols
-            + " FROM " + updateTarget.tableSql
-            + " WHERE " + buildWhereClause(beforeRow)
+            + " FROM " + effectiveTableSql
+            + " WHERE " + buildWhereClause(beforeRow, effectiveTableSql)
             + " LIMIT 1";
         SBQueryResult result = executeQuery(sql);
         if (result.getRows() == null || result.getRows().isEmpty()) {
             return null;
         }
-        return result.getRows().get(0);
+        Object[] loaded = result.getRows().get(0);
+        Object[] merged = baseline.clone();
+        for (int i = 0; i < projectedIndices.size() && i < loaded.length; i++) {
+            merged[projectedIndices.get(i) - 1] = loaded[i];
+        }
+        return merged;
     }
 
     private SBQueryResult executeMutation(String sql) throws SQLException {
@@ -2498,6 +3261,10 @@ public class SBResultSet implements ResultSet {
     }
 
     private String buildWhereClause(Object[] row) throws SQLException {
+        return buildWhereClause(row, updateTarget != null ? updateTarget.tableSql : null);
+    }
+
+    private String buildWhereClause(Object[] row, String targetTableSql) throws SQLException {
         List<String> mappedPredicates = new ArrayList<>(columns.size());
         List<String> fallbackPredicates = new ArrayList<>(columns.size());
         for (int i = 0; i < columns.size(); i++) {
@@ -2513,6 +3280,11 @@ public class SBResultSet implements ResultSet {
             if (mappedName == null || mappedName.isBlank()) {
                 continue;
             }
+            String mappedTableSql = targetTableSqlOrNull(i + 1);
+            if (targetTableSql != null && mappedTableSql != null
+                && !tableSqlEquivalent(mappedTableSql, targetTableSql)) {
+                continue;
+            }
             String mapped = quoteIdentifier(mappedName);
             if (value == null) {
                 mappedPredicates.add(mapped + " IS NULL");
@@ -2523,10 +3295,35 @@ public class SBResultSet implements ResultSet {
         if (!mappedPredicates.isEmpty()) {
             return String.join(" AND ", mappedPredicates);
         }
+        if (updateTarget != null && updateTarget.usesExplicitColumnMapping()) {
+            throw new SQLException("Cannot build row identity predicate for target table", "HY000");
+        }
         if (fallbackPredicates.isEmpty()) {
             throw new SQLException("Cannot build row identity predicate", "HY000");
         }
         return String.join(" AND ", fallbackPredicates);
+    }
+
+    private static boolean tableSqlEquivalent(String left, String right) {
+        if (left == null || right == null) {
+            return Objects.equals(left, right);
+        }
+        String normalizedLeft = normalizeTableSql(left);
+        String normalizedRight = normalizeTableSql(right);
+        if (normalizedLeft.equals(normalizedRight)) {
+            return true;
+        }
+        if (!normalizedLeft.contains(".") && normalizedRight.endsWith("." + normalizedLeft)) {
+            return true;
+        }
+        if (!normalizedRight.contains(".") && normalizedLeft.endsWith("." + normalizedRight)) {
+            return true;
+        }
+        return false;
+    }
+
+    private static String normalizeTableSql(String tableSql) {
+        return tableSql.replace("\"", "").trim().toLowerCase(Locale.ROOT);
     }
 
     private String columnName(int columnIndex) {

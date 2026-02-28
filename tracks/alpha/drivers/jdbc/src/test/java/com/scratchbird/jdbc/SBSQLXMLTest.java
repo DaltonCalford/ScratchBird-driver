@@ -17,6 +17,8 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLEventWriter;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
 import javax.xml.transform.Result;
@@ -73,6 +75,12 @@ class SBSQLXMLTest {
         }
     }
 
+    public static class CustomXmlEventReaderCtorStaxSource extends StAXSource {
+        public CustomXmlEventReaderCtorStaxSource(XMLEventReader reader) throws javax.xml.stream.XMLStreamException {
+            super(reader);
+        }
+    }
+
     public static class CustomWriterCtorStreamResult extends StreamResult {
         public CustomWriterCtorStreamResult(Writer writer) {
             super(writer);
@@ -99,6 +107,12 @@ class SBSQLXMLTest {
 
     public static class CustomXmlStreamWriterCtorStaxResult extends StAXResult {
         public CustomXmlStreamWriterCtorStaxResult(XMLStreamWriter writer) {
+            super(writer);
+        }
+    }
+
+    public static class CustomXmlEventWriterCtorStaxResult extends StAXResult {
+        public CustomXmlEventWriterCtorStaxResult(XMLEventWriter writer) {
             super(writer);
         }
     }
@@ -205,6 +219,9 @@ class SBSQLXMLTest {
         CustomXmlStreamReaderCtorStaxSource staxSource =
             sourceXml.getSource(CustomXmlStreamReaderCtorStaxSource.class);
         assertNotNull(staxSource.getXMLStreamReader());
+        CustomXmlEventReaderCtorStaxSource staxEventSource =
+            sourceXml.getSource(CustomXmlEventReaderCtorStaxSource.class);
+        assertNotNull(staxEventSource.getXMLEventReader());
 
         SBSQLXML streamWriterTarget = new SBSQLXML();
         CustomWriterCtorStreamResult writerResult =
@@ -244,5 +261,14 @@ class SBSQLXMLTest {
         writer.writeEndElement();
         writer.writeEndDocument();
         assertTrue(staxTarget.getString().contains("staxctor"));
+
+        SBSQLXML staxEventTarget = new SBSQLXML();
+        CustomXmlEventWriterCtorStaxResult customStaxEventResult =
+            staxEventTarget.setResult(CustomXmlEventWriterCtorStaxResult.class);
+        TransformerFactory.newInstance().newTransformer().transform(
+            new StreamSource(new StringReader("<staxevent/>")), customStaxEventResult);
+        String staxEventXml = staxEventTarget.getString();
+        assertNotNull(staxEventXml);
+        assertTrue(staxEventXml.contains("staxevent"));
     }
 }

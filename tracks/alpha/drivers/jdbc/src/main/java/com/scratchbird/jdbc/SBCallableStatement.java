@@ -150,6 +150,23 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
         if (outParameters.isEmpty() || currentResultSet == null) {
             return;
         }
+        Object[] firstRow = currentResultSet.firstBufferedRowSnapshot();
+        if (firstRow != null) {
+            for (Integer index : new TreeSet<>(outParameters.keySet())) {
+                Integer sqlType = outParameterSqlTypes.get(index);
+                if (sqlType != null && sqlType == Types.REF_CURSOR) {
+                    outParameters.put(index, currentResultSet);
+                    continue;
+                }
+                int rowOffset = index - 1;
+                if (rowOffset >= 0 && rowOffset < firstRow.length) {
+                    outParameters.put(index, firstRow[rowOffset]);
+                } else {
+                    outParameters.put(index, null);
+                }
+            }
+            return;
+        }
         boolean hasRow = currentResultSet.next();
         if (!hasRow) {
             return;
@@ -290,7 +307,19 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
 
     @Override
     public Object getObject(int parameterIndex, Map<String, Class<?>> map) throws SQLException {
-        return getObject(parameterIndex);
+        Object value = getObject(parameterIndex);
+        if (value == null || map == null || map.isEmpty()) {
+            return value;
+        }
+        if (!(value instanceof Struct || value instanceof Object[] || value instanceof Collection<?>)) {
+            return value;
+        }
+        try (SBResultSet bridge = bridgeSingleValueResultSet(value)) {
+            if (!bridge.next()) {
+                return null;
+            }
+            return bridge.getObject(1, map);
+        }
     }
 
     @Override
@@ -313,8 +342,28 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     @Override
     public Array getArray(int parameterIndex) throws SQLException {
         Object value = readOutParameter(parameterIndex);
+        if (value == null) return null;
         if (value instanceof Array) return (Array) value;
-        return null;
+        if (value instanceof Object[] elements) {
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        if (value instanceof Collection<?> collection) {
+            Object[] elements = collection.toArray();
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        if (value instanceof String text) {
+            Object[] elements = parseArrayLiteral(text);
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        if (value.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(value);
+            Object[] elements = new Object[len];
+            for (int i = 0; i < len; i++) {
+                elements[i] = java.lang.reflect.Array.get(value, i);
+            }
+            return new SBArray(inferArrayBaseType(elements), elements);
+        }
+        throw new SQLException("Value cannot be converted to SQL ARRAY", "HY000");
     }
 
     @Override
@@ -809,6 +858,30 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
             return type.cast(getTimestamp(parameterIndex));
         } else if (type == byte[].class) {
             return type.cast(getBytes(parameterIndex));
+        } else if (type == Array.class) {
+            return type.cast(getArray(parameterIndex));
+        } else if (type == Struct.class) {
+            Object raw = readOutParameter(parameterIndex);
+            if (raw == null) {
+                return null;
+            }
+            if (raw instanceof Struct structValue) {
+                return type.cast(structValue);
+            }
+            if (raw instanceof Object[] attrs) {
+                return type.cast(new SBStruct("record", attrs));
+            }
+            if (raw instanceof Collection<?> attrs) {
+                return type.cast(new SBStruct("record", attrs.toArray()));
+            }
+            throw new SQLException("Cannot convert to " + type.getName(), "HY000");
+        } else if (SQLData.class.isAssignableFrom(type)) {
+            try (SBResultSet bridge = bridgeSingleValueResultSet(value)) {
+                if (!bridge.next()) {
+                    return null;
+                }
+                return bridge.getObject(1, type);
+            }
         } else if (type == Ref.class) {
             return type.cast(getRef(parameterIndex));
         } else if (type == Blob.class) {
@@ -835,6 +908,159 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
         }
 
         throw new SQLException("Cannot convert to " + type.getName(), "HY000");
+    }
+
+    private static SBResultSet bridgeSingleValueResultSet(Object value) {
+        SBColumnInfo column = new SBColumnInfo();
+        column.setName("out");
+        return new SBResultSet(
+            null,
+            Collections.singletonList(column),
+            Collections.singletonList(new Object[] {value})
+        );
+    }
+
+    private static String inferArrayBaseType(Object[] elements) {
+        if (elements == null) {
+            return "text";
+        }
+        for (Object element : elements) {
+            if (element == null) {
+                continue;
+            }
+            if (element instanceof Boolean) return "boolean";
+            if (element instanceof Short) return "smallint";
+            if (element instanceof Integer) return "integer";
+            if (element instanceof Long) return "bigint";
+            if (element instanceof Float) return "real";
+            if (element instanceof Double || element instanceof BigDecimal) return "numeric";
+            if (element instanceof byte[]) return "bytea";
+            if (element instanceof java.sql.Date) return "date";
+            if (element instanceof java.sql.Time) return "time";
+            if (element instanceof java.sql.Timestamp) return "timestamp";
+            return "text";
+        }
+        return "text";
+    }
+
+    private static Object[] parseArrayLiteral(String raw) throws SQLException {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty()) {
+            return new Object[0];
+        }
+        if (text.regionMatches(true, 0, "ARRAY[", 0, 6) && text.endsWith("]")) {
+            text = text.substring(6, text.length() - 1).trim();
+        } else if ((text.startsWith("{") && text.endsWith("}")) ||
+                   (text.startsWith("[") && text.endsWith("]"))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return new Object[0];
+        }
+        List<String> tokens = splitArrayTokens(text);
+        List<Object> values = new ArrayList<>(tokens.size());
+        for (String token : tokens) {
+            values.add(parseArrayToken(token));
+        }
+        return values.toArray(new Object[0]);
+    }
+
+    private static List<String> splitArrayTokens(String text) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int nesting = 0;
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+                continue;
+            }
+            if ((inSingle || inDouble) && c == '\\') {
+                current.append(c);
+                escaped = true;
+                continue;
+            }
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                current.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble) {
+                if (c == '{' || c == '[' || c == '(') {
+                    nesting++;
+                } else if (c == '}' || c == ']' || c == ')') {
+                    if (nesting > 0) nesting--;
+                } else if (c == ',' && nesting == 0) {
+                    tokens.add(current.toString().trim());
+                    current.setLength(0);
+                    continue;
+                }
+            }
+            current.append(c);
+        }
+        tokens.add(current.toString().trim());
+        return tokens;
+    }
+
+    private static Object parseArrayToken(String token) throws SQLException {
+        if (token == null) {
+            return null;
+        }
+        String value = token.trim();
+        if (value.isEmpty()) {
+            return "";
+        }
+        if ("NULL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        if ((value.startsWith("{") && value.endsWith("}")) ||
+            (value.startsWith("[") && value.endsWith("]")) ||
+            (value.regionMatches(true, 0, "ARRAY[", 0, 6) && value.endsWith("]"))) {
+            return parseArrayLiteral(value);
+        }
+        if ((value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) ||
+            (value.length() >= 2 && value.startsWith("'") && value.endsWith("'"))) {
+            return unquoteArrayToken(value);
+        }
+        if ("true".equalsIgnoreCase(value) || "t".equalsIgnoreCase(value)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(value) || "f".equalsIgnoreCase(value)) {
+            return Boolean.FALSE;
+        }
+        try {
+            long asLong = Long.parseLong(value);
+            if (asLong <= Integer.MAX_VALUE && asLong >= Integer.MIN_VALUE) {
+                return (int) asLong;
+            }
+            return asLong;
+        } catch (NumberFormatException ignored) {
+            // Fall through to floating point/string parsing.
+        }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    private static String unquoteArrayToken(String value) {
+        String inner = value.substring(1, value.length() - 1);
+        inner = inner.replace("\\\\", "\\");
+        inner = inner.replace("\\\"", "\"");
+        inner = inner.replace("\\'", "'");
+        inner = inner.replace("''", "'");
+        return inner;
     }
 
     @Override

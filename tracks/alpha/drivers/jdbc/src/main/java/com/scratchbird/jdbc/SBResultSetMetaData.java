@@ -28,22 +28,32 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     private final List<SBColumnInfo> columns;
     private final boolean updatable;
     private final Set<Integer> writableColumns;
+    private final Set<Integer> autoIncrementColumns;
     private final String schemaName;
     private final String tableName;
     private final String catalogName;
 
     public SBResultSetMetaData(List<SBColumnInfo> columns) {
-        this(columns, false, Collections.emptySet(), "", "", "");
+        this(columns, false, Collections.emptySet(), Collections.emptySet(), "", "", "");
     }
 
     public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
                                Set<Integer> writableColumns, String schemaName,
                                String tableName, String catalogName) {
+        this(columns, updatable, writableColumns, Collections.emptySet(), schemaName, tableName, catalogName);
+    }
+
+    public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
+                               Set<Integer> writableColumns, Set<Integer> autoIncrementColumns,
+                               String schemaName, String tableName, String catalogName) {
         this.columns = columns;
         this.updatable = updatable;
         this.writableColumns = writableColumns == null
             ? Collections.emptySet()
             : Collections.unmodifiableSet(new HashSet<>(writableColumns));
+        this.autoIncrementColumns = autoIncrementColumns == null
+            ? Collections.emptySet()
+            : Collections.unmodifiableSet(new HashSet<>(autoIncrementColumns));
         this.schemaName = schemaName == null ? "" : schemaName;
         this.tableName = tableName == null ? "" : tableName;
         this.catalogName = catalogName == null ? "" : catalogName;
@@ -63,7 +73,8 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public boolean isAutoIncrement(int column) throws SQLException {
-        return false;  // Would need catalog lookup
+        getColumn(column);
+        return autoIncrementColumns.contains(column);
     }
 
     @Override

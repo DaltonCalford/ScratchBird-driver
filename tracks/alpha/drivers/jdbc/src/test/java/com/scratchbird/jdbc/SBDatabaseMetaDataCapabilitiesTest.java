@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.sql.ResultSet;
 import java.sql.RowIdLifetime;
 import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class SBDatabaseMetaDataCapabilitiesTest {
@@ -39,7 +41,7 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsCatalogsInTableDefinitions());
         assertTrue(meta.supportsCatalogsInIndexDefinitions());
         assertTrue(meta.supportsCatalogsInPrivilegeDefinitions());
-        assertFalse(meta.locatorsUpdateCopy());
+        assertTrue(meta.locatorsUpdateCopy());
         assertTrue(meta.supportsStatementPooling());
         assertTrue(meta.supportsNamedParameters());
         assertTrue(meta.supportsStoredFunctionsUsingCallSyntax());
@@ -48,6 +50,9 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertEquals(1073741823L, meta.getMaxLogicalLobSize());
         assertTrue(meta.generatedKeyAlwaysReturned());
         assertTrue(meta.supportsResultSetType(ResultSet.TYPE_SCROLL_INSENSITIVE));
+        assertTrue(meta.supportsResultSetType(ResultSet.TYPE_SCROLL_SENSITIVE));
+        assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_READ_ONLY));
+        assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE));
     }
 
     @Test
@@ -65,5 +70,25 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY));
         assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_UPDATABLE));
         assertTrue(meta.getRowIdLifetime() == RowIdLifetime.ROWID_VALID_OTHER);
+    }
+
+    @Test
+    void exposesClientInfoPropertiesForDriverAndToolingDiscovery() throws SQLException {
+        SBDatabaseMetaData meta = new SBDatabaseMetaData(null);
+
+        try (ResultSet rs = meta.getClientInfoProperties()) {
+            Map<String, Integer> maxLenByName = new HashMap<>();
+            while (rs.next()) {
+                maxLenByName.put(rs.getString("NAME"), rs.getInt("MAX_LEN"));
+                assertTrue(rs.getString("DESCRIPTION") != null && !rs.getString("DESCRIPTION").isBlank());
+            }
+
+            assertEquals(5, maxLenByName.size());
+            assertEquals(1024, maxLenByName.get("ApplicationName"));
+            assertEquals(256, maxLenByName.get("ClientUser"));
+            assertEquals(256, maxLenByName.get("ClientHostname"));
+            assertEquals(32, maxLenByName.get("ClientPid"));
+            assertEquals(256, maxLenByName.get("TraceTag"));
+        }
     }
 }

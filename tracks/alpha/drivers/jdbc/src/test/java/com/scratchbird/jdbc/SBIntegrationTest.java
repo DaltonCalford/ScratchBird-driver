@@ -30,6 +30,8 @@ import java.sql.SQLTimeoutException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.sql.Types;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -152,6 +154,25 @@ public class SBIntegrationTest {
                 assertTrue(tables.next());
                 assertMetadataColumns(tables, "TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "TABLE_TYPE", "REMARKS", "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SELF_REFERENCING_COL_NAME", "REF_GENERATION");
             }
+        }
+    }
+
+    @Test
+    public void metadataClientInfoPropertiesExposeDriverHints() throws Exception {
+        try (Connection conn = openConnection()) {
+            DatabaseMetaData metadata = conn.getMetaData();
+            Map<String, Integer> maxLenByProperty = new HashMap<>();
+            try (ResultSet rs = metadata.getClientInfoProperties()) {
+                while (rs.next()) {
+                    maxLenByProperty.put(rs.getString("NAME"), rs.getInt("MAX_LEN"));
+                    assertNotNull(rs.getString("DESCRIPTION"));
+                }
+            }
+            assertTrue(maxLenByProperty.containsKey("ApplicationName"));
+            assertTrue(maxLenByProperty.containsKey("ClientUser"));
+            assertTrue(maxLenByProperty.containsKey("ClientHostname"));
+            assertTrue(maxLenByProperty.containsKey("ClientPid"));
+            assertTrue(maxLenByProperty.containsKey("TraceTag"));
         }
     }
 

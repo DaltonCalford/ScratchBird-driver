@@ -798,11 +798,7 @@ public class SBStatement implements Statement {
             String setClause = update.group(2).trim();
             String cursor = update.group(3).trim();
             SBResultSet cursorResult = requireCursorResultSet(cursor);
-            String cursorTable = cursorResult.positionedTargetTableSql();
-            if (!tableSqlEquivalent(targetTable, cursorTable)) {
-                throw new SQLException("Positioned UPDATE table does not match cursor target", "34000");
-            }
-            String whereClause = cursorResult.positionedWhereClause();
+            String whereClause = cursorResult.positionedWhereClauseForTable(targetTable);
             return "UPDATE " + targetTable + " SET " + setClause + " WHERE " + whereClause;
         }
 
@@ -811,11 +807,7 @@ public class SBStatement implements Statement {
             String targetTable = delete.group(1).trim();
             String cursor = delete.group(2).trim();
             SBResultSet cursorResult = requireCursorResultSet(cursor);
-            String cursorTable = cursorResult.positionedTargetTableSql();
-            if (!tableSqlEquivalent(targetTable, cursorTable)) {
-                throw new SQLException("Positioned DELETE table does not match cursor target", "34000");
-            }
-            String whereClause = cursorResult.positionedWhereClause();
+            String whereClause = cursorResult.positionedWhereClauseForTable(targetTable);
             return "DELETE FROM " + targetTable + " WHERE " + whereClause;
         }
 
@@ -832,24 +824,6 @@ public class SBStatement implements Statement {
             throw new SQLException("Cursor is closed: " + cursorName, "34000");
         }
         return resultSet;
-    }
-
-    private static boolean tableSqlEquivalent(String sqlA, String sqlB) {
-        if (sqlA == null || sqlB == null) {
-            return false;
-        }
-        String a = canonicalizeTableSql(sqlA);
-        String b = canonicalizeTableSql(sqlB);
-        return a.equals(b);
-    }
-
-    private static String canonicalizeTableSql(String sql) {
-        String trimmed = sql.trim();
-        if (trimmed.isEmpty()) {
-            return "";
-        }
-        String noQuotes = trimmed.replace("\"", "");
-        return noQuotes.toLowerCase(Locale.ROOT);
     }
 
     private List<String> splitStatements(String sql) {

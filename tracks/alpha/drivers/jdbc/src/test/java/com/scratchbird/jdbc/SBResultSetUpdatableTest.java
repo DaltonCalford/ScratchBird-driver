@@ -232,6 +232,96 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
+    public void metadataTargetUsesDominantBaseTableWhenResultSetIncludesSecondaryTableColumns() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT l.id AS left_id, l.payload AS left_payload, "
+                + "r.id AS right_id, r.payload AS right_payload "
+                + "FROM public.left_demo l JOIN public.right_demo r ON r.id = l.id";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo leftId = new SBColumnInfo();
+        leftId.setName("left_id");
+        leftId.setTableOid(100);
+        leftId.setColumnNumber((short) 1);
+        columns.add(leftId);
+
+        SBColumnInfo leftPayload = new SBColumnInfo();
+        leftPayload.setName("left_payload");
+        leftPayload.setTableOid(100);
+        leftPayload.setColumnNumber((short) 2);
+        columns.add(leftPayload);
+
+        SBColumnInfo rightId = new SBColumnInfo();
+        rightId.setName("right_id");
+        rightId.setTableOid(200);
+        rightId.setColumnNumber((short) 1);
+        columns.add(rightId);
+
+        SBColumnInfo rightPayload = new SBColumnInfo();
+        rightPayload.setName("right_payload");
+        rightPayload.setTableOid(200);
+        rightPayload.setColumnNumber((short) 2);
+        columns.add(rightPayload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "left-before", 1, "right-before"})));
+
+        assertTrue(rs.next());
+        rs.updateString("left_payload", "left-after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("UPDATE \"public\".\"left_demo\"") || sql.startsWith("UPDATE left_demo"))
+                && sql.contains("'left-after'")), "executed SQL: " + protocol.executedSql);
+
+        rs.updateString("right_payload", "right-after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("UPDATE \"public\".\"right_demo\"") || sql.startsWith("UPDATE right_demo"))
+                && sql.contains("'right-after'")), "executed SQL: " + protocol.executedSql);
+
+        rs.updateString("left_payload", "left-mixed");
+        rs.updateString("right_payload", "right-mixed");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("UPDATE \"public\".\"left_demo\"") || sql.startsWith("UPDATE left_demo"))
+                && sql.contains("'left-mixed'")), "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("UPDATE \"public\".\"right_demo\"") || sql.startsWith("UPDATE right_demo"))
+                && sql.contains("'right-mixed'")), "executed SQL: " + protocol.executedSql);
+
+        rs.moveToInsertRow();
+        rs.updateInt("left_id", 2);
+        rs.updateString("left_payload", "left-insert");
+        rs.updateInt("right_id", 2);
+        rs.updateString("right_payload", "right-insert");
+        rs.insertRow();
+        assertTrue(rs.rowInserted());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("INSERT INTO \"public\".\"left_demo\"") || sql.startsWith("INSERT INTO left_demo"))
+                && sql.contains("'left-insert'")), "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("INSERT INTO \"public\".\"right_demo\"") || sql.startsWith("INSERT INTO right_demo"))
+                && sql.contains("'right-insert'")), "executed SQL: " + protocol.executedSql);
+
+        assertTrue(rs.absolute(1));
+        rs.deleteRow();
+        assertTrue(rs.rowDeleted());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("DELETE FROM \"public\".\"left_demo\"") || sql.startsWith("DELETE FROM left_demo"))
+                && sql.contains("'left-mixed'")), "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            (sql.startsWith("DELETE FROM \"public\".\"right_demo\"") || sql.startsWith("DELETE FROM right_demo"))
+                && sql.contains("'right-mixed'")), "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
     public void sqlFallbackWithoutWritableProjectionColumnsUsesLocalBufferedUpdatableMode() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
@@ -364,7 +454,13 @@ public class SBResultSetUpdatableTest {
             result.setUpdateCount(1);
             if (sql.contains("FROM pg_catalog.pg_class")) {
                 result.setColumns(Arrays.asList(new SBColumnInfo(), new SBColumnInfo()));
-                result.setRows(Collections.singletonList(new Object[] {"public", "meta_demo"}));
+                int oid = extractNumericSuffix(sql, "WHERE c.oid = ");
+                String tableName = switch (oid) {
+                    case 100 -> "left_demo";
+                    case 200 -> "right_demo";
+                    default -> "meta_demo";
+                };
+                result.setRows(Collections.singletonList(new Object[] {"public", tableName}));
                 return result;
             }
             if (sql.contains("FROM pg_catalog.pg_attribute")) {
@@ -380,6 +476,26 @@ public class SBResultSetUpdatableTest {
                 result.setRows(Collections.singletonList(new Object[] {1, "refreshed"}));
             }
             return result;
+        }
+
+        private static int extractNumericSuffix(String sql, String marker) {
+            int markerIndex = sql.indexOf(marker);
+            if (markerIndex < 0) {
+                return -1;
+            }
+            int start = markerIndex + marker.length();
+            int end = start;
+            while (end < sql.length() && Character.isDigit(sql.charAt(end))) {
+                end++;
+            }
+            if (end <= start) {
+                return -1;
+            }
+            try {
+                return Integer.parseInt(sql.substring(start, end));
+            } catch (NumberFormatException ex) {
+                return -1;
+            }
         }
     }
 
