@@ -14,6 +14,7 @@ using Xunit;
 
 namespace ScratchBird.Data.Tests;
 
+[Collection("ScratchBird Integration")]
 public class JDBC203PoolingAndRecoveryContractTests
 {
     private const int ScenarioCWorkers = 10;
@@ -21,12 +22,8 @@ public class JDBC203PoolingAndRecoveryContractTests
     [Fact]
     public async Task ScenarioA_BorrowReuseAfterExplicitCancel()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(dsn) || string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
+        var cancelSql = RequireCancelSql();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 4, minPoolSize: 0, connectionLifetime: 30);
         var beforeStats = GetPoolStats(poolingDsn);
@@ -70,12 +67,8 @@ public class JDBC203PoolingAndRecoveryContractTests
     [Fact]
     public void ScenarioB_TimeoutCancellationReuse()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(dsn) || string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
+        var cancelSql = RequireCancelSql();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 4, minPoolSize: 0, connectionLifetime: 30);
 
@@ -108,11 +101,7 @@ public class JDBC203PoolingAndRecoveryContractTests
     [Fact]
     public async Task ScenarioC_ConcurrentPoolStress10Workers()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 3, minPoolSize: 0, connectionLifetime: 20);
         var tasks = Enumerable.Range(0, ScenarioCWorkers).Select(_ => Task.Run(() =>
@@ -137,12 +126,8 @@ public class JDBC203PoolingAndRecoveryContractTests
     [Fact]
     public void ScenarioD_ReconnectRecoveryAfterFailure()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(dsn) || string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
+        var cancelSql = RequireCancelSql();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 2, minPoolSize: 0, connectionLifetime: 30);
 
@@ -176,12 +161,8 @@ public class JDBC203PoolingAndRecoveryContractTests
     [Fact]
     public void ScenarioE_MetadataAndStreamReuseAfterRecovery()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(dsn) || string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
+        var cancelSql = RequireCancelSql();
 
         var table = $"dotnet203_contract_{Guid.NewGuid():N}";
         var payloadText = $"payload-{DateTime.UtcNow:O}";
@@ -272,5 +253,39 @@ public class JDBC203PoolingAndRecoveryContractTests
     {
         var config = ScratchBirdConfig.FromConnectionString(dsn);
         return ProtocolClientPool.GetStats(config);
+    }
+
+    private static string RequireDsn()
+    {
+        var configured = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        var dsn = string.IsNullOrWhiteSpace(configured)
+            ? "scratchbird://sb_admin:SbAdmin_Compat1!@127.0.0.1:13092/main?sslmode=disable&allow_insecure=true"
+            : configured;
+        return EnsurePoolingDisabled(dsn);
+    }
+
+    private static string EnsurePoolingDisabled(string dsn)
+    {
+        if (dsn.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{dsn}{(dsn.Contains("?", StringComparison.OrdinalIgnoreCase) ? "&" : "?")}Pooling=false";
+        }
+
+        if (dsn.EndsWith(';'))
+        {
+            return $"{dsn}Pooling=false";
+        }
+
+        return $"{dsn};Pooling=false";
+    }
+
+    private static string RequireCancelSql()
+    {
+        var configured = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+        return "SELECT pg_sleep(5)";
     }
 }

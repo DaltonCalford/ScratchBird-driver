@@ -19,16 +19,13 @@ using Xunit;
 
 namespace ScratchBird.Data.Tests;
 
+[Collection("ScratchBird Integration")]
 public class IntegrationTests
 {
     [Fact]
     public void ConnectAndSelect()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -43,11 +40,7 @@ public class IntegrationTests
     [Fact]
     public void PrepareBindQuery()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -63,11 +56,7 @@ public class IntegrationTests
     [Fact]
     public void TypesFixtureQuery()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -82,11 +71,7 @@ public class IntegrationTests
     [Fact]
     public void PreparedStatementCacheCachesAndClearsOnSchemaMutation()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var table = $"dotnet_ps_cache_{Guid.NewGuid():N}";
         using var conn = new ScratchBirdConnection(dsn);
@@ -125,11 +110,7 @@ public class IntegrationTests
     [Fact]
     public void PreparedStatementRetryAfterSchemaInvalidation()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -152,11 +133,7 @@ public class IntegrationTests
     [Fact]
     public void GetSchemaTablesAndTextReaderStreamPaths()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var table = $"dotnet_schema_{Guid.NewGuid():N}";
         using var conn = new ScratchBirdConnection(dsn);
@@ -243,11 +220,7 @@ public class IntegrationTests
     [Fact]
     public void GetSchemaColumnsMetadata()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var table = $"dotnet_schema_metadata_{Guid.NewGuid():N}";
         using var conn = new ScratchBirdConnection(dsn);
@@ -295,11 +268,7 @@ public class IntegrationTests
     [Fact]
     public void GetSchemaTablesMetadataIsDiscoverable()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -320,11 +289,7 @@ public class IntegrationTests
     [Fact]
     public void BinaryStreamRoundTripForLargePayload()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         const int payloadSize = 256 * 1024;
         var original = new byte[payloadSize];
@@ -353,11 +318,7 @@ public class IntegrationTests
     [Fact]
     public void BinaryStreamRoundTripForVeryLargePayload()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         const int payloadSize = 1024 * 1024;
         var original = new byte[payloadSize];
@@ -393,11 +354,7 @@ public class IntegrationTests
     [Fact]
     public async Task ConcurrentVeryLargeLobRoundTripsDoNotLeakPool()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var basePayload = new byte[1024 * 1024];
         for (int i = 0; i < basePayload.Length; i++)
@@ -465,11 +422,7 @@ public class IntegrationTests
     [Fact]
     public void ConnectionPoolingReusesProtocolClient()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn);
         ProtocolClient? firstClient;
@@ -492,11 +445,7 @@ public class IntegrationTests
     [Fact]
     public void SavepointRollbackAndRelease()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -620,16 +569,8 @@ public class IntegrationTests
     [Fact]
     public async Task CancelQuery()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
+        var cancelSql = RequireCancelSql();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -652,17 +593,9 @@ public class IntegrationTests
     [Fact]
     public async Task CancelQueryAsyncViaTokenReleasesConnection()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var cancelSql = RequireCancelSql();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -688,17 +621,9 @@ public class IntegrationTests
     [Fact]
     public async Task ExecuteReaderAsyncCancelTokenReleasesConnection()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var cancelSql = RequireCancelSql();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -727,11 +652,7 @@ public class IntegrationTests
     [Fact]
     public async Task ReadAsyncCanCancelWithoutConnectionLeak()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -748,11 +669,7 @@ public class IntegrationTests
     [Fact]
     public async Task ExecuteNonQueryAsyncWithPreCanceledTokenReleasesConnection()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         using var conn = new ScratchBirdConnection(dsn);
         conn.Open();
@@ -773,17 +690,9 @@ public class IntegrationTests
     [Fact]
     public async Task ReaderCancellationConcurrentLoad()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
-        var cancelSql = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
-        if (string.IsNullOrWhiteSpace(cancelSql))
-        {
-            return;
-        }
+        var cancelSql = RequireCancelSql();
 
         var poolingDsn = AddPoolingFlags(dsn);
         var tasks = new List<Task<bool>>();
@@ -833,11 +742,7 @@ public class IntegrationTests
     [Fact]
     public async Task PooledConnectionConcurrentReuseDoesNotLeak()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn);
         var workerTasks = new List<Task>();
@@ -871,11 +776,7 @@ public class IntegrationTests
     [Fact]
     public async Task PooledConnectionSaturationCreatesFallbackClients()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 2, connectionLifetime: 300, minPoolSize: 0);
         const int workerCount = 6;
@@ -951,11 +852,7 @@ public class IntegrationTests
     [Fact]
     public async Task PoolConnectionLifetimeEvictsIdleClientsAndReleasesNewBorrow()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 1, connectionLifetime: 1);
         ProtocolClient? firstClient;
@@ -989,11 +886,7 @@ public class IntegrationTests
     [Fact]
     public void RecoverFromStaleClientHandleAfterDisconnect()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var poolingDsn = AddPoolingFlags(dsn);
         using (var conn = new ScratchBirdConnection(poolingDsn))
@@ -1017,11 +910,7 @@ public class IntegrationTests
     [Fact]
     public void SavepointNestedRollbackAndReadCommittedIsolation()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var table = $"dotnet_txn_test_{Guid.NewGuid():N}";
         using var conn = new ScratchBirdConnection(dsn);
@@ -1067,11 +956,7 @@ public class IntegrationTests
     [Fact]
     public async Task ConcurrentWritersAndReaderSessionMaintainIsolation()
     {
-        var dsn = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
-        if (string.IsNullOrWhiteSpace(dsn))
-        {
-            return;
-        }
+        var dsn = RequireDsn();
 
         var table = $"dotnet_isolation_txn_{Guid.NewGuid():N}";
         using var setup = new ScratchBirdConnection(dsn);
@@ -1201,5 +1086,39 @@ public class IntegrationTests
             cleanup.CommandText = $"DROP TABLE {table}";
             cleanup.ExecuteNonQuery();
         }
+    }
+
+    private static string RequireDsn()
+    {
+        var configured = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_URL");
+        var dsn = string.IsNullOrWhiteSpace(configured)
+            ? "scratchbird://sb_admin:SbAdmin_Compat1!@127.0.0.1:13092/main?sslmode=disable&allow_insecure=true"
+            : configured;
+        return EnsurePoolingDisabled(dsn);
+    }
+
+    private static string EnsurePoolingDisabled(string dsn)
+    {
+        if (dsn.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{dsn}{(dsn.Contains("?", StringComparison.OrdinalIgnoreCase) ? "&" : "?")}Pooling=false";
+        }
+
+        if (dsn.EndsWith(';'))
+        {
+            return $"{dsn}Pooling=false";
+        }
+
+        return $"{dsn};Pooling=false";
+    }
+
+    private static string RequireCancelSql()
+    {
+        var configured = Environment.GetEnvironmentVariable("SCRATCHBIRD_DOTNET_CANCEL_SQL");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+        return "SELECT pg_sleep(5)";
     }
 }
