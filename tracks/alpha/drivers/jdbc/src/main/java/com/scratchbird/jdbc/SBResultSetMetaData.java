@@ -14,7 +14,11 @@
 package com.scratchbird.jdbc;
 
 import java.sql.*;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * JDBC ResultSetMetaData implementation for ScratchBird.
@@ -22,9 +26,27 @@ import java.util.List;
 public class SBResultSetMetaData implements ResultSetMetaData {
 
     private final List<SBColumnInfo> columns;
+    private final boolean updatable;
+    private final Set<Integer> writableColumns;
+    private final String schemaName;
+    private final String tableName;
+    private final String catalogName;
 
     public SBResultSetMetaData(List<SBColumnInfo> columns) {
+        this(columns, false, Collections.emptySet(), "", "", "");
+    }
+
+    public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
+                               Set<Integer> writableColumns, String schemaName,
+                               String tableName, String catalogName) {
         this.columns = columns;
+        this.updatable = updatable;
+        this.writableColumns = writableColumns == null
+            ? Collections.emptySet()
+            : Collections.unmodifiableSet(new HashSet<>(writableColumns));
+        this.schemaName = schemaName == null ? "" : schemaName;
+        this.tableName = tableName == null ? "" : tableName;
+        this.catalogName = catalogName == null ? "" : catalogName;
     }
 
     private SBColumnInfo getColumn(int column) throws SQLException {
@@ -57,7 +79,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public boolean isCurrency(int column) throws SQLException {
-        return false;
+        return "money".equalsIgnoreCase(getColumnTypeName(column));
     }
 
     @Override
@@ -104,7 +126,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public String getSchemaName(int column) throws SQLException {
-        return "";  // Would need catalog lookup
+        return schemaName;
     }
 
     @Override
@@ -129,12 +151,12 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public String getTableName(int column) throws SQLException {
-        return "";  // Would need catalog lookup
+        return tableName;
     }
 
     @Override
     public String getCatalogName(int column) throws SQLException {
-        return "";
+        return catalogName;
     }
 
     @Override
@@ -151,17 +173,24 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public boolean isReadOnly(int column) throws SQLException {
-        return true;  // Default to read-only
+        return !isWritable(column);
     }
 
     @Override
     public boolean isWritable(int column) throws SQLException {
-        return false;
+        if (!updatable) {
+            return false;
+        }
+        if (!writableColumns.isEmpty()) {
+            return writableColumns.contains(column);
+        }
+        SBColumnInfo col = getColumn(column);
+        return col != null && col.getTableOid() > 0 && col.getColumnNumber() > 0;
     }
 
     @Override
     public boolean isDefinitelyWritable(int column) throws SQLException {
-        return false;
+        return isWritable(column);
     }
 
     @Override
@@ -187,6 +216,15 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case Types.TIMESTAMP: return java.sql.Timestamp.class.getName();
             case Types.TIMESTAMP_WITH_TIMEZONE: return java.time.OffsetDateTime.class.getName();
             case Types.ARRAY: return java.sql.Array.class.getName();
+            case Types.OTHER:
+                String typeName = getColumnTypeName(column).toLowerCase(Locale.ROOT);
+                if (typeName.contains("uuid")) {
+                    return java.util.UUID.class.getName();
+                }
+                if (typeName.contains("json")) {
+                    return String.class.getName();
+                }
+                return Object.class.getName();
             default: return Object.class.getName();
         }
     }
@@ -215,6 +253,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 700: return Types.REAL;         // float4
             case 701: return Types.DOUBLE;       // float8
             case 1700: return Types.NUMERIC;     // numeric
+            case 790: return Types.NUMERIC;      // money
             case 18: return Types.CHAR;          // char
             case 25: return Types.VARCHAR;       // text
             case 1042: return Types.CHAR;        // bpchar
@@ -245,6 +284,7 @@ public class SBResultSetMetaData implements ResultSetMetaData {
             case 700: return "real";
             case 701: return "double precision";
             case 1700: return "numeric";
+            case 790: return "money";
             case 18: return "char";
             case 25: return "text";
             case 1042: return "bpchar";

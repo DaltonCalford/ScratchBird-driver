@@ -98,7 +98,6 @@ public class SBResultSet implements ResultSet {
         this.localOnlyUpdatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
             && this.updateTarget == null
-            && hasWritableLocalProjection(statement, this.columns)
             && this.bufferedRowsMutable;
         this.updatable = statement != null
             && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
@@ -573,7 +572,29 @@ public class SBResultSet implements ResultSet {
     public ResultSetMetaData getMetaData() throws SQLException {
         checkClosed();
         syncColumns();
-        return new SBResultSetMetaData(columns);
+        String schema = "";
+        String table = "";
+        String catalog = "";
+        if (updateTarget != null) {
+            String[] parsed = parseQualifiedTableSql(updateTarget.tableSql);
+            if (parsed[0] != null) {
+                schema = parsed[0];
+            }
+            if (parsed[1] != null) {
+                table = parsed[1];
+            }
+        }
+        if (statement != null && statement.connection != null) {
+            try {
+                String connCatalog = statement.connection.getCatalog();
+                if (connCatalog != null) {
+                    catalog = connCatalog;
+                }
+            } catch (SQLException ignored) {
+                // Keep catalog blank when unavailable.
+            }
+        }
+        return new SBResultSetMetaData(columns, updatable, writableMetadataColumns(), schema, table, catalog);
     }
 
     @Override
@@ -1654,37 +1675,6 @@ public class SBResultSet implements ResultSet {
         return resolveUpdateTargetFromSql(statement, columns);
     }
 
-    private static boolean hasWritableLocalProjection(SBStatement statement, List<SBColumnInfo> columns) {
-        if (columns == null || columns.isEmpty()) {
-            return false;
-        }
-        if (statement == null) {
-            return false;
-        }
-        String sql = statement.getLastExecutedSql();
-        if (sql == null || sql.isBlank()) {
-            return true;
-        }
-        String collapsed = collapseWhitespace(sql);
-        if (collapsed.isBlank()) {
-            return true;
-        }
-        String normalized = collapsed.toLowerCase(Locale.ROOT);
-        if (!normalized.startsWith("select ")) {
-            return true;
-        }
-        int fromIndex = findTopLevelKeyword(normalized, " from ");
-        if (fromIndex < 0) {
-            return true;
-        }
-        String projectionSql = collapsed.substring("select ".length(), fromIndex).trim();
-        if (projectionSql.isEmpty()) {
-            return false;
-        }
-        Map<Integer, String> projectionMapping = resolveProjectionMapping(projectionSql, columns);
-        return projectionMapping != null && !projectionMapping.isEmpty();
-    }
-
     private static UpdateTarget resolveUpdateTargetFromSql(SBStatement statement, List<SBColumnInfo> columns) {
         String sql = statement.getLastExecutedSql();
         if (sql == null || sql.isBlank()) {
@@ -1731,6 +1721,36 @@ public class SBResultSet implements ResultSet {
             return null;
         }
         return new UpdateTarget(tableToken, projectionMapping);
+    }
+
+    private Set<Integer> writableMetadataColumns() {
+        if (!updatable || columns == null || columns.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Integer> writable = new HashSet<>();
+        for (int i = 1; i <= columns.size(); i++) {
+            if (canMutateColumn(i)) {
+                writable.add(i);
+            }
+        }
+        return writable;
+    }
+
+    private static String[] parseQualifiedTableSql(String tableSql) {
+        if (tableSql == null || tableSql.isBlank()) {
+            return new String[]{"", ""};
+        }
+        List<String> parts = splitIdentifierParts(tableSql);
+        if (parts.isEmpty()) {
+            return new String[]{"", unquoteIdentifier(tableSql)};
+        }
+        if (parts.size() == 1) {
+            return new String[]{"", unquoteIdentifier(parts.get(0))};
+        }
+        return new String[]{
+            unquoteIdentifier(parts.get(parts.size() - 2)),
+            unquoteIdentifier(parts.get(parts.size() - 1))
+        };
     }
 
     private static UpdateTarget resolveUpdateTargetFromMetadata(SBStatement statement, List<SBColumnInfo> columns) {

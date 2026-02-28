@@ -55,6 +55,17 @@ class SBTypeCodecParameterCoverageTest {
         assertEquals(SBTypeCodec.OID_TEXT, enumValue.getOid());
         assertEquals("RUNNABLE", SBTypeCodec.decodeValue(
             enumValue.getOid(), enumValue.getData(), enumValue.getFormat()));
+
+        Object customObject = new Object() {
+            @Override
+            public String toString() {
+                return "custom-parameter";
+            }
+        };
+        SBTypeCodec.ParamEncoding custom = SBTypeCodec.encodeParam(customObject, Types.OTHER);
+        assertEquals(SBTypeCodec.OID_TEXT, custom.getOid());
+        assertEquals("custom-parameter", SBTypeCodec.decodeValue(
+            custom.getOid(), custom.getData(), custom.getFormat()));
     }
 
     @Test

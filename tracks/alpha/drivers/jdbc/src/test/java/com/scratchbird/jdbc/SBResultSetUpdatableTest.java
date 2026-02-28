@@ -232,7 +232,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void sqlFallbackWithoutWritableProjectionColumnsRemainsReadOnly() throws Exception {
+    public void sqlFallbackWithoutWritableProjectionColumnsUsesLocalBufferedUpdatableMode() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -249,9 +249,13 @@ public class SBResultSetUpdatableTest {
         SBResultSet rs = new SBResultSet(statement, columns, rows);
 
         assertTrue(rs.next());
-        assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class,
-            () -> rs.updateString("derived", "illegal"));
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("derived", "changed");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertEquals("changed", rs.getString("derived"));
+        assertTrue(protocol.executedSql.isEmpty());
     }
 
     @Test

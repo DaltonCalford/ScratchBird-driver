@@ -346,8 +346,9 @@ public final class SBTypeCodec {
                 return numeric;
             }
         }
-
-        throw new SQLException("Unsupported parameter type: " + value.getClass().getName(), "22023");
+        byte[] fallback = value.toString().getBytes(StandardCharsets.UTF_8);
+        int fallbackOid = mappedOid != 0 ? mappedOid : OID_TEXT;
+        return new ParamEncoding(FORMAT_BINARY, fallbackOid, encodeLengthPrefixed(fallback), false);
     }
 
     public static Object decodeValue(int typeOid, byte[] data, int format) throws SQLException {
