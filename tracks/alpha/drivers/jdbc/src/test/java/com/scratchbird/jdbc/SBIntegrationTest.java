@@ -177,6 +177,42 @@ public class SBIntegrationTest {
     }
 
     @Test
+    public void resultSetMetadataReportsPerColumnBaseTablesForJoinQueries() throws Exception {
+        String leftTable = "jdbc_meta_left_" + System.currentTimeMillis();
+        String rightTable = "jdbc_meta_right_" + System.currentTimeMillis();
+        try (Connection conn = openConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE " + leftTable + " (id INTEGER, payload TEXT)");
+            stmt.execute("CREATE TABLE " + rightTable + " (id INTEGER, payload TEXT)");
+            stmt.execute("INSERT INTO " + leftTable + " (id, payload) VALUES (1, 'left')");
+            stmt.execute("INSERT INTO " + rightTable + " (id, payload) VALUES (1, 'right')");
+
+            String sql = "SELECT l.id, r.payload FROM " + leftTable + " l "
+                + "JOIN " + rightTable + " r ON r.id = l.id";
+            try (ResultSet rs = stmt.executeQuery(sql)) {
+                ResultSetMetaData meta = rs.getMetaData();
+                String table1 = meta.getTableName(1);
+                String table2 = meta.getTableName(2);
+                assertTrue(table1.isEmpty() || table1.equals(leftTable));
+                assertTrue(table2.isEmpty() || table2.equals(rightTable));
+
+                String schema1 = meta.getSchemaName(1);
+                String schema2 = meta.getSchemaName(2);
+                assertTrue(schema1.isEmpty() || schema1.equals("public"));
+                assertTrue(schema2.isEmpty() || schema2.equals("public"));
+            }
+        } finally {
+            try (Connection conn = openConnection();
+                 Statement cleanup = conn.createStatement()) {
+                cleanup.execute("DROP TABLE IF EXISTS " + rightTable);
+                cleanup.execute("DROP TABLE IF EXISTS " + leftTable);
+            } catch (SQLException ignored) {
+                // Cleanup best effort for integration workspace databases.
+            }
+        }
+    }
+
+    @Test
     public void metadataUdtAndTypeMetadataMethodsReturnExpectedColumns() throws Exception {
         String domainName = "jdbc_udt_" + System.currentTimeMillis();
         try (Connection conn = openConnection();

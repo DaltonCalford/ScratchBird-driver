@@ -69,6 +69,8 @@ class SBDatabaseMetaDataCapabilitiesTest {
         assertTrue(meta.supportsResultSetType(ResultSet.TYPE_FORWARD_ONLY));
         assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY));
         assertTrue(meta.supportsResultSetConcurrency(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_UPDATABLE));
+        assertTrue(meta.supportsResultSetHoldability(ResultSet.HOLD_CURSORS_OVER_COMMIT));
+        assertTrue(meta.supportsResultSetHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT));
         assertTrue(meta.getRowIdLifetime() == RowIdLifetime.ROWID_VALID_OTHER);
     }
 

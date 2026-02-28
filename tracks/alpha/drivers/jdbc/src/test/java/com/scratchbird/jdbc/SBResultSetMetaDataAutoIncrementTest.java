@@ -10,6 +10,7 @@
 package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -53,6 +54,40 @@ class SBResultSetMetaDataAutoIncrementTest {
         assertFalse(meta.isAutoIncrement(2));
     }
 
+    @Test
+    void reportsPerColumnSchemaAndTableNamesForMultiTableResultSet() throws Exception {
+        AutoIncrementCatalogProtocol protocol = new AutoIncrementCatalogProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT l.id, r.payload FROM public.left_demo l JOIN public.right_demo r ON r.id = l.id";
+
+        SBColumnInfo leftId = new SBColumnInfo();
+        leftId.setName("id");
+        leftId.setTableOid(100);
+        leftId.setColumnNumber((short) 1);
+
+        SBColumnInfo rightPayload = new SBColumnInfo();
+        rightPayload.setName("payload");
+        rightPayload.setTableOid(200);
+        rightPayload.setColumnNumber((short) 2);
+
+        SBResultSet rs = new SBResultSet(
+            statement,
+            Arrays.asList(leftId, rightPayload),
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "p"}))
+        );
+
+        ResultSetMetaData meta = rs.getMetaData();
+        assertEquals("public", meta.getSchemaName(1));
+        assertEquals("left_demo", meta.getTableName(1));
+        assertEquals("main", meta.getCatalogName(1));
+        assertEquals("public", meta.getSchemaName(2));
+        assertEquals("right_demo", meta.getTableName(2));
+        assertEquals("main", meta.getCatalogName(2));
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
@@ -91,7 +126,13 @@ class SBResultSetMetaDataAutoIncrementTest {
             SBQueryResult result = new SBQueryResult();
             if (sql.contains("FROM pg_catalog.pg_class c")) {
                 result.setColumns(Arrays.asList(new SBColumnInfo(), new SBColumnInfo()));
-                result.setRows(Collections.singletonList(new Object[] {"public", "demo"}));
+                int oid = extractNumericSuffix(sql, "WHERE c.oid = ");
+                String tableName = switch (oid) {
+                    case 100 -> "left_demo";
+                    case 200 -> "right_demo";
+                    default -> "demo";
+                };
+                result.setRows(Collections.singletonList(new Object[] {"public", tableName}));
                 return result;
             }
             if (sql.contains("FROM pg_catalog.pg_attribute a")

@@ -41,7 +41,7 @@ class SBDatabaseMetaDataColumnsTest {
     @Test
     void getColumnsReportsUsefulTypeSizesAndScale() throws SQLException {
         SBDatabaseMetaData meta = new HarnessMetaData(Arrays.asList(
-            new Object[]{"id", "int4", 1, 0, null, "orders", "public"},
+            new Object[]{"id", "int4", 1, 0, "nextval('orders_id_seq'::regclass)", "orders", "public"},
             new Object[]{"price", "numeric", 2, 1, "0", "orders", "public"},
             new Object[]{"name", "varchar", 3, 1, null, "orders", "public"},
             new Object[]{"created_at", "timestamp", 4, 1, null, "orders", "public"}
@@ -58,18 +58,22 @@ class SBDatabaseMetaDataColumnsTest {
                 assertEquals(10, rs.getInt("COLUMN_SIZE"));
                 assertEquals(0, rs.getInt("DECIMAL_DIGITS"));
                 assertEquals(10, rs.getInt("NUM_PREC_RADIX"));
+                assertEquals("YES", rs.getString("IS_AUTOINCREMENT"));
             } else if ("price".equals(column)) {
                 assertEquals(Types.NUMERIC, rs.getInt("DATA_TYPE"));
                 assertEquals(38, rs.getInt("COLUMN_SIZE"));
                 assertEquals(0, rs.getInt("DECIMAL_DIGITS"));
                 assertEquals(10, rs.getInt("NUM_PREC_RADIX"));
+                assertEquals("NO", rs.getString("IS_AUTOINCREMENT"));
             } else if ("name".equals(column)) {
                 assertEquals(Types.VARCHAR, rs.getInt("DATA_TYPE"));
                 assertEquals(65535, rs.getInt("COLUMN_SIZE"));
                 assertEquals(65535, rs.getInt("CHAR_OCTET_LENGTH"));
+                assertEquals("NO", rs.getString("IS_AUTOINCREMENT"));
             } else if ("created_at".equals(column)) {
                 assertEquals(Types.TIMESTAMP, rs.getInt("DATA_TYPE"));
                 assertEquals(29, rs.getInt("COLUMN_SIZE"));
+                assertEquals("NO", rs.getString("IS_AUTOINCREMENT"));
             }
         }
 

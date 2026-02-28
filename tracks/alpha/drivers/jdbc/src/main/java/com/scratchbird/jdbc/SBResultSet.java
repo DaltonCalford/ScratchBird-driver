@@ -1057,6 +1057,9 @@ public class SBResultSet implements ResultSet {
         String schema = "";
         String table = "";
         String catalog = "";
+        Map<Integer, String> schemaByColumn = new HashMap<>();
+        Map<Integer, String> tableByColumn = new HashMap<>();
+        Map<Integer, String> catalogByColumn = new HashMap<>();
         if (updateTarget != null) {
             String[] parsed = parseQualifiedTableSql(updateTarget.tableSql);
             if (parsed[0] != null) {
@@ -1076,11 +1079,42 @@ public class SBResultSet implements ResultSet {
                 // Keep catalog blank when unavailable.
             }
         }
+        if (columns != null && !columns.isEmpty()) {
+            for (int i = 0; i < columns.size(); i++) {
+                String tableSql = null;
+                if (updateTarget != null) {
+                    tableSql = updateTarget.mappedTableSql(i + 1);
+                }
+                if ((tableSql == null || tableSql.isBlank())
+                    && statement != null
+                    && statement.connection != null) {
+                    SBColumnInfo column = columns.get(i);
+                    if (column != null && column.getTableOid() > 0) {
+                        tableSql = resolveTableSql(statement, column.getTableOid());
+                    }
+                }
+                if (tableSql != null && !tableSql.isBlank()) {
+                    String[] parsed = parseQualifiedTableSql(tableSql);
+                    if (parsed[0] != null && !parsed[0].isBlank()) {
+                        schemaByColumn.put(i + 1, parsed[0]);
+                    }
+                    if (parsed[1] != null && !parsed[1].isBlank()) {
+                        tableByColumn.put(i + 1, parsed[1]);
+                    }
+                }
+                if (catalog != null && !catalog.isBlank()) {
+                    catalogByColumn.put(i + 1, catalog);
+                }
+            }
+        }
         return new SBResultSetMetaData(
             columns,
             updatable,
             writableMetadataColumns(),
             autoIncrementMetadataColumns(),
+            schemaByColumn,
+            tableByColumn,
+            catalogByColumn,
             schema,
             table,
             catalog

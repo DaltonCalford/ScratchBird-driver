@@ -15,9 +15,11 @@ package com.scratchbird.jdbc;
 
 import java.sql.*;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -29,6 +31,9 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     private final boolean updatable;
     private final Set<Integer> writableColumns;
     private final Set<Integer> autoIncrementColumns;
+    private final Map<Integer, String> schemaNamesByColumn;
+    private final Map<Integer, String> tableNamesByColumn;
+    private final Map<Integer, String> catalogNamesByColumn;
     private final String schemaName;
     private final String tableName;
     private final String catalogName;
@@ -40,11 +45,42 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
                                Set<Integer> writableColumns, String schemaName,
                                String tableName, String catalogName) {
-        this(columns, updatable, writableColumns, Collections.emptySet(), schemaName, tableName, catalogName);
+        this(
+            columns,
+            updatable,
+            writableColumns,
+            Collections.emptySet(),
+            Collections.emptyMap(),
+            Collections.emptyMap(),
+            Collections.emptyMap(),
+            schemaName,
+            tableName,
+            catalogName
+        );
     }
 
     public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
                                Set<Integer> writableColumns, Set<Integer> autoIncrementColumns,
+                               String schemaName, String tableName, String catalogName) {
+        this(
+            columns,
+            updatable,
+            writableColumns,
+            autoIncrementColumns,
+            Collections.emptyMap(),
+            Collections.emptyMap(),
+            Collections.emptyMap(),
+            schemaName,
+            tableName,
+            catalogName
+        );
+    }
+
+    public SBResultSetMetaData(List<SBColumnInfo> columns, boolean updatable,
+                               Set<Integer> writableColumns, Set<Integer> autoIncrementColumns,
+                               Map<Integer, String> schemaNamesByColumn,
+                               Map<Integer, String> tableNamesByColumn,
+                               Map<Integer, String> catalogNamesByColumn,
                                String schemaName, String tableName, String catalogName) {
         this.columns = columns;
         this.updatable = updatable;
@@ -54,6 +90,15 @@ public class SBResultSetMetaData implements ResultSetMetaData {
         this.autoIncrementColumns = autoIncrementColumns == null
             ? Collections.emptySet()
             : Collections.unmodifiableSet(new HashSet<>(autoIncrementColumns));
+        this.schemaNamesByColumn = schemaNamesByColumn == null
+            ? Collections.emptyMap()
+            : Collections.unmodifiableMap(new HashMap<>(schemaNamesByColumn));
+        this.tableNamesByColumn = tableNamesByColumn == null
+            ? Collections.emptyMap()
+            : Collections.unmodifiableMap(new HashMap<>(tableNamesByColumn));
+        this.catalogNamesByColumn = catalogNamesByColumn == null
+            ? Collections.emptyMap()
+            : Collections.unmodifiableMap(new HashMap<>(catalogNamesByColumn));
         this.schemaName = schemaName == null ? "" : schemaName;
         this.tableName = tableName == null ? "" : tableName;
         this.catalogName = catalogName == null ? "" : catalogName;
@@ -137,7 +182,8 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public String getSchemaName(int column) throws SQLException {
-        return schemaName;
+        getColumn(column);
+        return valueForColumn(schemaNamesByColumn, column, schemaName);
     }
 
     @Override
@@ -162,12 +208,14 @@ public class SBResultSetMetaData implements ResultSetMetaData {
 
     @Override
     public String getTableName(int column) throws SQLException {
-        return tableName;
+        getColumn(column);
+        return valueForColumn(tableNamesByColumn, column, tableName);
     }
 
     @Override
     public String getCatalogName(int column) throws SQLException {
-        return catalogName;
+        getColumn(column);
+        return valueForColumn(catalogNamesByColumn, column, catalogName);
     }
 
     @Override
@@ -251,6 +299,11 @@ public class SBResultSetMetaData implements ResultSetMetaData {
     @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         return iface.isAssignableFrom(getClass());
+    }
+
+    private static String valueForColumn(Map<Integer, String> valuesByColumn, int column, String fallback) {
+        String value = valuesByColumn.get(column);
+        return value != null ? value : fallback;
     }
 
     // ==================== Type Mapping ====================
