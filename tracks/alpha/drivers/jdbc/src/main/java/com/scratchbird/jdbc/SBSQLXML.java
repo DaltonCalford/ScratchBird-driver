@@ -215,6 +215,10 @@ public class SBSQLXML implements SQLXML {
                 return adapted;
             }
         }
+        T bestEffort = instantiateSourceBestEffort(sourceClass, xml);
+        if (bestEffort != null) {
+            return bestEffort;
+        }
         throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
     }
 
@@ -313,7 +317,86 @@ public class SBSQLXML implements SQLXML {
                 return adapted;
             }
         }
+        T bestEffort = instantiateResultBestEffort(resultClass);
+        if (bestEffort != null) {
+            return bestEffort;
+        }
         throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
+    }
+
+    private <T extends Source> T instantiateSourceBestEffort(Class<T> sourceClass, String xml) throws SQLException {
+        if (sourceClass == null) {
+            return null;
+        }
+        T instance = instantiateWithDefaultArguments(sourceClass);
+        if (instance == null) {
+            return null;
+        }
+        Source delegate = new StreamSource(new StringReader(xml == null ? "" : xml));
+        boolean bound = bindDelegateSource(instance, delegate);
+        if (!bound) {
+            if (instance instanceof StreamSource streamSource && streamSource.getReader() == null) {
+                streamSource.setReader(new StringReader(xml == null ? "" : xml));
+                bound = true;
+            } else if (instance instanceof DOMSource domSource && domSource.getNode() == null) {
+                domSource.setNode(parseDom(xml == null ? "" : xml));
+                bound = true;
+            } else if (instance instanceof SAXSource saxSource && saxSource.getInputSource() == null) {
+                saxSource.setInputSource(new InputSource(new StringReader(xml == null ? "" : xml)));
+                bound = true;
+            }
+        }
+        if (!bound && instance.getSystemId() == null) {
+            instance.setSystemId(delegate.getSystemId());
+        }
+        return instance;
+    }
+
+    private <T extends Result> T instantiateResultBestEffort(Class<T> resultClass) throws SQLException {
+        if (resultClass == null) {
+            return null;
+        }
+        T instance = instantiateWithDefaultArguments(resultClass);
+        if (instance == null) {
+            return null;
+        }
+        CandidateResult candidate;
+        if (DOMResult.class.isAssignableFrom(resultClass)) {
+            candidate = domDelegateResult();
+        } else if (SAXResult.class.isAssignableFrom(resultClass)) {
+            candidate = saxDelegateResult();
+        } else if (StAXResult.class.isAssignableFrom(resultClass)) {
+            candidate = staxDelegateResult();
+        } else {
+            candidate = streamDelegateResult();
+        }
+        bindDelegateResult(instance, candidate.result());
+        if (instance instanceof StreamResult streamResult && candidate.result() instanceof StreamResult delegated) {
+            if (streamResult.getWriter() == null && streamResult.getOutputStream() == null) {
+                if (delegated.getWriter() != null) {
+                    streamResult.setWriter(delegated.getWriter());
+                } else if (delegated.getOutputStream() != null) {
+                    streamResult.setOutputStream(delegated.getOutputStream());
+                }
+            }
+        } else if (instance instanceof DOMResult domResult && candidate.result() instanceof DOMResult delegated) {
+            if (domResult.getNode() == null) {
+                domResult.setNode(delegated.getNode());
+            }
+        } else if (instance instanceof SAXResult saxResult && candidate.result() instanceof SAXResult delegated) {
+            if (saxResult.getHandler() == null && delegated.getHandler() != null) {
+                saxResult.setHandler(delegated.getHandler());
+            }
+            if (saxResult.getLexicalHandler() == null && delegated.getLexicalHandler() != null) {
+                saxResult.setLexicalHandler(delegated.getLexicalHandler());
+            }
+        } else if (instance instanceof StAXResult staxResult && candidate.result() instanceof StAXResult delegated) {
+            if (staxResult.getXMLStreamWriter() == null && delegated.getXMLStreamWriter() != null) {
+                staxResult.setSystemId(delegated.getSystemId());
+            }
+        }
+        pendingMaterializer = candidate.materializer();
+        return instance;
     }
 
     private <T extends Source> T instantiateSourceFromDelegate(Class<T> sourceClass, String xml) throws SQLException {
@@ -322,26 +405,26 @@ public class SBSQLXML implements SQLXML {
         }
         try {
             Source streamCandidate = new StreamSource(new StringReader(xml));
-            T delegated = instantiateSourceWithDelegate(sourceClass, streamCandidate);
+            T delegated = instantiateSourceWithDelegate(sourceClass, streamCandidate, xml);
             if (delegated != null) {
                 return delegated;
             }
 
             Source domCandidate = new DOMSource(parseDom(xml));
-            delegated = instantiateSourceWithDelegate(sourceClass, domCandidate);
+            delegated = instantiateSourceWithDelegate(sourceClass, domCandidate, xml);
             if (delegated != null) {
                 return delegated;
             }
 
             Source saxCandidate = new SAXSource(new InputSource(new StringReader(xml)));
-            delegated = instantiateSourceWithDelegate(sourceClass, saxCandidate);
+            delegated = instantiateSourceWithDelegate(sourceClass, saxCandidate, xml);
             if (delegated != null) {
                 return delegated;
             }
 
             XMLInputFactory inputFactory = XMLInputFactory.newFactory();
             Source staxCandidate = new StAXSource(inputFactory.createXMLStreamReader(new StringReader(xml)));
-            return instantiateSourceWithDelegate(sourceClass, staxCandidate);
+            return instantiateSourceWithDelegate(sourceClass, staxCandidate, xml);
         } catch (SQLException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -349,7 +432,7 @@ public class SBSQLXML implements SQLXML {
         }
     }
 
-    private <T extends Source> T instantiateSourceWithDelegate(Class<T> sourceClass, Source delegate)
+    private <T extends Source> T instantiateSourceWithDelegate(Class<T> sourceClass, Source delegate, String xml)
             throws SQLException {
         if (sourceClass == null || delegate == null) {
             return null;
@@ -366,6 +449,48 @@ public class SBSQLXML implements SQLXML {
                 return ctor.newInstance(delegate);
             } catch (Exception ex) {
                 // Continue with factory/no-constructor fallback strategies.
+            }
+        }
+
+        // Custom wrappers may expose direct payload constructors instead of Source delegates.
+        Constructor<T> xmlCtor = findCompatibleSingleArgConstructor(sourceClass, String.class);
+        if (xmlCtor == null) {
+            xmlCtor = findCompatibleSingleArgConstructor(sourceClass, CharSequence.class);
+        }
+        if (xmlCtor != null) {
+            try {
+                return xmlCtor.newInstance(xml == null ? "" : xml);
+            } catch (Exception ex) {
+                // Continue with additional constructor paths.
+            }
+        }
+
+        Constructor<T> readerCtor = findCompatibleSingleArgConstructor(sourceClass, Reader.class);
+        if (readerCtor != null) {
+            try {
+                return readerCtor.newInstance(new StringReader(xml == null ? "" : xml));
+            } catch (Exception ex) {
+                // Continue with additional constructor paths.
+            }
+        }
+
+        Constructor<T> inputStreamCtor = findCompatibleSingleArgConstructor(sourceClass, InputStream.class);
+        if (inputStreamCtor != null) {
+            try {
+                return inputStreamCtor.newInstance(
+                    new ByteArrayInputStream((xml == null ? "" : xml).getBytes(StandardCharsets.UTF_8))
+                );
+            } catch (Exception ex) {
+                // Continue with additional constructor paths.
+            }
+        }
+
+        Constructor<T> inputSourceCtor = findCompatibleSingleArgConstructor(sourceClass, InputSource.class);
+        if (inputSourceCtor != null) {
+            try {
+                return inputSourceCtor.newInstance(new InputSource(new StringReader(xml == null ? "" : xml)));
+            } catch (Exception ex) {
+                // Continue with additional constructor paths.
             }
         }
 
@@ -442,6 +567,56 @@ public class SBSQLXML implements SQLXML {
                 return instance;
             } catch (Exception ex) {
                 // Continue with factory/no-constructor fallback strategies.
+            }
+        }
+
+        if (candidate.result() instanceof StreamResult streamDelegate) {
+            Writer delegateWriter = streamDelegate.getWriter();
+            if (delegateWriter != null) {
+                Constructor<T> writerCtor = findCompatibleSingleArgConstructor(resultClass, Writer.class);
+                if (writerCtor != null) {
+                    try {
+                        T instance = writerCtor.newInstance(delegateWriter);
+                        pendingMaterializer = candidate.materializer();
+                        return instance;
+                    } catch (Exception ex) {
+                        // Continue with additional constructor paths.
+                    }
+                }
+            }
+            OutputStream delegateOutput = streamDelegate.getOutputStream();
+            if (delegateOutput != null) {
+                Constructor<T> outputCtor = findCompatibleSingleArgConstructor(resultClass, OutputStream.class);
+                if (outputCtor != null) {
+                    try {
+                        T instance = outputCtor.newInstance(delegateOutput);
+                        pendingMaterializer = candidate.materializer();
+                        return instance;
+                    } catch (Exception ex) {
+                        // Continue with additional constructor paths.
+                    }
+                }
+            }
+            StringBuilder builderSink = new StringBuilder();
+            Constructor<T> stringBuilderCtor = findCompatibleSingleArgConstructor(resultClass, StringBuilder.class);
+            if (stringBuilderCtor != null) {
+                try {
+                    T instance = stringBuilderCtor.newInstance(builderSink);
+                    pendingMaterializer = builderSink::toString;
+                    return instance;
+                } catch (Exception ex) {
+                    // Continue with additional constructor paths.
+                }
+            }
+            Constructor<T> appendableCtor = findCompatibleSingleArgConstructor(resultClass, Appendable.class);
+            if (appendableCtor != null) {
+                try {
+                    T instance = appendableCtor.newInstance(builderSink);
+                    pendingMaterializer = builderSink::toString;
+                    return instance;
+                } catch (Exception ex) {
+                    // Continue with additional constructor paths.
+                }
             }
         }
 

@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Field;
 import java.sql.JDBCType;
 import java.sql.ResultSet;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -170,7 +171,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void metadataResolvedTargetSupportsAliasedColumnsAndAllowsDerivedColumnLocalMutations() throws Exception {
+    public void metadataResolvedTargetSupportsAliasedColumnsAndRejectsDerivedColumnMutations() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -208,18 +209,14 @@ public class SBResultSetUpdatableTest {
         rs.updateRow();
         assertTrue(rs.rowUpdated());
 
-        rs.updateString("derived", "derived-local");
-        rs.updateRow();
-        assertTrue(rs.rowUpdated());
-        assertEquals("derived-local", rs.getString("derived"));
+        assertThrows(SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "derived-local"));
 
         rs.moveToInsertRow();
         rs.updateInt("identifier", 2);
         rs.updateString("payload_alias", "inserted");
-        rs.updateString("derived", "insert-local");
         rs.insertRow();
         assertTrue(rs.rowInserted());
-        assertEquals("insert-local", rs.getString("derived"));
+        assertEquals("inserted", rs.getString("payload_alias"));
 
         assertTrue(protocol.executedSql.stream().anyMatch(sql ->
             sql.startsWith("UPDATE \"public\".\"meta_demo\"")));
@@ -230,7 +227,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void sqlFallbackProjectionMappingUsesSourceColumnsAndAllowsDerivedLocalMutations() throws Exception {
+    public void sqlFallbackProjectionMappingUsesSourceColumnsAndRejectsDerivedMutations() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -263,10 +260,7 @@ public class SBResultSetUpdatableTest {
         assertTrue(rs.rowUpdated());
         assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.contains("\"payload\" = 'after'")));
 
-        rs.updateString("derived", "derived-local");
-        rs.updateRow();
-        assertTrue(rs.rowUpdated());
-        assertEquals("derived-local", rs.getString("derived"));
+        assertThrows(SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "derived-local"));
     }
 
     @Test
@@ -360,7 +354,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void sqlFallbackWithoutWritableProjectionColumnsIsReadOnlyWithoutServerWritableColumns() throws Exception {
+    public void sqlFallbackWithoutWritableProjectionColumnsIsReadOnlyAndDoesNotEmitServerSql() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -378,8 +372,8 @@ public class SBResultSetUpdatableTest {
 
         assertTrue(rs.next());
         assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "changed"));
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
+        assertThrows(SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "changed"));
+        assertThrows(SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
         assertTrue(protocol.executedSql.stream().noneMatch(sql ->
             sql.startsWith("UPDATE ") || sql.startsWith("INSERT ") || sql.startsWith("DELETE ")),
             "executed SQL: " + protocol.executedSql);
@@ -919,7 +913,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void streamingResultSetIsReadOnlyWithoutResolvedBaseTable() throws Exception {
+    public void streamingResultSetIsReadOnlyWhenBaseTableCannotBeResolved() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_FORWARD_ONLY,
@@ -936,8 +930,8 @@ public class SBResultSetUpdatableTest {
 
         assertTrue(rs.next());
         assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "after-x"));
-        assertThrows(java.sql.SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
+        assertThrows(SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "after-x"));
+        assertThrows(SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
         assertTrue(protocol.executedSql.stream().noneMatch(sql ->
             sql.startsWith("UPDATE ") || sql.startsWith("INSERT ") || sql.startsWith("DELETE ")),
             "executed SQL: " + protocol.executedSql);

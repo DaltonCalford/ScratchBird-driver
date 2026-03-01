@@ -1685,14 +1685,17 @@ public class SBResultSet implements ResultSet {
         }
         Map<Integer, Object> values = new LinkedHashMap<>();
         for (int i = 1; i <= columns.size(); i++) {
+            if (!canMutateColumn(i)) {
+                continue;
+            }
             Object value = insertRowBuffer[i - 1];
             String targetName = targetColumnNameOrNull(i);
-            if (targetName == null) {
+            if (targetName == null && updateTarget != null) {
                 continue;
             }
             values.put(i, value);
         }
-        if (values.isEmpty()) {
+        if (values.isEmpty() && updateTarget != null) {
             throw new SQLException("Insert row has no writable columns", "HY000");
         }
         executeInsert(values);
@@ -2271,9 +2274,11 @@ public class SBResultSet implements ResultSet {
         private final String tableSql;
         private final Map<Integer, String> columnNamesByIndex;
         private final Map<Integer, String> tableSqlByIndex;
+        private final Set<Integer> writableColumns;
 
         private UpdateTarget(String tableSql, Map<Integer, String> columnNamesByIndex,
-                             Map<Integer, String> tableSqlByIndex) {
+                             Map<Integer, String> tableSqlByIndex,
+                             Set<Integer> writableColumns) {
             this.tableSql = tableSql;
             this.columnNamesByIndex = columnNamesByIndex == null
                 ? Collections.emptyMap()
@@ -2281,10 +2286,21 @@ public class SBResultSet implements ResultSet {
             this.tableSqlByIndex = tableSqlByIndex == null
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(tableSqlByIndex));
+            this.writableColumns = writableColumns == null
+                ? Collections.emptySet()
+                : Collections.unmodifiableSet(new LinkedHashSet<>(writableColumns));
         }
 
         private boolean usesExplicitColumnMapping() {
             return !columnNamesByIndex.isEmpty();
+        }
+
+        private boolean hasWritableColumns() {
+            return !writableColumns.isEmpty();
+        }
+
+        private boolean isColumnWritable(int columnIndex) {
+            return writableColumns.contains(columnIndex);
         }
 
         private String mappedColumnName(int columnIndex) {
@@ -2336,7 +2352,71 @@ public class SBResultSet implements ResultSet {
         if (sql == null || sql.isBlank()) {
             return null;
         }
-        return resolveUpdateTargetFromSelectSql(statement, sql, columns, 0);
+        UpdateTarget strict = resolveUpdateTargetFromSelectSql(statement, sql, columns, 0);
+        if (strict != null) {
+            return strict;
+        }
+        return resolveUpdateTargetLenientFromSingleTable(statement, sql, columns);
+    }
+
+    private static UpdateTarget resolveUpdateTargetLenientFromSingleTable(
+            SBStatement statement, String sql, List<SBColumnInfo> columns) {
+        if (statement == null || sql == null || sql.isBlank() || columns == null || columns.isEmpty()) {
+            return null;
+        }
+        String collapsed = collapseWhitespace(sql);
+        WithClauseParseResult withClause = parseLeadingWithClause(collapsed);
+        if (withClause != null && withClause.mainQuery != null && !withClause.mainQuery.isBlank()) {
+            collapsed = withClause.mainQuery;
+        }
+        String normalized = collapsed.toLowerCase(Locale.ROOT);
+        int fromIndex = findTopLevelKeyword(normalized, " from ");
+        if (fromIndex < 0) {
+            return null;
+        }
+        String afterFromOriginal = collapsed.substring(fromIndex + 6).trim();
+        if (afterFromOriginal.isEmpty()) {
+            return null;
+        }
+        String tableToken = firstToken(afterFromOriginal);
+        if (tableToken == null || tableToken.isBlank() || tableToken.startsWith("(")) {
+            return null;
+        }
+        String primaryTableSql = resolvePrimaryTableSql(afterFromOriginal, tableToken);
+        if (primaryTableSql == null || primaryTableSql.isBlank()) {
+            return null;
+        }
+
+        Set<String> tableColumns = resolveTableColumnNames(statement, primaryTableSql);
+        if (tableColumns.isEmpty()) {
+            return null;
+        }
+
+        Map<Integer, String> namesByIndex = new LinkedHashMap<>();
+        Map<Integer, String> tableByIndex = new LinkedHashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            SBColumnInfo column = columns.get(i);
+            if (column == null || column.getName() == null || column.getName().isBlank()) {
+                continue;
+            }
+            String normalizedName = unquoteIdentifier(column.getName()).toLowerCase(Locale.ROOT);
+            if (!tableColumns.contains(normalizedName)) {
+                continue;
+            }
+            int index = i + 1;
+            namesByIndex.put(index, unquoteIdentifier(column.getName()));
+            tableByIndex.put(index, primaryTableSql);
+        }
+        if (namesByIndex.isEmpty()) {
+            return null;
+        }
+
+        return new UpdateTarget(
+            primaryTableSql,
+            namesByIndex,
+            tableByIndex,
+            new LinkedHashSet<>(namesByIndex.keySet())
+        );
     }
 
     private static UpdateTarget resolveUpdateTargetFromSelectSql(
@@ -2474,7 +2554,12 @@ public class SBResultSet implements ResultSet {
                 tableByIndex.put(index, primaryTableSql);
             }
         }
-        return new UpdateTarget(primaryTableSql, namesByIndex, tableByIndex);
+        return new UpdateTarget(
+            primaryTableSql,
+            namesByIndex,
+            tableByIndex,
+            new LinkedHashSet<>(namesByIndex.keySet())
+        );
     }
 
     private static Map<Integer, ProjectionTarget> resolveProjectionTargetsFromResultColumns(
@@ -2741,7 +2826,12 @@ public class SBResultSet implements ResultSet {
         if (namesByIndex.isEmpty()) {
             return null;
         }
-        return new UpdateTarget(tableSql, namesByIndex, tableByIndex);
+        return new UpdateTarget(
+            tableSql,
+            namesByIndex,
+            tableByIndex,
+            new LinkedHashSet<>(namesByIndex.keySet())
+        );
     }
 
     private static String resolveTableSql(SBStatement statement, int tableOid) {
@@ -3764,12 +3854,18 @@ public class SBResultSet implements ResultSet {
     }
 
     private boolean canMutateColumn(int columnIndex) {
-        return updateTarget != null;
+        if (!updatable) {
+            return false;
+        }
+        if (updateTarget == null) {
+            return false;
+        }
+        return updateTarget.isColumnWritable(columnIndex);
     }
 
     private String targetColumnNameOrNull(int columnIndex) {
         if (updateTarget == null) {
-            return null;
+            return columnName(columnIndex);
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             return columnName(columnIndex);
@@ -3850,6 +3946,11 @@ public class SBResultSet implements ResultSet {
         checkClosed();
         ensureUpdatable();
         checkColumnIndex(columnIndex);
+        if (!canMutateColumn(columnIndex)) {
+            throw new SQLFeatureNotSupportedException(
+                "Column is not writable in this updatable ResultSet projection: " + columnName(columnIndex)
+            );
+        }
         clearRowActionFlags();
         if (onInsertRow) {
             if (insertRowBuffer == null) {
@@ -3868,7 +3969,7 @@ public class SBResultSet implements ResultSet {
 
     private void executeInsert(Map<Integer, Object> values) throws SQLException {
         if (updateTarget == null) {
-            return;
+            throw new SQLException("ResultSet mutation target is unresolved", "0A000");
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             String targetTableSql = resolveTargetTableForMutationIndices(values.keySet());
@@ -3916,7 +4017,7 @@ public class SBResultSet implements ResultSet {
 
     private void executeUpdate(Object[] beforeRow, Map<Integer, Object> updates) throws SQLException {
         if (updateTarget == null) {
-            return;
+            throw new SQLException("ResultSet mutation target is unresolved", "0A000");
         }
         Map<String, Map<Integer, Object>> groupedUpdates = partitionUpdatesByTargetTable(updates);
         if (groupedUpdates.isEmpty()) {
@@ -3956,7 +4057,7 @@ public class SBResultSet implements ResultSet {
 
     private void executeDelete(Object[] beforeRow) throws SQLException {
         if (updateTarget == null) {
-            return;
+            throw new SQLException("ResultSet mutation target is unresolved", "0A000");
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             String sql = "DELETE FROM " + updateTarget.tableSql
@@ -3995,7 +4096,7 @@ public class SBResultSet implements ResultSet {
 
     private Object[] executeRefresh(Object[] beforeRow) throws SQLException {
         if (updateTarget == null) {
-            return currentRowData == null ? null : currentRowData.clone();
+            throw new SQLException("ResultSet mutation target is unresolved", "0A000");
         }
         Object[] base = currentRowData == null ? null : currentRowData.clone();
         if (base == null || base.length == 0) {
@@ -4594,11 +4695,7 @@ public class SBResultSet implements ResultSet {
         }
         UpdateTarget resolved = resolveUpdateTarget(statement, columns);
         updateTarget = resolved;
-        if (resolved != null) {
-            updatable = true;
-            return;
-        }
-        updatable = false;
+        updatable = resolved != null && resolved.hasWritableColumns();
     }
 
     private void rebuildColumnIndex() {

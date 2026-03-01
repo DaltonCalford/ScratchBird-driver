@@ -217,13 +217,19 @@ final class SBIntegrationRuntime {
             candidates.add(Path.of(envServer));
         }
 
+        String envRoot = env("SCRATCHBIRD_SOURCE_ROOT");
+        if (!envRoot.isBlank()) {
+            candidates.addAll(sbServerBinaryCandidates(Path.of(envRoot).toAbsolutePath().normalize()));
+        }
+
         Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath();
-        candidates.add(cwd.resolve("../../../../../ScratchBird/build/src/sb_server").normalize());
-        candidates.add(Path.of("/home/dcalford/CliWork/ScratchBird/build/src/sb_server"));
+        candidates.addAll(sbServerBinaryCandidates(cwd.resolve("../../../../../ScratchBird").normalize()));
+        candidates.addAll(sbServerBinaryCandidates(Path.of("/home/dcalford/CliWork/ScratchBird")));
 
         Path cursor = cwd;
         for (int i = 0; i < 8 && cursor != null; i++) {
-            candidates.add(cursor.resolve("ScratchBird/build/src/sb_server"));
+            candidates.addAll(sbServerBinaryCandidates(cursor.resolve("ScratchBird").normalize()));
+            candidates.addAll(sbServerBinaryCandidates(cursor.resolve("../ScratchBird").normalize()));
             cursor = cursor.getParent();
         }
 
@@ -241,9 +247,14 @@ final class SBIntegrationRuntime {
 
     private static Path tryBuildServerBinary() {
         StringBuilder diagnostic = new StringBuilder();
+        String cmakeCommand = resolveFirstExecutable("cmake", "cmake3");
+        if (cmakeCommand == null || cmakeCommand.isBlank()) {
+            lastAutobuildDiagnostic = "cmake/cmake3 not available on PATH; cannot auto-build sb_server";
+            return null;
+        }
         for (Path sourceRoot : findServerSourceRoots()) {
-            Path binary = sourceRoot.resolve("build/src/sb_server").normalize();
-            if (Files.isRegularFile(binary) && Files.isExecutable(binary)) {
+            Path binary = firstExecutable(sbServerBinaryCandidates(sourceRoot));
+            if (binary != null) {
                 lastAutobuildDiagnostic = "";
                 return binary;
             }
@@ -265,31 +276,69 @@ final class SBIntegrationRuntime {
             }
 
             if (!runProcess(buildLog,
-                "cmake",
+                cmakeCommand,
                 "-S", sourceRoot.toAbsolutePath().toString(),
                 "-B", buildDir.toAbsolutePath().toString(),
                 "-DCMAKE_BUILD_TYPE=RelWithDebInfo")) {
-                diagnostic.append("cmake configure failed for ").append(sourceRoot)
+                diagnostic.append(cmakeCommand).append(" configure failed for ").append(sourceRoot)
                     .append(" (see ").append(buildLog).append("). ");
                 continue;
             }
             if (!runProcess(buildLog,
-                "cmake",
+                cmakeCommand,
                 "--build", buildDir.toAbsolutePath().toString(),
                 "--target", "sb_server",
                 "-j", "4")) {
-                diagnostic.append("cmake build failed for ").append(sourceRoot)
+                diagnostic.append(cmakeCommand).append(" build failed for ").append(sourceRoot)
                     .append(" (see ").append(buildLog).append("). ");
                 continue;
             }
-            if (Files.isRegularFile(binary) && Files.isExecutable(binary)) {
+            binary = firstExecutable(sbServerBinaryCandidates(sourceRoot));
+            if (binary != null) {
                 lastAutobuildDiagnostic = "";
                 return binary;
             }
-            diagnostic.append("build completed without executable sb_server at ")
-                .append(binary).append(". ");
+            diagnostic.append("build completed without executable sb_server under ")
+                .append(sourceRoot.resolve("build")).append(". ");
         }
         lastAutobuildDiagnostic = diagnostic.toString().trim();
+        return null;
+    }
+
+    private static List<Path> sbServerBinaryCandidates(Path sourceRoot) {
+        if (sourceRoot == null) {
+            return List.of();
+        }
+        Path normalized = sourceRoot.toAbsolutePath().normalize();
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(normalized.resolve("build/src/sb_server"));
+        candidates.add(normalized.resolve("build/src/server/sb_server"));
+        candidates.add(normalized.resolve("build/bin/sb_server"));
+        return candidates;
+    }
+
+    private static Path firstExecutable(List<Path> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        for (Path candidate : candidates) {
+            if (candidate != null && Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static String resolveFirstExecutable(String... candidates) {
+        if (candidates == null || candidates.length == 0) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            Path onPath = findExecutableOnPath(candidate);
+            if (onPath != null) {
+                return candidate;
+            }
+        }
         return null;
     }
 

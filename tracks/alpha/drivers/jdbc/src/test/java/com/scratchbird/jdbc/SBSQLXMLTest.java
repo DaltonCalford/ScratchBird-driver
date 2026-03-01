@@ -61,6 +61,52 @@ class SBSQLXMLTest {
     public static class CustomDomResult extends DOMResult {
     }
 
+    public static class StringCtorSourceWrapper implements Source {
+        private final String payload;
+        private String systemId;
+
+        public StringCtorSourceWrapper(String payload) {
+            this.payload = payload;
+        }
+
+        public String payload() {
+            return payload;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class WriterCtorResultWrapper implements Result {
+        private final Writer writer;
+        private String systemId;
+
+        public WriterCtorResultWrapper(Writer writer) {
+            this.writer = writer;
+        }
+
+        public Writer writer() {
+            return writer;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
     public static class CustomReaderCtorStreamSource extends StreamSource {
         public CustomReaderCtorStreamSource(Reader reader) {
             super(reader);
@@ -691,6 +737,23 @@ class SBSQLXMLTest {
         TransformerFactory.newInstance().newTransformer().transform(
             new StreamSource(new StringReader("<d/>")), customDomResult);
         assertTrue(domTarget.getString().contains("d"));
+    }
+
+    @Test
+    void supportsStringAndWriterCtorWrappersForGenericSourceAndResultClasses() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<ctor-source/>");
+        StringCtorSourceWrapper sourceWrapper = sourceXml.getSource(StringCtorSourceWrapper.class);
+        assertNotNull(sourceWrapper);
+        assertEquals("<ctor-source/>", sourceWrapper.payload());
+
+        SBSQLXML target = new SBSQLXML();
+        WriterCtorResultWrapper resultWrapper = target.setResult(WriterCtorResultWrapper.class);
+        assertNotNull(resultWrapper);
+        Writer writer = resultWrapper.writer();
+        assertNotNull(writer);
+        writer.write("<ctor-result/>");
+        writer.close();
+        assertEquals("<ctor-result/>", target.getString());
     }
 
     @Test

@@ -111,6 +111,7 @@ dotnet/.vs/
 jdbc/build/
 jdbc/.gradle/
 jdbc/bin/
+jdbc/.idea/
 jdbc/*.class
 jdbc/*.jar
 jdbc/*.war
@@ -193,6 +194,8 @@ mojo/.build/
 # Build artifacts
 # ===================
 tracks/**/.build/
+tracks/**/.gradle/
+tracks/**/jdbc/.gradle/
 build/
 dist/
 out/
