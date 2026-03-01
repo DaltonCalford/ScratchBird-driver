@@ -2027,6 +2027,9 @@ public class SBResultSet implements ResultSet {
     @Override
     public int getHoldability() throws SQLException {
         checkClosed();
+        if (statement != null) {
+            return statement.resultSetHoldability;
+        }
         return ResultSet.HOLD_CURSORS_OVER_COMMIT;
     }
 
@@ -2307,6 +2310,16 @@ public class SBResultSet implements ResultSet {
         }
     }
 
+    private static final class WithClauseParseResult {
+        private final String mainQuery;
+        private final Map<String, String> cteSqlByName;
+
+        private WithClauseParseResult(String mainQuery, Map<String, String> cteSqlByName) {
+            this.mainQuery = mainQuery;
+            this.cteSqlByName = cteSqlByName == null ? Collections.emptyMap() : cteSqlByName;
+        }
+    }
+
     private static UpdateTarget resolveUpdateTarget(SBStatement statement, List<SBColumnInfo> columns) {
         if (statement == null) {
             return null;
@@ -2328,11 +2341,37 @@ public class SBResultSet implements ResultSet {
 
     private static UpdateTarget resolveUpdateTargetFromSelectSql(
             SBStatement statement, String sql, List<SBColumnInfo> columns, int depth) {
+        return resolveUpdateTargetFromSelectSql(statement, sql, columns, depth, Collections.emptyMap());
+    }
+
+    private static UpdateTarget resolveUpdateTargetFromSelectSql(
+            SBStatement statement,
+            String sql,
+            List<SBColumnInfo> columns,
+            int depth,
+            Map<String, String> cteSqlByName) {
         if (sql == null || sql.isBlank() || depth > 3) {
             return null;
         }
         String collapsed = collapseWhitespace(sql);
         String normalized = collapsed.toLowerCase(Locale.ROOT);
+        WithClauseParseResult withClause = parseLeadingWithClause(collapsed);
+        if (withClause != null) {
+            Map<String, String> mergedCteMap = new LinkedHashMap<>();
+            if (cteSqlByName != null && !cteSqlByName.isEmpty()) {
+                mergedCteMap.putAll(cteSqlByName);
+            }
+            if (withClause.cteSqlByName != null && !withClause.cteSqlByName.isEmpty()) {
+                mergedCteMap.putAll(withClause.cteSqlByName);
+            }
+            return resolveUpdateTargetFromSelectSql(
+                statement,
+                withClause.mainQuery,
+                columns,
+                depth + 1,
+                mergedCteMap
+            );
+        }
         if (!normalized.startsWith("select ")) {
             return null;
         }
@@ -2362,12 +2401,34 @@ public class SBResultSet implements ResultSet {
         if (tableToken == null || tableToken.isBlank()) {
             return null;
         }
+        String tableTokenKey = normalizeIdentifierKey(tableToken);
+        if (cteSqlByName != null && !cteSqlByName.isEmpty()) {
+            String cteSql = cteSqlByName.get(tableTokenKey);
+            if (cteSql != null && !cteSql.isBlank()) {
+                UpdateTarget cteTarget = resolveUpdateTargetFromSelectSql(
+                    statement,
+                    cteSql,
+                    columns,
+                    depth + 1,
+                    cteSqlByName
+                );
+                if (cteTarget != null) {
+                    return cteTarget;
+                }
+            }
+        }
         if (tableToken.startsWith("(")) {
             String nestedSelect = extractLeadingParenthesizedSelect(afterFromOriginal);
             if (nestedSelect == null || nestedSelect.isBlank()) {
                 return null;
             }
-            UpdateTarget nestedTarget = resolveUpdateTargetFromSelectSql(statement, nestedSelect, columns, depth + 1);
+            UpdateTarget nestedTarget = resolveUpdateTargetFromSelectSql(
+                statement,
+                nestedSelect,
+                columns,
+                depth + 1,
+                cteSqlByName
+            );
             if (nestedTarget != null) {
                 return nestedTarget;
             }
@@ -2801,6 +2862,146 @@ public class SBResultSet implements ResultSet {
             sawWhitespace = false;
         }
         return out.toString().trim();
+    }
+
+    private static final class IdentifierTokenParseResult {
+        private final String token;
+        private final int nextIndex;
+
+        private IdentifierTokenParseResult(String token, int nextIndex) {
+            this.token = token;
+            this.nextIndex = nextIndex;
+        }
+    }
+
+    private static WithClauseParseResult parseLeadingWithClause(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return null;
+        }
+        String trimmed = sql.trim();
+        if (!startsWithWordAt(trimmed, 0, "with")) {
+            return null;
+        }
+
+        int index = skipWhitespace(trimmed, "with".length());
+        if (startsWithWordAt(trimmed, index, "recursive")) {
+            index = skipWhitespace(trimmed, index + "recursive".length());
+        }
+
+        if (index >= trimmed.length()) {
+            return null;
+        }
+
+        Map<String, String> cteSqlByName = new LinkedHashMap<>();
+        while (index < trimmed.length()) {
+            IdentifierTokenParseResult cteName = parseIdentifierToken(trimmed, index);
+            if (cteName == null || cteName.token == null || cteName.token.isBlank()) {
+                return null;
+            }
+            String cteKey = normalizeIdentifierKey(cteName.token);
+            index = skipWhitespace(trimmed, cteName.nextIndex);
+
+            if (index < trimmed.length() && trimmed.charAt(index) == '(') {
+                int close = findMatchingParenthesis(trimmed, index);
+                if (close < 0) {
+                    return null;
+                }
+                index = skipWhitespace(trimmed, close + 1);
+            }
+
+            if (!startsWithWordAt(trimmed, index, "as")) {
+                return null;
+            }
+            index = skipWhitespace(trimmed, index + 2);
+            if (index >= trimmed.length() || trimmed.charAt(index) != '(') {
+                return null;
+            }
+            int close = findMatchingParenthesis(trimmed, index);
+            if (close < 0) {
+                return null;
+            }
+            String cteSql = trimmed.substring(index + 1, close).trim();
+            if (!cteSql.isBlank()) {
+                cteSqlByName.put(cteKey, cteSql);
+            }
+            index = skipWhitespace(trimmed, close + 1);
+            if (index < trimmed.length() && trimmed.charAt(index) == ',') {
+                index = skipWhitespace(trimmed, index + 1);
+                continue;
+            }
+            break;
+        }
+
+        String mainQuery = trimmed.substring(Math.min(index, trimmed.length())).trim();
+        if (mainQuery.isBlank()) {
+            return null;
+        }
+        return new WithClauseParseResult(mainQuery, cteSqlByName);
+    }
+
+    private static int skipWhitespace(String value, int index) {
+        int i = Math.max(0, index);
+        while (i < value.length() && Character.isWhitespace(value.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    private static IdentifierTokenParseResult parseIdentifierToken(String value, int start) {
+        if (value == null || start >= value.length()) {
+            return null;
+        }
+        int index = skipWhitespace(value, start);
+        boolean inDouble = false;
+        int tokenStart = index;
+        while (index < value.length()) {
+            char c = value.charAt(index);
+            if (c == '"') {
+                inDouble = !inDouble;
+                index++;
+                continue;
+            }
+            if (!inDouble && (Character.isWhitespace(c) || c == ',' || c == ';' || c == '(')) {
+                break;
+            }
+            index++;
+        }
+        if (index <= tokenStart) {
+            return null;
+        }
+        return new IdentifierTokenParseResult(value.substring(tokenStart, index), index);
+    }
+
+    private static int findMatchingParenthesis(String value, int openIndex) {
+        if (value == null || openIndex < 0 || openIndex >= value.length() || value.charAt(openIndex) != '(') {
+            return -1;
+        }
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = openIndex; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble) {
+                continue;
+            }
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     private static String firstToken(String sql) {

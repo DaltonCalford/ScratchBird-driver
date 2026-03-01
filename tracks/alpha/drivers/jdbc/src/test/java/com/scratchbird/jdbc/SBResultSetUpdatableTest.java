@@ -859,6 +859,66 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
+    public void withCteProjectionResolvesBaseTableForServerSideMutations() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "WITH base AS (SELECT id, payload FROM demo) SELECT id, payload FROM base";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE demo") && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void nestedWithCteProjectionResolvesTransitiveBaseTableForMutations() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "WITH base AS (SELECT id, payload FROM demo), "
+            + "projected AS (SELECT id, payload FROM base) "
+            + "SELECT id, payload FROM projected";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {2, "before-nested"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after-nested");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE demo") && sql.contains("\"payload\" = 'after-nested'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
     public void streamingResultSetIsReadOnlyWithoutResolvedBaseTable() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);

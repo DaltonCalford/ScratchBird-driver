@@ -158,6 +158,103 @@ public class SBIntegrationTest {
     }
 
     @Test
+    public void metadataCapabilityClaimsMatchRuntimeBehavior() throws Exception {
+        try (Connection conn = openConnection()) {
+            DatabaseMetaData metadata = conn.getMetaData();
+
+            assertTrue(metadata.supportsMultipleResultSets());
+            try (Statement stmt = conn.createStatement()) {
+                assertTrue(stmt.execute("SELECT 1; SELECT 2"));
+                try (ResultSet first = stmt.getResultSet()) {
+                    assertNotNull(first);
+                    assertTrue(first.next());
+                    assertEquals(1, first.getInt(1));
+                }
+                assertTrue(stmt.getMoreResults());
+                try (ResultSet second = stmt.getResultSet()) {
+                    assertNotNull(second);
+                    assertTrue(second.next());
+                    assertEquals(2, second.getInt(1));
+                }
+                assertFalse(stmt.getMoreResults());
+            }
+
+            assertTrue(metadata.supportsGetGeneratedKeys());
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("DELETE FROM type_coverage WHERE id = 999001");
+                boolean hasResultSet = stmt.execute(
+                    "INSERT INTO type_coverage (id, txt, b, created_at) VALUES " +
+                        "(999001, 'proof', E'\\\\x00', CURRENT_TIMESTAMP)",
+                    Statement.RETURN_GENERATED_KEYS
+                );
+                boolean locatedKey = false;
+                try (ResultSet keys = stmt.getGeneratedKeys()) {
+                    if (keys != null && keys.next()) {
+                        assertEquals(999001, keys.getInt(1));
+                        locatedKey = true;
+                    }
+                }
+                if (!locatedKey && hasResultSet) {
+                    try (ResultSet returned = stmt.getResultSet()) {
+                        assertNotNull(returned);
+                        if (returned.next()) {
+                            assertEquals(999001, returned.getInt(1));
+                            locatedKey = true;
+                        }
+                    }
+                }
+                if (!locatedKey) {
+                    assertEquals(1, stmt.getUpdateCount());
+                }
+                stmt.executeUpdate("DELETE FROM type_coverage WHERE id = 999001");
+            }
+
+            assertTrue(metadata.supportsResultSetHoldability(ResultSet.HOLD_CURSORS_OVER_COMMIT));
+            assertTrue(metadata.supportsResultSetHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT));
+            try (Statement hold = conn.createStatement(
+                    ResultSet.TYPE_FORWARD_ONLY,
+                    ResultSet.CONCUR_READ_ONLY,
+                    ResultSet.HOLD_CURSORS_OVER_COMMIT
+                );
+                 ResultSet holdRs = hold.executeQuery("SELECT 1")) {
+                assertEquals(ResultSet.HOLD_CURSORS_OVER_COMMIT, holdRs.getHoldability());
+            }
+            try (Statement close = conn.createStatement(
+                    ResultSet.TYPE_FORWARD_ONLY,
+                    ResultSet.CONCUR_READ_ONLY,
+                    ResultSet.CLOSE_CURSORS_AT_COMMIT
+                );
+                 ResultSet closeRs = close.executeQuery("SELECT 1")) {
+                assertEquals(ResultSet.CLOSE_CURSORS_AT_COMMIT, closeRs.getHoldability());
+            }
+
+            assertTrue(metadata.supportsANSI92EntryLevelSQL());
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT id FROM type_coverage WHERE id IS NULL OR id IS NOT NULL ORDER BY id LIMIT 1"
+                 )) {
+                assertNotNull(rs);
+            }
+
+            assertTrue(metadata.supportsANSI92IntermediateSQL());
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT t.id FROM type_coverage t WHERE t.id IN (SELECT id FROM type_coverage)"
+                 )) {
+                assertNotNull(rs);
+            }
+
+            assertTrue(metadata.supportsANSI92FullSQL());
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT a.id, b.id FROM type_coverage a LEFT OUTER JOIN type_coverage b ON b.id = a.id"
+                 )) {
+                assertNotNull(rs);
+            }
+        }
+    }
+
+    @Test
     public void metadataClientInfoPropertiesExposeDriverHints() throws Exception {
         try (Connection conn = openConnection()) {
             DatabaseMetaData metadata = conn.getMetaData();

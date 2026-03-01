@@ -22,6 +22,10 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
@@ -1071,6 +1075,7 @@ public class SBSQLXML implements SQLXML {
         bound |= invokeCompatibleSetter(target, "setSource", delegate);
         bound |= invokeCompatibleSetter(target, "setDelegate", delegate);
         bound |= bindCompatibleField(target, delegate);
+        bound |= invokeBestEffortDelegateMutator(target, delegate, "delegate", "source", "wrapped", "bind");
         if (delegate instanceof StreamSource streamSource) {
             Reader reader = streamSource.getReader();
             if (reader != null) {
@@ -1126,6 +1131,7 @@ public class SBSQLXML implements SQLXML {
         bound |= invokeCompatibleSetter(target, "setResult", delegate);
         bound |= invokeCompatibleSetter(target, "setDelegate", delegate);
         bound |= bindCompatibleField(target, delegate);
+        bound |= invokeBestEffortDelegateMutator(target, delegate, "delegate", "result", "wrapped", "bind");
         if (delegate instanceof StreamResult streamResult) {
             if (streamResult.getWriter() != null) {
                 bound |= invokeCompatibleSetter(target, "setWriter", streamResult.getWriter());
@@ -1259,6 +1265,60 @@ public class SBSQLXML implements SQLXML {
                 return true;
             } catch (Exception ignored) {
                 // Try another compatible method.
+            }
+        }
+        return false;
+    }
+
+    private boolean invokeBestEffortDelegateMutator(Object target, Object argument, String... nameHints) {
+        if (target == null || argument == null) {
+            return false;
+        }
+        List<Method> methods = new ArrayList<>();
+        methods.addAll(Arrays.asList(target.getClass().getMethods()));
+        methods.addAll(Arrays.asList(target.getClass().getDeclaredMethods()));
+        for (Method method : methods) {
+            if (method == null
+                || java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                || method.getParameterCount() != 1) {
+                continue;
+            }
+            String methodName = method.getName() == null ? "" : method.getName().toLowerCase(Locale.ROOT);
+            if (!matchesNameHint(methodName, nameHints)) {
+                continue;
+            }
+            Class<?> parameterType = method.getParameterTypes()[0];
+            if (!parameterType.isAssignableFrom(argument.getClass())) {
+                continue;
+            }
+            Class<?> returnType = method.getReturnType();
+            if (!(Void.TYPE.equals(returnType) || returnType.isAssignableFrom(target.getClass()))) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                method.invoke(target, argument);
+                return true;
+            } catch (Exception ignored) {
+                // Keep searching for another compatible mutator.
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesNameHint(String methodName, String... nameHints) {
+        if (methodName == null || methodName.isBlank()) {
+            return false;
+        }
+        if (nameHints == null || nameHints.length == 0) {
+            return false;
+        }
+        for (String hint : nameHints) {
+            if (hint == null || hint.isBlank()) {
+                continue;
+            }
+            if (methodName.contains(hint.toLowerCase(Locale.ROOT))) {
+                return true;
             }
         }
         return false;

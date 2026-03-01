@@ -467,6 +467,58 @@ class SBSQLXMLTest {
         }
     }
 
+    public static class NonSetterDelegatingSource implements Source {
+        private Source wrapped;
+        private String systemId;
+
+        public void bindWrappedSource(Source delegate) {
+            this.wrapped = delegate;
+            if (delegate != null) {
+                this.systemId = delegate.getSystemId();
+            }
+        }
+
+        public Source delegate() {
+            return wrapped;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class NonSetterDelegatingResult implements Result {
+        private Result wrapped;
+        private String systemId;
+
+        public void bindWrappedResult(Result delegate) {
+            this.wrapped = delegate;
+            if (delegate != null) {
+                this.systemId = delegate.getSystemId();
+            }
+        }
+
+        public Result delegate() {
+            return wrapped;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
     public static class FieldOnlySourceWrapper implements Source {
         private Source delegate;
         private String systemId;
@@ -742,6 +794,27 @@ class SBSQLXMLTest {
         writer.write("<setter-delegated/>");
         writer.close();
         assertEquals("<setter-delegated/>", target.getString());
+    }
+
+    @Test
+    void supportsNonSetterDelegateMutationHooksForSourceAndResultWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>19</value></root>");
+        NonSetterDelegatingSource source = sourceXml.getSource(NonSetterDelegatingSource.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof StreamSource || source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        NonSetterDelegatingResult result = target.setResult(NonSetterDelegatingResult.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof StreamResult || result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<non-setter/>");
+        writer.close();
+        assertEquals("<non-setter/>", target.getString());
     }
 
     @Test
