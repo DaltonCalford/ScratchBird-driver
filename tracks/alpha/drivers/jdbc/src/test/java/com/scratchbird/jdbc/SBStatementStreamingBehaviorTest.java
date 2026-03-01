@@ -105,6 +105,24 @@ class SBStatementStreamingBehaviorTest {
     }
 
     @Test
+    void forwardOnlyUpdatableStatementUsesBufferedExecution() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.HOLD_CURSORS_OVER_COMMIT);
+        statement.setFetchSize(8);
+
+        try (ResultSet rs = statement.executeQuery("SELECT 1")) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+            assertThrows(SQLException.class, () -> rs.absolute(1));
+        }
+
+        assertEquals(1, protocol.simpleExecCount);
+        assertEquals(0, protocol.simpleStreamCount);
+    }
+
+    @Test
     void forwardOnlyBufferedResultSetStillRejectsScrollOperations() throws Exception {
         TrackingProtocol protocol = new TrackingProtocol();
         SBConnection connection = newConnectionForTest(protocol);
@@ -123,6 +141,26 @@ class SBStatementStreamingBehaviorTest {
 
         assertEquals(1, protocol.simpleExecCount);
         assertEquals(0, protocol.simpleStreamCount);
+    }
+
+    @Test
+    void forwardOnlyUpdatablePreparedStatementUsesBufferedExecution() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBPreparedStatement statement = new SBPreparedStatement(connection, "SELECT ?",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_UPDATABLE,
+            ResultSet.HOLD_CURSORS_OVER_COMMIT);
+        statement.setFetchSize(16);
+        statement.setInt(1, 42);
+
+        try (ResultSet rs = statement.executeQuery()) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+            assertThrows(SQLException.class, () -> rs.absolute(1));
+        }
+
+        assertEquals(1, protocol.paramExecCount);
+        assertEquals(0, protocol.paramStreamCount);
     }
 
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {

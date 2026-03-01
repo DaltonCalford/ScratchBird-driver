@@ -4,12 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.sql.ResultSet;
 import java.sql.RowIdLifetime;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import sun.misc.Unsafe;
 
 class SBDatabaseMetaDataCapabilitiesTest {
 
@@ -81,6 +84,36 @@ class SBDatabaseMetaDataCapabilitiesTest {
     }
 
     @Test
+    void exposesDeterministicIdentifierCaseAndNullOrderingCapabilities() throws Exception {
+        SBDatabaseMetaData defaults = new SBDatabaseMetaData(null);
+        assertTrue(defaults.nullsAreSortedHigh());
+        assertTrue(defaults.nullsAreSortedAtEnd());
+        assertFalse(defaults.nullsAreSortedLow());
+        assertFalse(defaults.nullsAreSortedAtStart());
+
+        assertFalse(defaults.supportsMixedCaseIdentifiers());
+        assertFalse(defaults.storesUpperCaseIdentifiers());
+        assertTrue(defaults.storesLowerCaseIdentifiers());
+        assertFalse(defaults.storesMixedCaseIdentifiers());
+        assertFalse(defaults.storesUpperCaseQuotedIdentifiers());
+        assertFalse(defaults.storesLowerCaseQuotedIdentifiers());
+        assertTrue(defaults.storesMixedCaseQuotedIdentifiers());
+
+        StubProtocol overriddenProtocol = new StubProtocol(Map.of(
+            "identifier_case", "mixed",
+            "quoted_identifier_case", "upper"
+        ));
+        SBDatabaseMetaData overridden = new SBDatabaseMetaData(newConnection(overriddenProtocol));
+        assertTrue(overridden.supportsMixedCaseIdentifiers());
+        assertFalse(overridden.storesUpperCaseIdentifiers());
+        assertFalse(overridden.storesLowerCaseIdentifiers());
+        assertTrue(overridden.storesMixedCaseIdentifiers());
+        assertTrue(overridden.storesUpperCaseQuotedIdentifiers());
+        assertFalse(overridden.storesLowerCaseQuotedIdentifiers());
+        assertFalse(overridden.storesMixedCaseQuotedIdentifiers());
+    }
+
+    @Test
     void exposesClientInfoPropertiesForDriverAndToolingDiscovery() throws SQLException {
         SBDatabaseMetaData meta = new SBDatabaseMetaData(null);
 
@@ -97,6 +130,42 @@ class SBDatabaseMetaDataCapabilitiesTest {
             assertEquals(256, maxLenByName.get("ClientHostname"));
             assertEquals(32, maxLenByName.get("ClientPid"));
             assertEquals(256, maxLenByName.get("TraceTag"));
+        }
+    }
+
+    private static SBConnection newConnection(SBProtocolHandler protocol) throws Exception {
+        SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
+        setField(connection, "protocol", protocol);
+        setField(connection, "properties", new SBConnectionProperties());
+        setField(connection, "closed", new AtomicBoolean(false));
+        return connection;
+    }
+
+    private static Unsafe getUnsafe() throws Exception {
+        Field field = Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (Unsafe) field.get(null);
+    }
+
+    private static void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = SBConnection.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static final class StubProtocol extends SBProtocolHandler {
+        private final Map<String, String> parameters = new HashMap<>();
+
+        StubProtocol(Map<String, String> parameters) {
+            super(new SBConnectionProperties());
+            if (parameters != null) {
+                this.parameters.putAll(parameters);
+            }
+        }
+
+        @Override
+        public String getServerParameter(String name) {
+            return parameters.get(name);
         }
     }
 }

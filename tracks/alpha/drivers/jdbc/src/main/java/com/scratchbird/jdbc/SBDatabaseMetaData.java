@@ -71,7 +71,7 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean nullsAreSortedAtEnd() throws SQLException {
-        return false;
+        return true;
     }
 
     @Override
@@ -81,6 +81,10 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public String getDatabaseProductVersion() throws SQLException {
+        String serverVersion = serverVersionFromConnection();
+        if (serverVersion != null && !serverVersion.isBlank()) {
+            return serverVersion;
+        }
         return "1.0.0";
     }
 
@@ -116,22 +120,25 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean supportsMixedCaseIdentifiers() throws SQLException {
-        return false;
+        String identifierCase = normalizedServerParameter("identifier_case");
+        return "mixed".equals(identifierCase) || "preserve".equals(identifierCase);
     }
 
     @Override
     public boolean storesUpperCaseIdentifiers() throws SQLException {
-        return false;
+        return "upper".equals(normalizedServerParameter("identifier_case"));
     }
 
     @Override
     public boolean storesLowerCaseIdentifiers() throws SQLException {
-        return true;
+        String identifierCase = normalizedServerParameter("identifier_case");
+        return identifierCase.isEmpty() || "lower".equals(identifierCase);
     }
 
     @Override
     public boolean storesMixedCaseIdentifiers() throws SQLException {
-        return false;
+        String identifierCase = normalizedServerParameter("identifier_case");
+        return "mixed".equals(identifierCase) || "preserve".equals(identifierCase);
     }
 
     @Override
@@ -141,17 +148,18 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public boolean storesUpperCaseQuotedIdentifiers() throws SQLException {
-        return false;
+        return "upper".equals(normalizedServerParameter("quoted_identifier_case"));
     }
 
     @Override
     public boolean storesLowerCaseQuotedIdentifiers() throws SQLException {
-        return false;
+        return "lower".equals(normalizedServerParameter("quoted_identifier_case"));
     }
 
     @Override
     public boolean storesMixedCaseQuotedIdentifiers() throws SQLException {
-        return true;
+        String quotedCase = normalizedServerParameter("quoted_identifier_case");
+        return quotedCase.isEmpty() || "mixed".equals(quotedCase) || "preserve".equals(quotedCase);
     }
 
     @Override
@@ -2967,12 +2975,12 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public int getDatabaseMajorVersion() throws SQLException {
-        return 1;
+        return parseVersionComponent(getDatabaseProductVersion(), 0, 1);
     }
 
     @Override
     public int getDatabaseMinorVersion() throws SQLException {
-        return 0;
+        return parseVersionComponent(getDatabaseProductVersion(), 1, 0);
     }
 
     @Override
@@ -3459,5 +3467,86 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             case Types.BOOLEAN: return 16;
             default: return 25;  // Default to text
         }
+    }
+
+    private String normalizedServerParameter(String name) {
+        if (connection == null || name == null || name.isBlank()) {
+            return "";
+        }
+        try {
+            SBProtocolHandler protocol = connection.getProtocol();
+            if (protocol == null) {
+                return "";
+            }
+            String value = protocol.getServerParameter(name);
+            if (value == null) {
+                return "";
+            }
+            return value.trim().toLowerCase(Locale.ROOT);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private String serverVersionFromConnection() {
+        if (connection == null) {
+            return null;
+        }
+        try {
+            SBProtocolHandler protocol = connection.getProtocol();
+            if (protocol == null) {
+                return null;
+            }
+            String serverVersion = protocol.getServerParameter("server_version");
+            if (serverVersion != null && !serverVersion.isBlank()) {
+                return serverVersion;
+            }
+            String serverVersionNum = protocol.getServerParameter("server_version_num");
+            if (serverVersionNum == null || serverVersionNum.isBlank()) {
+                return null;
+            }
+            if (!serverVersionNum.chars().allMatch(Character::isDigit)) {
+                return serverVersionNum;
+            }
+            int numeric = Integer.parseInt(serverVersionNum);
+            int major = numeric / 10000;
+            int minor = (numeric / 100) % 100;
+            int patch = numeric % 100;
+            if (patch > 0) {
+                return major + "." + minor + "." + patch;
+            }
+            return major + "." + minor;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private int parseVersionComponent(String version, int index, int fallback) {
+        if (version == null || version.isBlank()) {
+            return fallback;
+        }
+        int partIndex = 0;
+        int i = 0;
+        while (i < version.length()) {
+            while (i < version.length() && !Character.isDigit(version.charAt(i))) {
+                i++;
+            }
+            if (i >= version.length()) {
+                break;
+            }
+            int start = i;
+            while (i < version.length() && Character.isDigit(version.charAt(i))) {
+                i++;
+            }
+            if (partIndex == index) {
+                try {
+                    return Integer.parseInt(version.substring(start, i));
+                } catch (NumberFormatException ignored) {
+                    return fallback;
+                }
+            }
+            partIndex++;
+        }
+        return fallback;
     }
 }

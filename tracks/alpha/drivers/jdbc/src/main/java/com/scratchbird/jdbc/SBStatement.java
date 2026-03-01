@@ -51,6 +51,15 @@ public class SBStatement implements Statement {
         "(?is)^\\s*update\\s+(.+?)\\s+set\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
     private static final Pattern POSITIONED_DELETE_PATTERN = Pattern.compile(
         "(?is)^\\s*delete\\s+from\\s+(.+?)\\s+where\\s+current\\s+of\\s+([a-zA-Z_][a-zA-Z0-9_$\"]*)\\s*;?\\s*$");
+    private static final Pattern SIMPLE_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_$]*");
+    private static final Set<String> RESERVED_IDENTIFIER_WORDS = Set.of(
+        "select", "from", "where", "group", "order", "by", "having", "join", "inner", "left", "right",
+        "full", "cross", "on", "insert", "update", "delete", "into", "values", "table", "view", "index",
+        "create", "alter", "drop", "truncate", "grant", "revoke", "user", "role", "schema", "database",
+        "primary", "foreign", "key", "constraint", "null", "not", "default", "check", "unique", "distinct",
+        "union", "intersect", "except", "limit", "offset", "fetch", "case", "when", "then", "else", "end",
+        "true", "false", "and", "or"
+    );
     private static final AtomicLong CURSOR_SEQUENCE = new AtomicLong(0);
 
     // Parent connection
@@ -687,6 +696,60 @@ public class SBStatement implements Statement {
     }
 
     @Override
+    public String enquoteLiteral(String val) throws SQLException {
+        checkClosed();
+        if (val == null) {
+            throw new SQLException("Literal cannot be null", "HY009");
+        }
+        if (val.indexOf('\0') >= 0) {
+            throw new SQLException("Literal contains NUL character", "22021");
+        }
+        return "'" + val.replace("'", "''") + "'";
+    }
+
+    @Override
+    public String enquoteIdentifier(String identifier, boolean alwaysQuote) throws SQLException {
+        checkClosed();
+        if (identifier == null) {
+            throw new SQLException("Identifier cannot be null", "HY009");
+        }
+        String trimmed = identifier.trim();
+        if (trimmed.isEmpty()) {
+            throw new SQLException("Identifier cannot be empty", "42602");
+        }
+        if (trimmed.indexOf('\0') >= 0) {
+            throw new SQLException("Identifier contains NUL character", "22021");
+        }
+        if (!alwaysQuote
+            && isSimpleIdentifier(trimmed)
+            && trimmed.equals(trimmed.toLowerCase(Locale.ROOT))) {
+            return trimmed;
+        }
+        return "\"" + trimmed.replace("\"", "\"\"") + "\"";
+    }
+
+    @Override
+    public boolean isSimpleIdentifier(String identifier) throws SQLException {
+        checkClosed();
+        if (identifier == null) {
+            return false;
+        }
+        String trimmed = identifier.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        if (!SIMPLE_IDENTIFIER_PATTERN.matcher(trimmed).matches()) {
+            return false;
+        }
+        return !RESERVED_IDENTIFIER_WORDS.contains(trimmed.toLowerCase(Locale.ROOT));
+    }
+
+    @Override
+    public String enquoteNCharLiteral(String val) throws SQLException {
+        return "N" + enquoteLiteral(val);
+    }
+
+    @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
         if (iface.isAssignableFrom(getClass())) {
             return iface.cast(this);
@@ -751,7 +814,7 @@ public class SBStatement implements Statement {
         }
     }
 
-    private void bindCurrentResultSetCursor() {
+    protected void bindCurrentResultSetCursor() {
         if (currentResultSet == null) {
             return;
         }
@@ -763,7 +826,7 @@ public class SBStatement implements Statement {
         connection.registerNamedCursor(effectiveCursorName, currentResultSet);
     }
 
-    private void unbindCurrentResultSetCursor(SBResultSet resultSet) {
+    protected void unbindCurrentResultSetCursor(SBResultSet resultSet) {
         if (resultSet == null) {
             return;
         }
@@ -924,9 +987,12 @@ public class SBStatement implements Statement {
     /**
      * Streaming cursors are forward-only. Scroll-insensitive statements must
      * materialize results to preserve absolute/relative cursor semantics.
+     * Updatable cursors are also materialized so row mutation semantics remain
+     * deterministic instead of depending on protocol streaming state.
      */
     protected boolean shouldUseStreamingResultSet() {
-        return resultSetType == ResultSet.TYPE_FORWARD_ONLY;
+        return resultSetType == ResultSet.TYPE_FORWARD_ONLY
+            && resultSetConcurrency == ResultSet.CONCUR_READ_ONLY;
     }
 
     protected String getLastExecutedSql() {

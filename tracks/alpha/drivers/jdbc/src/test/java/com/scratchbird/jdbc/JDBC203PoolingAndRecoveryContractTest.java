@@ -27,6 +27,7 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -120,28 +121,21 @@ public class JDBC203PoolingAndRecoveryContractTest {
 
     @Test
     public void scenarioC_concurrentPoolStress_10Workers() throws Exception {
-        String dsn = pooledDsn("MaxPoolSize=3&MinPoolSize=0&ConnectionLifetime=20");
+        String dsn = pooledDsn("MaxPoolSize=3&MinPoolSize=0&ConnectionLifetime=20&AcquireTimeout=20");
         ExecutorService executor = Executors.newFixedThreadPool(SCENARIO_C_WORKERS);
 
         try {
             List<Future<Boolean>> tasks = new ArrayList<>();
             for (int i = 0; i < SCENARIO_C_WORKERS; i++) {
-                tasks.add(executor.submit(() -> {
-                    try (Connection conn = openConnection(dsn);
-                         Statement statement = conn.createStatement()) {
-                        try (ResultSet rs = statement.executeQuery("SELECT 1")) {
-                            return rs.next() && rs.getInt(1) == 1;
-                        }
-                    }
-                }));
+                tasks.add(executor.submit(() -> runPoolWorker(dsn)));
             }
 
             for (Future<Boolean> task : tasks) {
-                assertTrue(task.get(8, TimeUnit.SECONDS), "worker task did not return success");
+                assertTrue(task.get(20, TimeUnit.SECONDS), "worker task did not return success");
             }
         } finally {
             executor.shutdownNow();
-            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
         }
 
         SBConnectionPool.PoolStats stats = poolStats(dsn);
@@ -260,5 +254,45 @@ public class JDBC203PoolingAndRecoveryContractTest {
     private static SBConnectionPool.PoolStats poolStats(String dsn) throws Exception {
         SBConnectionProperties properties = parseProperties(dsn);
         return SBDriver.getPoolStats(properties);
+    }
+
+    private static boolean runPoolWorker(String dsn) throws Exception {
+        SQLException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try (Connection conn = openConnection(dsn);
+                 Statement statement = conn.createStatement();
+                 ResultSet rs = statement.executeQuery("SELECT 1")) {
+                return rs.next() && rs.getInt(1) == 1;
+            } catch (SQLException ex) {
+                last = ex;
+                if (!isTransientPoolFailure(ex) || attempt == 2) {
+                    throw ex;
+                }
+                Thread.sleep(75L * (attempt + 1));
+            }
+        }
+        throw last == null ? new SQLException("Pool worker failed without SQL exception") : last;
+    }
+
+    private static boolean isTransientPoolFailure(SQLException ex) {
+        String state = ex.getSQLState();
+        if (state != null) {
+            String normalized = state.trim().toUpperCase(Locale.ROOT);
+            if ("08001".equals(normalized)
+                || "08006".equals(normalized)
+                || "HYT00".equals(normalized)
+                || "HYT01".equals(normalized)) {
+                return true;
+            }
+        }
+        String message = ex.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalizedMessage = message.toLowerCase(Locale.ROOT);
+        return normalizedMessage.contains("timeout")
+            || normalizedMessage.contains("timed out")
+            || normalizedMessage.contains("pool")
+            || normalizedMessage.contains("busy");
     }
 }

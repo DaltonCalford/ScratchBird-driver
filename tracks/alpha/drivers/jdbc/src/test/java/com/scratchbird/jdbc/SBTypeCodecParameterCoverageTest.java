@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
 class SBTypeCodecParameterCoverageTest {
@@ -105,5 +107,52 @@ class SBTypeCodecParameterCoverageTest {
         assertNotNull(decodedTsTzRange.getUpper());
         assertInstanceOf(OffsetDateTime.class, decodedTsTzRange.getLower());
         assertInstanceOf(OffsetDateTime.class, decodedTsTzRange.getUpper());
+    }
+
+    @Test
+    void encodesAndDecodesTimeWithTimeZone() throws Exception {
+        OffsetTime value = OffsetTime.of(12, 34, 56, 123_000_000, ZoneOffset.ofHoursMinutes(5, 30));
+        SBTypeCodec.ParamEncoding encoded = SBTypeCodec.encodeParam(value, Types.TIME_WITH_TIMEZONE);
+        assertEquals(SBTypeCodec.OID_TIMETZ, encoded.getOid());
+
+        Object decoded = SBTypeCodec.decodeValue(encoded.getOid(), encoded.getData(), encoded.getFormat());
+        assertInstanceOf(OffsetTime.class, decoded);
+        assertEquals(value, decoded);
+    }
+
+    @Test
+    void decodesTemporalTextPayloadsUsingOffsetAwareTypes() throws Exception {
+        Object timetz = SBTypeCodec.decodeValue(
+            SBTypeCodec.OID_TIMETZ,
+            "08:09:10+03".getBytes(StandardCharsets.UTF_8),
+            SBTypeCodec.FORMAT_TEXT);
+        assertEquals(OffsetTime.parse("08:09:10+03:00"), timetz);
+
+        Object timestamptz = SBTypeCodec.decodeValue(
+            SBTypeCodec.OID_TIMESTAMPTZ,
+            "2026-03-01 12:34:56+02".getBytes(StandardCharsets.UTF_8),
+            SBTypeCodec.FORMAT_TEXT);
+        assertEquals(OffsetDateTime.parse("2026-03-01T12:34:56+02:00"), timestamptz);
+    }
+
+    @Test
+    void infersArrayOidsForTemporalAndNumericCollections() throws Exception {
+        SBTypeCodec.ParamEncoding timetzArray = SBTypeCodec.encodeParam(
+            new Object[] {
+                OffsetTime.parse("01:02:03+02:00"),
+                OffsetTime.parse("09:10:11-05:00")
+            },
+            Types.ARRAY
+        );
+        assertEquals(SBTypeCodec.OID_TIMETZ_ARRAY, timetzArray.getOid());
+        SBArray decodedTimetz = assertInstanceOf(SBArray.class,
+            SBTypeCodec.decodeValue(timetzArray.getOid(), timetzArray.getData(), timetzArray.getFormat()));
+        assertEquals("timetz", decodedTimetz.getBaseTypeName());
+
+        SBTypeCodec.ParamEncoding numericArray = SBTypeCodec.encodeParam(
+            new Object[] {1, 2L, 3.5d},
+            Types.ARRAY
+        );
+        assertEquals(SBTypeCodec.OID_FLOAT8_ARRAY, numericArray.getOid());
     }
 }

@@ -48,6 +48,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -256,7 +257,7 @@ public class SBProtocolHandler {
     private int lastQuerySequence = 0;
     private QueryPlanMessage lastPlan;
     private SblrCompiledMessage lastSblr;
-    private final List<NotificationListener> notificationListeners = new ArrayList<>();
+    private final CopyOnWriteArrayList<NotificationListener> notificationListeners = new CopyOnWriteArrayList<>();
     private final Map<String, PreparedStatementCacheEntry> preparedStatements =
         new LinkedHashMap<>(16, 0.75f, true);
     private int preparedStatementSequence = 0;
@@ -266,8 +267,14 @@ public class SBProtocolHandler {
     }
 
     public void addNotificationListener(NotificationListener listener) {
-        if (listener != null) {
+        if (listener != null && !notificationListeners.contains(listener)) {
             notificationListeners.add(listener);
+        }
+    }
+
+    public void removeNotificationListener(NotificationListener listener) {
+        if (listener != null) {
+            notificationListeners.remove(listener);
         }
     }
 

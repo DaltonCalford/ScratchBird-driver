@@ -17,6 +17,8 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLEventWriter;
 import javax.xml.stream.XMLStreamReader;
@@ -38,6 +40,14 @@ import org.xml.sax.ContentHandler;
 import org.xml.sax.InputSource;
 
 class SBSQLXMLTest {
+
+    public interface SourceInterfaceAdapter extends Source {
+        Source delegate();
+    }
+
+    public interface ResultInterfaceAdapter extends Result {
+        Result delegate();
+    }
 
     public static class CustomStreamSource extends StreamSource {
     }
@@ -117,6 +127,240 @@ class SBSQLXMLTest {
         }
     }
 
+    public static class CustomDelegatingStaxSource extends StAXSource {
+        private final Source delegate;
+
+        public CustomDelegatingStaxSource(Source delegate) {
+            super(extractStreamReader(delegate));
+            this.delegate = delegate;
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        private static XMLStreamReader extractStreamReader(Source delegate) {
+            if (delegate instanceof StAXSource staxSource && staxSource.getXMLStreamReader() != null) {
+                return staxSource.getXMLStreamReader();
+            }
+            if (delegate instanceof StreamSource streamSource) {
+                try {
+                    XMLInputFactory inputFactory = XMLInputFactory.newFactory();
+                    if (streamSource.getReader() != null) {
+                        return inputFactory.createXMLStreamReader(streamSource.getReader());
+                    }
+                    if (streamSource.getInputStream() != null) {
+                        return inputFactory.createXMLStreamReader(streamSource.getInputStream());
+                    }
+                } catch (Exception ex) {
+                    throw new IllegalArgumentException("Failed to create XMLStreamReader from StreamSource", ex);
+                }
+            }
+            throw new IllegalArgumentException("StAXSource delegate with XMLStreamReader expected");
+        }
+    }
+
+    public static class CustomDelegatingStaxResult extends StAXResult {
+        private final Result delegate;
+
+        public CustomDelegatingStaxResult(Result delegate) {
+            super(extractStreamWriter(delegate));
+            this.delegate = delegate;
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        private static XMLStreamWriter extractStreamWriter(Result delegate) {
+            if (delegate instanceof StAXResult staxResult && staxResult.getXMLStreamWriter() != null) {
+                return staxResult.getXMLStreamWriter();
+            }
+            if (delegate instanceof StreamResult streamResult) {
+                try {
+                    XMLOutputFactory outputFactory = XMLOutputFactory.newFactory();
+                    if (streamResult.getWriter() != null) {
+                        return outputFactory.createXMLStreamWriter(streamResult.getWriter());
+                    }
+                    if (streamResult.getOutputStream() != null) {
+                        return outputFactory.createXMLStreamWriter(streamResult.getOutputStream(), "UTF-8");
+                    }
+                } catch (Exception ex) {
+                    throw new IllegalArgumentException("Failed to create XMLStreamWriter from StreamResult", ex);
+                }
+            }
+            throw new IllegalArgumentException("StAXResult delegate with XMLStreamWriter expected");
+        }
+    }
+
+    public static class StaticFactoryDelegatingSource implements Source {
+        private final Source delegate;
+        private String systemId;
+
+        private StaticFactoryDelegatingSource(Source delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public static StaticFactoryDelegatingSource of(Source delegate) {
+            return new StaticFactoryDelegatingSource(delegate);
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class StaticFactoryDelegatingResult implements Result {
+        private final Result delegate;
+        private String systemId;
+
+        private StaticFactoryDelegatingResult(Result delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public static StaticFactoryDelegatingResult from(Result delegate) {
+            return new StaticFactoryDelegatingResult(delegate);
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class ObjectFactoryDelegatingSource implements Source {
+        private final Object delegate;
+        private String systemId;
+
+        private ObjectFactoryDelegatingSource(Object delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate instanceof Source source ? source.getSystemId() : null;
+        }
+
+        public static ObjectFactoryDelegatingSource of(Object delegate) {
+            return new ObjectFactoryDelegatingSource(delegate);
+        }
+
+        public Object delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class ObjectFactoryDelegatingResult implements Result {
+        private final Object delegate;
+        private String systemId;
+
+        private ObjectFactoryDelegatingResult(Object delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate instanceof Result result ? result.getSystemId() : null;
+        }
+
+        public static ObjectFactoryDelegatingResult from(Object delegate) {
+            return new ObjectFactoryDelegatingResult(delegate);
+        }
+
+        public Object delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class CreateFactoryDelegatingSource implements Source {
+        private final Source delegate;
+        private String systemId;
+
+        private CreateFactoryDelegatingSource(Source delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public static CreateFactoryDelegatingSource create(Source delegate) {
+            return new CreateFactoryDelegatingSource(delegate);
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class CreateFactoryDelegatingResult implements Result {
+        private final Result delegate;
+        private String systemId;
+
+        private CreateFactoryDelegatingResult(Result delegate) {
+            this.delegate = delegate;
+            this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public static CreateFactoryDelegatingResult create(Result delegate) {
+            return new CreateFactoryDelegatingResult(delegate);
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
     public static class CustomDelegatingSource implements Source {
         private final Source delegate;
         private String systemId;
@@ -148,6 +392,148 @@ class SBSQLXMLTest {
         public CustomDelegatingResult(Result delegate) {
             this.delegate = delegate;
             this.systemId = delegate == null ? null : delegate.getSystemId();
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class SetterDelegatingSource implements Source {
+        private Source delegate;
+        private String systemId;
+
+        public SetterDelegatingSource() {
+        }
+
+        public void setDelegate(Source delegate) {
+            this.delegate = delegate;
+            if (delegate != null) {
+                this.systemId = delegate.getSystemId();
+            }
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class SetterDelegatingResult implements Result {
+        private Result delegate;
+        private String systemId;
+
+        public SetterDelegatingResult() {
+        }
+
+        public void setDelegate(Result delegate) {
+            this.delegate = delegate;
+            if (delegate != null) {
+                this.systemId = delegate.getSystemId();
+            }
+        }
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class FieldOnlySourceWrapper implements Source {
+        private Source delegate;
+        private String systemId;
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class FieldOnlyResultWrapper implements Result {
+        private Result delegate;
+        private String systemId;
+
+        public Result delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class UnsafeOnlySourceWrapper implements Source {
+        private Source delegate;
+        private String systemId;
+
+        public UnsafeOnlySourceWrapper(Object marker) {
+            throw new IllegalStateException("Constructor path should not be used for unsafe fallback.");
+        }
+
+        public Source delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void setSystemId(String systemId) {
+            this.systemId = systemId;
+        }
+
+        @Override
+        public String getSystemId() {
+            return systemId;
+        }
+    }
+
+    public static class UnsafeOnlyResultWrapper implements Result {
+        private Result delegate;
+        private String systemId;
+
+        public UnsafeOnlyResultWrapper(Object marker) {
+            throw new IllegalStateException("Constructor path should not be used for unsafe fallback.");
         }
 
         public Result delegate() {
@@ -337,5 +723,170 @@ class SBSQLXMLTest {
         writer.write("<delegated/>");
         writer.close();
         assertEquals("<delegated/>", target.getString());
+    }
+
+    @Test
+    void supportsSetterDelegatingSourceAndResultWrappersWithoutDelegateConstructors() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>17</value></root>");
+        SetterDelegatingSource source = sourceXml.getSource(SetterDelegatingSource.class);
+        assertNotNull(source);
+        assertTrue(source.delegate() instanceof StreamSource);
+        assertNotNull(((StreamSource) source.delegate()).getReader());
+
+        SBSQLXML target = new SBSQLXML();
+        SetterDelegatingResult result = target.setResult(SetterDelegatingResult.class);
+        assertNotNull(result);
+        assertTrue(result.delegate() instanceof StreamResult);
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<setter-delegated/>");
+        writer.close();
+        assertEquals("<setter-delegated/>", target.getString());
+    }
+
+    @Test
+    void supportsStaxSubclassConstructorsViaDelegateFallback() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>23</value></root>");
+        CustomDelegatingStaxSource source = sourceXml.getSource(CustomDelegatingStaxSource.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        CustomDelegatingStaxResult result = target.setResult(CustomDelegatingStaxResult.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof Result);
+        TransformerFactory.newInstance().newTransformer().transform(
+            new StreamSource(new StringReader("<stax-delegate/>")), result);
+        String xml = target.getString();
+        assertNotNull(xml);
+        assertTrue(xml.contains("stax-delegate"));
+    }
+
+    @Test
+    void supportsStaticFactoryDelegatingSourceAndResultWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>29</value></root>");
+        StaticFactoryDelegatingSource source = sourceXml.getSource(StaticFactoryDelegatingSource.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof StreamSource || source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        StaticFactoryDelegatingResult result = target.setResult(StaticFactoryDelegatingResult.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof StreamResult || result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<factory-delegated/>");
+        writer.close();
+        assertEquals("<factory-delegated/>", target.getString());
+    }
+
+    @Test
+    void supportsAssignableStaticFactoryDelegatesUsingObjectSignatures() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>31</value></root>");
+        ObjectFactoryDelegatingSource source = sourceXml.getSource(ObjectFactoryDelegatingSource.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        ObjectFactoryDelegatingResult result = target.setResult(ObjectFactoryDelegatingResult.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<object-factory/>");
+        writer.close();
+        assertEquals("<object-factory/>", target.getString());
+    }
+
+    @Test
+    void supportsCreateFactoryDelegatesForSourceAndResultWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>37</value></root>");
+        CreateFactoryDelegatingSource source = sourceXml.getSource(CreateFactoryDelegatingSource.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        CreateFactoryDelegatingResult result = target.setResult(CreateFactoryDelegatingResult.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<create-factory/>");
+        writer.close();
+        assertEquals("<create-factory/>", target.getString());
+    }
+
+    @Test
+    void supportsFieldOnlyDelegatingSourceAndResultWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>41</value></root>");
+        FieldOnlySourceWrapper source = sourceXml.getSource(FieldOnlySourceWrapper.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        FieldOnlyResultWrapper result = target.setResult(FieldOnlyResultWrapper.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof StreamResult || result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<field-only/>");
+        writer.close();
+        assertEquals("<field-only/>", target.getString());
+    }
+
+    @Test
+    void supportsUnsafeConstructionFallbackForConstructorHostileWrappers() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>43</value></root>");
+        UnsafeOnlySourceWrapper source = sourceXml.getSource(UnsafeOnlySourceWrapper.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+
+        SBSQLXML target = new SBSQLXML();
+        UnsafeOnlyResultWrapper result = target.setResult(UnsafeOnlyResultWrapper.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof StreamResult || result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        assertNotNull(writer);
+        writer.write("<unsafe-only/>");
+        writer.close();
+        assertEquals("<unsafe-only/>", target.getString());
+    }
+
+    @Test
+    void supportsInterfaceAdaptersForCustomSourceAndResultInterfaces() throws Exception {
+        SBSQLXML sourceXml = new SBSQLXML("<root><value>47</value></root>");
+        SourceInterfaceAdapter source = sourceXml.getSource(SourceInterfaceAdapter.class);
+        assertNotNull(source);
+        assertNotNull(source.delegate());
+        assertTrue(source.delegate() instanceof Source);
+        assertEquals(sourceXml.getSource(StreamSource.class).getSystemId(), source.getSystemId());
+
+        SBSQLXML target = new SBSQLXML();
+        ResultInterfaceAdapter result = target.setResult(ResultInterfaceAdapter.class);
+        assertNotNull(result);
+        assertNotNull(result.delegate());
+        assertTrue(result.delegate() instanceof StreamResult || result.delegate() instanceof Result);
+
+        Writer writer = ((StreamResult) result.delegate()).getWriter();
+        writer.write("<interface-adapter/>");
+        writer.close();
+        assertEquals("<interface-adapter/>", target.getString());
     }
 }

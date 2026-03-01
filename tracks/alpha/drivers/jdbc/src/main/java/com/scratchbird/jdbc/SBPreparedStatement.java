@@ -53,6 +53,8 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
 
     // Named parameter mapping for :name / @name placeholders
     protected final Map<String, Integer> namedParameterIndexes = new HashMap<>();
+    protected final Map<String, List<Integer>> namedParameterIndexGroups = new HashMap<>();
+    protected final Map<Integer, List<Integer>> namedParameterAliasesByIndex = new HashMap<>();
 
     /**
      * Creates a new prepared statement.
@@ -73,22 +75,96 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         int paramIndex = 0;
         boolean inQuote = false;
         boolean inDoubleQuote = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        String dollarQuoteTag = null;
 
         for (int i = 0; i < originalSQL.length(); i++) {
             char c = originalSQL.charAt(i);
+            char next = (i + 1) < originalSQL.length() ? originalSQL.charAt(i + 1) : '\0';
+
+            if (dollarQuoteTag != null) {
+                if (startsWithAt(originalSQL, i, dollarQuoteTag)) {
+                    sb.append(dollarQuoteTag);
+                    i += dollarQuoteTag.length() - 1;
+                    dollarQuoteTag = null;
+                } else {
+                    sb.append(c);
+                }
+                continue;
+            }
+
+            if (inLineComment) {
+                sb.append(c);
+                if (c == '\n' || c == '\r') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+
+            if (inBlockComment) {
+                sb.append(c);
+                if (c == '*' && next == '/') {
+                    sb.append(next);
+                    i++;
+                    inBlockComment = false;
+                }
+                continue;
+            }
+
+            if (!inQuote && !inDoubleQuote) {
+                if (c == '-' && next == '-') {
+                    sb.append(c).append(next);
+                    i++;
+                    inLineComment = true;
+                    continue;
+                }
+                if (c == '/' && next == '*') {
+                    sb.append(c).append(next);
+                    i++;
+                    inBlockComment = true;
+                    continue;
+                }
+                String parsedTag = parseDollarQuoteTag(originalSQL, i);
+                if (parsedTag != null) {
+                    sb.append(parsedTag);
+                    i += parsedTag.length() - 1;
+                    dollarQuoteTag = parsedTag;
+                    continue;
+                }
+            }
 
             if (c == '\'' && !inDoubleQuote) {
+                if (inQuote && next == '\'') {
+                    sb.append(c).append(next);
+                    i++;
+                    continue;
+                }
                 inQuote = !inQuote;
                 sb.append(c);
-            } else if (c == '"' && !inQuote) {
+                continue;
+            }
+
+            if (c == '"' && !inQuote) {
+                if (inDoubleQuote && next == '"') {
+                    sb.append(c).append(next);
+                    i++;
+                    continue;
+                }
                 inDoubleQuote = !inDoubleQuote;
                 sb.append(c);
-            } else if (c == '?' && !inQuote && !inDoubleQuote) {
+                continue;
+            }
+
+            if (c == '?' && !inQuote && !inDoubleQuote) {
                 paramIndex++;
                 sb.append('$').append(paramIndex);
                 parameters.add(null);
                 parameterTypes.add(Types.NULL);
-            } else if (!inQuote && !inDoubleQuote && isNamedParameterStart(c, i)) {
+                continue;
+            }
+
+            if (!inQuote && !inDoubleQuote && isNamedParameterStart(c, i)) {
                 int nameStart = i + 1;
                 int nameEnd = nameStart;
                 while (nameEnd < originalSQL.length() && isNamedParameterPart(originalSQL.charAt(nameEnd))) {
@@ -101,21 +177,57 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                 parameterTypes.add(Types.NULL);
                 registerNamedParameter(parameterName, paramIndex);
                 i = nameEnd - 1;
-            } else {
-                sb.append(c);
+                continue;
             }
+            sb.append(c);
         }
 
         this.parsedSQL = sb.toString();
         this.parameterCount = paramIndex;
     }
 
+    private static boolean startsWithAt(String text, int index, String token) {
+        if (text == null || token == null || index < 0) {
+            return false;
+        }
+        int end = index + token.length();
+        if (end > text.length()) {
+            return false;
+        }
+        return text.regionMatches(index, token, 0, token.length());
+    }
+
+    private static String parseDollarQuoteTag(String sql, int index) {
+        if (sql == null || index < 0 || index >= sql.length() || sql.charAt(index) != '$') {
+            return null;
+        }
+        int end = sql.indexOf('$', index + 1);
+        if (end < 0) {
+            return null;
+        }
+        if (end == index + 1) {
+            return "$$";
+        }
+        for (int i = index + 1; i < end; i++) {
+            char ch = sql.charAt(i);
+            if (!(Character.isLetterOrDigit(ch) || ch == '_')) {
+                return null;
+            }
+        }
+        return sql.substring(index, end + 1);
+    }
+
     private boolean isNamedParameterStart(char token, int index) {
         if (token != ':' && token != '@') {
             return false;
         }
-        if (token == ':' && index + 1 < originalSQL.length() && originalSQL.charAt(index + 1) == ':') {
-            return false;
+        if (token == ':') {
+            if (index + 1 < originalSQL.length() && originalSQL.charAt(index + 1) == ':') {
+                return false;
+            }
+            if (index > 0 && originalSQL.charAt(index - 1) == ':') {
+                return false;
+            }
         }
         if (index + 1 >= originalSQL.length()) {
             return false;
@@ -133,6 +245,12 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
         }
         String normalized = parameterName.trim().toLowerCase(Locale.ROOT);
         namedParameterIndexes.putIfAbsent(normalized, index);
+        List<Integer> aliases = namedParameterIndexGroups.computeIfAbsent(
+            normalized, ignored -> new ArrayList<>());
+        aliases.add(index);
+        for (Integer aliasIndex : aliases) {
+            namedParameterAliasesByIndex.put(aliasIndex, aliases);
+        }
     }
 
     protected Integer resolveNamedParameterIndex(String parameterName) {
@@ -272,6 +390,10 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             return "TIME '" + value.toString() + "'";
         } else if (value instanceof java.time.LocalDateTime) {
             return "TIMESTAMP '" + value.toString().replace('T', ' ') + "'";
+        } else if (value instanceof java.time.OffsetTime) {
+            return "TIMETZ '" + value.toString() + "'";
+        } else if (value instanceof java.time.ZonedDateTime) {
+            return "TIMESTAMPTZ '" + ((java.time.ZonedDateTime) value).toOffsetDateTime() + "'";
         } else if (value instanceof java.time.OffsetDateTime) {
             return "TIMESTAMPTZ '" + value.toString() + "'";
         } else if (value instanceof java.time.Instant) {
@@ -336,6 +458,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                 throw new SQLException("Query did not return a result set", "02000");
             }
             currentResultSet = new SBResultSet(this, result.getStream(), maxRows);
+            bindCurrentResultSetCursor();
             return currentResultSet;
         }
 
@@ -356,6 +479,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             throw new SQLException("Query did not return a result set", "02000");
         }
         currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
+        bindCurrentResultSetCursor();
         return currentResultSet;
     }
 
@@ -419,6 +543,7 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                 return false;
             } else {
                 currentResultSet = new SBResultSet(this, result.getColumns(), result.getRows());
+                bindCurrentResultSetCursor();
                 updateCount = -1;
                 return true;
             }
@@ -518,8 +643,19 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             throw new SQLException("Parameter index out of range: " + parameterIndex +
                 " (expected 1-" + logicalCount + ")", "07001");
         }
-        parameters.set(mappedIndex - 1, value);
-        parameterTypes.set(mappedIndex - 1, sqlType);
+        List<Integer> aliasIndexes = namedParameterAliasesByIndex.get(mappedIndex);
+        if (aliasIndexes == null || aliasIndexes.isEmpty()) {
+            parameters.set(mappedIndex - 1, value);
+            parameterTypes.set(mappedIndex - 1, sqlType);
+            return;
+        }
+        for (Integer aliasIndex : aliasIndexes) {
+            if (aliasIndex == null || aliasIndex < 1 || aliasIndex > parameterCount) {
+                continue;
+            }
+            parameters.set(aliasIndex - 1, value);
+            parameterTypes.set(aliasIndex - 1, sqlType);
+        }
     }
 
     @Override
@@ -860,6 +996,27 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                     setTime(parameterIndex, java.sql.Time.valueOf(x.toString()));
                 }
                 break;
+            case Types.TIME_WITH_TIMEZONE:
+                if (x instanceof OffsetTime) {
+                    setParameter(parameterIndex, x, Types.TIME_WITH_TIMEZONE);
+                } else if (x instanceof OffsetDateTime) {
+                    setParameter(parameterIndex, ((OffsetDateTime) x).toOffsetTime(), Types.TIME_WITH_TIMEZONE);
+                } else if (x instanceof ZonedDateTime) {
+                    setParameter(parameterIndex,
+                        ((ZonedDateTime) x).toOffsetDateTime().toOffsetTime(),
+                        Types.TIME_WITH_TIMEZONE);
+                } else if (x instanceof java.sql.Time) {
+                    setParameter(parameterIndex,
+                        OffsetTime.of(((java.sql.Time) x).toLocalTime(), ZoneOffset.UTC),
+                        Types.TIME_WITH_TIMEZONE);
+                } else if (x instanceof LocalTime) {
+                    setParameter(parameterIndex, OffsetTime.of((LocalTime) x, ZoneOffset.UTC),
+                        Types.TIME_WITH_TIMEZONE);
+                } else {
+                    setParameter(parameterIndex, parseOffsetTimeLiteral(x.toString()),
+                        Types.TIME_WITH_TIMEZONE);
+                }
+                break;
             case Types.TIMESTAMP:
                 if (x instanceof java.sql.Timestamp) {
                     setTimestamp(parameterIndex, (java.sql.Timestamp) x);
@@ -867,6 +1024,28 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
                     setTimestamp(parameterIndex, new java.sql.Timestamp(((java.util.Date) x).getTime()));
                 } else {
                     setTimestamp(parameterIndex, java.sql.Timestamp.valueOf(x.toString()));
+                }
+                break;
+            case Types.TIMESTAMP_WITH_TIMEZONE:
+                if (x instanceof OffsetDateTime) {
+                    setParameter(parameterIndex, x, Types.TIMESTAMP_WITH_TIMEZONE);
+                } else if (x instanceof ZonedDateTime) {
+                    setParameter(parameterIndex, ((ZonedDateTime) x).toOffsetDateTime(),
+                        Types.TIMESTAMP_WITH_TIMEZONE);
+                } else if (x instanceof Instant) {
+                    setParameter(parameterIndex, x, Types.TIMESTAMP_WITH_TIMEZONE);
+                } else if (x instanceof java.sql.Timestamp) {
+                    setParameter(parameterIndex, ((java.sql.Timestamp) x).toInstant(),
+                        Types.TIMESTAMP_WITH_TIMEZONE);
+                } else if (x instanceof java.util.Date) {
+                    setParameter(parameterIndex, ((java.util.Date) x).toInstant(),
+                        Types.TIMESTAMP_WITH_TIMEZONE);
+                } else if (x instanceof LocalDateTime) {
+                    setParameter(parameterIndex, ((LocalDateTime) x).atOffset(ZoneOffset.UTC),
+                        Types.TIMESTAMP_WITH_TIMEZONE);
+                } else {
+                    setParameter(parameterIndex, parseOffsetDateTimeLiteral(x.toString()),
+                        Types.TIMESTAMP_WITH_TIMEZONE);
                 }
                 break;
             default:
@@ -927,7 +1106,11 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             setParameter(parameterIndex, x, Types.TIME);
         } else if (x instanceof java.time.LocalDateTime) {
             setParameter(parameterIndex, x, Types.TIMESTAMP);
+        } else if (x instanceof java.time.OffsetTime) {
+            setParameter(parameterIndex, x, Types.TIME_WITH_TIMEZONE);
         } else if (x instanceof java.time.OffsetDateTime) {
+            setParameter(parameterIndex, x, Types.TIMESTAMP_WITH_TIMEZONE);
+        } else if (x instanceof java.time.ZonedDateTime) {
             setParameter(parameterIndex, x, Types.TIMESTAMP_WITH_TIMEZONE);
         } else if (x instanceof java.time.Instant) {
             setParameter(parameterIndex, x, Types.TIMESTAMP_WITH_TIMEZONE);
@@ -944,6 +1127,48 @@ public class SBPreparedStatement extends SBStatement implements PreparedStatemen
             setString(parameterIndex, x.toString());
         } else {
             setParameter(parameterIndex, x, Types.OTHER);
+        }
+    }
+
+    private static OffsetTime parseOffsetTimeLiteral(String value) throws SQLException {
+        if (value == null) {
+            throw new SQLException("TIME WITH TIME ZONE literal cannot be null", "22007");
+        }
+        String normalized = value.trim();
+        if (normalized.matches(".*[+-]\\d{2}$")) {
+            normalized = normalized + ":00";
+        }
+        try {
+            return OffsetTime.parse(normalized);
+        } catch (RuntimeException ex) {
+            throw new SQLException("Invalid TIME WITH TIME ZONE literal: " + value, "22007", ex);
+        }
+    }
+
+    private static OffsetDateTime parseOffsetDateTimeLiteral(String value) throws SQLException {
+        if (value == null) {
+            throw new SQLException("TIMESTAMP WITH TIME ZONE literal cannot be null", "22007");
+        }
+        String normalized = value.trim();
+        if (normalized.contains(" ") && !normalized.contains("T")) {
+            normalized = normalized.replace(' ', 'T');
+        }
+        if (normalized.matches(".*[+-]\\d{2}$")) {
+            normalized = normalized + ":00";
+        }
+        try {
+            return OffsetDateTime.parse(normalized);
+        } catch (RuntimeException ignored) {
+            try {
+                return Instant.parse(normalized).atOffset(ZoneOffset.UTC);
+            } catch (RuntimeException ignored2) {
+                try {
+                    return LocalDateTime.parse(normalized).atOffset(ZoneOffset.UTC);
+                } catch (RuntimeException ex) {
+                    throw new SQLException("Invalid TIMESTAMP WITH TIME ZONE literal: " + value,
+                        "22007", ex);
+                }
+            }
         }
     }
 

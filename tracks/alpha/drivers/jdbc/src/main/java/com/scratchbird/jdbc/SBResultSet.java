@@ -30,6 +30,32 @@ public class SBResultSet implements ResultSet {
     private static final Map<TableCacheKey, String> TABLE_SQL_BY_KEY = new ConcurrentHashMap<>();
     private static final Map<TableCacheKey, Map<Integer, String>> TABLE_COLUMN_BY_KEY_AND_ATTNUM =
         new ConcurrentHashMap<>();
+    private static final Set<String> TABLE_REFERENCE_NON_ALIAS_TOKENS = Set.of(
+        "join",
+        "left",
+        "right",
+        "full",
+        "inner",
+        "outer",
+        "cross",
+        "natural",
+        "straight_join",
+        "on",
+        "using",
+        "where",
+        "group",
+        "having",
+        "order",
+        "limit",
+        "offset",
+        "fetch",
+        "for",
+        "union",
+        "intersect",
+        "except",
+        "window",
+        "lateral"
+    );
 
     private record TableCacheKey(String namespace, int tableOid) {}
 
@@ -64,10 +90,9 @@ public class SBResultSet implements ResultSet {
     private final int resultSetType;
 
     // Updatable result set state
-    private final boolean updatable;
-    private final boolean localOnlyUpdatable;
+    private boolean updatable;
     private final boolean bufferedRowsMutable;
-    private final UpdateTarget updateTarget;
+    private UpdateTarget updateTarget;
     private final Map<Integer, Object> pendingUpdates = new LinkedHashMap<>();
     private Object[] originalRowSnapshot;
     private boolean onInsertRow = false;
@@ -97,7 +122,6 @@ public class SBResultSet implements ResultSet {
 
         this.columnNameIndex = new HashMap<>();
         rebuildColumnIndex();
-        this.updateTarget = resolveUpdateTarget(statement, this.columns);
         this.bufferedRowsMutable = stream instanceof ListRowStream;
         int requestedType = statement != null
             ? statement.resultSetType
@@ -107,12 +131,7 @@ public class SBResultSet implements ResultSet {
         } else {
             this.resultSetType = requestedType;
         }
-        this.localOnlyUpdatable = statement != null
-            && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
-            && this.updateTarget == null;
-        this.updatable = statement != null
-            && statement.resultSetConcurrency == ResultSet.CONCUR_UPDATABLE
-            && (this.updateTarget != null || this.localOnlyUpdatable);
+        recomputeUpdatableState();
     }
 
     // ==================== Navigation ====================
@@ -281,6 +300,8 @@ public class SBResultSet implements ResultSet {
         Object value = getObject(columnIndex);
         if (value == null) return null;
         if (value instanceof Time) return (Time) value;
+        if (value instanceof OffsetTime offsetTime) return Time.valueOf(offsetTime.toLocalTime());
+        if (value instanceof LocalTime localTime) return Time.valueOf(localTime);
         if (value instanceof java.util.Date) return new Time(((java.util.Date) value).getTime());
         return Time.valueOf(value.toString());
     }
@@ -295,6 +316,10 @@ public class SBResultSet implements ResultSet {
         Object value = getObject(columnIndex);
         if (value == null) return null;
         if (value instanceof Timestamp) return (Timestamp) value;
+        if (value instanceof Instant instant) return Timestamp.from(instant);
+        if (value instanceof OffsetDateTime offsetDateTime) return Timestamp.from(offsetDateTime.toInstant());
+        if (value instanceof ZonedDateTime zonedDateTime) return Timestamp.from(zonedDateTime.toInstant());
+        if (value instanceof LocalDateTime localDateTime) return Timestamp.valueOf(localDateTime);
         if (value instanceof java.util.Date) return new Timestamp(((java.util.Date) value).getTime());
         return Timestamp.valueOf(value.toString());
     }
@@ -610,10 +635,42 @@ public class SBResultSet implements ResultSet {
         } else if (type == LocalTime.class) {
             Time time = getTime(columnIndex);
             return time == null ? null : type.cast(time.toLocalTime());
+        } else if (type == OffsetTime.class) {
+            if (value instanceof OffsetTime offsetTime) {
+                return type.cast(offsetTime);
+            }
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime.toOffsetTime());
+            }
+            if (value instanceof LocalTime localTime) {
+                return type.cast(OffsetTime.of(localTime, ZoneOffset.UTC));
+            }
+            if (value instanceof Time timeValue) {
+                return type.cast(OffsetTime.of(timeValue.toLocalTime(), ZoneOffset.UTC));
+            }
+            return type.cast(parseOffsetTimeLiteral(value.toString()));
         } else if (type == LocalDateTime.class) {
             Timestamp ts = getTimestamp(columnIndex);
             return ts == null ? null : type.cast(ts.toLocalDateTime());
+        } else if (type == ZonedDateTime.class) {
+            if (value instanceof ZonedDateTime zonedDateTime) {
+                return type.cast(zonedDateTime);
+            }
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime.toZonedDateTime());
+            }
+            if (value instanceof Instant instant) {
+                return type.cast(instant.atZone(ZoneOffset.UTC));
+            }
+            Timestamp ts = getTimestamp(columnIndex);
+            return ts == null ? null : type.cast(ts.toInstant().atZone(ZoneOffset.UTC));
         } else if (type == OffsetDateTime.class) {
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime);
+            }
+            if (value instanceof ZonedDateTime zonedDateTime) {
+                return type.cast(zonedDateTime.toOffsetDateTime());
+            }
             Timestamp ts = getTimestamp(columnIndex);
             return ts == null ? null : type.cast(ts.toInstant().atOffset(ZoneOffset.UTC));
         } else if (type == Instant.class) {
@@ -1485,6 +1542,23 @@ public class SBResultSet implements ResultSet {
     }
 
     @Override
+    public void updateObject(int columnIndex, Object x, SQLType targetSqlType, int scaleOrLength)
+            throws SQLException {
+        if (targetSqlType == null) {
+            throw new SQLException("SQLType cannot be null", "HY004");
+        }
+        updateObject(columnIndex, x, scaleOrLength);
+    }
+
+    @Override
+    public void updateObject(int columnIndex, Object x, SQLType targetSqlType) throws SQLException {
+        if (targetSqlType == null) {
+            throw new SQLException("SQLType cannot be null", "HY004");
+        }
+        updateObject(columnIndex, x);
+    }
+
+    @Override
     public void updateObject(int columnIndex, Object x) throws SQLException {
         updateColumn(columnIndex, x);
     }
@@ -1578,6 +1652,23 @@ public class SBResultSet implements ResultSet {
     @Override
     public void updateObject(String columnLabel, Object x, int scaleOrLength) throws SQLException {
         updateObject(findColumn(columnLabel), x, scaleOrLength);
+    }
+
+    @Override
+    public void updateObject(String columnLabel, Object x, SQLType targetSqlType, int scaleOrLength)
+            throws SQLException {
+        if (targetSqlType == null) {
+            throw new SQLException("SQLType cannot be null", "HY004");
+        }
+        updateObject(findColumn(columnLabel), x, scaleOrLength);
+    }
+
+    @Override
+    public void updateObject(String columnLabel, Object x, SQLType targetSqlType) throws SQLException {
+        if (targetSqlType == null) {
+            throw new SQLException("SQLType cannot be null", "HY004");
+        }
+        updateObject(findColumn(columnLabel), x);
     }
 
     @Override
@@ -2206,6 +2297,16 @@ public class SBResultSet implements ResultSet {
         }
     }
 
+    private static final class ProjectionTarget {
+        private final String columnName;
+        private final String tableQualifier;
+
+        private ProjectionTarget(String columnName, String tableQualifier) {
+            this.columnName = columnName;
+            this.tableQualifier = tableQualifier;
+        }
+    }
+
     private static UpdateTarget resolveUpdateTarget(SBStatement statement, List<SBColumnInfo> columns) {
         if (statement == null) {
             return null;
@@ -2222,10 +2323,11 @@ public class SBResultSet implements ResultSet {
         if (sql == null || sql.isBlank()) {
             return null;
         }
-        return resolveUpdateTargetFromSelectSql(sql, columns, 0);
+        return resolveUpdateTargetFromSelectSql(statement, sql, columns, 0);
     }
 
-    private static UpdateTarget resolveUpdateTargetFromSelectSql(String sql, List<SBColumnInfo> columns, int depth) {
+    private static UpdateTarget resolveUpdateTargetFromSelectSql(
+            SBStatement statement, String sql, List<SBColumnInfo> columns, int depth) {
         if (sql == null || sql.isBlank() || depth > 3) {
             return null;
         }
@@ -2234,8 +2336,7 @@ public class SBResultSet implements ResultSet {
         if (!normalized.startsWith("select ")) {
             return null;
         }
-        if (normalized.contains(" join ")
-            || normalized.contains(" union ")
+        if (normalized.contains(" union ")
             || normalized.contains(" intersect ")
             || normalized.contains(" except ")
             || normalized.contains(" group by ")
@@ -2266,17 +2367,120 @@ public class SBResultSet implements ResultSet {
             if (nestedSelect == null || nestedSelect.isBlank()) {
                 return null;
             }
-            return resolveUpdateTargetFromSelectSql(nestedSelect, columns, depth + 1);
+            UpdateTarget nestedTarget = resolveUpdateTargetFromSelectSql(statement, nestedSelect, columns, depth + 1);
+            if (nestedTarget != null) {
+                return nestedTarget;
+            }
         }
-        Map<Integer, String> projectionMapping = resolveProjectionMapping(projectionSql, columns);
-        if (projectionMapping == null || projectionMapping.isEmpty()) {
+        Map<String, String> tableSqlByQualifier = parseFromClauseTableMapping(afterFromOriginal);
+        String primaryTableSql = resolvePrimaryTableSql(afterFromOriginal, tableToken);
+        if (primaryTableSql == null || primaryTableSql.isBlank()) {
+            primaryTableSql = tableToken;
+        }
+
+        Map<Integer, ProjectionTarget> projectionTargets = resolveProjectionTargets(projectionSql, columns);
+        if (projectionTargets == null || projectionTargets.isEmpty()) {
+            projectionTargets = resolveProjectionTargetsFromResultColumns(statement, columns, primaryTableSql);
+            if (projectionTargets == null || projectionTargets.isEmpty()) {
+                return null;
+            }
+        }
+
+        Map<Integer, String> namesByIndex = new LinkedHashMap<>();
+        Map<Integer, String> tableByIndex = new LinkedHashMap<>();
+        for (Map.Entry<Integer, ProjectionTarget> entry : projectionTargets.entrySet()) {
+            ProjectionTarget target = entry.getValue();
+            if (target == null || target.columnName == null || target.columnName.isBlank()) {
+                continue;
+            }
+            int columnIndex = entry.getKey();
+            namesByIndex.put(columnIndex, target.columnName);
+
+            String mappedTableSql = resolveTableSqlForQualifier(
+                tableSqlByQualifier,
+                target.tableQualifier,
+                primaryTableSql
+            );
+            if (mappedTableSql != null && !mappedTableSql.isBlank()) {
+                tableByIndex.put(columnIndex, mappedTableSql);
+            }
+        }
+        if (namesByIndex.isEmpty()) {
             return null;
         }
-        Map<Integer, String> tableByIndex = new LinkedHashMap<>();
-        for (Integer index : projectionMapping.keySet()) {
-            tableByIndex.put(index, tableToken);
+        if (tableByIndex.isEmpty()) {
+            for (Integer index : namesByIndex.keySet()) {
+                tableByIndex.put(index, primaryTableSql);
+            }
         }
-        return new UpdateTarget(tableToken, projectionMapping, tableByIndex);
+        return new UpdateTarget(primaryTableSql, namesByIndex, tableByIndex);
+    }
+
+    private static Map<Integer, ProjectionTarget> resolveProjectionTargetsFromResultColumns(
+            SBStatement statement, List<SBColumnInfo> columns, String primaryTableSql) {
+        if (statement == null || columns == null || columns.isEmpty()
+            || primaryTableSql == null || primaryTableSql.isBlank()) {
+            return Collections.emptyMap();
+        }
+        Set<String> tableColumns = resolveTableColumnNames(statement, primaryTableSql);
+        if (tableColumns.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, ProjectionTarget> mapped = new LinkedHashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            SBColumnInfo column = columns.get(i);
+            if (column == null || column.getName() == null || column.getName().isBlank()) {
+                continue;
+            }
+            String normalized = unquoteIdentifier(column.getName()).toLowerCase(Locale.ROOT);
+            if (!tableColumns.contains(normalized)) {
+                continue;
+            }
+            mapped.put(i + 1, new ProjectionTarget(unquoteIdentifier(column.getName()), null));
+        }
+        return mapped;
+    }
+
+    private static Set<String> resolveTableColumnNames(SBStatement statement, String tableSql) {
+        if (statement == null || statement.connection == null || tableSql == null || tableSql.isBlank()) {
+            return Collections.emptySet();
+        }
+        String[] parsed = parseQualifiedTableSql(tableSql);
+        String schema = parsed[0] == null ? "" : parsed[0].trim();
+        String table = parsed[1] == null ? "" : parsed[1].trim();
+        if (table.isBlank()) {
+            return Collections.emptySet();
+        }
+        String escapedTable = table.replace("'", "''");
+        String sql;
+        if (schema.isBlank()) {
+            sql = "SELECT column_name FROM information_schema.columns "
+                + "WHERE table_name = '" + escapedTable + "'";
+        } else {
+            String escapedSchema = schema.replace("'", "''");
+            sql = "SELECT column_name FROM information_schema.columns "
+                + "WHERE table_schema = '" + escapedSchema + "' "
+                + "AND table_name = '" + escapedTable + "'";
+        }
+        try {
+            SBQueryResult result = statement.connection.getProtocol().execute(sql, 0, 0);
+            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+                return Collections.emptySet();
+            }
+            Set<String> names = new HashSet<>();
+            for (Object[] row : result.getRows()) {
+                if (row == null || row.length == 0 || row[0] == null) {
+                    continue;
+                }
+                String value = row[0].toString().trim();
+                if (!value.isBlank()) {
+                    names.add(value.toLowerCase(Locale.ROOT));
+                }
+            }
+            return names;
+        } catch (SQLException ex) {
+            return Collections.emptySet();
+        }
     }
 
     private static String extractLeadingParenthesizedSelect(String sql) {
@@ -2697,6 +2901,97 @@ public class SBResultSet implements ResultSet {
         return mapping;
     }
 
+    private static Map<Integer, ProjectionTarget> resolveProjectionTargets(
+            String projectionSql, List<SBColumnInfo> columns) {
+        String trimmedProjection = projectionSql == null ? "" : projectionSql.trim();
+        if (trimmedProjection.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        if (isStarProjection(trimmedProjection)) {
+            String starQualifier = starProjectionQualifier(trimmedProjection);
+            Map<Integer, ProjectionTarget> mapped = new LinkedHashMap<>();
+            if (columns != null) {
+                for (int i = 0; i < columns.size(); i++) {
+                    SBColumnInfo column = columns.get(i);
+                    if (column == null || column.getName() == null || column.getName().isBlank()) {
+                        continue;
+                    }
+                    mapped.put(i + 1, new ProjectionTarget(column.getName(), starQualifier));
+                }
+            }
+            return mapped;
+        }
+
+        List<String> projectionItems = splitTopLevel(projectionSql, ',');
+        if (projectionItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        for (String item : projectionItems) {
+            if (isStarProjection(stripAlias(item))) {
+                return null;
+            }
+        }
+
+        int resultColumnCount = columns == null ? 0 : columns.size();
+        int maxIndex = resultColumnCount == 0
+            ? projectionItems.size()
+            : Math.min(resultColumnCount, projectionItems.size());
+
+        Map<Integer, ProjectionTarget> mapped = new LinkedHashMap<>();
+        for (int i = 0; i < maxIndex; i++) {
+            ProjectionTarget target = projectionTargetFromProjectionItem(projectionItems.get(i));
+            if (target == null) {
+                continue;
+            }
+            mapped.put(i + 1, target);
+        }
+        return mapped;
+    }
+
+    private static String starProjectionQualifier(String projection) {
+        String trimmed = projection == null ? "" : projection.trim();
+        if (!trimmed.endsWith(".*")) {
+            return null;
+        }
+        String prefix = trimmed.substring(0, trimmed.length() - 2).trim();
+        if (prefix.isEmpty()) {
+            return null;
+        }
+        List<String> parts = splitIdentifierParts(prefix);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        return qualifierFromParts(parts);
+    }
+
+    private static String qualifierFromParts(List<String> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return "";
+        }
+        StringBuilder normalized = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                normalized.append('.');
+            }
+            normalized.append(unquoteIdentifier(parts.get(i)).toLowerCase(Locale.ROOT));
+        }
+        return normalized.toString();
+    }
+
+    private static List<String> qualifierKeysForTableToken(String tableToken) {
+        List<String> parts = splitIdentifierParts(tableToken);
+        if (parts.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> keys = new ArrayList<>();
+        for (int i = 0; i < parts.size(); i++) {
+            keys.add(qualifierFromParts(parts.subList(i, parts.size())));
+        }
+        return keys;
+    }
+
     private static Map<Integer, String> mapColumnsByIndex(List<SBColumnInfo> columns) {
         if (columns == null || columns.isEmpty()) {
             return Collections.emptyMap();
@@ -2722,6 +3017,277 @@ public class SBResultSet implements ResultSet {
             return null;
         }
         return unquoteIdentifier(parts.get(parts.size() - 1));
+    }
+
+    private static ProjectionTarget projectionTargetFromProjectionItem(String item) {
+        String core = stripAlias(item).trim();
+        if (core.isEmpty() || isStarProjection(core) || !isSimpleColumnReference(core)) {
+            return null;
+        }
+        List<String> parts = splitIdentifierParts(core);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        String columnName = unquoteIdentifier(parts.get(parts.size() - 1));
+        String qualifier = null;
+        if (parts.size() > 1) {
+            qualifier = qualifierFromParts(parts.subList(0, parts.size() - 1));
+        }
+        return new ProjectionTarget(columnName, qualifier);
+    }
+
+    private static Map<String, String> parseFromClauseTableMapping(String afterFromOriginal) {
+        String tableClause = extractTopLevelTableClause(afterFromOriginal);
+        if (tableClause == null || tableClause.isBlank()) {
+            return Collections.emptyMap();
+        }
+        List<String> references = splitTableReferences(tableClause);
+        if (references.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> mapped = new LinkedHashMap<>();
+        for (String reference : references) {
+            TableReference parsed = parseTableReference(reference);
+            if (parsed == null || parsed.tableSql == null || parsed.tableSql.isBlank()) {
+                continue;
+            }
+            if (parsed.alias != null && !parsed.alias.isBlank()) {
+                mapped.put(normalizeIdentifierKey(parsed.alias), parsed.tableSql);
+            }
+            for (String key : qualifierKeysForTableToken(parsed.tableSql)) {
+                mapped.putIfAbsent(key, parsed.tableSql);
+            }
+            if (parsed.tableName != null && !parsed.tableName.isBlank()) {
+                mapped.putIfAbsent(normalizeIdentifierKey(parsed.tableName), parsed.tableSql);
+            }
+        }
+        return mapped;
+    }
+
+    private static String resolvePrimaryTableSql(String afterFromOriginal, String fallback) {
+        String tableClause = extractTopLevelTableClause(afterFromOriginal);
+        if (tableClause == null || tableClause.isBlank()) {
+            return fallback;
+        }
+        List<String> references = splitTableReferences(tableClause);
+        if (references.isEmpty()) {
+            return fallback;
+        }
+        for (String reference : references) {
+            TableReference parsed = parseTableReference(reference);
+            if (parsed != null && parsed.tableSql != null && !parsed.tableSql.isBlank()) {
+                return parsed.tableSql;
+            }
+        }
+        return fallback;
+    }
+
+    private static String resolveTableSqlForQualifier(Map<String, String> tableSqlByQualifier,
+                                                      String qualifier,
+                                                      String defaultTableSql) {
+        if (qualifier == null || qualifier.isBlank()) {
+            return defaultTableSql;
+        }
+        if (tableSqlByQualifier == null || tableSqlByQualifier.isEmpty()) {
+            return defaultTableSql;
+        }
+        String mapped = tableSqlByQualifier.get(normalizeIdentifierKey(qualifier));
+        return mapped != null && !mapped.isBlank() ? mapped : defaultTableSql;
+    }
+
+    private static String normalizeIdentifierKey(String identifier) {
+        if (identifier == null) {
+            return "";
+        }
+        List<String> parts = splitIdentifierParts(identifier);
+        if (parts.isEmpty()) {
+            return unquoteIdentifier(identifier).toLowerCase(Locale.ROOT);
+        }
+        return qualifierFromParts(parts);
+    }
+
+    private static String extractTopLevelTableClause(String afterFromOriginal) {
+        if (afterFromOriginal == null || afterFromOriginal.isBlank()) {
+            return null;
+        }
+        String collapsed = collapseWhitespace(afterFromOriginal);
+        String normalized = collapsed.toLowerCase(Locale.ROOT);
+        int end = normalized.length();
+        String[] boundaryKeywords = {
+            " where ",
+            " group by ",
+            " having ",
+            " order by ",
+            " limit ",
+            " offset ",
+            " fetch ",
+            " for ",
+            " union ",
+            " intersect ",
+            " except "
+        };
+        for (String keyword : boundaryKeywords) {
+            int index = findTopLevelKeyword(normalized, keyword);
+            if (index >= 0 && index < end) {
+                end = index;
+            }
+        }
+        return collapsed.substring(0, end).trim();
+    }
+
+    private static List<String> splitTableReferences(String tableClause) {
+        if (tableClause == null || tableClause.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<String> references = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i < tableClause.length(); i++) {
+            char c = tableClause.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                current.append(c);
+                continue;
+            }
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                current.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                    current.append(c);
+                    continue;
+                }
+                if (c == ')') {
+                    depth = Math.max(0, depth - 1);
+                    current.append(c);
+                    continue;
+                }
+                if (depth == 0 && c == ',') {
+                    String segment = current.toString().trim();
+                    if (!segment.isEmpty()) {
+                        references.add(stripJoinPredicate(segment));
+                    }
+                    current.setLength(0);
+                    continue;
+                }
+                if (depth == 0 && startsWithWordAt(tableClause, i, "join")) {
+                    String segment = current.toString().trim();
+                    if (!segment.isEmpty()) {
+                        references.add(stripJoinPredicate(segment));
+                    }
+                    current.setLength(0);
+                    i += "join".length() - 1;
+                    continue;
+                }
+            }
+            current.append(c);
+        }
+        String trailing = current.toString().trim();
+        if (!trailing.isEmpty()) {
+            references.add(stripJoinPredicate(trailing));
+        }
+        return references;
+    }
+
+    private static boolean startsWithWordAt(String text, int index, String word) {
+        if (text == null || word == null || index < 0) {
+            return false;
+        }
+        int end = index + word.length();
+        if (end > text.length()) {
+            return false;
+        }
+        if (!text.regionMatches(true, index, word, 0, word.length())) {
+            return false;
+        }
+        char before = index > 0 ? text.charAt(index - 1) : ' ';
+        char after = end < text.length() ? text.charAt(end) : ' ';
+        boolean beforeBoundary = Character.isWhitespace(before) || before == '(' || before == ')';
+        boolean afterBoundary = Character.isWhitespace(after) || after == '(' || after == ')';
+        return beforeBoundary && afterBoundary;
+    }
+
+    private static String stripJoinPredicate(String tableReference) {
+        String collapsed = collapseWhitespace(tableReference);
+        String normalized = collapsed.toLowerCase(Locale.ROOT);
+        int onIndex = findTopLevelKeyword(normalized, " on ");
+        if (onIndex >= 0) {
+            return collapsed.substring(0, onIndex).trim();
+        }
+        int usingIndex = findTopLevelKeyword(normalized, " using ");
+        if (usingIndex >= 0) {
+            return collapsed.substring(0, usingIndex).trim();
+        }
+        return collapsed.trim();
+    }
+
+    private static final class TableReference {
+        private final String tableSql;
+        private final String tableName;
+        private final String alias;
+
+        private TableReference(String tableSql, String tableName, String alias) {
+            this.tableSql = tableSql;
+            this.tableName = tableName;
+            this.alias = alias;
+        }
+    }
+
+    private static TableReference parseTableReference(String referenceSql) {
+        if (referenceSql == null || referenceSql.isBlank()) {
+            return null;
+        }
+        String trimmed = referenceSql.trim();
+        if (trimmed.startsWith("(")) {
+            return null;
+        }
+        String tableToken = firstToken(trimmed);
+        if (tableToken == null || tableToken.isBlank()) {
+            return null;
+        }
+
+        String remaining = trimmed.substring(Math.min(trimmed.length(), tableToken.length())).trim();
+        String alias = null;
+        if (!remaining.isEmpty()) {
+            String remLower = remaining.toLowerCase(Locale.ROOT);
+            if (remLower.startsWith("as ")) {
+                String candidate = firstToken(remaining.substring(3).trim());
+                if (isUsableAliasToken(candidate)) {
+                    alias = candidate;
+                }
+            } else {
+                String candidate = firstToken(remaining);
+                if (isUsableAliasToken(candidate)) {
+                    alias = candidate;
+                }
+            }
+        }
+
+        List<String> tableParts = splitIdentifierParts(tableToken);
+        String tableName;
+        if (tableParts.isEmpty()) {
+            tableName = unquoteIdentifier(tableToken);
+        } else {
+            tableName = unquoteIdentifier(tableParts.get(tableParts.size() - 1));
+        }
+        return new TableReference(tableToken, tableName, alias);
+    }
+
+    private static boolean isUsableAliasToken(String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return false;
+        }
+        String trimmed = candidate.trim();
+        if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
+            return true;
+        }
+        return !TABLE_REFERENCE_NON_ALIAS_TOKENS.contains(trimmed.toLowerCase(Locale.ROOT));
     }
 
     private static String stripAlias(String item) {
@@ -2997,15 +3563,12 @@ public class SBResultSet implements ResultSet {
     }
 
     private boolean canMutateColumn(int columnIndex) {
-        if (updateTarget == null) {
-            return localOnlyUpdatable;
-        }
-        return true;
+        return updateTarget != null;
     }
 
     private String targetColumnNameOrNull(int columnIndex) {
         if (updateTarget == null) {
-            return localOnlyUpdatable ? columnName(columnIndex) : null;
+            return null;
         }
         if (!updateTarget.usesExplicitColumnMapping()) {
             return columnName(columnIndex);
@@ -3047,7 +3610,7 @@ public class SBResultSet implements ResultSet {
                     continue;
                 }
                 if (!tableSqlEquivalent(targetTableSql, mappedTableSql)) {
-                    // Favor the resolved primary table and treat unmatched columns as local-only.
+                    // Favor the resolved primary table and ignore columns mapped to other targets.
                     continue;
                 }
             }
@@ -3474,8 +4037,14 @@ public class SBResultSet implements ResultSet {
         if (value instanceof LocalDateTime) {
             return "TIMESTAMP '" + value.toString().replace('T', ' ') + "'";
         }
+        if (value instanceof OffsetTime) {
+            return "TIMETZ '" + value + "'";
+        }
         if (value instanceof OffsetDateTime) {
             return "TIMESTAMPTZ '" + value + "'";
+        }
+        if (value instanceof ZonedDateTime) {
+            return "TIMESTAMPTZ '" + ((ZonedDateTime) value).toOffsetDateTime() + "'";
         }
         if (value instanceof Instant) {
             return "TIMESTAMPTZ '" + OffsetDateTime.ofInstant((Instant) value, ZoneOffset.UTC) + "'";
@@ -3636,10 +4205,29 @@ public class SBResultSet implements ResultSet {
             if (element instanceof byte[]) return "bytea";
             if (element instanceof java.sql.Date || element instanceof LocalDate) return "date";
             if (element instanceof java.sql.Time || element instanceof LocalTime) return "time";
+            if (element instanceof OffsetTime) return "timetz";
             if (element instanceof java.sql.Timestamp || element instanceof LocalDateTime) return "timestamp";
+            if (element instanceof OffsetDateTime || element instanceof ZonedDateTime || element instanceof Instant) {
+                return "timestamptz";
+            }
             return "text";
         }
         return "text";
+    }
+
+    private static OffsetTime parseOffsetTimeLiteral(String value) throws SQLException {
+        if (value == null) {
+            throw new SQLException("TIME WITH TIME ZONE literal cannot be null", "22007");
+        }
+        String normalized = value.trim();
+        if (normalized.matches(".*[+-]\\d{2}$")) {
+            normalized = normalized + ":00";
+        }
+        try {
+            return OffsetTime.parse(normalized);
+        } catch (RuntimeException ex) {
+            throw new SQLException("Invalid TIME WITH TIME ZONE literal: " + value, "22007", ex);
+        }
     }
 
     private static Object[] parseArrayLiteral(String raw) throws SQLException {
@@ -3793,7 +4381,23 @@ public class SBResultSet implements ResultSet {
         if (columns != updated) {
             columns = updated;
             rebuildColumnIndex();
+            recomputeUpdatableState();
         }
+    }
+
+    private void recomputeUpdatableState() {
+        if (statement == null || statement.resultSetConcurrency != ResultSet.CONCUR_UPDATABLE) {
+            updateTarget = null;
+            updatable = false;
+            return;
+        }
+        UpdateTarget resolved = resolveUpdateTarget(statement, columns);
+        updateTarget = resolved;
+        if (resolved != null) {
+            updatable = true;
+            return;
+        }
+        updatable = false;
     }
 
     private void rebuildColumnIndex() {

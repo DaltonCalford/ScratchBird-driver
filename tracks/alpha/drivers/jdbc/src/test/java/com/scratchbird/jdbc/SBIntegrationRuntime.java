@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 final class SBIntegrationRuntime {
 
     private static RuntimeConfig runtime;
+    private static String lastAutobuildDiagnostic = "";
 
     private SBIntegrationRuntime() {
     }
@@ -86,8 +87,11 @@ final class SBIntegrationRuntime {
             serverBinary = tryBuildServerBinary();
         }
         if (serverBinary == null) {
+            String detail = lastAutobuildDiagnostic == null || lastAutobuildDiagnostic.isBlank()
+                ? "No prebuilt sb_server found and auto-build did not produce a binary."
+                : lastAutobuildDiagnostic;
             return new RuntimeConfig(false, null, null, null, null, null, null, null, null, null, null,
-                "SCRATCHBIRD_JDBC_URL is not set and sb_server binary was not found");
+                "SCRATCHBIRD_JDBC_URL is not set and sb_server binary was not found. " + detail);
         }
 
         try {
@@ -228,18 +232,25 @@ final class SBIntegrationRuntime {
                 return candidate;
             }
         }
+        Path onPath = findExecutableOnPath("sb_server");
+        if (onPath != null) {
+            return onPath;
+        }
         return null;
     }
 
     private static Path tryBuildServerBinary() {
+        StringBuilder diagnostic = new StringBuilder();
         for (Path sourceRoot : findServerSourceRoots()) {
             Path binary = sourceRoot.resolve("build/src/sb_server").normalize();
             if (Files.isRegularFile(binary) && Files.isExecutable(binary)) {
+                lastAutobuildDiagnostic = "";
                 return binary;
             }
 
             Path srcDir = sourceRoot.resolve("src");
             if (!Files.isDirectory(srcDir)) {
+                diagnostic.append("skip ").append(sourceRoot).append(" (missing src/). ");
                 continue;
             }
 
@@ -248,6 +259,8 @@ final class SBIntegrationRuntime {
             try {
                 Files.createDirectories(buildDir);
             } catch (IOException ignored) {
+                diagnostic.append("skip ").append(sourceRoot)
+                    .append(" (cannot create build dir ").append(buildDir).append("). ");
                 continue;
             }
 
@@ -256,6 +269,8 @@ final class SBIntegrationRuntime {
                 "-S", sourceRoot.toAbsolutePath().toString(),
                 "-B", buildDir.toAbsolutePath().toString(),
                 "-DCMAKE_BUILD_TYPE=RelWithDebInfo")) {
+                diagnostic.append("cmake configure failed for ").append(sourceRoot)
+                    .append(" (see ").append(buildLog).append("). ");
                 continue;
             }
             if (!runProcess(buildLog,
@@ -263,12 +278,18 @@ final class SBIntegrationRuntime {
                 "--build", buildDir.toAbsolutePath().toString(),
                 "--target", "sb_server",
                 "-j", "4")) {
+                diagnostic.append("cmake build failed for ").append(sourceRoot)
+                    .append(" (see ").append(buildLog).append("). ");
                 continue;
             }
             if (Files.isRegularFile(binary) && Files.isExecutable(binary)) {
+                lastAutobuildDiagnostic = "";
                 return binary;
             }
+            diagnostic.append("build completed without executable sb_server at ")
+                .append(binary).append(". ");
         }
+        lastAutobuildDiagnostic = diagnostic.toString().trim();
         return null;
     }
 
@@ -317,6 +338,27 @@ final class SBIntegrationRuntime {
             }
             return false;
         }
+    }
+
+    private static Path findExecutableOnPath(String executable) {
+        if (executable == null || executable.isBlank()) {
+            return null;
+        }
+        String path = System.getenv("PATH");
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String[] entries = path.split(":");
+        for (String entry : entries) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            Path candidate = Path.of(entry, executable);
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return candidate.toAbsolutePath().normalize();
+            }
+        }
+        return null;
     }
 
     private static int allocatePort() throws IOException {
@@ -538,6 +580,29 @@ final class SBIntegrationRuntime {
         }
 
         private String chooseCancellationProbeSql() throws SQLException {
+            List<String> candidates = List.of(
+                "SELECT COUNT(*) FROM information_schema.columns c1, information_schema.columns c2, " +
+                    "information_schema.columns c3",
+                "SELECT COUNT(*) FROM information_schema.tables t1, information_schema.tables t2, " +
+                    "information_schema.tables t3",
+                "SELECT COUNT(*) FROM information_schema.columns c1, information_schema.columns c2",
+                "SELECT 1"
+            );
+
+            String firstExecutable = null;
+            for (String candidate : candidates) {
+                ProbeOutcome outcome = probeCancellationSql(candidate);
+                if (outcome.timeoutLike) {
+                    return candidate;
+                }
+                if (!outcome.error && firstExecutable == null) {
+                    firstExecutable = candidate;
+                }
+            }
+
+            if (firstExecutable != null) {
+                return firstExecutable;
+            }
             return "SELECT 1";
         }
 

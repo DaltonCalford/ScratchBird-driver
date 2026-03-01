@@ -18,6 +18,9 @@ import java.sql.ResultSet;
 import java.sql.RowId;
 import java.sql.SQLXML;
 import java.sql.Types;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -39,9 +42,20 @@ class SBTypedGetObjectConversionTest {
         columns.add(column("ref_col"));
         columns.add(column("rowid_col"));
         columns.add(column("bool_col"));
+        columns.add(column("timetz_col"));
+        columns.add(column("timestamptz_col"));
 
         List<Object[]> rows = new ArrayList<>();
-        rows.add(new Object[] {"42", "https://example.com", "<doc/>", "rid-1", "rid-2", "true"});
+        rows.add(new Object[] {
+            "42",
+            "https://example.com",
+            "<doc/>",
+            "rid-1",
+            "rid-2",
+            "true",
+            OffsetTime.of(6, 7, 8, 0, ZoneOffset.ofHours(-4)),
+            OffsetDateTime.parse("2026-03-01T12:34:56+02:00")
+        });
         SBResultSet rs = new SBResultSet(statement, columns, rows);
 
         rs.next();
@@ -54,6 +68,10 @@ class SBTypedGetObjectConversionTest {
         assertEquals("rid-2", new String(rs.getObject(5, RowId.class).getBytes()));
         assertEquals(Boolean.TRUE, rs.getObject(6, Boolean.class));
         assertEquals(Boolean.TRUE, rs.getObject(6, boolean.class));
+        assertEquals(OffsetTime.of(6, 7, 8, 0, ZoneOffset.ofHours(-4)),
+            rs.getObject(7, OffsetTime.class));
+        assertEquals(OffsetDateTime.parse("2026-03-01T12:34:56+02:00").toInstant(),
+            rs.getObject(8, java.time.ZonedDateTime.class).toInstant());
     }
 
     @Test

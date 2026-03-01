@@ -11,9 +11,11 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.sql.JDBCType;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -132,6 +134,39 @@ public class SBResultSetUpdatableTest {
 
         assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("UPDATE demo")));
         assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("INSERT INTO demo")));
+    }
+
+    @Test
+    public void streamingResultSetBecomesUpdatableAfterDeferredColumnMetadataArrives() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT id, name FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo name = new SBColumnInfo();
+        name.setName("name");
+        columns.add(name);
+
+        SBResultSet rs = new SBResultSet(statement,
+            new DeferredColumnsSingleRowStream(columns, new Object[] {1, "before"}), 0);
+
+        // SQL fallback can resolve the base table before deferred metadata is available.
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        assertTrue(rs.next());
+        // Once the stream exposes columns, the update target resolves and server mutations are enabled.
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("name", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+
+        assertTrue(protocol.executedSql.stream().anyMatch(sql -> sql.startsWith("UPDATE demo")));
     }
 
     @Test
@@ -325,7 +360,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void sqlFallbackWithoutWritableProjectionColumnsUsesLocalBufferedUpdatableMode() throws Exception {
+    public void sqlFallbackWithoutWritableProjectionColumnsIsReadOnlyWithoutServerWritableColumns() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -342,13 +377,441 @@ public class SBResultSetUpdatableTest {
         SBResultSet rs = new SBResultSet(statement, columns, rows);
 
         assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "changed"));
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
+        assertTrue(protocol.executedSql.stream().noneMatch(sql ->
+            sql.startsWith("UPDATE ") || sql.startsWith("INSERT ") || sql.startsWith("DELETE ")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void expressionAliasMatchingBaseColumnUsesCatalogFallbackForServerMutations() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT payload || '' AS payload FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {"before"})));
+        assertTrue(rs.next());
         assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
 
-        rs.updateString("derived", "changed");
+        rs.updateString("payload", "after");
         rs.updateRow();
         assertTrue(rs.rowUpdated());
-        assertEquals("changed", rs.getString("derived"));
-        assertTrue(protocol.executedSql.isEmpty());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE demo") && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackJoinProjectionMapsPerAliasWithoutMetadataOids() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT l.id AS left_id, l.payload AS left_payload, "
+                + "r.id AS right_id, r.payload AS right_payload "
+                + "FROM left_demo l JOIN right_demo r ON r.id = l.id";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo leftId = new SBColumnInfo();
+        leftId.setName("left_id");
+        columns.add(leftId);
+        SBColumnInfo leftPayload = new SBColumnInfo();
+        leftPayload.setName("left_payload");
+        columns.add(leftPayload);
+        SBColumnInfo rightId = new SBColumnInfo();
+        rightId.setName("right_id");
+        columns.add(rightId);
+        SBColumnInfo rightPayload = new SBColumnInfo();
+        rightPayload.setName("right_payload");
+        columns.add(rightPayload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "left-old", 1, "right-old"})));
+
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("left_payload", "left-new");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE left_demo") && sql.contains("\"payload\" = 'left-new'")),
+            "executed SQL: " + protocol.executedSql);
+
+        rs.updateString("right_payload", "right-new");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("\"payload\" = 'right-new'")),
+            "executed SQL: " + protocol.executedSql);
+
+        rs.moveToInsertRow();
+        rs.updateInt("left_id", 2);
+        rs.updateString("left_payload", "left-ins");
+        rs.updateInt("right_id", 2);
+        rs.updateString("right_payload", "right-ins");
+        rs.insertRow();
+        assertTrue(rs.rowInserted());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("INSERT INTO left_demo") && sql.contains("'left-ins'")),
+            "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("INSERT INTO right_demo") && sql.contains("'right-ins'")),
+            "executed SQL: " + protocol.executedSql);
+
+        assertTrue(rs.absolute(1));
+        rs.deleteRow();
+        assertTrue(rs.rowDeleted());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("DELETE FROM left_demo")),
+            "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("DELETE FROM right_demo")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackJoinMappingHandlesAsAliasesAndTrailingClauses() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT l.id AS left_id, r.payload AS right_payload "
+                + "FROM left_demo AS l LEFT JOIN right_demo AS r ON r.id = l.id "
+                + "WHERE l.id > 0 ORDER BY l.id LIMIT 10";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo leftId = new SBColumnInfo();
+        leftId.setName("left_id");
+        columns.add(leftId);
+        SBColumnInfo rightPayload = new SBColumnInfo();
+        rightPayload.setName("right_payload");
+        columns.add(rightPayload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "right-old"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("right_payload", "right-updated");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("'right-updated'")),
+            "executed SQL: " + protocol.executedSql);
+
+        rs.updateInt("left_id", 7);
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE left_demo") && sql.contains("\"id\" = 7")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackJoinMappingWithoutAliasesIgnoresJoinModifiers() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT left_demo.id AS left_id, right_demo.payload AS right_payload "
+                + "FROM left_demo LEFT JOIN right_demo ON right_demo.id = left_demo.id "
+                + "WHERE left_demo.id > 0";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo leftId = new SBColumnInfo();
+        leftId.setName("left_id");
+        columns.add(leftId);
+        SBColumnInfo rightPayload = new SBColumnInfo();
+        rightPayload.setName("right_payload");
+        columns.add(rightPayload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "right-old"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("right_payload", "right-updated");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("'right-updated'")),
+            "executed SQL: " + protocol.executedSql);
+
+        rs.updateInt("left_id", 5);
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE left_demo") && sql.contains("\"id\" = 5")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackPrimaryTableSkipsSubqueryReferencesWhenChoosingDefaultTarget() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT payload FROM (SELECT 1 AS x) s JOIN right_demo ON true";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {"before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackSupportsRecursiveQualifiedSchemaTargets() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT r.payload AS payload_alias "
+                + "FROM \"emulated\".\"mysql\".\"mymain\".\"left_demo\" AS r";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload_alias");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {"before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload_alias", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"mysql\".\"mymain\".\"left_demo\"")
+                && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackSupportsOnlyQualifiedTableReferences() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT d.payload FROM ONLY \"emulated\".\"postgresql\".\"sb\".\"demo\" d";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {"before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"postgresql\".\"sb\".\"demo\"")
+                && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackQualifiedStarMapsColumnsToSelectedAliasTable() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT r.* FROM left_demo l JOIN right_demo r ON r.id = l.id";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().noneMatch(sql -> sql.startsWith("UPDATE left_demo")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackQualifiedStarMapsColumnsToQuotedAliasTable() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT \"R\".* FROM left_demo l JOIN right_demo \"R\" ON \"R\".id = l.id";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "before-quoted"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after-quoted");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE right_demo") && sql.contains("\"payload\" = 'after-quoted'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackResolvesFullRecursiveQualifierWhenTableNamesRepeat() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT \"emulated\".\"mysql\".\"mymain\".\"left_demo\".payload AS payload_a, "
+                + "\"emulated\".\"mysql\".\"mymain1\".\"left_demo\".payload AS payload_b "
+                + "FROM \"emulated\".\"mysql\".\"mymain\".\"left_demo\" "
+                + "JOIN \"emulated\".\"mysql\".\"mymain1\".\"left_demo\" ON true";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo payloadA = new SBColumnInfo();
+        payloadA.setName("payload_a");
+        columns.add(payloadA);
+        SBColumnInfo payloadB = new SBColumnInfo();
+        payloadB.setName("payload_b");
+        columns.add(payloadB);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {"a-before", "b-before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload_a", "a-after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"mysql\".\"mymain\".\"left_demo\"")
+                && sql.contains("\"payload\" = 'a-after'")),
+            "executed SQL: " + protocol.executedSql);
+
+        rs.updateString("payload_b", "b-after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"mysql\".\"mymain1\".\"left_demo\"")
+                && sql.contains("\"payload\" = 'b-after'")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlFallbackQualifiedStarUsesFullRecursiveQualifierWhenTableNamesRepeat() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql =
+            "SELECT \"emulated\".\"mysql\".\"mymain1\".\"left_demo\".* "
+                + "FROM \"emulated\".\"mysql\".\"mymain\".\"left_demo\" "
+                + "JOIN \"emulated\".\"mysql\".\"mymain1\".\"left_demo\" ON true";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo payload = new SBColumnInfo();
+        payload.setName("payload");
+        columns.add(payload);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "before"})));
+        assertTrue(rs.next());
+        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
+
+        rs.updateString("payload", "after");
+        rs.updateRow();
+        assertTrue(rs.rowUpdated());
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"mysql\".\"mymain1\".\"left_demo\"")
+                && sql.contains("\"payload\" = 'after'")),
+            "executed SQL: " + protocol.executedSql);
+        assertTrue(protocol.executedSql.stream().noneMatch(sql ->
+            sql.startsWith("UPDATE \"emulated\".\"mysql\".\"mymain\".\"left_demo\"")),
+            "executed SQL: " + protocol.executedSql);
+    }
+
+    @Test
+    public void sqlTypeUpdateObjectOverloadsMutateRowsAndRejectNullSqlType() throws Exception {
+        CaptureMutationProtocol protocol = new CaptureMutationProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBStatement statement = new SBStatement(connection, ResultSet.TYPE_SCROLL_INSENSITIVE,
+            ResultSet.CONCUR_UPDATABLE, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.lastExecutedSql = "SELECT id, name FROM demo";
+
+        List<SBColumnInfo> columns = new ArrayList<>();
+        SBColumnInfo id = new SBColumnInfo();
+        id.setName("id");
+        columns.add(id);
+        SBColumnInfo name = new SBColumnInfo();
+        name.setName("name");
+        columns.add(name);
+
+        SBResultSet rs = new SBResultSet(statement, columns,
+            new ArrayList<>(Collections.singletonList(new Object[] {1, "before"})));
+
+        assertTrue(rs.next());
+        rs.updateObject(2, "typed-index", JDBCType.VARCHAR);
+        rs.updateRow();
+        assertEquals("typed-index", rs.getString("name"));
+
+        rs.updateObject("name", "typed-label", JDBCType.VARCHAR, 0);
+        rs.updateRow();
+        assertEquals("typed-label", rs.getString("name"));
+
+        assertTrue(protocol.executedSql.stream().anyMatch(sql ->
+            sql.contains("\"name\" = 'typed-index'") || sql.contains("\"name\" = 'typed-label'")));
+        assertThrows(java.sql.SQLException.class, () -> rs.updateObject(2, "bad", (java.sql.SQLType) null));
+        assertThrows(java.sql.SQLException.class, () -> rs.updateObject("name", "bad", (java.sql.SQLType) null));
     }
 
     @Test
@@ -396,7 +859,7 @@ public class SBResultSetUpdatableTest {
     }
 
     @Test
-    public void localStreamingUpdatableFallbackWorksWithoutResolvedBaseTable() throws Exception {
+    public void streamingResultSetIsReadOnlyWithoutResolvedBaseTable() throws Exception {
         CaptureMutationProtocol protocol = new CaptureMutationProtocol();
         SBConnection connection = newConnectionForTest(protocol);
         SBStatement statement = new SBStatement(connection, ResultSet.TYPE_FORWARD_ONLY,
@@ -412,12 +875,12 @@ public class SBResultSetUpdatableTest {
             new SingleRowStream(columns, new Object[] {"before-x"}), 0);
 
         assertTrue(rs.next());
-        assertEquals(ResultSet.CONCUR_UPDATABLE, rs.getConcurrency());
-        rs.updateString("derived", "after-x");
-        rs.updateRow();
-        assertTrue(rs.rowUpdated());
-        assertEquals("after-x", rs.getString("derived"));
-        assertTrue(protocol.executedSql.isEmpty());
+        assertEquals(ResultSet.CONCUR_READ_ONLY, rs.getConcurrency());
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class, () -> rs.updateString("derived", "after-x"));
+        assertThrows(java.sql.SQLFeatureNotSupportedException.class, rs::moveToInsertRow);
+        assertTrue(protocol.executedSql.stream().noneMatch(sql ->
+            sql.startsWith("UPDATE ") || sql.startsWith("INSERT ") || sql.startsWith("DELETE ")),
+            "executed SQL: " + protocol.executedSql);
     }
 
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
@@ -457,6 +920,15 @@ public class SBResultSetUpdatableTest {
             executedSql.add(sql);
             SBQueryResult result = new SBQueryResult();
             result.setUpdateCount(1);
+            if (sql.contains("FROM information_schema.columns")) {
+                result.setColumns(Collections.singletonList(new SBColumnInfo()));
+                result.setRows(Arrays.asList(
+                    new Object[] {"id"},
+                    new Object[] {"payload"},
+                    new Object[] {"name"}
+                ));
+                return result;
+            }
             if (sql.contains("FROM pg_catalog.pg_class")) {
                 result.setColumns(Arrays.asList(new SBColumnInfo(), new SBColumnInfo()));
                 int oid = extractNumericSuffix(sql, "WHERE c.oid = ");
@@ -525,6 +997,51 @@ public class SBResultSetUpdatableTest {
 
         @Override
         public List<SBColumnInfo> getColumns() {
+            return columns;
+        }
+
+        @Override
+        public long getUpdateCount() {
+            return -1;
+        }
+
+        @Override
+        public String getCommandTag() {
+            return "SELECT";
+        }
+
+        @Override
+        public boolean isDone() {
+            return consumed;
+        }
+    }
+
+    private static final class DeferredColumnsSingleRowStream implements SBRowStream {
+        private final List<SBColumnInfo> columns;
+        private final Object[] row;
+        private boolean consumed;
+        private boolean columnsReady;
+
+        private DeferredColumnsSingleRowStream(List<SBColumnInfo> columns, Object[] row) {
+            this.columns = columns;
+            this.row = row;
+        }
+
+        @Override
+        public Object[] nextRow() {
+            if (consumed) {
+                return null;
+            }
+            columnsReady = true;
+            consumed = true;
+            return row.clone();
+        }
+
+        @Override
+        public List<SBColumnInfo> getColumns() {
+            if (!columnsReady) {
+                return Collections.emptyList();
+            }
             return columns;
         }
 

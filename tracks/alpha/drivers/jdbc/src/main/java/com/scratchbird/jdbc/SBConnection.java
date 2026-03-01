@@ -13,9 +13,12 @@
  */
 package com.scratchbird.jdbc;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,6 +38,51 @@ public class SBConnection implements Connection {
 
     /** Snapshot isolation level (ScratchBird extension) */
     public static final int TRANSACTION_SNAPSHOT = 5;
+
+    @FunctionalInterface
+    public interface NotificationListener {
+        void onNotification(Notification notification);
+    }
+
+    public static final class Notification {
+        private final int processId;
+        private final String channel;
+        private final byte[] payload;
+        private final Character changeType;
+        private final Long rowId;
+
+        private Notification(int processId, String channel, byte[] payload, Character changeType, Long rowId) {
+            this.processId = processId;
+            this.channel = channel;
+            this.payload = payload == null ? new byte[0] : Arrays.copyOf(payload, payload.length);
+            this.changeType = changeType;
+            this.rowId = rowId;
+        }
+
+        public int getProcessId() {
+            return processId;
+        }
+
+        public String getChannel() {
+            return channel;
+        }
+
+        public byte[] getPayload() {
+            return Arrays.copyOf(payload, payload.length);
+        }
+
+        public String getPayloadText() {
+            return new String(payload, StandardCharsets.UTF_8);
+        }
+
+        public Character getChangeType() {
+            return changeType;
+        }
+
+        public Long getRowId() {
+            return rowId;
+        }
+    }
 
     // Connection properties
     private final SBConnectionProperties properties;
@@ -72,6 +120,10 @@ public class SBConnection implements Connection {
     private final KeepaliveManager keepaliveManager = new KeepaliveManager();
     private KeepaliveTracker keepaliveTracker;
     private final Map<String, SBResultSet> namedCursors = new ConcurrentHashMap<>();
+    private Queue<Notification> notificationQueue;
+    private CopyOnWriteArrayList<NotificationListener> notificationListeners;
+    private AtomicBoolean notificationBridgeInstalled;
+    private SBProtocolHandler.NotificationListener notificationBridgeListener;
 
     @FunctionalInterface
     interface SqlSupplier<T> {
@@ -152,6 +204,205 @@ public class SBConnection implements Connection {
             return;
         }
         warnings.setNextWarning(warning);
+    }
+
+    private Queue<Notification> notificationQueue() {
+        Queue<Notification> queue = notificationQueue;
+        if (queue == null) {
+            synchronized (this) {
+                queue = notificationQueue;
+                if (queue == null) {
+                    queue = new ConcurrentLinkedQueue<>();
+                    notificationQueue = queue;
+                }
+            }
+        }
+        return queue;
+    }
+
+    private CopyOnWriteArrayList<NotificationListener> notificationListenerRegistry() {
+        CopyOnWriteArrayList<NotificationListener> listeners = notificationListeners;
+        if (listeners == null) {
+            synchronized (this) {
+                listeners = notificationListeners;
+                if (listeners == null) {
+                    listeners = new CopyOnWriteArrayList<>();
+                    notificationListeners = listeners;
+                }
+            }
+        }
+        return listeners;
+    }
+
+    private AtomicBoolean notificationBridgeFlag() {
+        AtomicBoolean bridge = notificationBridgeInstalled;
+        if (bridge == null) {
+            synchronized (this) {
+                bridge = notificationBridgeInstalled;
+                if (bridge == null) {
+                    bridge = new AtomicBoolean(false);
+                    notificationBridgeInstalled = bridge;
+                }
+            }
+        }
+        return bridge;
+    }
+
+    private SBProtocolHandler.NotificationListener notificationBridgeListener() {
+        SBProtocolHandler.NotificationListener bridge = notificationBridgeListener;
+        if (bridge == null) {
+            synchronized (this) {
+                bridge = notificationBridgeListener;
+                if (bridge == null) {
+                    bridge = this::acceptNotification;
+                    notificationBridgeListener = bridge;
+                }
+            }
+        }
+        return bridge;
+    }
+
+    private void ensureNotificationBridge() throws SQLException {
+        SBProtocolHandler handler = protocol;
+        if (handler == null) {
+            throw new SQLException("Connection protocol is not initialized", "08003");
+        }
+        AtomicBoolean bridgeInstalled = notificationBridgeFlag();
+        if (bridgeInstalled.compareAndSet(false, true)) {
+            handler.addNotificationListener(notificationBridgeListener());
+        }
+    }
+
+    private void acceptNotification(SBProtocolHandler.NotificationMessage message) {
+        if (message == null) {
+            return;
+        }
+        Notification notification = new Notification(
+            message.processId,
+            message.channel,
+            message.payload,
+            message.changeType,
+            message.rowId
+        );
+        notificationQueue().add(notification);
+        CopyOnWriteArrayList<NotificationListener> listeners = notificationListeners;
+        if (listeners == null) {
+            return;
+        }
+        for (NotificationListener listener : listeners) {
+            try {
+                listener.onNotification(notification);
+            } catch (RuntimeException ex) {
+                LOGGER.log(Level.FINE, "Notification listener failed for connection " + connectionId, ex);
+            }
+        }
+    }
+
+    public void addNotificationListener(NotificationListener listener) throws SQLException {
+        checkClosed();
+        if (listener == null) {
+            throw new SQLException("Notification listener cannot be null", "HY024");
+        }
+        ensureNotificationBridge();
+        CopyOnWriteArrayList<NotificationListener> listeners = notificationListenerRegistry();
+        if (!listeners.contains(listener)) {
+            listeners.add(listener);
+        }
+    }
+
+    public boolean removeNotificationListener(NotificationListener listener) throws SQLException {
+        checkClosed();
+        if (listener == null) {
+            return false;
+        }
+        CopyOnWriteArrayList<NotificationListener> listeners = notificationListeners;
+        return listeners != null && listeners.remove(listener);
+    }
+
+    public Notification getNotification() throws SQLException {
+        checkClosed();
+        ensureNotificationBridge();
+        return notificationQueue().poll();
+    }
+
+    public List<Notification> getNotifications() throws SQLException {
+        checkClosed();
+        ensureNotificationBridge();
+        Queue<Notification> queue = notificationQueue();
+        if (queue.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Notification> drained = new ArrayList<>();
+        Notification notice;
+        while ((notice = queue.poll()) != null) {
+            drained.add(notice);
+        }
+        return Collections.unmodifiableList(drained);
+    }
+
+    public void clearNotifications() throws SQLException {
+        checkClosed();
+        ensureNotificationBridge();
+        notificationQueue().clear();
+    }
+
+    public void listen(String channel) throws SQLException {
+        checkClosed();
+        ensureNotificationBridge();
+        String normalizedChannel = normalizeNotificationChannel(channel);
+        String sql = "LISTEN " + quoteIdentifier(normalizedChannel);
+        withResilience("listen", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void unlisten(String channel) throws SQLException {
+        checkClosed();
+        String normalizedChannel = normalizeNotificationChannel(channel);
+        String sql = "UNLISTEN " + quoteIdentifier(normalizedChannel);
+        withResilience("unlisten", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void unlistenAll() throws SQLException {
+        checkClosed();
+        final String sql = "UNLISTEN *";
+        withResilience("unlisten", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void notifyChannel(String channel) throws SQLException {
+        notifyChannel(channel, (String) null);
+    }
+
+    public void notifyChannel(String channel, byte[] payload) throws SQLException {
+        if (payload == null) {
+            notifyChannel(channel, (String) null);
+            return;
+        }
+        notifyChannel(channel, new String(payload, StandardCharsets.UTF_8));
+    }
+
+    public void notifyChannel(String channel, String payload) throws SQLException {
+        checkClosed();
+        String normalizedChannel = normalizeNotificationChannel(channel);
+        String sql = "NOTIFY " + quoteIdentifier(normalizedChannel);
+        if (payload != null) {
+            if (payload.indexOf('\0') >= 0) {
+                throw new SQLException("Notification payload cannot contain NUL bytes", "HY024");
+            }
+            sql += ", " + quoteSqlLiteral(payload);
+        }
+        final String command = sql;
+        withResilience("notify", command, () -> {
+            protocol.execute(command);
+            return null;
+        });
     }
 
     @Override
@@ -324,6 +575,11 @@ public class SBConnection implements Connection {
                     }
                 }
                 if (protocol != null) {
+                    AtomicBoolean bridgeInstalled = notificationBridgeInstalled;
+                    SBProtocolHandler.NotificationListener bridgeListener = notificationBridgeListener;
+                    if (bridgeInstalled != null && bridgeInstalled.get() && bridgeListener != null) {
+                        protocol.removeNotificationListener(bridgeListener);
+                    }
                     protocol.close();
                 }
                 if (keepaliveTracker != null) {
@@ -331,6 +587,14 @@ public class SBConnection implements Connection {
                     keepaliveTracker = null;
                 }
                 keepaliveManager.stop();
+                Queue<Notification> pending = notificationQueue;
+                if (pending != null) {
+                    pending.clear();
+                }
+                CopyOnWriteArrayList<NotificationListener> listeners = notificationListeners;
+                if (listeners != null) {
+                    listeners.clear();
+                }
             } finally {
                 LOGGER.log(Level.FINE, "Connection {0} closed", connectionId);
             }
@@ -622,6 +886,9 @@ public class SBConnection implements Connection {
     @Override
     public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {
         checkClosed();
+        if (executor == null) {
+            throw new SQLException("Executor cannot be null", "HY000");
+        }
         if (milliseconds < 0) {
             throw new SQLException("Network timeout must be >= 0", "HY024");
         }
@@ -644,6 +911,11 @@ public class SBConnection implements Connection {
     public void endRequest() throws SQLException {
         checkClosed();
         requestScopeActive = false;
+    }
+
+    public ShardingKeyBuilder createShardingKeyBuilder() throws SQLException {
+        checkClosed();
+        return new SBShardingKeyBuilder();
     }
 
     @Override
@@ -706,6 +978,43 @@ public class SBConnection implements Connection {
     @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         return iface.isAssignableFrom(getClass());
+    }
+
+    private static final class SBShardingKey implements ShardingKey {
+        private final List<KeyPart> parts;
+
+        private SBShardingKey(List<KeyPart> parts) {
+            this.parts = Collections.unmodifiableList(new ArrayList<>(parts));
+        }
+    }
+
+    private static final class KeyPart {
+        private final Object value;
+        private final int sqlType;
+
+        private KeyPart(Object value, int sqlType) {
+            this.value = value;
+            this.sqlType = sqlType;
+        }
+    }
+
+    private static final class SBShardingKeyBuilder implements ShardingKeyBuilder {
+        private final List<KeyPart> parts = new ArrayList<>();
+
+        @Override
+        public ShardingKeyBuilder subkey(Object subkey, SQLType sqlType) {
+            if (sqlType == null) {
+                throw new IllegalArgumentException("SQLType cannot be null");
+            }
+            Integer vendorType = sqlType.getVendorTypeNumber();
+            parts.add(new KeyPart(subkey, vendorType != null ? vendorType : java.sql.Types.OTHER));
+            return this;
+        }
+
+        @Override
+        public ShardingKey build() throws SQLException {
+            return new SBShardingKey(parts);
+        }
     }
 
     // ==================== ScratchBird Extensions ====================
@@ -881,6 +1190,20 @@ public class SBConnection implements Connection {
         return trimmed.toLowerCase(Locale.ROOT);
     }
 
+    private static String normalizeNotificationChannel(String channel) throws SQLException {
+        if (channel == null) {
+            throw new SQLException("Notification channel cannot be null", "HY024");
+        }
+        String normalized = channel.trim();
+        if (normalized.isEmpty()) {
+            throw new SQLException("Notification channel cannot be empty", "HY024");
+        }
+        if (normalized.indexOf('\0') >= 0) {
+            throw new SQLException("Notification channel cannot contain NUL bytes", "HY024");
+        }
+        return normalized;
+    }
+
     private void reconnectForFailover() throws SQLException {
         if (protocol == null) {
             throw new SQLException("Protocol handler is not available", "08003");
@@ -987,6 +1310,10 @@ public class SBConnection implements Connection {
 
     private static String quoteIdentifier(String identifier) {
         return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
+
+    private static String quoteSqlLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     private static List<String> splitTopLevel(String value, char delimiter) {

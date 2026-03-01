@@ -73,6 +73,51 @@ class SBCallableStatementEscapeSyntaxTest {
         assertEquals(77, statement.getInt(1));
     }
 
+    @Test
+    void functionEscapeSyntaxNamedDuplicateParametersPropagateAliases() throws Exception {
+        CaptureProtocol protocol = new CaptureProtocol();
+        protocol.functionResult = 101;
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection,
+            "{? = call demo_fn(:id, :id)}",
+            ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_READ_ONLY,
+            ResultSet.HOLD_CURSORS_OVER_COMMIT);
+
+        statement.registerOutParameter(1, Types.INTEGER);
+        statement.setInt("id", 55);
+
+        boolean hasResultSet = statement.execute();
+
+        assertTrue(hasResultSet);
+        assertTrue(protocol.lastSql.startsWith("SELECT demo_fn("));
+        assertEquals(2, protocol.lastParams.size());
+        assertEquals(55, protocol.lastParams.get(0));
+        assertEquals(55, protocol.lastParams.get(1));
+        assertEquals(101, statement.getInt(1));
+    }
+
+    @Test
+    void functionEscapeSyntaxIndexBindingUpdatesAllDuplicateNamedAliases() throws Exception {
+        CaptureProtocol protocol = new CaptureProtocol();
+        protocol.functionResult = 202;
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection,
+            "{? = call demo_fn(:id, :id)}",
+            ResultSet.TYPE_FORWARD_ONLY,
+            ResultSet.CONCUR_READ_ONLY,
+            ResultSet.HOLD_CURSORS_OVER_COMMIT);
+
+        statement.registerOutParameter(1, Types.INTEGER);
+        statement.setInt(2, 88);
+
+        assertTrue(statement.execute());
+        assertEquals(2, protocol.lastParams.size());
+        assertEquals(88, protocol.lastParams.get(0));
+        assertEquals(88, protocol.lastParams.get(1));
+        assertEquals(202, statement.getInt(1));
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);

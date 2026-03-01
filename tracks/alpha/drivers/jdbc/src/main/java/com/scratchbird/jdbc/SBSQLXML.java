@@ -23,6 +23,10 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLXML;
@@ -170,20 +174,42 @@ public class SBSQLXML implements SQLXML {
             }
         }
         if (sourceClass != null && StreamSource.class.isAssignableFrom(sourceClass)) {
-            return instantiateStreamSourceSubclass(sourceClass, xml);
+            try {
+                return instantiateStreamSourceSubclass(sourceClass, xml);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (sourceClass != null && DOMSource.class.isAssignableFrom(sourceClass)) {
-            return instantiateDomSourceSubclass(sourceClass, xml);
+            try {
+                return instantiateDomSourceSubclass(sourceClass, xml);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (sourceClass != null && SAXSource.class.isAssignableFrom(sourceClass)) {
-            return instantiateSaxSourceSubclass(sourceClass, xml);
+            try {
+                return instantiateSaxSourceSubclass(sourceClass, xml);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (sourceClass != null && StAXSource.class.isAssignableFrom(sourceClass)) {
-            return instantiateStaxSourceSubclass(sourceClass, xml);
+            try {
+                return instantiateStaxSourceSubclass(sourceClass, xml);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         T delegated = instantiateSourceFromDelegate(sourceClass, xml);
         if (delegated != null) {
             return delegated;
+        }
+        if (sourceClass != null && sourceClass.isInterface() && Source.class.isAssignableFrom(sourceClass)) {
+            T adapted = adaptSourceInterface(sourceClass, new StreamSource(new StringReader(xml)));
+            if (adapted != null) {
+                return adapted;
+            }
         }
         throw new SQLFeatureNotSupportedException("Source class not supported: " + sourceClass);
     }
@@ -244,20 +270,44 @@ public class SBSQLXML implements SQLXML {
             }
         }
         if (resultClass != null && StreamResult.class.isAssignableFrom(resultClass)) {
-            return instantiateStreamResultSubclass(resultClass);
+            try {
+                return instantiateStreamResultSubclass(resultClass);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (resultClass != null && DOMResult.class.isAssignableFrom(resultClass)) {
-            return instantiateDomResultSubclass(resultClass);
+            try {
+                return instantiateDomResultSubclass(resultClass);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (resultClass != null && SAXResult.class.isAssignableFrom(resultClass)) {
-            return instantiateSaxResultSubclass(resultClass);
+            try {
+                return instantiateSaxResultSubclass(resultClass);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         if (resultClass != null && StAXResult.class.isAssignableFrom(resultClass)) {
-            return instantiateStaxResultSubclass(resultClass);
+            try {
+                return instantiateStaxResultSubclass(resultClass);
+            } catch (SQLFeatureNotSupportedException ignored) {
+                // Fall through to delegate-based instantiation paths.
+            }
         }
         T delegated = instantiateResultFromDelegate(resultClass);
         if (delegated != null) {
             return delegated;
+        }
+        if (resultClass != null && resultClass.isInterface() && Result.class.isAssignableFrom(resultClass)) {
+            CandidateResult streamCandidate = streamDelegateResult();
+            T adapted = adaptResultInterface(resultClass, streamCandidate.result());
+            if (adapted != null) {
+                pendingMaterializer = streamCandidate.materializer();
+                return adapted;
+            }
         }
         throw new SQLFeatureNotSupportedException("Result class not supported: " + resultClass);
     }
@@ -307,11 +357,35 @@ public class SBSQLXML implements SQLXML {
         if (ctor == null) {
             ctor = findCompatibleSingleArgConstructor(sourceClass, Source.class);
         }
-        if (ctor == null) {
-            return null;
+        if (ctor != null) {
+            try {
+                return ctor.newInstance(delegate);
+            } catch (Exception ex) {
+                // Continue with factory/no-constructor fallback strategies.
+            }
         }
+
+        T factoryInstance = invokeStaticFactory(sourceClass, delegate, Source.class);
+        if (factoryInstance != null) {
+            return factoryInstance;
+        }
+
         try {
-            return ctor.newInstance(delegate);
+            Constructor<T> noArgCtor = findConstructor(sourceClass);
+            T instance = null;
+            if (noArgCtor != null) {
+                instance = noArgCtor.newInstance();
+            }
+            if (instance == null) {
+                instance = instantiateWithDefaultArguments(sourceClass);
+            }
+            if (instance == null) {
+                return null;
+            }
+            if (bindDelegateSource(instance, delegate)) {
+                return instance;
+            }
+            return null;
         } catch (Exception ex) {
             throw new SQLException("Failed to instantiate delegated SQLXML source class: " + sourceClass,
                 "HY000", ex);
@@ -357,13 +431,39 @@ public class SBSQLXML implements SQLXML {
         if (ctor == null) {
             ctor = findCompatibleSingleArgConstructor(resultClass, Result.class);
         }
-        if (ctor == null) {
-            return null;
+        if (ctor != null) {
+            try {
+                T instance = ctor.newInstance(candidate.result());
+                pendingMaterializer = candidate.materializer();
+                return instance;
+            } catch (Exception ex) {
+                // Continue with factory/no-constructor fallback strategies.
+            }
         }
-        try {
-            T instance = ctor.newInstance(candidate.result());
+
+        T factoryInstance = invokeStaticFactory(resultClass, candidate.result(), Result.class);
+        if (factoryInstance != null) {
             pendingMaterializer = candidate.materializer();
-            return instance;
+            return factoryInstance;
+        }
+
+        try {
+            Constructor<T> noArgCtor = findConstructor(resultClass);
+            T instance = null;
+            if (noArgCtor != null) {
+                instance = noArgCtor.newInstance();
+            }
+            if (instance == null) {
+                instance = instantiateWithDefaultArguments(resultClass);
+            }
+            if (instance == null) {
+                return null;
+            }
+            if (bindDelegateResult(instance, candidate.result())) {
+                pendingMaterializer = candidate.materializer();
+                return instance;
+            }
+            return null;
         } catch (Exception ex) {
             throw new SQLException("Failed to instantiate delegated SQLXML result class: " + resultClass,
                 "HY000", ex);
@@ -754,6 +854,414 @@ public class SBSQLXML implements SQLXML {
             return compatible;
         }
         return null;
+    }
+
+    private static <T> T instantiateWithDefaultArguments(Class<T> type) {
+        if (type == null) {
+            return null;
+        }
+        Constructor<?>[] constructors = type.getDeclaredConstructors();
+        Constructor<?> best = null;
+        for (Constructor<?> constructor : constructors) {
+            if (best == null || constructor.getParameterCount() < best.getParameterCount()) {
+                best = constructor;
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+        try {
+            best.setAccessible(true);
+            Class<?>[] parameterTypes = best.getParameterTypes();
+            Object[] args = new Object[parameterTypes.length];
+            for (int i = 0; i < parameterTypes.length; i++) {
+                args[i] = defaultValue(parameterTypes[i]);
+            }
+            @SuppressWarnings("unchecked")
+            T instance = (T) best.newInstance(args);
+            return instance;
+        } catch (Exception ex) {
+            return allocateWithUnsafe(type);
+        }
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (type == null || !type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) return false;
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0f;
+        if (type == double.class) return 0d;
+        if (type == char.class) return '\0';
+        return null;
+    }
+
+    private static <T> T adaptSourceInterface(Class<T> sourceClass, Source delegate) {
+        if (sourceClass == null || delegate == null || !sourceClass.isInterface()) {
+            return null;
+        }
+        InvocationHandler handler = (proxy, method, args) -> invokeDelegatingInterfaceMethod(
+            proxy, method, args, delegate, Source.class
+        );
+        Object proxy = Proxy.newProxyInstance(
+            sourceClass.getClassLoader(),
+            new Class<?>[]{sourceClass},
+            handler
+        );
+        return sourceClass.cast(proxy);
+    }
+
+    private static <T> T adaptResultInterface(Class<T> resultClass, Result delegate) {
+        if (resultClass == null || delegate == null || !resultClass.isInterface()) {
+            return null;
+        }
+        InvocationHandler handler = (proxy, method, args) -> invokeDelegatingInterfaceMethod(
+            proxy, method, args, delegate, Result.class
+        );
+        Object proxy = Proxy.newProxyInstance(
+            resultClass.getClassLoader(),
+            new Class<?>[]{resultClass},
+            handler
+        );
+        return resultClass.cast(proxy);
+    }
+
+    private static Object invokeDelegatingInterfaceMethod(
+            Object proxy, Method method, Object[] args, Object delegate, Class<?> baseType) throws Throwable {
+        if (method == null) {
+            return null;
+        }
+        String name = method.getName();
+        if ("toString".equals(name) && method.getParameterCount() == 0) {
+            return delegate.toString();
+        }
+        if ("hashCode".equals(name) && method.getParameterCount() == 0) {
+            return delegate.hashCode();
+        }
+        if ("equals".equals(name) && method.getParameterCount() == 1) {
+            return proxy == args[0];
+        }
+        if ("delegate".equals(name) && method.getParameterCount() == 0
+            && method.getReturnType().isAssignableFrom(delegate.getClass())) {
+            return delegate;
+        }
+        Method delegateMethod = findDelegateMethod(delegate.getClass(), method);
+        if (delegateMethod != null) {
+            delegateMethod.setAccessible(true);
+            return delegateMethod.invoke(delegate, args);
+        }
+        if (method.getReturnType() == void.class) {
+            return null;
+        }
+        return defaultValue(method.getReturnType());
+    }
+
+    private static Method findDelegateMethod(Class<?> delegateClass, Method interfaceMethod) {
+        if (delegateClass == null || interfaceMethod == null) {
+            return null;
+        }
+        try {
+            return delegateClass.getMethod(interfaceMethod.getName(), interfaceMethod.getParameterTypes());
+        } catch (NoSuchMethodException ex) {
+            try {
+                return delegateClass.getDeclaredMethod(interfaceMethod.getName(), interfaceMethod.getParameterTypes());
+            } catch (NoSuchMethodException ignored) {
+                return null;
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T allocateWithUnsafe(Class<T> type) {
+        try {
+            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Method allocateInstance = unsafeClass.getMethod("allocateInstance", Class.class);
+            Object instance = allocateInstance.invoke(unsafe, type);
+            if (instance == null) {
+                return null;
+            }
+            return (T) instance;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static <T> T invokeStaticFactory(Class<T> targetClass, Object delegate, Class<?> delegateSuperType)
+            throws SQLException {
+        if (targetClass == null || delegate == null) {
+            return null;
+        }
+        String[] factoryNames = {
+            "of",
+            "from",
+            "valueOf",
+            "newInstance",
+            "create",
+            "createInstance",
+            "fromSource",
+            "fromResult"
+        };
+        for (String factoryName : factoryNames) {
+            T created = invokeStaticFactoryByArgType(targetClass, factoryName, delegate, delegate.getClass());
+            if (created != null) {
+                return created;
+            }
+            if (delegateSuperType != null) {
+                created = invokeStaticFactoryByArgType(targetClass, factoryName, delegate, delegateSuperType);
+                if (created != null) {
+                    return created;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static <T> T invokeStaticFactoryByArgType(Class<T> targetClass, String methodName, Object delegate,
+                                                      Class<?> argumentType) throws SQLException {
+        if (targetClass == null || methodName == null || delegate == null || argumentType == null) {
+            return null;
+        }
+        for (Method method : targetClass.getMethods()) {
+            T value = invokeFactoryMethodIfCompatible(targetClass, methodName, delegate, argumentType, method);
+            if (value != null) {
+                return value;
+            }
+        }
+        for (Method method : targetClass.getDeclaredMethods()) {
+            T value = invokeFactoryMethodIfCompatible(targetClass, methodName, delegate, argumentType, method);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static <T> T invokeFactoryMethodIfCompatible(Class<T> targetClass, String methodName, Object delegate,
+                                                          Class<?> argumentType, Method method) throws SQLException {
+        if (method == null
+            || !method.getName().equals(methodName)
+            || !java.lang.reflect.Modifier.isStatic(method.getModifiers())
+            || method.getParameterCount() != 1
+            || !targetClass.isAssignableFrom(method.getReturnType())) {
+            return null;
+        }
+        Class<?> parameterType = method.getParameterTypes()[0];
+        if (!parameterType.isAssignableFrom(argumentType)) {
+            return null;
+        }
+        try {
+            method.setAccessible(true);
+            Object value = method.invoke(null, delegate);
+            return targetClass.cast(value);
+        } catch (Exception ex) {
+            throw new SQLException("Failed to invoke delegated SQLXML factory method " + methodName
+                + " on " + targetClass.getName(), "HY000", ex);
+        }
+    }
+
+    private boolean bindDelegateSource(Object target, Source delegate) {
+        boolean bound = false;
+        bound |= invokeCompatibleSetter(target, "setSource", delegate);
+        bound |= invokeCompatibleSetter(target, "setDelegate", delegate);
+        bound |= bindCompatibleField(target, delegate);
+        if (delegate instanceof StreamSource streamSource) {
+            Reader reader = streamSource.getReader();
+            if (reader != null) {
+                bound |= invokeCompatibleSetter(target, "setReader", reader);
+            }
+            InputStream inputStream = streamSource.getInputStream();
+            if (inputStream != null) {
+                bound |= invokeCompatibleSetter(target, "setInputStream", inputStream);
+            }
+            if (streamSource.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", streamSource.getSystemId());
+            }
+        } else if (delegate instanceof DOMSource domSource) {
+            if (domSource.getNode() != null) {
+                bound |= invokeCompatibleSetter(target, "setNode", domSource.getNode());
+            }
+            if (domSource.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", domSource.getSystemId());
+            }
+        } else if (delegate instanceof SAXSource saxSource) {
+            if (saxSource.getInputSource() != null) {
+                bound |= invokeCompatibleSetter(target, "setInputSource", saxSource.getInputSource());
+            }
+            if (saxSource.getXMLReader() != null) {
+                bound |= invokeCompatibleSetter(target, "setXMLReader", saxSource.getXMLReader());
+            }
+            if (saxSource.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", saxSource.getSystemId());
+            }
+        } else if (delegate instanceof StAXSource staxSource) {
+            if (staxSource.getXMLStreamReader() != null) {
+                bound |= invokeCompatibleSetter(target, "setXMLStreamReader", staxSource.getXMLStreamReader());
+            }
+            if (staxSource.getXMLEventReader() != null) {
+                bound |= invokeCompatibleSetter(target, "setXMLEventReader", staxSource.getXMLEventReader());
+            }
+            if (staxSource.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", staxSource.getSystemId());
+            }
+        }
+        if (target instanceof Source source && delegate.getSystemId() != null) {
+            source.setSystemId(delegate.getSystemId());
+            bound = true;
+        }
+        if (delegate.getSystemId() != null) {
+            bound |= bindNamedStringField(target, "systemId", delegate.getSystemId());
+        }
+        return bound;
+    }
+
+    private boolean bindDelegateResult(Object target, Result delegate) {
+        boolean bound = false;
+        bound |= invokeCompatibleSetter(target, "setResult", delegate);
+        bound |= invokeCompatibleSetter(target, "setDelegate", delegate);
+        bound |= bindCompatibleField(target, delegate);
+        if (delegate instanceof StreamResult streamResult) {
+            if (streamResult.getWriter() != null) {
+                bound |= invokeCompatibleSetter(target, "setWriter", streamResult.getWriter());
+            }
+            if (streamResult.getOutputStream() != null) {
+                bound |= invokeCompatibleSetter(target, "setOutputStream", streamResult.getOutputStream());
+            }
+            if (streamResult.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", streamResult.getSystemId());
+            }
+        } else if (delegate instanceof DOMResult domResult) {
+            if (domResult.getNode() != null) {
+                bound |= invokeCompatibleSetter(target, "setNode", domResult.getNode());
+            }
+            if (domResult.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", domResult.getSystemId());
+            }
+        } else if (delegate instanceof SAXResult saxResult) {
+            if (saxResult.getHandler() != null) {
+                bound |= invokeCompatibleSetter(target, "setHandler", saxResult.getHandler());
+            }
+            if (saxResult.getLexicalHandler() != null) {
+                bound |= invokeCompatibleSetter(target, "setLexicalHandler", saxResult.getLexicalHandler());
+            }
+            if (saxResult.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", saxResult.getSystemId());
+            }
+        } else if (delegate instanceof StAXResult staxResult) {
+            if (staxResult.getXMLStreamWriter() != null) {
+                bound |= invokeCompatibleSetter(target, "setXMLStreamWriter", staxResult.getXMLStreamWriter());
+            }
+            if (staxResult.getXMLEventWriter() != null) {
+                bound |= invokeCompatibleSetter(target, "setXMLEventWriter", staxResult.getXMLEventWriter());
+            }
+            if (staxResult.getSystemId() != null) {
+                bound |= invokeCompatibleSetter(target, "setSystemId", staxResult.getSystemId());
+            }
+        }
+        if (target instanceof Result result && delegate.getSystemId() != null) {
+            result.setSystemId(delegate.getSystemId());
+            bound = true;
+        }
+        if (delegate.getSystemId() != null) {
+            bound |= bindNamedStringField(target, "systemId", delegate.getSystemId());
+        }
+        return bound;
+    }
+
+    private boolean bindCompatibleField(Object target, Object value) {
+        if (target == null || value == null) {
+            return false;
+        }
+        Class<?> type = target.getClass();
+        while (type != null && type != Object.class) {
+            for (Field field : type.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                if (!field.getType().isAssignableFrom(value.getClass())) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    field.set(target, value);
+                    return true;
+                } catch (Exception ignored) {
+                    // Try next candidate field.
+                }
+            }
+            type = type.getSuperclass();
+        }
+        return false;
+    }
+
+    private boolean bindNamedStringField(Object target, String fieldName, String value) {
+        if (target == null || fieldName == null || fieldName.isEmpty() || value == null) {
+            return false;
+        }
+        Class<?> type = target.getClass();
+        while (type != null && type != Object.class) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                if (!String.class.equals(field.getType())
+                    || java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                    return false;
+                }
+                field.setAccessible(true);
+                field.set(target, value);
+                return true;
+            } catch (NoSuchFieldException ex) {
+                type = type.getSuperclass();
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private boolean invokeCompatibleSetter(Object target, String methodName, Object argument) {
+        if (target == null || argument == null || methodName == null || methodName.isEmpty()) {
+            return false;
+        }
+        Class<?> type = target.getClass();
+        for (Method method : type.getMethods()) {
+            if (!method.getName().equals(methodName) || method.getParameterCount() != 1) {
+                continue;
+            }
+            Class<?> parameterType = method.getParameterTypes()[0];
+            if (!parameterType.isAssignableFrom(argument.getClass())) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                method.invoke(target, argument);
+                return true;
+            } catch (Exception ignored) {
+                // Try another compatible method.
+            }
+        }
+        for (Method method : type.getDeclaredMethods()) {
+            if (!method.getName().equals(methodName) || method.getParameterCount() != 1) {
+                continue;
+            }
+            Class<?> parameterType = method.getParameterTypes()[0];
+            if (!parameterType.isAssignableFrom(argument.getClass())) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                method.invoke(target, argument);
+                return true;
+            } catch (Exception ignored) {
+                // Try another compatible method.
+            }
+        }
+        return false;
     }
 
     private void materializeIfPending() throws SQLException {

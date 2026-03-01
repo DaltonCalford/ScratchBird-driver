@@ -17,6 +17,14 @@ import java.io.*;
 import java.math.*;
 import java.net.*;
 import java.sql.*;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -132,6 +140,36 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     @Override
     public void registerOutParameter(String parameterName, int sqlType, String typeName) throws SQLException {
         registerOutParameter(parameterName, sqlType);
+    }
+
+    @Override
+    public void registerOutParameter(int parameterIndex, SQLType sqlType) throws SQLException {
+        registerOutParameter(parameterIndex, sqlTypeCode(sqlType));
+    }
+
+    @Override
+    public void registerOutParameter(int parameterIndex, SQLType sqlType, int scale) throws SQLException {
+        registerOutParameter(parameterIndex, sqlTypeCode(sqlType), scale);
+    }
+
+    @Override
+    public void registerOutParameter(int parameterIndex, SQLType sqlType, String typeName) throws SQLException {
+        registerOutParameter(parameterIndex, sqlTypeCode(sqlType), typeName);
+    }
+
+    @Override
+    public void registerOutParameter(String parameterName, SQLType sqlType) throws SQLException {
+        registerOutParameter(parameterName, sqlTypeCode(sqlType));
+    }
+
+    @Override
+    public void registerOutParameter(String parameterName, SQLType sqlType, int scale) throws SQLException {
+        registerOutParameter(parameterName, sqlTypeCode(sqlType), scale);
+    }
+
+    @Override
+    public void registerOutParameter(String parameterName, SQLType sqlType, String typeName) throws SQLException {
+        registerOutParameter(parameterName, sqlTypeCode(sqlType), typeName);
     }
 
     @Override
@@ -600,8 +638,27 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
     }
 
     @Override
+    public void setObject(String parameterName, Object x, SQLType targetSqlType, int scaleOrLength)
+            throws SQLException {
+        if (targetSqlType == null) {
+            setObject(parameterName, x);
+            return;
+        }
+        setObject(parameterName, x, sqlTypeCode(targetSqlType), scaleOrLength);
+    }
+
+    @Override
     public void setObject(String parameterName, Object x, int targetSqlType) throws SQLException {
         setObject(getParameterIndex(parameterName), x, targetSqlType);
+    }
+
+    @Override
+    public void setObject(String parameterName, Object x, SQLType targetSqlType) throws SQLException {
+        if (targetSqlType == null) {
+            setObject(parameterName, x);
+            return;
+        }
+        setObject(parameterName, x, sqlTypeCode(targetSqlType));
     }
 
     @Override
@@ -856,8 +913,58 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
             return type.cast(getTime(parameterIndex));
         } else if (type == Timestamp.class) {
             return type.cast(getTimestamp(parameterIndex));
+        } else if (type == LocalDate.class) {
+            java.sql.Date date = getDate(parameterIndex);
+            return date == null ? null : type.cast(date.toLocalDate());
+        } else if (type == LocalTime.class) {
+            Time time = getTime(parameterIndex);
+            return time == null ? null : type.cast(time.toLocalTime());
+        } else if (type == OffsetTime.class) {
+            if (value instanceof OffsetTime offsetTime) {
+                return type.cast(offsetTime);
+            }
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime.toOffsetTime());
+            }
+            if (value instanceof LocalTime localTime) {
+                return type.cast(OffsetTime.of(localTime, ZoneOffset.UTC));
+            }
+            if (value instanceof Time timeValue) {
+                return type.cast(OffsetTime.of(timeValue.toLocalTime(), ZoneOffset.UTC));
+            }
+            return type.cast(parseOffsetTimeLiteral(value.toString()));
+        } else if (type == LocalDateTime.class) {
+            Timestamp ts = getTimestamp(parameterIndex);
+            return ts == null ? null : type.cast(ts.toLocalDateTime());
+        } else if (type == ZonedDateTime.class) {
+            if (value instanceof ZonedDateTime zonedDateTime) {
+                return type.cast(zonedDateTime);
+            }
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime.toZonedDateTime());
+            }
+            if (value instanceof Instant instant) {
+                return type.cast(instant.atZone(ZoneOffset.UTC));
+            }
+            Timestamp ts = getTimestamp(parameterIndex);
+            return ts == null ? null : type.cast(ts.toInstant().atZone(ZoneOffset.UTC));
+        } else if (type == OffsetDateTime.class) {
+            if (value instanceof OffsetDateTime offsetDateTime) {
+                return type.cast(offsetDateTime);
+            }
+            if (value instanceof ZonedDateTime zonedDateTime) {
+                return type.cast(zonedDateTime.toOffsetDateTime());
+            }
+            Timestamp ts = getTimestamp(parameterIndex);
+            return ts == null ? null : type.cast(ts.toInstant().atOffset(ZoneOffset.UTC));
+        } else if (type == Instant.class) {
+            Timestamp ts = getTimestamp(parameterIndex);
+            return ts == null ? null : type.cast(ts.toInstant());
         } else if (type == byte[].class) {
             return type.cast(getBytes(parameterIndex));
+        } else if (type == UUID.class) {
+            String s = getString(parameterIndex);
+            return s == null ? null : type.cast(UUID.fromString(s));
         } else if (type == Array.class) {
             return type.cast(getArray(parameterIndex));
         } else if (type == Struct.class) {
@@ -888,6 +995,8 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
             return type.cast(getBlob(parameterIndex));
         } else if (type == Clob.class) {
             return type.cast(getClob(parameterIndex));
+        } else if (type == NClob.class) {
+            return type.cast(getNClob(parameterIndex));
         } else if (type == RowId.class) {
             Object raw = readOutParameter(parameterIndex);
             return raw == null ? null : type.cast(SBRowId.fromObject(raw));
@@ -938,9 +1047,39 @@ public class SBCallableStatement extends SBPreparedStatement implements Callable
             if (element instanceof java.sql.Date) return "date";
             if (element instanceof java.sql.Time) return "time";
             if (element instanceof java.sql.Timestamp) return "timestamp";
+            if (element instanceof OffsetTime) return "timetz";
+            if (element instanceof OffsetDateTime || element instanceof ZonedDateTime || element instanceof Instant) {
+                return "timestamptz";
+            }
             return "text";
         }
         return "text";
+    }
+
+    private static OffsetTime parseOffsetTimeLiteral(String value) throws SQLException {
+        if (value == null) {
+            throw new SQLException("TIME WITH TIME ZONE literal cannot be null", "22007");
+        }
+        String normalized = value.trim();
+        if (normalized.matches(".*[+-]\\d{2}$")) {
+            normalized = normalized + ":00";
+        }
+        try {
+            return OffsetTime.parse(normalized);
+        } catch (RuntimeException ex) {
+            throw new SQLException("Invalid TIME WITH TIME ZONE literal: " + value, "22007", ex);
+        }
+    }
+
+    private static int sqlTypeCode(SQLType sqlType) throws SQLException {
+        if (sqlType == null) {
+            throw new SQLException("SQLType cannot be null", "HY004");
+        }
+        Integer vendorType = sqlType.getVendorTypeNumber();
+        if (vendorType == null) {
+            throw new SQLException("SQLType vendor type is not available: " + sqlType, "HY004");
+        }
+        return vendorType;
     }
 
     private static Object[] parseArrayLiteral(String raw) throws SQLException {

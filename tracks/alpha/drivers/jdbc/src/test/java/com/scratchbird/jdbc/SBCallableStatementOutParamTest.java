@@ -10,23 +10,37 @@
 package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
 import java.sql.Array;
+import java.sql.JDBCType;
 import java.sql.ResultSet;
 import java.sql.SQLData;
 import java.sql.SQLInput;
 import java.sql.SQLOutput;
+import java.sql.SQLType;
+import java.sql.SQLException;
 import java.sql.Struct;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import sun.misc.Unsafe;
 
 import org.junit.jupiter.api.Test;
@@ -213,6 +227,79 @@ public class SBCallableStatementOutParamTest {
         assertEquals(91, sample.code);
     }
 
+    @Test
+    public void sqlTypeRegisterOutParameterOverloadsHydrateValues() throws Exception {
+        OutParamProtocol protocol = new OutParamProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection, "CALL demo(?, ?)",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        statement.registerOutParameter(1, JDBCType.INTEGER);
+        statement.registerOutParameter("param2", JDBCType.VARCHAR);
+
+        assertTrue(statement.execute());
+        assertEquals(7, statement.getInt(1));
+        assertEquals("done", statement.getString("param2"));
+    }
+
+    @Test
+    public void sqlTypeNamedSetObjectOverloadsBindUsingVendorTypeCode() throws Exception {
+        OutParamProtocol protocol = new OutParamProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection, "CALL demo(?)",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        statement.setObject("1", "42", JDBCType.INTEGER);
+        statement.execute();
+
+        assertEquals(1, protocol.lastParamTypes.size());
+        assertEquals(Types.INTEGER, protocol.lastParamTypes.get(0).intValue());
+        assertEquals(42, protocol.lastParams.get(0));
+    }
+
+    @Test
+    public void sqlTypeOverloadsRejectNullSqlType() throws Exception {
+        OutParamProtocol protocol = new OutParamProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection, "CALL demo(?)",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+
+        assertThrows(SQLException.class, () -> statement.registerOutParameter(1, (SQLType) null));
+        assertThrows(SQLException.class, () -> statement.registerOutParameter("1", (SQLType) null));
+        assertDoesNotThrow(() -> statement.setObject("1", 7, (SQLType) null));
+    }
+
+    @Test
+    public void typedGetObjectSupportsJavaTimeUuidAndNclobMappings() throws Exception {
+        ConfigurableOutParamProtocol protocol = new ConfigurableOutParamProtocol(
+            new String[] {"d", "t", "ts", "uuid", "nclob", "timetz"},
+            new Object[] {"2026-03-01", "12:34:56", "2026-03-01 12:34:56",
+                "550e8400-e29b-41d4-a716-446655440000", "unicode-text", "01:02:03+02:00"}
+        );
+        SBConnection connection = newConnectionForTest(protocol);
+        SBCallableStatement statement = new SBCallableStatement(connection, "CALL demo(?, ?, ?, ?, ?, ?)",
+            ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        statement.registerOutParameter(1, Types.DATE);
+        statement.registerOutParameter(2, Types.TIME);
+        statement.registerOutParameter(3, Types.TIMESTAMP);
+        statement.registerOutParameter(4, Types.VARCHAR);
+        statement.registerOutParameter(5, Types.NCLOB);
+        statement.registerOutParameter(6, Types.TIME_WITH_TIMEZONE);
+
+        assertTrue(statement.execute());
+        assertEquals(LocalDate.of(2026, 3, 1), statement.getObject(1, LocalDate.class));
+        assertEquals(LocalTime.of(12, 34, 56), statement.getObject(2, LocalTime.class));
+        assertEquals(LocalDateTime.of(2026, 3, 1, 12, 34, 56), statement.getObject(3, LocalDateTime.class));
+        assertNotNull(statement.getObject(3, OffsetDateTime.class));
+        assertNotNull(statement.getObject(3, Instant.class));
+        assertEquals(UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+            statement.getObject(4, UUID.class));
+        assertEquals("unicode-text", statement.getObject(5, java.sql.NClob.class).getSubString(1, 12));
+        assertEquals(OffsetTime.parse("01:02:03+02:00"), statement.getObject(6, OffsetTime.class));
+        ZonedDateTime zoned = statement.getObject(3, ZonedDateTime.class);
+        assertNotNull(zoned);
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
@@ -239,6 +326,9 @@ public class SBCallableStatementOutParamTest {
     }
 
     private static final class OutParamProtocol extends SBProtocolHandler {
+        private List<Object> lastParams = Collections.emptyList();
+        private List<Integer> lastParamTypes = Collections.emptyList();
+
         OutParamProtocol() {
             super(new SBConnectionProperties());
         }
@@ -246,6 +336,8 @@ public class SBCallableStatementOutParamTest {
         @Override
         public SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
                                      int maxRows, int timeoutMs) {
+            lastParams = params == null ? Collections.emptyList() : new ArrayList<>(params);
+            lastParamTypes = paramTypes == null ? Collections.emptyList() : new ArrayList<>(paramTypes);
             SBQueryResult result = new SBQueryResult();
             List<SBColumnInfo> columns = new ArrayList<>();
             SBColumnInfo first = new SBColumnInfo();

@@ -104,8 +104,11 @@ public final class SBTypeCodec {
     public static final int OID_TEXT_ARRAY = 1009;
     public static final int OID_VARCHAR_ARRAY = 1015;
     public static final int OID_DATE_ARRAY = 1182;
+    public static final int OID_TIME_ARRAY = 1183;
     public static final int OID_TIMESTAMP_ARRAY = 1115;
     public static final int OID_TIMESTAMPTZ_ARRAY = 1185;
+    public static final int OID_TIMETZ_ARRAY = 1270;
+    public static final int OID_NUMERIC_ARRAY = 1231;
     public static final int OID_UUID_ARRAY = 2951;
 
     private static final int RANGE_EMPTY = 0x01;
@@ -285,8 +288,8 @@ public final class SBTypeCodec {
                 encodeTimestamp(((ZonedDateTime) value).toInstant()), false);
         }
         if (value instanceof OffsetTime) {
-            long micros = ((OffsetTime) value).toLocalTime().toNanoOfDay() / 1000;
-            return new ParamEncoding(FORMAT_BINARY, OID_TIMETZ, toBytesLE(micros), false);
+            return new ParamEncoding(FORMAT_BINARY, OID_TIMETZ,
+                encodeTimeWithTimezone((OffsetTime) value), false);
         }
         if (value instanceof Instant) {
             return new ParamEncoding(FORMAT_BINARY, OID_TIMESTAMPTZ, encodeTimestamp((Instant) value), false);
@@ -416,6 +419,8 @@ public final class SBTypeCodec {
                 return java.sql.Date.valueOf(decodeDate(data));
             case OID_TIME:
                 return java.sql.Time.valueOf(decodeTime(data));
+            case OID_TIMETZ:
+                return decodeTimeWithTimezone(data);
             case OID_TIMESTAMP:
                 return Timestamp.from(decodeTimestamp(data));
             case OID_TIMESTAMPTZ:
@@ -557,8 +562,11 @@ public final class SBTypeCodec {
             case OID_TIME:
                 return java.sql.Time.valueOf(text);
             case OID_TIMESTAMP:
-            case OID_TIMESTAMPTZ:
                 return java.sql.Timestamp.valueOf(text.replace('T', ' '));
+            case OID_TIMESTAMPTZ:
+                return parseOffsetDateTimeText(text);
+            case OID_TIMETZ:
+                return parseOffsetTimeText(text);
             case OID_UUID:
                 return UUID.fromString(text);
             default:
@@ -568,9 +576,10 @@ public final class SBTypeCodec {
 
     private static ParamEncoding encodeArray(Object[] values) {
         Object[] safe = values != null ? values : new Object[0];
+        int arrayOid = inferArrayOid(safe);
         String literal = formatArrayLiteral(safe);
         byte[] raw = literal.getBytes(StandardCharsets.UTF_8);
-        return new ParamEncoding(FORMAT_BINARY, 0, encodeLengthPrefixed(raw), false);
+        return new ParamEncoding(FORMAT_BINARY, arrayOid, encodeLengthPrefixed(raw), false);
     }
 
     private static Object decodeArray(int oid, byte[] data) {
@@ -593,8 +602,11 @@ public final class SBTypeCodec {
             case OID_TEXT_ARRAY: return "text";
             case OID_VARCHAR_ARRAY: return "varchar";
             case OID_DATE_ARRAY: return "date";
+            case OID_TIME_ARRAY: return "time";
+            case OID_TIMETZ_ARRAY: return "timetz";
             case OID_TIMESTAMP_ARRAY: return "timestamp";
             case OID_TIMESTAMPTZ_ARRAY: return "timestamptz";
+            case OID_NUMERIC_ARRAY: return "numeric";
             case OID_UUID_ARRAY: return "uuid";
             default: return "text";
         }
@@ -604,7 +616,8 @@ public final class SBTypeCodec {
         return oid == OID_BOOL_ARRAY || oid == OID_BYTEA_ARRAY || oid == OID_INT2_ARRAY ||
             oid == OID_INT4_ARRAY || oid == OID_INT8_ARRAY || oid == OID_FLOAT4_ARRAY ||
             oid == OID_FLOAT8_ARRAY || oid == OID_TEXT_ARRAY || oid == OID_VARCHAR_ARRAY ||
-            oid == OID_DATE_ARRAY || oid == OID_TIMESTAMP_ARRAY || oid == OID_TIMESTAMPTZ_ARRAY ||
+            oid == OID_DATE_ARRAY || oid == OID_TIME_ARRAY || oid == OID_TIMETZ_ARRAY ||
+            oid == OID_TIMESTAMP_ARRAY || oid == OID_TIMESTAMPTZ_ARRAY || oid == OID_NUMERIC_ARRAY ||
             oid == OID_UUID_ARRAY;
     }
 
@@ -616,6 +629,16 @@ public final class SBTypeCodec {
     private static byte[] encodeTime(LocalTime value) {
         long micros = value.toNanoOfDay() / 1000;
         return toBytesLE(micros);
+    }
+
+    private static byte[] encodeTimeWithTimezone(OffsetTime value) {
+        ByteBuffer buf = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+        long micros = value.toLocalTime().toNanoOfDay() / 1000;
+        // PostgreSQL stores timetz zone as seconds west of UTC.
+        int zoneSecondsWest = -value.getOffset().getTotalSeconds();
+        buf.putLong(micros);
+        buf.putInt(zoneSecondsWest);
+        return buf.array();
     }
 
     private static byte[] encodeTimestamp(Instant instant) {
@@ -664,6 +687,31 @@ public final class SBTypeCodec {
         long micros = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).getLong();
         long nanos = micros * 1000;
         return LocalTime.ofNanoOfDay(nanos);
+    }
+
+    private static OffsetTime decodeTimeWithTimezone(byte[] data) throws SQLException {
+        if (data == null || data.length < 8) {
+            throw new SQLException("Invalid timetz binary payload", "22023");
+        }
+
+        ByteBuffer buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+        long micros = buf.getLong();
+        long dayMicros = 24L * 60L * 60L * 1_000_000L;
+        micros = Math.floorMod(micros, dayMicros);
+        LocalTime localTime = LocalTime.ofNanoOfDay(micros * 1000L);
+
+        // Backward compatibility with older 8-byte timetz payloads (time only).
+        if (buf.remaining() < 4) {
+            return OffsetTime.of(localTime, ZoneOffset.UTC);
+        }
+
+        int zoneSecondsWest = buf.getInt();
+        try {
+            ZoneOffset offset = ZoneOffset.ofTotalSeconds(-zoneSecondsWest);
+            return OffsetTime.of(localTime, offset);
+        } catch (RuntimeException ex) {
+            throw new SQLException("Invalid timetz zone displacement", "22023", ex);
+        }
     }
 
     private static Instant decodeTimestamp(byte[] data) {
@@ -1116,14 +1164,190 @@ public final class SBTypeCodec {
             case "time":
                 return java.sql.Time.valueOf(text);
             case "timestamp":
-            case "timestamptz":
                 return java.sql.Timestamp.valueOf(text.replace('T', ' '));
+            case "timestamptz":
+                return parseOffsetDateTimeText(text);
+            case "timetz":
+                return parseOffsetTimeText(text);
             case "uuid":
                 return UUID.fromString(text);
             default:
                 break;
         }
         return text;
+    }
+
+    private static OffsetDateTime parseOffsetDateTimeText(String text) {
+        String normalized = normalizeTemporalText(text);
+        try {
+            return OffsetDateTime.parse(normalized);
+        } catch (RuntimeException ignored) {
+            try {
+                return Instant.parse(normalized).atOffset(ZoneOffset.UTC);
+            } catch (RuntimeException ignored2) {
+                return LocalDateTime.parse(normalized).atOffset(ZoneOffset.UTC);
+            }
+        }
+    }
+
+    private static OffsetTime parseOffsetTimeText(String text) {
+        String normalized = normalizeTemporalText(text);
+        return OffsetTime.parse(normalized);
+    }
+
+    private static String normalizeTemporalText(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.contains(" ") && !normalized.contains("T")) {
+            normalized = normalized.replace(' ', 'T');
+        }
+        if (normalized.matches(".*[+-]\\d{2}$")) {
+            normalized = normalized + ":00";
+        }
+        return normalized;
+    }
+
+    private static int inferArrayOid(Object[] values) {
+        if (values == null || values.length == 0) {
+            return OID_TEXT_ARRAY;
+        }
+
+        int scalarOid = 0;
+        for (Object value : values) {
+            int candidate = inferScalarOid(value);
+            if (candidate == 0) {
+                continue;
+            }
+            if (scalarOid == 0) {
+                scalarOid = candidate;
+                continue;
+            }
+            if (scalarOid == candidate) {
+                continue;
+            }
+            if (isNumericScalarOid(scalarOid) && isNumericScalarOid(candidate)) {
+                scalarOid = widenNumericScalarOid(scalarOid, candidate);
+                continue;
+            }
+            return OID_TEXT_ARRAY;
+        }
+
+        if (scalarOid == 0) {
+            return OID_TEXT_ARRAY;
+        }
+        int mapped = scalarToArrayOid(scalarOid);
+        return mapped == 0 ? OID_TEXT_ARRAY : mapped;
+    }
+
+    private static int inferScalarOid(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof Collection<?>) {
+            return inferArrayOid(((Collection<?>) value).toArray());
+        }
+        if (value instanceof Object[]) {
+            return inferArrayOid((Object[]) value);
+        }
+        if (value instanceof Boolean) {
+            return OID_BOOL;
+        }
+        if (value instanceof Byte || value instanceof Short) {
+            return OID_INT2;
+        }
+        if (value instanceof Integer) {
+            return OID_INT4;
+        }
+        if (value instanceof Long) {
+            return OID_INT8;
+        }
+        if (value instanceof Float) {
+            return OID_FLOAT4;
+        }
+        if (value instanceof Double) {
+            return OID_FLOAT8;
+        }
+        if (value instanceof BigDecimal) {
+            return OID_NUMERIC;
+        }
+        if (value instanceof byte[]) {
+            return OID_BYTEA;
+        }
+        if (value instanceof UUID) {
+            return OID_UUID;
+        }
+        if (value instanceof java.sql.Date || value instanceof LocalDate) {
+            return OID_DATE;
+        }
+        if (value instanceof Time || value instanceof LocalTime) {
+            return OID_TIME;
+        }
+        if (value instanceof OffsetTime) {
+            return OID_TIMETZ;
+        }
+        if (value instanceof Timestamp || value instanceof LocalDateTime) {
+            return OID_TIMESTAMP;
+        }
+        if (value instanceof OffsetDateTime || value instanceof ZonedDateTime || value instanceof Instant) {
+            return OID_TIMESTAMPTZ;
+        }
+        if (value instanceof java.util.Date) {
+            return OID_TIMESTAMPTZ;
+        }
+        if (value instanceof String || value instanceof CharSequence || value instanceof Enum<?>) {
+            return OID_TEXT;
+        }
+        if (value instanceof RowId) {
+            return OID_BYTEA;
+        }
+        if (value instanceof Ref) {
+            return OID_TEXT;
+        }
+        return 0;
+    }
+
+    private static int scalarToArrayOid(int scalarOid) {
+        return switch (scalarOid) {
+            case OID_BOOL -> OID_BOOL_ARRAY;
+            case OID_BYTEA -> OID_BYTEA_ARRAY;
+            case OID_INT2 -> OID_INT2_ARRAY;
+            case OID_INT4 -> OID_INT4_ARRAY;
+            case OID_INT8 -> OID_INT8_ARRAY;
+            case OID_FLOAT4 -> OID_FLOAT4_ARRAY;
+            case OID_FLOAT8 -> OID_FLOAT8_ARRAY;
+            case OID_TEXT, OID_VARCHAR, OID_BPCHAR -> OID_TEXT_ARRAY;
+            case OID_DATE -> OID_DATE_ARRAY;
+            case OID_TIME -> OID_TIME_ARRAY;
+            case OID_TIMETZ -> OID_TIMETZ_ARRAY;
+            case OID_TIMESTAMP -> OID_TIMESTAMP_ARRAY;
+            case OID_TIMESTAMPTZ -> OID_TIMESTAMPTZ_ARRAY;
+            case OID_NUMERIC -> OID_NUMERIC_ARRAY;
+            case OID_UUID -> OID_UUID_ARRAY;
+            default -> 0;
+        };
+    }
+
+    private static boolean isNumericScalarOid(int oid) {
+        return oid == OID_INT2 || oid == OID_INT4 || oid == OID_INT8
+            || oid == OID_FLOAT4 || oid == OID_FLOAT8 || oid == OID_NUMERIC;
+    }
+
+    private static int widenNumericScalarOid(int left, int right) {
+        if (left == OID_NUMERIC || right == OID_NUMERIC) {
+            return OID_NUMERIC;
+        }
+        if (left == OID_FLOAT8 || right == OID_FLOAT8) {
+            return OID_FLOAT8;
+        }
+        if (left == OID_FLOAT4 || right == OID_FLOAT4) {
+            return OID_FLOAT8;
+        }
+        if (left == OID_INT8 || right == OID_INT8) {
+            return OID_INT8;
+        }
+        if (left == OID_INT4 || right == OID_INT4) {
+            return OID_INT4;
+        }
+        return OID_INT2;
     }
 
     private static Object[] boxArray(int[] values) {
@@ -1340,6 +1564,8 @@ public final class SBTypeCodec {
                 return OID_DATE;
             case java.sql.Types.TIME:
                 return OID_TIME;
+            case java.sql.Types.TIME_WITH_TIMEZONE:
+                return OID_TIMETZ;
             case java.sql.Types.TIMESTAMP:
                 return OID_TIMESTAMP;
             case java.sql.Types.TIMESTAMP_WITH_TIMEZONE:
