@@ -1179,7 +1179,41 @@ internal sealed class ProtocolClient
         {
             message += $"\nHINT: {parsed.Hint}";
         }
-        return ScratchBirdSqlStateMapper.Create(message, parsed.SqlState, parsed.Detail, parsed.Hint);
+
+        var exception = ScratchBirdSqlStateMapper.Create(message, parsed.SqlState, parsed.Detail, parsed.Hint);
+        if (ShouldInvalidateAfterServerError(parsed.SqlState, parsed.Message, parsed.Detail, parsed.Hint))
+        {
+            try
+            {
+                Close();
+            }
+            catch
+            {
+                // best effort close for fatal server-side transport/protocol faults
+            }
+        }
+
+        return exception;
+    }
+
+    private static bool ShouldInvalidateAfterServerError(string sqlState, string message, string detail, string hint)
+    {
+        if (!string.IsNullOrWhiteSpace(sqlState))
+        {
+            if (sqlState.StartsWith("08", StringComparison.Ordinal)
+                || sqlState is "57P01" or "57P02" or "57P03" or "57P05")
+            {
+                return true;
+            }
+        }
+
+        var combined = $"{message} {detail} {hint}".ToLowerInvariant();
+        return combined.Contains("failed to send query", StringComparison.Ordinal)
+            || combined.Contains("connection lost", StringComparison.Ordinal)
+            || combined.Contains("connection reset", StringComparison.Ordinal)
+            || combined.Contains("broken pipe", StringComparison.Ordinal)
+            || combined.Contains("protocol sync", StringComparison.Ordinal)
+            || combined.Contains("socket", StringComparison.Ordinal);
     }
 
     private Stream UpgradeToTls(Stream stream, ScratchBirdConfig config, string sslMode)

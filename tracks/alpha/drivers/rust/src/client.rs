@@ -339,7 +339,7 @@ impl Client {
         let span = self.begin_operation("query_stream").await?;
         let telemetry = Arc::clone(&self.telemetry);
         let circuit_breaker = Arc::clone(&self.circuit_breaker);
-        let page_size = self.config.fetch_size;
+        let page_size = self.config.fetch_size.max(1);
         self.send_simple_query(sql, page_size, 0).await?;
         Ok(QueryStream {
             client: self,
@@ -361,7 +361,7 @@ impl Client {
         let telemetry = Arc::clone(&self.telemetry);
         let circuit_breaker = Arc::clone(&self.circuit_breaker);
         let normalized = normalize(sql, params)?;
-        let page_size = self.config.fetch_size;
+        let page_size = self.config.fetch_size.max(1);
         if normalized.params.is_empty() {
             self.send_simple_query(&normalized.sql, page_size, 0).await?;
         } else {
@@ -1135,6 +1135,11 @@ impl Client {
                     command_tag = tag;
                     row_count = rows_affected as i64;
                 }
+                protocol::MSG_PORTAL_SUSPENDED => {
+                    let rows_to_fetch = self.config.fetch_size.max(1);
+                    let payload = protocol::build_execute_payload("", rows_to_fetch);
+                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false).await?;
+                }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
                     self.apply_txn_state(txn_id);
@@ -1299,7 +1304,7 @@ impl Client {
 
         let sslmode = self.config.sslmode.to_ascii_lowercase();
         if sslmode == "disable" {
-            return Err(Error::new(ErrorKind::Connection, "TLS is required"));
+            return Ok(Box::new(stream));
         }
         let tls = self.connect_tls(stream).await?;
         Ok(Box::new(tls))
