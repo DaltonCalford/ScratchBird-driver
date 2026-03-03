@@ -43,6 +43,9 @@ type
     FSQL: TStringList;
     FParams: TScratchBirdParams;
     FResult: TScratchBirdQueryResult;
+    FPreparedSql: string;
+    FPreparedParams: TArray<TScratchBirdParamInput>;
+    FPrepared: Boolean;
     function BuildSql(out Ordered: TArray<TScratchBirdParamInput>): string;
   public
     constructor Create(AOwner: TComponent); override;
@@ -115,6 +118,7 @@ begin
   inherited Create(AOwner);
   FSQL := TStringList.Create;
   FParams := TScratchBirdParams.Create;
+  FPrepared := False;
 end;
 
 destructor TScratchBirdFDQuery.Destroy;
@@ -125,7 +129,14 @@ begin
 end;
 
 procedure TScratchBirdFDQuery.Prepare;
+var
+  Ordered: TArray<TScratchBirdParamInput>;
 begin
+  if FConnection = nil then
+    raise Exception.Create('Connection not assigned');
+  FPreparedSql := BuildSql(Ordered);
+  FPreparedParams := Ordered;
+  FPrepared := True;
 end;
 
 procedure TScratchBirdFDQuery.Open;
@@ -135,7 +146,13 @@ var
 begin
   if FConnection = nil then
     raise Exception.Create('Connection not assigned');
-  SqlText := BuildSql(Ordered);
+  if FPrepared then
+  begin
+    SqlText := FPreparedSql;
+    Ordered := Copy(FPreparedParams);
+  end
+  else
+    SqlText := BuildSql(Ordered);
   FResult := TScratchBirdQueryResult.Create(FConnection.Client.ExecuteQueryParams(SqlText, Ordered));
   FResult.Next;
 end;
@@ -147,7 +164,13 @@ var
 begin
   if FConnection = nil then
     raise Exception.Create('Connection not assigned');
-  SqlText := BuildSql(Ordered);
+  if FPrepared then
+  begin
+    SqlText := FPreparedSql;
+    Ordered := Copy(FPreparedParams);
+  end
+  else
+    SqlText := BuildSql(Ordered);
   FConnection.Client.ExecSQLParams(SqlText, Ordered);
 end;
 

@@ -99,6 +99,46 @@ public class TransactionExecutionParityTests
         Assert.Throws<ArgumentOutOfRangeException>(() => command.CommandTimeout = -1);
     }
 
+    [Fact]
+    public void CommandType_AllowsStoredProcedureAndRejectsTableDirect()
+    {
+        using var command = new ScratchBirdCommand();
+        command.CommandType = CommandType.StoredProcedure;
+        Assert.Equal(CommandType.StoredProcedure, command.CommandType);
+        Assert.Throws<NotSupportedException>(() => command.CommandType = CommandType.TableDirect);
+    }
+
+    [Fact]
+    public void Prepare_ForStoredProcedureBuildsCallableSql()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = "sys.echo_value";
+        command.Parameters.Add(new ScratchBirdParameter("v1", 42));
+        command.Parameters.Add(new ScratchBirdParameter("v2", "ok"));
+
+        command.Prepare();
+
+        var prepared = (object?)GetPrivateField(command, "_preparedQuery");
+        Assert.NotNull(prepared);
+        var sql = (string?)prepared!.GetType().GetProperty("Sql")?.GetValue(prepared);
+        Assert.Equal("CALL \"sys\".\"echo_value\"($1, $2)", sql);
+    }
+
+    [Theory]
+    [InlineData(IsolationLevel.Snapshot)]
+    [InlineData(IsolationLevel.Chaos)]
+    public void IsolationLevelSnapshotAndChaosMapToSerializable(IsolationLevel input)
+    {
+        var method = typeof(ProtocolClient).GetMethod(
+            "MapIsolationLevel",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        var mapped = (byte)method!.Invoke(null, new object[] { input })!;
+        Assert.Equal(ProtocolConstants.IsolationSerializable, mapped);
+    }
+
     private static ScratchBirdConnection CreateOpenConnection()
     {
         var connection = new ScratchBirdConnection("Host=localhost;Port=13092;Database=main;Username=sb_admin;Password=SbAdmin_Compat1!;Pooling=false");
@@ -111,5 +151,12 @@ public class TransactionExecutionParityTests
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(field);
         field!.SetValue(target, value);
+    }
+
+    private static object? GetPrivateField(object target, string fieldName)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return field!.GetValue(target);
     }
 }

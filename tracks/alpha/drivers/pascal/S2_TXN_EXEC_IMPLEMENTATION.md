@@ -19,6 +19,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added/updated lane tests:
   - New `tests/TxnExecParityTests.pas` for TXN guardrails and EXEC validation/normalization checks.
   - Updated `tests/SqlTests.pas` to current normalization APIs and added cast-syntax normalization coverage.
+- Implemented adapter `Prepare` behavior in:
+  - `src/ScratchBird.FireDAC.pas`
+  - `src/ScratchBird.IBX.pas`
+  - `src/ScratchBird.SQLdb.pas`
+  - `src/ScratchBird.Zeos.pas`
+  so `Prepare` now normalizes/caches SQL and parameter ordering for reuse by `Open`/`ExecSQL`.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -48,8 +54,8 @@ Rationale:
 - Recommendation: `PARTIAL`
 
 Rationale:
-- Deterministic lane-local execution parity improved with blank SQL validation and cast-safe named-parameter normalization, with targeted unit coverage in `TxnExecParityTests` and `SqlTests`.
-- Remaining gaps prevent `MET`: adapter `Prepare` methods are still placeholders, and there is no first-class lane API/test coverage for batch execution, multi-result traversal, or generated-key retrieval.
+- Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, and adapter `Prepare` normalization/cache behavior.
+- Remaining gaps prevent `MET`: no first-class lane API/test coverage yet for batch execution, multi-result traversal, or generated-key retrieval.
 
 ## Remaining Concrete Gaps
 
@@ -57,6 +63,5 @@ Rationale:
   - Add live integration tests for full transaction lifecycle against a running ScratchBird endpoint.
   - Surface advanced transaction option parity at adapter APIs (currently client-level only).
 - EXEC:
-  - Implement adapter `Prepare` methods.
   - Add stream-control/backpressure tests on execution flows.
   - Add explicit batch/multi-result/generated-key API coverage.

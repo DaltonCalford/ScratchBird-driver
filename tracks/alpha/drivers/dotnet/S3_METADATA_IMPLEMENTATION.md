@@ -14,28 +14,30 @@ Scope: `tracks/alpha/drivers/dotnet` lane only.
 - Updated `ScratchBirdConnection.GetSchema` metadata pipeline to:
   - normalize collection keys once;
   - shape metadata rows through a shared helper path;
-  - apply restriction filtering for `Tables`, `Columns`, and `Schemas`;
+  - apply restriction filtering for `Tables`, `Columns`, `Schemas`, and `Catalogs`;
+  - expose additional metadata families (`Catalogs`, `PrimaryKeys`, `ForeignKeys`, `TablePrivileges`, `ColumnPrivileges`, `TypeInfo`);
   - optionally expand dotted schema parents for metadata-only recursive tree navigation when `MetadataExpandSchemaParents=true`.
 - Added focused metadata shaping tests covering:
   - parent expansion ancestry/uniqueness behavior;
   - expansion + schema-pattern filtering behavior;
-  - table/column restriction filtering behavior.
+  - table/column restriction filtering behavior;
+  - catalog restriction filtering and metadata collection alias normalization.
 - Added config parser tests verifying metadata parent-expansion aliases.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` `META` row evidence/notes to reflect current behavior.
 
 ## Tests Run
 
-- `dotnet test tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~ScratchBirdConnectionMetadataShapingTests"`: **PASS** (4 passed, 0 failed, 0 skipped)
+- `dotnet test --filter "FullyQualifiedName~ScratchBirdConnectionMetadataShapingTests"`: **PASS** (8 passed, 0 failed, 0 skipped)
 - `dotnet test tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~ScratchBirdConnectionSchemaStatementTests"`: **PASS** (3 passed, 0 failed, 0 skipped)
 - `dotnet test tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~ConfigTests.ParseMetadataExpandSchemaParentsAliases"`: **PASS** (1 passed, 0 failed, 0 skipped)
 
 ## META Status Recommendation
 
 - Recommendation: **PARTIAL**
-- Reason: core metadata shaping improved for recursive schema navigation and restrictions (`Tables`/`Columns`/`Schemas`), but lane metadata coverage is still incomplete versus full JDBC baseline families.
+- Reason: metadata shaping and family routing are expanded (catalog/key/privilege/type families now available), but deeper restriction-mapping parity and live-metadata integration coverage are still incomplete.
 
 ## Remaining Gaps
 
-- Restriction-value handling is currently implemented for `Tables`, `Columns`, and `Schemas` only; other supported collections still use unfiltered row sets.
-- Broader metadata families required by JDBC-level parity (for example privilege/key/type-oriented surfaces and fuller DDL-editor fields across all collections) are not fully covered in this lane yet.
+- Restriction-value handling is still partial across the expanded families (only key collections have explicit mapping rules).
+- Metadata field richness for DDL/editor parity is still incomplete in some collections.
 - Parent-expanded schema rows are synthetic metadata rows (name-focused) and do not provide physical schema IDs for synthetic ancestors.

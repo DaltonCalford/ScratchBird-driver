@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
 use crate::errors::{error_from_sqlstate, Error, ErrorKind, Result};
 use crate::keepalive::{KeepaliveConfig, KeepaliveTracker};
+use crate::metadata::{normalize_metadata_collection_name, resolve_metadata_collection_query};
 use crate::protocol;
 use crate::protocol::MessageHeader;
 use crate::scram::ScramExchange;
@@ -90,6 +91,7 @@ pub struct Client {
     keepalive_tracker: Arc<KeepaliveTracker>,
 }
 
+#[derive(Debug, Clone)]
 pub struct QueryResult {
     pub columns: Vec<Column>,
     pub rows: Vec<Vec<Value>>,
@@ -378,6 +380,31 @@ impl Client {
             circuit_breaker,
             span,
             finalized: false,
+        })
+    }
+
+    pub async fn query_metadata(&mut self, collection: &str) -> Result<QueryResult> {
+        let Some(query) = resolve_metadata_collection_query(collection) else {
+            return Err(Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                format!("metadata collection '{}' is not supported", collection),
+                Some("0A000".to_string()),
+                None,
+                None,
+            ));
+        };
+        self.query(query).await
+    }
+
+    pub fn metadata_collection_name(collection: &str) -> Result<&'static str> {
+        normalize_metadata_collection_name(collection).ok_or_else(|| {
+            Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                format!("metadata collection '{}' is not supported", collection),
+                Some("0A000".to_string()),
+                None,
+                None,
+            )
         })
     }
 
@@ -1784,5 +1811,28 @@ mod tests {
 
         let name = Client::validate_savepoint_name("  sp_a  ").unwrap();
         assert_eq!(name, "sp_a");
+    }
+
+    #[test]
+    fn metadata_collection_name_rejects_unknown_collection() {
+        let err = Client::metadata_collection_name("not_a_collection").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
+    }
+
+    #[tokio::test]
+    async fn query_metadata_rejects_unknown_collection_before_connect() {
+        let mut client = Client::new(Config::default());
+        let err = client.query_metadata("bad_collection").await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
+    }
+
+    #[tokio::test]
+    async fn query_metadata_requires_connected_client_for_supported_collection() {
+        let mut client = Client::new(Config::default());
+        let err = client.query_metadata("schemas").await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Connection);
+        assert_eq!(err.message, "client is not connected");
     }
 }

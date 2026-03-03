@@ -7,6 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 
 namespace ScratchBird.Data;
 
@@ -72,9 +73,9 @@ public sealed class ScratchBirdCommand : DbCommand
         get => _commandType;
         set
         {
-            if (value != CommandType.Text)
+            if (value != CommandType.Text && value != CommandType.StoredProcedure)
             {
-                throw new NotSupportedException("Only CommandType.Text is supported");
+                throw new NotSupportedException("Only CommandType.Text and CommandType.StoredProcedure are supported");
             }
             _commandType = value;
         }
@@ -128,13 +129,13 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override void Prepare()
     {
-        if (_commandType != CommandType.Text)
+        if (_commandType != CommandType.Text && _commandType != CommandType.StoredProcedure)
         {
-            throw new NotSupportedException("Prepare only supports CommandType.Text");
+            throw new NotSupportedException("Prepare only supports CommandType.Text and CommandType.StoredProcedure");
         }
         ValidateCommandExecutionState();
 
-        _preparedQuery = NormalizeParameters();
+        _preparedQuery = BuildNormalizedQuery();
     }
 
     public override int ExecuteNonQuery()
@@ -235,7 +236,7 @@ public sealed class ScratchBirdCommand : DbCommand
 
         var connection = _connection!;
         var client = connection.GetConnectedClient();
-        var normalized = NormalizeParameters();
+        var normalized = BuildNormalizedQuery();
         if (_preparedQuery == null
             || !string.Equals(_preparedQuery.Sql, normalized.Sql, StringComparison.Ordinal)
             || _preparedQuery.Parameters.Count != normalized.Parameters.Count)
@@ -251,6 +252,60 @@ public sealed class ScratchBirdCommand : DbCommand
     private NormalizedQuery NormalizeParameters()
     {
         return SqlHelpers.Normalize(_commandText, _parameters.Cast<ScratchBirdParameter>().ToList());
+    }
+
+    private NormalizedQuery BuildNormalizedQuery()
+    {
+        if (_commandType == CommandType.StoredProcedure)
+        {
+            return BuildStoredProcedureCall();
+        }
+
+        return NormalizeParameters();
+    }
+
+    private NormalizedQuery BuildStoredProcedureCall()
+    {
+        var parameters = _parameters.Cast<ScratchBirdParameter>().ToList();
+        var routine = FormatRoutineName(_commandText);
+        var placeholders = parameters.Count == 0
+            ? string.Empty
+            : string.Join(", ", Enumerable.Range(1, parameters.Count).Select(index => $"${index}"));
+        var sql = placeholders.Length == 0
+            ? $"CALL {routine}()"
+            : $"CALL {routine}({placeholders})";
+        return new NormalizedQuery(sql, parameters);
+    }
+
+    private static string FormatRoutineName(string routineName)
+    {
+        var trimmed = routineName.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new InvalidOperationException("CommandText must be set");
+        }
+
+        var segments = trimmed
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(QuoteIdentifier)
+            .ToArray();
+
+        if (segments.Length == 0)
+        {
+            throw new InvalidOperationException("CommandText must be set");
+        }
+
+        return string.Join(".", segments);
+    }
+
+    private static string QuoteIdentifier(string value)
+    {
+        if (value.Length >= 2 && value.StartsWith('"') && value.EndsWith('"'))
+        {
+            return value;
+        }
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
     }
 
     protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)

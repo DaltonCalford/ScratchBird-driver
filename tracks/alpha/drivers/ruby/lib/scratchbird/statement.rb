@@ -29,6 +29,14 @@ module Scratchbird
     end
 
     def close
+      return if @closed
+      if @connection.respond_to?(:close_prepared)
+        begin
+          @connection.close_prepared(@name)
+        rescue Scratchbird::Error, Scratchbird::ConnectionError
+          nil
+        end
+      end
       @closed = true
     end
 

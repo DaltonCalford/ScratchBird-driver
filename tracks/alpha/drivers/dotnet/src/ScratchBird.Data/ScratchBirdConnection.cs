@@ -287,17 +287,27 @@ public sealed class ScratchBirdConnection : DbConnection
         }
 
         var collectionKey = NormalizeCollectionName(collectionName);
+        if (string.Equals(collectionKey, "catalogs", StringComparison.Ordinal))
+        {
+            return BuildCatalogsMetadataTable(collectionName, restrictionValues);
+        }
 
         var query = collectionKey switch
         {
+            "catalogs" => ScratchBirdMetadata.CatalogsQuery,
             "tables" => ScratchBirdMetadata.TablesQuery,
             "columns" => ScratchBirdMetadata.ColumnsQuery,
             "schemas" => ScratchBirdMetadata.SchemasQuery,
             "indexes" => ScratchBirdMetadata.IndexesQuery,
             "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
             "constraints" => ScratchBirdMetadata.ConstraintsQuery,
+            "primarykeys" => ScratchBirdMetadata.PrimaryKeysQuery,
+            "foreignkeys" => ScratchBirdMetadata.ForeignKeysQuery,
+            "tableprivileges" => ScratchBirdMetadata.TablePrivilegesQuery,
+            "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
             "procedures" => ScratchBirdMetadata.ProceduresQuery,
             "functions" => ScratchBirdMetadata.FunctionsQuery,
+            "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
             _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
         };
 
@@ -329,16 +339,36 @@ public sealed class ScratchBirdConnection : DbConnection
     {
         return collectionName?.ToLowerInvariant() switch
         {
+            "catalog" or "catalogs" => "catalogs",
             null or "" or "tables" => "tables",
             "columns" => "columns",
             "schemas" => "schemas",
             "indexes" => "indexes",
             "indexcolumns" or "index_columns" => "indexcolumns",
             "constraints" => "constraints",
+            "primarykey" or "primarykeys" or "primary_keys" or "pk" => "primarykeys",
+            "foreignkey" or "foreignkeys" or "foreign_keys" or "fk" => "foreignkeys",
+            "tableprivileges" or "table_privileges" => "tableprivileges",
+            "columnprivileges" or "column_privileges" => "columnprivileges",
             "procedures" => "procedures",
             "functions" => "functions",
+            "typeinfo" or "type_info" or "types" => "typeinfo",
             _ => collectionName?.ToLowerInvariant() ?? string.Empty
         };
+    }
+
+    private DataTable BuildCatalogsMetadataTable(string collectionName, string?[]? restrictionValues)
+    {
+        var table = new DataTable(collectionName);
+        table.Columns.Add("table_catalog", typeof(string));
+        if (!string.IsNullOrWhiteSpace(_config.Database))
+        {
+            var row = table.NewRow();
+            row["table_catalog"] = _config.Database;
+            table.Rows.Add(row);
+        }
+
+        return ApplyRestrictionValuesForMetadata(table, "catalogs", restrictionValues);
     }
 
     internal static DataTable ShapeMetadataTable(
@@ -471,6 +501,10 @@ public sealed class ScratchBirdConnection : DbConnection
             [
                 (0, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
                 (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" })
+            ],
+            "catalogs" =>
+            [
+                (0, new[] { "table_catalog", "TABLE_CATALOG", "catalog_name", "CATALOG_NAME" })
             ],
             _ => Array.Empty<(int, string[])>()
         };

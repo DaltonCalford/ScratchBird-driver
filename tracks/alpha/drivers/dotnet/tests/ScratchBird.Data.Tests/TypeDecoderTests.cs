@@ -48,6 +48,34 @@ public class TypeDecoderTests
         Assert.Equal(guid, Assert.IsType<Guid>(decoded));
     }
 
+    [Fact]
+    public void DecodeBooleanBinary_AcceptsLengthPrefixedPayload()
+    {
+        var encoded = WithLengthPrefix(new byte[] { 1 });
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidBool, encoded, (byte)TypeDecoder.FormatBinary);
+        Assert.True(Assert.IsType<bool>(decoded));
+    }
+
+    [Fact]
+    public void DecodeInt4Binary_AcceptsLengthPrefixedPayload()
+    {
+        var payload = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(payload, 1234);
+        var encoded = WithLengthPrefix(payload);
+
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidInt4, encoded, (byte)TypeDecoder.FormatBinary);
+        Assert.Equal(1234, Assert.IsType<int>(decoded));
+    }
+
+    [Fact]
+    public void DecodeVectorBinary_ReturnsFloatArray()
+    {
+        var encoded = WithLengthPrefix(Encoding.UTF8.GetBytes("[1.5,2,3.25]"));
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidSbVector, encoded, (byte)TypeDecoder.FormatBinary);
+        var vector = Assert.IsType<float[]>(decoded);
+        Assert.Equal(new[] { 1.5f, 2.0f, 3.25f }, vector);
+    }
+
     private static byte[] GuidToDriverBytes(Guid guid)
     {
         var text = guid.ToString("N");

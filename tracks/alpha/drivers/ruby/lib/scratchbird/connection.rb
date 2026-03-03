@@ -49,6 +49,21 @@ module Scratchbird
       @client.rollback
     end
 
+    def savepoint(name)
+      ensure_open
+      @client.savepoint(name)
+    end
+
+    def rollback_to_savepoint(name)
+      ensure_open
+      @client.rollback_to_savepoint(name)
+    end
+
+    def release_savepoint(name)
+      ensure_open
+      @client.release_savepoint(name)
+    end
+
     def in_transaction?
       return false unless @client.respond_to?(:in_transaction?)
       @client.in_transaction?
@@ -85,6 +100,11 @@ module Scratchbird
       ensure_open
       begin_transaction_if_needed
       @client.execute_stream(name, params, options)
+    end
+
+    def close_prepared(name)
+      ensure_open
+      @client.deallocate(name)
     end
 
     def client

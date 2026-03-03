@@ -208,6 +208,8 @@ internal sealed class ProtocolClient
             IsolationLevel.ReadCommitted => ProtocolConstants.IsolationReadCommitted,
             IsolationLevel.RepeatableRead => ProtocolConstants.IsolationRepeatableRead,
             IsolationLevel.Serializable => ProtocolConstants.IsolationSerializable,
+            IsolationLevel.Snapshot => ProtocolConstants.IsolationSerializable,
+            IsolationLevel.Chaos => ProtocolConstants.IsolationSerializable,
             _ => ProtocolConstants.IsolationReadCommitted
         };
     }

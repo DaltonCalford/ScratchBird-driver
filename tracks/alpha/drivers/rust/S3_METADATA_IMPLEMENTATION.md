@@ -15,28 +15,38 @@ Lane: `tracks/alpha/drivers/rust`
      - same-leaf-name support under different parent paths,
      - optional database label on output tree.
    - `expand_schema_metadata_rows(...)` for metadata-row parent expansion that emits synthetic parent rows and preserves physical leaf rows.
-2. Added focused lane tests in `tests/metadata_test.rs` for:
+   - metadata collection alias/query resolvers for extended families:
+     - `normalize_metadata_collection_name(...)`
+     - `resolve_metadata_collection_query(...)`
+     - catalogs/keys/privileges/type-info query constants.
+2. Added first-class executable metadata API surface on `Client` in `src/client.rs`:
+   - `query_metadata(collection)` for collection-routed metadata execution.
+   - `metadata_collection_name(collection)` for normalized metadata collection naming.
+3. Added focused lane tests in `tests/metadata_test.rs` for:
    - database->default branch-style metadata rows (`TABLE_SCHEM`) expansion,
    - dotted parent expansion behavior,
    - uniqueness within the same parent,
-   - same leaf name under different parents.
-3. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence row and recommendation.
+   - same leaf name under different parents,
+   - metadata alias/query resolver coverage for extended families.
+4. Added metadata API unit coverage in `src/client.rs` tests for unsupported-collection and connected-client requirements.
+5. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence row and recommendation.
 
 ## Tests Run
 
 1. `cargo test --test metadata_test`  
-   Result: PASS (`4 passed, 0 failed`)
+   Result: PASS (`6 passed, 0 failed`)
+2. `cargo test --lib metadata_collection_name_rejects_unknown_collection query_metadata_rejects_unknown_collection_before_connect query_metadata_requires_connected_client_for_supported_collection`
+   Result: PASS (`3 passed, 0 failed`)
 
 ## META Status Recommendation
 
 Recommendation: `PARTIAL`
 
 Why:
-- This lane now has metadata-only recursive schema shaping support with parent expansion and targeted lane tests for branch-style metadata rows plus tree uniqueness semantics.
-- The lane still lacks a first-class metadata execution API surface on `Client` (and wider JDBC metadata-family parity), so status should not be marked fully implemented yet.
+- This lane now has metadata-only recursive schema shaping and first-class metadata collection routing/execution APIs on `Client`.
+- Status remains partial because restriction mapping and live metadata integration coverage are still incomplete across the full metadata surface.
 
 ## Remaining Gaps
 
-1. No callable metadata API on `Client` that executes metadata collections and returns shaped catalog/table/column metadata results.
-2. No full JDBC metadata family parity evidence yet (catalog/key/privilege/type-oriented families).
-3. No metadata-focused live integration assertions against a running server/tooling flow.
+1. Restriction-value handling and richer metadata payload shaping are not yet exposed as first-class APIs.
+2. No metadata-focused live integration assertions against a running server/tooling flow.

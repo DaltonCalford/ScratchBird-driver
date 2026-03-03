@@ -43,6 +43,7 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `lib/scratchbird/connection.rb:37` (`Connection#begin_transaction`, `#commit`, `#rollback`)
+  - `lib/scratchbird/connection.rb:50` (`Connection#savepoint`, `#rollback_to_savepoint`, `#release_savepoint`)
   - `lib/scratchbird/connection.rb:52` (`Connection#in_transaction?`, transaction-state gate delegated to client)
   - `lib/scratchbird/connection.rb:57` (`Connection#execute`/`#stream` autocommit gate via `begin_transaction_if_needed`)
   - `lib/scratchbird/connection.rb:78` (`Connection#execute_prepared`, `#stream_prepared` uses the same transaction gate as direct execution)
@@ -54,9 +55,9 @@
   - `test/test_txn_exec_parity.rb:67` (`test_execute_starts_transaction_once_when_autocommit_disabled`)
   - `test/test_txn_exec_parity.rb:79` (`test_commit_and_rollback_reset_transaction_gate`)
   - `test/test_txn_exec_parity.rb:106` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
+  - `test/test_txn_exec_parity.rb:129` (`test_connection_savepoint_api_forwards_to_client`)
 - Gaps / next actions:
   - Add wire-level tests that validate `txn_id` transitions from `READY` frames against a live server response sequence.
-  - Add savepoint/release/rollback-to-savepoint transaction coverage at the driver API level.
   - Add integration coverage for failure paths (for example commit/rollback behavior after server-side aborts).
 
 ## EXEC (JDBCBL: `EXEC`)
@@ -69,6 +70,7 @@
   - `lib/scratchbird/statement.rb:21` (`Statement#execute`, `#stream` delegates through connection gate)
   - `lib/scratchbird/client.rb:254` (`Client#query`, `#stream`)
   - `lib/scratchbird/client.rb:266` (`Client#prepare`, `#execute`, `#execute_stream`)
+  - `lib/scratchbird/client.rb:291` (`Client#deallocate`, explicit prepared-statement close protocol flow)
   - `lib/scratchbird/client.rb:298` (`Client#cancel`)
   - `lib/scratchbird/client.rb:705` (`execute_query_loop`) and `lib/scratchbird/client.rb:856` (`ResultStream`)
   - `lib/scratchbird/protocol.rb:379` (`parse_row_description`), `lib/scratchbird/protocol.rb:411` (`parse_data_row`), `lib/scratchbird/protocol.rb:442` (`parse_command_complete`)
@@ -79,12 +81,13 @@
   - `test/test_txn_exec_parity.rb:94` (`test_query_and_stream_forward_options`)
   - `test/test_txn_exec_parity.rb:106` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
   - `test/test_txn_exec_parity.rb:121` (`test_statement_execute_raises_when_closed`)
+  - `test/test_txn_exec_parity.rb:140` (`test_statement_close_deallocates_prepared_handle`)
   - `test/test_integration.rb:24` (`test_prepare_bind`, env-gated parameter execution)
   - `test/test_integration.rb:50` (`test_cancel`, env-gated)
 - Gaps / next actions:
   - Add deterministic coverage for `max_rows` portal suspend/resume and multi-frame stream continuation.
   - Add unit tests for `ResultStream#each_hash` and single-consumption lifecycle against mixed async/query frames.
-  - Add statement deallocation/close protocol coverage once explicit close semantics are implemented.
+  - Add live-wire sequencing assertions around `MSG_CLOSE_COMPLETE` behavior in integration coverage.
 
 ## META (JDBCBL: `META`)
 
@@ -143,7 +146,8 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `lib/scratchbird/connection.rb:27` (`Connection#close`, `#closed?`)
-  - `lib/scratchbird/statement.rb:31` (`Statement#close`, `#closed?`)
+  - `lib/scratchbird/connection.rb:85` (`Connection#close_prepared`)
+  - `lib/scratchbird/statement.rb:31` (`Statement#close`, `#closed?`, best-effort prepared deallocation)
   - `lib/scratchbird/result.rb:11` (`Result` container/enumeration helpers)
   - `lib/scratchbird/client.rb:94` (`Client#close` cleanup path: socket, keepalive, leak guard)
   - `lib/scratchbird/client.rb:644` (`with_resilience` wrapper for circuit breaker + telemetry + keepalive)

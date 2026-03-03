@@ -300,6 +300,18 @@ module Scratchbird
       execute_prepared_stream(name, normalized.params, options)
     end
 
+    def deallocate(name)
+      ensure_connected
+      statement_name = name.to_s
+      raise ArgumentError, "name is required" if statement_name.empty?
+      payload = Protocol.build_close_payload(Protocol::DESCRIBE_STATEMENT, statement_name)
+      send_message(Protocol::MSG_CLOSE, payload, 0, false)
+      send_message(Protocol::MSG_SYNC, +"", 0, false)
+      drain_until_ready
+      @prepared.delete(statement_name)
+      true
+    end
+
     def cancel
       payload = Protocol.build_cancel_payload(0, @last_query_sequence)
       send_message(Protocol::MSG_CANCEL, payload, Protocol::MSG_FLAG_URGENT, false)

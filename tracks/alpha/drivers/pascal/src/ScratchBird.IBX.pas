@@ -42,6 +42,9 @@ type
     FSQL: TStringList;
     FParams: TScratchBirdParams;
     FResult: TScratchBirdQueryResult;
+    FPreparedSql: string;
+    FPreparedParams: TArray<TScratchBirdParamInput>;
+    FPrepared: Boolean;
     function BuildSql(out Ordered: TArray<TScratchBirdParamInput>): string;
   public
     constructor Create(AOwner: TComponent); override;
@@ -108,6 +111,7 @@ begin
   inherited Create(AOwner);
   FSQL := TStringList.Create;
   FParams := TScratchBirdParams.Create;
+  FPrepared := False;
 end;
 
 destructor TScratchBirdIBQuery.Destroy;
@@ -143,7 +147,14 @@ begin
 end;
 
 procedure TScratchBirdIBQuery.Prepare;
+var
+  Ordered: TArray<TScratchBirdParamInput>;
 begin
+  if FDatabase = nil then
+    raise Exception.Create('Database not assigned');
+  FPreparedSql := BuildSql(Ordered);
+  FPreparedParams := Ordered;
+  FPrepared := True;
 end;
 
 procedure TScratchBirdIBQuery.Open;
@@ -153,7 +164,13 @@ var
 begin
   if FDatabase = nil then
     raise Exception.Create('Database not assigned');
-  SqlText := BuildSql(Ordered);
+  if FPrepared then
+  begin
+    SqlText := FPreparedSql;
+    Ordered := Copy(FPreparedParams);
+  end
+  else
+    SqlText := BuildSql(Ordered);
   FResult := TScratchBirdQueryResult.Create(FDatabase.Client.ExecuteQueryParams(SqlText, Ordered));
   FResult.Next;
 end;
@@ -165,7 +182,13 @@ var
 begin
   if FDatabase = nil then
     raise Exception.Create('Database not assigned');
-  SqlText := BuildSql(Ordered);
+  if FPrepared then
+  begin
+    SqlText := FPreparedSql;
+    Ordered := Copy(FPreparedParams);
+  end
+  else
+    SqlText := BuildSql(Ordered);
   FDatabase.Client.ExecSQLParams(SqlText, Ordered);
 end;
 

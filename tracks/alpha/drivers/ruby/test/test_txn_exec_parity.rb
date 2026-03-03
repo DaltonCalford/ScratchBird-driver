@@ -38,6 +38,21 @@ class TestTxnExecParity < Minitest::Test
       true
     end
 
+    def savepoint(name)
+      @calls << [:savepoint, name]
+      true
+    end
+
+    def rollback_to_savepoint(name)
+      @calls << [:rollback_to_savepoint, name]
+      true
+    end
+
+    def release_savepoint(name)
+      @calls << [:release_savepoint, name]
+      true
+    end
+
     def query(sql, params = nil, options = nil)
       @calls << [:query, sql, params, options]
       :query_result
@@ -61,6 +76,11 @@ class TestTxnExecParity < Minitest::Test
     def execute_stream(name, params = nil, options = nil)
       @calls << [:execute_stream, name, params, options]
       :execute_stream_result
+    end
+
+    def deallocate(name)
+      @calls << [:deallocate, name]
+      true
     end
   end
 
@@ -126,6 +146,31 @@ class TestTxnExecParity < Minitest::Test
 
     err = assert_raises(Scratchbird::Error) { stmt.execute }
     assert_equal "statement is closed", err.message
+  end
+
+  def test_connection_savepoint_api_forwards_to_client
+    client = FakeClient.new
+    conn = build_connection(client)
+
+    conn.savepoint("sp1")
+    conn.rollback_to_savepoint("sp1")
+    conn.release_savepoint("sp1")
+
+    assert_includes client.calls, [:savepoint, "sp1"]
+    assert_includes client.calls, [:rollback_to_savepoint, "sp1"]
+    assert_includes client.calls, [:release_savepoint, "sp1"]
+  end
+
+  def test_statement_close_deallocates_prepared_handle
+    client = FakeClient.new
+    conn = build_connection(client)
+    stmt = Scratchbird::Statement.new(conn, "SELECT 1")
+    name = stmt.instance_variable_get(:@name)
+
+    stmt.close
+
+    assert stmt.closed?
+    assert_includes client.calls, [:deallocate, name]
   end
 
   private

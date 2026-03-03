@@ -8,7 +8,8 @@
 use serde_json::Value;
 
 use scratchbird::metadata::{
-    build_metadata_schema_tree, expand_schema_metadata_rows, list_metadata_schema_paths, MetadataRow,
+    build_metadata_schema_tree, expand_schema_metadata_rows, list_metadata_schema_paths,
+    normalize_metadata_collection_name, resolve_metadata_collection_query, MetadataRow,
     MetadataSchemaTreeNode, MetadataSchemaTreeOptions,
 };
 
@@ -107,6 +108,31 @@ fn build_metadata_schema_tree_allows_same_leaf_name_under_different_parents() {
     assert_eq!(bob_dev.name, "dev");
     assert_ne!(alice_dev.path, bob_dev.path);
     assert!(!std::ptr::eq(alice_dev, bob_dev));
+}
+
+#[test]
+fn metadata_collection_aliases_resolve_consistently() {
+    assert_eq!(normalize_metadata_collection_name("catalog").unwrap(), "catalogs");
+    assert_eq!(normalize_metadata_collection_name("primary_keys").unwrap(), "primary_keys");
+    assert_eq!(normalize_metadata_collection_name("fk").unwrap(), "foreign_keys");
+    assert_eq!(normalize_metadata_collection_name("typeinfo").unwrap(), "type_info");
+}
+
+#[test]
+fn metadata_collection_query_resolution_covers_extended_families() {
+    assert!(resolve_metadata_collection_query("catalogs")
+        .unwrap()
+        .contains("catalog"));
+    assert!(resolve_metadata_collection_query("primary_keys")
+        .unwrap()
+        .contains("primary"));
+    assert!(resolve_metadata_collection_query("foreign_keys")
+        .unwrap()
+        .contains("foreign"));
+    assert!(resolve_metadata_collection_query("type_info")
+        .unwrap()
+        .contains("data_type_name"));
+    assert!(resolve_metadata_collection_query("bad_collection").is_none());
 }
 
 fn schema_row(schema: &str) -> MetadataRow {

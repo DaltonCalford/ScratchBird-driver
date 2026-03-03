@@ -26,7 +26,20 @@ Scope: transaction and execution parity improvements with targeted lane-local te
      - Added `attr_reader :txn_id`.
      - Added `Client#in_transaction?` (`txn_id != 0`).
    - Effect:
-     - Connection layer can make transaction gating decisions based on tracked wire-level transaction state.
+   - Connection layer can make transaction gating decisions based on tracked wire-level transaction state.
+
+3. Savepoint and statement-close parity surfaces
+   - Files:
+     - `lib/scratchbird/connection.rb`
+     - `lib/scratchbird/client.rb`
+     - `lib/scratchbird/statement.rb`
+   - Changes:
+     - Added `Connection#savepoint`, `#rollback_to_savepoint`, and `#release_savepoint`.
+     - Added `Client#deallocate(name)` using protocol `MSG_CLOSE` + `SYNC` flow.
+     - Updated `Statement#close` to deallocate prepared handles through connection/client (best effort).
+   - Effect:
+     - Connection-level TXN API now exposes savepoint lifecycle operations.
+     - Prepared statements now have explicit close/deallocation behavior instead of closed-flag only semantics.
 
 3. Targeted TXN/EXEC lane unit tests
    - File: `test/test_txn_exec_parity.rb`
@@ -39,15 +52,15 @@ Scope: transaction and execution parity improvements with targeted lane-local te
 
 ## Targeted Tests Run
 
-1. `ruby -Itest test/test_txn_exec_parity.rb`
+1. `ruby -Ilib:test test/test_txn_exec_parity.rb`
    - Result: PASS
-   - Output summary: `5 runs, 20 assertions, 0 failures, 0 errors, 0 skips`
+   - Output summary: `7 runs, 29 assertions, 0 failures, 0 errors, 0 skips`
 
-2. `ruby -Itest test/test_sql.rb`
+2. `ruby -Ilib:test test/test_sql.rb`
    - Result: PASS
    - Output summary: `3 runs, 6 assertions, 0 failures, 0 errors, 0 skips`
 
-3. `ruby -Itest test/test_conn_auth_protocol.rb`
+3. `ruby -Ilib:test test/test_conn_auth_protocol.rb`
    - Result: PASS
    - Output summary: `10 runs, 25 assertions, 0 failures, 0 errors, 0 skips`
 
@@ -63,11 +76,10 @@ Rationale:
 ## Remaining Gaps
 
 1. TXN:
-   - Savepoint/release/rollback-to-savepoint paths are present in client code but not yet lane-tested.
    - No live-wire assertions of `READY` transaction state transitions under real server behavior.
    - No deterministic coverage for commit/rollback error handling after server-side transaction aborts.
 
 2. EXEC:
    - No deterministic portal suspend/resume coverage (`max_rows` multi-frame behavior).
    - Streaming lifecycle coverage is still limited (for example `each_hash`, async frame interleaving).
-   - Statement close/deallocation protocol behavior is not yet implemented/tested.
+   - Statement close/deallocation protocol behavior is now implemented and lane-tested; remaining gaps are around live-wire close-complete sequencing assertions.

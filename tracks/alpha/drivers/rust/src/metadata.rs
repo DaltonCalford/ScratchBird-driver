@@ -12,6 +12,9 @@ use serde_json::Value;
 pub const SCHEMAS_QUERY: &str =
     "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
 
+pub const CATALOGS_QUERY: &str =
+    "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+
 pub const TABLES_QUERY: &str =
     "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
 
@@ -27,11 +30,26 @@ pub const INDEX_COLUMNS_QUERY: &str =
 pub const CONSTRAINTS_QUERY: &str =
     "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
 
+pub const PRIMARY_KEYS_QUERY: &str =
+    "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+
+pub const FOREIGN_KEYS_QUERY: &str =
+    "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+
+pub const TABLE_PRIVILEGES_QUERY: &str =
+    "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+
+pub const COLUMN_PRIVILEGES_QUERY: &str =
+    "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+
 pub const PROCEDURES_QUERY: &str =
     "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
 
 pub const FUNCTIONS_QUERY: &str =
     "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
+
+pub const TYPE_INFO_QUERY: &str =
+    "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 
 const SCHEMA_FIELD_CANDIDATES: [&str; 6] = [
     "schema_name",
@@ -62,6 +80,49 @@ pub struct MetadataSchemaTree {
 pub struct MetadataSchemaTreeOptions {
     pub expand_parents: bool,
     pub database: Option<String>,
+}
+
+pub fn normalize_metadata_collection_name(collection: &str) -> Option<&'static str> {
+    let normalized = collection.trim().to_ascii_lowercase();
+    let key = if normalized.is_empty() { "tables" } else { normalized.as_str() };
+    match key {
+        "catalog" | "catalogs" => Some("catalogs"),
+        "schema" | "schemas" => Some("schemas"),
+        "table" | "tables" => Some("tables"),
+        "column" | "columns" => Some("columns"),
+        "index" | "indexes" => Some("indexes"),
+        "indexcolumns" | "index_columns" => Some("index_columns"),
+        "constraint" | "constraints" => Some("constraints"),
+        "primarykey" | "primarykeys" | "primary_keys" | "pk" => Some("primary_keys"),
+        "foreignkey" | "foreignkeys" | "foreign_keys" | "fk" => Some("foreign_keys"),
+        "tableprivileges" | "table_privileges" => Some("table_privileges"),
+        "columnprivileges" | "column_privileges" => Some("column_privileges"),
+        "procedure" | "procedures" => Some("procedures"),
+        "function" | "functions" => Some("functions"),
+        "typeinfo" | "type_info" | "types" => Some("type_info"),
+        _ => None,
+    }
+}
+
+pub fn resolve_metadata_collection_query(collection: &str) -> Option<&'static str> {
+    let normalized = normalize_metadata_collection_name(collection)?;
+    match normalized {
+        "catalogs" => Some(CATALOGS_QUERY),
+        "schemas" => Some(SCHEMAS_QUERY),
+        "tables" => Some(TABLES_QUERY),
+        "columns" => Some(COLUMNS_QUERY),
+        "indexes" => Some(INDEXES_QUERY),
+        "index_columns" => Some(INDEX_COLUMNS_QUERY),
+        "constraints" => Some(CONSTRAINTS_QUERY),
+        "primary_keys" => Some(PRIMARY_KEYS_QUERY),
+        "foreign_keys" => Some(FOREIGN_KEYS_QUERY),
+        "table_privileges" => Some(TABLE_PRIVILEGES_QUERY),
+        "column_privileges" => Some(COLUMN_PRIVILEGES_QUERY),
+        "procedures" => Some(PROCEDURES_QUERY),
+        "functions" => Some(FUNCTIONS_QUERY),
+        "type_info" => Some(TYPE_INFO_QUERY),
+        _ => None,
+    }
 }
 
 pub fn expand_schema_paths<I, S>(schema_paths: I) -> Vec<String>

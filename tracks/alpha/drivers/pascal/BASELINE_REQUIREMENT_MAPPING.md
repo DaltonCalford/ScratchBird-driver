@@ -53,7 +53,7 @@
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
   - `tests/IntegrationTest.pas:33`, `tests/IntegrationTest.pas:40`, `tests/IntegrationTest.pas:53`, `tests/IntegrationTest.pas:54`
 - Gaps/next actions:
-  - Adapter `Prepare` methods are currently empty (`src/ScratchBird.FireDAC.pas:127`, `src/ScratchBird.IBX.pas:145`, `src/ScratchBird.Zeos.pas:146`, `src/ScratchBird.SQLdb.pas:146`).
+  - Adapter `Prepare` methods now normalize/cache SQL+parameter order for reuse, but adapter-level tests still need explicit assertions for prepare/execute lifecycle behavior.
   - Add tests for stream control/backpressure path (`src/ScratchBird.Client.pas:618`).
   - Add dedicated API coverage for batch execution, multi-result traversal, and generated-key retrieval (currently not first-class in this lane).
 

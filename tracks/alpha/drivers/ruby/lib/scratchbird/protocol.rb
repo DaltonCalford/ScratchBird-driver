@@ -251,6 +251,15 @@ module Scratchbird
       [portal_bytes.bytesize].pack("V") + portal_bytes + [max_rows].pack("V")
     end
 
+    def self.build_close_payload(close_type, name)
+      name_bytes = name.to_s
+      payload = [close_type].pack("C")
+      payload << "\0\0\0"
+      payload << [name_bytes.bytesize].pack("V")
+      payload << name_bytes
+      payload
+    end
+
     def self.build_describe_payload(describe_type, name)
       name_bytes = name.to_s
       payload = [describe_type].pack("C")

@@ -7,6 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data;
 using System.Linq;
+using System.Reflection;
 using ScratchBird.Data;
 using Xunit;
 
@@ -111,6 +112,49 @@ public class ScratchBirdConnectionMetadataShapingTests
         Assert.Contains("net_total", names);
     }
 
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersCatalogRows()
+    {
+        var table = new DataTable("Catalogs");
+        table.Columns.Add("TABLE_CATALOG", typeof(string));
+        table.Rows.Add("main");
+        table.Rows.Add("analytics");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "catalogs",
+            new[] { "main" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("main", filtered.Rows[0]["TABLE_CATALOG"]?.ToString());
+    }
+
+    [Theory]
+    [InlineData("catalog", "catalogs")]
+    [InlineData("primary_keys", "primarykeys")]
+    [InlineData("fk", "foreignkeys")]
+    [InlineData("table_privileges", "tableprivileges")]
+    [InlineData("types", "typeinfo")]
+    public void NormalizeCollectionNameSupportsNewAliases(string input, string expected)
+    {
+        var method = typeof(ScratchBirdConnection).GetMethod(
+            "NormalizeCollectionName",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var normalized = (string?)method!.Invoke(null, new object?[] { input });
+        Assert.Equal(expected, normalized);
+    }
+
+    [Fact]
+    public void GetSchemaCatalogsReturnsSyntheticConfiguredDatabase()
+    {
+        using var connection = CreateOpenConnection("Host=localhost;Port=13092;Database=main;Username=sb_admin;Password=SbAdmin_Compat1!;Pooling=false");
+        var catalogs = connection.GetSchema("Catalogs");
+        Assert.Single(catalogs.Rows);
+        Assert.Equal("main", catalogs.Rows[0]["table_catalog"]?.ToString());
+    }
+
     private static DataTable CreateSchemasTable(params string[] schemas)
     {
         var table = new DataTable("Schemas");
@@ -134,5 +178,14 @@ public class ScratchBirdConnectionMetadataShapingTests
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Cast<string>()
             .ToArray();
+    }
+
+    private static ScratchBirdConnection CreateOpenConnection(string dsn)
+    {
+        var connection = new ScratchBirdConnection(dsn);
+        var field = typeof(ScratchBirdConnection).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field!.SetValue(connection, ConnectionState.Open);
+        return connection;
     }
 }
