@@ -49,25 +49,42 @@ module Scratchbird
       @client.rollback
     end
 
-    def execute(sql, params = nil)
-      ensure_open
-      begin_transaction unless autocommit
-      @client.query(sql, params)
+    def in_transaction?
+      return false unless @client.respond_to?(:in_transaction?)
+      @client.in_transaction?
     end
 
-    def query(sql, params = nil)
-      execute(sql, params)
+    def execute(sql, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.query(sql, params, options)
     end
 
-    def stream(sql, params = nil)
+    def query(sql, params = nil, options = nil)
+      execute(sql, params, options)
+    end
+
+    def stream(sql, params = nil, options = nil)
       ensure_open
-      begin_transaction unless autocommit
-      @client.stream(sql, params)
+      begin_transaction_if_needed
+      @client.stream(sql, params, options)
     end
 
     def prepare(sql)
       ensure_open
       Statement.new(self, sql)
+    end
+
+    def execute_prepared(name, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.execute(name, params, options)
+    end
+
+    def stream_prepared(name, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.execute_stream(name, params, options)
     end
 
     def client
@@ -78,6 +95,11 @@ module Scratchbird
 
     def ensure_open
       raise ConnectionError, "connection is closed" if @closed
+    end
+
+    def begin_transaction_if_needed
+      return if autocommit || in_transaction?
+      @client.begin_transaction
     end
 
     def build_config(options)

@@ -1,7 +1,7 @@
 # ScratchBird Ruby Driver - Circuit Breaker
 # Copyright (c) 2025-2026 Dalton Calford
 
-module ScratchBird
+module Scratchbird
   module CircuitState
     CLOSED = :closed
     OPEN = :open

@@ -4,7 +4,7 @@
 
 require 'timeout'
 
-module ScratchBird
+module Scratchbird
   # Configuration for keepalive
   class KeepaliveConfig
     attr_accessor :interval_ms, :max_idle_before_check_ms, :validation_timeout_ms

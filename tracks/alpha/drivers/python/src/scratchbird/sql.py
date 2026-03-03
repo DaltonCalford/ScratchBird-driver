@@ -26,16 +26,23 @@ def normalize_query(sql: str, params) -> Tuple[str, List[Any]]:
 
 
 def _has_named_params(sql: str) -> bool:
+    i = 0
     in_string = False
-    for i in range(len(sql) - 1):
+    while i < len(sql) - 1:
         ch = sql[i]
         if ch == "'":
             in_string = not in_string
+            i += 1
             continue
         if in_string:
+            i += 1
+            continue
+        if ch == ":" and sql[i + 1] == ":":
+            i += 2
             continue
         if ch in (":", "@") and sql[i + 1].isidentifier():
             return True
+        i += 1
     return False
 
 
@@ -50,6 +57,10 @@ def _rewrite_named(sql: str, params: Dict[str, Any]) -> Tuple[str, List[Any]]:
             in_string = not in_string
             result.append(ch)
             i += 1
+            continue
+        if not in_string and ch == ":" and i + 1 < len(sql) and sql[i + 1] == ":":
+            result.append("::")
+            i += 2
             continue
         if not in_string and ch in (":", "@") and i + 1 < len(sql) and sql[i + 1].isidentifier():
             j = i + 1

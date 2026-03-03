@@ -19,14 +19,49 @@ begin
     raise Exception.Create(MessageText + ': expected=' + Expected + ' actual=' + Actual);
 end;
 
+procedure AssertTrue(Value: Boolean; const MessageText: string);
+begin
+  if not Value then
+    raise Exception.Create(MessageText);
+end;
+
 var
   OutSql: string;
+  PositionalParams: TArray<TScratchBirdParamInput>;
+  PositionalOrdered: TArray<TScratchBirdParamInput>;
+  NamedNames: TArray<string>;
+  NamedParams: TArray<TScratchBirdParamInput>;
+  NamedOrdered: TArray<TScratchBirdParamInput>;
 begin
   try
-    OutSql := SubstituteSql('SELECT * FROM t WHERE id = ? AND name = ?', [42, 'Ada']);
-    AssertEqual('SELECT * FROM t WHERE id = 42 AND name = ''Ada''', OutSql, 'positional');
-    OutSql := SubstituteNamedSql('SELECT * FROM users WHERE name = @name AND active = :active', ['name', 'active'], ['Ada', True]);
-    AssertEqual('SELECT * FROM users WHERE name = ''Ada'' AND active = TRUE', OutSql, 'named');
+    SetLength(PositionalParams, 2);
+    PositionalParams[0].Value := 42;
+    PositionalParams[0].Obj := nil;
+    PositionalParams[1].Value := 'Ada';
+    PositionalParams[1].Obj := nil;
+    OutSql := NormalizePositionalSql('SELECT * FROM t WHERE id = ? AND name = ?', PositionalParams, PositionalOrdered);
+    AssertEqual('SELECT * FROM t WHERE id = $1 AND name = $2', OutSql, 'positional');
+    AssertTrue(Length(PositionalOrdered) = 2, 'positional ordered count');
+
+    SetLength(NamedNames, 2);
+    NamedNames[0] := 'name';
+    NamedNames[1] := 'active';
+    SetLength(NamedParams, 2);
+    NamedParams[0].Value := 'Ada';
+    NamedParams[0].Obj := nil;
+    NamedParams[1].Value := True;
+    NamedParams[1].Obj := nil;
+    OutSql := NormalizeNamedSql('SELECT * FROM users WHERE name = @name AND active = :active', NamedNames, NamedParams, NamedOrdered);
+    AssertEqual('SELECT * FROM users WHERE name = $1 AND active = $2', OutSql, 'named');
+    AssertTrue(Length(NamedOrdered) = 2, 'named ordered count');
+
+    SetLength(NamedNames, 1);
+    NamedNames[0] := 'id';
+    SetLength(NamedParams, 1);
+    NamedParams[0].Value := 7;
+    NamedParams[0].Obj := nil;
+    OutSql := NormalizeNamedSql('SELECT :id::INTEGER AS v', NamedNames, NamedParams, NamedOrdered);
+    AssertEqual('SELECT $1::INTEGER AS v', OutSql, 'named cast syntax');
     Writeln('SqlTests: OK');
   except
     on E: Exception do

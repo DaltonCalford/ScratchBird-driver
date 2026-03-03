@@ -3,6 +3,10 @@
 Native ScratchBird driver using Swift Concurrency (async/await). SBWP v1.1,
 binary-only transport.
 
+## Lane Docs
+
+- [Baseline Requirement Mapping (S0)](./BASELINE_REQUIREMENT_MAPPING.md)
+
 ## Platform Support
 
 | Platform | Status | Notes |

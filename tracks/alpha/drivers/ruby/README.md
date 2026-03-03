@@ -6,6 +6,7 @@ Native ScratchBird Ruby driver using the ScratchBird wire protocol.
 
 - Getting started: `docs/getting-started/ruby.md`
 - API reference: `docs/api-reference/ruby.md`
+- Baseline requirement mapping (S0): `BASELINE_REQUIREMENT_MAPPING.md`
 
 ## Build/Test (Windows/Linux)
 

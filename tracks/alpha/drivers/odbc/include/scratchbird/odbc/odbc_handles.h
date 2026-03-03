@@ -153,6 +153,11 @@ public:
      */
     size_t getConnectionCount() const;
 
+    /**
+     * @brief End transactions for all connected child connections
+     */
+    SQLRETURN endTransaction(SQLSMALLINT completion_type);
+
     // =========================================================================
     // Configuration
     // =========================================================================

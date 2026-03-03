@@ -29,3 +29,30 @@ fn normalize_named() {
     assert_eq!(normalized.sql, "SELECT * FROM users WHERE name = $1 AND active = $2");
     assert_eq!(normalized.params.len(), 2);
 }
+
+#[test]
+fn normalize_positional_ignores_escaped_string_literals() {
+    let sql = "SELECT 'it''s ?' AS txt, ?::INTEGER";
+    let normalized = normalize(sql, Params::Positional(vec![Param::from(42_i64)])).unwrap();
+    assert_eq!(normalized.sql, "SELECT 'it''s ?' AS txt, $1::INTEGER");
+    assert_eq!(normalized.params.len(), 1);
+}
+
+#[test]
+fn normalize_named_ignores_escaped_string_literals() {
+    let sql = "SELECT 'it''s @name' AS txt, @name";
+    let mut params = std::collections::HashMap::new();
+    params.insert("name".to_string(), Param::from("Ada"));
+    let normalized = normalize(sql, Params::Named(params)).unwrap();
+    assert_eq!(normalized.sql, "SELECT 'it''s @name' AS txt, $1");
+    assert_eq!(normalized.params.len(), 1);
+}
+
+#[test]
+fn normalize_named_errors_when_placeholders_exist_only_in_literals() {
+    let sql = "SELECT 'it''s @name' AS txt";
+    let mut params = std::collections::HashMap::new();
+    params.insert("name".to_string(), Param::from("Ada"));
+    let err = normalize(sql, Params::Named(params)).unwrap_err();
+    assert_eq!(err.message, "named parameters provided but query has no placeholders");
+}

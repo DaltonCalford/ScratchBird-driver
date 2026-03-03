@@ -895,10 +895,7 @@ extern "C" SQLRETURN ODBC_API SQLEndTran(
     if (HandleType == SQL_HANDLE_ENV) {
         auto* env = asEnvironment(Handle);
         if (!env) return SQL_INVALID_HANDLE;
-
-        // Commit/rollback all connections
-        // For now, just return success
-        return SQL_SUCCESS;
+        return env->endTransaction(CompletionType);
     } else if (HandleType == SQL_HANDLE_DBC) {
         auto* conn = asConnection(Handle);
         if (!conn) return SQL_INVALID_HANDLE;

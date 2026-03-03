@@ -6,6 +6,7 @@ Native ScratchBird driver for Node.js with full TypeScript types.
 
 - Getting started: `docs/getting-started/node.md`
 - API reference: `docs/api-reference/node.md`
+- Baseline requirement mapping: [`BASELINE_REQUIREMENT_MAPPING.md`](BASELINE_REQUIREMENT_MAPPING.md)
 
 ## Build/Test (Windows/Linux)
 

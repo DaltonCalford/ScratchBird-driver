@@ -195,6 +195,20 @@ impl Client {
     }
 
     pub async fn connect(&mut self) -> Result<()> {
+        let startup_params = self.preflight_connect()?;
+        let manager_proxy = self.config.front_door_mode == "manager_proxy";
+        let stream = self.connect_transport().await?;
+        self.stream = Some(stream);
+        if manager_proxy {
+            self.perform_manager_connect().await?;
+        }
+        self.handshake(startup_params).await?;
+        self.apply_schema().await?;
+        self.connected = true;
+        Ok(())
+    }
+
+    fn preflight_connect(&mut self) -> Result<HashMap<String, String>> {
         let protocol = normalize_native_protocol(&self.config.protocol).ok_or_else(|| {
             Error::with_sqlstate(
                 ErrorKind::NotSupported,
@@ -205,6 +219,7 @@ impl Client {
             )
         })?;
         self.config.protocol = protocol.to_string();
+
         let front_door_mode = normalize_front_door_mode(&self.config.front_door_mode).ok_or_else(|| {
             Error::with_sqlstate(
                 ErrorKind::NotSupported,
@@ -215,6 +230,7 @@ impl Client {
             )
         })?;
         self.config.front_door_mode = front_door_mode.to_string();
+
         if self.config.user.is_empty() || self.config.database.is_empty() {
             return Err(Error::new(ErrorKind::Connection, "user and database are required"));
         }
@@ -236,15 +252,53 @@ impl Client {
                 None,
             ));
         }
-        let stream = self.connect_transport().await?;
-        self.stream = Some(stream);
-        if self.config.front_door_mode == "manager_proxy" {
-            self.perform_manager_connect().await?;
+        if self.config.front_door_mode == "manager_proxy" && self.config.manager_auth_token.is_empty() {
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "manager_proxy mode requires manager_auth_token",
+            ));
         }
-        self.handshake().await?;
-        self.apply_schema().await?;
-        self.connected = true;
-        Ok(())
+        self.build_startup_params()
+    }
+
+    fn build_startup_params(&self) -> Result<HashMap<String, String>> {
+        let mut params = HashMap::new();
+        params.insert("database".to_string(), self.config.database.clone());
+        params.insert("user".to_string(), self.config.user.clone());
+        if !self.config.role.is_empty() {
+            params.insert("role".to_string(), self.config.role.clone());
+        }
+        if !self.config.application_name.is_empty() {
+            params.insert("application_name".to_string(), self.config.application_name.clone());
+        }
+        let auth_plugin_selection = protocol::AuthPluginSelection {
+            method_id: self
+                .config
+                .extra
+                .get(protocol::AUTH_PARAM_METHOD_ID)
+                .cloned()
+                .unwrap_or_default(),
+            payload_json: self
+                .config
+                .extra
+                .get(protocol::AUTH_PARAM_PAYLOAD_JSON)
+                .cloned()
+                .unwrap_or_default(),
+            payload_b64: self
+                .config
+                .extra
+                .get(protocol::AUTH_PARAM_PAYLOAD_B64)
+                .cloned()
+                .unwrap_or_default(),
+            provider_profile: self
+                .config
+                .extra
+                .get(protocol::AUTH_PARAM_PROVIDER_PROFILE)
+                .cloned()
+                .unwrap_or_default(),
+        };
+        protocol::apply_auth_plugin_selection(&mut params, &auth_plugin_selection)?;
+        Ok(params)
     }
 
     pub async fn close(&mut self) {
@@ -253,11 +307,17 @@ impl Client {
         }
         self.connected = false;
         self.authed = false;
+        self.txn_id = 0;
         self.sequence = 0;
     }
 
     pub async fn query(&mut self, sql: &str) -> Result<QueryResult> {
         self.query_params(sql, Params::Positional(Vec::new())).await
+    }
+
+    pub fn native_sql(&self, sql: &str, params: Params) -> Result<String> {
+        let normalized = normalize(sql, params)?;
+        Ok(normalized.sql)
     }
 
     pub async fn query_params(&mut self, sql: &str, params: Params) -> Result<QueryResult> {
@@ -335,6 +395,7 @@ impl Client {
 
     pub async fn begin_transaction(&mut self, options: Option<TxnBeginOptions>) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_no_active_transaction()?;
         let opts = options.unwrap_or_default();
         let mut flags = 0u16;
         let isolation = opts.isolation_level.unwrap_or(protocol::ISOLATION_READ_COMMITTED);
@@ -372,6 +433,7 @@ impl Client {
 
     pub async fn commit_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_transaction_active("commit")?;
         let flags = options.map(|opt| opt.flags).unwrap_or(0);
         let payload = protocol::build_txn_commit_payload(flags);
         self.send_message(protocol::MSG_TXN_COMMIT, &payload, 0, false).await?;
@@ -380,6 +442,7 @@ impl Client {
 
     pub async fn rollback_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_transaction_active("rollback")?;
         let flags = options.map(|opt| opt.flags).unwrap_or(0);
         let payload = protocol::build_txn_rollback_payload(flags);
         self.send_message(protocol::MSG_TXN_ROLLBACK, &payload, 0, false).await?;
@@ -388,6 +451,8 @@ impl Client {
 
     pub async fn savepoint(&mut self, name: &str) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_transaction_active("savepoint")?;
+        let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_savepoint_payload(name);
         self.send_message(protocol::MSG_TXN_SAVEPOINT, &payload, 0, false).await?;
         self.drain_until_ready().await
@@ -395,6 +460,8 @@ impl Client {
 
     pub async fn release_savepoint(&mut self, name: &str) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_transaction_active("release savepoint")?;
+        let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_release_payload(name);
         self.send_message(protocol::MSG_TXN_RELEASE, &payload, 0, false).await?;
         self.drain_until_ready().await
@@ -402,6 +469,8 @@ impl Client {
 
     pub async fn rollback_to_savepoint(&mut self, name: &str) -> Result<()> {
         self.ensure_connected()?;
+        self.ensure_transaction_active("rollback to savepoint")?;
+        let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_rollback_to_payload(name);
         self.send_message(protocol::MSG_TXN_ROLLBACK_TO, &payload, 0, false).await?;
         self.drain_until_ready().await
@@ -425,7 +494,7 @@ impl Client {
             if msg.header.msg_type == protocol::MSG_PONG || msg.header.msg_type == protocol::MSG_READY {
                 if msg.header.msg_type == protocol::MSG_READY {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                 }
                 return Ok(());
             }
@@ -699,6 +768,8 @@ impl Client {
                     return Ok(CopyState::Failed { error: message });
                 }
                 protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_txn_state(txn_id);
                     return Ok(CopyState::Complete);
                 }
                 _ => continue,
@@ -731,7 +802,7 @@ impl Client {
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     return Ok(CopyResult {
                         rows_affected: 0,
                         command_tag: "COPY".to_string(),
@@ -770,7 +841,7 @@ impl Client {
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     return Ok(result);
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -957,19 +1028,10 @@ impl Client {
         Ok(())
     }
 
-    async fn handshake(&mut self) -> Result<()> {
+    async fn handshake(&mut self, params: HashMap<String, String>) -> Result<()> {
         self.authed = false;
         self.parameters.clear();
         let features = self.requested_features();
-        let mut params = HashMap::new();
-        params.insert("database".to_string(), self.config.database.clone());
-        params.insert("user".to_string(), self.config.user.clone());
-        if !self.config.role.is_empty() {
-            params.insert("role".to_string(), self.config.role.clone());
-        }
-        if !self.config.application_name.is_empty() {
-            params.insert("application_name".to_string(), self.config.application_name.clone());
-        }
         let payload = protocol::build_startup_payload(features, &params);
         self.send_message(protocol::MSG_STARTUP, &payload, 0, true).await?;
         let mut scram: Option<ScramExchange> = None;
@@ -1010,7 +1072,7 @@ impl Client {
                 protocol::MSG_AUTH_OK => {
                     let (_session_id, info) = protocol::parse_auth_ok(&msg.payload)?;
                     self.attachment_id.copy_from_slice(&msg.header.attachment_id);
-                    self.txn_id = msg.header.txn_id;
+                    self.apply_txn_state(msg.header.txn_id);
                     self.authed = true;
                     if let Some(ref exchange) = scram {
                         if !info.is_empty() && info.starts_with(b"v=") {
@@ -1025,7 +1087,7 @@ impl Client {
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     return Ok(());
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -1075,7 +1137,7 @@ impl Client {
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     if row_count < 0 {
                         row_count = rows.len() as i64;
                     }
@@ -1105,7 +1167,7 @@ impl Client {
             match msg.header.msg_type {
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     return Ok(());
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -1122,7 +1184,7 @@ impl Client {
         }
         if name == "current_txn_id" {
             if let Ok(parsed) = value.trim().parse::<u64>() {
-                self.txn_id = parsed;
+                self.apply_txn_state(parsed);
             }
         }
         self.parameters.insert(name, value);
@@ -1218,7 +1280,7 @@ impl Client {
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.txn_id = txn_id;
+                    self.apply_txn_state(txn_id);
                     return Ok(param_count);
                 }
                 _ => continue,
@@ -1384,6 +1446,52 @@ impl Client {
         Ok(())
     }
 
+    fn has_active_transaction(&self) -> bool {
+        self.txn_id != 0
+    }
+
+    fn ensure_no_active_transaction(&self) -> Result<()> {
+        if self.has_active_transaction() {
+            return Err(Self::invalid_txn_state("transaction already active"));
+        }
+        Ok(())
+    }
+
+    fn ensure_transaction_active(&self, operation: &str) -> Result<()> {
+        if !self.has_active_transaction() {
+            return Err(Self::invalid_txn_state(format!("cannot {} without an active transaction", operation)));
+        }
+        Ok(())
+    }
+
+    fn invalid_txn_state(message: impl Into<String>) -> Error {
+        Error::with_sqlstate(
+            ErrorKind::Transaction,
+            message,
+            Some("25000".to_string()),
+            None,
+            None,
+        )
+    }
+
+    fn validate_savepoint_name(name: &str) -> Result<&str> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(Error::with_sqlstate(
+                ErrorKind::Syntax,
+                "savepoint name is required",
+                Some("42601".to_string()),
+                None,
+                None,
+            ));
+        }
+        Ok(trimmed)
+    }
+
+    fn apply_txn_state(&mut self, txn_id: u64) {
+        self.txn_id = txn_id;
+    }
+
     fn requested_features(&self) -> u64 {
         let mut features = 0u64;
         if self.config.compression.eq_ignore_ascii_case("zstd") {
@@ -1457,7 +1565,7 @@ impl<'a> QueryStream<'a> {
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.client.txn_id = txn_id;
+                    self.client.apply_txn_state(txn_id);
                     self.done = true;
                     self.finalize(true).await;
                     return Ok(None);
@@ -1551,4 +1659,125 @@ fn parse_uuid_bytes(value: &str) -> Option<[u8; 16]> {
         }
     }
     Some(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preflight_connect_requires_manager_auth_token() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.front_door_mode = "manager_proxy".to_string();
+        let mut client = Client::new(cfg);
+        let err = client.preflight_connect().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Connection);
+        assert_eq!(err.message, "manager_proxy mode requires manager_auth_token");
+    }
+
+    #[test]
+    fn build_startup_params_includes_auth_plugin_selection() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_METHOD_ID.to_string(),
+            "scratchbird.auth.password".to_string(),
+        );
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
+            "{\"tenant\":\"alpha\"}".to_string(),
+        );
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PAYLOAD_B64.to_string(),
+            "dGVzdA==".to_string(),
+        );
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PROVIDER_PROFILE.to_string(),
+            "default".to_string(),
+        );
+        let client = Client::new(cfg);
+        let params = client.build_startup_params().unwrap();
+
+        assert_eq!(params.get("database").map(String::as_str), Some("db"));
+        assert_eq!(params.get("user").map(String::as_str), Some("tester"));
+        assert_eq!(
+            params.get(protocol::AUTH_PARAM_METHOD_ID).map(String::as_str),
+            Some("scratchbird.auth.password")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_PAYLOAD_JSON)
+                .map(String::as_str),
+            Some("{\"tenant\":\"alpha\"}")
+        );
+        assert_eq!(
+            params.get(protocol::AUTH_PARAM_PAYLOAD_B64).map(String::as_str),
+            Some("dGVzdA==")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_PROVIDER_PROFILE)
+                .map(String::as_str),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn build_startup_params_rejects_invalid_auth_method_namespace() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_METHOD_ID.to_string(),
+            "custom.invalid".to_string(),
+        );
+        let client = Client::new(cfg);
+        let err = client.build_startup_params().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Auth);
+        assert_eq!(err.message, "invalid auth_method_id namespace");
+    }
+
+    #[test]
+    fn native_sql_rewrites_named_placeholders() {
+        let client = Client::new(Config::default());
+        let mut params = HashMap::new();
+        params.insert("a".to_string(), Param::from(1_i32));
+        params.insert("b".to_string(), Param::from(2_i32));
+
+        let sql = client
+            .native_sql("SELECT :a, @b", Params::Named(params))
+            .unwrap();
+
+        assert_eq!(sql, "SELECT $1, $2");
+    }
+
+    #[test]
+    fn transaction_state_guards_enforce_begin_commit_rules() {
+        let mut client = Client::new(Config::default());
+
+        let err = client.ensure_transaction_active("commit").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Transaction);
+        assert_eq!(err.sqlstate.as_deref(), Some("25000"));
+        assert_eq!(err.message, "cannot commit without an active transaction");
+
+        client.apply_txn_state(42);
+        let err = client.ensure_no_active_transaction().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Transaction);
+        assert_eq!(err.sqlstate.as_deref(), Some("25000"));
+        assert_eq!(err.message, "transaction already active");
+    }
+
+    #[test]
+    fn savepoint_name_validation_rejects_blank() {
+        let err = Client::validate_savepoint_name("   ").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Syntax);
+        assert_eq!(err.sqlstate.as_deref(), Some("42601"));
+        assert_eq!(err.message, "savepoint name is required");
+
+        let name = Client::validate_savepoint_name("  sp_a  ").unwrap();
+        assert_eq!(name, "sp_a");
+    }
 }

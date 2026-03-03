@@ -65,6 +65,12 @@ from .protocol import (
     build_stream_control_payload,
     build_attach_create_payload,
     build_startup_payload,
+    AUTH_PARAM_METHOD_ID,
+    AUTH_PARAM_PAYLOAD_JSON,
+    AUTH_PARAM_PAYLOAD_B64,
+    AUTH_PARAM_PROVIDER_PROFILE,
+    AuthPluginSelection,
+    apply_auth_plugin_selection,
     build_copy_data_payload,
     build_copy_done_payload,
     build_copy_fail_payload,
@@ -133,6 +139,10 @@ class ConnectionConfig:
     manager_client_intent: str = "native_v3"
     manager_client_flags: int = 0
     manager_auth_fast_path: bool = True
+    auth_method_id: Optional[str] = None
+    auth_payload_json: Optional[str] = None
+    auth_payload_b64: Optional[str] = None
+    auth_provider_profile: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -168,8 +178,8 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
         )
     except ValueError as exc:
         raise errors.InterfaceError(str(exc)) from exc
-    cfg.database = params.get("database", cfg.database)
-    cfg.user = params.get("user", cfg.user)
+    cfg.database = params.get("database", params.get("dbname", cfg.database))
+    cfg.user = params.get("user", params.get("username", cfg.user))
     cfg.password = params.get("password", cfg.password)
     cfg.schema = params.get("schema", params.get("search_path", params.get("searchpath", params.get("currentschema", cfg.schema))))
     cfg.sslmode = params.get("sslmode", params.get("ssl", cfg.sslmode))
@@ -177,11 +187,11 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.sslcert = params.get("sslcert", cfg.sslcert)
     cfg.sslkey = params.get("sslkey", cfg.sslkey)
     cfg.sslpassword = params.get("sslpassword", cfg.sslpassword)
-    cfg.connect_timeout = int(params.get("connect_timeout", cfg.connect_timeout))
-    cfg.socket_timeout = int(params.get("socket_timeout", cfg.socket_timeout))
-    cfg.application_name = params.get("application_name", cfg.application_name)
+    cfg.connect_timeout = int(params.get("connect_timeout", params.get("connecttimeout", cfg.connect_timeout)))
+    cfg.socket_timeout = int(params.get("socket_timeout", params.get("sockettimeout", cfg.socket_timeout)))
+    cfg.application_name = params.get("application_name", params.get("applicationname", cfg.application_name))
     cfg.role = params.get("role", cfg.role)
-    raw_binary = params.get("binary_transfer", cfg.binary_transfer)
+    raw_binary = params.get("binary_transfer", params.get("binarytransfer", cfg.binary_transfer))
     if isinstance(raw_binary, str):
         cfg.binary_transfer = raw_binary.lower() in ("1", "true", "yes", "on")
     else:
@@ -208,6 +218,13 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             cfg.manager_auth_fast_path = raw_fast_path.lower() in ("1", "true", "yes", "on")
         else:
             cfg.manager_auth_fast_path = bool(raw_fast_path)
+    cfg.auth_method_id = params.get(AUTH_PARAM_METHOD_ID, params.get("authmethodid", cfg.auth_method_id))
+    cfg.auth_payload_json = params.get(AUTH_PARAM_PAYLOAD_JSON, params.get("authpayloadjson", cfg.auth_payload_json))
+    cfg.auth_payload_b64 = params.get(AUTH_PARAM_PAYLOAD_B64, params.get("authpayloadb64", cfg.auth_payload_b64))
+    cfg.auth_provider_profile = params.get(
+        AUTH_PARAM_PROVIDER_PROFILE,
+        params.get("authproviderprofile", cfg.auth_provider_profile),
+    )
     cfg.extra = {
         k: v
         for k, v in params.items()
@@ -220,10 +237,12 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "connection_mode",
             "ingress_mode",
             "database",
+            "dbname",
             "protocol",
             "parser",
             "dialect",
             "user",
+            "username",
             "password",
             "schema",
             "search_path",
@@ -236,10 +255,14 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "sslkey",
             "sslpassword",
             "connect_timeout",
+            "connecttimeout",
             "socket_timeout",
+            "sockettimeout",
             "application_name",
+            "applicationname",
             "role",
             "binary_transfer",
+            "binarytransfer",
             "compression",
             "manager_auth_token",
             "mcp_auth_token",
@@ -255,6 +278,14 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "mcp_client_flags",
             "manager_auth_fast_path",
             "mcp_auth_fast_path",
+            AUTH_PARAM_METHOD_ID,
+            "authmethodid",
+            AUTH_PARAM_PAYLOAD_JSON,
+            "authpayloadjson",
+            AUTH_PARAM_PAYLOAD_B64,
+            "authpayloadb64",
+            AUTH_PARAM_PROVIDER_PROFILE,
+            "authproviderprofile",
         }
     }
 
@@ -300,6 +331,8 @@ class Connection:
             raise errors.NotSupportedError("binary_transfer=false is not supported")
         if (self._config.compression or "").lower() == "zstd":
             raise errors.NotSupportedError("compression=zstd is not supported")
+        if self._config.front_door_mode == "manager_proxy" and not self._config.manager_auth_token:
+            raise errors.InterfaceError("manager_proxy mode requires manager_auth_token")
         raw_sock = socket.create_connection(
             (self._config.host, self._config.port),
             timeout=self._config.connect_timeout,
@@ -399,18 +432,24 @@ class Connection:
 
     def commit(self) -> None:
         self._ensure_open()
+        if not self._transaction_active():
+            return
         payload = build_txn_commit_payload(0)
         self._send_message(MessageType.TXN_COMMIT, payload)
         self._drain_until_ready()
 
     def rollback(self) -> None:
         self._ensure_open()
+        if not self._transaction_active():
+            return
         payload = build_txn_rollback_payload(0)
         self._send_message(MessageType.TXN_ROLLBACK, payload)
         self._drain_until_ready()
 
     def begin(self, **kwargs) -> None:
         self._ensure_open()
+        if self._transaction_active():
+            raise errors.ProgrammingError("transaction already active")
         flags = 0
         isolation = kwargs.get("isolation_level", ISOLATION_READ_COMMITTED)
         if "isolation_level" in kwargs:
@@ -440,19 +479,25 @@ class Connection:
 
     def savepoint(self, name: str) -> None:
         self._ensure_open()
-        payload = build_txn_savepoint_payload(name)
+        if not self._transaction_active():
+            raise errors.ProgrammingError("savepoint requires an active transaction")
+        payload = build_txn_savepoint_payload(self._normalize_savepoint_name(name))
         self._send_message(MessageType.TXN_SAVEPOINT, payload)
         self._drain_until_ready()
 
     def release_savepoint(self, name: str) -> None:
         self._ensure_open()
-        payload = build_txn_release_payload(name)
+        if not self._transaction_active():
+            raise errors.ProgrammingError("release_savepoint requires an active transaction")
+        payload = build_txn_release_payload(self._normalize_savepoint_name(name))
         self._send_message(MessageType.TXN_RELEASE, payload)
         self._drain_until_ready()
 
     def rollback_to_savepoint(self, name: str) -> None:
         self._ensure_open()
-        payload = build_txn_rollback_to_payload(name)
+        if not self._transaction_active():
+            raise errors.ProgrammingError("rollback_to_savepoint requires an active transaction")
+        payload = build_txn_rollback_to_payload(self._normalize_savepoint_name(name))
         self._send_message(MessageType.TXN_ROLLBACK_TO, payload)
         self._drain_until_ready()
 
@@ -550,6 +595,16 @@ class Connection:
         cur.execute(sql, params)
         return cur
 
+    def native_sql(self, sql: str, params=None) -> str:
+        self._ensure_open()
+        if sql is None:
+            raise errors.ProgrammingError("sql is required")
+        try:
+            normalized_sql, _ = normalize_query(sql, params)
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
+        return normalized_sql
+
     def executemany(self, sql: str, seq_of_params) -> Cursor:
         cur = self.cursor()
         cur.executemany(sql, seq_of_params)
@@ -564,6 +619,17 @@ class Connection:
     def _ensure_open(self) -> None:
         if self._closed:
             raise errors.InterfaceError("connection is closed")
+
+    def _transaction_active(self) -> bool:
+        return self._txn_id != 0
+
+    def _normalize_savepoint_name(self, name: str) -> str:
+        if not isinstance(name, str):
+            raise errors.ProgrammingError("savepoint name must be a string")
+        normalized = name.strip()
+        if not normalized:
+            raise errors.ProgrammingError("savepoint name is required")
+        return normalized
 
     def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
         if header.msg_type == MessageType.PARAMETER_STATUS:
@@ -708,14 +774,10 @@ class Connection:
     def _startup_and_auth(self) -> None:
         self._authed = False
         self._parameters.clear()
-        params = {
-            "database": self._config.database or "",
-            "user": self._config.user or "",
-        }
-        if self._config.role:
-            params["role"] = self._config.role
-        if self._config.application_name:
-            params["application_name"] = self._config.application_name
+        try:
+            params = self._build_startup_params()
+        except ValueError as exc:
+            raise errors.InterfaceError(str(exc)) from exc
         features = 0
         if self._config.compression.lower() == "zstd":
             features |= FEATURE_COMPRESSION
@@ -780,6 +842,24 @@ class Connection:
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
             continue
+
+    def _build_startup_params(self) -> Dict[str, str]:
+        params = {
+            "database": self._config.database or "",
+            "user": self._config.user or "",
+        }
+        if self._config.role:
+            params["role"] = self._config.role
+        if self._config.application_name:
+            params["application_name"] = self._config.application_name
+        selection = AuthPluginSelection(
+            method_id=self._config.auth_method_id or "",
+            payload_json=self._config.auth_payload_json or "",
+            payload_b64=self._config.auth_payload_b64 or "",
+            provider_profile=self._config.auth_provider_profile or "",
+        )
+        apply_auth_plugin_selection(params, selection)
+        return params
 
     def _send_message(self, msg_type: int, payload: bytes, flags: int = 0, force_zero: bool = False) -> None:
         if not self._socket:
@@ -857,7 +937,10 @@ class Connection:
             self._send_message(MessageType.SYNC, b"")
 
     def _execute_query(self, sql: str, params=None, max_rows: int = 0):
-        normalized_sql, ordered = normalize_query(sql, params)
+        try:
+            normalized_sql, ordered = normalize_query(sql, params)
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
         span = self._begin_operation("execute_query", normalized_sql)
         try:
             if ordered:

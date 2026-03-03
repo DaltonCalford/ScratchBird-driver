@@ -25,6 +25,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private ScratchBirdConfig _config = new();
     private ProtocolClient? _client;
     private ProtocolClientPool.Lease? _clientLease;
+    private ScratchBirdTransaction? _activeTransaction;
     private bool _disposed;
 
     public ScratchBirdConnection() { }
@@ -119,6 +120,7 @@ public sealed class ScratchBirdConnection : DbConnection
     {
         _clientLease?.Dispose();
         _clientLease = null;
+        _activeTransaction = null;
 
         _client = ProtocolClientPool.BorrowOrCreate(_config, out var lease);
         _clientLease = lease;
@@ -161,6 +163,7 @@ public sealed class ScratchBirdConnection : DbConnection
         _clientLease?.Dispose();
         _clientLease = null;
         _client = null;
+        _activeTransaction = null;
         OpenWithRetry();
 
         return _client ?? throw new InvalidOperationException("Connection could not be restored");
@@ -186,6 +189,7 @@ public sealed class ScratchBirdConnection : DbConnection
         var lease = _clientLease;
         _clientLease = null;
         _client = null;
+        _activeTransaction = null;
         _state = ConnectionState.Closed;
         lease?.Dispose();
     }
@@ -221,8 +225,42 @@ public sealed class ScratchBirdConnection : DbConnection
         {
             throw new InvalidOperationException("Connection is not open");
         }
+        if (HasActiveTransaction)
+        {
+            throw new InvalidOperationException("Connection already has an active transaction");
+        }
+
         GetConnectedClient().Begin(isolationLevel);
-        return new ScratchBirdTransaction(this, isolationLevel);
+        var transaction = new ScratchBirdTransaction(this, isolationLevel);
+        _activeTransaction = transaction;
+        return transaction;
+    }
+
+    internal bool HasActiveTransaction
+    {
+        get
+        {
+            if (_activeTransaction != null && _activeTransaction.IsCompleted)
+            {
+                _activeTransaction = null;
+            }
+
+            return _activeTransaction != null;
+        }
+    }
+
+    internal bool IsActiveTransaction(ScratchBirdTransaction transaction)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        return ReferenceEquals(_activeTransaction, transaction) && !_activeTransaction.IsCompleted;
+    }
+
+    internal void CompleteTransaction(ScratchBirdTransaction transaction)
+    {
+        if (_activeTransaction != null && ReferenceEquals(_activeTransaction, transaction))
+        {
+            _activeTransaction = null;
+        }
     }
 
     protected override DbCommand CreateDbCommand()

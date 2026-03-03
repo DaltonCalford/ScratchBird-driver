@@ -56,7 +56,15 @@ public sealed class ScratchBirdCommand : DbCommand
     public override int CommandTimeout
     {
         get => _commandTimeout;
-        set => _commandTimeout = value;
+        set
+        {
+            if (value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "CommandTimeout must be non-negative");
+            }
+
+            _commandTimeout = value;
+        }
     }
 
     public override CommandType CommandType
@@ -124,10 +132,7 @@ public sealed class ScratchBirdCommand : DbCommand
         {
             throw new NotSupportedException("Prepare only supports CommandType.Text");
         }
-        if (_connection == null || _connection.State != ConnectionState.Open)
-        {
-            throw new InvalidOperationException("Connection must be open");
-        }
+        ValidateCommandExecutionState();
 
         _preparedQuery = NormalizeParameters();
     }
@@ -226,12 +231,10 @@ public sealed class ScratchBirdCommand : DbCommand
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        if (_connection == null || _connection.State != ConnectionState.Open)
-        {
-            throw new InvalidOperationException("Connection must be open");
-        }
+        ValidateCommandExecutionState();
 
-        var client = _connection.GetConnectedClient();
+        var connection = _connection!;
+        var client = connection.GetConnectedClient();
         var normalized = NormalizeParameters();
         if (_preparedQuery == null
             || !string.Equals(_preparedQuery.Sql, normalized.Sql, StringComparison.Ordinal)
@@ -240,9 +243,9 @@ public sealed class ScratchBirdCommand : DbCommand
             _preparedQuery = normalized;
         }
         var timeoutMs = _commandTimeout > 0 ? _commandTimeout * 1000 : 0;
-        var maxRows = _fetchSize > 0 ? _fetchSize : _connection.Config.DefaultFetchSize;
+        var maxRows = _fetchSize > 0 ? _fetchSize : connection.Config.DefaultFetchSize;
         var stream = client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
-        return new ScratchBirdDataReader(stream, behavior, _connection);
+        return new ScratchBirdDataReader(stream, behavior, connection);
     }
 
     private NormalizedQuery NormalizeParameters()
@@ -305,6 +308,49 @@ public sealed class ScratchBirdCommand : DbCommand
     public new ScratchBirdParameter CreateParameter()
     {
         return new ScratchBirdParameter();
+    }
+
+    private void ValidateCommandExecutionState()
+    {
+        if (_connection == null || _connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection must be open");
+        }
+
+        if (string.IsNullOrWhiteSpace(_commandText))
+        {
+            throw new InvalidOperationException("CommandText must be set");
+        }
+
+        if (_transaction == null)
+        {
+            if (_connection.HasActiveTransaction)
+            {
+                throw new InvalidOperationException("Command requires an explicit Transaction when the connection has an active transaction");
+            }
+
+            return;
+        }
+
+        if (!_transaction.BelongsTo(_connection))
+        {
+            throw new InvalidOperationException("Transaction is not associated with this command's connection");
+        }
+
+        if (_transaction.IsDisposed)
+        {
+            throw new InvalidOperationException("Transaction is disposed");
+        }
+
+        if (_transaction.IsCompleted)
+        {
+            throw new InvalidOperationException("Transaction is already completed");
+        }
+
+        if (!_connection.IsActiveTransaction(_transaction))
+        {
+            throw new InvalidOperationException("Transaction is not active on this connection");
+        }
     }
 
 }

@@ -48,4 +48,22 @@ final class ConfigTest extends TestCase
         $this->assertSame('token', $cfg->managerAuthToken);
         $this->assertSame(7, $cfg->managerClientFlags);
     }
+
+    public function testParseBooleanVariants(): void
+    {
+        $cfg = Config::fromDsn('binary_transfer=off manager_auth_fast_path=no');
+        $this->assertFalse($cfg->binaryTransfer);
+        $this->assertFalse($cfg->managerAuthFastPath);
+
+        $cfg = Config::fromDsn('binary_transfer=on manager_auth_fast_path=yes');
+        $this->assertTrue($cfg->binaryTransfer);
+        $this->assertTrue($cfg->managerAuthFastPath);
+    }
+
+    public function testParseProtocolAndFrontDoorAliases(): void
+    {
+        $cfg = Config::fromDsn('protocol=scratchbird_native front_door_mode=managed');
+        $this->assertSame('native', $cfg->protocol);
+        $this->assertSame('manager_proxy', $cfg->frontDoorMode);
+    }
 }

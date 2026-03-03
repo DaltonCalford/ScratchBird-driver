@@ -45,6 +45,7 @@ final class Connection
     private int $sequence = 0;
     private int $lastQuerySequence = 0;
     private int $lastMaxRows = 0;
+    private bool $inTransaction = false;
     private bool $connected = false;
     private array $attributes = [];
     private array $parameters = [];
@@ -105,9 +106,12 @@ final class Connection
     public function exec(string $statement): int|false
     {
         try {
-            $stmt = $this->prepare($statement);
-            $stmt->execute();
-            return $stmt->rowCount();
+            $this->sendSimpleQuery($statement, 0);
+            $stream = new ResultStream($this);
+            while ($stream->readRow() !== null) {
+                // Drain all rows so command-complete rowsAffected is finalized.
+            }
+            return max(0, $stream->rowsAffected());
         } catch (\Throwable $ex) {
             $this->recordError($ex);
             return false;
@@ -116,14 +120,23 @@ final class Connection
 
     public function beginTransaction(): bool
     {
+        if ($this->inTransaction) {
+            throw new ScratchBirdTransactionException('Transaction already active', '25001');
+        }
         $payload = Protocol::buildTxnBeginPayload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0);
         $this->sendMessage(Protocol::MSG_TXN_BEGIN, $payload, 0, false);
         $this->drainUntilReady();
         return true;
     }
 
+    public function inTransaction(): bool
+    {
+        return $this->inTransaction;
+    }
+
     public function commit(): bool
     {
+        $this->requireActiveTransaction('commit');
         $payload = Protocol::buildTxnCommitPayload(0);
         $this->sendMessage(Protocol::MSG_TXN_COMMIT, $payload, 0, false);
         $this->drainUntilReady();
@@ -132,6 +145,7 @@ final class Connection
 
     public function rollBack(): bool
     {
+        $this->requireActiveTransaction('rollback');
         $payload = Protocol::buildTxnRollbackPayload(0);
         $this->sendMessage(Protocol::MSG_TXN_ROLLBACK, $payload, 0, false);
         $this->drainUntilReady();
@@ -140,6 +154,8 @@ final class Connection
 
     public function savepoint(string $name): void
     {
+        $this->requireActiveTransaction('savepoint');
+        $name = $this->normalizeSavepointName($name);
         $payload = Protocol::buildTxnSavepointPayload($name);
         $this->sendMessage(Protocol::MSG_TXN_SAVEPOINT, $payload, 0, false);
         $this->drainUntilReady();
@@ -147,6 +163,8 @@ final class Connection
 
     public function releaseSavepoint(string $name): void
     {
+        $this->requireActiveTransaction('release savepoint');
+        $name = $this->normalizeSavepointName($name);
         $payload = Protocol::buildTxnReleasePayload($name);
         $this->sendMessage(Protocol::MSG_TXN_RELEASE, $payload, 0, false);
         $this->drainUntilReady();
@@ -154,6 +172,8 @@ final class Connection
 
     public function rollbackToSavepoint(string $name): void
     {
+        $this->requireActiveTransaction('rollback to savepoint');
+        $name = $this->normalizeSavepointName($name);
         $payload = Protocol::buildTxnRollbackToPayload($name);
         $this->sendMessage(Protocol::MSG_TXN_ROLLBACK_TO, $payload, 0, false);
         $this->drainUntilReady();
@@ -177,7 +197,7 @@ final class Connection
             if ($type === Protocol::MSG_PONG || $type === Protocol::MSG_READY) {
                 if ($type === Protocol::MSG_READY) {
                     [, $txnId] = Protocol::parseReady($payload);
-                    $this->txnId = $txnId;
+                    $this->applyTxnState($txnId);
                 }
                 return;
             }
@@ -291,6 +311,7 @@ final class Connection
         fclose($this->socket);
         $this->socket = null;
         $this->connected = false;
+        $this->applyTxnState(0);
         if ($this->keepaliveTracker !== null) {
             $this->keepaliveManager->unregister($this->connectionId);
             $this->keepaliveTracker = null;
@@ -412,7 +433,7 @@ final class Connection
             if ($name === 'current_txn_id') {
                 $parsed = $this->parseUint64($value);
                 if ($parsed !== null) {
-                    $this->txnId = $parsed;
+                    $this->applyTxnState($parsed);
                 }
             }
             return true;
@@ -447,7 +468,7 @@ final class Connection
             }
             if ($type === Protocol::MSG_READY) {
                 [, $txnId] = Protocol::parseReady($payload);
-                $this->txnId = $txnId;
+                $this->applyTxnState($txnId);
                 return;
             }
         }
@@ -459,12 +480,6 @@ final class Connection
         $this->config->frontDoorMode = $this->normalizeFrontDoorMode($this->config->frontDoorMode ?? 'direct');
         if ($this->config->user === '' || $this->config->database === '') {
             throw new ScratchBirdConnectionException('user and database are required', '08001');
-        }
-        if (!$this->config->binaryTransfer) {
-            throw new ScratchBirdNotSupportedException('binary_transfer=false is not supported', '0A000');
-        }
-        if (strtolower($this->config->compression) === 'zstd') {
-            throw new ScratchBirdNotSupportedException('compression=zstd is not supported', '0A000');
         }
         $timeout = $this->config->connectTimeoutMs / 1000;
         $address = sprintf('tcp://%s:%d', $this->config->host, $this->config->port);
@@ -695,15 +710,18 @@ final class Connection
         return '"' . str_replace('"', '""', $name) . '"';
     }
 
-    private function handshake(): void
+    private function buildStartupFeatures(): int
     {
         $features = 0;
-        if (strtolower($this->config->compression) === 'zstd') {
-            $features |= Protocol::FEATURE_COMPRESSION;
-        }
         if ($this->config->binaryTransfer) {
             $features |= Protocol::FEATURE_STREAMING;
         }
+        return $features;
+    }
+
+    private function handshake(): void
+    {
+        $features = $this->buildStartupFeatures();
         $params = [
             'database' => $this->config->database,
             'user' => $this->config->user,
@@ -720,10 +738,10 @@ final class Connection
         $scram = null;
 
         while (true) {
-            [$type, , $payload, , $attachmentId, $txnId] = $this->receive();
-            switch ($type) {
-                case Protocol::MSG_NEGOTIATE_VERSION:
-                    continue;
+                [$type, , $payload, , $attachmentId, $txnId] = $this->receive();
+                switch ($type) {
+                    case Protocol::MSG_NEGOTIATE_VERSION:
+                        continue 2;
                 case Protocol::MSG_AUTH_REQUEST:
                     [$method, $data] = Protocol::parseAuthRequest($payload);
                     if ($method === Protocol::AUTH_OK) {
@@ -753,7 +771,7 @@ final class Connection
                 case Protocol::MSG_AUTH_OK:
                     [, $serverInfo] = Protocol::parseAuthOk($payload);
                     $this->attachmentId = $attachmentId;
-                    $this->txnId = $txnId;
+                    $this->applyTxnState($txnId);
                     if ($scram !== null && $serverInfo !== '' && str_starts_with($serverInfo, 'v=')) {
                         $scram->verifyServerFinal($serverInfo);
                     }
@@ -764,7 +782,7 @@ final class Connection
                     continue 2;
                 case Protocol::MSG_READY:
                     [, $txnId] = Protocol::parseReady($payload);
-                    $this->txnId = $txnId;
+                    $this->applyTxnState($txnId);
                     return;
                 case Protocol::MSG_ERROR:
                     throw $this->buildQueryException($payload);
@@ -832,7 +850,7 @@ final class Connection
             }
             if ($type === Protocol::MSG_READY) {
                 [, $txnId] = Protocol::parseReady($payload);
-                $this->txnId = $txnId;
+                $this->applyTxnState($txnId);
                 return $paramCount;
             }
         }
@@ -873,6 +891,28 @@ final class Connection
             return null;
         }
         return (int) $trimmed;
+    }
+
+    private function applyTxnState(int $txnId): void
+    {
+        $this->txnId = $txnId;
+        $this->inTransaction = $txnId !== 0;
+    }
+
+    private function requireActiveTransaction(string $operation): void
+    {
+        if (!$this->inTransaction) {
+            throw new ScratchBirdTransactionException("No active transaction for {$operation}", '25000');
+        }
+    }
+
+    private function normalizeSavepointName(string $name): string
+    {
+        $normalized = trim($name);
+        if ($normalized === '') {
+            throw new ScratchBirdTransactionException('Savepoint name must not be empty', '3B001');
+        }
+        return $normalized;
     }
 
     private function readExact(int $length): string

@@ -22,3 +22,10 @@ def test_normalize_named():
     rewritten, params = normalize_query(sql, {"id": 1, "name": "Ada"})
     assert rewritten == "SELECT $1, $2"
     assert params == [1, "Ada"]
+
+
+def test_normalize_named_preserves_cast_syntax():
+    sql = "SELECT :id::INTEGER"
+    rewritten, params = normalize_query(sql, {"id": 1})
+    assert rewritten == "SELECT $1::INTEGER"
+    assert params == [1]

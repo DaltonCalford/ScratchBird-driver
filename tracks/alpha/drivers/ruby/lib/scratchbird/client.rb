@@ -39,7 +39,7 @@ module Scratchbird
     MCP_MSG_DB_CONNECT = 0x69
     MCP_AUTH_METHOD_TOKEN = 4
 
-    attr_reader :parameters
+    attr_reader :parameters, :txn_id
 
     def initialize(config)
       @config = config
@@ -72,19 +72,24 @@ module Scratchbird
       rescue ArgumentError => e
         raise NotSupportedError, e.message
       end
-      raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
-      raise NotSupportedError, "binary_transfer=false is not supported" unless @config.binary_transfer
-      raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
-      raw_socket = connect_tcp
-      @socket = wrap_tls(raw_socket)
-      perform_manager_connect if @config.front_door_mode == "manager_proxy"
-      handshake
-      apply_schema
-      @connected = true
-      @keepalive_manager.start
-      @keepalive_tracker = @keepalive_manager.register(@connection_id, self) { ping }
-      @leak_detector.start
-      @leak_guard = @leak_detector.checkout(@connection_id, driver: "ruby")
+      begin
+        raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
+        raise NotSupportedError, "binary_transfer=false is not supported" unless @config.binary_transfer
+        raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
+        raw_socket = connect_tcp
+        @socket = wrap_tls(raw_socket)
+        perform_manager_connect if @config.front_door_mode == "manager_proxy"
+        handshake
+        apply_schema
+        @connected = true
+        @keepalive_manager.start
+        @keepalive_tracker = @keepalive_manager.register(@connection_id, self) { ping }
+        @leak_detector.start
+        @leak_guard = @leak_detector.checkout(@connection_id, driver: "ruby")
+      rescue StandardError
+        close
+        raise
+      end
     end
 
     def connected?
@@ -302,6 +307,10 @@ module Scratchbird
 
     def update_txn_id(txn_id)
       @txn_id = txn_id
+    end
+
+    def in_transaction?
+      @txn_id.to_i != 0
     end
 
     def recv_message

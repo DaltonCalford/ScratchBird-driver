@@ -1771,6 +1771,49 @@ size_t OdbcEnvironment::getConnectionCount() const {
     return connections_.size();
 }
 
+SQLRETURN OdbcEnvironment::endTransaction(SQLSMALLINT completion_type) {
+    clearDiagnostics();
+
+    if (completion_type != SQL_COMMIT && completion_type != SQL_ROLLBACK) {
+        setError("HY012", 0, "Invalid transaction operation code");
+        return SQL_ERROR;
+    }
+
+    std::vector<OdbcConnection*> connections;
+    {
+        std::lock_guard lock(connections_mutex_);
+        connections.reserve(connections_.size());
+        for (const auto& conn : connections_) {
+            connections.push_back(conn.get());
+        }
+    }
+
+    SQLRETURN overall = SQL_SUCCESS;
+    for (auto* conn : connections) {
+        if (!conn || !conn->isConnected()) {
+            continue;
+        }
+
+        auto status = conn->endTransaction(completion_type);
+        if (status == SQL_SUCCESS_WITH_INFO) {
+            overall = SQL_SUCCESS_WITH_INFO;
+            continue;
+        }
+
+        if (status != SQL_SUCCESS) {
+            const auto* diag = conn->getDiagnostic(1);
+            if (diag) {
+                setError(diag->sqlstate, diag->native_error, diag->message);
+            } else {
+                setError("HY000", 0, "Failed to complete transaction for one or more connections");
+            }
+            return SQL_ERROR;
+        }
+    }
+
+    return overall;
+}
+
 // =============================================================================
 // OdbcConnection Implementation
 // =============================================================================
@@ -3528,7 +3571,7 @@ SQLRETURN OdbcConnection::executeSQL(const std::string& sql,
         return SQL_ERROR;
     }
     auto result = client_bridge_->executeSQL(sql, results, columns, rows_affected);
-    if (result != SQL_SUCCESS) {
+    if (result != SQL_SUCCESS && result != SQL_SUCCESS_WITH_INFO) {
         auto status = client_bridge_->lastStatus();
         auto message = client_bridge_->lastError();
         setError(mapStatusToSqlState(status), static_cast<SQLINTEGER>(status),
@@ -3718,7 +3761,7 @@ SQLRETURN OdbcStatement::execDirect(const SQLCHAR* sql, SQLINTEGER sql_len) {
 
     auto result = executeSqlStatements(sql_);
     clearPutDataState();
-    if (result == SQL_SUCCESS) {
+    if (result == SQL_SUCCESS || result == SQL_SUCCESS_WITH_INFO) {
         prepared_ = false;
     }
 
@@ -6004,13 +6047,17 @@ SQLRETURN OdbcStatement::executeSqlStatements(const std::string& sql) {
         return SQL_ERROR;
     }
 
+    SQLRETURN overall_status = SQL_SUCCESS;
     result_sets_.reserve(statements.size());
     for (const auto& statement : statements) {
         ResultSet rs;
         SQLLEN rows_affected = 0;
         auto status = conn_->executeSQL(statement, rs.rows, rs.columns, rows_affected);
-        if (status != SQL_SUCCESS) {
+        if (status != SQL_SUCCESS && status != SQL_SUCCESS_WITH_INFO) {
             return status;
+        }
+        if (status == SQL_SUCCESS_WITH_INFO) {
+            overall_status = SQL_SUCCESS_WITH_INFO;
         }
         if (!rs.columns.empty()) {
             rs.row_count = static_cast<SQLLEN>(rs.rows.size());
@@ -6027,7 +6074,7 @@ SQLRETURN OdbcStatement::executeSqlStatements(const std::string& sql) {
     current_result_index_ = 0;
     applyResultSet(current_result_index_);
     executed_ = true;
-    return SQL_SUCCESS;
+    return overall_status;
 }
 
 void OdbcStatement::applyResultSet(size_t index) {

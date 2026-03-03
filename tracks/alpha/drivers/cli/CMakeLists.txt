@@ -12,7 +12,7 @@ set(SB_ENGINE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../ScratchBird" CACHE PATH
 set(SB_ENGINE_BUILD_DIR "${SB_ENGINE_SOURCE_DIR}/build" CACHE PATH
     "Path to ScratchBird engine build tree (for FDW CLI linkage)")
 
-set(SB_CPP_DRIVER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../beta/drivers/cpp")
+set(SB_CPP_DRIVER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../beta/drivers/cpp")
 if (NOT TARGET scratchbird_client)
     add_subdirectory("${SB_CPP_DRIVER_DIR}" "${CMAKE_BINARY_DIR}/scratchbird_cpp")
 endif()
@@ -22,7 +22,10 @@ add_executable(sb_admin sb_admin.cpp)
 add_executable(sb_backup sb_backup.cpp)
 add_executable(sb_security sb_security.cpp)
 add_executable(sb_verify sb_verify.cpp)
-add_executable(sbdriver_conformance sbdriver_conformance.cpp)
+add_executable(sbdriver_conformance
+    sbdriver_conformance.cpp
+    txn_exec_parity.cpp
+)
 
 set(cli_targets
     sb_isql
@@ -202,4 +205,11 @@ if (TARGET sb_verify)
     target_sources(sb_verify PRIVATE crc32c.cpp)
 endif()
 
- 
+add_executable(sbdriver_txn_exec_tests
+    txn_exec_parity_test.cpp
+    txn_exec_parity.cpp
+)
+target_include_directories(sbdriver_txn_exec_tests
+    PRIVATE
+        "${SB_CPP_DRIVER_DIR}/include"
+)

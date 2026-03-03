@@ -6,6 +6,7 @@ Pure Java (Type 4) driver for ScratchBird.
 
 - Getting started: `docs/getting-started/jdbc.md`
 - API reference: `docs/api-reference/jdbc.md`
+- Baseline requirement mapping: `BASELINE_REQUIREMENT_MAPPING.md`
 
 ## Build/Test (Windows/Linux)
 

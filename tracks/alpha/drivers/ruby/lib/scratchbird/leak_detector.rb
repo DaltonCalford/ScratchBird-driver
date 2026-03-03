@@ -1,7 +1,7 @@
 # ScratchBird Ruby Driver - Connection Leak Detector
 # Copyright (c) 2025-2026 Dalton Calford
 
-module ScratchBird
+module Scratchbird
   module LeakLogLevel
     DEBUG = :debug
     WARN = :warn

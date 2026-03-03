@@ -189,7 +189,7 @@ func (c *Conn) endOperation(span *SpanContext, success bool) {
 }
 
 func (c *Conn) applyTLS(ctx context.Context) error {
-	mode := strings.ToLower(c.config.SSLMode)
+	mode := strings.ToLower(strings.TrimSpace(c.config.SSLMode))
 	if mode == "" {
 		mode = "require"
 	}
@@ -226,7 +226,9 @@ func (c *Conn) buildTLSConfig() (*tls.Config, error) {
 			return nil, err
 		}
 		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM(caData)
+		if ok := pool.AppendCertsFromPEM(caData); !ok {
+			return nil, errors.New("failed to parse sslrootcert PEM")
+		}
 		cfg.RootCAs = pool
 	}
 	return cfg, nil
@@ -679,6 +681,12 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 			isolation = isolationRepeatableRead
 		case driver.IsolationLevel(sql.LevelSerializable):
 			isolation = isolationSerializable
+		default:
+			return nil, &Error{
+				Kind:     ErrNotSupported,
+				Message:  fmt.Sprintf("isolation level %d is not supported", opts.Isolation),
+				SQLState: "0A000",
+			}
 		}
 	}
 	accessMode := byte(0)
@@ -709,7 +717,7 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 		return nil, err
 	}
 	if len(normalized.args) == 0 {
-		if err := c.sendSimpleQuery(normalized.sql, ctx); err != nil {
+		if err := c.sendSimpleQueryWithMaxRows(normalized.sql, ctx, 0); err != nil {
 			c.endOperation(span, false)
 			return nil, err
 		}
@@ -721,7 +729,7 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 		c.endOperation(span, true)
 		return &Result{tag: tag, rowsAffected: int64(rows), lastInsertID: int64(lastID)}, nil
 	}
-	if err := c.sendExtendedQuery(normalized.sql, normalized.args, ctx); err != nil {
+	if err := c.sendExtendedQueryWithMaxRows(normalized.sql, normalized.args, ctx, 0); err != nil {
 		c.endOperation(span, false)
 		return nil, err
 	}
@@ -763,11 +771,14 @@ func (c *Conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 }
 
 func (c *Conn) sendSimpleQuery(sql string, ctx context.Context) error {
+	return c.sendSimpleQueryWithMaxRows(sql, ctx, c.config.FetchSize)
+}
+
+func (c *Conn) sendSimpleQueryWithMaxRows(sql string, ctx context.Context, maxRows uint32) error {
 	flags := uint32(0)
 	if c.config.BinaryTransfer {
 		flags |= queryFlagBinaryResult
 	}
-	maxRows := uint32(c.config.FetchSize)
 	timeoutMs := uint32(0)
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
@@ -780,6 +791,10 @@ func (c *Conn) sendSimpleQuery(sql string, ctx context.Context) error {
 }
 
 func (c *Conn) sendExtendedQuery(sql string, args []driver.NamedValue, ctx context.Context) error {
+	return c.sendExtendedQueryWithMaxRows(sql, args, ctx, c.config.FetchSize)
+}
+
+func (c *Conn) sendExtendedQueryWithMaxRows(sql string, args []driver.NamedValue, ctx context.Context, maxRows uint32) error {
 	paramValues := make([]paramValue, 0, len(args))
 	paramTypes := make([]uint32, 0, len(args))
 	for _, arg := range args {
@@ -843,7 +858,6 @@ described:
 	if err := c.sendMessage(msgBind, bindPayload, 0, false); err != nil {
 		return err
 	}
-	maxRows := uint32(c.config.FetchSize)
 	execPayload := buildExecutePayload("", maxRows)
 	if err := c.sendMessage(msgExecute, execPayload, 0, false); err != nil {
 		return err

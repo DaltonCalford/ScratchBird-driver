@@ -28,6 +28,9 @@ public sealed class ScratchBirdTransaction : DbTransaction
     public override IsolationLevel IsolationLevel => _isolationLevel;
 
     protected override DbConnection DbConnection => _connection;
+    internal bool IsCompleted => _completed;
+    internal bool IsDisposed => _disposed;
+    internal bool BelongsTo(ScratchBirdConnection connection) => ReferenceEquals(_connection, connection);
 
     public override void Commit()
     {
@@ -39,6 +42,7 @@ public sealed class ScratchBirdTransaction : DbTransaction
         _connection.GetConnectedClient().Commit();
         _completed = true;
         _savepoints.Clear();
+        _connection.CompleteTransaction(this);
     }
 
     public override void Rollback()
@@ -51,6 +55,7 @@ public sealed class ScratchBirdTransaction : DbTransaction
         _connection.GetConnectedClient().Rollback();
         _completed = true;
         _savepoints.Clear();
+        _connection.CompleteTransaction(this);
     }
 
     public override void Save(string savepointName)
@@ -112,10 +117,15 @@ public sealed class ScratchBirdTransaction : DbTransaction
             {
                 Rollback();
             }
-            catch (ScratchBirdException)
+            catch (Exception ex) when (ex is ScratchBirdException || ex is InvalidOperationException)
             {
                 // Allow dispose to complete and avoid re-throwing after user-initiated disposal.
             }
+        }
+
+        if (_completed)
+        {
+            _connection.CompleteTransaction(this);
         }
 
         _disposed = true;
@@ -124,6 +134,10 @@ public sealed class ScratchBirdTransaction : DbTransaction
 
     private void EnsureTransactionActive()
     {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(ScratchBirdTransaction));
+        }
         if (_completed)
         {
             throw new InvalidOperationException("Transaction is already completed");
@@ -131,6 +145,10 @@ public sealed class ScratchBirdTransaction : DbTransaction
         if (_connection.State != ConnectionState.Open)
         {
             throw new InvalidOperationException("Connection is not open");
+        }
+        if (!_connection.IsActiveTransaction(this))
+        {
+            throw new InvalidOperationException("Transaction is not active on this connection");
         }
     }
 

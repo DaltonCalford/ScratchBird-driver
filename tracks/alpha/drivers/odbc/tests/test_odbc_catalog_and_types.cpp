@@ -10,6 +10,7 @@
 #include "scratchbird/odbc/odbc_handles.h"
 #include "scratchbird/odbc/odbc_client_bridge.h"
 #undef private
+#include "scratchbird/odbc/odbc_driver.h"
 
 using namespace scratchbird::odbc;
 
@@ -436,6 +437,43 @@ public:
     }
 };
 
+class TransactionRecordingClientBridge : public RecordingClientBridge {
+public:
+    SQLRETURN commit_result{SQL_SUCCESS};
+    SQLRETURN rollback_result{SQL_SUCCESS};
+    int commit_calls{0};
+    int rollback_calls{0};
+
+    SQLRETURN commit() override {
+        ++commit_calls;
+        return commit_result;
+    }
+
+    SQLRETURN rollback() override {
+        ++rollback_calls;
+        return rollback_result;
+    }
+};
+
+class WarningExecuteClientBridge : public RecordingClientBridge {
+public:
+    SQLRETURN execute_result{SQL_SUCCESS_WITH_INFO};
+
+    SQLRETURN executeSQL(const std::string& sql,
+                         std::vector<std::vector<std::string>>& results,
+                         std::vector<scratchbird::odbc::ColumnMetadata>& columns,
+                         SQLLEN& rows_affected) override {
+        sql_log.push_back(sql);
+        scratchbird::odbc::ColumnMetadata col;
+        col.name = "value";
+        col.sql_type = SQL_INTEGER;
+        columns = {col};
+        results = {{"1"}};
+        rows_affected = 1;
+        return execute_result;
+    }
+};
+
 class SmokeClientBridge : public RecordingClientBridge {
 public:
     SQLRETURN executeSQL(const std::string& sql,
@@ -508,6 +546,73 @@ TEST(OdbcAutocommitTest, IsolationMappingUsesSetTransaction) {
     EXPECT_EQ(bridge_ptr->sql_log[0],
               "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE ON CONFLICT COMMIT");
     EXPECT_EQ(bridge_ptr->sql_log[1], "SET AUTOCOMMIT ON ON CONFLICT COMMIT");
+}
+
+TEST(OdbcTransactionTest, EnvHandleEndTranCommitsConnectedConnections) {
+    scratchbird::odbc::OdbcEnvironment env;
+
+    auto* conn1 = env.createConnection();
+    auto* conn2 = env.createConnection();
+    auto* conn3 = env.createConnection();
+
+    auto bridge1 = std::make_unique<TransactionRecordingClientBridge>();
+    auto bridge2 = std::make_unique<TransactionRecordingClientBridge>();
+    auto bridge3 = std::make_unique<TransactionRecordingClientBridge>();
+
+    auto* bridge1_ptr = bridge1.get();
+    auto* bridge2_ptr = bridge2.get();
+    auto* bridge3_ptr = bridge3.get();
+
+    conn1->client_bridge_ = std::move(bridge1);
+    conn1->connected_ = true;
+    conn1->auto_commit_ = SQL_AUTOCOMMIT_OFF;
+    conn1->in_transaction_ = true;
+
+    conn2->client_bridge_ = std::move(bridge2);
+    conn2->connected_ = true;
+    conn2->auto_commit_ = SQL_AUTOCOMMIT_OFF;
+    conn2->in_transaction_ = true;
+
+    conn3->client_bridge_ = std::move(bridge3);
+    conn3->connected_ = false;
+
+    SQLRETURN rc = SQLEndTran(SQL_HANDLE_ENV, &env, SQL_COMMIT);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    EXPECT_EQ(bridge1_ptr->commit_calls, 1);
+    EXPECT_EQ(bridge1_ptr->rollback_calls, 0);
+    EXPECT_EQ(bridge2_ptr->commit_calls, 1);
+    EXPECT_EQ(bridge2_ptr->rollback_calls, 0);
+    EXPECT_EQ(bridge3_ptr->commit_calls, 0);
+    EXPECT_EQ(bridge3_ptr->rollback_calls, 0);
+}
+
+TEST(OdbcExecutionParityTest, ExecuteAndExecDirectPropagateSuccessWithInfo) {
+    scratchbird::odbc::OdbcEnvironment env;
+    scratchbird::odbc::OdbcConnection conn(&env);
+    scratchbird::odbc::OdbcStatement stmt(&conn);
+
+    auto bridge = std::make_unique<WarningExecuteClientBridge>();
+    auto* bridge_ptr = bridge.get();
+    conn.client_bridge_ = std::move(bridge);
+    conn.connected_ = true;
+
+    ASSERT_EQ(stmt.prepare(reinterpret_cast<const SQLCHAR*>("SELECT 1"), SQL_NTS), SQL_SUCCESS);
+    ASSERT_TRUE(stmt.prepared_);
+
+    SQLRETURN rc = stmt.execute();
+    ASSERT_EQ(rc, SQL_SUCCESS_WITH_INFO);
+    EXPECT_TRUE(stmt.prepared_);
+    EXPECT_TRUE(stmt.executed_);
+    ASSERT_EQ(bridge_ptr->sql_log.size(), 1u);
+    EXPECT_EQ(bridge_ptr->sql_log[0], "SELECT 1");
+
+    stmt.prepared_ = true;
+    rc = stmt.execDirect(reinterpret_cast<const SQLCHAR*>("SELECT 1"), SQL_NTS);
+    ASSERT_EQ(rc, SQL_SUCCESS_WITH_INFO);
+    EXPECT_FALSE(stmt.prepared_);
+    EXPECT_TRUE(stmt.executed_);
+    ASSERT_EQ(bridge_ptr->sql_log.size(), 2u);
+    EXPECT_EQ(bridge_ptr->sql_log[1], "SELECT 1");
 }
 
 TEST(OdbcFetchTest, BindAndFetchPopulateBuffers) {

@@ -42,6 +42,8 @@ class Cursor:
         self._ensure_open()
         if sql is None:
             raise errors.ProgrammingError("sql is required")
+        if seq_of_params is None:
+            raise errors.ProgrammingError("seq_of_params is required")
         self._reset_state()
         total = 0
         rowcount_known = True

@@ -159,6 +159,11 @@ public final class ScratchBirdConnection {
         conflictAction: UInt8 = 0
     ) async throws {
         try await Task.detached {
+            try validateTxnBeginOptions(
+                isolationLevel: isolationLevel,
+                accessMode: accessMode,
+                autocommitMode: autocommitMode
+            )
             try await self.withResilience(operation: "txn_begin") {
                 var flags: UInt16 = 0
                 let isolation = isolationLevel ?? isolationReadCommitted
@@ -203,27 +208,30 @@ public final class ScratchBirdConnection {
     }
 
     public func savepoint(_ name: String) async throws {
+        let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
             try await self.withResilience(operation: "txn_savepoint") {
-                _ = try self.sendMessage(type: .txnSavepoint, payload: buildTxnSavepointPayload(name: name))
+                _ = try self.sendMessage(type: .txnSavepoint, payload: buildTxnSavepointPayload(name: normalizedName))
                 _ = try self.drainUntilReady()
             }
         }.value
     }
 
     public func releaseSavepoint(_ name: String) async throws {
+        let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
             try await self.withResilience(operation: "txn_release") {
-                _ = try self.sendMessage(type: .txnRelease, payload: buildTxnReleasePayload(name: name))
+                _ = try self.sendMessage(type: .txnRelease, payload: buildTxnReleasePayload(name: normalizedName))
                 _ = try self.drainUntilReady()
             }
         }.value
     }
 
     public func rollbackToSavepoint(_ name: String) async throws {
+        let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
             try await self.withResilience(operation: "txn_rollback_to") {
-                _ = try self.sendMessage(type: .txnRollbackTo, payload: buildTxnRollbackToPayload(name: name))
+                _ = try self.sendMessage(type: .txnRollbackTo, payload: buildTxnRollbackToPayload(name: normalizedName))
                 _ = try self.drainUntilReady()
             }
         }.value
@@ -324,7 +332,8 @@ public final class ScratchBirdConnection {
 
     public func cancel() async throws {
         try await Task.detached {
-            let payload = buildCancelPayload(cancelType: 0, targetSequence: self.lastQuerySequence)
+            let targetSequence = try requireCancelableSequence(self.lastQuerySequence)
+            let payload = buildCancelPayload(cancelType: 0, targetSequence: targetSequence)
             _ = try self.sendMessage(type: .cancel, payload: payload, flags: messageFlagUrgent)
         }.value
     }
@@ -399,11 +408,14 @@ public final class ScratchBirdConnection {
                 }
                 rows.append(decoded)
             case .ready:
+                lastQuerySequence = 0
                 return ScratchBirdResult(rows: rows, columns: columns)
             case .error:
+                lastQuerySequence = 0
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Query failed"])
             case .portalSuspended:
-                try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: UInt32(config.fetchSize)))
+                let resumeMaxRows = normalizePortalResumeMaxRows(fetchSize: config.fetchSize)
+                lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: resumeMaxRows))
                 try sendMessage(type: .sync, payload: Data())
             default:
                 continue

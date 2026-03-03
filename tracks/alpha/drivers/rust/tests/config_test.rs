@@ -47,3 +47,43 @@ fn parse_manager_proxy_params() {
     assert_eq!(cfg.manager_auth_token, "token");
     assert_eq!(cfg.manager_client_flags, 7);
 }
+
+#[test]
+fn parse_uri_precedence_latest_override_wins() {
+    let cfg = Config::from_dsn(
+        "scratchbird://user:pass@localhost:3092/pathdb?database=querydb&user=override&connect_timeout=1&connect_timeout=2",
+    )
+    .unwrap();
+    assert_eq!(cfg.database, "querydb");
+    assert_eq!(cfg.user, "override");
+    assert_eq!(cfg.connect_timeout_ms, 2000);
+}
+
+#[test]
+fn parse_key_value_precedence_latest_override_wins() {
+    let cfg = Config::from_dsn("Host=first;Host=second;Port=3100;Port=4100;Database=a;Database=b").unwrap();
+    assert_eq!(cfg.host, "second");
+    assert_eq!(cfg.port, 4100);
+    assert_eq!(cfg.database, "b");
+}
+
+#[test]
+fn parse_auth_plugin_selection_params_into_extra() {
+    let cfg = Config::from_dsn(
+        "scratchbird://user:pass@localhost:3092/mydb?auth_method_id=scratchbird.auth.password&auth_payload_json=%7B%22tenant%22%3A%22alpha%22%7D&auth_payload_b64=dGVzdA%3D%3D&auth_provider_profile=default",
+    )
+    .unwrap();
+    assert_eq!(
+        cfg.extra.get("auth_method_id").map(String::as_str),
+        Some("scratchbird.auth.password")
+    );
+    assert_eq!(
+        cfg.extra.get("auth_payload_json").map(String::as_str),
+        Some("{\"tenant\":\"alpha\"}")
+    );
+    assert_eq!(cfg.extra.get("auth_payload_b64").map(String::as_str), Some("dGVzdA=="));
+    assert_eq!(
+        cfg.extra.get("auth_provider_profile").map(String::as_str),
+        Some("default")
+    );
+}

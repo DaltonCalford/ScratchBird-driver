@@ -153,7 +153,9 @@ read_u64 <- function(data, offset) {
 }
 
 read_u32 <- function(data, offset) {
-  as.integer(readBin(data[offset:(offset + 3)], integer(), size = 4, endian = "little", signed = FALSE))
+  value <- as.numeric(readBin(data[offset:(offset + 3)], integer(), size = 4, endian = "little", signed = TRUE))
+  if (value < 0) value <- value + 4294967296
+  value
 }
 
 read_u16 <- function(data, offset) {

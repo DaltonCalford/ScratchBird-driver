@@ -51,6 +51,19 @@ final class IntegrationTest extends TestCase
         $this->assertNotFalse($row);
     }
 
+    public function testConnectWithCompatibilityConnOptions(): void
+    {
+        $dsn = getenv('SCRATCHBIRD_PHP_URL');
+        if (!$dsn) {
+            $this->markTestSkipped('SCRATCHBIRD_PHP_URL not set');
+        }
+        $separator = str_contains($dsn, '?') ? '&' : '?';
+        $pdo = new ScratchBirdPDO($dsn . $separator . 'binary_transfer=false&compression=zstd');
+        $stmt = $pdo->query('SELECT 1');
+        $row = $stmt->fetch(\PDO::FETCH_NUM);
+        $this->assertSame(1, (int)$row[0]);
+    }
+
     public function testCancel(): void
     {
         $dsn = getenv('SCRATCHBIRD_PHP_URL');

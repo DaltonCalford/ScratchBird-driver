@@ -451,6 +451,9 @@ class MessageType:
     FLUSH = 0x0A
     CANCEL = 0x0B
     TERMINATE = 0x0C
+    TXN_BEGIN = 0x15
+    TXN_COMMIT = 0x16
+    TXN_ROLLBACK = 0x17
     PING = 0x1B
     SET_OPTION = 0x1C
 
@@ -472,6 +475,18 @@ class MessageType:
     PONG = 0x5D
 
 MSG_FLAG_URGENT = 0x08
+
+ISOLATION_READ_UNCOMMITTED = 0
+ISOLATION_READ_COMMITTED = 1
+ISOLATION_REPEATABLE_READ = 2
+ISOLATION_SERIALIZABLE = 3
+
+TXN_FLAG_HAS_ISOLATION = 0x0001
+TXN_FLAG_HAS_ACCESS = 0x0002
+TXN_FLAG_HAS_DEFERRABLE = 0x0004
+TXN_FLAG_HAS_WAIT = 0x0008
+TXN_FLAG_HAS_TIMEOUT = 0x0010
+TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
 
 class AuthMethod:
     OK = 0
@@ -1511,7 +1526,7 @@ class ScratchBirdConnection:
     def query(self, sql: str, params=None) -> ScratchBirdResult:
         var span = self._begin_operation("query", sql)
         try:
-            if params:
+            if params is not None:
                 var result = self._extended_query(sql, params)
                 self._end_operation(span, True)
                 return result
@@ -1619,18 +1634,52 @@ class ScratchBirdConnection:
 
     def begin(self, **kwargs):
         flags = 0
-        payload = build_txn_begin_payload(flags, 0, 0, 0, 0, 0, 0, 0)
-        self._send_message(0x15, payload)
+        if "isolation_level" in kwargs:
+            flags |= TXN_FLAG_HAS_ISOLATION
+        if "access_mode" in kwargs:
+            flags |= TXN_FLAG_HAS_ACCESS
+        if "deferrable" in kwargs:
+            flags |= TXN_FLAG_HAS_DEFERRABLE
+        if "wait" in kwargs or "wait_mode" in kwargs:
+            flags |= TXN_FLAG_HAS_WAIT
+        if "timeout_ms" in kwargs:
+            flags |= TXN_FLAG_HAS_TIMEOUT
+        if "autocommit_mode" in kwargs:
+            flags |= TXN_FLAG_HAS_AUTOCOMMIT
+
+        deferrable = kwargs.get("deferrable", 0)
+        if isinstance(deferrable, bool):
+            deferrable = 1 if deferrable else 0
+
+        wait_mode = kwargs.get("wait_mode", kwargs.get("wait", 0))
+        if isinstance(wait_mode, bool):
+            wait_mode = 1 if wait_mode else 0
+
+        payload = build_txn_begin_payload(
+            int(flags),
+            int(kwargs.get("conflict_action", 0)),
+            int(kwargs.get("autocommit_mode", 0)),
+            int(kwargs.get("isolation_level", ISOLATION_READ_COMMITTED)),
+            int(kwargs.get("access_mode", 0)),
+            int(deferrable),
+            int(wait_mode),
+            int(kwargs.get("timeout_ms", 0)),
+        )
+        self._send_message(MessageType.TXN_BEGIN, payload)
         self._drain_until_ready()
 
     def commit(self):
+        if self._txn_id == 0:
+            return
         payload = build_txn_commit_payload(0)
-        self._send_message(0x16, payload)
+        self._send_message(MessageType.TXN_COMMIT, payload)
         self._drain_until_ready()
 
     def rollback(self):
+        if self._txn_id == 0:
+            return
         payload = build_txn_rollback_payload(0)
-        self._send_message(0x17, payload)
+        self._send_message(MessageType.TXN_ROLLBACK, payload)
         self._drain_until_ready()
 
     def set_option(self, name: str, value: str):
@@ -1657,7 +1706,7 @@ class ScratchBirdConnection:
             if msg_type == MessageType.READY:
                 return
             if msg_type == MessageType.ERROR:
-                raise RuntimeError("command failed")
+                self._raise_error(payload)
 
 
 def connect(config: ScratchBirdConfig) -> ScratchBirdConnection:

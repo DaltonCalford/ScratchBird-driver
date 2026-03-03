@@ -18,14 +18,14 @@ module Scratchbird
       @connection.client.prepare(@name, @sql)
     end
 
-    def execute(params = nil)
+    def execute(params = nil, options = nil)
       ensure_open
-      @connection.client.execute(@name, params)
+      @connection.execute_prepared(@name, params, options)
     end
 
-    def stream(params = nil)
+    def stream(params = nil, options = nil)
       ensure_open
-      @connection.client.execute_stream(@name, params)
+      @connection.stream_prepared(@name, params, options)
     end
 
     def close

@@ -56,7 +56,9 @@ begin
   if (Mode = '') or (Mode = 'require') then
     Exit(tmRequire);
   if Mode = 'disable' then
-    Exit(tmDisable);
+    raise EScratchbirdConnectionError.CreateWithInfo(
+      'TLS mode "disable" is not allowed for ScratchBird connections.',
+      '08001', '', '');
   if Mode = 'allow' then
     Exit(tmAllow);
   if Mode = 'prefer' then

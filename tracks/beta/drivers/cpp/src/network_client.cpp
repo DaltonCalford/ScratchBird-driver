@@ -181,6 +181,11 @@ core::Status resolveConnectionAddress(const NetworkClientConfig& config,
 
     if (isLocalIpcTransport(transport)) {
         server::IPCMethod method = resolveLocalIpcMethod(config.ipc_method);
+        if (method == server::IPCMethod::NAMED_PIPE) {
+            // Socket transport for OS named pipes is not wired yet in this lane.
+            // Route pipe mode through local loopback to keep local IPC profiles usable.
+            method = server::IPCMethod::TCP_LOCALHOST;
+        }
         if (method == server::IPCMethod::UNIX_SOCKET) {
 #ifdef _WIN32
             return setError(ctx,
@@ -197,12 +202,6 @@ core::Status resolveConnectionAddress(const NetworkClientConfig& config,
             local_ipc_transport = true;
             return core::Status::OK;
 #endif
-        }
-
-        if (method == server::IPCMethod::NAMED_PIPE) {
-            return setError(ctx,
-                            core::Status::NOT_SUPPORTED,
-                            "transport_mode=local_ipc with ipc_method=pipe is not implemented in this client");
         }
 
         address_out.family = network::AddressFamily::IPV4;
@@ -530,6 +529,14 @@ core::Status mapProtocolError(const protocol::ProtocolMessage& msg,
         mapped = core::Status::CONNECTION_FAILURE;
     } else if (sqlstate == "28P01" || sqlstate == "28000") {
         mapped = core::Status::INVALID_PASSWORD;
+    } else if (sqlstate == "25P01") {
+        mapped = core::Status::NO_ACTIVE_TRANSACTION;
+    } else if (sqlstate == "25P02") {
+        mapped = core::Status::TRANSACTION_ABORTED;
+    } else if (sqlstate == "25006") {
+        mapped = core::Status::READ_ONLY_TRANSACTION;
+    } else if (sqlstate.rfind("25", 0) == 0 || sqlstate == "2D000" || sqlstate == "0B000") {
+        mapped = core::Status::INVALID_TRANSACTION_STATE;
     } else if (sqlstate.rfind("42", 0) == 0) {
         mapped = core::Status::SYNTAX_ERROR;
     } else if (sqlstate.rfind("23", 0) == 0) {
@@ -555,6 +562,19 @@ core::Status mapProtocolError(const protocol::ProtocolMessage& msg,
         }
     }
     return mapped;
+}
+
+core::Status parseReadyAndTrackTransaction(const std::vector<uint8_t>& payload,
+                                           bool& in_transaction,
+                                           core::ErrorContext* ctx) {
+    uint8_t status_byte = 0;
+    uint64_t txn_id = 0;
+    uint64_t epoch = 0;
+    auto status = protocol::parseReady(payload, status_byte, txn_id, epoch, ctx);
+    if (status == core::Status::OK) {
+        in_transaction = status_byte != 0;
+    }
+    return status;
 }
 
 std::vector<uint8_t> parseUuidHex(const std::string& value) {
@@ -917,6 +937,15 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
     if (isManagerProxyMode(config_.front_door_mode) && !isManagedTransport(config_.transport_mode)) {
         config_.transport_mode = "managed";
     }
+    if (isManagerProxyMode(config_.front_door_mode) && config_.manager_auth_token.empty()) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT,
+                        "manager_proxy mode requires manager_auth_token");
+    }
+    if (!config_.auth_method_id.empty() &&
+        !protocol::isValidAuthMethodId(config_.auth_method_id)) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT,
+                        "auth_method_id must start with scratchbird.auth.");
+    }
     network::NetworkInitGuard guard;
     if (!guard.isInitialized()) {
         return setError(ctx, core::Status::CONNECTION_FAILURE, "Network init failed");
@@ -1097,20 +1126,11 @@ core::Status NetworkClient::executeQuery(const std::string& sql,
                 break;
             }
             case protocol::MessageType::Error:
+                last_query_sequence_ = 0;
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                if (status == core::Status::OK) {
-                    in_transaction_ = status_byte != 0;
-                    if (txn_id != 0) {
-                        // Update current txn id
-                    }
-                }
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                last_query_sequence_ = 0;
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
                 break;
         }
@@ -1165,10 +1185,7 @@ core::Status NetworkClient::prepare(const std::string& sql,
             case protocol::MessageType::Error:
                 return mapProtocolError(msg, ctx);
             case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
+                status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
                 stmt.valid_ = (status == core::Status::OK);
                 return status;
             }
@@ -1261,14 +1278,11 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
                 break;
             }
             case protocol::MessageType::Error:
+                last_query_sequence_ = 0;
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                last_query_sequence_ = 0;
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
                 break;
         }
@@ -1385,14 +1399,11 @@ core::Status NetworkClient::executeServerStatement(uint32_t stmt_id,
                 }
                 break;
             case protocol::MessageType::Error:
+                last_query_sequence_ = 0;
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                last_query_sequence_ = 0;
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
                 break;
         }
@@ -1552,13 +1563,8 @@ core::Status NetworkClient::attachList(NetworkResultSet& results,
             }
             case protocol::MessageType::Error:
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
                 break;
         }
@@ -1597,16 +1603,8 @@ core::Status NetworkClient::ping(core::ErrorContext* ctx) {
         switch (msg.header.type) {
             case protocol::MessageType::Pong:
                 return core::Status::OK;
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                if (status == core::Status::OK) {
-                    in_transaction_ = status_byte != 0;
-                }
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             case protocol::MessageType::Error:
                 return mapProtocolError(msg, ctx);
             default:
@@ -1690,14 +1688,11 @@ core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
                 break;
             }
             case protocol::MessageType::Error:
+                last_query_sequence_ = 0;
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                status = protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-                return status;
-            }
+            case protocol::MessageType::Ready:
+                last_query_sequence_ = 0;
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
                 break;
         }
@@ -2135,8 +2130,13 @@ core::Status NetworkClient::drainUntilReady(std::string* command_tag,
                 break;
             }
             case protocol::MessageType::Error:
+                last_query_sequence_ = 0;
                 return mapProtocolError(msg, ctx);
-            case protocol::MessageType::Ready:
+            case protocol::MessageType::Ready: {
+                auto ready_status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                if (ready_status != core::Status::OK) {
+                    return ready_status;
+                }
                 if (command_tag) {
                     *command_tag = tag;
                 }
@@ -2146,7 +2146,9 @@ core::Status NetworkClient::drainUntilReady(std::string* command_tag,
                 if (last_id) {
                     *last_id = local_last;
                 }
+                last_query_sequence_ = 0;
                 return core::Status::OK;
+            }
             default:
                 break;
         }
@@ -2331,12 +2333,8 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                 }
                 continue;
             }
-            case protocol::MessageType::Ready: {
-                uint8_t status_byte = 0;
-                uint64_t txn_id = 0;
-                uint64_t epoch = 0;
-                return protocol::parseReady(msg.body, status_byte, txn_id, epoch, ctx);
-            }
+            case protocol::MessageType::Ready:
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             case protocol::MessageType::Error:
                 return mapProtocolError(msg, ctx);
             default:

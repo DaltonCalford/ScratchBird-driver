@@ -4,6 +4,10 @@ Native CLI tools for ScratchBird operations and conformance workflows:
 `sb_isql`, `sb_admin`, `sb_backup`, `sb_security`, `sb_verify`, and
 `sbdriver_conformance`.
 
+## Top-Level Lane Docs
+
+- [`BASELINE_REQUIREMENT_MAPPING.md`](BASELINE_REQUIREMENT_MAPPING.md) - Lane-local S0 mapping of CLI capabilities to JDBCBL requirement groups.
+
 ## Connection Modes
 
 Network-backed CLIs (`sb_isql`, `sb_admin`, `sb_security`) now support the

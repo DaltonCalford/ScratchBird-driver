@@ -18,3 +18,7 @@ cmake --build build --config Release
 ```
 
 See `docs/BUILD_MATRIX.md` for required ODBC/OpenSSL dependencies.
+
+## Baseline Mapping
+
+See [BASELINE_REQUIREMENT_MAPPING.md](BASELINE_REQUIREMENT_MAPPING.md) for S0 ODBCBL-to-JDBC baseline status and evidence anchors.

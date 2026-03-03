@@ -148,7 +148,13 @@ begin
       end;
       Continue;
     end;
-    if (Sql[I] = '@') or (Sql[I] = ':') then
+    if (Sql[I] = ':') and (I < Length(Sql)) and (Sql[I + 1] = ':') then
+    begin
+      OutSql := OutSql + '::';
+      Inc(I, 2);
+      Continue;
+    end;
+    if ((Sql[I] = '@') or (Sql[I] = ':')) and (I < Length(Sql)) and IsIdentChar(Sql[I + 1]) then
     begin
       J := I + 1;
       while (J <= Length(Sql)) and IsIdentChar(Sql[J]) do

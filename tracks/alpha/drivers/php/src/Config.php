@@ -178,7 +178,7 @@ final class Config
                 break;
             case 'binary_transfer':
             case 'binarytransfer':
-                $cfg->binaryTransfer = $value === '1' || strtolower($value) === 'true';
+                $cfg->binaryTransfer = self::parseBool($value, $cfg->binaryTransfer);
                 break;
             case 'compression':
                 $cfg->compression = strtolower($value) === 'zstd' ? 'zstd' : 'off';
@@ -214,10 +214,21 @@ final class Config
                 break;
             case 'manager_auth_fast_path':
             case 'mcp_auth_fast_path':
-                $normalized = strtolower(trim($value));
-                $cfg->managerAuthFastPath = in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+                $cfg->managerAuthFastPath = self::parseBool($value, $cfg->managerAuthFastPath);
                 break;
         }
+    }
+
+    private static function parseBool(string $value, bool $default): bool
+    {
+        $normalized = strtolower(trim($value));
+        if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+        if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+            return false;
+        }
+        return $default;
     }
 
     private static function normalizeNativeProtocol(string $value): string

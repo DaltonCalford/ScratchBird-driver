@@ -53,6 +53,11 @@ final class ScratchBirdPDO
         return $this->connection->commit();
     }
 
+    public function inTransaction(): bool
+    {
+        return $this->connection->inTransaction();
+    }
+
     public function rollBack(): bool
     {
         return $this->connection->rollBack();

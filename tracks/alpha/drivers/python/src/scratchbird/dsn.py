@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 
 
@@ -63,7 +64,7 @@ def _parse_uri(dsn: str) -> dict:
 
 def _parse_kv(dsn: str) -> dict:
     params = {}
-    tokens = dsn.split()
+    tokens = re.split(r"[;\s]+", dsn.strip())
     for token in tokens:
         if "=" not in token:
             continue

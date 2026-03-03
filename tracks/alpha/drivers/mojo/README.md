@@ -4,6 +4,11 @@ Native ScratchBird driver for Mojo (SBWP v1.1). This implementation targets
 low-latency application workflows and is designed to keep the transport layer small
 and swappable as Mojo networking evolves.
 
+## Lane Docs
+
+- [Baseline Requirement Mapping (S0)](BASELINE_REQUIREMENT_MAPPING.md)
+- [Tests](tests/README.md)
+
 ## Status
 
 - Full SBWP v1.1 coverage via Mojo-Python interop (uses the ScratchBird

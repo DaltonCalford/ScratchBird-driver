@@ -3,7 +3,7 @@
 
 require 'securerandom'
 
-module ScratchBird
+module Scratchbird
   class TelemetryConfig
     attr_accessor :enable_tracing, :enable_metrics, :enable_slow_query_log,
                   :slow_query_threshold_ms, :sanitize_queries, :sample_rate

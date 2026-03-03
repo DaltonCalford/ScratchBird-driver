@@ -303,6 +303,7 @@ export class Client {
   private config: ClientConfig;
   private protocol = new ProtocolConnection();
   private connected = false;
+  private transactionActive = false;
   private prepared = new Map<string, { sql: string; paramCount: number }>();
   private parameters: Record<string, string> = {};
   private notificationHandlers: Array<(notice: NotificationMessage) => void> = [];
@@ -377,6 +378,10 @@ export class Client {
     return this.executeQueryStream(normalized.sql, normalized.params, options);
   }
 
+  nativeSQL(text: string, params?: any[] | Record<string, any>): string {
+    return normalizeQuery(text, params).sql;
+  }
+
   async prepare(name: string, text: string, _paramTypes?: string[]): Promise<void> {
     if (!name) throw new Error("name is required");
     this.ensureConnected();
@@ -411,6 +416,7 @@ export class Client {
 
   async beginTransaction(options?: TxnBeginOptions): Promise<void> {
     this.ensureConnected();
+    this.ensureNoActiveTransaction();
     await this.withResilience("txn_begin", undefined, async () => {
       const isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
       let flags = 0;
@@ -432,29 +438,38 @@ export class Client {
       );
       await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
       await this.drainUntilReady();
+      this.transactionActive = true;
     });
   }
 
   async commitTransaction(options?: TxnEndOptions): Promise<void> {
     this.ensureConnected();
+    this.ensureTransactionActive("commit");
     await this.withResilience("txn_commit", undefined, async () => {
       const payload = buildTxnCommitPayload(options?.flags ?? 0);
       await this.protocol.sendMessage(MessageType.TXN_COMMIT, payload, 0, false);
       await this.drainUntilReady();
+      this.transactionActive = false;
     });
   }
 
   async rollbackTransaction(options?: TxnEndOptions): Promise<void> {
     this.ensureConnected();
+    this.ensureTransactionActive("rollback");
     await this.withResilience("txn_rollback", undefined, async () => {
       const payload = buildTxnRollbackPayload(options?.flags ?? 0);
       await this.protocol.sendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
       await this.drainUntilReady();
+      this.transactionActive = false;
     });
   }
 
   async savepoint(name: string): Promise<void> {
     this.ensureConnected();
+    this.ensureTransactionActive("savepoint");
+    if (!name.trim()) {
+      throw new ScratchbirdError("savepoint name is required", "42601");
+    }
     await this.withResilience("txn_savepoint", undefined, async () => {
       const payload = buildTxnSavepointPayload(name);
       await this.protocol.sendMessage(MessageType.TXN_SAVEPOINT, payload, 0, false);
@@ -464,6 +479,10 @@ export class Client {
 
   async releaseSavepoint(name: string): Promise<void> {
     this.ensureConnected();
+    this.ensureTransactionActive("release savepoint");
+    if (!name.trim()) {
+      throw new ScratchbirdError("savepoint name is required", "42601");
+    }
     await this.withResilience("txn_release", undefined, async () => {
       const payload = buildTxnReleasePayload(name);
       await this.protocol.sendMessage(MessageType.TXN_RELEASE, payload, 0, false);
@@ -473,6 +492,10 @@ export class Client {
 
   async rollbackToSavepoint(name: string): Promise<void> {
     this.ensureConnected();
+    this.ensureTransactionActive("rollback to savepoint");
+    if (!name.trim()) {
+      throw new ScratchbirdError("savepoint name is required", "42601");
+    }
     await this.withResilience("txn_rollback_to", undefined, async () => {
       const payload = buildTxnRollbackToPayload(name);
       await this.protocol.sendMessage(MessageType.TXN_ROLLBACK_TO, payload, 0, false);
@@ -514,6 +537,7 @@ export class Client {
     await this.protocol.sendMessage(MessageType.TERMINATE, Buffer.alloc(0), 0, false);
     this.protocol.close();
     this.cleanupResilience();
+    this.transactionActive = false;
     this.connected = false;
   }
 
@@ -599,12 +623,25 @@ export class Client {
     }
     this.protocol.close();
     this.cleanupResilience();
+    this.transactionActive = false;
     this.connected = false;
   }
 
   private ensureConnected(): void {
     if (!this.connected) {
       throw new Error("Client is not connected");
+    }
+  }
+
+  private ensureNoActiveTransaction(): void {
+    if (this.transactionActive) {
+      throw new ScratchbirdError("transaction already active", "25001");
+    }
+  }
+
+  private ensureTransactionActive(operation: string): void {
+    if (!this.transactionActive) {
+      throw new ScratchbirdError(`${operation} requires an active transaction`, "25000");
     }
   }
 
@@ -818,7 +855,7 @@ export class Client {
         }
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
-          this.protocol.setTxnId(txnId);
+          this.applyTxnState(txnId);
           return;
         }
         case MessageType.ERROR:
@@ -891,7 +928,7 @@ export class Client {
         }
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
-          this.protocol.setTxnId(txnId);
+          this.applyTxnState(txnId);
           if (rowCount < 0) {
             rowCount = rows.length;
           }
@@ -914,7 +951,7 @@ export class Client {
     if (name === "current_txn_id") {
       const parsed = parseBigInt(value);
       if (parsed !== null) {
-        this.protocol.setTxnId(parsed);
+        this.applyTxnState(parsed);
       }
     }
   }
@@ -1021,7 +1058,7 @@ export class Client {
             }
             case MessageType.READY: {
               const { txnId } = parseReady(msg.payload);
-              self.protocol.setTxnId(txnId);
+              self.applyTxnState(txnId);
               success = true;
               return;
             }
@@ -1113,7 +1150,7 @@ export class Client {
           continue;
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
-          this.protocol.setTxnId(txnId);
+          this.applyTxnState(txnId);
           return paramCount;
         }
         default:
@@ -1137,13 +1174,18 @@ export class Client {
           throw this.raiseProtocolError(msg.payload);
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
-          this.protocol.setTxnId(txnId);
+          this.applyTxnState(txnId);
           return;
         }
         default:
           continue;
       }
     }
+  }
+
+  private applyTxnState(txnId: bigint): void {
+    this.protocol.setTxnId(txnId);
+    this.transactionActive = txnId !== 0n;
   }
 
   private raiseProtocolError(payload: Buffer): ScratchbirdError {

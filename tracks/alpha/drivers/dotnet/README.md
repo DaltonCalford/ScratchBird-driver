@@ -6,6 +6,7 @@ ScratchBird ADO.NET provider using the native wire protocol.
 
 - Getting started: `docs/getting-started/dotnet.md`
 - API reference: `docs/api-reference/dotnet.md`
+- Baseline requirement mapping: `BASELINE_REQUIREMENT_MAPPING.md`
 
 ## Build/Test (Windows/Linux)
 

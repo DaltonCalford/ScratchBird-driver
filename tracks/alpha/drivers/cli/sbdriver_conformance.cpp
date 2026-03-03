@@ -20,6 +20,7 @@
 #include "scratchbird/client/network_client.h"
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
+#include "txn_exec_parity.h"
 
 using json = nlohmann::json;
 
@@ -708,6 +709,44 @@ void fillResultRows(json& result,
     result["rows"] = std::move(rows);
 }
 
+class NetworkTxnExecClient final : public scratchbird::cli::parity::TxnExecClient {
+public:
+    explicit NetworkTxnExecClient(scratchbird::client::NetworkClient* client)
+        : client_(client) {}
+
+    scratchbird::core::Status executeStatement(
+        const std::string& sql,
+        scratchbird::cli::parity::ExecObservation* observation,
+        scratchbird::core::ErrorContext* ctx) override {
+        scratchbird::client::NetworkResultSet results;
+        scratchbird::core::Status status = client_->executeQuery(sql, results, ctx);
+        if (status == scratchbird::core::Status::OK && observation != nullptr) {
+            observation->rows_affected = results.rows_affected;
+            observation->rows_returned = static_cast<int64_t>(results.rows.size());
+        }
+        return status;
+    }
+
+    scratchbird::core::Status beginTransaction(scratchbird::core::ErrorContext* ctx) override {
+        return client_->beginTransaction(ctx);
+    }
+
+    scratchbird::core::Status commit(scratchbird::core::ErrorContext* ctx) override {
+        return client_->commit(ctx);
+    }
+
+    scratchbird::core::Status rollback(scratchbird::core::ErrorContext* ctx) override {
+        return client_->rollback(ctx);
+    }
+
+    std::string lastError() const override {
+        return client_->lastError();
+    }
+
+private:
+    scratchbird::client::NetworkClient* client_{nullptr};
+};
+
 void seedConformanceFixtures(const scratchbird::client::NetworkClientConfig& config) {
     scratchbird::client::NetworkClient client;
     scratchbird::core::ErrorContext ctx;
@@ -787,6 +826,10 @@ int main(int argc, char** argv) {
             kind = "native_query";
         } else if (kind == "prepare_bind") {
             kind = "native_prepare_bind";
+        } else if (kind == "exec") {
+            kind = "native_exec";
+        } else if (kind == "txn") {
+            kind = "txn_exec";
         }
         std::string sql = test.value("sql", "");
         std::string dsn_append = test.value("dsn_append", "");
@@ -846,6 +889,12 @@ int main(int argc, char** argv) {
                     had_error = true;
                 }
             }
+        } else if (kind == "native_exec") {
+            NetworkTxnExecClient parity_client(&client);
+            scratchbird::cli::parity::runNativeExecCase(parity_client, test, result, &had_error, &ctx);
+        } else if (kind == "txn_exec") {
+            NetworkTxnExecClient parity_client(&client);
+            scratchbird::cli::parity::runTxnExecCase(parity_client, test, result, &had_error, &ctx);
         } else if (kind == "native_prepare_bind") {
             std::string expect_sqlstate = test.value("expect_sqlstate", "");
             uint32_t stmt_id = 0;

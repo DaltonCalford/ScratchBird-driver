@@ -113,6 +113,10 @@ type
     procedure ParseQueryPlan(const Payload: TBytes; out Plan: TQueryPlan);
     procedure ParseSblrCompiled(const Payload: TBytes; out Compiled: TSblrCompiled);
     function ParseUuidBytes(const Value: string): TBytes;
+    procedure EnsureConnected;
+    procedure EnsureTransactionActive(const Operation: string);
+    function NormalizeSavepointName(const Name: string): string;
+    function NormalizeSqlText(const Sql: string): string;
     function BeginOperation(const Name, Sql: string): TSpanContext;
     procedure EndOperation(Span: TSpanContext; Success: Boolean);
   public
@@ -393,6 +397,10 @@ begin
     raise EScratchbirdNotSupported.CreateWithInfo(
       'front_door_mode must be direct or manager_proxy.',
       '0A000', '', '');
+  if (FConfig.FrontDoorMode = 'manager_proxy') and (Trim(FConfig.ManagerAuthToken) = '') then
+    raise EScratchbirdConnectionError.CreateWithInfo(
+      'manager_proxy mode requires manager_auth_token',
+      '08001', '', '');
   if not FConfig.BinaryTransfer then
     raise EScratchbirdNotSupported.CreateWithInfo('binary_transfer=false is not supported', '0A000', '', '');
   if SameText(FConfig.Compression, 'zstd') then
@@ -414,6 +422,9 @@ begin
     Exit;
   FTransport.Disconnect;
   FConnected := False;
+  FTxnId := 0;
+  if Length(FAttachmentId) = 16 then
+    FillChar(FAttachmentId[0], 16, 0);
   if Assigned(FLeakDetector) then
     FLeakDetector.Checkin(FConnectionId);
 end;
@@ -443,6 +454,9 @@ var
   Flags: Word;
   Payload: TBytes;
 begin
+  EnsureConnected;
+  if FTxnId <> 0 then
+    raise EScratchbirdTransactionError.CreateWithInfo('transaction already active', '25000', '', '');
   Flags := TXN_FLAG_HAS_ISOLATION;
   if AccessMode <> 0 then
     Flags := Flags or TXN_FLAG_HAS_ACCESS;
@@ -464,6 +478,9 @@ procedure TScratchBirdClient.Commit(Flags: Byte = 0);
 var
   Payload: TBytes;
 begin
+  if FTxnId = 0 then
+    Exit;
+  EnsureConnected;
   Payload := BuildTxnCommitPayload(Flags);
   SendMessage(MSG_TXN_COMMIT, Payload, 0, False);
   DrainUntilReady;
@@ -473,26 +490,44 @@ procedure TScratchBirdClient.Rollback(Flags: Byte = 0);
 var
   Payload: TBytes;
 begin
+  if FTxnId = 0 then
+    Exit;
+  EnsureConnected;
   Payload := BuildTxnRollbackPayload(Flags);
   SendMessage(MSG_TXN_ROLLBACK, Payload, 0, False);
   DrainUntilReady;
 end;
 
 procedure TScratchBirdClient.Savepoint(const Name: string);
+var
+  SavepointName: string;
 begin
-  SendMessage(MSG_TXN_SAVEPOINT, BuildTxnSavepointPayload(Name), 0, False);
+  SavepointName := NormalizeSavepointName(Name);
+  EnsureTransactionActive('savepoint');
+  EnsureConnected;
+  SendMessage(MSG_TXN_SAVEPOINT, BuildTxnSavepointPayload(SavepointName), 0, False);
   DrainUntilReady;
 end;
 
 procedure TScratchBirdClient.ReleaseSavepoint(const Name: string);
+var
+  SavepointName: string;
 begin
-  SendMessage(MSG_TXN_RELEASE, BuildTxnReleasePayload(Name), 0, False);
+  SavepointName := NormalizeSavepointName(Name);
+  EnsureTransactionActive('release_savepoint');
+  EnsureConnected;
+  SendMessage(MSG_TXN_RELEASE, BuildTxnReleasePayload(SavepointName), 0, False);
   DrainUntilReady;
 end;
 
 procedure TScratchBirdClient.RollbackToSavepoint(const Name: string);
+var
+  SavepointName: string;
 begin
-  SendMessage(MSG_TXN_ROLLBACK_TO, BuildTxnRollbackToPayload(Name), 0, False);
+  SavepointName := NormalizeSavepointName(Name);
+  EnsureTransactionActive('rollback_to_savepoint');
+  EnsureConnected;
+  SendMessage(MSG_TXN_ROLLBACK_TO, BuildTxnRollbackToPayload(SavepointName), 0, False);
   DrainUntilReady;
 end;
 
@@ -612,16 +647,19 @@ end;
 procedure TScratchBirdClient.ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
 var
   Span: TSpanContext;
+  SqlText: string;
 begin
-  Span := BeginOperation('exec', Sql);
+  SqlText := NormalizeSqlText(Sql);
+  EnsureConnected;
+  Span := BeginOperation('exec', SqlText);
   try
     if Length(Params) = 0 then
     begin
-      SendSimpleQuery(Sql, 0);
+      SendSimpleQuery(SqlText, 0);
     end
     else
     begin
-      SendExtendedQuery(Sql, Params, 0);
+      SendExtendedQuery(SqlText, Params, 0);
     end;
     DrainUntilReady;
     EndOperation(Span, True);
@@ -642,13 +680,16 @@ end;
 function TScratchBirdClient.ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
 var
   Span: TSpanContext;
+  SqlText: string;
 begin
-  Span := BeginOperation('query', Sql);
+  SqlText := NormalizeSqlText(Sql);
+  EnsureConnected;
+  Span := BeginOperation('query', SqlText);
   try
     if Length(Params) = 0 then
-      SendSimpleQuery(Sql, Cardinal(FConfig.FetchSize))
+      SendSimpleQuery(SqlText, Cardinal(FConfig.FetchSize))
     else
-      SendExtendedQuery(Sql, Params, Cardinal(FConfig.FetchSize));
+      SendExtendedQuery(SqlText, Params, Cardinal(FConfig.FetchSize));
     Result := TScratchBirdResultStream.Create(Self);
     EndOperation(Span, True);
   except
@@ -1197,6 +1238,32 @@ begin
     end;
     Result[I] := Byte(ByteVal);
   end;
+end;
+
+procedure TScratchBirdClient.EnsureConnected;
+begin
+  if not FConnected then
+    raise EScratchbirdConnectionError.CreateWithInfo('Client is not connected', '08003', '', '');
+end;
+
+procedure TScratchBirdClient.EnsureTransactionActive(const Operation: string);
+begin
+  if FTxnId = 0 then
+    raise EScratchbirdTransactionError.CreateWithInfo(Operation + ' requires an active transaction', '25000', '', '');
+end;
+
+function TScratchBirdClient.NormalizeSavepointName(const Name: string): string;
+begin
+  Result := Trim(Name);
+  if Result = '' then
+    raise EScratchbirdSyntaxError.CreateWithInfo('savepoint name is required', '42601', '', '');
+end;
+
+function TScratchBirdClient.NormalizeSqlText(const Sql: string): string;
+begin
+  Result := Trim(Sql);
+  if Result = '' then
+    raise EScratchbirdSyntaxError.CreateWithInfo('SQL text is required', '42601', '', '');
 end;
 
 function TScratchBirdClient.BeginOperation(const Name, Sql: string): TSpanContext;

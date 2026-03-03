@@ -67,6 +67,10 @@ fn has_named_params(sql: &str) -> bool {
     while i + 1 < chars.len() {
         let ch = chars[i];
         if ch == '\'' {
+            if in_string && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                i += 2;
+                continue;
+            }
             in_string = !in_string;
             i += 1;
             continue;
@@ -88,8 +92,13 @@ fn rewrite_named(sql: &str, params: &HashMap<String, Param>) -> Result<(String, 
     while i < chars.len() {
         let ch = chars[i];
         if ch == '\'' {
-            in_string = !in_string;
             out.push(ch);
+            if in_string && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                out.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            in_string = !in_string;
             i += 1;
             continue;
         }
@@ -124,8 +133,13 @@ fn rewrite_positional(sql: &str, params: &[Param]) -> Result<(String, Vec<Param>
     while i < chars.len() {
         let ch = chars[i];
         if ch == '\'' {
-            in_string = !in_string;
             out.push(ch);
+            if in_string && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                out.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            in_string = !in_string;
             i += 1;
             continue;
         }
