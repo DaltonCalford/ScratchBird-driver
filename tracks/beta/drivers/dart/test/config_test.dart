@@ -34,4 +34,16 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('parses metadata parent expansion aliases', () {
+    final cfg = ScratchBirdConfig.fromDsn(
+      'scratchbird://user:pass@localhost:3092/db?metadata_expand_schema_parents=true',
+    );
+    expect(cfg.metadataExpandSchemaParents, isTrue);
+
+    final kv = ScratchBirdConfig.fromDsn(
+      'host=localhost port=3092 database=db user=user expand_schema_parents=1',
+    );
+    expect(kv.metadataExpandSchemaParents, isTrue);
+  });
 }

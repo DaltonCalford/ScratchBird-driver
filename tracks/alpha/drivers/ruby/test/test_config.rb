@@ -46,6 +46,16 @@ class TestConfig < Minitest::Test
     assert_equal 7, cfg.manager_client_flags
   end
 
+  def test_parse_metadata_expand_schema_parents_aliases
+    cfg = Scratchbird::Config.parse(
+      "scratchbird://user:pass@localhost:3092/mydb?metadata_expand_schema_parents=true"
+    )
+    assert_equal true, cfg.metadata_expand_schema_parents
+
+    kv = Scratchbird::Config.parse("Host=server;Database=db;User=me;Expand_Schema_Parents=1")
+    assert_equal true, kv.metadata_expand_schema_parents
+  end
+
   def test_invalid_front_door_mode_raises
     assert_raises(ArgumentError) do
       Scratchbird::Config.parse("scratchbird://localhost:3092/db?front_door_mode=invalid")

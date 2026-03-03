@@ -32,6 +32,7 @@ type
     procedure Commit;
     procedure Rollback;
     procedure ExecSQL(const Sql: string);
+    function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     property Connected: Boolean read FConnected;
     property Dsn: string read FDsn write FDsn;
     property Client: TScratchBirdClient read FClient;
@@ -111,6 +112,11 @@ end;
 procedure TScratchBirdFDConnection.ExecSQL(const Sql: string);
 begin
   FClient.ExecSQL(Sql);
+end;
+
+function TScratchBirdFDConnection.GetSchema(const CollectionName: string): TScratchBirdResultStream;
+begin
+  Result := FClient.GetSchema(CollectionName);
 end;
 
 constructor TScratchBirdFDQuery.Create(AOwner: TComponent);

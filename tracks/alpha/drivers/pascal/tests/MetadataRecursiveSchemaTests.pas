@@ -14,7 +14,7 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  SysUtils, Variants, ScratchBird.Metadata;
+  SysUtils, Variants, ScratchBird.Metadata, ScratchBird.Errors;
 
 procedure Fail(const MessageText: string);
 begin
@@ -37,6 +37,12 @@ procedure AssertEqualString(const Expected, Actual, MessageText: string);
 begin
   if Expected <> Actual then
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
+end;
+
+procedure AssertContains(const Needle, Haystack, MessageText: string);
+begin
+  if Pos(Needle, Haystack) = 0 then
+    Fail(MessageText + ': expected "' + Needle + '" in "' + Haystack + '"');
 end;
 
 procedure AssertVariantInt(Expected: Integer; const Value: Variant; const MessageText: string);
@@ -225,12 +231,34 @@ begin
   end;
 end;
 
+procedure TestMetadataCollectionResolution;
+var
+  SqlText: string;
+begin
+  AssertEqualString('schemas', NormalizeMetadataCollectionName('schema'), 'schema alias normalization');
+  AssertEqualString('index_columns', NormalizeMetadataCollectionName('indexColumns'), 'index columns alias normalization');
+  SqlText := ResolveMetadataCollectionQuery('constraints');
+  AssertContains('FROM sys.constraints', SqlText, 'constraints query resolution');
+
+  try
+    ResolveMetadataCollectionQuery('unsupported_metadata_family');
+    Fail('unsupported metadata collection should raise not supported');
+  except
+    on E: EScratchbirdNotSupported do
+    begin
+      AssertEqualString('0A000', E.SQLState, 'unsupported metadata SQLSTATE');
+      AssertContains('not supported', E.Message, 'unsupported metadata message');
+    end;
+  end;
+end;
+
 begin
   try
     TestExpandMetadataRowsSupportsDatabaseDefaultBranchStyleRows;
     TestListMetadataSchemaPathsExpandsDottedParents;
     TestBuildMetadataSchemaTreeEnforcesPerParentUniqueness;
     TestBuildMetadataSchemaTreeAllowsSameLeafUnderDifferentParents;
+    TestMetadataCollectionResolution;
     Writeln('MetadataRecursiveSchemaTests: OK');
   except
     on E: Exception do

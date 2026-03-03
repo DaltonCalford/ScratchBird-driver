@@ -31,6 +31,7 @@ type
     procedure StartTransaction;
     procedure Commit;
     procedure Rollback;
+    function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     property Connected: Boolean read FConnected;
     property Dsn: string read FDsn write FDsn;
     property Client: TScratchBirdClient read FClient;
@@ -105,6 +106,11 @@ end;
 procedure TScratchBirdZConnection.Rollback;
 begin
   FClient.Rollback;
+end;
+
+function TScratchBirdZConnection.GetSchema(const CollectionName: string): TScratchBirdResultStream;
+begin
+  Result := FClient.GetSchema(CollectionName);
 end;
 
 constructor TScratchBirdZQuery.Create(AOwner: TComponent);

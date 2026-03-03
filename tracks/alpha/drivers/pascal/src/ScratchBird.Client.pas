@@ -15,7 +15,7 @@ interface
 
 uses
   SysUtils, Classes,
-  ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Errors, ScratchBird.Scram, ScratchBird.Types, ScratchBird.Sql,
+  ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Errors, ScratchBird.Scram, ScratchBird.Types, ScratchBird.Sql, ScratchBird.Metadata,
   ScratchBird.Transport, ScratchBird.Transport.Native,
   {$IFDEF SCRATCHBIRD_USE_INDY}
   ScratchBird.Transport.Indy,
@@ -146,6 +146,8 @@ type
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
     function ExecuteQuery(const Sql: string): TScratchBirdResultStream;
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+    function QueryMetadata(const CollectionName: string = 'tables'): TScratchBirdResultStream;
+    function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     procedure Cancel;
     function GetLastPlan(out Plan: TQueryPlan): Boolean;
     function GetLastSblr(out Compiled: TSblrCompiled): Boolean;
@@ -699,6 +701,16 @@ begin
       raise;
     end;
   end;
+end;
+
+function TScratchBirdClient.QueryMetadata(const CollectionName: string): TScratchBirdResultStream;
+begin
+  Result := ExecuteQuery(ResolveMetadataCollectionQuery(CollectionName));
+end;
+
+function TScratchBirdClient.GetSchema(const CollectionName: string): TScratchBirdResultStream;
+begin
+  Result := QueryMetadata(CollectionName);
 end;
 
 procedure TScratchBirdClient.Cancel;

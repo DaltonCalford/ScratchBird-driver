@@ -16,6 +16,7 @@ import 'config.dart';
 import 'protocol.dart';
 import 'scram.dart';
 import 'types.dart';
+import 'metadata.dart';
 import 'circuit_breaker.dart';
 import 'keepalive.dart';
 import 'leak_detector.dart';
@@ -318,6 +319,41 @@ class ScratchBirdClient {
       await _sendExtendedQuery(sql, params, 0);
       return _collectResults();
     });
+  }
+
+  Future<ScratchBirdResult> queryMetadata([String collectionName = 'tables']) {
+    final sql = resolveMetadataCollectionQuery(collectionName);
+    return query(sql);
+  }
+
+  Future<List<Map<String, dynamic>>> getSchema({
+    String collectionName = 'tables',
+    bool? expandParents,
+  }) async {
+    final normalizedCollection = normalizeMetadataCollectionName(collectionName);
+    final result = await queryMetadata(collectionName);
+    final rows = _resultRowsToMaps(result);
+    final shouldExpand = expandParents ?? config.metadataExpandSchemaParents;
+    if (normalizedCollection != MetadataCollectionName.schemas || !shouldExpand) {
+      return rows;
+    }
+    return expandSchemaMetadataRows(rows, expandParents: true);
+  }
+
+  Future<MetadataSchemaTree> getSchemaTree({
+    bool? expandParents,
+    String? database,
+  }) async {
+    final shouldExpand = expandParents ?? config.metadataExpandSchemaParents;
+    final rows = await getSchema(
+      collectionName: 'schemas',
+      expandParents: shouldExpand,
+    );
+    return buildMetadataSchemaTree(
+      rows,
+      expandParents: shouldExpand,
+      database: database ?? config.database,
+    );
   }
 
   void onNotification(void Function(NotificationMessage) handler) {
@@ -760,6 +796,21 @@ class ScratchBirdClient {
     }
     final bytecode = payload.sublist(16, 16 + length);
     return SblrCompiledMessage(hash, version, bytecode);
+  }
+
+  List<Map<String, dynamic>> _resultRowsToMaps(ScratchBirdResult result) {
+    final fieldNames =
+        result.columns.map((column) => column.name).toList(growable: false);
+    final rows = <Map<String, dynamic>>[];
+    for (final row in result.rows) {
+      final out = <String, dynamic>{};
+      for (var i = 0; i < row.length; i++) {
+        final key = i < fieldNames.length ? fieldNames[i] : 'col_${i + 1}';
+        out[key] = row[i];
+      }
+      rows.add(out);
+    }
+    return rows;
   }
 
   Uint8List? _parseUuidBytes(String value) {

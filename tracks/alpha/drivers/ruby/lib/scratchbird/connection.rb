@@ -8,6 +8,7 @@
 require "scratchbird/client"
 require "scratchbird/config"
 require "scratchbird/errors"
+require "scratchbird/metadata"
 require "scratchbird/sql"
 require "scratchbird/statement"
 
@@ -83,6 +84,30 @@ module Scratchbird
       ensure_open
       begin_transaction_if_needed
       @client.stream(sql, params, options)
+    end
+
+    def query_metadata(collection_name = "tables", options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.query_metadata(collection_name, options)
+    end
+
+    def get_schema(collection_name = "tables", options = nil, expand_schema_parents: nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.get_schema(collection_name, options, expand_schema_parents: expand_schema_parents)
+    end
+
+    def get_schema_tree(expand_schema_parents: nil, database: nil, default_branch: "default")
+      ensure_open
+      begin_transaction_if_needed
+      rows = get_schema("schemas", nil, expand_schema_parents: expand_schema_parents)
+      Metadata.build_database_default_metadata_rows(
+        rows,
+        database: database || @config.database,
+        expand_schema_parents: false,
+        default_branch: default_branch
+      )
     end
 
     def prepare(sql)

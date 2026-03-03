@@ -14,7 +14,8 @@ module Scratchbird
                   :connect_timeout_ms, :socket_timeout_ms, :application_name, :protocol,
                   :binary_transfer, :compression, :front_door_mode, :manager_auth_token,
                   :manager_username, :manager_database, :manager_connection_profile,
-                  :manager_client_intent, :manager_client_flags, :manager_auth_fast_path
+                  :manager_client_intent, :manager_client_flags, :manager_auth_fast_path,
+                  :metadata_expand_schema_parents
 
     def initialize
       @host = "localhost"
@@ -43,6 +44,7 @@ module Scratchbird
       @manager_client_intent = "native_v3"
       @manager_client_flags = 0
       @manager_auth_fast_path = true
+      @metadata_expand_schema_parents = false
     end
 
     def self.parse(dsn)
@@ -121,6 +123,12 @@ module Scratchbird
         cfg.password = value
       when "schema", "search_path", "searchpath", "currentschema"
         cfg.schema = value
+      when "metadataexpandschemaparents", "metadata_expand_schema_parents",
+           "expandschemaparents", "expand_schema_parents",
+           "dbeaverexpandschemaparents", "dbeaver_expand_schema_parents"
+        normalized = value.to_s.downcase
+        cfg.metadata_expand_schema_parents = normalized == "true" || value.to_s == "1" ||
+          normalized == "yes" || normalized == "on"
       when "role"
         cfg.role = value
       when "protocol", "parser", "dialect"

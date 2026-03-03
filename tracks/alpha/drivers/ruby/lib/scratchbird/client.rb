@@ -19,6 +19,7 @@ require "scratchbird/circuit_breaker"
 require "scratchbird/keepalive"
 require "scratchbird/leak_detector"
 require "scratchbird/telemetry"
+require "scratchbird/metadata"
 
 module Scratchbird
   class Client
@@ -268,6 +269,34 @@ module Scratchbird
       execute_query_stream(normalized.sql, normalized.params, options)
     end
 
+    def query_metadata(collection_name = "tables", options = nil)
+      ensure_connected
+      normalized_collection = normalize_metadata_collection_name(collection_name)
+      query(Metadata.resolve_collection_query(normalized_collection), nil, options)
+    end
+
+    def get_schema(collection_name = "tables", options = nil, expand_schema_parents: nil)
+      normalized_collection = normalize_metadata_collection_name(collection_name)
+      result = query_metadata(normalized_collection, options)
+      rows = result.respond_to?(:each_hash) ? result.each_hash.to_a : []
+      return rows unless normalized_collection == "schemas"
+
+      expand = metadata_expand_schema_parents?(expand_schema_parents)
+      return rows unless expand
+
+      Metadata.expand_schema_metadata_rows(rows)
+    end
+
+    def get_schema_tree(expand_schema_parents: nil, database: nil)
+      rows = get_schema("schemas", nil, expand_schema_parents: expand_schema_parents)
+      Metadata.build_schema_tree(
+        Metadata.schema_paths_for_navigation(
+          rows,
+          expand_schema_parents: metadata_expand_schema_parents?(expand_schema_parents)
+        )
+      )
+    end
+
     def prepare(name, sql)
       raise ArgumentError, "name is required" if name.to_s.empty?
       ensure_connected
@@ -411,6 +440,19 @@ module Scratchbird
       hex = value.to_s.delete("-").strip
       return nil unless hex.match?(/\A[0-9a-fA-F]{32}\z/)
       [hex].pack("H*")
+    end
+
+    def normalize_metadata_collection_name(collection_name)
+      Metadata.normalize_collection_name(collection_name)
+    rescue ArgumentError => e
+      raise NotSupportedError, e.message
+    end
+
+    def metadata_expand_schema_parents?(override)
+      return override unless override.nil?
+      return false unless @config.respond_to?(:metadata_expand_schema_parents)
+
+      @config.metadata_expand_schema_parents == true
     end
 
     def connect_tcp

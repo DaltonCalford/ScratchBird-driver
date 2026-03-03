@@ -16,6 +16,34 @@ module Scratchbird
     CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
     PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
     FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+    COLLECTION_QUERIES = {
+      "schemas" => SCHEMAS_QUERY,
+      "tables" => TABLES_QUERY,
+      "columns" => COLUMNS_QUERY,
+      "indexes" => INDEXES_QUERY,
+      "index_columns" => INDEX_COLUMNS_QUERY,
+      "constraints" => CONSTRAINTS_QUERY,
+      "procedures" => PROCEDURES_QUERY,
+      "functions" => FUNCTIONS_QUERY
+    }.freeze
+    COLLECTION_ALIASES = {
+      "schema" => "schemas",
+      "schemas" => "schemas",
+      "table" => "tables",
+      "tables" => "tables",
+      "column" => "columns",
+      "columns" => "columns",
+      "index" => "indexes",
+      "indexes" => "indexes",
+      "indexcolumns" => "index_columns",
+      "index_columns" => "index_columns",
+      "constraint" => "constraints",
+      "constraints" => "constraints",
+      "procedure" => "procedures",
+      "procedures" => "procedures",
+      "function" => "functions",
+      "functions" => "functions"
+    }.freeze
     SCHEMA_FIELD_CANDIDATES = %w[
       schema_name
       table_schem
@@ -69,6 +97,20 @@ module Scratchbird
 
     def self.functions_query
       FUNCTIONS_QUERY
+    end
+
+    def self.normalize_collection_name(collection_name = "tables")
+      raw = collection_name.to_s.strip.downcase
+      raw = "tables" if raw.empty?
+      collapsed = raw.gsub(/[^a-z0-9]/, "")
+      normalized = COLLECTION_ALIASES[raw] || COLLECTION_ALIASES[collapsed]
+      return normalized if normalized
+
+      raise ArgumentError, "Metadata collection '#{collection_name}' is not supported"
+    end
+
+    def self.resolve_collection_query(collection_name = "tables")
+      COLLECTION_QUERIES.fetch(normalize_collection_name(collection_name))
     end
 
     def self.schema_paths_for_navigation(rows_or_names, expand_schema_parents: false)

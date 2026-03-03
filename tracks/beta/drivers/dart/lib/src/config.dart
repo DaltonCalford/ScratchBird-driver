@@ -27,6 +27,7 @@ class ScratchBirdConfig {
   final bool binaryTransfer;
   final String compression;
   final int fetchSize;
+  final bool metadataExpandSchemaParents;
   final String? managerAuthToken;
   final String? managerUsername;
   final String? managerDatabase;
@@ -56,6 +57,7 @@ class ScratchBirdConfig {
     this.binaryTransfer = true,
     this.compression = 'off',
     this.fetchSize = 0,
+    this.metadataExpandSchemaParents = false,
     this.managerAuthToken,
     this.managerUsername,
     this.managerDatabase,
@@ -84,6 +86,7 @@ class ScratchBirdConfig {
     String? applicationName,
     String? role,
     bool? binaryTransfer,
+    bool? metadataExpandSchemaParents,
     String? managerAuthToken,
     String? managerUsername,
     String? managerDatabase,
@@ -113,6 +116,8 @@ class ScratchBirdConfig {
       binaryTransfer: binaryTransfer ?? this.binaryTransfer,
       compression: compression,
       fetchSize: fetchSize,
+      metadataExpandSchemaParents:
+          metadataExpandSchemaParents ?? this.metadataExpandSchemaParents,
       managerAuthToken: managerAuthToken ?? this.managerAuthToken,
       managerUsername: managerUsername ?? this.managerUsername,
       managerDatabase: managerDatabase ?? this.managerDatabase,
@@ -144,6 +149,8 @@ ScratchBirdConfig _fromUri(Uri uri) {
     binaryTransfer: _parseBool(params['binary_transfer'], true),
     compression: params['compression'] ?? 'off',
     fetchSize: _parseInt(params['fetch_size'], 0),
+    metadataExpandSchemaParents:
+        _parseBool(params['metadata_expand_schema_parents'], false),
     managerAuthToken: params['manager_auth_token'],
     managerUsername: params['manager_username'],
     managerDatabase: params['manager_database'],
@@ -178,6 +185,8 @@ ScratchBirdConfig _fromKv(String dsn) {
     binaryTransfer: _parseBool(normalized['binary_transfer'], true),
     compression: normalized['compression'] ?? 'off',
     fetchSize: _parseInt(normalized['fetch_size'], 0),
+    metadataExpandSchemaParents:
+        _parseBool(normalized['metadata_expand_schema_parents'], false),
     managerAuthToken: normalized['manager_auth_token'],
     managerUsername: normalized['manager_username'],
     managerDatabase: normalized['manager_database'],
@@ -262,6 +271,14 @@ Map<String, String> _normalizeParams(Map<String, String> params) {
       case 'connection_mode':
       case 'ingress_mode':
         out['front_door_mode'] = value;
+        break;
+      case 'metadataexpandschemaparents':
+      case 'metadata_expand_schema_parents':
+      case 'expandschemaparents':
+      case 'expand_schema_parents':
+      case 'dbeaverexpandschemaparents':
+      case 'dbeaver_expand_schema_parents':
+        out['metadata_expand_schema_parents'] = value;
         break;
       case 'mcp_auth_token':
         out['manager_auth_token'] = value;

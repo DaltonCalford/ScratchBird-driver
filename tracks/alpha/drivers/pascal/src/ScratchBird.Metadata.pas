@@ -14,7 +14,7 @@ unit ScratchBird.Metadata;
 interface
 
 uses
-  SysUtils, Classes, Variants, Contnrs;
+  SysUtils, Classes, Variants, Contnrs, ScratchBird.Errors;
 
 type
   TMetadataField = record
@@ -69,6 +69,8 @@ function MetadataIndexColumnsQuery: string;
 function MetadataConstraintsQuery: string;
 function MetadataProceduresQuery: string;
 function MetadataFunctionsQuery: string;
+function NormalizeMetadataCollectionName(const CollectionName: string): string;
+function ResolveMetadataCollectionQuery(const CollectionName: string): string;
 function MetadataRowTryGetValue(const Row: TMetadataRow; const Key: string; out Value: Variant): Boolean;
 function ExpandSchemaPaths(const SchemaPaths: array of string): TArray<string>;
 function ListMetadataSchemaPaths(const Rows: TMetadataRows; ExpandParents: Boolean): TArray<string>;
@@ -87,6 +89,91 @@ const
     'TABLE_SCHEMA',
     'schema'
   );
+  METADATA_COLLECTION_ALIASES: array[0..15, 0..1] of string = (
+    ('schemas', 'schemas'),
+    ('schema', 'schemas'),
+    ('tables', 'tables'),
+    ('table', 'tables'),
+    ('columns', 'columns'),
+    ('column', 'columns'),
+    ('indexes', 'indexes'),
+    ('index', 'indexes'),
+    ('index_columns', 'index_columns'),
+    ('indexcolumns', 'index_columns'),
+    ('constraints', 'constraints'),
+    ('constraint', 'constraints'),
+    ('procedures', 'procedures'),
+    ('procedure', 'procedures'),
+    ('functions', 'functions'),
+    ('function', 'functions')
+  );
+
+function NormalizeCollectionKey(const Value: string): string;
+var
+  I: Integer;
+  Ch: Char;
+begin
+  Result := '';
+  for I := 1 to Length(Value) do
+  begin
+    Ch := Value[I];
+    if ((Ch >= 'a') and (Ch <= 'z')) or ((Ch >= '0') and (Ch <= '9')) then
+      Result := Result + Ch;
+  end;
+end;
+
+function NormalizeMetadataCollectionName(const CollectionName: string): string;
+var
+  RawName: string;
+  Collapsed: string;
+  I: Integer;
+begin
+  RawName := LowerCase(Trim(CollectionName));
+  if RawName = '' then
+    RawName := 'tables';
+  Collapsed := NormalizeCollectionKey(RawName);
+  for I := Low(METADATA_COLLECTION_ALIASES) to High(METADATA_COLLECTION_ALIASES) do
+  begin
+    if (RawName = METADATA_COLLECTION_ALIASES[I, 0]) or
+      (Collapsed = NormalizeCollectionKey(METADATA_COLLECTION_ALIASES[I, 0])) then
+      Exit(METADATA_COLLECTION_ALIASES[I, 1]);
+  end;
+  raise EScratchbirdNotSupported.CreateWithInfo(
+    'Metadata collection "' + CollectionName + '" is not supported',
+    '0A000',
+    '',
+    ''
+  );
+end;
+
+function ResolveMetadataCollectionQuery(const CollectionName: string): string;
+var
+  Normalized: string;
+begin
+  Normalized := NormalizeMetadataCollectionName(CollectionName);
+  if Normalized = 'schemas' then
+    Exit(MetadataSchemasQuery);
+  if Normalized = 'tables' then
+    Exit(MetadataTablesQuery);
+  if Normalized = 'columns' then
+    Exit(MetadataColumnsQuery);
+  if Normalized = 'indexes' then
+    Exit(MetadataIndexesQuery);
+  if Normalized = 'index_columns' then
+    Exit(MetadataIndexColumnsQuery);
+  if Normalized = 'constraints' then
+    Exit(MetadataConstraintsQuery);
+  if Normalized = 'procedures' then
+    Exit(MetadataProceduresQuery);
+  if Normalized = 'functions' then
+    Exit(MetadataFunctionsQuery);
+  raise EScratchbirdNotSupported.CreateWithInfo(
+    'Metadata collection "' + CollectionName + '" is not supported',
+    '0A000',
+    '',
+    ''
+  );
+end;
 
 function AppendUniqueString(var Values: TArray<string>; Seen: TStringList; const Value: string): Boolean;
 var
