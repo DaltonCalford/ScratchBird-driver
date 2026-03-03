@@ -174,11 +174,40 @@ static inline const char* sb_metadata_functions_query(void) {
     return "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
 }
 
+static inline const char* sb_metadata_routines_query(void) {
+    return "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name";
+}
+
+static inline const char* sb_metadata_catalogs_query(void) {
+    return "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+}
+
+static inline const char* sb_metadata_primary_keys_query(void) {
+    return "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+}
+
+static inline const char* sb_metadata_foreign_keys_query(void) {
+    return "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+}
+
+static inline const char* sb_metadata_table_privileges_query(void) {
+    return "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+}
+
+static inline const char* sb_metadata_column_privileges_query(void) {
+    return "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+}
+
+static inline const char* sb_metadata_type_info_query(void) {
+    return "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
+}
+
 sb_connection* sb_connect(const char* conn_str, sb_error* err);
 void sb_disconnect(sb_connection* conn);
 
 sb_result* sb_execute(sb_connection* conn, const char* sql, sb_error* err);
 sb_result* sb_query(sb_connection* conn, const char* sql, sb_error* err);
+sb_result* sb_metadata_query(sb_connection* conn, const char* collection_name, sb_error* err);
 int sb_cancel(sb_connection* conn, sb_error* err);
 int sb_set_option(sb_connection* conn, const char* name, const char* value, sb_error* err);
 int sb_ping(sb_connection* conn, sb_error* err);

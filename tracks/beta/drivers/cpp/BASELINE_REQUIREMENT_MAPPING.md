@@ -56,15 +56,16 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `include/scratchbird/client/scratchbird_client.h` (`sb_metadata_*_query` helper SQL strings)
-  - `include/scratchbird/client/metadata.h` (metadata-only schema path expansion/tree shaping APIs and row model)
-  - `src/metadata.cpp` (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`)
+  - `include/scratchbird/client/metadata.h` (schema tree shaping plus metadata collection normalization/query resolution APIs)
+  - `src/metadata.cpp` (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`, `normalizeMetadataCollectionName`, `resolveMetadataCollectionQuery`)
+  - `src/scratchbird_client_c.cpp` (`sb_metadata_query`)
   - `src/network_client.cpp` row-description parsing in execution paths populates column metadata
   - `src/scratchbird_client_c.cpp` (`sb_column_count`, `sb_get_column_meta`)
 - Lane-local test anchors:
-  - `tests/test_metadata_schema_tree.cpp` (`TreeRowsStartAtDatabaseAndExposeTopBranches`, `ParentExpansionAddsDottedSchemaAncestors`, `ParentDoesNotAllowDuplicateChildNames`, `SameLeafNameUnderDifferentParentsIsPreserved`)
+  - `tests/test_metadata_schema_tree.cpp` (`TreeRowsStartAtDatabaseAndExposeTopBranches`, `ParentExpansionAddsDottedSchemaAncestors`, `ParentDoesNotAllowDuplicateChildNames`, `SameLeafNameUnderDifferentParentsIsPreserved`, `NormalizesCollectionAliasesForExtendedFamilies`, `ResolvesExtendedCollectionQueries`, `RejectsUnsupportedCollection`)
+  - `tests/test_type_mapping.cpp` (`MetadataQueryRequiresConnectionHandle`)
 - Gaps / next actions:
-  - Add executable metadata API surfaces for broader JDBC families (catalog/key/privilege/type), not only helper SQL strings and shaping utilities.
-  - Add tests validating metadata helper SQL strings and result-column metadata extraction (`sb_get_column_meta`) through concrete metadata query flows.
+  - Add live metadata query assertions that validate `sb_metadata_query` + result-column metadata extraction (`sb_get_column_meta`) through concrete endpoint-driven flows.
   - Add DDL-editor completeness validation for metadata payload fields beyond schema-tree shaping.
 
 ## TYPE (JDBCBL: TYPE)

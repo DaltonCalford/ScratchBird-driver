@@ -71,8 +71,11 @@
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:1718` (metadata SQL constants for `sys.schemas`, `sys.tables`, `sys.columns`, indexes, constraints, routines)
-- `src/scratchbird.mojo:1738` (`ScratchBirdSchemaTreeNode` metadata-only recursive schema node model)
+- `src/scratchbird.mojo:1725` (metadata SQL constants now include extended families: catalogs, primary/foreign keys, table/column privileges, type info, routines)
+- `src/scratchbird.mojo:1760` (`METADATA_COLLECTION_QUERY_MAP` / `METADATA_COLLECTION_ALIASES`)
+- `src/scratchbird.mojo:1542` (`query_metadata` executable metadata routing through normal query path)
+- `src/scratchbird.mojo:1547` (`get_schema` metadata row materialization surface)
+- `src/scratchbird.mojo:1868` (`normalize_metadata_collection_name` / `resolve_metadata_collection_query`)
 - `src/scratchbird.mojo:1778` (`schema_paths_for_navigation` with optional dotted parent expansion)
 - `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
 - `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
@@ -82,11 +85,15 @@
 - `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
 - `tests/metadata_recursive_schema.mojo:77` (per-parent uniqueness)
 - `tests/metadata_recursive_schema.mojo:94` (same leaf name under different parents)
+- `tests/metadata_execution.mojo:16` (metadata execution wrapper entrypoint)
+- `tests/metadata_execution.py:38` (collection alias normalization coverage)
+- `tests/metadata_execution.py:53` (extended collection query resolution coverage)
+- `tests/metadata_execution.py:80` (metadata execution routing path coverage)
+- `tests/metadata_execution.py:111` (unsupported metadata collection `0A000` behavior)
 - `tests/README.md:41` (metadata recursive schema scaffold invocation)
 - Gaps/next actions:
-- Wire metadata shaping helpers through callable metadata execution APIs that use `METADATA_*_QUERY` constants.
 - Add live metadata integration assertions for schema/table/column result stability against a running ScratchBird endpoint.
-- Expand JDBCBL-META family coverage beyond recursive schema shaping (catalog/key/privilege/type-oriented surfaces).
+- Expand restriction-aware metadata filtering and payload-shaping assertions for DDL-editor-specific field contracts.
 
 ## TYPE (JDBCBL)
 

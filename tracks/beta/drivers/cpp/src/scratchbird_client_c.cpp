@@ -11,6 +11,7 @@
 #include "scratchbird/client/circuit_breaker.h"
 #include "scratchbird/client/keepalive.h"
 #include "scratchbird/client/leak_detector.h"
+#include "scratchbird/client/metadata.h"
 #include "scratchbird/client/telemetry.h"
 #include "scratchbird/client/driver_config.h"
 #include "scratchbird/core/error_context.h"
@@ -716,6 +717,29 @@ sb_result* sb_execute(sb_connection* conn, const char* sql, sb_error* err) {
 
 sb_result* sb_query(sb_connection* conn, const char* sql, sb_error* err) {
     return sb_execute(conn, sql, err);
+}
+
+sb_result* sb_metadata_query(sb_connection* conn, const char* collection_name, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_NULL_POINTER, "Connection required");
+        return nullptr;
+    }
+
+    const std::string requested = collection_name ? collection_name : std::string();
+    std::string metadata_sql;
+    std::string normalized_collection;
+    if (!scratchbird::client::resolveMetadataCollectionQuery(
+            requested,
+            &metadata_sql,
+            &normalized_collection)) {
+        set_error(
+            err,
+            SB_ERR_NOT_IMPLEMENTED,
+            scratchbird::client::metadataCollectionNotSupportedMessage(requested));
+        return nullptr;
+    }
+
+    return sb_query(conn, metadata_sql.c_str(), err);
 }
 
 int sb_fetch(sb_result* result, sb_row* row, sb_error* err) {

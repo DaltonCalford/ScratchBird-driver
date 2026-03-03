@@ -14,27 +14,42 @@ Lane: `tracks/alpha/drivers/php`
      - same leaf-name support under different parent paths,
      - optional database label on output.
    - `expandSchemaMetadataRows(...)` for metadata-row parent expansion that emits synthetic ancestor rows while preserving physical leaf rows.
-2. Added focused lane tests in `tests/MetadataRecursiveSchemaTest.php` covering:
+2. Extended executable metadata collection routing in `src/Metadata.php`:
+   - Added query constants and resolvers for extended metadata families:
+     - `catalogs`
+     - `primary_keys`
+     - `foreign_keys`
+     - `table_privileges`
+     - `column_privileges`
+     - `type_info`
+     - `routines`
+   - Expanded alias normalization (including separator/case variants like `primaryKeys`, `table privileges`, `column-privileges`).
+3. Added focused lane tests in `tests/MetadataRecursiveSchemaTest.php` covering:
    - database/default branch-style metadata rows,
    - dotted parent expansion,
    - no duplicates within the same parent,
    - same leaf name under different parents.
-3. Added executable local smoke coverage in `tests/metadata_recursive_schema_smoke.php` for the same four behaviors, used as the targeted runnable evidence in this workspace.
-4. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence anchors and status note.
+4. Added metadata execution tests in `tests/MetadataExecutionTest.php` covering:
+   - extended alias normalization,
+   - extended collection query resolution,
+   - connection-level metadata execution path (`Connection::getSchema(...)`) with wire-fixture validation of emitted metadata SQL,
+   - unsupported collection mapping to `ScratchBirdNotSupportedException` (`0A000`).
+5. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence anchors and status note.
 
 ## Tests Run
 
-1. `php tests/metadata_recursive_schema_smoke.php`  
-   Result: PASS (`metadata recursive schema smoke tests: PASS (4/4)`)
+1. `vendor/bin/phpunit --bootstrap tests/bootstrap.php tests/MetadataRecursiveSchemaTest.php tests/MetadataExecutionTest.php`
+   Result: PASS
 
 ## META Status Recommendation
 
 Recommendation: `Partial`
 
 Why:
-- The lane now has metadata-only recursive schema shaping with parent expansion mode and focused tests for uniqueness and cross-parent leaf behavior.
-- Status should remain `Partial` because the lane still does not expose a full first-class executable metadata API surface for full JDBC metadata families (catalog/key/privilege/type) and does not yet include live metadata integration assertions.
+- The lane now has executable metadata collection routing and validation for extended metadata families plus wire-level execution-path tests.
+- Recursive schema-tree shaping behavior remains covered with dedicated tests.
+- Status remains `Partial` because live metadata integration assertions and richer restriction-aware metadata shaping are still pending.
 
 ## Blockers
 
-1. `phpunit` executable is not present in this local workspace (`vendor/bin/phpunit` absent), so runnable evidence used the lane-local executable smoke suite instead of direct PHPUnit execution.
+1. Live metadata integration assertions against an active ScratchBird endpoint are still missing.

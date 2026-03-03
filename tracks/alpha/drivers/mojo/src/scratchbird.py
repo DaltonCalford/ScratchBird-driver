@@ -36,6 +36,76 @@ METADATA_INDEX_COLUMNS_QUERY = "SELECT index_id, column_id, column_name, ordinal
 METADATA_CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
 METADATA_PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
 METADATA_FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+METADATA_ROUTINES_QUERY = "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name"
+METADATA_CATALOGS_QUERY = "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
+METADATA_PRIMARY_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name"
+METADATA_FOREIGN_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name"
+METADATA_TABLE_PRIVILEGES_QUERY = "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name"
+METADATA_COLUMN_PRIVILEGES_QUERY = "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+METADATA_TYPE_INFO_QUERY = "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name"
+
+DEFAULT_METADATA_COLLECTION = "tables"
+
+_METADATA_COLLECTION_QUERY_MAP = {
+    "schemas": METADATA_SCHEMAS_QUERY,
+    "tables": METADATA_TABLES_QUERY,
+    "columns": METADATA_COLUMNS_QUERY,
+    "indexes": METADATA_INDEXES_QUERY,
+    "index_columns": METADATA_INDEX_COLUMNS_QUERY,
+    "constraints": METADATA_CONSTRAINTS_QUERY,
+    "procedures": METADATA_PROCEDURES_QUERY,
+    "functions": METADATA_FUNCTIONS_QUERY,
+    "routines": METADATA_ROUTINES_QUERY,
+    "catalogs": METADATA_CATALOGS_QUERY,
+    "primary_keys": METADATA_PRIMARY_KEYS_QUERY,
+    "foreign_keys": METADATA_FOREIGN_KEYS_QUERY,
+    "table_privileges": METADATA_TABLE_PRIVILEGES_QUERY,
+    "column_privileges": METADATA_COLUMN_PRIVILEGES_QUERY,
+    "type_info": METADATA_TYPE_INFO_QUERY,
+}
+
+_METADATA_COLLECTION_ALIASES = {
+    "schema": "schemas",
+    "schemas": "schemas",
+    "table": "tables",
+    "tables": "tables",
+    "column": "columns",
+    "columns": "columns",
+    "index": "indexes",
+    "indexes": "indexes",
+    "index_column": "index_columns",
+    "index_columns": "index_columns",
+    "indexcolumn": "index_columns",
+    "indexcolumns": "index_columns",
+    "constraint": "constraints",
+    "constraints": "constraints",
+    "procedure": "procedures",
+    "procedures": "procedures",
+    "function": "functions",
+    "functions": "functions",
+    "routine": "routines",
+    "routines": "routines",
+    "catalog": "catalogs",
+    "catalogs": "catalogs",
+    "primary_key": "primary_keys",
+    "primary_keys": "primary_keys",
+    "primarykey": "primary_keys",
+    "primarykeys": "primary_keys",
+    "foreign_key": "foreign_keys",
+    "foreign_keys": "foreign_keys",
+    "foreignkey": "foreign_keys",
+    "foreignkeys": "foreign_keys",
+    "table_privilege": "table_privileges",
+    "table_privileges": "table_privileges",
+    "tableprivilege": "table_privileges",
+    "tableprivileges": "table_privileges",
+    "column_privilege": "column_privileges",
+    "column_privileges": "column_privileges",
+    "columnprivilege": "column_privileges",
+    "columnprivileges": "column_privileges",
+    "type_info": "type_info",
+    "typeinfo": "type_info",
+}
 
 _SCHEMA_KEYS = (
     "schema_name",
@@ -88,6 +158,14 @@ class _ShimConnection:
         if "type_coverage" in statement:
             return ScratchBirdResult([["ok"]], [], 1)
         return ScratchBirdResult([], [], 0)
+
+    def query_metadata(self, collection_name: Optional[str] = None) -> ScratchBirdResult:
+        normalized_collection = normalize_metadata_collection_name(collection_name)
+        metadata_sql = resolve_metadata_collection_query(normalized_collection)
+        return self.query(metadata_sql)
+
+    def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
+        return self.query_metadata(collection_name).rows
 
     def close(self) -> None:
         return None
@@ -165,6 +243,18 @@ class ScratchBirdConnection:
                 end(span, False)
             raise
 
+    @staticmethod
+    def query_metadata(conn: Any, collection_name: Optional[str] = None) -> Any:
+        resolved = normalize_metadata_collection_name(collection_name)
+        metadata_sql = resolve_metadata_collection_query(resolved)
+        return ScratchBirdConnection.query(conn, metadata_sql, None)
+
+    @staticmethod
+    def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:
+        result = ScratchBirdConnection.query_metadata(conn, collection_name)
+        rows = getattr(result, "rows", None)
+        return rows if rows is not None else []
+
 
 def connect(config: ScratchBirdConfig) -> _ShimConnection:
     return _ShimConnection(config)
@@ -200,6 +290,51 @@ def procedures_query() -> str:
 
 def functions_query() -> str:
     return METADATA_FUNCTIONS_QUERY
+
+
+def routines_query() -> str:
+    return METADATA_ROUTINES_QUERY
+
+
+def catalogs_query() -> str:
+    return METADATA_CATALOGS_QUERY
+
+
+def primary_keys_query() -> str:
+    return METADATA_PRIMARY_KEYS_QUERY
+
+
+def foreign_keys_query() -> str:
+    return METADATA_FOREIGN_KEYS_QUERY
+
+
+def table_privileges_query() -> str:
+    return METADATA_TABLE_PRIVILEGES_QUERY
+
+
+def column_privileges_query() -> str:
+    return METADATA_COLUMN_PRIVILEGES_QUERY
+
+
+def type_info_query() -> str:
+    return METADATA_TYPE_INFO_QUERY
+
+
+def normalize_metadata_collection_name(collection_name: Optional[str] = None) -> str:
+    raw = DEFAULT_METADATA_COLLECTION if collection_name is None else str(collection_name)
+    normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized == "":
+        normalized = DEFAULT_METADATA_COLLECTION
+    collapsed = normalized.replace("_", "")
+    resolved = _METADATA_COLLECTION_ALIASES.get(normalized) or _METADATA_COLLECTION_ALIASES.get(collapsed)
+    if resolved is None:
+        raise ScratchBirdError(f"metadata collection '{raw}' is not supported", "0A000")
+    return resolved
+
+
+def resolve_metadata_collection_query(collection_name: Optional[str] = None) -> str:
+    resolved = normalize_metadata_collection_name(collection_name)
+    return _METADATA_COLLECTION_QUERY_MAP[resolved]
 
 
 @dataclass

@@ -2,23 +2,34 @@
 
 Date: 2026-03-03
 Lane: `tracks/alpha/drivers/mojo`
-Scope: metadata-only recursive schema shaping parity and focused lane test coverage.
+Scope: metadata collection routing + recursive schema shaping parity with focused lane tests.
 
 ## Changes
 
 1. Implemented metadata recursive schema shaping in `src/scratchbird.py`:
    - `ScratchBirdSchemaTreeNode`
-   - metadata query accessors: `schemas_query`, `tables_query`, `columns_query`, `indexes_query`, `index_columns_query`, `constraints_query`, `procedures_query`, `functions_query`
+   - metadata query accessors:
+     - existing families: `schemas_query`, `tables_query`, `columns_query`, `indexes_query`, `index_columns_query`, `constraints_query`, `procedures_query`, `functions_query`
+     - extended families: `routines_query`, `catalogs_query`, `primary_keys_query`, `foreign_keys_query`, `table_privileges_query`, `column_privileges_query`, `type_info_query`
+   - metadata collection routing:
+     - `normalize_metadata_collection_name(...)`
+     - `resolve_metadata_collection_query(...)`
+     - `ScratchBirdConnection.query_metadata(...)`
+     - `ScratchBirdConnection.get_schema(...)`
    - schema shaping helpers:
      - `schema_paths_for_navigation(..., expand_schema_parents=...)`
      - `expand_schema_parent_paths(...)`
      - `build_schema_tree(...)`
      - `expand_schema_metadata_rows(...)`
      - `build_database_default_metadata_rows(...)`
-2. Added focused S3 metadata tests in `tests/metadata_recursive_schema.py`.
-3. Replaced failing Python-style `.mojo` test body with a Mojo wrapper entrypoint:
+2. Mirrored metadata collection routing additions in `src/scratchbird.mojo` so the lane source and shim surface stay aligned.
+3. Added focused metadata tests:
+   - `tests/metadata_recursive_schema.py` for recursive-tree behavior.
+   - `tests/metadata_execution.py` for alias normalization, extended query resolution, executable metadata routing, and unsupported collection behavior (`0A000`).
+4. Added Mojo wrapper entrypoint:
    - `tests/metadata_recursive_schema.mojo` delegates to the Python test script via Mojo-Python interop.
-4. Updated lane docs for pixi-managed Mojo execution.
+   - `tests/metadata_execution.mojo` delegates to `tests/metadata_execution.py`.
+5. Updated lane docs for pixi-managed Mojo execution.
 
 ## Validation Evidence
 
@@ -30,7 +41,11 @@ Scope: metadata-only recursive schema shaping parity and focused lane test cover
    - `pixi run -m /home/dcalford/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo`
    - Result: PASS (`Mojo metadata recursive schema tests OK`).
 
-3. Related lane checks
+3. Metadata execution routing tests
+   - `pixi run -m /home/dcalford/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo`
+   - Result: PASS (`Mojo metadata execution tests OK`).
+
+4. Related lane checks
    - `pixi run -m /home/dcalford/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo`
    - Result: PASS (`Mojo TXN/EXEC parity tests OK`).
 
@@ -39,5 +54,6 @@ Scope: metadata-only recursive schema shaping parity and focused lane test cover
 Recommendation: `PARTIAL`
 
 Rationale:
-- Required recursive schema shaping behavior is implemented and executable in the Mojo lane.
+- Executable metadata collection routing now covers extended families (catalog/key/privilege/type/routine) with alias normalization and unsupported-path guardrails.
+- Recursive schema shaping behavior remains implemented and validated.
 - Remaining gap: no live metadata integration against a running ScratchBird endpoint in this validation run.

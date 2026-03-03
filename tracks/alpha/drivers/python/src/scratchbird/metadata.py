@@ -40,6 +40,106 @@ FUNCTIONS_QUERY = (
     "SELECT function_id, schema_id, function_name "
     "FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
 )
+ROUTINES_QUERY = (
+    "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type "
+    "FROM sys.procedures WHERE is_valid = 1 "
+    "UNION ALL "
+    "SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type "
+    "FROM sys.functions WHERE is_valid = 1 "
+    "ORDER BY schema_id, routine_name"
+)
+CATALOGS_QUERY = (
+    "SELECT schema_id AS catalog_id, schema_name AS catalog_name "
+    "FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
+)
+PRIMARY_KEYS_QUERY = (
+    "SELECT constraint_id, table_id, constraint_name, constraint_type "
+    "FROM sys.constraints WHERE is_valid = 1 "
+    "AND lower(constraint_type) IN ('primary key', 'primary') "
+    "ORDER BY table_id, constraint_name"
+)
+FOREIGN_KEYS_QUERY = (
+    "SELECT constraint_id, table_id, constraint_name, constraint_type "
+    "FROM sys.constraints WHERE is_valid = 1 "
+    "AND lower(constraint_type) IN ('foreign key', 'foreign') "
+    "ORDER BY table_id, constraint_name"
+)
+TABLE_PRIVILEGES_QUERY = (
+    "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, "
+    "'ALL' AS privilege_type "
+    "FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name"
+)
+COLUMN_PRIVILEGES_QUERY = (
+    "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type "
+    "FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+)
+TYPE_INFO_QUERY = (
+    "SELECT DISTINCT data_type_id, data_type_name "
+    "FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name"
+)
+
+DEFAULT_COLLECTION = "tables"
+
+COLLECTION_QUERY_MAP: Dict[str, str] = {
+    "schemas": SCHEMAS_QUERY,
+    "tables": TABLES_QUERY,
+    "columns": COLUMNS_QUERY,
+    "indexes": INDEXES_QUERY,
+    "index_columns": INDEX_COLUMNS_QUERY,
+    "constraints": CONSTRAINTS_QUERY,
+    "procedures": PROCEDURES_QUERY,
+    "functions": FUNCTIONS_QUERY,
+    "routines": ROUTINES_QUERY,
+    "catalogs": CATALOGS_QUERY,
+    "primary_keys": PRIMARY_KEYS_QUERY,
+    "foreign_keys": FOREIGN_KEYS_QUERY,
+    "table_privileges": TABLE_PRIVILEGES_QUERY,
+    "column_privileges": COLUMN_PRIVILEGES_QUERY,
+    "type_info": TYPE_INFO_QUERY,
+}
+
+COLLECTION_ALIASES: Dict[str, str] = {
+    "schema": "schemas",
+    "schemas": "schemas",
+    "table": "tables",
+    "tables": "tables",
+    "column": "columns",
+    "columns": "columns",
+    "index": "indexes",
+    "indexes": "indexes",
+    "index_column": "index_columns",
+    "index_columns": "index_columns",
+    "indexcolumn": "index_columns",
+    "indexcolumns": "index_columns",
+    "constraint": "constraints",
+    "constraints": "constraints",
+    "procedure": "procedures",
+    "procedures": "procedures",
+    "function": "functions",
+    "functions": "functions",
+    "routine": "routines",
+    "routines": "routines",
+    "catalog": "catalogs",
+    "catalogs": "catalogs",
+    "primary_key": "primary_keys",
+    "primary_keys": "primary_keys",
+    "primarykey": "primary_keys",
+    "primarykeys": "primary_keys",
+    "foreign_key": "foreign_keys",
+    "foreign_keys": "foreign_keys",
+    "foreignkey": "foreign_keys",
+    "foreignkeys": "foreign_keys",
+    "table_privilege": "table_privileges",
+    "table_privileges": "table_privileges",
+    "tableprivilege": "table_privileges",
+    "tableprivileges": "table_privileges",
+    "column_privilege": "column_privileges",
+    "column_privileges": "column_privileges",
+    "columnprivilege": "column_privileges",
+    "columnprivileges": "column_privileges",
+    "type_info": "type_info",
+    "typeinfo": "type_info",
+}
 
 
 @dataclass
@@ -82,6 +182,51 @@ def procedures_query() -> str:
 
 def functions_query() -> str:
     return FUNCTIONS_QUERY
+
+
+def routines_query() -> str:
+    return ROUTINES_QUERY
+
+
+def catalogs_query() -> str:
+    return CATALOGS_QUERY
+
+
+def primary_keys_query() -> str:
+    return PRIMARY_KEYS_QUERY
+
+
+def foreign_keys_query() -> str:
+    return FOREIGN_KEYS_QUERY
+
+
+def table_privileges_query() -> str:
+    return TABLE_PRIVILEGES_QUERY
+
+
+def column_privileges_query() -> str:
+    return COLUMN_PRIVILEGES_QUERY
+
+
+def type_info_query() -> str:
+    return TYPE_INFO_QUERY
+
+
+def normalize_collection_name(collection_name: Optional[str] = None) -> str:
+    raw = DEFAULT_COLLECTION if collection_name is None else str(collection_name)
+    normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
+    if not normalized:
+        normalized = DEFAULT_COLLECTION
+    collapsed = normalized.replace("_", "")
+    resolved = COLLECTION_ALIASES.get(normalized) or COLLECTION_ALIASES.get(collapsed)
+    if resolved is None:
+        raise ValueError(f"metadata collection '{raw}' is not supported")
+    return resolved
+
+
+def resolve_collection_query(collection_name: Optional[str] = None) -> str:
+    resolved = normalize_collection_name(collection_name)
+    return COLLECTION_QUERY_MAP[resolved]
 
 
 def schema_name_matches_pattern(schema_name: Optional[str], schema_pattern: Optional[str]) -> bool:

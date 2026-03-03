@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "scratchbird/client/metadata.h"
+#include "scratchbird/client/scratchbird_client.h"
 
 namespace {
 
@@ -98,4 +99,48 @@ TEST(MetadataSchemaTreeTest, SameLeafNameUnderDifferentParentsIsPreserved) {
     EXPECT_EQ(alice_orders->name, "orders");
     EXPECT_EQ(bob_orders->name, "orders");
     EXPECT_NE(alice_orders->parent_path, bob_orders->parent_path);
+}
+
+TEST(MetadataSchemaTreeTest, NormalizesCollectionAliasesForExtendedFamilies) {
+    std::string normalized;
+    ASSERT_TRUE(scratchbird::client::normalizeMetadataCollectionName("primaryKeys", &normalized));
+    EXPECT_EQ(normalized, "primary_keys");
+
+    ASSERT_TRUE(scratchbird::client::normalizeMetadataCollectionName("table privileges", &normalized));
+    EXPECT_EQ(normalized, "table_privileges");
+
+    ASSERT_TRUE(scratchbird::client::normalizeMetadataCollectionName("column-privileges", &normalized));
+    EXPECT_EQ(normalized, "column_privileges");
+
+    ASSERT_TRUE(scratchbird::client::normalizeMetadataCollectionName("catalog", &normalized));
+    EXPECT_EQ(normalized, "catalogs");
+}
+
+TEST(MetadataSchemaTreeTest, ResolvesExtendedCollectionQueries) {
+    std::string query_sql;
+    std::string normalized;
+
+    ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("primarykeys", &query_sql, &normalized));
+    EXPECT_EQ(normalized, "primary_keys");
+    EXPECT_EQ(query_sql, sb_metadata_primary_keys_query());
+
+    ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("foreign_keys", &query_sql, &normalized));
+    EXPECT_EQ(normalized, "foreign_keys");
+    EXPECT_EQ(query_sql, sb_metadata_foreign_keys_query());
+
+    ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("tableprivileges", &query_sql, &normalized));
+    EXPECT_EQ(normalized, "table_privileges");
+    EXPECT_EQ(query_sql, sb_metadata_table_privileges_query());
+
+    ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("type_info", &query_sql, &normalized));
+    EXPECT_EQ(normalized, "type_info");
+    EXPECT_EQ(query_sql, sb_metadata_type_info_query());
+}
+
+TEST(MetadataSchemaTreeTest, RejectsUnsupportedCollection) {
+    std::string query_sql;
+    EXPECT_FALSE(scratchbird::client::resolveMetadataCollectionQuery("nope_collection", &query_sql, nullptr));
+    EXPECT_EQ(
+        scratchbird::client::metadataCollectionNotSupportedMessage("nope_collection"),
+        "metadata collection 'nope_collection' is not supported");
 }

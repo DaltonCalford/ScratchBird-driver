@@ -49,5 +49,16 @@ std::vector<MetadataSchemaTreeRow> buildMetadataSchemaTreeRows(
     const std::string& database,
     bool expand_schema_parents);
 
+bool normalizeMetadataCollectionName(
+    const std::string& collection_name,
+    std::string* normalized_collection);
+
+bool resolveMetadataCollectionQuery(
+    const std::string& collection_name,
+    std::string* query_sql,
+    std::string* normalized_collection = nullptr);
+
+std::string metadataCollectionNotSupportedMessage(const std::string& collection_name);
+
 } // namespace client
 } // namespace scratchbird

@@ -92,6 +92,7 @@ from .protocol import (
 )
 from .scram import ScramExchange
 from .sql import normalize_query
+from .metadata import normalize_collection_name, resolve_collection_query
 from .types import FORMAT_BINARY, decode_value, encode_param
 
 MANAGER_PROTOCOL_MAGIC = 0x42444253  # SBDB
@@ -641,6 +642,16 @@ class Connection:
         cur.executemany(sql, seq_of_params)
         return cur
 
+    def query_metadata(self, collection_name: str = "tables") -> Cursor:
+        self._ensure_open()
+        normalized_collection = self._normalize_metadata_collection(collection_name)
+        metadata_sql = resolve_collection_query(normalized_collection)
+        return self.execute(metadata_sql)
+
+    def get_schema(self, collection_name: str = "tables"):
+        cur = self.query_metadata(collection_name)
+        return cur.fetchall()
+
     def setinputsizes(self, sizes) -> None:
         self._ensure_open()
 
@@ -661,6 +672,12 @@ class Connection:
         if not normalized:
             raise errors.ProgrammingError("savepoint name is required")
         return normalized
+
+    def _normalize_metadata_collection(self, collection_name: str) -> str:
+        try:
+            return normalize_collection_name(collection_name)
+        except ValueError as exc:
+            raise errors.NotSupportedError(str(exc)) from exc
 
     def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
         if header.msg_type == MessageType.PARAMETER_STATUS:

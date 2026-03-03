@@ -32,6 +32,13 @@ final class Metadata
     public const CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
     public const PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
     public const FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
+    public const ROUTINES_QUERY = "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name";
+    public const CATALOGS_QUERY = "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+    public const PRIMARY_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+    public const FOREIGN_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+    public const TABLE_PRIVILEGES_QUERY = "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+    public const COLUMN_PRIVILEGES_QUERY = "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+    public const TYPE_INFO_QUERY = "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 
     private const COLLECTION_QUERY_MAP = [
         'schemas' => self::SCHEMAS_QUERY,
@@ -42,6 +49,13 @@ final class Metadata
         'constraints' => self::CONSTRAINTS_QUERY,
         'procedures' => self::PROCEDURES_QUERY,
         'functions' => self::FUNCTIONS_QUERY,
+        'routines' => self::ROUTINES_QUERY,
+        'catalogs' => self::CATALOGS_QUERY,
+        'primary_keys' => self::PRIMARY_KEYS_QUERY,
+        'foreign_keys' => self::FOREIGN_KEYS_QUERY,
+        'table_privileges' => self::TABLE_PRIVILEGES_QUERY,
+        'column_privileges' => self::COLUMN_PRIVILEGES_QUERY,
+        'type_info' => self::TYPE_INFO_QUERY,
     ];
 
     private const COLLECTION_ALIASES = [
@@ -61,16 +75,40 @@ final class Metadata
         'procedure' => 'procedures',
         'functions' => 'functions',
         'function' => 'functions',
+        'routines' => 'routines',
+        'routine' => 'routines',
+        'catalogs' => 'catalogs',
+        'catalog' => 'catalogs',
+        'primary_keys' => 'primary_keys',
+        'primary_key' => 'primary_keys',
+        'primarykeys' => 'primary_keys',
+        'primarykey' => 'primary_keys',
+        'foreign_keys' => 'foreign_keys',
+        'foreign_key' => 'foreign_keys',
+        'foreignkeys' => 'foreign_keys',
+        'foreignkey' => 'foreign_keys',
+        'table_privileges' => 'table_privileges',
+        'table_privilege' => 'table_privileges',
+        'tableprivileges' => 'table_privileges',
+        'tableprivilege' => 'table_privileges',
+        'column_privileges' => 'column_privileges',
+        'column_privilege' => 'column_privileges',
+        'columnprivileges' => 'column_privileges',
+        'columnprivilege' => 'column_privileges',
+        'type_info' => 'type_info',
+        'typeinfo' => 'type_info',
     ];
 
     public static function normalizeCollectionName(?string $collectionName = null): string
     {
         $value = $collectionName ?? self::DEFAULT_COLLECTION;
         $normalized = strtolower(trim($value));
+        $normalized = str_replace(['-', ' '], '_', $normalized);
         if ($normalized === '') {
             $normalized = self::DEFAULT_COLLECTION;
         }
-        $resolved = self::COLLECTION_ALIASES[$normalized] ?? null;
+        $collapsed = str_replace('_', '', $normalized);
+        $resolved = self::COLLECTION_ALIASES[$normalized] ?? self::COLLECTION_ALIASES[$collapsed] ?? null;
         if ($resolved === null) {
             throw new \InvalidArgumentException("Metadata collection '{$value}' is not supported");
         }
@@ -121,6 +159,41 @@ final class Metadata
     public static function functionsQuery(): string
     {
         return self::FUNCTIONS_QUERY;
+    }
+
+    public static function routinesQuery(): string
+    {
+        return self::ROUTINES_QUERY;
+    }
+
+    public static function catalogsQuery(): string
+    {
+        return self::CATALOGS_QUERY;
+    }
+
+    public static function primaryKeysQuery(): string
+    {
+        return self::PRIMARY_KEYS_QUERY;
+    }
+
+    public static function foreignKeysQuery(): string
+    {
+        return self::FOREIGN_KEYS_QUERY;
+    }
+
+    public static function tablePrivilegesQuery(): string
+    {
+        return self::TABLE_PRIVILEGES_QUERY;
+    }
+
+    public static function columnPrivilegesQuery(): string
+    {
+        return self::COLUMN_PRIVILEGES_QUERY;
+    }
+
+    public static function typeInfoQuery(): string
+    {
+        return self::TYPE_INFO_QUERY;
     }
 
     /**

@@ -78,3 +78,10 @@ TEST(TypeMappingConformance, MapsSbTypesToWireOids) {
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_CIDR), kOidCidr);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_MACADDR), kOidMacaddr);
 }
+
+TEST(TypeMappingConformance, MetadataQueryRequiresConnectionHandle) {
+    sb_error err{};
+    sb_result* result = sb_metadata_query(nullptr, "tables", &err);
+    EXPECT_EQ(result, nullptr);
+    EXPECT_EQ(err.code, SB_ERR_NULL_POINTER);
+}

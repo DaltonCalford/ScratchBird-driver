@@ -1,6 +1,7 @@
 #include "scratchbird/client/metadata.h"
 
 #include <cctype>
+#include <algorithm>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -76,6 +77,124 @@ void appendRowsDepthFirst(const MetadataSchemaTreeNode& node,
         }
         appendRowsDepthFirst(*child, database_name, node.full_path, false, rows);
     }
+}
+
+constexpr const char* kDefaultMetadataCollection = "tables";
+constexpr const char* kMetadataSchemasQuery =
+    "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+constexpr const char* kMetadataTablesQuery =
+    "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
+constexpr const char* kMetadataColumnsQuery =
+    "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+constexpr const char* kMetadataIndexesQuery =
+    "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name";
+constexpr const char* kMetadataIndexColumnsQuery =
+    "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position";
+constexpr const char* kMetadataConstraintsQuery =
+    "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
+constexpr const char* kMetadataProceduresQuery =
+    "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
+constexpr const char* kMetadataFunctionsQuery =
+    "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
+constexpr const char* kMetadataRoutinesQuery =
+    "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name";
+constexpr const char* kMetadataCatalogsQuery =
+    "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+constexpr const char* kMetadataPrimaryKeysQuery =
+    "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+constexpr const char* kMetadataForeignKeysQuery =
+    "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+constexpr const char* kMetadataTablePrivilegesQuery =
+    "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+constexpr const char* kMetadataColumnPrivilegesQuery =
+    "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+constexpr const char* kMetadataTypeInfoQuery =
+    "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
+
+const std::unordered_map<std::string, std::string> kMetadataCollectionAliases = {
+    {"schema", "schemas"},
+    {"schemas", "schemas"},
+    {"table", "tables"},
+    {"tables", "tables"},
+    {"column", "columns"},
+    {"columns", "columns"},
+    {"index", "indexes"},
+    {"indexes", "indexes"},
+    {"index_column", "index_columns"},
+    {"index_columns", "index_columns"},
+    {"indexcolumn", "index_columns"},
+    {"indexcolumns", "index_columns"},
+    {"constraint", "constraints"},
+    {"constraints", "constraints"},
+    {"procedure", "procedures"},
+    {"procedures", "procedures"},
+    {"function", "functions"},
+    {"functions", "functions"},
+    {"routine", "routines"},
+    {"routines", "routines"},
+    {"catalog", "catalogs"},
+    {"catalogs", "catalogs"},
+    {"primary_key", "primary_keys"},
+    {"primary_keys", "primary_keys"},
+    {"primarykey", "primary_keys"},
+    {"primarykeys", "primary_keys"},
+    {"foreign_key", "foreign_keys"},
+    {"foreign_keys", "foreign_keys"},
+    {"foreignkey", "foreign_keys"},
+    {"foreignkeys", "foreign_keys"},
+    {"table_privilege", "table_privileges"},
+    {"table_privileges", "table_privileges"},
+    {"tableprivilege", "table_privileges"},
+    {"tableprivileges", "table_privileges"},
+    {"column_privilege", "column_privileges"},
+    {"column_privileges", "column_privileges"},
+    {"columnprivilege", "column_privileges"},
+    {"columnprivileges", "column_privileges"},
+    {"type_info", "type_info"},
+    {"typeinfo", "type_info"},
+};
+
+const std::unordered_map<std::string, std::string> kMetadataCollectionQueries = {
+    {"schemas", kMetadataSchemasQuery},
+    {"tables", kMetadataTablesQuery},
+    {"columns", kMetadataColumnsQuery},
+    {"indexes", kMetadataIndexesQuery},
+    {"index_columns", kMetadataIndexColumnsQuery},
+    {"constraints", kMetadataConstraintsQuery},
+    {"procedures", kMetadataProceduresQuery},
+    {"functions", kMetadataFunctionsQuery},
+    {"routines", kMetadataRoutinesQuery},
+    {"catalogs", kMetadataCatalogsQuery},
+    {"primary_keys", kMetadataPrimaryKeysQuery},
+    {"foreign_keys", kMetadataForeignKeysQuery},
+    {"table_privileges", kMetadataTablePrivilegesQuery},
+    {"column_privileges", kMetadataColumnPrivilegesQuery},
+    {"type_info", kMetadataTypeInfoQuery},
+};
+
+std::string normalizeMetadataCollectionKey(const std::string& collection_name) {
+    std::string normalized = trim(collection_name);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    std::replace(normalized.begin(), normalized.end(), '-', '_');
+    std::replace(normalized.begin(), normalized.end(), ' ', '_');
+    if (normalized.empty()) {
+        normalized = kDefaultMetadataCollection;
+    }
+    return normalized;
+}
+
+std::string collapseUnderscores(const std::string& value) {
+    std::string collapsed;
+    collapsed.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '_') {
+            continue;
+        }
+        collapsed.push_back(ch);
+    }
+    return collapsed;
 }
 
 } // namespace
@@ -194,6 +313,59 @@ std::vector<MetadataSchemaTreeRow> buildMetadataSchemaTreeRows(
     }
 
     return rows;
+}
+
+bool normalizeMetadataCollectionName(
+    const std::string& collection_name,
+    std::string* normalized_collection) {
+    if (!normalized_collection) {
+        return false;
+    }
+
+    std::string normalized_key = normalizeMetadataCollectionKey(collection_name);
+    auto alias_it = kMetadataCollectionAliases.find(normalized_key);
+    if (alias_it == kMetadataCollectionAliases.end()) {
+        const std::string collapsed = collapseUnderscores(normalized_key);
+        alias_it = kMetadataCollectionAliases.find(collapsed);
+    }
+    if (alias_it == kMetadataCollectionAliases.end()) {
+        return false;
+    }
+
+    *normalized_collection = alias_it->second;
+    return true;
+}
+
+bool resolveMetadataCollectionQuery(
+    const std::string& collection_name,
+    std::string* query_sql,
+    std::string* normalized_collection) {
+    if (!query_sql) {
+        return false;
+    }
+
+    std::string normalized;
+    if (!normalizeMetadataCollectionName(collection_name, &normalized)) {
+        return false;
+    }
+
+    auto query_it = kMetadataCollectionQueries.find(normalized);
+    if (query_it == kMetadataCollectionQueries.end()) {
+        return false;
+    }
+
+    *query_sql = query_it->second;
+    if (normalized_collection) {
+        *normalized_collection = normalized;
+    }
+    return true;
+}
+
+std::string metadataCollectionNotSupportedMessage(const std::string& collection_name) {
+    const std::string candidate = collection_name.empty()
+        ? std::string(kDefaultMetadataCollection)
+        : collection_name;
+    return "metadata collection '" + candidate + "' is not supported";
 }
 
 } // namespace client
