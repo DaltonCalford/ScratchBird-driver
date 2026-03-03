@@ -239,6 +239,7 @@ use the standard drivers for those engines against ScratchBird's emulation liste
 Application-specific drivers:
 - Superset: `tracks/beta/integrations/scratchbird-superset-driver/`
 - Metabase: `tracks/alpha/integrations/scratchbird-metabase-driver/`
+- DBeaver: `tracks/alpha/integrations/scratchbird-dbeaver-driver/`
 
 Integration templates for ecosystem targets live in:
 `docs/specifications/integrations/` (drivers, ORMs, tools, apps, cloud).
@@ -320,6 +321,7 @@ ScratchBird-driver/
 ├── tracks/alpha/drivers/mojo/                   Mojo adapter
 ├── tracks/beta/integrations/scratchbird-superset-driver/   Superset dialect
 ├── tracks/alpha/integrations/scratchbird-metabase-driver/   Metabase driver
+├── tracks/alpha/integrations/scratchbird-dbeaver-driver/   DBeaver integration plugin
 ├── CONTRIBUTING.md         Contribution guidelines
 ├── CHANGELOG.md            Version history
 └── LICENSE                 IDPL License

@@ -50,6 +50,7 @@ public class SBConnectionProperties {
     // Connection options
     private boolean tcpKeepAlive = true;
     private String currentSchema = "public";
+    private boolean metadataExpandSchemaParents = false;
     private String role;
     private String applicationName;
     private boolean readOnly = false;
@@ -184,6 +185,14 @@ public class SBConnectionProperties {
             case "currentschema":
             case "searchpath":
                 this.currentSchema = value;
+                break;
+            case "metadataexpandschemaparents":
+            case "metadata_expand_schema_parents":
+            case "expandschemaparents":
+            case "expand_schema_parents":
+            case "dbeaverexpandschemaparents":
+            case "dbeaver_expand_schema_parents":
+                this.metadataExpandSchemaParents = Boolean.parseBoolean(value);
                 break;
             case "role":
                 this.role = value;
@@ -341,6 +350,11 @@ public class SBConnectionProperties {
                 return String.valueOf(tcpKeepAlive);
             case "currentschema":
                 return currentSchema;
+            case "metadataexpandschemaparents":
+            case "metadata_expand_schema_parents":
+            case "expandschemaparents":
+            case "expand_schema_parents":
+                return String.valueOf(metadataExpandSchemaParents);
             case "role":
                 return role;
             case "applicationname":
@@ -551,6 +565,14 @@ public class SBConnectionProperties {
 
     public void setCurrentSchema(String currentSchema) {
         this.currentSchema = currentSchema;
+    }
+
+    public boolean isMetadataExpandSchemaParents() {
+        return metadataExpandSchemaParents;
+    }
+
+    public void setMetadataExpandSchemaParents(boolean metadataExpandSchemaParents) {
+        this.metadataExpandSchemaParents = metadataExpandSchemaParents;
     }
 
     public String getRole() {
@@ -788,6 +810,7 @@ public class SBConnectionProperties {
         props.setProperty("loginTimeout", String.valueOf(loginTimeout));
         props.setProperty("tcpKeepAlive", String.valueOf(tcpKeepAlive));
         props.setProperty("currentSchema", currentSchema);
+        props.setProperty("metadataExpandSchemaParents", String.valueOf(metadataExpandSchemaParents));
         props.setProperty("pooling", String.valueOf(pooling));
         props.setProperty("maxPoolSize", String.valueOf(maxPoolSize));
         props.setProperty("minPoolSize", String.valueOf(minPoolSize));

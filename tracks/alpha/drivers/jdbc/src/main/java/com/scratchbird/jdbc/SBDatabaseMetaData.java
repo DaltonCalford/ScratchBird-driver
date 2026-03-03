@@ -1010,19 +1010,29 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
 
     @Override
     public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
-        String currentCatalog = connection.getConnectionProperties().getDatabase();
+        String currentCatalog = currentCatalogName();
         if (catalog != null && currentCatalog != null && !catalog.equalsIgnoreCase(currentCatalog)) {
             return createEmptyResultSet(
                 new String[]{"TABLE_SCHEM", "TABLE_CATALOG"},
                 new int[]{Types.VARCHAR, Types.VARCHAR}
             );
         }
-        List<Object[]> rows = new ArrayList<>();
-        for (Object[] row : queryRows("SELECT schema_name FROM sys.schemas WHERE is_valid = 1")) {
+        boolean expandSchemaParents = expandSchemaParentNodesInMetadata();
+        LinkedHashSet<String> schemaNames = new LinkedHashSet<>();
+        for (Object[] row : queryRows("SELECT schema_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name")) {
             String schemaName = toStringValue(row, 0);
-            if (!matchesPattern(schemaName, schemaPattern)) {
+            if (schemaName == null || schemaName.isBlank()) {
                 continue;
             }
+            if (expandSchemaParents) {
+                appendSchemaWithParents(schemaNames, schemaName, schemaPattern);
+            } else if (matchesPattern(schemaName, schemaPattern)) {
+                schemaNames.add(schemaName);
+            }
+        }
+
+        List<Object[]> rows = new ArrayList<>(schemaNames.size());
+        for (String schemaName : schemaNames) {
             rows.add(new Object[]{schemaName, currentCatalog});
         }
         List<SBColumnInfo> cols = new ArrayList<>();
@@ -1831,6 +1841,31 @@ public class SBDatabaseMetaData implements DatabaseMetaData {
             return null;
         }
         return connection.getConnectionProperties().getDatabase();
+    }
+
+    protected boolean expandSchemaParentNodesInMetadata() {
+        if (connection == null || connection.getConnectionProperties() == null) {
+            return false;
+        }
+        return connection.getConnectionProperties().isMetadataExpandSchemaParents();
+    }
+
+    private void appendSchemaWithParents(Set<String> out, String schemaName, String schemaPattern) {
+        String[] segments = schemaName.split("\\.");
+        StringBuilder current = new StringBuilder();
+        for (String segment : segments) {
+            if (segment == null || segment.isBlank()) {
+                continue;
+            }
+            if (current.length() > 0) {
+                current.append('.');
+            }
+            current.append(segment);
+            String candidate = current.toString();
+            if (matchesPattern(candidate, schemaPattern)) {
+                out.add(candidate);
+            }
+        }
     }
 
     private List<Object[]> foreignKeyRows() {

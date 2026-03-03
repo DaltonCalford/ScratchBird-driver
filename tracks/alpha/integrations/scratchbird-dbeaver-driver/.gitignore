@@ -1,0 +1,6 @@
+# Keep the DBeaver OSGi test-plugin sources (parent .gitignore has *.test).
+!test/org.jkiss.dbeaver.ext.scratchbird.test/
+!test/org.jkiss.dbeaver.ext.scratchbird.test/**
+
+plugins/**/target/
+test/**/target/

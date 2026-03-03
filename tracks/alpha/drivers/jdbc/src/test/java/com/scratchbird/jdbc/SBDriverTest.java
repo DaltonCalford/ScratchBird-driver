@@ -36,7 +36,7 @@ public class SBDriverTest {
         Properties info = new Properties();
         info.setProperty("user", "alice");
         SBConnectionProperties props =
-            SBDriver.parseURL("jdbc:scratchbird://db.example.com:3093/app?sslmode=require&connectTimeout=15",
+            SBDriver.parseURL("jdbc:scratchbird://db.example.com:3093/app?sslmode=require&connectTimeout=15&metadataExpandSchemaParents=true",
                 info);
         assertEquals("db.example.com", props.getHost());
         assertEquals(3093, props.getPort());
@@ -44,6 +44,7 @@ public class SBDriverTest {
         assertEquals("alice", props.getUser());
         assertEquals("require", props.getSslMode());
         assertEquals("15", props.getProperty("connectTimeout"));
+        assertEquals("true", props.getProperty("metadataExpandSchemaParents"));
     }
 
     @Test
@@ -68,5 +69,12 @@ public class SBDriverTest {
 
         assertThrows(SQLException.class, () ->
             SBDriver.parseURL("jdbc:scratchbird://localhost:3092/demo?compression=gzip", null));
+    }
+
+    @Test
+    public void parsesDbeaverSchemaExpansionAlias() throws SQLException {
+        SBConnectionProperties props = SBDriver.parseURL(
+            "jdbc:scratchbird://localhost:3092/demo?dbeaver_expand_schema_parents=true", null);
+        assertEquals("true", props.getProperty("metadataExpandSchemaParents"));
     }
 }

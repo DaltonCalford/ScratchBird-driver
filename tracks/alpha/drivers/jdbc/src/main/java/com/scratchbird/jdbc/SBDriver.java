@@ -209,6 +209,14 @@ public class SBDriver implements Driver {
         schemaProp.description = "Default schema";
         propList.add(schemaProp);
 
+        DriverPropertyInfo expandSchemaParentsProp = new DriverPropertyInfo(
+            "metadataExpandSchemaParents",
+            props.getProperty("metadataExpandSchemaParents", "false"));
+        expandSchemaParentsProp.description =
+            "Expose dotted schema parents as synthetic metadata schemas (useful for DBeaver recursive tree rendering)";
+        expandSchemaParentsProp.choices = new String[]{"true", "false"};
+        propList.add(expandSchemaParentsProp);
+
         // Application name
         DriverPropertyInfo appProp = new DriverPropertyInfo("ApplicationName",
             props.getProperty("ApplicationName", ""));
