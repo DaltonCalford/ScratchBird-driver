@@ -6,7 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 export { Client, Pool } from "./client";
-export type { ClientConfig, FieldDef, QueryResult, ParamValue } from "./types";
+export type { BatchItemResult, BatchResult, ClientConfig, FieldDef, QueryResult, ParamValue } from "./types";
 export {
   FORMAT_TEXT,
   FORMAT_BINARY,
@@ -60,7 +60,7 @@ export {
   oidToString,
 } from "./types";
 export { parseDsn } from "./dsn";
-export { normalizeQuery } from "./sql";
+export { normalizeCallableQuery, normalizeCallableSql, normalizeQuery } from "./sql";
 export * from "./metadata";
 export * from "./errors";
 export * from "./circuit_breaker";

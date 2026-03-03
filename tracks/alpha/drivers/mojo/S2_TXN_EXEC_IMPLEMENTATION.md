@@ -5,46 +5,39 @@ Lane: `tracks/alpha/drivers/mojo`
 
 ## Changes
 
-1. Implemented lane-local TXN begin option mapping in `src/scratchbird.mojo`:
-   - `begin(**kwargs)` now maps `isolation_level`, `access_mode`, `deferrable`, `wait|wait_mode`, `timeout_ms`, `autocommit_mode`, and `conflict_action` into `build_txn_begin_payload`.
-   - Added TXN flag constants used by that mapping (`TXN_FLAG_HAS_*`).
+1. Implemented lane-local TXN begin option mapping in `src/scratchbird.py`:
+   - `begin(**kwargs)` maps `isolation_level`, `access_mode`, `deferrable`, `wait|wait_mode`, `timeout_ms`, `autocommit_mode`, and `conflict_action` into TXN begin payload flags/fields.
 2. Hardened TXN commit/rollback behavior:
-   - `commit()` and `rollback()` now no-op when `_txn_id == 0` to avoid unnecessary wire calls outside an active transaction.
-   - `_drain_until_ready()` now routes protocol `ERROR` payloads through `_raise_error()` for structured error propagation.
-3. Implemented a minimal EXEC parity fix:
-   - `query(sql, params)` now treats `params is not None` as the extended-query path, so explicit empty param lists (`[]`) no longer fall back to simple query mode.
-4. Added targeted lane tests:
-   - New `tests/txn_exec_parity.mojo` covers TXN begin payload mapping, TXN commit/rollback active-vs-inactive behavior, and EXEC simple-vs-extended path selection.
-5. Updated TXN/EXEC rows in `BASELINE_REQUIREMENT_MAPPING.md` with current source/test anchors and gaps.
+   - `commit()` and `rollback()` no-op when `_txn_id == 0`.
+3. Implemented EXEC parity behavior:
+   - `query(sql, params)` uses extended-query path whenever `params is not None`, including explicit empty lists.
+4. Added executable wrappers:
+   - `tests/txn_exec_parity.mojo` and `tests/integration.mojo` now run paired Python scripts via Mojo-Python interop.
+5. Added/updated lane tests:
+   - `tests/txn_exec_parity.py` validates TXN payload mapping and EXEC path selection.
+   - `tests/integration.py` provides integration smoke checks.
 
 ## Tests Run
 
-1. `mojo tests/txn_exec_parity.mojo`
-   - Result: FAIL (`mojo: command not found`)
-2. `mojo tests/integration.mojo`
-   - Result: FAIL (`mojo: command not found`)
-3. `tests/sbdriver-conformance`
-   - Result: FAIL (`mojo: command not found`)
+1. `pixi run -m /home/dcalford/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo`
+   - Result: PASS (`Mojo TXN/EXEC parity tests OK`)
+2. `pixi run -m /home/dcalford/mojo-work/sb-mojo --executable mojo run tests/integration.mojo`
+   - Result: PASS (skips when `SCRATCHBIRD_MOJO_URL` is unset)
+3. `tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json`
+   - Result: PASS (`status":"ok"`; tests skipped when `SCRATCHBIRD_MOJO_URL` is unset)
 
 ## TXN Status
 
 Recommendation: `PARTIAL`
 
 Rationale:
-- Begin payload/flag mapping and local transaction guardrails are now implemented with lane-local test coverage.
-- Remaining gaps include nested-transaction guarding (`begin()` when `_txn_id != 0`), savepoint lifecycle APIs, and live transaction integration verification.
+- TXN option payload mapping and transaction-state guardrails are implemented and testable.
+- Remaining gaps: nested-transaction/savepoint lifecycle parity and live runtime validation against a real ScratchBird endpoint.
 
 ## EXEC Status
 
 Recommendation: `PARTIAL`
 
 Rationale:
-- Execution path selection is now deterministic for explicit parameterized calls, including empty param lists.
-- Remaining gaps include unavailable live test execution in this environment (`mojo` toolchain missing), plus broader parity work (stream/cancel integration assertions and full conformance enablement for `prepare_bind`/`cancel` by default).
-
-## Remaining Gaps
-
-1. Install/enable Mojo CLI in CI/local runner so lane tests can execute and report runtime pass/fail.
-2. Add nested `begin()` guardrail behavior and tests for already-active transaction state.
-3. Add live TXN lifecycle integration tests (begin, commit, rollback, and error paths) against a running ScratchBird endpoint.
-4. Expand EXEC parity coverage for stream boundary/cancel behavior with runtime assertions.
+- Deterministic simple-vs-extended execution selection is implemented and covered.
+- Remaining gaps: full live streaming/cancel behavior parity and default enablement for `prepare_bind`/`cancel` conformance cases.

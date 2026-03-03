@@ -33,3 +33,212 @@ public enum ScratchBirdMetadata {
     public static let functionsQuery =
         "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
 }
+
+public enum ScratchBirdMetadataTreeRowKind: Equatable {
+    case database
+    case schema
+}
+
+public struct ScratchBirdMetadataSchemaTreeRow {
+    public let kind: ScratchBirdMetadataTreeRowKind
+    public let database: String
+    public let parentPath: String
+    public let path: String
+    public let name: String
+    public let terminal: Bool
+    public let topLevelBranch: Bool
+
+    public init(
+        kind: ScratchBirdMetadataTreeRowKind,
+        database: String,
+        parentPath: String,
+        path: String,
+        name: String,
+        terminal: Bool,
+        topLevelBranch: Bool
+    ) {
+        self.kind = kind
+        self.database = database
+        self.parentPath = parentPath
+        self.path = path
+        self.name = name
+        self.terminal = terminal
+        self.topLevelBranch = topLevelBranch
+    }
+}
+
+public final class ScratchBirdMetadataSchemaTreeNode {
+    public let name: String
+    public let path: String
+    public var terminal: Bool
+    public var children: [ScratchBirdMetadataSchemaTreeNode]
+
+    public init(
+        name: String,
+        path: String,
+        terminal: Bool = false,
+        children: [ScratchBirdMetadataSchemaTreeNode] = []
+    ) {
+        self.name = name
+        self.path = path
+        self.terminal = terminal
+        self.children = children
+    }
+}
+
+public struct ScratchBirdMetadataSchemaTree {
+    public let database: String?
+    public let schemas: [ScratchBirdMetadataSchemaTreeNode]
+
+    public init(database: String?, schemas: [ScratchBirdMetadataSchemaTreeNode]) {
+        self.database = database
+        self.schemas = schemas
+    }
+}
+
+public func metadataSchemaPathsForNavigation(
+    _ schemaNames: [String],
+    expandSchemaParents: Bool = false
+) -> [String] {
+    var out: [String] = []
+    var seen: Set<String> = []
+
+    for raw in schemaNames {
+        guard let normalized = normalizeMetadataSchemaPath(raw) else {
+            continue
+        }
+
+        if !expandSchemaParents {
+            if seen.insert(normalized).inserted {
+                out.append(normalized)
+            }
+            continue
+        }
+
+        var current = ""
+        for part in splitMetadataSchemaPath(normalized) {
+            current = current.isEmpty ? part : "\(current).\(part)"
+            if seen.insert(current).inserted {
+                out.append(current)
+            }
+        }
+    }
+
+    return out
+}
+
+public func buildMetadataSchemaTree(
+    _ schemaNames: [String],
+    database: String = "",
+    expandSchemaParents: Bool = false
+) -> ScratchBirdMetadataSchemaTree {
+    let schemaPaths = metadataSchemaPathsForNavigation(schemaNames, expandSchemaParents: expandSchemaParents)
+    let terminalPaths = Set(schemaPaths)
+    var nodesByPath: [String: ScratchBirdMetadataSchemaTreeNode] = [:]
+    var roots: [ScratchBirdMetadataSchemaTreeNode] = []
+
+    for schemaPath in schemaPaths {
+        var parent: ScratchBirdMetadataSchemaTreeNode?
+        var currentPath = ""
+        for part in splitMetadataSchemaPath(schemaPath) {
+            currentPath = currentPath.isEmpty ? part : "\(currentPath).\(part)"
+            let node: ScratchBirdMetadataSchemaTreeNode
+            if let existing = nodesByPath[currentPath] {
+                node = existing
+            } else {
+                node = ScratchBirdMetadataSchemaTreeNode(name: part, path: currentPath)
+                nodesByPath[currentPath] = node
+                if let parent {
+                    parent.children.append(node)
+                } else {
+                    roots.append(node)
+                }
+            }
+            if terminalPaths.contains(currentPath) {
+                node.terminal = true
+            }
+            parent = node
+        }
+    }
+
+    let trimmedDatabase = database.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedDatabase = trimmedDatabase.isEmpty ? nil : trimmedDatabase
+    return ScratchBirdMetadataSchemaTree(database: normalizedDatabase, schemas: roots)
+}
+
+public func buildMetadataSchemaTreeRows(
+    _ schemaNames: [String],
+    database: String = "",
+    expandSchemaParents: Bool = false
+) -> [ScratchBirdMetadataSchemaTreeRow] {
+    let tree = buildMetadataSchemaTree(
+        schemaNames,
+        database: database,
+        expandSchemaParents: expandSchemaParents
+    )
+    let databaseName = tree.database ?? "default"
+    var rows: [ScratchBirdMetadataSchemaTreeRow] = [
+        ScratchBirdMetadataSchemaTreeRow(
+            kind: .database,
+            database: databaseName,
+            parentPath: "",
+            path: databaseName,
+            name: databaseName,
+            terminal: false,
+            topLevelBranch: false
+        )
+    ]
+
+    for root in tree.schemas {
+        appendMetadataTreeRowsDepthFirst(
+            root,
+            databaseName: databaseName,
+            parentPath: databaseName,
+            topLevel: true,
+            rows: &rows
+        )
+    }
+
+    return rows
+}
+
+public func splitMetadataSchemaPath(_ schemaName: String) -> [String] {
+    schemaName
+        .split(separator: ".", omittingEmptySubsequences: false)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+public func normalizeMetadataSchemaPath(_ schemaName: String) -> String? {
+    let normalized = splitMetadataSchemaPath(schemaName).joined(separator: ".")
+    return normalized.isEmpty ? nil : normalized
+}
+
+private func appendMetadataTreeRowsDepthFirst(
+    _ node: ScratchBirdMetadataSchemaTreeNode,
+    databaseName: String,
+    parentPath: String,
+    topLevel: Bool,
+    rows: inout [ScratchBirdMetadataSchemaTreeRow]
+) {
+    rows.append(
+        ScratchBirdMetadataSchemaTreeRow(
+            kind: .schema,
+            database: databaseName,
+            parentPath: parentPath,
+            path: node.path,
+            name: node.name,
+            terminal: node.terminal,
+            topLevelBranch: topLevel
+        )
+    )
+    for child in node.children {
+        appendMetadataTreeRowsDepthFirst(
+            child,
+            databaseName: databaseName,
+            parentPath: node.path,
+            topLevel: false,
+            rows: &rows
+        )
+    }
+}

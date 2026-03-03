@@ -70,8 +70,10 @@ import {
 } from "./protocol";
 import { ScramExchange } from "./scram";
 import { parseDsn, normalizeFrontDoorMode, normalizeNativeProtocol } from "./dsn";
-import { normalizeQuery } from "./sql";
+import { normalizeCallableQuery, normalizeQuery } from "./sql";
 import {
+  BatchItemResult,
+  BatchResult,
   ClientConfig,
   FieldDef,
   QueryResult,
@@ -86,6 +88,15 @@ import { CircuitBreaker } from "./circuit_breaker";
 import { KeepaliveManager, KeepaliveTracker } from "./keepalive";
 import { LeakDetector, LeakDetectionGuard } from "./leak_detector";
 import { TelemetryCollector, SpanContext } from "./telemetry";
+import {
+  MetadataCollectionName,
+  MetadataSchemaTree,
+  MetadataSchemaTreeOptions,
+  buildMetadataSchemaTree,
+  expandSchemaMetadataRows,
+  normalizeMetadataCollectionName,
+  resolveMetadataCollectionQuery,
+} from "./metadata";
 
 const QUERY_FLAG_BINARY_RESULT = 0x04;
 const FORMAT_TEXT = 0;
@@ -328,6 +339,7 @@ export class Client {
     if (!this.config.sslmode) this.config.sslmode = "require";
     if (this.config.binaryTransfer === undefined) this.config.binaryTransfer = true;
     if (!this.config.compression) this.config.compression = "off";
+    if (this.config.metadataExpandSchemaParents === undefined) this.config.metadataExpandSchemaParents = false;
     if (!this.config.managerConnectionProfile) this.config.managerConnectionProfile = "native_v3";
     if (!this.config.managerClientIntent) this.config.managerClientIntent = "native_v3";
     if (this.config.managerClientFlags === undefined) this.config.managerClientFlags = 0;
@@ -372,6 +384,34 @@ export class Client {
     return (await this.executeQuery(normalized.sql, normalized.params, options)) as QueryResult<T>;
   }
 
+  async queryMulti<T = any>(
+    text: string,
+    params?: any[] | Record<string, any>,
+    options?: QueryOptions,
+  ): Promise<Array<QueryResult<T>>> {
+    this.ensureConnected();
+    const normalized = normalizeQuery(text, params);
+    const results = await this.executeQueryMulti(normalized.sql, normalized.params, options);
+    return results as Array<QueryResult<T>>;
+  }
+
+  async queryBatch(
+    text: string,
+    batchParams: Array<any[] | Record<string, any>>,
+    options?: QueryOptions,
+  ): Promise<BatchResult> {
+    this.ensureConnected();
+    const summaries: BatchItemResult[] = [];
+    for (let i = 0; i < batchParams.length; i++) {
+      const result = await this.query(text, batchParams[i], options);
+      summaries.push(this.toBatchSummary(i, result));
+    }
+    return {
+      items: summaries,
+      totalRowCount: summaries.reduce((sum, item) => sum + item.rowCount, 0),
+    };
+  }
+
   async queryStream(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
     this.ensureConnected();
     const normalized = normalizeQuery(text, params);
@@ -380,6 +420,47 @@ export class Client {
 
   nativeSQL(text: string, params?: any[] | Record<string, any>): string {
     return normalizeQuery(text, params).sql;
+  }
+
+  nativeCallableSQL(text: string, params?: any[] | Record<string, any>): string {
+    return normalizeCallableQuery(text, params).sql;
+  }
+
+  async call<T = any>(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
+    this.ensureConnected();
+    const normalized = normalizeCallableQuery(text, params);
+    return (await this.executeQuery(normalized.sql, normalized.params, options)) as QueryResult<T>;
+  }
+
+  async getSchema(collectionName: string = "tables"): Promise<QueryResult> {
+    this.ensureConnected();
+    let normalizedCollection: MetadataCollectionName;
+    try {
+      normalizedCollection = normalizeMetadataCollectionName(collectionName);
+    } catch (err) {
+      throw new ScratchbirdNotSupportedError((err as Error).message, "0A000");
+    }
+
+    const sql = resolveMetadataCollectionQuery(normalizedCollection);
+    const result = await this.query(sql);
+    if (normalizedCollection !== "schemas" || !this.config.metadataExpandSchemaParents) {
+      return result;
+    }
+    const expandedRows = expandSchemaMetadataRows(result.rows as Array<Record<string, unknown>>);
+    return {
+      ...result,
+      rows: expandedRows,
+      rowCount: expandedRows.length,
+    };
+  }
+
+  async getSchemaTree(options?: MetadataSchemaTreeOptions): Promise<MetadataSchemaTree> {
+    this.ensureConnected();
+    const schemas = await this.getSchema("schemas");
+    return buildMetadataSchemaTree(schemas.rows as Array<Record<string, unknown>>, {
+      expandParents: options?.expandParents ?? this.config.metadataExpandSchemaParents === true,
+      database: options?.database ?? this.config.database,
+    });
   }
 
   async prepare(name: string, text: string, _paramTypes?: string[]): Promise<void> {
@@ -400,6 +481,39 @@ export class Client {
       throw new ScratchbirdError("parameter count mismatch", "07001");
     }
     return (await this.executePrepared(name, normalized.params, options)) as QueryResult<T>;
+  }
+
+  async executeMulti<T = any>(
+    name: string,
+    params?: any[] | Record<string, any>,
+    options?: QueryOptions,
+  ): Promise<Array<QueryResult<T>>> {
+    this.ensureConnected();
+    const prepared = this.prepared.get(name);
+    if (!prepared) throw new Error(`Unknown prepared statement: ${name}`);
+    const normalized = normalizeQuery(prepared.sql, params);
+    if (prepared.paramCount >= 0 && prepared.paramCount !== normalized.params.length) {
+      throw new ScratchbirdError("parameter count mismatch", "07001");
+    }
+    const results = await this.executePreparedMulti(name, normalized.params, options);
+    return results as Array<QueryResult<T>>;
+  }
+
+  async executeBatch(
+    name: string,
+    batchParams: Array<any[] | Record<string, any>>,
+    options?: QueryOptions,
+  ): Promise<BatchResult> {
+    this.ensureConnected();
+    const summaries: BatchItemResult[] = [];
+    for (let i = 0; i < batchParams.length; i++) {
+      const result = await this.execute(name, batchParams[i], options);
+      summaries.push(this.toBatchSummary(i, result));
+    }
+    return {
+      items: summaries,
+      totalRowCount: summaries.reduce((sum, item) => sum + item.rowCount, 0),
+    };
   }
 
   async begin(options?: TxnBeginOptions): Promise<void> {
@@ -880,11 +994,45 @@ export class Client {
   }
 
   private async collectResults(pageSize: number, options?: QueryOptions): Promise<QueryResult> {
-    const rows: any[] = [];
-    let fields: FieldDef[] = [];
+    const results = await this.collectResultSets(pageSize, options);
+    if (results.length === 0) {
+      return this.emptyQueryResult();
+    }
+    if (results.length === 1) {
+      return results[0];
+    }
+    return this.mergeLegacyResults(results);
+  }
+
+  private async collectResultSets(pageSize: number, options?: QueryOptions): Promise<QueryResult[]> {
+    const results: QueryResult[] = [];
     let columns: ReturnType<typeof parseRowDescription> = [];
+    let rows: any[] = [];
+    let fields: FieldDef[] = [];
     let rowCount = -1;
     let command = "";
+    let lastId: bigint | null = null;
+    let hasCurrentResult = false;
+
+    const finalizeResult = () => {
+      if (!hasCurrentResult) {
+        return;
+      }
+      results.push({
+        rows,
+        rowCount: rowCount >= 0 ? rowCount : rows.length,
+        fields,
+        command,
+        lastId,
+      });
+      columns = [];
+      rows = [];
+      fields = [];
+      rowCount = -1;
+      command = "";
+      lastId = null;
+      hasCurrentResult = false;
+    };
 
     while (true) {
       if (options?.signal?.aborted) {
@@ -908,18 +1056,30 @@ export class Client {
             typeOid: col.typeOid,
             typeModifier: col.typeModifier,
           }));
+          hasCurrentResult = true;
           continue;
         case MessageType.DATA_ROW: {
           const values = parseDataRow(msg.payload, columns.length);
           rows.push(buildRow(columns, values));
+          hasCurrentResult = true;
           continue;
         }
         case MessageType.COMMAND_COMPLETE: {
           const parsed = parseCommandComplete(msg.payload);
           command = parsed.tag;
           rowCount = Number(parsed.rows);
+          lastId = parsed.lastId;
+          hasCurrentResult = true;
+          finalizeResult();
           continue;
         }
+        case MessageType.EMPTY_QUERY:
+          command = "";
+          rowCount = 0;
+          lastId = null;
+          hasCurrentResult = true;
+          finalizeResult();
+          continue;
         case MessageType.PORTAL_SUSPENDED: {
           if (pageSize > 0) {
             await this.resumePortal(pageSize);
@@ -929,15 +1089,52 @@ export class Client {
         case MessageType.READY: {
           const { txnId } = parseReady(msg.payload);
           this.applyTxnState(txnId);
-          if (rowCount < 0) {
-            rowCount = rows.length;
-          }
-          return { rows, rowCount, fields, command };
+          finalizeResult();
+          return results;
         }
         default:
           continue;
       }
     }
+  }
+
+  private mergeLegacyResults(results: QueryResult[]): QueryResult {
+    const mergedRows: any[] = [];
+    let mergedFields: FieldDef[] = [];
+    for (const result of results) {
+      mergedRows.push(...result.rows);
+      if (result.fields.length > 0) {
+        mergedFields = result.fields;
+      }
+    }
+    const last = results[results.length - 1];
+    return {
+      rows: mergedRows,
+      rowCount: last.rowCount >= 0 ? last.rowCount : mergedRows.length,
+      fields: mergedFields,
+      command: last.command,
+      lastId: last.lastId,
+    };
+  }
+
+  private emptyQueryResult(): QueryResult {
+    return {
+      rows: [],
+      rowCount: 0,
+      fields: [],
+      command: "",
+      lastId: null,
+    };
+  }
+
+  private toBatchSummary(index: number, result: QueryResult): BatchItemResult {
+    return {
+      index,
+      rowCount: result.rowCount,
+      fields: result.fields,
+      command: result.command,
+      lastId: result.lastId,
+    };
   }
 
   private handleParameterStatus(name: string, value: string): void {
@@ -995,12 +1192,33 @@ export class Client {
     });
   }
 
+  private async executeQueryMulti(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult[]> {
+    const pageSize = options?.maxRows ?? 0;
+    return this.withResilience("query_multi", sql, async () => {
+      if (params.length === 0) {
+        await this.sendSimpleQuery(sql, options);
+      } else {
+        await this.sendExtendedQuery(sql, params, options);
+      }
+      return this.collectResultSets(pageSize, options);
+    });
+  }
+
   private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
     const prepared = this.prepared.get(name);
     return this.withResilience("execute_prepared", prepared?.sql, async () => {
       await this.sendBindExecute(name, params, options);
       return this.collectResults(pageSize, options);
+    });
+  }
+
+  private async executePreparedMulti(name: string, params: any[], options?: QueryOptions): Promise<QueryResult[]> {
+    const pageSize = options?.maxRows ?? 0;
+    const prepared = this.prepared.get(name);
+    return this.withResilience("execute_prepared_multi", prepared?.sql, async () => {
+      await this.sendBindExecute(name, params, options);
+      return this.collectResultSets(pageSize, options);
     });
   }
 

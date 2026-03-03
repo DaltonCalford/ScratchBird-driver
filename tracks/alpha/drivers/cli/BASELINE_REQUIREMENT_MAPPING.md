@@ -57,13 +57,16 @@
 - Current status: Partial
 - Lane-local source anchors:
   - `sb_isql.cpp:1727-1816` maps `\d`-family commands to metadata SQL.
-  - `sb_isql.cpp:3473-3501` implements `--schema-tree` output from `sys.catalog.object_resolver`.
+  - `metadata_shaping.h:9-44` defines metadata schema tree row contracts (database/schema row kinds, parent/path semantics).
+  - `metadata_shaping.cpp:106-251` implements metadata-only schema shaping: dotted-parent expansion, per-parent de-dup, and object-resolver schema extraction.
+  - `sb_isql.cpp:3443-3535` now routes `--schema-tree` through metadata shaping rows (database/default branch + recursive dotted tree output).
   - `sb_isql.cpp:2737-2959` implements DDL extraction for domains, sequences, tables, views, indexes, triggers, procedures, and functions.
 - Lane-local test anchors:
-  - No metadata-focused lane tests found in `sbdriver_conformance.cpp:829-1185`.
+  - `metadata_shaping_test.cpp:34-134` covers database/default branch rows, dotted parent expansion, per-parent uniqueness, and same-leaf/different-parent behavior.
+  - `CMakeLists.txt:221-224` adds dedicated `sbdriver_metadata_shaping_tests` build target.
 - Gaps/next actions:
   - DDL extraction includes placeholders/fallbacks for missing definitions (`sb_isql.cpp:2750-2752`, `2814-2816`, `2837`, `2925`, `2948`).
-  - Add conformance coverage for metadata queries and schema-tree output.
+  - Add conformance/live metadata coverage for `--schema-tree` and `\d` metadata query families (current validation is lane-local unit only).
 
 ## TYPE (JDBCBL: TYPE)
 - Current status: Partial

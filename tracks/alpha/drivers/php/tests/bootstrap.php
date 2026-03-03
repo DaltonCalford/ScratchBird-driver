@@ -10,6 +10,7 @@ $sources = [
     dirname(__DIR__) . '/src/Errors.php',
     dirname(__DIR__) . '/src/Protocol.php',
     dirname(__DIR__) . '/src/Scram.php',
+    dirname(__DIR__) . '/src/Metadata.php',
     dirname(__DIR__) . '/src/Connection.php',
     dirname(__DIR__) . '/src/Sql.php',
     dirname(__DIR__) . '/src/Statement.php',

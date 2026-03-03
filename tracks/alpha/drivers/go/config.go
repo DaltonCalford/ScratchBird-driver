@@ -16,33 +16,34 @@ import (
 )
 
 type Config struct {
-	Host                     string
-	Port                     int
-	FrontDoorMode            string
-	Database                 string
-	User                     string
-	Password                 string
-	Schema                   string
-	Role                     string
-	Protocol                 string
-	SSLMode                  string
-	SSLRootCert              string
-	SSLCert                  string
-	SSLKey                   string
-	SSLPassword              string
-	ConnectTimeout           time.Duration
-	SocketTimeout            time.Duration
-	Application              string
-	BinaryTransfer           bool
-	Compression              string
-	FetchSize                uint32
-	ManagerAuthToken         string
-	ManagerUsername          string
-	ManagerDatabase          string
-	ManagerConnectionProfile string
-	ManagerClientIntent      string
-	ManagerClientFlags       uint16
-	ManagerAuthFastPath      bool
+	Host                        string
+	Port                        int
+	FrontDoorMode               string
+	Database                    string
+	User                        string
+	Password                    string
+	Schema                      string
+	Role                        string
+	Protocol                    string
+	SSLMode                     string
+	SSLRootCert                 string
+	SSLCert                     string
+	SSLKey                      string
+	SSLPassword                 string
+	ConnectTimeout              time.Duration
+	SocketTimeout               time.Duration
+	Application                 string
+	BinaryTransfer              bool
+	Compression                 string
+	FetchSize                   uint32
+	MetadataExpandSchemaParents bool
+	ManagerAuthToken            string
+	ManagerUsername             string
+	ManagerDatabase             string
+	ManagerConnectionProfile    string
+	ManagerClientIntent         string
+	ManagerClientFlags          uint16
+	ManagerAuthFastPath         bool
 }
 
 func defaultConfig() Config {
@@ -220,6 +221,8 @@ func applyParam(cfg *Config, key, value string) error {
 		if rows, err := strconv.Atoi(value); err == nil && rows >= 0 {
 			cfg.FetchSize = uint32(rows)
 		}
+	case "metadata_expand_schema_parents", "metadataexpandschemaparents", "expand_schema_parents", "expandschemaparents", "dbeaver_expand_schema_parents":
+		cfg.MetadataExpandSchemaParents = parseBoolParam(value)
 	case "manager_auth_token", "mcp_auth_token":
 		cfg.ManagerAuthToken = value
 	case "manager_username", "mcp_username":
@@ -235,11 +238,15 @@ func applyParam(cfg *Config, key, value string) error {
 			cfg.ManagerClientFlags = uint16(flags)
 		}
 	case "manager_auth_fast_path", "mcp_auth_fast_path":
-		normalized := strings.ToLower(strings.TrimSpace(value))
-		cfg.ManagerAuthFastPath = normalized == "1" ||
-			normalized == "true" ||
-			normalized == "yes" ||
-			normalized == "on"
+		cfg.ManagerAuthFastPath = parseBoolParam(value)
 	}
 	return nil
+}
+
+func parseBoolParam(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	return normalized == "1" ||
+		normalized == "true" ||
+		normalized == "yes" ||
+		normalized == "on"
 }

@@ -49,6 +49,23 @@ def test_connect_maps_common_conn_aliases(monkeypatch):
     assert cfg.binary_transfer is False
 
 
+def test_connect_maps_metadata_expand_schema_parents_aliases(monkeypatch):
+    captured = {}
+
+    class FakeConnection:
+        def __init__(self, config):
+            captured["cfg"] = config
+
+    monkeypatch.setattr(connection_mod, "Connection", FakeConnection)
+    connect(
+        "host=server;port=4000;dbname=mydb;username=me;"
+        "metadataExpandSchemaParents=true;dbeaver_expand_schema_parents=false;"
+        "metadata_expand_schema_parents=1",
+    )
+    cfg = captured["cfg"]
+    assert cfg.metadata_expand_schema_parents is True
+
+
 def test_connect_captures_auth_plugin_startup_fields(monkeypatch):
     captured = {}
 

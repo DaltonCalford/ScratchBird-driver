@@ -66,4 +66,19 @@ final class ConfigTest extends TestCase
         $this->assertSame('native', $cfg->protocol);
         $this->assertSame('manager_proxy', $cfg->frontDoorMode);
     }
+
+    public function testParseMetadataExpandSchemaParentsAliases(): void
+    {
+        $cfg = Config::fromDsn('metadata_expand_schema_parents=yes');
+        $this->assertTrue($cfg->metadataExpandSchemaParents);
+
+        $cfg = Config::fromDsn('expand_schema_parents=1');
+        $this->assertTrue($cfg->metadataExpandSchemaParents);
+
+        $cfg = Config::fromDsn('dbeaver_expand_schema_parents=on');
+        $this->assertTrue($cfg->metadataExpandSchemaParents);
+
+        $cfg = Config::fromDsn('metadataexpandschemaparents=off');
+        $this->assertFalse($cfg->metadataExpandSchemaParents);
+    }
 }

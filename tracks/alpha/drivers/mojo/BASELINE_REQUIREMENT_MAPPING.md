@@ -69,17 +69,24 @@
 
 ## META (JDBCBL)
 
-- Current status: Planned
+- Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:737` (`ScratchBirdColumn` row-description metadata shape)
-- `src/scratchbird.mojo:1173` (`parse_row_description`)
-- `src/scratchbird.mojo:1575` (`_read_resultset` fills result-set column metadata)
-- `src/scratchbird.mojo:1668` (metadata SQL constants for `sys.schemas`, `sys.tables`, `sys.columns`, indexes, constraints, routines)
+- `src/scratchbird.mojo:1718` (metadata SQL constants for `sys.schemas`, `sys.tables`, `sys.columns`, indexes, constraints, routines)
+- `src/scratchbird.mojo:1738` (`ScratchBirdSchemaTreeNode` metadata-only recursive schema node model)
+- `src/scratchbird.mojo:1778` (`schema_paths_for_navigation` with optional dotted parent expansion)
+- `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
+- `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
+- `src/scratchbird.mojo:1848` (`build_database_default_metadata_rows` database/default branch-style metadata rows)
 - Lane-local test anchors:
-- No metadata helper tests found in `tests/`.
+- `tests/metadata_recursive_schema.mojo:24` (database/default branch style row shaping)
+- `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
+- `tests/metadata_recursive_schema.mojo:77` (per-parent uniqueness)
+- `tests/metadata_recursive_schema.mojo:94` (same leaf name under different parents)
+- `tests/README.md:41` (metadata recursive schema scaffold invocation)
 - Gaps/next actions:
-- Add callable metadata helper APIs that use the `METADATA_*_QUERY` constants.
-- Add lane tests for schema/table/column metadata results and stability.
+- Wire metadata shaping helpers through callable metadata execution APIs that use `METADATA_*_QUERY` constants.
+- Add live metadata integration assertions for schema/table/column result stability against a running ScratchBird endpoint.
+- Expand JDBCBL-META family coverage beyond recursive schema shaping (catalog/key/privilege/type-oriented surfaces).
 
 ## TYPE (JDBCBL)
 

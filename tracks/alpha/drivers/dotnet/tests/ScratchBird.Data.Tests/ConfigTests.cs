@@ -66,4 +66,27 @@ public class ConfigTests
         Assert.Equal(25, cfg.MaxPoolSize);
         Assert.Equal(60, cfg.ConnectionLifetime);
     }
+
+    [Fact]
+    public void ParseMetadataExpandSchemaParentsAliases()
+    {
+        var aliases = new[]
+        {
+            "metadataExpandSchemaParents",
+            "metadata_expand_schema_parents",
+            "expandSchemaParents",
+            "expand_schema_parents",
+            "dbeaverExpandSchemaParents",
+            "dbeaver_expand_schema_parents"
+        };
+
+        foreach (var alias in aliases)
+        {
+            var uriCfg = ScratchBirdConfig.FromConnectionString($"scratchbird://user:pass@localhost:3092/mydb?{alias}=true");
+            Assert.True(uriCfg.MetadataExpandSchemaParents);
+
+            var kvCfg = ScratchBirdConfig.FromConnectionString($"Host=localhost;Port=3092;Database=mydb;{alias}=1");
+            Assert.True(kvCfg.MetadataExpandSchemaParents);
+        }
+    }
 }

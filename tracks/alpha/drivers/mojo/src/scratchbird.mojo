@@ -1723,3 +1723,279 @@ METADATA_INDEX_COLUMNS_QUERY = "SELECT index_id, column_id, column_name, ordinal
 METADATA_CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
 METADATA_PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
 METADATA_FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+SCHEMA_FIELD_CANDIDATES = [
+    "schema_name",
+    "table_schem",
+    "table_schema",
+    "schema",
+    "SCHEMA_NAME",
+    "TABLE_SCHEM",
+    "TABLE_SCHEMA",
+    "SCHEMA",
+]
+
+
+class ScratchBirdSchemaTreeNode:
+    def __init__(self, name: str, full_path: str):
+        self.name = name
+        self.full_path = full_path
+        self.terminal = False
+        self.children = []
+
+
+def schemas_query() -> str:
+    return METADATA_SCHEMAS_QUERY
+
+
+def tables_query() -> str:
+    return METADATA_TABLES_QUERY
+
+
+def columns_query() -> str:
+    return METADATA_COLUMNS_QUERY
+
+
+def indexes_query() -> str:
+    return METADATA_INDEXES_QUERY
+
+
+def index_columns_query() -> str:
+    return METADATA_INDEX_COLUMNS_QUERY
+
+
+def constraints_query() -> str:
+    return METADATA_CONSTRAINTS_QUERY
+
+
+def procedures_query() -> str:
+    return METADATA_PROCEDURES_QUERY
+
+
+def functions_query() -> str:
+    return METADATA_FUNCTIONS_QUERY
+
+
+def schema_paths_for_navigation(rows_or_names, expand_schema_parents: bool = False):
+    base_paths = _unique_schema_paths(rows_or_names)
+    if not expand_schema_parents:
+        return base_paths
+    return expand_schema_parent_paths(base_paths)
+
+
+def expand_schema_parent_paths(rows_or_names):
+    out = []
+    seen = {}
+    for schema_path in _iter_schema_paths(rows_or_names):
+        current = ""
+        for segment in _split_schema_path(schema_path):
+            current = segment if current == "" else current + "." + segment
+            if current in seen:
+                continue
+            seen[current] = True
+            out.append(current)
+    return out
+
+
+def build_schema_tree(schema_paths):
+    nodes_by_path = {}
+    roots = []
+    for schema_path in _iter_schema_paths(schema_paths):
+        parent = None
+        path_parts = []
+        for segment in _split_schema_path(schema_path):
+            path_parts.append(segment)
+            full_path = ".".join(path_parts)
+            node = nodes_by_path.get(full_path)
+            if node is None:
+                node = ScratchBirdSchemaTreeNode(segment, full_path)
+                nodes_by_path[full_path] = node
+                if parent is None:
+                    roots.append(node)
+                else:
+                    parent.children.append(node)
+            parent = node
+        if parent is not None:
+            parent.terminal = True
+    return roots
+
+
+def expand_schema_metadata_rows(rows):
+    out = []
+    seen = {}
+    if rows is None:
+        return out
+
+    for row in rows:
+        schema_path = _read_schema_path(row)
+        if schema_path is None:
+            out.append(row)
+            continue
+
+        current = ""
+        segments = _split_schema_path(schema_path)
+        for idx in range(len(segments)):
+            current = segments[idx] if current == "" else current + "." + segments[idx]
+            if current in seen:
+                continue
+            seen[current] = True
+            if idx == len(segments) - 1:
+                out.append(row)
+            else:
+                out.append(_synthetic_schema_row(row, current))
+    return out
+
+
+def build_database_default_metadata_rows(rows_or_names, database: str, expand_schema_parents: bool = False,
+                                         default_branch: str = "default"):
+    database_name = str(database or "").strip()
+    if database_name == "":
+        raise RuntimeError("database is required")
+
+    default_name = str(default_branch or "").strip()
+    if default_name == "":
+        raise RuntimeError("default_branch is required")
+
+    schema_paths = schema_paths_for_navigation(rows_or_names, expand_schema_parents=expand_schema_parents)
+    roots = build_schema_tree(schema_paths)
+    rows = []
+
+    database_path = database_name
+    default_path = database_path + "." + default_name
+    rows.append({
+        "node_type": "database",
+        "node_name": database_name,
+        "node_path": database_path,
+        "parent_path": None,
+        "schema_path": None,
+        "terminal": False,
+    })
+    rows.append({
+        "node_type": "schema",
+        "node_name": default_name,
+        "node_path": default_path,
+        "parent_path": database_path,
+        "schema_path": None,
+        "terminal": False,
+    })
+    _append_tree_metadata_rows(rows, roots, default_path)
+    return rows
+
+
+def _append_tree_metadata_rows(out_rows, nodes, parent_node_path):
+    for node in nodes:
+        node_path = node.name if parent_node_path == "" else parent_node_path + "." + node.name
+        out_rows.append({
+            "node_type": "schema",
+            "node_name": node.name,
+            "node_path": node_path,
+            "parent_path": parent_node_path,
+            "schema_path": node.full_path,
+            "terminal": node.terminal,
+        })
+        _append_tree_metadata_rows(out_rows, node.children, node_path)
+
+
+def _unique_schema_paths(rows_or_names):
+    out = []
+    seen = {}
+    for schema_path in _iter_schema_paths(rows_or_names):
+        if schema_path in seen:
+            continue
+        seen[schema_path] = True
+        out.append(schema_path)
+    return out
+
+
+def _iter_schema_paths(rows_or_names):
+    out = []
+    if rows_or_names is None:
+        return out
+
+    if isinstance(rows_or_names, str) or isinstance(rows_or_names, dict):
+        values = [rows_or_names]
+    elif hasattr(rows_or_names, "__iter__"):
+        values = rows_or_names
+    else:
+        values = [rows_or_names]
+
+    for row_or_name in values:
+        schema_path = _read_schema_path(row_or_name)
+        if schema_path is None:
+            continue
+        out.append(schema_path)
+    return out
+
+
+def _read_schema_path(row_or_name):
+    if isinstance(row_or_name, str):
+        return _normalize_schema_path(row_or_name)
+    if isinstance(row_or_name, dict):
+        return _read_schema_path_from_dict(row_or_name)
+    return None
+
+
+def _read_schema_path_from_dict(row):
+    for candidate in SCHEMA_FIELD_CANDIDATES:
+        key = _metadata_row_key(row, candidate)
+        if key is None:
+            continue
+        value = row.get(key)
+        if not isinstance(value, str):
+            continue
+        normalized = _normalize_schema_path(value)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _normalize_schema_path(value):
+    normalized = ".".join(_split_schema_path(value))
+    if normalized == "":
+        return None
+    return normalized
+
+
+def _split_schema_path(value):
+    out = []
+    for segment in str(value or "").split("."):
+        normalized = segment.strip()
+        if normalized == "":
+            continue
+        out.append(normalized)
+    return out
+
+
+def _synthetic_schema_row(sample_row, schema_path):
+    synthetic = {}
+    if isinstance(sample_row, dict):
+        for key in sample_row.keys():
+            synthetic[key] = None
+    _assign_schema_path(synthetic, schema_path)
+    return synthetic
+
+
+def _assign_schema_path(row, schema_path):
+    assigned = False
+    touched = {}
+    for candidate in SCHEMA_FIELD_CANDIDATES:
+        key = _metadata_row_key(row, candidate)
+        if key is None:
+            continue
+        key_token = str(key)
+        if key_token in touched:
+            continue
+        touched[key_token] = True
+        row[key] = schema_path
+        assigned = True
+    if not assigned:
+        row["schema_name"] = schema_path
+
+
+def _metadata_row_key(row, key):
+    if key in row:
+        return key
+    lower_key = str(key).lower()
+    for candidate in row.keys():
+        if str(candidate).lower() == lower_key:
+            return candidate
+    return None

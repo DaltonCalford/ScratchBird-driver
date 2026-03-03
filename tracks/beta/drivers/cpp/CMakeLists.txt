@@ -3,6 +3,7 @@ project(scratchbird_client VERSION 0.1.0 LANGUAGES C CXX)
 
 add_library(scratchbird_client
     src/connection.cpp
+    src/metadata.cpp
     src/circuit_breaker.cpp
     src/keepalive.cpp
     src/leak_detector.cpp
@@ -45,6 +46,7 @@ if (BUILD_TESTING)
         add_executable(scratchbird_client_tests
             tests/test_driver_connectivity.cpp
             tests/test_driver_defaults.cpp
+            tests/test_metadata_schema_tree.cpp
             tests/test_type_mapping.cpp
             tests/test_paging_payload.cpp
         )

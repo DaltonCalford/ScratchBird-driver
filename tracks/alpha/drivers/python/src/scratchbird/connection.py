@@ -121,6 +121,7 @@ class ConnectionConfig:
     user: Optional[str] = None
     password: Optional[str] = None
     schema: Optional[str] = None
+    metadata_expand_schema_parents: bool = False
     sslmode: str = "require"
     sslrootcert: Optional[str] = None
     sslcert: Optional[str] = None
@@ -182,6 +183,29 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.user = params.get("user", params.get("username", cfg.user))
     cfg.password = params.get("password", cfg.password)
     cfg.schema = params.get("schema", params.get("search_path", params.get("searchpath", params.get("currentschema", cfg.schema))))
+    raw_expand_schema_parents = params.get(
+        "metadata_expand_schema_parents",
+        params.get(
+            "metadataexpandschemaparents",
+            params.get(
+                "metadataExpandSchemaParents",
+                params.get(
+                    "expandschemaparents",
+                    params.get(
+                        "expand_schema_parents",
+                        params.get(
+                            "dbeaverexpandschemaparents",
+                            params.get("dbeaver_expand_schema_parents", cfg.metadata_expand_schema_parents),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    if isinstance(raw_expand_schema_parents, str):
+        cfg.metadata_expand_schema_parents = raw_expand_schema_parents.lower() in ("1", "true", "yes", "on")
+    else:
+        cfg.metadata_expand_schema_parents = bool(raw_expand_schema_parents)
     cfg.sslmode = params.get("sslmode", params.get("ssl", cfg.sslmode))
     cfg.sslrootcert = params.get("sslrootcert", cfg.sslrootcert)
     cfg.sslcert = params.get("sslcert", cfg.sslcert)
@@ -248,6 +272,13 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "search_path",
             "searchpath",
             "currentschema",
+            "metadata_expand_schema_parents",
+            "metadataexpandschemaparents",
+            "metadataExpandSchemaParents",
+            "expandschemaparents",
+            "expand_schema_parents",
+            "dbeaverexpandschemaparents",
+            "dbeaver_expand_schema_parents",
             "sslmode",
             "ssl",
             "sslrootcert",
@@ -1238,6 +1269,7 @@ class ResultStream:
         self._page_size = page_size
         self.columns = []
         self.rowcount = -1
+        self.lastrowid = None
         self._done = False
 
     def read_row(self):
@@ -1262,8 +1294,9 @@ class ResultStream:
                         decoded.append(decode_value(0, value.data, FORMAT_BINARY))
                 return tuple(decoded)
             elif header.msg_type == MessageType.COMMAND_COMPLETE:
-                _, rows_affected, _, _ = parse_command_complete(payload)
+                _, rows_affected, last_id, _ = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
+                self.lastrowid = int(last_id)
             elif header.msg_type == MessageType.PORTAL_SUSPENDED:
                 exec_payload = build_execute_payload("", self._page_size)
                 self._connection._send_message(MessageType.EXECUTE, exec_payload)

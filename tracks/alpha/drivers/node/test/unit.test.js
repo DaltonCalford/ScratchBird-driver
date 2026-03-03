@@ -9,12 +9,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   parseDsn,
+  normalizeCallableQuery,
   normalizeQuery,
   decodeValue,
   OID_INT4,
   OID_SB_VECTOR,
   FORMAT_BINARY,
   Client,
+  METADATA_TABLES_QUERY,
+  METADATA_SCHEMAS_QUERY,
+  METADATA_INDEX_COLUMNS_QUERY,
+  resolveMetadataCollectionQuery,
+  buildMetadataSchemaTree,
 } = require("../dist/index.js");
 const { MessageType } = require("../dist/protocol.js");
 
@@ -43,6 +49,13 @@ test("parseDsn supports manager_proxy mode params", () => {
   assert.equal(cfg.managerClientFlags, 7);
 });
 
+test("parseDsn supports metadataExpandSchemaParents aliases", () => {
+  const fromUri = parseDsn("scratchbird://admin:secret@localhost:3090/mydb?metadata_expand_schema_parents=true");
+  const fromKv = parseDsn("host=127.0.0.1 dbname=mydb user=me expandSchemaParents=1");
+  assert.equal(fromUri.metadataExpandSchemaParents, true);
+  assert.equal(fromKv.metadataExpandSchemaParents, true);
+});
+
 test("normalizeQuery rewrites positional", () => {
   const normalized = normalizeQuery("select ?", [1]);
   assert.equal(normalized.sql, "select $1");
@@ -53,6 +66,16 @@ test("normalizeQuery rewrites named", () => {
   const normalized = normalizeQuery("select :a, @b", { a: 1, b: 2 });
   assert.equal(normalized.sql, "select $1, $2");
   assert.deepEqual(normalized.params, [1, 2]);
+});
+
+test("normalizeCallableQuery rewrites JDBC escape-call syntax", () => {
+  const procedure = normalizeCallableQuery("{ call app.do_work(?, ?) }", [7, 9]);
+  assert.equal(procedure.sql, "call app.do_work($1, $2)");
+  assert.deepEqual(procedure.params, [7, 9]);
+
+  const functionCall = normalizeCallableQuery("{ ? = call math.abs(?) }", [-3]);
+  assert.equal(functionCall.sql, "select math.abs($1) as return_value");
+  assert.deepEqual(functionCall.params, [-3]);
 });
 
 test("decodeValue decodes int4", () => {
@@ -82,6 +105,11 @@ function createMockProtocol(readyTxnIds = []) {
     header: { type: MessageType.READY },
     payload: makeReadyPayload(txnId),
   }));
+  return createQueuedProtocol(queue);
+}
+
+function createQueuedProtocol(queueEntries = []) {
+  const queue = [...queueEntries];
   const sent = [];
   let txnId = 0n;
   return {
@@ -107,6 +135,24 @@ function createMockProtocol(readyTxnIds = []) {
     },
     close() {},
   };
+}
+
+function makeReadyMessage(txnId) {
+  return {
+    header: { type: MessageType.READY },
+    payload: makeReadyPayload(txnId),
+  };
+}
+
+function makeCommandCompletePayload(tag, rows, lastId = 0n, commandType = 0) {
+  const tagBuffer = Buffer.from(tag, "utf8");
+  const payload = Buffer.alloc(20 + tagBuffer.length + 1);
+  payload.writeUInt8(commandType, 0);
+  payload.writeBigUInt64LE(rows, 4);
+  payload.writeBigUInt64LE(lastId, 12);
+  tagBuffer.copy(payload, 20);
+  payload[payload.length - 1] = 0;
+  return payload;
 }
 
 function parseSqlFromParsePayload(payload) {
@@ -161,7 +207,7 @@ test("extended query path rewrites named parameters and sends parse/bind/execute
   client.connected = true;
   client.protocol = protocol;
   client.describeStatement = async () => 1;
-  client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT" });
+  client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null });
 
   await client.query("select :value", { value: 7 });
 
@@ -177,7 +223,7 @@ test("prepared execute path sends bind/execute/sync and nativeSQL normalizes ali
   const protocol = createMockProtocol();
   client.connected = true;
   client.protocol = protocol;
-  client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT" });
+  client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null });
   client.prepared.set("stmt", { sql: "select :a, @b", paramCount: 2 });
 
   const normalized = client.nativeSQL("select :a, @b", { a: 1, b: 2 });
@@ -187,5 +233,133 @@ test("prepared execute path sends bind/execute/sync and nativeSQL normalizes ali
   assert.deepEqual(
     protocol.sent.map((entry) => entry.type),
     [MessageType.BIND, MessageType.EXECUTE, MessageType.SYNC],
+  );
+});
+
+function findTreeNode(nodes, path) {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return node;
+    }
+  }
+  return null;
+}
+
+test("metadata query resolver supports collection aliases", () => {
+  assert.equal(resolveMetadataCollectionQuery(), METADATA_TABLES_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("schemas"), METADATA_SCHEMAS_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("indexcolumns"), METADATA_INDEX_COLUMNS_QUERY);
+  assert.throws(() => resolveMetadataCollectionQuery("privileges"), /not supported/);
+});
+
+test("getSchema routes metadata collections and rejects unsupported collections", async () => {
+  const client = new Client({ user: "me", database: "db", metadataExpandSchemaParents: false });
+  client.connected = true;
+  const issuedSql = [];
+  client.query = async (sql) => {
+    issuedSql.push(sql);
+    return { rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null };
+  };
+
+  await client.getSchema("index_columns");
+  await assert.rejects(() => client.getSchema("privileges"), (err) => err && err.code === "0A000");
+
+  assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY]);
+});
+
+test("getSchema expands schema parents when metadataExpandSchemaParents is enabled", async () => {
+  const client = new Client({ user: "me", database: "db", metadataExpandSchemaParents: true });
+  client.connected = true;
+  client.query = async () => ({
+    rows: [
+      { schema_id: 1, schema_name: "users.alice.dev", owner_id: 7, default_tablespace_id: 3 },
+      { schema_id: 2, schema_name: "sys", owner_id: 7, default_tablespace_id: 3 },
+      { schema_id: 3, schema_name: "users.bob.dev", owner_id: 7, default_tablespace_id: 3 },
+      { schema_id: 4, schema_name: "users.bob.dev", owner_id: 7, default_tablespace_id: 3 },
+    ],
+    rowCount: 4,
+    fields: [],
+    command: "SELECT",
+    lastId: null,
+  });
+
+  const schemas = await client.getSchema("schemas");
+
+  assert.equal(schemas.rowCount, 6);
+  assert.deepEqual(
+    schemas.rows.map((row) => row.schema_name),
+    ["users", "users.alice", "users.alice.dev", "sys", "users.bob", "users.bob.dev"],
+  );
+  assert.equal(schemas.rows[0].schema_id, null);
+  assert.equal(schemas.rows[2].schema_id, 1);
+});
+
+test("buildMetadataSchemaTree preserves recursive ancestry and per-parent uniqueness", () => {
+  const tree = buildMetadataSchemaTree(
+    [
+      { schema_name: "users.alice.dev" },
+      { schema_name: "users.alice.prod" },
+      { schema_name: "users.bob.dev" },
+      { schema_name: "users.bob.dev" },
+      { schema_name: "analytics.dev" },
+      { schema_name: "analytics.prod" },
+    ],
+    { database: "main" },
+  );
+
+  assert.equal(tree.database, "main");
+  assert.deepEqual(
+    tree.schemas.map((node) => node.path),
+    ["users", "analytics"],
+  );
+
+  const users = findTreeNode(tree.schemas, "users");
+  assert.ok(users);
+  assert.equal(users.terminal, false);
+
+  const alice = findTreeNode(users.children, "users.alice");
+  const bob = findTreeNode(users.children, "users.bob");
+  assert.ok(alice);
+  assert.ok(bob);
+  assert.deepEqual(
+    alice.children.map((node) => node.path),
+    ["users.alice.dev", "users.alice.prod"],
+  );
+  assert.deepEqual(
+    bob.children.map((node) => node.path),
+    ["users.bob.dev"],
+  );
+
+  const aliceDev = findTreeNode(alice.children, "users.alice.dev");
+  const bobDev = findTreeNode(bob.children, "users.bob.dev");
+  assert.ok(aliceDev);
+  assert.ok(bobDev);
+  assert.equal(aliceDev.terminal, true);
+  assert.equal(bobDev.terminal, true);
+});
+
+test("getSchemaTree builds metadata-only tree from schema rows", async () => {
+  const client = new Client({ user: "me", database: "db_main" });
+  client.connected = true;
+  client.getSchema = async () => ({
+    rows: [{ schema_name: "sys" }, { schema_name: "users.alice.dev" }, { schema_name: "users.bob.dev" }],
+    rowCount: 3,
+    fields: [],
+    command: "SELECT",
+    lastId: null,
+  });
+
+  const tree = await client.getSchemaTree();
+  assert.equal(tree.database, "db_main");
+  assert.deepEqual(
+    tree.schemas.map((node) => node.path),
+    ["sys", "users"],
+  );
+
+  const users = findTreeNode(tree.schemas, "users");
+  assert.ok(users);
+  assert.deepEqual(
+    users.children.map((node) => node.path),
+    ["users.alice", "users.bob"],
   );
 });

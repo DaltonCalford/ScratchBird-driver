@@ -60,12 +60,16 @@
 
 - Current status: `Partial`
 - Lane-local source anchors:
-  - `Sources/ScratchBird/Metadata.swift:11-35`
-  - `Sources/ScratchBird/Connection.swift:127-137`
+  - `Sources/ScratchBird/Metadata.swift:11-35` catalog query constants.
+  - `Sources/ScratchBird/Metadata.swift:37-244` metadata-only recursive schema tree shaping (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`) with optional parent expansion and per-parent uniqueness.
 - Lane-local test anchors:
-  - None in `Tests/ScratchBirdTests`.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:13-28` database/default root row + top-branch metadata row shape.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:30-40` dotted parent expansion behavior for schema navigation paths.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:42-54` uniqueness within the same parent branch.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:56-70` same leaf name preserved under different parents.
 - Gaps/next actions:
-  - Add metadata API wrappers over catalog queries and tests that validate each query contract.
+  - Wire recursive schema shaping helpers through client-facing metadata execution APIs (metadata collection query wrappers and schema-tree accessors).
+  - Add live metadata integration coverage validating engine-backed metadata payload completeness beyond schema-tree shaping.
 
 ## TYPE (`JDBCBL-TYPE`)
 

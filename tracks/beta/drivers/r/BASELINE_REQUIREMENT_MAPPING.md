@@ -83,12 +83,18 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/metadata.R:7` (`sb_metadata_tables_query`)
   - `R/metadata.R:11` (`sb_metadata_columns_query`)
   - `R/metadata.R:18` / `R/metadata.R:22` / `R/metadata.R:26` / `R/metadata.R:30` / `R/metadata.R:34` (indexes/constraints/procedures/functions)
-  - `NAMESPACE:18` through `NAMESPACE:25` (metadata helper exports)
+  - `R/metadata.R:45` (`sb_metadata_schema_paths_for_navigation`, dotted parent expansion path shaping)
+  - `R/metadata.R:69` (`sb_metadata_build_schema_tree`, recursive tree shaping with per-parent uniqueness)
+  - `R/metadata.R:117` (`sb_metadata_build_schema_tree_rows`, database/default branch-style row shaping)
+  - `NAMESPACE:18` through `NAMESPACE:28` (metadata helper + recursive schema shaping exports)
 - Lane-local test anchors:
-  - None in `tests/testthat/` for metadata helpers.
+  - `tests/testthat/test_metadata_recursive_schema.R:17` (database/default branch-style rows with top-level branches)
+  - `tests/testthat/test_metadata_recursive_schema.R:32` (dotted parent expansion for schema navigation paths)
+  - `tests/testthat/test_metadata_recursive_schema.R:44` (per-parent uniqueness for duplicate leaf paths)
+  - `tests/testthat/test_metadata_recursive_schema.R:58` (same leaf name preserved under different parents)
 - Gaps / next actions:
   - Add DBI metadata surface methods (for example, `dbListTables`, `dbListFields`, `dbExistsTable`) mapped to helper queries.
-  - Add lane tests validating metadata outputs against expected schema fixtures.
+  - Add live metadata integration coverage to validate engine-backed metadata payload completeness beyond recursive schema tree shaping.
 
 ## TYPE -> JDBCBL-TYPE
 

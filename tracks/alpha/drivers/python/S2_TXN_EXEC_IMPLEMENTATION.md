@@ -14,20 +14,20 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `_execute_query()` now maps SQL normalization `ValueError` into DB-API `ProgrammingError`.
 - Added lane-local execution input validation in `src/scratchbird/cursor.py`:
   - `executemany(..., seq_of_params)` now raises `ProgrammingError` when `seq_of_params` is `None`.
+- Implemented command-complete generated-key parity in `src/scratchbird/connection.py` and `src/scratchbird/cursor.py`:
+  - `ResultStream` now captures `COMMAND_COMPLETE.last_id` as `lastrowid`.
+  - Cursor drain paths (`fetchone()` completion and `executemany()`) now propagate stream `lastrowid` consistently.
 - Fixed named parameter normalization around cast syntax in `src/scratchbird/sql.py`:
   - `::` cast markers are no longer misinterpreted as named placeholders.
 - Added targeted tests:
-  - New `tests/test_txn_exec_parity.py` for TXN/EXEC guardrails and normalization flow checks.
+  - Extended `tests/test_txn_exec_parity.py` with result-stream `last_id` to `lastrowid` propagation and `executemany` final-`lastrowid` behavior checks.
   - Extended `tests/test_sql.py` with a cast-syntax rewrite regression test.
 - Updated TXN/EXEC rows in `BASELINE_REQUIREMENT_MAPPING.md` with current evidence and status notes.
 
 ## Tests Run
 
-1. `pytest -q tests/test_txn_exec_parity.py tests/test_sql.py`
-- Result: PASS (`15 passed`)
-
-2. `pytest -q tests/test_connection_auth_protocol.py`
-- Result: PASS (`6 passed`)
+1. `pytest -q tests/test_txn_exec_parity.py tests/test_sql.py tests/test_connection_auth_protocol.py`
+- Result: PASS (`25 passed`)
 
 ## TXN Status
 
@@ -40,8 +40,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - Execution normalization and dispatch parity improved via `native_sql`, normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, and explicit `executemany` input validation, all with lane-local tests.
-  - Remaining gap: no first-class batch API, multi-result traversal API, generated-key API, or callable/routine API.
+  - Execution normalization and dispatch parity improved via `native_sql`, normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, and `COMMAND_COMPLETE.last_id` to `cursor.lastrowid` propagation across execute/executemany paths, all with lane-local tests.
+  - Remaining gap: no first-class batch API, multi-result traversal API, dedicated generated-keys result-set API, or callable/routine API.
 
 ## Remaining Gaps
 
@@ -51,5 +51,5 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - EXEC:
   - No dedicated batch execution API surface.
   - No dedicated multi-result traversal API surface.
-  - No generated-key retrieval surface (`lastrowid` is not wired to protocol metadata).
+  - No dedicated generated-keys result-set API (current coverage is `lastrowid` parity from command-complete metadata only).
   - No dedicated callable/routine execution API.

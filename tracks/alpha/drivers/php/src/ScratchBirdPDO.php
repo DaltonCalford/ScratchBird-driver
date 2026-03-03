@@ -38,6 +38,22 @@ final class ScratchBirdPDO
         }
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getSchema(string $collectionName = 'tables'): array
+    {
+        return $this->connection->getSchema($collectionName);
+    }
+
+    /**
+     * @return array{database: ?string, schemas: array<int, array{name: string, path: string, terminal: bool, children: array}>}
+     */
+    public function getSchemaTree(?bool $expandParents = null, ?string $database = null): array
+    {
+        return $this->connection->getSchemaTree($expandParents, $database);
+    }
+
     public function exec(string $statement): int|false
     {
         return $this->connection->exec($statement);

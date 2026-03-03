@@ -43,7 +43,7 @@ final class Sql
             if ($inString) {
                 continue;
             }
-            if (($ch === ':' || $ch === '@') && ctype_alpha($sql[$i + 1])) {
+            if (self::isNamedParameterStart($sql, $i)) {
                 return true;
             }
         }
@@ -70,7 +70,7 @@ final class Sql
                 $i++;
                 continue;
             }
-            if (!$inString && ($ch === '@' || $ch === ':') && $i + 1 < $len && ctype_alpha($sql[$i + 1])) {
+            if (!$inString && self::isNamedParameterStart($sql, $i)) {
                 $j = $i + 1;
                 while ($j < $len && (ctype_alnum($sql[$j]) || $sql[$j] === '_')) {
                     $j++;
@@ -122,5 +122,25 @@ final class Sql
             throw new \InvalidArgumentException('too many parameters');
         }
         return ['sql' => $out, 'params' => $ordered];
+    }
+
+    private static function isNamedParameterStart(string $sql, int $index): bool
+    {
+        $len = strlen($sql);
+        if ($index < 0 || $index + 1 >= $len) {
+            return false;
+        }
+
+        $marker = $sql[$index];
+        if ($marker !== ':' && $marker !== '@') {
+            return false;
+        }
+        if (!ctype_alpha($sql[$index + 1])) {
+            return false;
+        }
+        if ($marker === ':' && $index > 0 && $sql[$index - 1] === ':') {
+            return false;
+        }
+        return true;
     }
 }

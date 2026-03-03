@@ -83,6 +83,7 @@ class Cursor:
         if row is None:
             if self._stream.rowcount is not None and self._stream.rowcount >= 0:
                 self.rowcount = self._stream.rowcount
+            self.lastrowid = getattr(self._stream, "lastrowid", None)
             return None
         return row
 
@@ -155,6 +156,7 @@ class Cursor:
             row = stream.read_row()
             if row is None:
                 break
+        self.lastrowid = getattr(stream, "lastrowid", None)
         return stream.rowcount if stream.rowcount is not None else count
 
     @property

@@ -60,13 +60,21 @@
 ## META (JDBCBL: META)
 - Current status: Partial
 - Lane-local source anchors:
-  - `src/ScratchBird.Metadata.pas:27`, `src/ScratchBird.Metadata.pas:32`, `src/ScratchBird.Metadata.pas:37`, `src/ScratchBird.Metadata.pas:42`
-  - `src/ScratchBird.Metadata.pas:47`, `src/ScratchBird.Metadata.pas:52`, `src/ScratchBird.Metadata.pas:57`, `src/ScratchBird.Metadata.pas:62`
+  - `src/ScratchBird.Metadata.pas:64`, `src/ScratchBird.Metadata.pas:65`, `src/ScratchBird.Metadata.pas:66`, `src/ScratchBird.Metadata.pas:67`
+  - `src/ScratchBird.Metadata.pas:68`, `src/ScratchBird.Metadata.pas:69`, `src/ScratchBird.Metadata.pas:70`, `src/ScratchBird.Metadata.pas:71`
+  - `src/ScratchBird.Metadata.pas:283` (`ExpandSchemaPaths`, dotted parent expansion + de-duplication)
+  - `src/ScratchBird.Metadata.pas:318` (`ListMetadataSchemaPaths`, metadata-row schema extraction + optional parent expansion)
+  - `src/ScratchBird.Metadata.pas:346` (`ExpandSchemaMetadataRows`, synthetic ancestor-row shaping for recursive navigation)
+  - `src/ScratchBird.Metadata.pas:517` (`BuildMetadataSchemaTree`, recursive schema tree with per-parent uniqueness and terminal-node semantics)
 - Lane-local test anchors:
-  - No metadata-specific lane tests in `tests/`.
+  - `tests/MetadataRecursiveSchemaTests.pas:123` (database/default branch-style metadata-row expansion)
+  - `tests/MetadataRecursiveSchemaTests.pas:158` (dotted parent expansion ordering + uniqueness)
+  - `tests/MetadataRecursiveSchemaTests.pas:178` (per-parent uniqueness semantics)
+  - `tests/MetadataRecursiveSchemaTests.pas:202` (same leaf name under different parents)
 - Gaps/next actions:
-  - Add client/adapter metadata APIs that call `ScratchBird.Metadata` query builders.
+  - Add client/adapter metadata APIs that execute these metadata helpers for first-class metadata collections.
   - Add metadata integration tests for schema/table/column/index/constraint/routine query paths.
+  - Add broader JDBC metadata-family parity coverage (catalog/key/privilege/type families and restriction mapping).
 
 ## TYPE (JDBCBL: TYPE)
 - Current status: Partial

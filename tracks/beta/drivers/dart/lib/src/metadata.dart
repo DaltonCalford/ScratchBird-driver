@@ -29,3 +29,341 @@ const String metadataProceduresQuery =
 
 const String metadataFunctionsQuery =
     'SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name';
+
+enum MetadataCollectionName {
+  schemas,
+  tables,
+  columns,
+  indexes,
+  indexColumns,
+  constraints,
+  procedures,
+  functions,
+}
+
+const Map<MetadataCollectionName, String> _metadataCollectionQueries = {
+  MetadataCollectionName.schemas: metadataSchemasQuery,
+  MetadataCollectionName.tables: metadataTablesQuery,
+  MetadataCollectionName.columns: metadataColumnsQuery,
+  MetadataCollectionName.indexes: metadataIndexesQuery,
+  MetadataCollectionName.indexColumns: metadataIndexColumnsQuery,
+  MetadataCollectionName.constraints: metadataConstraintsQuery,
+  MetadataCollectionName.procedures: metadataProceduresQuery,
+  MetadataCollectionName.functions: metadataFunctionsQuery,
+};
+
+const Map<String, MetadataCollectionName> _metadataCollectionAliases = {
+  'schemas': MetadataCollectionName.schemas,
+  'schema': MetadataCollectionName.schemas,
+  'tables': MetadataCollectionName.tables,
+  'table': MetadataCollectionName.tables,
+  'columns': MetadataCollectionName.columns,
+  'column': MetadataCollectionName.columns,
+  'indexes': MetadataCollectionName.indexes,
+  'index': MetadataCollectionName.indexes,
+  'indexcolumns': MetadataCollectionName.indexColumns,
+  'index_columns': MetadataCollectionName.indexColumns,
+  'constraints': MetadataCollectionName.constraints,
+  'constraint': MetadataCollectionName.constraints,
+  'procedures': MetadataCollectionName.procedures,
+  'procedure': MetadataCollectionName.procedures,
+  'functions': MetadataCollectionName.functions,
+  'function': MetadataCollectionName.functions,
+};
+
+const List<String> _schemaFieldCandidates = [
+  'schema_name',
+  'TABLE_SCHEM',
+  'table_schem',
+  'table_schema',
+  'TABLE_SCHEMA',
+  'schema',
+];
+
+const Set<String> _schemaFieldCandidatesLower = {
+  'schema_name',
+  'table_schem',
+  'table_schema',
+  'schema',
+};
+
+const Set<String> _catalogFieldCandidatesLower = {
+  'table_catalog',
+  'table_cat',
+  'catalog',
+  'database',
+};
+
+class MetadataSchemaTreeNode {
+  final String name;
+  final String path;
+  bool terminal;
+  final List<MetadataSchemaTreeNode> children;
+
+  MetadataSchemaTreeNode({
+    required this.name,
+    required this.path,
+    this.terminal = false,
+    List<MetadataSchemaTreeNode>? children,
+  }) : children = children ?? <MetadataSchemaTreeNode>[];
+}
+
+class MetadataSchemaTree {
+  final String? database;
+  final List<MetadataSchemaTreeNode> schemas;
+
+  const MetadataSchemaTree({
+    required this.database,
+    required this.schemas,
+  });
+}
+
+MetadataCollectionName normalizeMetadataCollectionName(
+    [String? collectionName]) {
+  final normalized = (collectionName ?? 'tables').trim().toLowerCase();
+  final resolved = _metadataCollectionAliases[normalized];
+  if (resolved != null) {
+    return resolved;
+  }
+  throw ArgumentError(
+      "Metadata collection '${collectionName ?? ''}' is not supported");
+}
+
+String resolveMetadataCollectionQuery([String? collectionName]) {
+  return _metadataCollectionQueries[
+      normalizeMetadataCollectionName(collectionName)]!;
+}
+
+List<String> expandSchemaPaths(Iterable<String> schemaPaths) {
+  final out = <String>[];
+  final seen = <String>{};
+  for (final rawPath in schemaPaths) {
+    final normalized = normalizeSchemaPath(rawPath);
+    if (normalized == null) {
+      continue;
+    }
+    var current = '';
+    for (final segment in splitSchemaPath(normalized)) {
+      current = current.isEmpty ? segment : '$current.$segment';
+      if (seen.add(current)) {
+        out.add(current);
+      }
+    }
+  }
+  return out;
+}
+
+List<String> listMetadataSchemaPaths(
+  Iterable<Object?> rows, {
+  bool expandParents = false,
+}) {
+  final deduped = <String>[];
+  final seen = <String>{};
+  for (final row in rows) {
+    final schemaPath = readMetadataSchemaPath(row);
+    if (schemaPath == null) {
+      continue;
+    }
+    if (seen.add(schemaPath)) {
+      deduped.add(schemaPath);
+    }
+  }
+  return expandParents ? expandSchemaPaths(deduped) : deduped;
+}
+
+MetadataSchemaTree buildMetadataSchemaTree(
+  Iterable<Object?> rows, {
+  bool expandParents = false,
+  String? database,
+}) {
+  final basePaths = listMetadataSchemaPaths(rows);
+  final expandedPaths =
+      expandParents ? expandSchemaPaths(basePaths) : basePaths;
+  final terminalPaths = (expandParents ? expandedPaths : basePaths).toSet();
+  final nodesByPath = <String, MetadataSchemaTreeNode>{};
+  final roots = <MetadataSchemaTreeNode>[];
+
+  for (final schemaPath in expandedPaths) {
+    MetadataSchemaTreeNode? parent;
+    var currentPath = '';
+    for (final segment in splitSchemaPath(schemaPath)) {
+      currentPath = currentPath.isEmpty ? segment : '$currentPath.$segment';
+      var node = nodesByPath[currentPath];
+      if (node == null) {
+        node = MetadataSchemaTreeNode(name: segment, path: currentPath);
+        nodesByPath[currentPath] = node;
+        if (parent == null) {
+          roots.add(node);
+        } else {
+          parent.children.add(node);
+        }
+      }
+      if (terminalPaths.contains(currentPath)) {
+        node.terminal = true;
+      }
+      parent = node;
+    }
+  }
+
+  final normalizedDatabase = database?.trim();
+  return MetadataSchemaTree(
+    database: normalizedDatabase != null && normalizedDatabase.isNotEmpty
+        ? normalizedDatabase
+        : null,
+    schemas: roots,
+  );
+}
+
+List<Map<String, dynamic>> expandSchemaMetadataRows(
+  Iterable<Map<String, dynamic>> rows, {
+  bool expandParents = true,
+}) {
+  final out = <Map<String, dynamic>>[];
+  if (!expandParents) {
+    for (final row in rows) {
+      out.add(Map<String, dynamic>.from(row));
+    }
+    return out;
+  }
+
+  final seen = <String>{};
+  for (final row in rows) {
+    final schemaPath = readMetadataSchemaPath(row);
+    if (schemaPath == null) {
+      out.add(Map<String, dynamic>.from(row));
+      continue;
+    }
+
+    final segments = splitSchemaPath(schemaPath);
+    var current = '';
+    final catalog = readMetadataCatalog(row);
+    for (var i = 0; i < segments.length; i++) {
+      current = current.isEmpty ? segments[i] : '$current.${segments[i]}';
+      final dedupKey = catalog == null ? current : '$catalog::$current';
+      if (!seen.add(dedupKey)) {
+        continue;
+      }
+      if (i == segments.length - 1) {
+        final leaf = Map<String, dynamic>.from(row);
+        _assignSchemaPath(leaf, current);
+        out.add(leaf);
+      } else {
+        out.add(_createSyntheticSchemaRow(row, current));
+      }
+    }
+  }
+
+  return out;
+}
+
+String? readMetadataSchemaPath(Object? row) {
+  if (row is String) {
+    return normalizeSchemaPath(row);
+  }
+  if (row is! Map) {
+    return null;
+  }
+
+  final key = _findSchemaKeyInMap(row);
+  if (key == null) {
+    return null;
+  }
+  return normalizeSchemaPath(row[key]);
+}
+
+String? readMetadataCatalog(Map row) {
+  final key = _findCatalogKeyInMap(row);
+  if (key == null) {
+    return null;
+  }
+  final value = row[key];
+  if (value is! String) {
+    return null;
+  }
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+List<String> splitSchemaPath(String value) {
+  return value
+      .split('.')
+      .map((segment) => segment.trim())
+      .where((segment) => segment.isNotEmpty)
+      .toList(growable: false);
+}
+
+String? normalizeSchemaPath(Object? value) {
+  if (value is! String) {
+    return null;
+  }
+  final normalized = splitSchemaPath(value).join('.');
+  return normalized.isEmpty ? null : normalized;
+}
+
+Map<String, dynamic> _createSyntheticSchemaRow(
+  Map<String, dynamic> sample,
+  String schemaPath,
+) {
+  final synthetic = <String, dynamic>{};
+  for (final key in sample.keys) {
+    synthetic[key] = null;
+  }
+
+  _assignSchemaPath(synthetic, schemaPath);
+  for (final key in _catalogKeysInMap(sample)) {
+    synthetic[key] = sample[key];
+  }
+  return synthetic;
+}
+
+void _assignSchemaPath(Map<String, dynamic> row, String schemaPath) {
+  final schemaKeys = _schemaKeysInMap(row);
+  if (schemaKeys.isEmpty) {
+    row['schema_name'] = schemaPath;
+    return;
+  }
+  for (final key in schemaKeys) {
+    row[key] = schemaPath;
+  }
+}
+
+Object? _findSchemaKeyInMap(Map row) {
+  for (final candidate in _schemaFieldCandidates) {
+    for (final key in row.keys) {
+      if (key is String && key.toLowerCase() == candidate.toLowerCase()) {
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+Object? _findCatalogKeyInMap(Map row) {
+  for (final key in row.keys) {
+    if (key is String &&
+        _catalogFieldCandidatesLower.contains(key.toLowerCase())) {
+      return key;
+    }
+  }
+  return null;
+}
+
+List<String> _schemaKeysInMap(Map<String, dynamic> row) {
+  final keys = <String>[];
+  for (final key in row.keys) {
+    if (_schemaFieldCandidatesLower.contains(key.toLowerCase())) {
+      keys.add(key);
+    }
+  }
+  return keys;
+}
+
+List<String> _catalogKeysInMap(Map<String, dynamic> row) {
+  final keys = <String>[];
+  for (final key in row.keys) {
+    if (_catalogFieldCandidatesLower.contains(key.toLowerCase())) {
+      keys.add(key);
+    }
+  }
+  return keys;
+}

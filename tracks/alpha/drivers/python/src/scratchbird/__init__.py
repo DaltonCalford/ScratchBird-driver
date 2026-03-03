@@ -30,6 +30,7 @@ from .pool import (
     retry_with_backoff,
 )
 from .metadata import (
+    SchemaTreeNode,
     schemas_query,
     tables_query,
     columns_query,
@@ -38,6 +39,10 @@ from .metadata import (
     constraints_query,
     procedures_query,
     functions_query,
+    schema_name_matches_pattern,
+    schema_paths_for_navigation,
+    expand_schema_parent_paths,
+    build_schema_tree,
 )
 
 apilevel = "2.0"
@@ -69,6 +74,7 @@ __all__ = [
     "RawValue",
     "COPY_FORMAT_TEXT",
     "COPY_FORMAT_BINARY",
+    "SchemaTreeNode",
     "schemas_query",
     "tables_query",
     "columns_query",
@@ -77,4 +83,8 @@ __all__ = [
     "constraints_query",
     "procedures_query",
     "functions_query",
+    "schema_name_matches_pattern",
+    "schema_paths_for_navigation",
+    "expand_schema_parent_paths",
+    "build_schema_tree",
 ]

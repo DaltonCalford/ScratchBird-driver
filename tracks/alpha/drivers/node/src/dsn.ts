@@ -106,6 +106,18 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "currentschema":
       config.schema = value;
       break;
+    case "metadataexpandschemaparents":
+    case "metadata_expand_schema_parents":
+    case "expandschemaparents":
+    case "expand_schema_parents":
+    case "dbeaverexpandschemaparents":
+    case "dbeaver_expand_schema_parents":
+      config.metadataExpandSchemaParents =
+        value.toLowerCase() === "true" ||
+        value === "1" ||
+        value.toLowerCase() === "yes" ||
+        value.toLowerCase() === "on";
+      break;
     case "protocol":
     case "parser":
     case "dialect":

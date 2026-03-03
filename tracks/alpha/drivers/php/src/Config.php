@@ -21,6 +21,7 @@ final class Config
     public string $user = '';
     public string $password = '';
     public string $schema = '';
+    public bool $metadataExpandSchemaParents = false;
     public string $role = '';
     public string $sslMode = 'require';
     public ?string $sslRootCert = null;
@@ -143,6 +144,14 @@ final class Config
             case 'searchpath':
             case 'currentschema':
                 $cfg->schema = $value;
+                break;
+            case 'metadataexpandschemaparents':
+            case 'metadata_expand_schema_parents':
+            case 'expandschemaparents':
+            case 'expand_schema_parents':
+            case 'dbeaverexpandschemaparents':
+            case 'dbeaver_expand_schema_parents':
+                $cfg->metadataExpandSchemaParents = self::parseBool($value, $cfg->metadataExpandSchemaParents);
                 break;
             case 'role':
                 $cfg->role = $value;

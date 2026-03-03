@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayDeque;
@@ -90,6 +91,54 @@ public class SBStatementGeneratedKeysTest {
         }
     }
 
+    @Test
+    public void preparedStatementReturnGeneratedKeysAppendsReturningWildcard() throws Exception {
+        QueueProtocol protocol = new QueueProtocol();
+        protocol.enqueue(resultWithColumns(1, List.of("id"),
+            java.util.Collections.singletonList(new Object[] {99L})));
+        SBConnection connection = newConnectionForTest(protocol);
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO demo(v) VALUES (?)", Statement.RETURN_GENERATED_KEYS)) {
+            statement.setInt(1, 12);
+            int updated = statement.executeUpdate();
+            assertEquals(1, updated);
+            assertTrue(protocol.lastSql.toUpperCase().contains("RETURNING *"));
+            assertEquals(1, protocol.lastParams.size());
+            assertEquals(12, protocol.lastParams.get(0));
+
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                assertTrue(keys.next());
+                assertEquals(99L, keys.getLong(1));
+                assertFalse(keys.next());
+            }
+        }
+    }
+
+    @Test
+    public void preparedStatementNamedGeneratedColumnsAppendReturningProjection() throws Exception {
+        QueueProtocol protocol = new QueueProtocol();
+        protocol.enqueue(resultWithColumns(1, List.of("id"),
+            java.util.Collections.singletonList(new Object[] {101})));
+        SBConnection connection = newConnectionForTest(protocol);
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO demo(v) VALUES (?)", new String[] {"id"})) {
+            statement.setInt(1, 77);
+            int updated = statement.executeUpdate();
+            assertEquals(1, updated);
+            assertTrue(protocol.lastSql.toUpperCase().contains("RETURNING ID"));
+            assertEquals(1, protocol.lastParams.size());
+            assertEquals(77, protocol.lastParams.get(0));
+
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                assertTrue(keys.next());
+                assertEquals(101, keys.getInt(1));
+                assertFalse(keys.next());
+            }
+        }
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
@@ -133,6 +182,7 @@ public class SBStatementGeneratedKeysTest {
     private static final class QueueProtocol extends SBProtocolHandler {
         final Queue<SBQueryResult> results = new ArrayDeque<>();
         String lastSql;
+        List<Object> lastParams = List.of();
 
         QueueProtocol() {
             super(new SBConnectionProperties());
@@ -145,6 +195,18 @@ public class SBStatementGeneratedKeysTest {
         @Override
         public SBQueryResult execute(String sql, int maxRows, int timeoutMs) {
             this.lastSql = sql;
+            SBQueryResult result = results.poll();
+            if (result == null) {
+                return new SBQueryResult();
+            }
+            return result;
+        }
+
+        @Override
+        public SBQueryResult execute(String sql, List<Object> params, List<Integer> paramTypes,
+                                     int maxRows, int timeoutMs) {
+            this.lastSql = sql;
+            this.lastParams = params == null ? List.of() : new ArrayList<>(params);
             SBQueryResult result = results.poll();
             if (result == null) {
                 return new SBQueryResult();

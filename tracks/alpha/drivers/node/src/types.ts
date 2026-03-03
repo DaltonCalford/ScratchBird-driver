@@ -18,6 +18,7 @@ export interface ClientConfig {
   password?: string;
   database?: string;
   schema?: string;
+  metadataExpandSchemaParents?: boolean;
   ssl?: boolean | Record<string, any>;
   sslmode?: string;
   sslrootcert?: string;
@@ -53,6 +54,20 @@ export interface QueryResult<T = any> {
   rowCount: number;
   fields: FieldDef[];
   command: string;
+  lastId: bigint | null;
+}
+
+export interface BatchItemResult {
+  index: number;
+  rowCount: number;
+  fields: FieldDef[];
+  command: string;
+  lastId: bigint | null;
+}
+
+export interface BatchResult {
+  items: BatchItemResult[];
+  totalRowCount: number;
 }
 
 export interface ParamValue {

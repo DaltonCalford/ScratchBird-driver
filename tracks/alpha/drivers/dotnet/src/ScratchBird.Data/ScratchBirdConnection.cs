@@ -10,6 +10,7 @@ using System.Data.Common;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace ScratchBird.Data;
@@ -285,20 +286,20 @@ public sealed class ScratchBirdConnection : DbConnection
             throw new InvalidOperationException("Connection is not open");
         }
 
-        var query = collectionName?.ToLowerInvariant() switch
+        var collectionKey = NormalizeCollectionName(collectionName);
+
+        var query = collectionKey switch
         {
-            null or "" or "tables" => ScratchBirdMetadata.TablesQuery,
+            "tables" => ScratchBirdMetadata.TablesQuery,
             "columns" => ScratchBirdMetadata.ColumnsQuery,
             "schemas" => ScratchBirdMetadata.SchemasQuery,
             "indexes" => ScratchBirdMetadata.IndexesQuery,
-            "indexcolumns" or "index_columns" => ScratchBirdMetadata.IndexColumnsQuery,
+            "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
             "constraints" => ScratchBirdMetadata.ConstraintsQuery,
             "procedures" => ScratchBirdMetadata.ProceduresQuery,
             "functions" => ScratchBirdMetadata.FunctionsQuery,
             _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
         };
-
-        _ = restrictionValues;
 
         using var cmd = CreateDbCommand();
         cmd.CommandText = query;
@@ -321,7 +322,252 @@ public sealed class ScratchBirdConnection : DbConnection
             table.Rows.Add(row);
         }
 
-        return table;
+        return ShapeMetadataTable(table, collectionKey, restrictionValues, _config.MetadataExpandSchemaParents);
+    }
+
+    private static string NormalizeCollectionName(string? collectionName)
+    {
+        return collectionName?.ToLowerInvariant() switch
+        {
+            null or "" or "tables" => "tables",
+            "columns" => "columns",
+            "schemas" => "schemas",
+            "indexes" => "indexes",
+            "indexcolumns" or "index_columns" => "indexcolumns",
+            "constraints" => "constraints",
+            "procedures" => "procedures",
+            "functions" => "functions",
+            _ => collectionName?.ToLowerInvariant() ?? string.Empty
+        };
+    }
+
+    internal static DataTable ShapeMetadataTable(
+        DataTable table,
+        string collectionKey,
+        string?[]? restrictionValues,
+        bool expandSchemaParents)
+    {
+        var shaped = table;
+        if (expandSchemaParents && string.Equals(collectionKey, "schemas", StringComparison.Ordinal))
+        {
+            shaped = ExpandSchemaParentsForMetadata(shaped);
+        }
+
+        return ApplyRestrictionValuesForMetadata(shaped, collectionKey, restrictionValues);
+    }
+
+    internal static DataTable ExpandSchemaParentsForMetadata(DataTable table)
+    {
+        var schemaColumn = ResolveColumnName(table, "schema_name", "table_schema", "table_schem");
+        if (schemaColumn == null)
+        {
+            return table;
+        }
+
+        var schemaNames = table.Rows.Cast<DataRow>()
+            .Select(row => row[schemaColumn] == DBNull.Value ? null : row[schemaColumn]?.ToString())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (schemaNames.Count == 0)
+        {
+            return table;
+        }
+
+        var expanded = new HashSet<string>(schemaNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var schemaName in schemaNames)
+        {
+            AppendSchemaParents(expanded, schemaName);
+        }
+
+        if (expanded.Count == schemaNames.Count)
+        {
+            return table;
+        }
+
+        var existingRows = table.Rows.Cast<DataRow>()
+            .Where(row => row[schemaColumn] != DBNull.Value)
+            .GroupBy(row => row[schemaColumn]?.ToString() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var result = table.Clone();
+        foreach (var schemaName in expanded.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (existingRows.TryGetValue(schemaName, out var existing))
+            {
+                result.ImportRow(existing);
+                continue;
+            }
+
+            var synthetic = result.NewRow();
+            synthetic[schemaColumn] = schemaName;
+            result.Rows.Add(synthetic);
+        }
+
+        return result;
+    }
+
+    internal static DataTable ApplyRestrictionValuesForMetadata(
+        DataTable table,
+        string collectionKey,
+        string?[]? restrictionValues)
+    {
+        if (restrictionValues == null || restrictionValues.Length == 0)
+        {
+            return table;
+        }
+
+        var restrictionColumns = ResolveRestrictionColumns(table, collectionKey);
+        if (restrictionColumns.Count == 0)
+        {
+            return table;
+        }
+
+        var filtered = table.Clone();
+        foreach (DataRow row in table.Rows)
+        {
+            if (!RowMatchesRestrictions(row, restrictionValues, restrictionColumns))
+            {
+                continue;
+            }
+            filtered.ImportRow(row);
+        }
+
+        return filtered;
+    }
+
+    private static Dictionary<int, string> ResolveRestrictionColumns(DataTable table, string collectionKey)
+    {
+        var resolved = new Dictionary<int, string>();
+        foreach (var (index, aliases) in RestrictionColumnAliases(collectionKey))
+        {
+            var column = ResolveColumnName(table, aliases);
+            if (column != null)
+            {
+                resolved[index] = column;
+            }
+        }
+        return resolved;
+    }
+
+    private static IEnumerable<(int index, string[] aliases)> RestrictionColumnAliases(string collectionKey)
+    {
+        return collectionKey switch
+        {
+            "tables" =>
+            [
+                (1, new[] { "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME" }),
+                (3, new[] { "table_type", "TABLE_TYPE" })
+            ],
+            "columns" =>
+            [
+                (1, new[] { "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME" }),
+                (3, new[] { "column_name", "COLUMN_NAME" })
+            ],
+            "schemas" =>
+            [
+                (0, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" })
+            ],
+            _ => Array.Empty<(int, string[])>()
+        };
+    }
+
+    private static bool RowMatchesRestrictions(DataRow row, IReadOnlyList<string?> restrictionValues, IReadOnlyDictionary<int, string> restrictionColumns)
+    {
+        for (var i = 0; i < restrictionValues.Count; i++)
+        {
+            var restriction = restrictionValues[i];
+            if (string.IsNullOrWhiteSpace(restriction))
+            {
+                continue;
+            }
+            if (!restrictionColumns.TryGetValue(i, out var columnName))
+            {
+                continue;
+            }
+
+            var value = row[columnName] == DBNull.Value ? string.Empty : row[columnName]?.ToString() ?? string.Empty;
+            if (!MatchesRestriction(value, restriction))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MatchesRestriction(string value, string pattern)
+    {
+        if (pattern.IndexOf('%') < 0 && pattern.IndexOf('_') < 0)
+        {
+            return string.Equals(value, pattern, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var regexBuilder = new StringBuilder("^");
+        foreach (var ch in pattern)
+        {
+            if (ch == '%')
+            {
+                regexBuilder.Append(".*");
+                continue;
+            }
+            if (ch == '_')
+            {
+                regexBuilder.Append('.');
+                continue;
+            }
+            regexBuilder.Append(Regex.Escape(ch.ToString()));
+        }
+        regexBuilder.Append('$');
+
+        var regexPattern = regexBuilder.ToString();
+        return Regex.IsMatch(value, regexPattern, RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    }
+
+    private static void AppendSchemaParents(ISet<string> output, string schemaName)
+    {
+        if (string.IsNullOrWhiteSpace(schemaName))
+        {
+            return;
+        }
+
+        var segments = schemaName.Split('.', StringSplitOptions.None);
+        var current = new StringBuilder();
+        foreach (var segmentRaw in segments)
+        {
+            var segment = segmentRaw.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            if (current.Length > 0)
+            {
+                current.Append('.');
+            }
+            current.Append(segment);
+            output.Add(current.ToString());
+        }
+    }
+
+    private static string? ResolveColumnName(DataTable table, params string[] aliases)
+    {
+        foreach (var alias in aliases)
+        {
+            foreach (DataColumn column in table.Columns)
+            {
+                if (string.Equals(column.ColumnName, alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return column.ColumnName;
+                }
+            }
+        }
+
+        return null;
     }
 
     private void ApplySchema()

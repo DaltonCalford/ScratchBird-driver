@@ -10,6 +10,12 @@ export interface NormalizedQuery {
   params: any[];
 }
 
+interface CallableInvocation {
+  routine: string;
+  args: string;
+  hasParens: boolean;
+}
+
 export function normalizeQuery(sql: string, params?: any[] | Record<string, any>): NormalizedQuery {
   if (!params) {
     return { sql, params: [] };
@@ -26,6 +32,46 @@ export function normalizeQuery(sql: string, params?: any[] | Record<string, any>
   }
   const rewritten = rewriteNamed(sql, params);
   return { sql: rewritten.sql, params: rewritten.params };
+}
+
+export function normalizeCallableQuery(sql: string, params?: any[] | Record<string, any>): NormalizedQuery {
+  const callableSql = normalizeCallableSql(sql);
+  return normalizeQuery(callableSql, params);
+}
+
+export function normalizeCallableSql(sql: string): string {
+  const trimmed = sql.trim();
+  if (!(trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+    return sql;
+  }
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) {
+    return sql;
+  }
+
+  const functionMatch = /^\?\s*=\s*call\s+([\s\S]+)$/i.exec(inner);
+  if (functionMatch) {
+    const invocation = parseCallableInvocation(functionMatch[1].trim());
+    if (!invocation) {
+      throw new Error("invalid JDBC escape call syntax");
+    }
+    const args = invocation.hasParens ? invocation.args : "";
+    return `select ${invocation.routine}(${args}) as return_value`;
+  }
+
+  const procedureMatch = /^call\s+([\s\S]+)$/i.exec(inner);
+  if (procedureMatch) {
+    const invocation = parseCallableInvocation(procedureMatch[1].trim());
+    if (!invocation) {
+      throw new Error("invalid JDBC escape call syntax");
+    }
+    if (invocation.hasParens) {
+      return `call ${invocation.routine}(${invocation.args})`;
+    }
+    return `call ${invocation.routine}`;
+  }
+
+  return sql;
 }
 
 function hasNamedParams(sql: string): boolean {
@@ -108,6 +154,57 @@ function rewritePositional(sql: string, params: any[]): NormalizedQuery {
     throw new Error("too many parameters");
   }
   return { sql: result, params: ordered };
+}
+
+function parseCallableInvocation(text: string): CallableInvocation | null {
+  const openParen = text.indexOf("(");
+  if (openParen < 0) {
+    const routine = text.trim();
+    if (!routine) return null;
+    return { routine, args: "", hasParens: false };
+  }
+  let inSingle = false;
+  let inDouble = false;
+  let depth = 0;
+  let closeParen = -1;
+  for (let i = openParen; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (inSingle || inDouble) {
+      continue;
+    }
+    if (ch === "(") {
+      depth++;
+      continue;
+    }
+    if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        closeParen = i;
+        break;
+      }
+    }
+  }
+  if (closeParen < 0) {
+    return null;
+  }
+  const routine = text.slice(0, openParen).trim();
+  if (!routine) {
+    return null;
+  }
+  const trailing = text.slice(closeParen + 1).trim();
+  if (trailing) {
+    return null;
+  }
+  const args = text.slice(openParen + 1, closeParen).trim();
+  return { routine, args, hasParens: true };
 }
 
 function isIdentStart(ch: string): boolean {

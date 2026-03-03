@@ -90,13 +90,21 @@
 
 - Current status: `Partial`
 - Lane-local source anchors:
-  - `lib/scratchbird/metadata.rb:10` (`Metadata` query constants and accessors for schemas/tables/columns/indexes/constraints/procedures/functions)
+  - `lib/scratchbird/metadata.rb:11` (`Metadata` query constants and accessors for schemas/tables/columns/indexes/constraints/procedures/functions)
+  - `lib/scratchbird/metadata.rb:74` (`schema_paths_for_navigation`, metadata-only schema path normalization/de-duplication with optional parent expansion mode)
+  - `lib/scratchbird/metadata.rb:99` (`build_schema_tree`, recursive schema tree shaping with per-parent uniqueness and terminal-node tracking)
+  - `lib/scratchbird/metadata.rb:131` (`expand_schema_metadata_rows`, metadata-row parent expansion with synthetic ancestor rows)
+  - `lib/scratchbird/metadata.rb:160` (`build_database_default_metadata_rows`, database->default branch-style metadata row shaping)
   - `lib/scratchbird.rb:18` (exports metadata module via top-level require)
 - Lane-local test anchors:
-  - No metadata tests found under `test/`.
+  - `test/test_metadata_recursive_schema.rb:11` (`test_database_default_branch_style_metadata_rows`)
+  - `test/test_metadata_recursive_schema.rb:40` (`test_dotted_schema_parent_expansion`)
+  - `test/test_metadata_recursive_schema.rb:64` (`test_tree_uniqueness_within_parent`)
+  - `test/test_metadata_recursive_schema.rb:80` (`test_same_object_name_under_different_parents_is_preserved`)
 - Gaps / next actions:
-  - Add driver-level metadata API helpers that execute these catalog queries through a connection.
-  - Add tests validating metadata query results/shape against fixture catalogs.
+  - Add driver-level metadata execution APIs through `Connection`/`Client` (collection routing/restriction support is still helper-only in this lane).
+  - Expand metadata family coverage toward full JDBCBL-META scope (catalog/key/privilege/type-oriented surfaces and richer DDL editor fields).
+  - Add live integration assertions that validate metadata query payloads against fixture catalogs (current coverage is lane unit-level shaping).
 
 ## TYPE (JDBCBL: `TYPE`)
 

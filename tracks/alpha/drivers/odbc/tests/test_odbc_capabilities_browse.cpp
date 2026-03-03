@@ -34,14 +34,26 @@ public:
             return SQL_SUCCESS;
         }
         if (sql == scratchbird::odbc::metadata::kSchemasQuery) {
-            results = {{"public"}, {"analytics"}};
+            results = {
+                {"public"},
+                {"analytics"},
+                {"database.default.users"},
+                {"database.default.audit"},
+                {"users.alice.dev"},
+                {"users.bob.dev"},
+                {"users.bob.dev"}
+            };
             return SQL_SUCCESS;
         }
         if (sql == scratchbird::odbc::metadata::kTablesQuery) {
             results = {
                 {"users", "public", "TABLE"},
                 {"orders", "public", "TABLE"},
-                {"events", "analytics", "TABLE"}
+                {"events", "analytics", "TABLE"},
+                {"session_log", "database.default.users", "TABLE"},
+                {"audit_entry", "database.default.audit", "TABLE"},
+                {"profile", "users.alice.dev", "TABLE"},
+                {"profile", "users.bob.dev", "TABLE"}
             };
             return SQL_SUCCESS;
         }
@@ -51,7 +63,9 @@ public:
                 {"name", "users", "public", "VARCHAR", "2", "YES", ""},
                 {"created_at", "users", "public", "TIMESTAMP", "3", "YES", ""},
                 {"event_id", "events", "analytics", "INTEGER", "1", "NO", "PRI"},
-                {"payload", "events", "analytics", "JSON", "2", "YES", ""}
+                {"payload", "events", "analytics", "JSON", "2", "YES", ""},
+                {"id", "profile", "users.alice.dev", "INTEGER", "1", "NO", "PRI"},
+                {"id", "profile", "users.bob.dev", "INTEGER", "1", "NO", "PRI"}
             };
             return SQL_SUCCESS;
         }
@@ -202,12 +216,102 @@ static bool isFunctionAdvertised(const SQLUSMALLINT* function_map, SQLUSMALLINT 
     return ((function_map[word] >> bit) & 1u) != 0;
 }
 
+static std::size_t countOccurrences(const std::string& value, const std::string& token) {
+    if (token.empty()) {
+        return 0;
+    }
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while ((pos = value.find(token, pos)) != std::string::npos) {
+        ++count;
+        pos += token.size();
+    }
+    return count;
+}
+
+TEST(OdbcMetadataShapingTest, DatabaseDefaultRowsExposeDefaultBranchPaths) {
+    auto rows = scratchbird::odbc::metadata::buildDatabaseDefaultMetadataRows(
+        {"database.default.users", "database.default.audit"},
+        "db_main",
+        true);
+
+    ASSERT_FALSE(rows.empty());
+    EXPECT_EQ(rows[0].kind, scratchbird::odbc::metadata::MetadataTreeRowKind::DATABASE);
+    EXPECT_EQ(rows[0].path, "db_main");
+
+    std::vector<std::string> schema_paths;
+    std::vector<std::string> top_branches;
+    for (const auto& row : rows) {
+        if (row.kind != scratchbird::odbc::metadata::MetadataTreeRowKind::SCHEMA) {
+            continue;
+        }
+        schema_paths.push_back(row.path);
+        if (row.top_level_branch) {
+            top_branches.push_back(row.path);
+        }
+    }
+
+    EXPECT_EQ(schema_paths,
+              (std::vector<std::string>{
+                  "database",
+                  "database.default",
+                  "database.default.users",
+                  "database.default.audit"}));
+    EXPECT_EQ(top_branches, (std::vector<std::string>{"database"}));
+}
+
+TEST(OdbcMetadataShapingTest, ParentExpansionAndPerParentUniquenessAreStable) {
+    auto expanded = scratchbird::odbc::metadata::metadataSchemaPathsForNavigation(
+        {"users.alice.dev", "users.bob.dev", "users.bob.dev"},
+        true);
+
+    EXPECT_EQ(expanded,
+              (std::vector<std::string>{
+                  "users",
+                  "users.alice",
+                  "users.alice.dev",
+                  "users.bob",
+                  "users.bob.dev"}));
+
+    auto tree = scratchbird::odbc::metadata::buildMetadataSchemaTree(
+        {"users.bob.dev", "users.bob.dev", "users.bob.prod"},
+        "db_main",
+        true);
+    const auto* bob = scratchbird::odbc::metadata::findMetadataSchemaNodeByPath(
+        tree.schemas,
+        "users.bob");
+    ASSERT_NE(bob, nullptr);
+    ASSERT_EQ(bob->children.size(), 2u);
+    EXPECT_EQ(bob->children[0]->full_path, "users.bob.dev");
+    EXPECT_EQ(bob->children[1]->full_path, "users.bob.prod");
+}
+
+TEST(OdbcMetadataShapingTest, SameLeafNameUnderDifferentParentsIsDistinct) {
+    auto tree = scratchbird::odbc::metadata::buildMetadataSchemaTree(
+        {"users.alice.dev", "users.bob.dev"},
+        "db_main",
+        true);
+
+    const auto* alice_leaf = scratchbird::odbc::metadata::findMetadataSchemaNodeByPath(
+        tree.schemas,
+        "users.alice.dev");
+    const auto* bob_leaf = scratchbird::odbc::metadata::findMetadataSchemaNodeByPath(
+        tree.schemas,
+        "users.bob.dev");
+
+    ASSERT_NE(alice_leaf, nullptr);
+    ASSERT_NE(bob_leaf, nullptr);
+    EXPECT_EQ(alice_leaf->name, "dev");
+    EXPECT_EQ(bob_leaf->name, "dev");
+    EXPECT_NE(alice_leaf->full_path, bob_leaf->full_path);
+}
+
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectListsAvailableDsnsWhenNotYetConnected) {
     auto ini_path = writeIniFile();
     ASSERT_FALSE(ini_path.empty());
     ScopedOdbcIni scoped(ini_path);
 
-    SQLCHAR out_conn[256] = {};
+    SQLCHAR out_conn[1024] = {};
     SQLSMALLINT out_len = 0;
 
     auto rc = conn_.browseConnect(nullptr, SQL_NTS, out_conn, sizeof(out_conn), &out_len);
@@ -221,7 +325,7 @@ TEST_F(OdbcCapabilityBrowseTest, BrowseConnectListsAvailableDsnsWhenNotYetConnec
 
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectTraversesCatalogSchemaTableColumns) {
     std::string input;
-    SQLCHAR out_conn[256] = {};
+    SQLCHAR out_conn[1024] = {};
     SQLSMALLINT out_len = 0;
     SQLRETURN rc;
 
@@ -241,7 +345,7 @@ TEST_F(OdbcCapabilityBrowseTest, BrowseConnectTraversesCatalogSchemaTableColumns
     std::string table_level = reinterpret_cast<const char*>(out_conn);
     EXPECT_NE(table_level.find("TABLE=users"), std::string::npos);
     EXPECT_NE(table_level.find("TABLE=orders"), std::string::npos);
-    EXPECT_NE(table_level.find("TABLE=events"), std::string::npos);
+    EXPECT_EQ(table_level.find("TABLE=events"), std::string::npos);
 
     input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=public;TABLE=users;";
     std::fill(std::begin(out_conn), std::end(out_conn), 0);
@@ -253,6 +357,79 @@ TEST_F(OdbcCapabilityBrowseTest, BrowseConnectTraversesCatalogSchemaTableColumns
     EXPECT_NE(column_level.find("COLUMN=name"), std::string::npos);
     EXPECT_NE(column_level.find("COLUMN=created_at"), std::string::npos);
     EXPECT_EQ(column_level.find("COLUMN=payload"), std::string::npos);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectExpandsRecursiveSchemaBranchesBeforeTables) {
+    SQLCHAR out_conn[1024] = {};
+    SQLSMALLINT out_len = 0;
+    SQLRETURN rc = SQL_SUCCESS;
+
+    std::string input = "DSN=MainDSN;CATALOG=db_main;";
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string root_schemas = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(root_schemas.find("SCHEMA=database"), std::string::npos);
+    EXPECT_NE(root_schemas.find("SCHEMA=users"), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=database;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string database_branch = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(database_branch.find("SCHEMA=database.default"), std::string::npos);
+    EXPECT_EQ(database_branch.find("TABLE="), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=database.default;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string leaf_branches = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(leaf_branches.find("SCHEMA=database.default.users"), std::string::npos);
+    EXPECT_NE(leaf_branches.find("SCHEMA=database.default.audit"), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=database.default.users;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string leaf_tables = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(leaf_tables.find("TABLE=session_log"), std::string::npos);
+    EXPECT_EQ(leaf_tables.find("TABLE=audit_entry"), std::string::npos);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectDeduplicatesSiblingLeavesAndKeepsParentIdentity) {
+    SQLCHAR out_conn[1024] = {};
+    SQLSMALLINT out_len = 0;
+    SQLRETURN rc = SQL_SUCCESS;
+
+    std::string input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=users;";
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string users_branch = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(users_branch.find("SCHEMA=users.alice"), std::string::npos);
+    EXPECT_NE(users_branch.find("SCHEMA=users.bob"), std::string::npos);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=users.bob;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string bob_branch = reinterpret_cast<const char*>(out_conn);
+    EXPECT_EQ(countOccurrences(bob_branch, "SCHEMA=users.bob.dev"), 1u);
+
+    input = "DSN=MainDSN;CATALOG=db_main;SCHEMA=users.alice;";
+    std::fill(std::begin(out_conn), std::end(out_conn), 0);
+    rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                             SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string alice_branch = reinterpret_cast<const char*>(out_conn);
+    EXPECT_EQ(countOccurrences(alice_branch, "SCHEMA=users.alice.dev"), 1u);
+    EXPECT_NE(alice_branch.find("SCHEMA=users.alice.dev"), std::string::npos);
+    EXPECT_NE(bob_branch.find("SCHEMA=users.bob.dev"), std::string::npos);
 }
 
 TEST_F(OdbcCapabilityBrowseTest, GetInfoAndGetFunctionsReportNoFalsePositives) {
@@ -327,7 +504,7 @@ TEST_F(OdbcCapabilityBrowseTest, GetFunctionsSupportsAllFunctionsBitmapAlias) {
 }
 
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectPathFallbackParsesHierarchicalPath) {
-    SQLCHAR out_conn[256] = {};
+    SQLCHAR out_conn[1024] = {};
     SQLSMALLINT out_len = 0;
     auto input = std::string("PATH=MainDSN/db_main/public/users;");
     auto rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
@@ -339,8 +516,19 @@ TEST_F(OdbcCapabilityBrowseTest, BrowseConnectPathFallbackParsesHierarchicalPath
     EXPECT_NE(row_columns.find("COLUMN=created_at"), std::string::npos);
 }
 
+TEST_F(OdbcCapabilityBrowseTest, BrowseConnectPathFallbackPreservesDottedSchemaSegments) {
+    SQLCHAR out_conn[1024] = {};
+    SQLSMALLINT out_len = 0;
+    auto input = std::string("PATH=MainDSN/db_main/users.alice.dev;");
+    auto rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),
+                                  SQL_NTS, out_conn, sizeof(out_conn), &out_len);
+    ASSERT_EQ(rc, SQL_NEED_DATA);
+    std::string table_level = reinterpret_cast<const char*>(out_conn);
+    EXPECT_NE(table_level.find("TABLE=profile"), std::string::npos);
+}
+
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectRawPathWithoutKeyFallsBackToPath) {
-    SQLCHAR out_conn[256] = {};
+    SQLCHAR out_conn[1024] = {};
     SQLSMALLINT out_len = 0;
     auto input = std::string("MainDSN/db_main/public/users;");
     auto rc = conn_.browseConnect(reinterpret_cast<SQLCHAR*>(input.data()),

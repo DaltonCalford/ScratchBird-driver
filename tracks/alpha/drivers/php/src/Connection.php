@@ -103,6 +103,34 @@ final class Connection
         return $stmt;
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getSchema(string $collectionName = 'tables'): array
+    {
+        $normalizedCollection = $this->normalizeMetadataCollection($collectionName);
+        $statement = $this->query(Metadata::resolveCollectionQuery($normalizedCollection));
+        $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        if ($normalizedCollection === 'schemas' && $this->config->metadataExpandSchemaParents) {
+            /** @var array<int, array<string, mixed>> $rows */
+            $rows = Metadata::expandSchemaMetadataRows($rows);
+        }
+        return $rows;
+    }
+
+    /**
+     * @return array{database: ?string, schemas: array<int, array{name: string, path: string, terminal: bool, children: array}>}
+     */
+    public function getSchemaTree(?bool $expandParents = null, ?string $database = null): array
+    {
+        $rows = $this->getSchema('schemas');
+        return Metadata::buildMetadataSchemaTree(
+            $rows,
+            $expandParents ?? ($this->config->metadataExpandSchemaParents === true),
+            $database ?? $this->config->database
+        );
+    }
+
     public function exec(string $statement): int|false
     {
         try {
@@ -913,6 +941,15 @@ final class Connection
             throw new ScratchBirdTransactionException('Savepoint name must not be empty', '3B001');
         }
         return $normalized;
+    }
+
+    private function normalizeMetadataCollection(string $collectionName): string
+    {
+        try {
+            return Metadata::normalizeCollectionName($collectionName);
+        } catch (\InvalidArgumentException $ex) {
+            throw new ScratchBirdNotSupportedException($ex->getMessage(), '0A000');
+        }
     }
 
     private function readExact(int $length): string

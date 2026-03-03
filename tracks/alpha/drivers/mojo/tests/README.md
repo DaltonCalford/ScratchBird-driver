@@ -1,39 +1,44 @@
 # ScratchBird Mojo Tests
 
-This directory contains scaffolding for Mojo conformance and integration
-validation against the shared SBWP harness.
+This lane executes through Mojo entrypoints (`*.mojo`) that delegate to paired
+Python test scripts (`*.py`) via Mojo-Python interop.
 
-## Conformance Adapter (Scaffold)
+## Requirements
 
-A minimal `sbdriver-conformance` adapter is provided to wire Mojo into the
-shared test harness. It executes `query` tests from the manifest when
-`SCRATCHBIRD_MOJO_URL` is set, while `prepare_bind` and `cancel` tests are
-currently skipped.
+- Python 3.10+
+- `pixi` with Mojo toolchain (default manifest path: `~/mojo-work/sb-mojo`)
 
-Run (example):
+Optional environment overrides:
+- `MOJO_PIXI_MANIFEST`: path to Mojo pixi workspace used by launcher scripts
+- `MOJO_BIN`: explicit Mojo binary (used when pixi manifest is unavailable)
 
+## Quick Run
+
+Run from lane root (`tracks/alpha/drivers/mojo`):
+
+```bash
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 ```
-export PATH="$PWD/tracks/alpha/drivers/mojo/tests:$PATH"
-mojo sbdriver_conformance.mojo --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
-sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
+
+Expected behavior:
+- metadata and txn/exec tests report `OK`
+- integration smoke prints a skip message when `SCRATCHBIRD_MOJO_URL` is not set
+
+## Conformance Adapter
+
+The `sbdriver-conformance` launcher resolves Mojo automatically (prefers pixi
+manifest mode) and runs `tests/sbdriver_conformance.mojo`.
+
+```bash
+tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```
 
 Environment variables:
 - `SCRATCHBIRD_CONFORMANCE_MANIFEST`: optional manifest path
 - `SCRATCHBIRD_MOJO_URL`: DSN for running query tests
-- `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: enable prepare/bind tests (requires driver support)
-- `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: enable cancel tests (requires driver support)
+- `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: enable `prepare_bind` tests (requires driver support)
+- `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: enable `cancel` tests (requires driver support)
 
-## Integration Smoke (Scaffold)
-
-`integration.mojo` runs a small set of smoke queries if `SCRATCHBIRD_MOJO_URL`
-exists.
-
-```
-mojo integration.mojo
-```
-
-Notes:
-- Requires the ScratchBird Mojo driver module in `tracks/alpha/drivers/mojo/src/`.
-- These tests are scaffolds; extend them once parameter binding and cancel are
-  implemented in the Mojo driver.
+Without `SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped.

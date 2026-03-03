@@ -29,4 +29,20 @@ final class SqlTest extends TestCase
         $this->assertSame('SELECT * FROM users WHERE name = $1 AND active = $2', $out['sql']);
         $this->assertSame(['Ada', true], $out['params']);
     }
+
+    public function testNormalizeNamedIgnoresPostgresCastMarkers(): void
+    {
+        $sql = 'SELECT :id::int AS id, created_at::timestamp AS created_at';
+        $out = Sql::normalize($sql, ['id' => 42]);
+        $this->assertSame('SELECT $1::int AS id, created_at::timestamp AS created_at', $out['sql']);
+        $this->assertSame([42], $out['params']);
+    }
+
+    public function testNormalizePositionalKeepsCastSyntaxIntact(): void
+    {
+        $sql = 'SELECT ?::bigint AS id';
+        $out = Sql::normalize($sql, [7]);
+        $this->assertSame('SELECT $1::bigint AS id', $out['sql']);
+        $this->assertSame([7], $out['params']);
+    }
 }

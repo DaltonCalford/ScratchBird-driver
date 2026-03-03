@@ -1,33 +1,48 @@
 # ScratchBird Mojo Driver
 
-Native ScratchBird driver for Mojo (SBWP v1.1). This implementation targets
-low-latency application workflows and is designed to keep the transport layer small
-and swappable as Mojo networking evolves.
+Native ScratchBird driver lane for Mojo (SBWP v1.1).
+
+Current implementation is a Mojo-Python interop lane:
+- API/runtime shim in `src/scratchbird.py`
+- Mojo entrypoints in `tests/*.mojo` invoke paired Python scripts for execution
+  under the active Mojo toolchain
 
 ## Lane Docs
 
 - [Baseline Requirement Mapping (S0)](BASELINE_REQUIREMENT_MAPPING.md)
+- [S2 TXN/EXEC Implementation](S2_TXN_EXEC_IMPLEMENTATION.md)
+- [S3 Metadata Implementation](S3_METADATA_IMPLEMENTATION.md)
 - [Tests](tests/README.md)
 
 ## Status
 
-- Full SBWP v1.1 coverage via Mojo-Python interop (uses the ScratchBird
-  Python driver for transport/auth while Mojo networking matures).
-- API surface matches the canonical driver specs; transport is isolated so a
-  native TCP/TLS implementation can replace the Python bridge later.
+- Full SBWP v1.1 API surface is represented in-lane through the Python-backed shim.
+- Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
+- Native Mojo transport/auth remains future work.
 
 ## Platform Support
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| Linux | Experimental | CI path is gated (`MOJO_ENABLED=true`) and toolchain-dependent. |
+| Linux | Experimental | Validated with pixi-managed Mojo toolchain. |
 | Windows | Not supported | No CI/toolchain path configured. |
 | macOS | Not supported | No CI/toolchain path configured. |
 
 ## Requirements
 
 - Python 3.10+
-- `scratchbird` Python package available on `PYTHONPATH`
+- Mojo toolchain (recommended: `pixi` workspace at `~/mojo-work/sb-mojo`)
+
+## Verification
+
+From `tracks/alpha/drivers/mojo`:
+
+```bash
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
+tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
+```
 
 ## Next Steps
 

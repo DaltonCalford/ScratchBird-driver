@@ -19,6 +19,7 @@ public sealed class ScratchBirdConfig
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
     public string Schema { get; set; } = "";
+    public bool MetadataExpandSchemaParents { get; set; } = false;
     public string Role { get; set; } = "";
     public string SslMode { get; set; } = "require";
     public bool AllowInsecureDisable { get; set; } = false;
@@ -193,6 +194,17 @@ internal static class DsnParser
             case "searchpath":
             case "currentschema":
                 cfg.Schema = value;
+                break;
+            case "metadataexpandschemaparents":
+            case "metadata_expand_schema_parents":
+            case "expandschemaparents":
+            case "expand_schema_parents":
+            case "dbeaverexpandschemaparents":
+            case "dbeaver_expand_schema_parents":
+                cfg.MetadataExpandSchemaParents = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
                 break;
             case "role":
                 cfg.Role = value;

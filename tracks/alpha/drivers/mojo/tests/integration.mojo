@@ -6,31 +6,18 @@
 # You may obtain a copy of the License at:
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
-import os
-import scratchbird
+from python import Python
 
 
-def main():
-    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "")
-    if not dsn:
-        print("SCRATCHBIRD_MOJO_URL not set; skipping Mojo integration smoke.")
-        return
-
-    cfg = scratchbird.ScratchBirdConfig(dsn)
-    conn = scratchbird.connect(cfg)
-    try:
-        res = conn.query("SELECT 1")
-        if len(res.rows) == 0 or res.rows[0][0] != 1:
-            raise RuntimeError("unexpected SELECT 1 result")
-
-        res = conn.query("SELECT * FROM type_coverage")
-        if len(res.rows) == 0:
-            raise RuntimeError("type_coverage returned no rows")
-
-        print("Mojo integration smoke OK")
-    finally:
-        conn.close()
-
-
-if __name__ == "__main__":
-    main()
+fn main() raises:
+    var os = Python.import_module("os")
+    var runpy = Python.import_module("runpy")
+    var candidates = Python.list()
+    _ = candidates.append("tests/integration.py")
+    _ = candidates.append("integration.py")
+    _ = candidates.append("tracks/alpha/drivers/mojo/tests/integration.py")
+    for path in candidates:
+        if os.path.exists(path):
+            _ = runpy.run_path(path, run_name="__main__")
+            return
+    raise Error("integration.py not found; run from mojo lane root or tests directory")

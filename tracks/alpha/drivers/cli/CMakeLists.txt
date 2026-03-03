@@ -17,7 +17,10 @@ if (NOT TARGET scratchbird_client)
     add_subdirectory("${SB_CPP_DRIVER_DIR}" "${CMAKE_BINARY_DIR}/scratchbird_cpp")
 endif()
 
-add_executable(sb_isql sb_isql.cpp)
+add_executable(sb_isql
+    sb_isql.cpp
+    metadata_shaping.cpp
+)
 add_executable(sb_admin sb_admin.cpp)
 add_executable(sb_backup sb_backup.cpp)
 add_executable(sb_security sb_security.cpp)
@@ -212,4 +215,10 @@ add_executable(sbdriver_txn_exec_tests
 target_include_directories(sbdriver_txn_exec_tests
     PRIVATE
         "${SB_CPP_DRIVER_DIR}/include"
+)
+target_link_libraries(sbdriver_txn_exec_tests PRIVATE scratchbird_client)
+
+add_executable(sbdriver_metadata_shaping_tests
+    metadata_shaping_test.cpp
+    metadata_shaping.cpp
 )

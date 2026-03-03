@@ -85,3 +85,29 @@ func TestParseRejectsInvalidFrontDoorMode(t *testing.T) {
 		t.Fatalf("expected parse failure for invalid front_door_mode")
 	}
 }
+
+func TestParseMetadataExpandSchemaParents(t *testing.T) {
+	cfg, err := ParseConfig("scratchbird://localhost:3092/db?metadataExpandSchemaParents=true")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if !cfg.MetadataExpandSchemaParents {
+		t.Fatalf("expected metadataExpandSchemaParents=true from URI alias")
+	}
+
+	cfg, err = ParseConfig("Host=localhost;Database=db;dbeaver_expand_schema_parents=on")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if !cfg.MetadataExpandSchemaParents {
+		t.Fatalf("expected metadataExpandSchemaParents=true from dbeaver alias")
+	}
+
+	cfg, err = ParseConfig("Host=localhost;Database=db;metadata_expand_schema_parents=false")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if cfg.MetadataExpandSchemaParents {
+		t.Fatalf("expected metadataExpandSchemaParents=false when explicitly disabled")
+	}
+}

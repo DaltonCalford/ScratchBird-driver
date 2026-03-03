@@ -58,14 +58,18 @@
 - Current status: Partial
 - Lane-local source anchors:
   - `lib/src/metadata.dart:9-31` catalog query constants (schemas/tables/columns/indexes/constraints/procedures/functions).
+  - `lib/src/metadata.dart:33-135` metadata collection normalization + query resolution helpers.
+  - `lib/src/metadata.dart:137-215` metadata-only recursive schema tree shaping (`expandParents`, database root, per-parent uniqueness).
+  - `lib/src/metadata.dart:217-360` metadata row shaping with optional dotted-parent expansion and catalog-preserving synthetic parent rows.
   - `lib/scratchbird.dart:14` metadata export.
-  - `lib/src/client.dart:40-53` `ScratchBirdColumn`/`ScratchBirdResult` model.
-  - `lib/src/client.dart:783-804` row-description parsing for per-result column metadata.
 - Lane-local test anchors:
-  - None in `test/`.
+  - `test/metadata_recursive_schema_test.dart:6-33` database->default-branch style metadata rows and dotted parent expansion behavior.
+  - `test/metadata_recursive_schema_test.dart:35-58` dotted schema parent expansion ordering/uniqueness in path extraction.
+  - `test/metadata_recursive_schema_test.dart:60-79` per-parent uniqueness for duplicate leaf paths.
+  - `test/metadata_recursive_schema_test.dart:81-107` same leaf name under different parents remains distinct in recursive schema tree.
 - Gaps/next actions:
-  - Add typed metadata helper APIs on top of exported query constants.
-  - Add tests that validate metadata query execution and returned metadata shapes.
+  - Wire metadata shaping helpers through client-facing metadata execution APIs (for example `getSchema`/`getSchemaTree`) with runtime-configurable parent-expansion mode.
+  - Add live metadata integration tests validating engine-backed metadata query execution and DDL-editor payload fields.
 
 ## TYPE (JDBCBL)
 

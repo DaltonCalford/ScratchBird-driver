@@ -82,6 +82,7 @@
 #include "scratchbird/client/connection.h"
 #include "scratchbird/core/status.h"
 #include "scratchbird/core/error_context.h"
+#include "metadata_shaping.h"
 
 using namespace scratchbird;
 using namespace scratchbird::client;
@@ -3369,29 +3370,7 @@ bool parseArgs(int argc, char* argv[]) {
 // =============================================================================
 
 namespace {
-struct SchemaTreeNode {
-    std::map<std::string, std::unique_ptr<SchemaTreeNode>> children;
-    std::vector<std::pair<std::string, std::string>> objects;  // (type, name)
-};
-
-std::vector<std::string> splitSchemaPath(const std::string& path) {
-    std::vector<std::string> parts;
-    std::string current;
-    for (char ch : path) {
-        if (ch == '.' || ch == '/') {
-            if (!current.empty()) {
-                parts.push_back(current);
-                current.clear();
-            }
-        } else {
-            current.push_back(ch);
-        }
-    }
-    if (!current.empty()) {
-        parts.push_back(current);
-    }
-    return parts;
-}
+using SchemaObjectEntry = std::pair<std::string, std::string>;
 
 std::string formatObjectLabel(const std::string& type) {
     std::string label = type;
@@ -3402,69 +3381,60 @@ std::string formatObjectLabel(const std::string& type) {
     return label;
 }
 
-void ensureSchemaPath(SchemaTreeNode& root, const std::string& path) {
-    SchemaTreeNode* node = &root;
-    for (const auto& part : splitSchemaPath(path)) {
-        if (part.empty()) {
-            continue;
-        }
-        auto& child = node->children[part];
-        if (!child) {
-            child = std::make_unique<SchemaTreeNode>();
-        }
-        node = child.get();
-    }
-}
-
-void addObjectToTree(SchemaTreeNode& root,
-                     const std::string& object_type,
-                     const std::string& schema_path,
-                     const std::string& object_name) {
-    if (object_type == "SCHEMA") {
-        std::string full_path = schema_path;
-        if (!object_name.empty()) {
-            if (!full_path.empty()) {
-                full_path.push_back('.');
-            }
-            full_path += object_name;
-        }
-        ensureSchemaPath(root, full_path);
-        return;
-    }
-    if (object_type == "COLUMN") {
+void printSchemaBranch(
+    const std::string& schema_path,
+    const std::map<std::string, std::string>& schema_name_by_path,
+    const std::map<std::string, std::vector<std::string>>& children_by_parent,
+    const std::map<std::string, std::vector<SchemaObjectEntry>>& objects_by_schema,
+    size_t indent) {
+    auto name_it = schema_name_by_path.find(schema_path);
+    if (name_it == schema_name_by_path.end()) {
         return;
     }
 
-    SchemaTreeNode* node = &root;
-    for (const auto& part : splitSchemaPath(schema_path)) {
-        if (part.empty()) {
-            continue;
-        }
-        auto& child = node->children[part];
-        if (!child) {
-            child = std::make_unique<SchemaTreeNode>();
-        }
-        node = child.get();
-    }
-
-    node->objects.emplace_back(formatObjectLabel(object_type), object_name);
-}
-
-void printSchemaTreeNode(const SchemaTreeNode& node, size_t indent) {
     auto& out = getOutput();
     std::string padding(indent, ' ');
+    out << padding << name_it->second << "\n";
 
-    for (const auto& entry : node.children) {
-        out << padding << entry.first << "\n";
-        printSchemaTreeNode(*entry.second, indent + 4);
+    auto child_it = children_by_parent.find(schema_path);
+    if (child_it != children_by_parent.end()) {
+        std::vector<std::string> children = child_it->second;
+        std::sort(children.begin(), children.end(),
+                  [&schema_name_by_path](const std::string& lhs,
+                                         const std::string& rhs) {
+                      const auto lhs_name = schema_name_by_path.find(lhs);
+                      const auto rhs_name = schema_name_by_path.find(rhs);
+                      const std::string lhs_label =
+                          lhs_name == schema_name_by_path.end() ? lhs : lhs_name->second;
+                      const std::string rhs_label =
+                          rhs_name == schema_name_by_path.end() ? rhs : rhs_name->second;
+                      if (lhs_label == rhs_label) {
+                          return lhs < rhs;
+                      }
+                      return lhs_label < rhs_label;
+                  });
+        for (const auto& child_path : children) {
+            printSchemaBranch(child_path,
+                              schema_name_by_path,
+                              children_by_parent,
+                              objects_by_schema,
+                              indent + 4);
+        }
     }
 
-    if (!node.objects.empty()) {
-        std::vector<std::pair<std::string, std::string>> objects = node.objects;
+    auto object_it = objects_by_schema.find(schema_path);
+    if (object_it != objects_by_schema.end()) {
+        std::vector<SchemaObjectEntry> objects = object_it->second;
         std::sort(objects.begin(), objects.end(),
-                  [](const auto& a, const auto& b) { return a.second < b.second; });
+                  [](const SchemaObjectEntry& lhs, const SchemaObjectEntry& rhs) {
+                      if (lhs.second == rhs.second) {
+                          return lhs.first < rhs.first;
+                      }
+                      return lhs.second < rhs.second;
+                  });
+        const std::string object_padding(indent + 4, ' ');
         for (const auto& obj : objects) {
-            out << padding << "(" << obj.first << ") " << obj.second << "\n";
+            out << object_padding << "(" << obj.first << ") " << obj.second << "\n";
         }
     }
 }
@@ -3486,18 +3456,82 @@ static bool outputSchemaTree() {
         return false;
     }
 
-    SchemaTreeNode root;
+    std::vector<scratchbird::cli::metadata::ObjectResolverEntry> resolver_entries;
+    std::map<std::string, std::vector<SchemaObjectEntry>> objects_by_schema;
     while (results.next()) {
         std::string object_type = results.isNull(0) ? "" : results.getString(0);
         std::string schema_path = results.isNull(1) ? "" : results.getString(1);
         std::string object_name = results.isNull(2) ? "" : results.getString(2);
+        resolver_entries.push_back(
+            scratchbird::cli::metadata::ObjectResolverEntry{
+                object_type, schema_path, object_name});
 
-        addObjectToTree(root, object_type, schema_path, object_name);
+        if (object_type == "SCHEMA" || object_type == "COLUMN" ||
+            object_name.empty()) {
+            continue;
+        }
+
+        std::vector<std::string> normalized_schema =
+            scratchbird::cli::metadata::schemaPathsForNavigation(
+                std::vector<std::string>{schema_path}, false);
+        if (normalized_schema.empty()) {
+            continue;
+        }
+        objects_by_schema[normalized_schema.front()].emplace_back(
+            formatObjectLabel(object_type), object_name);
+    }
+
+    std::vector<std::string> schema_paths =
+        scratchbird::cli::metadata::schemaPathsFromObjectResolver(resolver_entries);
+    std::vector<scratchbird::cli::metadata::SchemaTreeRow> schema_rows =
+        scratchbird::cli::metadata::buildSchemaTreeRows(
+            schema_paths, g_config.database_path, true);
+
+    std::string database_branch = "default";
+    std::map<std::string, std::string> schema_name_by_path;
+    std::map<std::string, std::vector<std::string>> children_by_parent;
+    for (const auto& row : schema_rows) {
+        if (row.kind ==
+            scratchbird::cli::metadata::SchemaTreeRowKind::kDatabase) {
+            database_branch = row.path;
+            continue;
+        }
+        if (row.path.empty()) {
+            continue;
+        }
+        schema_name_by_path[row.path] = row.name;
+        children_by_parent[row.parent_path].push_back(row.path);
     }
 
     auto& out = getOutput();
-    out << "(root/database)\n";
-    printSchemaTreeNode(root, 4);
+    out << "(database) " << database_branch << "\n";
+
+    auto roots = children_by_parent.find(database_branch);
+    if (roots != children_by_parent.end()) {
+        std::vector<std::string> root_paths = roots->second;
+        std::sort(root_paths.begin(), root_paths.end(),
+                  [&schema_name_by_path](const std::string& lhs,
+                                         const std::string& rhs) {
+                      const auto lhs_name = schema_name_by_path.find(lhs);
+                      const auto rhs_name = schema_name_by_path.find(rhs);
+                      const std::string lhs_label =
+                          lhs_name == schema_name_by_path.end() ? lhs : lhs_name->second;
+                      const std::string rhs_label =
+                          rhs_name == schema_name_by_path.end() ? rhs : rhs_name->second;
+                      if (lhs_label == rhs_label) {
+                          return lhs < rhs;
+                      }
+                      return lhs_label < rhs_label;
+                  });
+        for (const auto& root_path : root_paths) {
+            printSchemaBranch(root_path,
+                              schema_name_by_path,
+                              children_by_parent,
+                              objects_by_schema,
+                              4);
+        }
+    }
+
     return true;
 }
 

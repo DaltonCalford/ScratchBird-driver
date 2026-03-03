@@ -513,12 +513,13 @@ std::vector<std::string> splitBrowsePath(const std::string& path) {
         return parts;
     }
 
-    std::string normalized = path;
-    std::replace(normalized.begin(), normalized.end(), '.', '/');
+    // Prefer slash-delimited browse paths so dotted schema names remain intact.
+    const bool use_dot_delimiter = path.find('/') == std::string::npos;
+    const char delimiter = use_dot_delimiter ? '.' : '/';
 
     std::string part;
-    for (char ch : normalized) {
-        if (ch == '/') {
+    for (char ch : path) {
+        if (ch == delimiter) {
             part = trimString(part);
             if (!part.empty()) {
                 parts.push_back(part);
@@ -2108,23 +2109,60 @@ SQLRETURN OdbcConnection::browseConnect(const SQLCHAR* in_conn_str, SQLSMALLINT 
         if (result != SQL_SUCCESS) {
             return result;
         }
-        appendContext();
+        std::vector<std::string> schema_paths;
+        schema_paths.reserve(rows.size());
         for (const auto& row : rows) {
-            if (row.empty() || row[0].empty()) {
-                continue;
+            if (!row.empty() && !row[0].empty()) {
+                schema_paths.push_back(row[0]);
             }
-            add_schema(row[0]);
+        }
+        const auto schema_tree =
+            metadata::buildMetadataSchemaTree(schema_paths, stage.catalog, true);
+        const auto top_level_schemas = metadata::metadataSchemaChildren(schema_tree, "");
+        appendContext();
+        for (const auto& schema_path : top_level_schemas) {
+            add_schema(schema_path);
         }
         emitResponse(true);
         return result;
     }
 
     if (stage.has_schema && !stage.has_table) {
+        std::vector<std::vector<std::string>> schema_rows;
+        result = executeMetadataQuery(metadata::kSchemasQuery, {}, 0, &schema_rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
+        std::vector<std::string> schema_paths;
+        schema_paths.reserve(schema_rows.size());
+        for (const auto& row : schema_rows) {
+            if (!row.empty() && !row[0].empty()) {
+                schema_paths.push_back(row[0]);
+            }
+        }
+        const std::string normalized_schema = metadata::normalizeSchemaPath(stage.schema);
+        const std::string schema_filter = normalized_schema.empty() ? stage.schema : normalized_schema;
+        const auto schema_tree =
+            metadata::buildMetadataSchemaTree(schema_paths, stage.catalog, true);
+        const auto child_schemas = metadata::metadataSchemaChildren(schema_tree, schema_filter);
+
+        appendContext();
+        if (!child_schemas.empty()) {
+            for (const auto& child_schema : child_schemas) {
+                add_schema(child_schema);
+            }
+            emitResponse(true);
+            return result;
+        }
+
         result = executeMetadataQuery(metadata::kTablesQuery, {}, 0, &rows);
         if (result != SQL_SUCCESS) {
             return result;
         }
-        appendContext();
+        result = filterMetadataRows(schema_filter, 1, &rows);
+        if (result != SQL_SUCCESS) {
+            return result;
+        }
         for (const auto& row : rows) {
             if (row.empty()) {
                 continue;

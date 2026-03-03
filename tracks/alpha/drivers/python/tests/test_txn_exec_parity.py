@@ -5,7 +5,7 @@ import struct
 import pytest
 
 from scratchbird import errors
-from scratchbird.connection import Connection
+from scratchbird.connection import Connection, ResultStream
 from scratchbird.cursor import Cursor
 from scratchbird.protocol import (
     MessageType,
@@ -24,6 +24,45 @@ def _new_connection(txn_id: int = 0) -> Connection:
     conn._closed = False
     conn._txn_id = txn_id
     return conn
+
+
+class _Header:
+    def __init__(self, msg_type: int):
+        self.msg_type = msg_type
+
+
+class _ResultConnection:
+    def __init__(self, messages):
+        self._messages = list(messages)
+        self._txn_id = 0
+        self.sent_messages = []
+
+    def _recv_message(self):
+        if not self._messages:
+            raise AssertionError("unexpected _recv_message call")
+        return self._messages.pop(0)
+
+    def _handle_async(self, _header, _payload):
+        return False
+
+    def _raise_protocol_error(self, payload):
+        raise AssertionError(f"unexpected protocol error: {payload!r}")
+
+    def _send_message(self, msg_type, payload):
+        self.sent_messages.append((msg_type, payload))
+
+
+class _FakeStream:
+    def __init__(self, rows, rowcount: int, lastrowid):
+        self._rows = list(rows)
+        self.rowcount = rowcount
+        self.lastrowid = lastrowid
+        self.columns = []
+
+    def read_row(self):
+        if self._rows:
+            return self._rows.pop(0)
+        return None
 
 
 def test_begin_rejects_nested_transaction():
@@ -150,3 +189,60 @@ def test_cursor_executemany_requires_seq_of_params():
     cursor = Cursor(object())
     with pytest.raises(errors.ProgrammingError, match="seq_of_params is required"):
         cursor.executemany("SELECT 1", None)
+
+
+def test_result_stream_propagates_command_complete_last_id():
+    command_complete_payload = struct.pack("<B3xQQ", 1, 3, 91) + b"INSERT 0 3\x00"
+    ready_payload = struct.pack("<B3xQQ", 0, 77, 0)
+    conn = _ResultConnection(
+        [
+            (_Header(MessageType.COMMAND_COMPLETE), command_complete_payload),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(conn, page_size=0)
+
+    assert stream.read_row() is None
+    assert stream.rowcount == 3
+    assert stream.lastrowid == 91
+    assert conn._txn_id == 77
+
+
+def test_cursor_execute_propagates_lastrowid_on_stream_completion(monkeypatch):
+    conn = _new_connection()
+    stream = _FakeStream(rows=[(1,)], rowcount=1, lastrowid=42)
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    cursor = Cursor(conn)
+    cursor.execute("INSERT INTO t VALUES (?) RETURNING id", [1])
+
+    assert cursor.fetchone() == (1,)
+    assert cursor.lastrowid is None
+    assert cursor.fetchone() is None
+    assert cursor.rowcount == 1
+    assert cursor.lastrowid == 42
+
+
+def test_cursor_executemany_sets_final_lastrowid_and_total_rowcount(monkeypatch):
+    conn = _new_connection()
+    streams = [
+        _FakeStream(rows=[], rowcount=1, lastrowid=10),
+        _FakeStream(rows=[], rowcount=2, lastrowid=11),
+    ]
+    calls = []
+
+    def _fake_execute_query(sql, params, max_rows=0):
+        calls.append((sql, tuple(params), max_rows))
+        return streams[len(calls) - 1]
+
+    monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
+
+    cursor = Cursor(conn)
+    cursor.executemany("INSERT INTO t VALUES (?)", [(1,), (2,)])
+
+    assert calls == [
+        ("INSERT INTO t VALUES (?)", (1,), 0),
+        ("INSERT INTO t VALUES (?)", (2,), 0),
+    ]
+    assert cursor.rowcount == 3
+    assert cursor.lastrowid == 11
