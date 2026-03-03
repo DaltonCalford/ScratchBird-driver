@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -14,6 +15,7 @@
 #include "scratchbird/core/status.h"
 #include "scratchbird/network/network.h"
 #include "scratchbird/network/socket.h"
+#include "scratchbird/client/scratchbird_client.h"
 #include "scratchbird/protocol/sbwp_protocol.h"
 #include "scratchbird/server/ipc_server.h"
 

@@ -42,15 +42,15 @@ Legend:
 | Driver | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State |
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **Java / JDBC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Most complete lane |
-| **ODBC 3.8** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Enterprise-ready baseline |
-| **.NET** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Core usable, parity gaps remain |
+| **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
+| **.NET** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Core usable, parity gaps remain in TXN/EXEC/META/TYPE |
 | **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong core, extended features partial |
 | **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Baseline working, not fully certified |
 | **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Infrastructure solid, parity incomplete |
-| **Rust** | 🟡 | 🟡 | 🟡 | 🔴 | ✅ | ✅ | ✅ | Strong type/error layer, metadata gap |
-| **Ruby** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Guardrails present, integration shallow |
+| **Rust** | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ✅ | Strong type/error/resource layer, CONN/TXN/EXEC/META still partial |
+| **Ruby** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Metadata execution APIs added, integration depth still shallow |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | Resource lifecycle strongest surface |
-| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | TLS/protocol solid, integration limited |
+| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | 🟡 | TLS/protocol solid, metadata execution added, integration limited |
 | **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Python-bridge adapter, partial baseline |
 
 ---
@@ -60,9 +60,9 @@ Legend:
 | Driver | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State |
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **C/C++ (libscratchbird_client)** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong C API base, transport gaps |
-| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | Execution parity strongest surface |
+| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | Execution parity strongest surface, DBI metadata methods now present |
 | **Swift (Async/Await)** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Connect complete, integration pending |
-| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Structurally solid, test depth pending |
+| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Client metadata/schema-tree APIs added, live coverage pending |
 
 ---
 
@@ -176,4 +176,3 @@ Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for 
 ---
 
 **Last Updated:** 2026-03-03
-
