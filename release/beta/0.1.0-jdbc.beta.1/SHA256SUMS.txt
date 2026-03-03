@@ -1,0 +1,2 @@
+ab723df2f9813087ead5b1873c0246aa7a54dfae6cd7b8aafdd10fffc0feded5  jdbc/scratchbird-jdbc-0.1.0-sources.jar
+58cdc5017c56176978a5865c5bfb174ab60212b98dcee27f0612b19afcd15331  jdbc/scratchbird-jdbc-0.1.0.jar

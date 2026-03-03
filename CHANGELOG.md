@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - stock-installable DBeaver p2 update-site zip
   - JDBC jar and sources jar
   - checksums and beta release notes (no human QA sign-off yet)
+- ScratchBird JDBC beta packaging bundle (`release/beta/0.1.0-jdbc.beta.1`) including:
+  - JDBC jar and sources jar
+  - checksums and beta release notes (no human QA sign-off yet)
 
 ### Changed
 - N/A
