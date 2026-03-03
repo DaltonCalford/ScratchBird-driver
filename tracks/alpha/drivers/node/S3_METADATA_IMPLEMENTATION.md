@@ -2,7 +2,8 @@
 
 ## Changes
 - Added a lane-local metadata API surface on `Client`:
-  - `getSchema(collectionName)` for supported metadata collections (`schemas`, `tables`, `columns`, `indexes`, `index_columns`, `constraints`, `procedures`, `functions`).
+  - `getSchema(collectionName)` for supported metadata collections (`catalogs`, `schemas`, `tables`, `columns`, `indexes`, `index_columns`, `constraints`, `primary_keys`, `foreign_keys`, `table_privileges`, `column_privileges`, `procedures`, `functions`, `type_info`).
+  - `catalogs` is served locally from configured database context for deterministic metadata availability.
   - Unsupported collections now fail deterministically with `ScratchbirdNotSupportedError` (`0A000`).
   - `getSchema("schemas")` now supports JDBC-like parent expansion when `metadataExpandSchemaParents` is enabled.
 - Added metadata helper utilities in `src/metadata.ts`:
@@ -21,13 +22,9 @@
 ## META Status Recommendation
 - Recommendation: `PARTIAL`
 - Why:
-  - Implemented and tested: metadata collection routing, recursive schema ancestry preservation, metadata-only tree shaping, per-parent uniqueness, same-name separation across different schema parents, and config/DSN parent-expansion mode.
-  - Still incomplete for full `JDBCBL-META`: catalog/key/privilege/type metadata families are not yet exposed as first-class metadata APIs in this lane.
+  - Implemented and tested: metadata collection routing across core plus catalog/key/privilege/type families, recursive schema ancestry preservation, metadata-only tree shaping, per-parent uniqueness, same-name separation across different schema parents, and config/DSN parent-expansion mode.
+  - Still incomplete for full `JDBCBL-META`: richer DDL-editor payload depth and broader live integration verification.
 
 ## Remaining Gaps
-- Add metadata families beyond the current collection set:
-  - Catalog metadata.
-  - Key/foreign-key/privilege metadata surfaces.
-  - Type metadata surfaces.
 - Expand metadata payload coverage for DDL-editor parity where richer key/privilege/type fields are needed.
 - Add live integration assertions for metadata API behavior against an actual server/catalog (current coverage is lane unit-level).

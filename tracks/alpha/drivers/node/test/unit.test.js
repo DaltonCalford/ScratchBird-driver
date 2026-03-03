@@ -16,11 +16,20 @@ const {
   OID_SB_VECTOR,
   FORMAT_BINARY,
   Client,
+  Pool,
   METADATA_TABLES_QUERY,
   METADATA_SCHEMAS_QUERY,
   METADATA_INDEX_COLUMNS_QUERY,
+  METADATA_PRIMARY_KEYS_QUERY,
+  METADATA_FOREIGN_KEYS_QUERY,
+  METADATA_TABLE_PRIVILEGES_QUERY,
+  METADATA_TYPE_INFO_QUERY,
   resolveMetadataCollectionQuery,
   buildMetadataSchemaTree,
+  mapSqlState,
+  ScratchbirdSyntaxError,
+  ScratchbirdConnectionError,
+  ScratchbirdError,
 } = require("../dist/index.js");
 const { MessageType } = require("../dist/protocol.js");
 
@@ -162,6 +171,13 @@ function parseSqlFromParsePayload(payload) {
   return payload.subarray(sqlLenOffset + 4, sqlLenOffset + 4 + sqlLen).toString("utf8");
 }
 
+function parseSqlFromQueryPayload(payload) {
+  const sqlWithTerminator = payload.subarray(12).toString("utf8");
+  return sqlWithTerminator.endsWith("\u0000")
+    ? sqlWithTerminator.slice(0, -1)
+    : sqlWithTerminator;
+}
+
 test("transaction lifecycle enforces begin-before-commit semantics", async () => {
   const client = new Client({ user: "me", database: "db" });
   const protocol = createMockProtocol([42n, 0n]);
@@ -201,6 +217,42 @@ test("savepoint flows require an active transaction and a non-empty name", async
   );
 });
 
+test("autocommit toggle drives implicit begin and commit", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol([77n, 0n]);
+  client.connected = true;
+  client.protocol = protocol;
+  client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null });
+
+  assert.equal(client.getAutoCommit(), true);
+  await client.setAutoCommit(false);
+  await client.query("select 1");
+  assert.equal(client.getAutoCommit(), false);
+  assert.equal(client.transactionActive, true);
+
+  await client.setAutoCommit(true);
+  assert.equal(client.getAutoCommit(), true);
+  assert.equal(client.transactionActive, false);
+  assert.deepEqual(
+    protocol.sent.map((entry) => entry.type),
+    [MessageType.TXN_BEGIN, MessageType.QUERY, MessageType.TXN_COMMIT],
+  );
+});
+
+test("setSessionSchema applies schema statement on connected clients", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol([0n]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  await client.setSessionSchema("analytics.dev");
+  assert.equal(client.getSessionSchema(), "analytics.dev");
+  assert.equal(client.config.schema, "analytics.dev");
+  assert.equal(protocol.sent.length, 1);
+  assert.equal(protocol.sent[0].type, MessageType.QUERY);
+  assert.equal(parseSqlFromQueryPayload(protocol.sent[0].payload), 'SET SCHEMA "analytics.dev"');
+});
+
 test("extended query path rewrites named parameters and sends parse/bind/execute/sync", async () => {
   const client = new Client({ user: "me", database: "db" });
   const protocol = createMockProtocol();
@@ -236,6 +288,66 @@ test("prepared execute path sends bind/execute/sync and nativeSQL normalizes ali
   );
 });
 
+test("queryMulti returns independent result sets and preserves generated keys", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createQueuedProtocol([
+    {
+      header: { type: MessageType.COMMAND_COMPLETE },
+      payload: makeCommandCompletePayload("INSERT", 1n, 101n),
+    },
+    {
+      header: { type: MessageType.COMMAND_COMPLETE },
+      payload: makeCommandCompletePayload("INSERT", 1n, 202n),
+    },
+    makeReadyMessage(0n),
+  ]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  const results = await client.queryMulti("insert into t values (1); insert into t values (2)");
+  assert.equal(results.length, 2);
+  assert.equal(results[0].command, "INSERT");
+  assert.equal(results[0].lastId, 101n);
+  assert.equal(results[1].lastId, 202n);
+});
+
+test("queryBatch aggregates per-item command summaries", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  client.query = async (_sql, params) => ({
+    rows: [],
+    rowCount: 1,
+    fields: [],
+    command: "INSERT",
+    lastId: BigInt(Array.isArray(params) ? params[0] : 0),
+  });
+
+  const batch = await client.queryBatch("insert into t(id) values (?)", [[11], [22], [33]]);
+  assert.equal(batch.items.length, 3);
+  assert.equal(batch.totalRowCount, 3);
+  assert.deepEqual(
+    batch.items.map((item) => item.lastId),
+    [11n, 22n, 33n],
+  );
+});
+
+test("call rewrites escape syntax and delegates through executeQuery", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  let observedSql = null;
+  let observedParams = null;
+  client.executeQuery = async (sql, params) => {
+    observedSql = sql;
+    observedParams = params;
+    return { rows: [{ return_value: 3 }], rowCount: 1, fields: [], command: "SELECT", lastId: null };
+  };
+
+  const result = await client.call("{ ? = call math.abs(?) }", [-3]);
+  assert.equal(observedSql, "select math.abs($1) as return_value");
+  assert.deepEqual(observedParams, [-3]);
+  assert.equal(result.rows[0].return_value, 3);
+});
+
 function findTreeNode(nodes, path) {
   for (const node of nodes) {
     if (node.path === path) {
@@ -249,7 +361,11 @@ test("metadata query resolver supports collection aliases", () => {
   assert.equal(resolveMetadataCollectionQuery(), METADATA_TABLES_QUERY);
   assert.equal(resolveMetadataCollectionQuery("schemas"), METADATA_SCHEMAS_QUERY);
   assert.equal(resolveMetadataCollectionQuery("indexcolumns"), METADATA_INDEX_COLUMNS_QUERY);
-  assert.throws(() => resolveMetadataCollectionQuery("privileges"), /not supported/);
+  assert.equal(resolveMetadataCollectionQuery("pk"), METADATA_PRIMARY_KEYS_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("foreign_keys"), METADATA_FOREIGN_KEYS_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("table_privileges"), METADATA_TABLE_PRIVILEGES_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("types"), METADATA_TYPE_INFO_QUERY);
+  assert.throws(() => resolveMetadataCollectionQuery("no_such_metadata"), /not supported/);
 });
 
 test("getSchema routes metadata collections and rejects unsupported collections", async () => {
@@ -262,9 +378,26 @@ test("getSchema routes metadata collections and rejects unsupported collections"
   };
 
   await client.getSchema("index_columns");
-  await assert.rejects(() => client.getSchema("privileges"), (err) => err && err.code === "0A000");
+  await client.getSchema("foreign_keys");
+  await client.getSchema("table_privileges");
+  await assert.rejects(() => client.getSchema("privileges_not_supported"), (err) => err && err.code === "0A000");
 
-  assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY]);
+  assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY, METADATA_FOREIGN_KEYS_QUERY, METADATA_TABLE_PRIVILEGES_QUERY]);
+});
+
+test("getSchema returns synthetic catalogs without issuing SQL", async () => {
+  const client = new Client({ user: "me", database: "main" });
+  client.connected = true;
+  let queryInvoked = false;
+  client.query = async () => {
+    queryInvoked = true;
+    return { rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null };
+  };
+
+  const catalogs = await client.getSchema("catalogs");
+  assert.equal(queryInvoked, false);
+  assert.equal(catalogs.rowCount, 1);
+  assert.deepEqual(catalogs.rows, [{ catalog_name: "main" }]);
 });
 
 test("getSchema expands schema parents when metadataExpandSchemaParents is enabled", async () => {
@@ -362,4 +495,48 @@ test("getSchemaTree builds metadata-only tree from schema rows", async () => {
     users.children.map((node) => node.path),
     ["users.alice", "users.bob"],
   );
+});
+
+test("mapSqlState resolves typed driver errors for known classes", () => {
+  assert.equal(mapSqlState("42P01"), ScratchbirdSyntaxError);
+  assert.equal(mapSqlState("08006"), ScratchbirdConnectionError);
+  assert.equal(mapSqlState("99999"), ScratchbirdError);
+  assert.equal(mapSqlState(undefined), ScratchbirdError);
+});
+
+test("pool query returns leased clients and releases them to idle queue", async () => {
+  const originalConnect = Client.prototype.connect;
+  const originalQuery = Client.prototype.query;
+  const originalEnd = Client.prototype.end;
+  try {
+    let connects = 0;
+    let ends = 0;
+    Client.prototype.connect = async function mockConnect() {
+      this.connected = true;
+      connects++;
+    };
+    Client.prototype.query = async function mockQuery() {
+      return { rows: [{ ok: 1 }], rowCount: 1, fields: [], command: "SELECT", lastId: null };
+    };
+    Client.prototype.end = async function mockEnd() {
+      this.connected = false;
+      ends++;
+    };
+
+    const pool = new Pool({ user: "me", database: "db", max: 1, idleTimeoutMs: 5 });
+    const first = await pool.query("select 1");
+    const second = await pool.query("select 1");
+    assert.equal(first.rows[0].ok, 1);
+    assert.equal(second.rows[0].ok, 1);
+    assert.equal(connects, 1, "expected pooled client reuse");
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await pool.query("select 1");
+    await pool.end();
+    assert.ok(ends >= 1);
+  } finally {
+    Client.prototype.connect = originalConnect;
+    Client.prototype.query = originalQuery;
+    Client.prototype.end = originalEnd;
+  }
 });

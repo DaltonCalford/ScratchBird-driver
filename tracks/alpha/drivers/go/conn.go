@@ -704,6 +704,63 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 	return &Tx{conn: c}, nil
 }
 
+func (c *Conn) Savepoint(ctx context.Context, name string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	savepointName, err := validateSavepointName(name)
+	if err != nil {
+		return err
+	}
+	if c.txnID == 0 {
+		return &Error{Kind: ErrTransaction, Message: "savepoint requires an active transaction", SQLState: "25000"}
+	}
+	payload := buildTxnSavepointPayload(savepointName)
+	if err := c.sendMessage(msgTxnSavepoint, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err = c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) ReleaseSavepoint(ctx context.Context, name string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	savepointName, err := validateSavepointName(name)
+	if err != nil {
+		return err
+	}
+	if c.txnID == 0 {
+		return &Error{Kind: ErrTransaction, Message: "release savepoint requires an active transaction", SQLState: "25000"}
+	}
+	payload := buildTxnReleasePayload(savepointName)
+	if err := c.sendMessage(msgTxnRelease, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err = c.drainUntilReady(ctx)
+	return err
+}
+
+func (c *Conn) RollbackToSavepoint(ctx context.Context, name string) error {
+	if err := c.ensureOpen(ctx); err != nil {
+		return err
+	}
+	savepointName, err := validateSavepointName(name)
+	if err != nil {
+		return err
+	}
+	if c.txnID == 0 {
+		return &Error{Kind: ErrTransaction, Message: "rollback to savepoint requires an active transaction", SQLState: "25000"}
+	}
+	payload := buildTxnRollbackToPayload(savepointName)
+	if err := c.sendMessage(msgTxnRollbackTo, payload, 0, false); err != nil {
+		return err
+	}
+	_, _, _, err = c.drainUntilReady(ctx)
+	return err
+}
+
 func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
@@ -920,6 +977,21 @@ func (c *Conn) SetOption(ctx context.Context, name, value string) error {
 	}
 	_, _, _, err := c.drainUntilReady(ctx)
 	return err
+}
+
+func (c *Conn) QueryMetadata(ctx context.Context, collection string) (driver.Rows, error) {
+	if err := c.ensureOpen(ctx); err != nil {
+		return nil, err
+	}
+	query, err := ResolveMetadataCollectionQuery(collection)
+	if err != nil {
+		return nil, &Error{
+			Kind:     ErrNotSupported,
+			Message:  err.Error(),
+			SQLState: "0A000",
+		}
+	}
+	return c.QueryContext(ctx, query, nil)
 }
 
 func (c *Conn) Subscribe(ctx context.Context, subType byte, channel, filter string) error {
@@ -1438,6 +1510,14 @@ func buildSchemaStatement(schema string) string {
 	return "SET SCHEMA " + quoteIdentifier(schema)
 }
 
+func validateSavepointName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", &Error{Kind: ErrSyntax, Message: "savepoint name is required", SQLState: "42601"}
+	}
+	return trimmed, nil
+}
+
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
@@ -1819,4 +1899,25 @@ func (t *Tx) Rollback() error {
 	}
 	_, _, _, err := t.conn.drainUntilReady(context.Background())
 	return err
+}
+
+func (t *Tx) Savepoint(name string) error {
+	if t.conn == nil {
+		return nil
+	}
+	return t.conn.Savepoint(context.Background(), name)
+}
+
+func (t *Tx) ReleaseSavepoint(name string) error {
+	if t.conn == nil {
+		return nil
+	}
+	return t.conn.ReleaseSavepoint(context.Background(), name)
+}
+
+func (t *Tx) RollbackToSavepoint(name string) error {
+	if t.conn == nil {
+		return nil
+	}
+	return t.conn.RollbackToSavepoint(context.Background(), name)
 }

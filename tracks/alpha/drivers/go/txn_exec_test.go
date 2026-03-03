@@ -14,6 +14,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -100,6 +101,148 @@ func TestBeginTxEncodesIsolationAndReadOnly(t *testing.T) {
 	if err := <-errCh; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestSavepointLifecycleEncodesWireCalls(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		defer server.Close()
+
+		if err := expectMessage(server, msgTxnBegin); err != nil {
+			errCh <- err
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 77, 0))); err != nil {
+			errCh <- fmt.Errorf("write begin ready: %w", err)
+			return
+		}
+
+		savepointMsg, err := readMessage(server)
+		if err != nil {
+			errCh <- fmt.Errorf("read savepoint message: %w", err)
+			return
+		}
+		if savepointMsg.header.typ != msgTxnSavepoint {
+			errCh <- fmt.Errorf("expected %v, got %v", msgTxnSavepoint, savepointMsg.header.typ)
+			return
+		}
+		if !containsPayloadText(savepointMsg.body, "sp1") {
+			errCh <- fmt.Errorf("savepoint payload missing name")
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 77, 0))); err != nil {
+			errCh <- fmt.Errorf("write savepoint ready: %w", err)
+			return
+		}
+
+		rollbackToMsg, err := readMessage(server)
+		if err != nil {
+			errCh <- fmt.Errorf("read rollback-to message: %w", err)
+			return
+		}
+		if rollbackToMsg.header.typ != msgTxnRollbackTo {
+			errCh <- fmt.Errorf("expected %v, got %v", msgTxnRollbackTo, rollbackToMsg.header.typ)
+			return
+		}
+		if !containsPayloadText(rollbackToMsg.body, "sp1") {
+			errCh <- fmt.Errorf("rollback-to payload missing name")
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 77, 0))); err != nil {
+			errCh <- fmt.Errorf("write rollback-to ready: %w", err)
+			return
+		}
+
+		releaseMsg, err := readMessage(server)
+		if err != nil {
+			errCh <- fmt.Errorf("read release message: %w", err)
+			return
+		}
+		if releaseMsg.header.typ != msgTxnRelease {
+			errCh <- fmt.Errorf("expected %v, got %v", msgTxnRelease, releaseMsg.header.typ)
+			return
+		}
+		if !containsPayloadText(releaseMsg.body, "sp1") {
+			errCh <- fmt.Errorf("release payload missing name")
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 77, 0))); err != nil {
+			errCh <- fmt.Errorf("write release ready: %w", err)
+			return
+		}
+
+		if err := expectMessage(server, msgTxnCommit); err != nil {
+			errCh <- err
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 0, 0))); err != nil {
+			errCh <- fmt.Errorf("write commit ready: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+
+	conn := &Conn{
+		config: defaultConfig(),
+		raw:    client,
+	}
+	txDriver, err := conn.BeginTx(context.Background(), driver.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx failed: %v", err)
+	}
+	tx, ok := txDriver.(*Tx)
+	if !ok {
+		t.Fatalf("expected *Tx, got %T", txDriver)
+	}
+	if err := tx.Savepoint("sp1"); err != nil {
+		t.Fatalf("savepoint failed: %v", err)
+	}
+	if err := tx.RollbackToSavepoint("sp1"); err != nil {
+		t.Fatalf("rollback to savepoint failed: %v", err)
+	}
+	if err := tx.ReleaseSavepoint("sp1"); err != nil {
+		t.Fatalf("release savepoint failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+	if conn.txnID != 0 {
+		t.Fatalf("expected txn id 0 after commit, got %d", conn.txnID)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSavepointRejectsWhenTransactionInactive(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	conn := &Conn{
+		config: defaultConfig(),
+		raw:    client,
+	}
+	err := conn.Savepoint(context.Background(), "sp1")
+	requireDriverError(t, err, ErrTransaction, "25000")
+}
+
+func TestSavepointRejectsBlankName(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	conn := &Conn{
+		config: defaultConfig(),
+		raw:    client,
+		txnID:  99,
+	}
+	err := conn.Savepoint(context.Background(), "   ")
+	requireDriverError(t, err, ErrSyntax, "42601")
 }
 
 func TestExecContextSimpleIgnoresFetchSizeForExec(t *testing.T) {
@@ -296,6 +439,10 @@ func executeMaxRows(payload []byte) (uint32, error) {
 		return 0, fmt.Errorf("execute payload truncated: %d", len(payload))
 	}
 	return binary.LittleEndian.Uint32(payload[4+portalLen : 8+portalLen]), nil
+}
+
+func containsPayloadText(payload []byte, value string) bool {
+	return strings.Contains(string(payload), value)
 }
 
 func testReadyPayload(status byte, txnID, epoch uint64) []byte {

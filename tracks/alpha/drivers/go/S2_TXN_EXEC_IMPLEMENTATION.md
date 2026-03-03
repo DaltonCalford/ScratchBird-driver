@@ -9,6 +9,17 @@ Scope: `tracks/alpha/drivers/go` lane only.
   - `sendSimpleQueryWithMaxRows(...)`
   - `sendExtendedQueryWithMaxRows(...)`
 - Added focused wire-level tests for TXN and EXEC behavior in `txn_exec_test.go`.
+- Added first-class savepoint APIs on Go connection/transaction types:
+  - `Conn.Savepoint(ctx, name)`
+  - `Conn.ReleaseSavepoint(ctx, name)`
+  - `Conn.RollbackToSavepoint(ctx, name)`
+  - `Tx.Savepoint(name)`
+  - `Tx.ReleaseSavepoint(name)`
+  - `Tx.RollbackToSavepoint(name)`
+- Added savepoint validation and state guards:
+  - Rejects blank savepoint names with `ErrSyntax` (`SQLSTATE 42601`).
+  - Rejects savepoint operations without an active transaction with `ErrTransaction` (`SQLSTATE 25000`).
+- Added wire-level savepoint lifecycle tests in `txn_exec_test.go` (begin, savepoint, rollback-to, release, commit).
 
 ## Tests Run
 - `cd tracks/alpha/drivers/go && go test . -run 'TestBeginTxRejectsUnsupportedIsolation|TestBeginTxEncodesIsolationAndReadOnly|TestExecContextSimpleIgnoresFetchSizeForExec|TestExecContextExtendedIgnoresFetchSizeForExec'`
@@ -20,8 +31,9 @@ Scope: `tracks/alpha/drivers/go` lane only.
   - Begin/BeginTx transaction start path with wire payloads.
   - Commit/Rollback wire commands.
   - Unsupported isolation handling now explicit and tested.
+  - Savepoint/release/rollback-to API surface with wire validation and error guards.
 - Remaining gaps:
-  - Savepoint API is still not surfaced on `Conn`/`Tx` (payload builders exist only).
+  - Broader live transaction integration depth beyond lane unit/wire tests.
 
 ## EXEC Status
 - Recommendation: `PARTIAL`

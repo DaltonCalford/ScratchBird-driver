@@ -8,6 +8,9 @@
 package scratchbird
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"reflect"
 	"testing"
 )
@@ -113,6 +116,109 @@ func TestMetadataBuildSchemaTreeSmoke(t *testing.T) {
 	}
 }
 
+func TestResolveMetadataCollectionQueryAliases(t *testing.T) {
+	query, err := ResolveMetadataCollectionQuery("")
+	if err != nil {
+		t.Fatalf("resolve default metadata query failed: %v", err)
+	}
+	if query != MetadataTablesQuery() {
+		t.Fatalf("default metadata query mismatch: got %q want %q", query, MetadataTablesQuery())
+	}
+
+	cases := map[string]string{
+		"schemas":          MetadataSchemasQuery(),
+		"indexcolumns":     MetadataIndexColumnsQuery(),
+		"pk":               MetadataPrimaryKeysQuery(),
+		"foreign_keys":     MetadataForeignKeysQuery(),
+		"table_privileges": MetadataTablePrivilegesQuery(),
+		"types":            MetadataTypeInfoQuery(),
+	}
+	for input, expected := range cases {
+		got, err := ResolveMetadataCollectionQuery(input)
+		if err != nil {
+			t.Fatalf("resolve metadata query for %q failed: %v", input, err)
+		}
+		if got != expected {
+			t.Fatalf("metadata query mismatch for %q: got %q want %q", input, got, expected)
+		}
+	}
+
+	if _, err := ResolveMetadataCollectionQuery("unsupported_metadata_family"); err == nil {
+		t.Fatalf("expected unsupported metadata collection error")
+	}
+}
+
+func TestQueryMetadataRoutesCollectionQuery(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		defer server.Close()
+
+		msg, err := readMessage(server)
+		if err != nil {
+			errCh <- fmt.Errorf("read metadata query message: %w", err)
+			return
+		}
+		if msg.header.typ != msgQuery {
+			errCh <- fmt.Errorf("expected %v, got %v", msgQuery, msg.header.typ)
+			return
+		}
+		sqlText, err := queryPayloadSQL(msg.body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if sqlText != MetadataTablesQuery() {
+			errCh <- fmt.Errorf("metadata query mismatch: got %q want %q", sqlText, MetadataTablesQuery())
+			return
+		}
+
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgCommandComplete}, testCommandCompletePayload(0, 0, "SELECT"))); err != nil {
+			errCh <- fmt.Errorf("write metadata command complete: %w", err)
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 0, 0))); err != nil {
+			errCh <- fmt.Errorf("write metadata ready: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+
+	conn := &Conn{
+		config: defaultConfig(),
+		raw:    client,
+	}
+	rows, err := conn.QueryMetadata(context.Background(), "tables")
+	if err != nil {
+		t.Fatalf("query metadata failed: %v", err)
+	}
+	if rows == nil {
+		t.Fatalf("expected rows, got nil")
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close metadata rows failed: %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQueryMetadataRejectsUnsupportedCollection(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	conn := &Conn{
+		config: defaultConfig(),
+		raw:    client,
+	}
+	_, err := conn.QueryMetadata(context.Background(), "no_such_metadata")
+	requireDriverError(t, err, ErrNotSupported, "0A000")
+}
+
 func findMetadataNodeByName(nodes []*MetadataSchemaTreeNode, name string) *MetadataSchemaTreeNode {
 	for _, node := range nodes {
 		if node != nil && node.Name == name {
@@ -120,4 +226,15 @@ func findMetadataNodeByName(nodes []*MetadataSchemaTreeNode, name string) *Metad
 		}
 	}
 	return nil
+}
+
+func queryPayloadSQL(payload []byte) (string, error) {
+	if len(payload) < 13 {
+		return "", fmt.Errorf("query payload too short: %d", len(payload))
+	}
+	sqlWithTerminator := payload[12:]
+	if sqlWithTerminator[len(sqlWithTerminator)-1] == 0 {
+		sqlWithTerminator = sqlWithTerminator[:len(sqlWithTerminator)-1]
+	}
+	return string(sqlWithTerminator), nil
 }

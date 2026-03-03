@@ -9,6 +9,9 @@
 export const METADATA_SCHEMAS_QUERY =
   "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
 
+export const METADATA_CATALOGS_QUERY =
+  "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
+
 export const METADATA_TABLES_QUERY =
   "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
 
@@ -24,21 +27,42 @@ export const METADATA_INDEX_COLUMNS_QUERY =
 export const METADATA_CONSTRAINTS_QUERY =
   "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
 
+export const METADATA_PRIMARY_KEYS_QUERY =
+  "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+
+export const METADATA_FOREIGN_KEYS_QUERY =
+  "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+
+export const METADATA_TABLE_PRIVILEGES_QUERY =
+  "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+
+export const METADATA_COLUMN_PRIVILEGES_QUERY =
+  "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+
 export const METADATA_PROCEDURES_QUERY =
   "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
 
 export const METADATA_FUNCTIONS_QUERY =
   "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
 
+export const METADATA_TYPE_INFO_QUERY =
+  "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
+
 export type MetadataCollectionName =
+  | "catalogs"
   | "schemas"
   | "tables"
   | "columns"
   | "indexes"
   | "index_columns"
   | "constraints"
+  | "primary_keys"
+  | "foreign_keys"
+  | "table_privileges"
+  | "column_privileges"
   | "procedures"
-  | "functions";
+  | "functions"
+  | "type_info";
 
 export interface MetadataSchemaTreeNode {
   name: string;
@@ -60,17 +84,25 @@ export interface MetadataSchemaTreeOptions {
 export type MetadataSchemaInput = string | Record<string, unknown>;
 
 const METADATA_COLLECTION_QUERIES: Record<MetadataCollectionName, string> = {
+  catalogs: METADATA_CATALOGS_QUERY,
   schemas: METADATA_SCHEMAS_QUERY,
   tables: METADATA_TABLES_QUERY,
   columns: METADATA_COLUMNS_QUERY,
   indexes: METADATA_INDEXES_QUERY,
   index_columns: METADATA_INDEX_COLUMNS_QUERY,
   constraints: METADATA_CONSTRAINTS_QUERY,
+  primary_keys: METADATA_PRIMARY_KEYS_QUERY,
+  foreign_keys: METADATA_FOREIGN_KEYS_QUERY,
+  table_privileges: METADATA_TABLE_PRIVILEGES_QUERY,
+  column_privileges: METADATA_COLUMN_PRIVILEGES_QUERY,
   procedures: METADATA_PROCEDURES_QUERY,
   functions: METADATA_FUNCTIONS_QUERY,
+  type_info: METADATA_TYPE_INFO_QUERY,
 };
 
 const METADATA_COLLECTION_ALIASES: Record<string, MetadataCollectionName> = {
+  catalogs: "catalogs",
+  catalog: "catalogs",
   schemas: "schemas",
   schema: "schemas",
   tables: "tables",
@@ -83,10 +115,25 @@ const METADATA_COLLECTION_ALIASES: Record<string, MetadataCollectionName> = {
   index_columns: "index_columns",
   constraints: "constraints",
   constraint: "constraints",
+  primarykeys: "primary_keys",
+  primary_keys: "primary_keys",
+  primarykey: "primary_keys",
+  pk: "primary_keys",
+  foreignkeys: "foreign_keys",
+  foreign_keys: "foreign_keys",
+  foreignkey: "foreign_keys",
+  fk: "foreign_keys",
+  tableprivileges: "table_privileges",
+  table_privileges: "table_privileges",
+  columnprivileges: "column_privileges",
+  column_privileges: "column_privileges",
   procedures: "procedures",
   procedure: "procedures",
   functions: "functions",
   function: "functions",
+  typeinfo: "type_info",
+  type_info: "type_info",
+  types: "type_info",
 };
 
 const SCHEMA_FIELD_CANDIDATES = [

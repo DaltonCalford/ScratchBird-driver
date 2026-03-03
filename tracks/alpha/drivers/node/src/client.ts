@@ -315,6 +315,8 @@ export class Client {
   private protocol = new ProtocolConnection();
   private connected = false;
   private transactionActive = false;
+  private autoCommit = true;
+  private sessionSchema: string | null = null;
   private prepared = new Map<string, { sql: string; paramCount: number }>();
   private parameters: Record<string, string> = {};
   private notificationHandlers: Array<(notice: NotificationMessage) => void> = [];
@@ -344,6 +346,7 @@ export class Client {
     if (!this.config.managerClientIntent) this.config.managerClientIntent = "native_v3";
     if (this.config.managerClientFlags === undefined) this.config.managerClientFlags = 0;
     if (this.config.managerAuthFastPath === undefined) this.config.managerAuthFastPath = true;
+    this.sessionSchema = normalizeSessionSchema(this.config.schema);
   }
 
   async connect(): Promise<void> {
@@ -441,6 +444,18 @@ export class Client {
       throw new ScratchbirdNotSupportedError((err as Error).message, "0A000");
     }
 
+    if (normalizedCollection === "catalogs") {
+      const catalogName = this.config.database?.trim() ?? "";
+      const rows = catalogName ? [{ catalog_name: catalogName }] : [];
+      return {
+        rows,
+        rowCount: rows.length,
+        fields: [],
+        command: "SELECT",
+        lastId: null,
+      };
+    }
+
     const sql = resolveMetadataCollectionQuery(normalizedCollection);
     const result = await this.query(sql);
     if (normalizedCollection !== "schemas" || !this.config.metadataExpandSchemaParents) {
@@ -460,6 +475,44 @@ export class Client {
     return buildMetadataSchemaTree(schemas.rows as Array<Record<string, unknown>>, {
       expandParents: options?.expandParents ?? this.config.metadataExpandSchemaParents === true,
       database: options?.database ?? this.config.database,
+    });
+  }
+
+  getAutoCommit(): boolean {
+    return this.autoCommit;
+  }
+
+  async setAutoCommit(enabled: boolean): Promise<void> {
+    this.ensureConnected();
+    if (this.autoCommit === enabled) {
+      return;
+    }
+    if (enabled && this.transactionActive) {
+      await this.commitTransaction();
+    }
+    this.autoCommit = enabled;
+  }
+
+  getSessionSchema(): string | null {
+    return this.sessionSchema;
+  }
+
+  async setSessionSchema(schema: string | null | undefined): Promise<void> {
+    const normalized = normalizeSessionSchema(schema);
+    this.sessionSchema = normalized;
+    this.config.schema = normalized ?? undefined;
+    if (!this.connected) {
+      return;
+    }
+
+    const statement = buildSchemaStatement(normalized ?? "public");
+    if (!statement) {
+      return;
+    }
+
+    await this.withResilience("set_session_schema", statement, async () => {
+      await this.sendSimpleQuery(statement);
+      await this.drainUntilReady();
     });
   }
 
@@ -671,6 +724,7 @@ export class Client {
 
   async executeSblr(hash: bigint, bytecode: Buffer | null, params?: any[], options?: QueryOptions): Promise<QueryResult> {
     this.ensureConnected();
+    await this.ensureImplicitTransaction();
     return this.withResilience("sblr_execute", undefined, async () => {
       const paramValues: ParamValue[] = [];
       if (params) {
@@ -745,6 +799,13 @@ export class Client {
     if (!this.connected) {
       throw new Error("Client is not connected");
     }
+  }
+
+  private async ensureImplicitTransaction(): Promise<void> {
+    if (this.autoCommit || this.transactionActive) {
+      return;
+    }
+    await this.beginTransaction();
   }
 
   private ensureNoActiveTransaction(): void {
@@ -1182,6 +1243,7 @@ export class Client {
 
   private async executeQuery(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
+    await this.ensureImplicitTransaction();
     return this.withResilience("query", sql, async () => {
       if (params.length === 0) {
         await this.sendSimpleQuery(sql, options);
@@ -1194,6 +1256,7 @@ export class Client {
 
   private async executeQueryMulti(sql: string, params: any[], options?: QueryOptions): Promise<QueryResult[]> {
     const pageSize = options?.maxRows ?? 0;
+    await this.ensureImplicitTransaction();
     return this.withResilience("query_multi", sql, async () => {
       if (params.length === 0) {
         await this.sendSimpleQuery(sql, options);
@@ -1207,6 +1270,7 @@ export class Client {
   private async executePrepared(name: string, params: any[], options?: QueryOptions): Promise<QueryResult> {
     const pageSize = options?.maxRows ?? 0;
     const prepared = this.prepared.get(name);
+    await this.ensureImplicitTransaction();
     return this.withResilience("execute_prepared", prepared?.sql, async () => {
       await this.sendBindExecute(name, params, options);
       return this.collectResults(pageSize, options);
@@ -1216,6 +1280,7 @@ export class Client {
   private async executePreparedMulti(name: string, params: any[], options?: QueryOptions): Promise<QueryResult[]> {
     const pageSize = options?.maxRows ?? 0;
     const prepared = this.prepared.get(name);
+    await this.ensureImplicitTransaction();
     return this.withResilience("execute_prepared_multi", prepared?.sql, async () => {
       await this.sendBindExecute(name, params, options);
       return this.collectResultSets(pageSize, options);
@@ -1224,6 +1289,7 @@ export class Client {
 
   private async executeQueryStream(sql: string, params: any[], options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
     const pageSize = options?.maxRows ?? 0;
+    await this.ensureImplicitTransaction();
     if (!this.circuitBreaker.allowRequest()) {
       throw new ScratchbirdError("Circuit breaker is OPEN", "08006");
     }
@@ -1550,6 +1616,14 @@ function buildSchemaStatement(schema: string): string {
     return `SET SEARCH_PATH TO ${parts.join(", ")}`;
   }
   return `SET SCHEMA ${quoteIdentifier(trimmed)}`;
+}
+
+function normalizeSessionSchema(schema: string | null | undefined): string | null {
+  if (schema === undefined || schema === null) {
+    return null;
+  }
+  const trimmed = schema.trim();
+  return trimmed.length ? trimmed : null;
 }
 
 function quoteIdentifier(name: string): string {
