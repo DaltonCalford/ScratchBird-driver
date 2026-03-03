@@ -1,0 +1,4 @@
+4291215249104347e86742614ddcab9cf3ff6489bb6c640729ebf7534e0ba99b  dbeaver/org.jkiss.dbeaver.ext.scratchbird.repository-1.0.1-SNAPSHOT.zip
+7fb5536b4262f08e0889fb12feddebc82a1895cba47712642886a8ba3eddce13  dbeaver/scratchbird-dbeaver-update-site-1.0.1-beta.1.zip
+e098d5c155812de897f5308e81f0dc9612e1eead01ec94fbc3ca81b603f5cebc  jdbc/scratchbird-jdbc-0.1.0-sources.jar
+86d924fea7568ad42866b89d1ab4617f87502684c4bae9a057e7fcfe32bda9d4  jdbc/scratchbird-jdbc-0.1.0.jar

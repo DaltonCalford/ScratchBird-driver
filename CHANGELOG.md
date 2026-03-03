@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- N/A
+- ScratchBird DBeaver integration beta packaging bundle (`release/beta/0.1.0-dbeaver.beta.1`) including:
+  - stock-installable DBeaver p2 update-site zip
+  - JDBC jar and sources jar
+  - checksums and beta release notes (no human QA sign-off yet)
 
 ### Changed
 - N/A
