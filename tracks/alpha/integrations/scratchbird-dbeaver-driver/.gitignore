@@ -4,3 +4,6 @@
 
 plugins/**/target/
 test/**/target/
+features/**/target/
+repository/target/
+dist/

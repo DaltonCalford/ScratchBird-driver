@@ -1,21 +1,30 @@
 # ScratchBird DBeaver Integration
 
-This folder stores the ScratchBird-specific DBeaver integration assets inside
-`ScratchBird-driver` so the work is versioned with the JDBC driver.
+This folder stores ScratchBird-specific DBeaver integration assets inside
+`ScratchBird-driver` so the DBeaver plugin and JDBC compatibility behavior are
+versioned together.
 
 ## Contents
 
 - `plugins/org.jkiss.dbeaver.ext.scratchbird/`
   ScratchBird DBeaver extension plugin (recursive schema tree + Generic DDL folders)
-- `test/org.jkiss.dbeaver.ext.scratchbird.test/`
-  DBeaver-side integration tests for plugin metadata behavior
+- `features/org.jkiss.dbeaver.ext.scratchbird.feature/`
+  p2 feature descriptor for the ScratchBird plugin
+- `repository/`
+  p2 update-site packaging (`category.xml`, repository module)
+- `pom.xml`
+  Standalone Tycho reactor for plugin/feature/repository build
+- `scripts/build-p2-update-site.sh`
+  Build and package a stock-installable p2 update-site zip
 - `scripts/install-into-dbeaver.sh`
   Idempotent installer for a local DBeaver source checkout
+- `test/org.jkiss.dbeaver.ext.scratchbird.test/`
+  DBeaver-side integration tests for plugin metadata behavior
 
 ## JDBC Driver Improvements Included
 
-The JDBC driver now includes a metadata compatibility switch for recursive
-schema tools:
+The JDBC driver includes a metadata compatibility switch for recursive schema
+clients:
 
 - Property: `metadataExpandSchemaParents` (aliases:
   `metadata_expand_schema_parents`, `expandSchemaParents`,
@@ -27,13 +36,12 @@ schema tools:
 
 This keeps default metadata behavior unchanged for non-DBeaver clients.
 
-## Install Into DBeaver (Source Checkout)
+## Install Into Stock DBeaver (No DBeaver Source Build)
 
 These steps assume:
 
 - ScratchBird driver repo: `~/CliWork/ScratchBird-driver`
-- DBeaver repo: `~/CliWork/dbeaver`
-- DBeaver common repo: `~/CliWork/dbeaver-common`
+- You are using a regular DBeaver binary download (not a source checkout)
 
 ### 1) Build ScratchBird JDBC JAR
 
@@ -46,35 +54,33 @@ JAR output:
 
 - `~/CliWork/ScratchBird-driver/tracks/alpha/drivers/jdbc/build/libs/scratchbird-jdbc-*.jar`
 
-### 2) Install Plugin Sources Into DBeaver
+### 2) Build the p2 Update Site
 
 ```bash
 cd ~/CliWork/ScratchBird-driver/tracks/alpha/integrations/scratchbird-dbeaver-driver
-./scripts/install-into-dbeaver.sh ~/CliWork/dbeaver
+./scripts/build-p2-update-site.sh
 ```
 
-This copies plugin/test-plugin folders and patches:
+Outputs:
 
-- `~/CliWork/dbeaver/plugins/pom.xml`
-- `~/CliWork/dbeaver/test/pom.xml`
-- `~/CliWork/dbeaver/features/org.jkiss.dbeaver.db.feature/feature.xml`
-- `~/CliWork/dbeaver/features/org.jkiss.dbeaver.test.feature/feature.xml`
+- Repository folder:
+  `~/CliWork/ScratchBird-driver/tracks/alpha/integrations/scratchbird-dbeaver-driver/repository/target/repository`
+- Installable zip:
+  `~/CliWork/ScratchBird-driver/tracks/alpha/integrations/scratchbird-dbeaver-driver/dist/scratchbird-dbeaver-update-site-*.zip`
 
-### 3) Build/Verify In DBeaver
+### 3) Install Plugin in DBeaver UI
 
-```bash
-cd ~/CliWork/dbeaver
-~/CliWork/dbeaver-common/mvnw -f product/aggregate/pom.xml \
-  -pl ../../../dbeaver-common/modules/org.jkiss.utils,../../../dbeaver-common/modules/com.dbeaver.jdbc.api,../../plugins/org.jkiss.dbeaver.model,../../plugins/org.jkiss.dbeaver.model.jdbc,../../plugins/org.jkiss.dbeaver.model.lsm,../../plugins/org.jkiss.dbeaver.model.sql,../../plugins/org.jkiss.dbeaver.model.sql.jdbc,../../plugins/org.jkiss.dbeaver.registry,../../plugins/org.jkiss.dbeaver.ext.generic,../../plugins/org.jkiss.dbeaver.ext.scratchbird,../../test/org.jkiss.dbeaver.ext.scratchbird.test \
-  -am verify -DskipITs
-```
+1. Open DBeaver
+2. Go to `Help` -> `Install New Software...`
+3. Click `Add...` -> `Archive...`
+4. Select the generated zip from step 2
+5. Choose `ScratchBird Extension`
+6. Complete install and restart DBeaver
 
-Expected: `BUILD SUCCESS`.
-
-### 4) Configure Driver Library In DBeaver UI
+### 4) Point Driver to Local JDBC JAR
 
 The plugin descriptor references `maven:/com.scratchbird:scratchbird-jdbc:RELEASE`.
-If you are testing local builds, point the driver to the local JAR:
+If you are testing local builds, set the library manually:
 
 1. Open `Database` -> `Driver Manager` -> `ScratchBird`
 2. `Libraries` tab -> add local file
@@ -91,10 +97,51 @@ If you want parent schema rows emitted directly by JDBC metadata:
 Use this only when needed; default `false` keeps non-DBeaver metadata behavior
 unchanged.
 
+### Policy Note
+
+If `Help` -> `Install New Software...` is disabled in your DBeaver install,
+software install/update policies are being enforced by that environment.
+In that case, use an unmanaged install or ask your administrator to allow
+plugin installation.
+
+## Install Into DBeaver Source Checkout (Developer Flow)
+
+These steps assume:
+
+- ScratchBird driver repo: `~/CliWork/ScratchBird-driver`
+- DBeaver repo: `~/CliWork/dbeaver`
+- DBeaver common repo: `~/CliWork/dbeaver-common`
+
+### 1) Copy Plugin/Test Sources Into DBeaver Checkout
+
+```bash
+cd ~/CliWork/ScratchBird-driver/tracks/alpha/integrations/scratchbird-dbeaver-driver
+./scripts/install-into-dbeaver.sh ~/CliWork/dbeaver
+```
+
+This copies plugin/test-plugin folders and patches:
+
+- `~/CliWork/dbeaver/plugins/pom.xml`
+- `~/CliWork/dbeaver/test/pom.xml`
+- `~/CliWork/dbeaver/features/org.jkiss.dbeaver.db.feature/feature.xml`
+- `~/CliWork/dbeaver/features/org.jkiss.dbeaver.test.feature/feature.xml`
+
+### 2) Build/Verify In DBeaver
+
+```bash
+cd ~/CliWork/dbeaver
+~/CliWork/dbeaver-common/mvnw -f product/aggregate/pom.xml \
+  -pl ../../../dbeaver-common/modules/org.jkiss.utils,../../../dbeaver-common/modules/com.dbeaver.jdbc.api,../../plugins/org.jkiss.dbeaver.model,../../plugins/org.jkiss.dbeaver.model.jdbc,../../plugins/org.jkiss.dbeaver.model.lsm,../../plugins/org.jkiss.dbeaver.model.sql,../../plugins/org.jkiss.dbeaver.model.sql.jdbc,../../plugins/org.jkiss.dbeaver.registry,../../plugins/org.jkiss.dbeaver.ext.generic,../../plugins/org.jkiss.dbeaver.ext.scratchbird,../../test/org.jkiss.dbeaver.ext.scratchbird.test \
+  -am verify -DskipITs
+```
+
+Expected: `BUILD SUCCESS`.
+
 ## Update Workflow
 
-When this integration is updated:
+When integration code changes:
 
 1. Update files under this folder
-2. Re-run `install-into-dbeaver.sh` against your DBeaver checkout
-3. Re-run the aggregate `verify` command above
+2. Rebuild the p2 archive: `./scripts/build-p2-update-site.sh`
+3. Reinstall/update in DBeaver via `Help` -> `Install New Software...`
+4. Keep the local JDBC jar updated in Driver Manager when testing local builds

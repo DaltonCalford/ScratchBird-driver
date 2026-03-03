@@ -11,6 +11,6 @@
         <relativePath>../..</relativePath>
     </parent>
 
-    <artifactId>org.jkiss.dbeaver.ext.scratchbird</artifactId>
-    <packaging>eclipse-plugin</packaging>
+    <artifactId>org.jkiss.dbeaver.ext.scratchbird.feature</artifactId>
+    <packaging>eclipse-feature</packaging>
 </project>

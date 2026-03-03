@@ -76,6 +76,44 @@ sync_dir() {
   cp -a "${src}" "${dst}"
 }
 
+write_dbeaver_reactor_poms() {
+  cat > "${DBEAVER_DIR}/plugins/org.jkiss.dbeaver.ext.scratchbird/pom.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.jkiss.dbeaver</groupId>
+        <artifactId>plugins</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../</relativePath>
+    </parent>
+    <artifactId>org.jkiss.dbeaver.ext.scratchbird</artifactId>
+    <version>1.0.1-SNAPSHOT</version>
+    <packaging>eclipse-plugin</packaging>
+</project>
+EOF
+
+  cat > "${DBEAVER_DIR}/test/org.jkiss.dbeaver.ext.scratchbird.test/pom.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.jkiss.dbeaver</groupId>
+        <artifactId>tests</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../</relativePath>
+    </parent>
+    <artifactId>org.jkiss.dbeaver.ext.scratchbird.test</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>eclipse-test-plugin</packaging>
+</project>
+EOF
+}
+
 require_file "${DBEAVER_DIR}/plugins/pom.xml"
 require_file "${DBEAVER_DIR}/test/pom.xml"
 require_file "${DBEAVER_DIR}/features/org.jkiss.dbeaver.db.feature/feature.xml"
@@ -88,6 +126,8 @@ sync_dir \
 sync_dir \
   "${INTEGRATION_DIR}/test/org.jkiss.dbeaver.ext.scratchbird.test" \
   "${DBEAVER_DIR}/test/org.jkiss.dbeaver.ext.scratchbird.test"
+
+write_dbeaver_reactor_poms
 
 insert_after_regex_once \
   "${DBEAVER_DIR}/plugins/pom.xml" \
