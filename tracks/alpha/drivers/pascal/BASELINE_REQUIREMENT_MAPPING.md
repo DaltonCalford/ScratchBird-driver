@@ -18,11 +18,11 @@
   - `tests/ConfigTests.pas:38`, `tests/ConfigTests.pas:55`, `tests/ConfigTests.pas:61`
   - `tests/ConnectionManagerProxyTests.pas:250` (deterministic manager-proxy connect success path with MCP negotiation + password auth handshake)
   - `tests/ConnectionManagerProxyTests.pas:290` (deterministic manager-proxy auth failure path maps to `28000` and remains disconnected)
+  - `tests/ConnectionDirectAuthMatrixTests.pas:166`, `tests/ConnectionDirectAuthMatrixTests.pas:194` (deterministic direct front-door password + SCRAM auth matrix coverage through READY state with startup/auth frame assertions)
   - `tests/ConnectionAuthProtocolTests.pas:48`, `tests/ConnectionAuthProtocolTests.pas:59`, `tests/ConnectionAuthProtocolTests.pas:77`, `tests/ConnectionAuthProtocolTests.pas:98`, `tests/ConnectionAuthProtocolTests.pas:124`
   - `tests/TlsCryptoAndPolicyTests.pas:127`, `tests/TlsCryptoAndPolicyTests.pas:149`
   - `tests/IntegrationTest.pas:24`, `tests/IntegrationTest.pas:33`
 - Gaps/next actions:
-  - Add deterministic lane tests for direct front-door end-to-end auth negotiation matrix (password/SCRAM) without relying on external environment setup.
   - Integration connect checks are env-gated and can be skipped (`tests/IntegrationTest.pas:24-28`).
 
 ## TXN (JDBCBL: TXN)
@@ -104,8 +104,9 @@
   - `tests/MetadataRecursiveSchemaTests.pas:338` (client metadata stream API guards: unsupported collection => `0A000`, disconnected supported collection => `08003`)
   - `tests/MetadataRecursiveSchemaTests.pas:370` (client metadata rows API guards for unsupported/disconnected paths)
   - `tests/MetadataRecursiveSchemaTests.pas:399` (typed metadata wrapper API guards on disconnected client)
+  - `tests/MetadataExecutionFlowTests.pas:220`, `tests/MetadataExecutionFlowTests.pas:277` (deterministic metadata execution flow coverage for schema/table/column/index/constraint/routine wrapper query paths and restriction-aware `QueryMetadataRows` materialization)
 - Gaps/next actions:
-  - Add metadata integration tests for schema/table/column/index/constraint/routine query paths.
+  - Add live metadata integration assertions against a running server for schema/table/column/index/constraint/routine query paths.
   - Extend result-shape parity fields to align more tightly with JDBC metadata contracts across collection families.
 
 ## TYPE (JDBCBL: TYPE)

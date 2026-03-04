@@ -53,6 +53,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added deterministic adapter metadata API guard suite:
   - `tests/AdapterMetadataApiTests.pas`
   - validates disconnected supported-collection behavior (`08003`) and unsupported collection behavior (`0A000`) across all four adapter surfaces.
+- Added deterministic metadata execution-flow suite:
+  - `tests/MetadataExecutionFlowTests.pas`
+  - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` query paths.
+  - validates restriction-aware `QueryMetadataRows('tables', restrictions)` materialization from wire row payloads.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence/notes for the new S3 metadata shaping coverage.
 
 ## Targeted Tests Run
@@ -69,6 +73,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 4. `/tmp/sb_pascal_meta_adapter_bin/AdapterMetadataApiTests`
 - Result: PASS (`AdapterMetadataApiTests: OK`).
 
+5. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_meta_exec_build -FE/tmp/sb_pascal_meta_exec_bin ./tracks/alpha/drivers/pascal/tests/MetadataExecutionFlowTests.pas`
+- Result: PASS (compile succeeded).
+
+6. `/tmp/sb_pascal_meta_exec_bin/MetadataExecutionFlowTests`
+- Result: PASS (`MetadataExecutionFlowTests: OK`).
+
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
@@ -78,6 +88,7 @@ Rationale:
 - Generic executable metadata APIs now exist on the client (`QueryMetadata` / `GetSchema`) with expanded metadata family coverage.
 - Typed client metadata wrappers now exist for the expanded metadata family surface.
 - Restriction-aware filtering parity now exists for materialized metadata rows (`FilterMetadataRowsByRestrictions` + `QueryMetadataRows`/`GetSchemaRows`).
+- Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and restriction-aware row materialization from wire payloads.
 - Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
 - Status remains partial because live integration depth and JDBC result-shape parity are still incomplete.
 
