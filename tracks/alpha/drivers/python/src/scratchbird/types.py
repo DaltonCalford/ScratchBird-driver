@@ -423,6 +423,8 @@ def _normalize_temporal_text(value: str) -> str:
     normalized = value.strip()
     if " " in normalized and "T" not in normalized:
         normalized = normalized.replace(" ", "T")
+    if normalized.endswith("Z") or normalized.endswith("z"):
+        normalized = normalized[:-1] + "+00:00"
     if re.fullmatch(r".*[+-]\d{2}", normalized):
         normalized = normalized + ":00"
     return normalized
@@ -913,11 +915,7 @@ def _convert_array_scalar(value: Any, scalar_oid: int) -> Any:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            lowered = value.strip().lower()
-            if lowered == "true":
-                return True
-            if lowered == "false":
-                return False
+            return value.strip().lower() in ("t", "true")
         return bool(value)
     if scalar_oid in (OID_INT2, OID_INT4, OID_INT8):
         return int(value)
@@ -1041,12 +1039,37 @@ def _encode_range_bound(range_oid: int, value: Any) -> bytes:
     if range_oid == OID_NUMRANGE:
         return _encode_length_prefixed(str(value).encode("utf-8"))
     if range_oid == OID_DATERANGE:
-        return _encode_date(value)
+        return _encode_date(_coerce_range_date(value))
     if range_oid == OID_TSRANGE:
-        return _encode_timestamp(value.replace(tzinfo=_dt.timezone.utc))
+        return _encode_timestamp(_coerce_range_timestamp(value))
     if range_oid == OID_TSTZRANGE:
-        return _encode_timestamp(value.astimezone(_dt.timezone.utc))
+        return _encode_timestamp(_coerce_range_timestamp(value))
     raise ValueError("unsupported range type")
+
+
+def _coerce_range_date(value: Any) -> _dt.date:
+    if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
+        return value
+    if isinstance(value, _dt.datetime):
+        if value.tzinfo is not None:
+            return value.astimezone(_dt.timezone.utc).date()
+        return value.date()
+    if isinstance(value, str):
+        return _dt.date.fromisoformat(value.strip())
+    raise ValueError("unsupported daterange bound type")
+
+
+def _coerce_range_timestamp(value: Any) -> _dt.datetime:
+    parsed: _dt.datetime
+    if isinstance(value, _dt.datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(value))
+    else:
+        raise ValueError("unsupported timestamp range bound type")
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=_dt.timezone.utc)
+    return parsed.astimezone(_dt.timezone.utc)
 
 
 def _decode_range(range_oid: int, data: bytes) -> Range:
