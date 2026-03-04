@@ -47,13 +47,20 @@
   - `src/ScratchBird.Client.pas:642`, `src/ScratchBird.Client.pas:647`, `src/ScratchBird.Client.pas:680`, `src/ScratchBird.Client.pas:1243`, `src/ScratchBird.Client.pas:1262`
   - `src/ScratchBird.Client.pas:274`, `src/ScratchBird.Common.pas:111`
   - `src/ScratchBird.Sql.pas:50`, `src/ScratchBird.Sql.pas:114`, `src/ScratchBird.Sql.pas:151`, `src/ScratchBird.Sql.pas:157`
-  - `src/ScratchBird.FireDAC.pas:186`, `src/ScratchBird.IBX.pas:120`, `src/ScratchBird.Zeos.pas:121`, `src/ScratchBird.SQLdb.pas:121`
+  - `src/ScratchBird.FireDAC.pas:35`, `src/ScratchBird.FireDAC.pas:149`, `src/ScratchBird.FireDAC.pas:178` (adapter query prepare + exec routed through overridable execution hooks)
+  - `src/ScratchBird.IBX.pas:34`, `src/ScratchBird.IBX.pas:167`, `src/ScratchBird.IBX.pas:196` (adapter query prepare + exec routed through overridable execution hooks)
+  - `src/ScratchBird.Zeos.pas:34`, `src/ScratchBird.Zeos.pas:168`, `src/ScratchBird.Zeos.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
+  - `src/ScratchBird.SQLdb.pas:34`, `src/ScratchBird.SQLdb.pas:168`, `src/ScratchBird.SQLdb.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
 - Lane-local test anchors:
+  - `tests/AdapterPrepareLifecycleTests.pas:146` (adapter prepare guardrails for missing connection/database assignment)
+  - `tests/AdapterPrepareLifecycleTests.pas:218` (FireDAC prepare snapshot and normalized parameter ordering reuse on exec)
+  - `tests/AdapterPrepareLifecycleTests.pas:247` (IBX prepare snapshot and normalized parameter ordering reuse on exec)
+  - `tests/AdapterPrepareLifecycleTests.pas:276` (Zeos prepare snapshot and normalized parameter ordering reuse on exec)
+  - `tests/AdapterPrepareLifecycleTests.pas:305` (SQLdb prepare snapshot and normalized parameter ordering reuse on exec)
   - `tests/TxnExecParityTests.pas:142`, `tests/TxnExecParityTests.pas:193`
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
   - `tests/IntegrationTest.pas:33`, `tests/IntegrationTest.pas:40`, `tests/IntegrationTest.pas:53`, `tests/IntegrationTest.pas:54`
 - Gaps/next actions:
-  - Adapter `Prepare` methods now normalize/cache SQL+parameter order for reuse, but adapter-level tests still need explicit assertions for prepare/execute lifecycle behavior.
   - Add tests for stream control/backpressure path (`src/ScratchBird.Client.pas:618`).
   - Add dedicated API coverage for batch execution, multi-result traversal, and generated-key retrieval (currently not first-class in this lane).
 

@@ -31,6 +31,8 @@ type
     procedure StartTransaction;
     procedure Commit;
     procedure Rollback;
+    procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput); virtual;
+    function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream; virtual;
     function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     property Connected: Boolean read FConnected;
     property Dsn: string read FDsn write FDsn;
@@ -107,6 +109,16 @@ begin
   FClient.Rollback;
 end;
 
+procedure TScratchBirdIBDatabase.ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
+begin
+  FClient.ExecSQLParams(Sql, Params);
+end;
+
+function TScratchBirdIBDatabase.ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+begin
+  Result := FClient.ExecuteQueryParams(Sql, Params);
+end;
+
 function TScratchBirdIBDatabase.GetSchema(const CollectionName: string): TScratchBirdResultStream;
 begin
   Result := FClient.GetSchema(CollectionName);
@@ -177,7 +189,7 @@ begin
   end
   else
     SqlText := BuildSql(Ordered);
-  FResult := TScratchBirdQueryResult.Create(FDatabase.Client.ExecuteQueryParams(SqlText, Ordered));
+  FResult := TScratchBirdQueryResult.Create(FDatabase.ExecuteQueryParams(SqlText, Ordered));
   FResult.Next;
 end;
 
@@ -195,7 +207,7 @@ begin
   end
   else
     SqlText := BuildSql(Ordered);
-  FDatabase.Client.ExecSQLParams(SqlText, Ordered);
+  FDatabase.ExecSQLParams(SqlText, Ordered);
 end;
 
 procedure TScratchBirdIBQuery.Next;
