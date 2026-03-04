@@ -12,6 +12,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
     - Backward-compatible 8-byte payloads (UTC fallback when zone bytes are absent).
   - Text decode now routes through `_decode_text_typed_value(...)`, with typed parsing for `date`/`time`/`timetz`/`timestamp`/`timestamptz`/`uuid` OIDs.
   - `type_name(...)` now maps `OID_TIMETZ` to `"timetz"`.
+- Added JDBC-style `BYTEA` decode parity in `src/scratchbird/types.py`:
+  - Binary `OID_BYTEA` decode now detects and decodes escaped/hex textual payloads (`\\x`/`0x`/plain hex/octal escapes), while preserving raw binary payloads when text markers are absent.
+  - Text decode for `OID_BYTEA` now follows the same decode path.
+  - `bytea[]` typed-array conversion now materializes `bytes` elements via the same decoding rules.
 - Added JDBC-style typed array parity in `src/scratchbird/types.py`:
   - Non-vector Python list/tuple payloads now infer stable array OIDs (for bool/bytea/int/float/text/date/time/timetz/timestamp/timestamptz/numeric/uuid families) instead of always using OID `0`.
   - `_decode_binary_value(...)` now recognizes typed array OIDs and decodes them through array-literal parsing plus scalar-type conversion.
@@ -31,6 +35,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_encode_rowid_wrapper_uses_bytea_oid`
   - `test_encode_ref_wrapper_uses_text_oid`
   - `test_encode_sqlxml_wrapper_uses_xml_oid`
+  - `test_decode_bytea_binary_prefixed_hex_payload`
+  - `test_decode_bytea_binary_escaped_octal_payload`
+  - `test_decode_bytea_text_payload`
   - `test_encode_timetz_uses_binary_layout_and_zone_seconds_west`
   - `test_decode_timetz_binary_payload_roundtrip`
   - `test_decode_timetz_binary_payload_supports_legacy_8byte_form`
@@ -51,14 +58,15 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_numeric_array_to_decimal_values`
   - `test_decode_uuid_array_to_uuid_values`
   - `test_decode_timestamptz_array_to_aware_datetimes`
+  - `test_decode_bytea_array_to_bytes_values`
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`33 passed`)
+- Result: PASS (`37 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`178 passed, 27 skipped, 1 warning`)
+- Result: PASS (`182 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -66,6 +74,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Reason:
   - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for date/time/timestamp/timestamptz/uuid families.
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
+  - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.
   - Remaining gap: deeper live type coverage is still env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.

@@ -293,7 +293,16 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
     if type_oid == OID_JSONB:
         return Jsonb(_strip_length_prefix(data), None)
     if type_oid == OID_BYTEA:
-        return _strip_length_prefix(data)
+        raw = _strip_length_prefix(data)
+        if not raw:
+            return raw
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw
+        if _looks_like_encoded_bytea_text(text):
+            return _decode_bytea_text(text)
+        return raw
     if type_oid == OID_DATE:
         return _decode_date(data)
     if type_oid == OID_TIME:
@@ -368,6 +377,8 @@ def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
             return uuid.UUID(stripped)
         except ValueError:
             return text
+    if type_oid == OID_BYTEA:
+        return _decode_bytea_text(stripped)
     return text
 
 
@@ -378,6 +389,64 @@ def _normalize_temporal_text(value: str) -> str:
     if re.fullmatch(r".*[+-]\d{2}", normalized):
         normalized = normalized + ":00"
     return normalized
+
+
+def _looks_like_encoded_bytea_text(text: str) -> bool:
+    if text.startswith("\\x") or text.startswith("0x"):
+        return True
+    if "\\" in text:
+        return True
+    return len(text) > 0 and (len(text) % 2 == 0) and bool(re.fullmatch(r"(?i)[0-9a-f]+", text))
+
+
+def _decode_bytea_text(text: str) -> bytes:
+    if text is None:
+        return b""
+
+    hex_text = None
+    if text.startswith("\\x") or text.startswith("0x"):
+        hex_text = text[2:]
+    elif len(text) > 0 and (len(text) % 2 == 0) and re.fullmatch(r"(?i)[0-9a-f]+", text):
+        hex_text = text
+
+    if hex_text is not None:
+        try:
+            return bytes.fromhex(hex_text)
+        except ValueError:
+            pass
+
+    if "\\" in text:
+        out = bytearray()
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch != "\\":
+                out.append(ord(ch))
+                i += 1
+                continue
+            if i + 1 >= len(text):
+                out.append(ord("\\"))
+                break
+            n1 = text[i + 1]
+            if n1 == "\\":
+                out.append(ord("\\"))
+                i += 2
+                continue
+            if (
+                i + 3 < len(text)
+                and "0" <= n1 <= "7"
+                and "0" <= text[i + 2] <= "7"
+                and "0" <= text[i + 3] <= "7"
+            ):
+                value = ((ord(n1) - ord("0")) << 6) | ((ord(text[i + 2]) - ord("0")) << 3) | (ord(text[i + 3]) - ord("0"))
+                out.append(value & 0xFF)
+                i += 4
+                continue
+            out.append(ord(n1))
+            i += 2
+        return bytes(out)
+
+    return text.encode("utf-8")
 
 
 def _decode_unknown_binary(data: bytes) -> Any:
@@ -860,8 +929,10 @@ def _convert_array_scalar(value: Any, scalar_oid: int) -> Any:
         if isinstance(value, uuid.UUID):
             return value
         return uuid.UUID(str(value).strip())
-    if scalar_oid == OID_BYTEA and isinstance(value, (bytes, bytearray)):
-        return bytes(value)
+    if scalar_oid == OID_BYTEA:
+        if isinstance(value, (bytes, bytearray)):
+            return bytes(value)
+        return _decode_bytea_text(str(value))
     return str(value)
 
 

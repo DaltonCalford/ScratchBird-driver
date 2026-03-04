@@ -20,6 +20,7 @@ from scratchbird.types import (
     FORMAT_TEXT,
     OID_BOOL_ARRAY,
     OID_BYTEA,
+    OID_BYTEA_ARRAY,
     OID_DATE_ARRAY,
     OID_DATE,
     OID_INT4_ARRAY,
@@ -84,6 +85,22 @@ def test_encode_rowid_wrapper_uses_bytea_oid():
     param, oid = encode_param(RowId(raw=payload))
     assert oid == OID_BYTEA
     assert decode_value(oid, param.data, FORMAT_BINARY) == payload
+
+
+def test_decode_bytea_binary_prefixed_hex_payload():
+    payload = b"\\x616263"
+    raw = len(payload).to_bytes(4, byteorder="little") + payload
+    assert decode_value(OID_BYTEA, raw, FORMAT_BINARY) == b"abc"
+
+
+def test_decode_bytea_binary_escaped_octal_payload():
+    payload = b"\\141\\142\\\\c"
+    raw = len(payload).to_bytes(4, byteorder="little") + payload
+    assert decode_value(OID_BYTEA, raw, FORMAT_BINARY) == b"ab\\c"
+
+
+def test_decode_bytea_text_payload():
+    assert decode_value(OID_BYTEA, b"\\x616263", FORMAT_TEXT) == b"abc"
 
 
 def test_encode_ref_wrapper_uses_text_oid():
@@ -253,6 +270,12 @@ def test_decode_timestamptz_array_to_aware_datetimes():
         dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone(dt.timedelta(hours=2))),
         dt.datetime(2026, 3, 2, 1, 2, 3, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
     ]
+
+
+def test_decode_bytea_array_to_bytes_values():
+    literal = b'{"\\\\x6162","\\\\x63"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_BYTEA_ARRAY, raw, FORMAT_BINARY) == [b"ab", b"c"]
 
 
 def test_encode_decode_range_roundtrip():
