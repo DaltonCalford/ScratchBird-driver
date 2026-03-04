@@ -74,6 +74,26 @@ type
     Bytecode: TBytes;
   end;
 
+  TScratchBirdBatchResult = record
+    RowsAffected: Int64;
+    CommandTag: string;
+    LastInsertId: UInt64;
+    HasLastInsertId: Boolean;
+  end;
+
+  TScratchBirdBatchResults = TArray<TScratchBirdBatchResult>;
+
+  TScratchBirdRowset = record
+    Columns: TArray<TColumnInfo>;
+    Rows: TArray<TArray<Variant>>;
+    RowsAffected: Int64;
+    CommandTag: string;
+    LastInsertId: UInt64;
+    HasLastInsertId: Boolean;
+  end;
+
+  TScratchBirdRowsets = TArray<TScratchBirdRowset>;
+
   TScratchBirdClient = class
   private
     FConfig: TScratchBirdConfig;
@@ -126,7 +146,7 @@ type
     procedure EndOperation(Span: TSpanContext; Success: Boolean);
   public
     constructor Create; overload;
-    constructor CreateWithTransport(const Transport: IScratchBirdTransport); overload;
+    constructor CreateWithTransport(const Transport: IScratchBirdTransport; StartConnected: Boolean = False); overload;
     destructor Destroy; override;
     procedure Connect(const Dsn: string);
     procedure Disconnect;
@@ -152,6 +172,8 @@ type
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput);
     function ExecuteQuery(const Sql: string): TScratchBirdResultStream;
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
+    function ExecuteBatch(const Statements: array of string): TScratchBirdBatchResults;
+    function QueryMulti(const Statements: array of string): TScratchBirdRowsets;
     function QueryMetadata(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     function QueryMetadataRows(const CollectionName: string = 'tables'): TMetadataRows; overload;
@@ -400,10 +422,12 @@ begin
   InitializeClient(Transport);
 end;
 
-constructor TScratchBirdClient.CreateWithTransport(const Transport: IScratchBirdTransport);
+constructor TScratchBirdClient.CreateWithTransport(const Transport: IScratchBirdTransport; StartConnected: Boolean);
 begin
   inherited Create;
   InitializeClient(Transport);
+  if StartConnected then
+    FConnected := True;
 end;
 
 destructor TScratchBirdClient.Destroy;
@@ -744,6 +768,61 @@ begin
     begin
       EndOperation(Span, False);
       raise;
+    end;
+  end;
+end;
+
+function TScratchBirdClient.ExecuteBatch(const Statements: array of string): TScratchBirdBatchResults;
+var
+  I: Integer;
+  Stream: TScratchBirdResultStream;
+begin
+  SetLength(Result, Length(Statements));
+  for I := 0 to High(Statements) do
+  begin
+    Stream := ExecuteQuery(Statements[I]);
+    try
+      while Stream.ReadRow <> nil do
+      begin
+      end;
+      Result[I].RowsAffected := Stream.RowsAffected;
+      Result[I].CommandTag := Stream.CommandTag;
+      Result[I].LastInsertId := Stream.LastInsertId;
+      Result[I].HasLastInsertId := Stream.HasLastInsertId;
+    finally
+      Stream.Free;
+    end;
+  end;
+end;
+
+function TScratchBirdClient.QueryMulti(const Statements: array of string): TScratchBirdRowsets;
+var
+  I, RowIndex: Integer;
+  Stream: TScratchBirdResultStream;
+  Row: TArray<Variant>;
+begin
+  SetLength(Result, Length(Statements));
+  for I := 0 to High(Statements) do
+  begin
+    Stream := ExecuteQuery(Statements[I]);
+    try
+      SetLength(Result[I].Rows, 0);
+      while True do
+      begin
+        Row := Stream.ReadRow;
+        if Row = nil then
+          Break;
+        RowIndex := Length(Result[I].Rows);
+        SetLength(Result[I].Rows, RowIndex + 1);
+        Result[I].Rows[RowIndex] := Row;
+      end;
+      Result[I].Columns := Copy(Stream.Columns);
+      Result[I].RowsAffected := Stream.RowsAffected;
+      Result[I].CommandTag := Stream.CommandTag;
+      Result[I].LastInsertId := Stream.LastInsertId;
+      Result[I].HasLastInsertId := Stream.HasLastInsertId;
+    finally
+      Stream.Free;
     end;
   end;
 end;

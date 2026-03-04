@@ -2,7 +2,7 @@
 
 Date: 2026-03-04  
 Lane: `tracks/alpha/drivers/pascal`  
-Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `Prepare` lifecycle and stream-control/backpressure behavior).
+Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `Prepare` lifecycle, stream-control/backpressure behavior, and first-class batch + multi-result API coverage).
 
 ## Changes Implemented
 
@@ -41,6 +41,46 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
      - command completion metadata (`CommandTag`, `RowsAffected`) through the resume path.
      - generated-key metadata capture (`LastInsertId`, `HasLastInsertId`) from `MSG_COMMAND_COMPLETE` payload `LastId`.
 
+4. First-class batch execution API with deterministic coverage
+   - Files:
+     - `src/ScratchBird.Client.pas`
+     - `tests/BatchExecutionTests.pas`
+   - Added:
+     - `TScratchBirdBatchResult` / `TScratchBirdBatchResults` summary model.
+     - `TScratchBirdClient.ExecuteBatch(const Statements: array of string): TScratchBirdBatchResults`.
+   - Behavior:
+     - executes each statement through lane query execution path and returns per-statement summaries:
+       - `RowsAffected`
+       - `CommandTag`
+       - `LastInsertId`
+       - `HasLastInsertId`
+     - preserves existing SQL normalization/blank-SQL guard behavior.
+   - Deterministic tests validate:
+     - per-statement summary materialization,
+     - generated-key propagation into batch results,
+     - emitted wire query payloads for each batch entry.
+
+5. First-class multi-result traversal API with deterministic coverage
+   - Files:
+     - `src/ScratchBird.Client.pas`
+     - `tests/QueryMultiTests.pas`
+   - Added:
+     - `TScratchBirdRowset` / `TScratchBirdRowsets` result model.
+     - `TScratchBirdClient.QueryMulti(const Statements: array of string): TScratchBirdRowsets`.
+   - Behavior:
+     - executes each statement and materializes per-statement rowset payload:
+       - `Columns`
+       - `Rows`
+       - `RowsAffected`
+       - `CommandTag`
+       - `LastInsertId`
+       - `HasLastInsertId`
+     - preserves existing SQL normalization/blank-SQL guard behavior.
+   - Deterministic tests validate:
+     - row/column materialization for query result sets,
+     - command metadata and generated-key propagation for DML result sets,
+     - emitted wire query payloads per statement.
+
 ## Targeted Tests Run
 
 1. Adapter lifecycle suite
@@ -61,6 +101,16 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
    - `/tmp/sb_pascal_exec_stream_bin/StreamControlBackpressureTests`
    - Result: PASS (`StreamControlBackpressureTests: OK`)
 
+4. Batch execution suite
+   - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_batch_build -FE/tmp/sb_pascal_batch_bin ./tracks/alpha/drivers/pascal/tests/BatchExecutionTests.pas`
+   - `/tmp/sb_pascal_batch_bin/BatchExecutionTests`
+   - Result: PASS (`BatchExecutionTests: OK`)
+
+5. Multi-result suite
+   - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_multi_build -FE/tmp/sb_pascal_multi_bin ./tracks/alpha/drivers/pascal/tests/QueryMultiTests.pas`
+   - `/tmp/sb_pascal_multi_bin/QueryMultiTests`
+   - Result: PASS (`QueryMultiTests: OK`)
+
 ## EXEC Status Recommendation
 
 - Recommendation: keep `PARTIAL`
@@ -68,8 +118,10 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
   - adapter prepare lifecycle behavior now has explicit deterministic lane-local assertions.
   - stream-control/backpressure wire behavior now has deterministic lane-local assertions.
   - generated-key retrieval now has first-class result-stream exposure with deterministic tests.
-  - remaining EXEC gap is first-class batch/multi-result API coverage.
+  - first-class batch execution now has deterministic lane-local API coverage.
+  - first-class multi-result traversal now has deterministic lane-local API coverage.
+  - status remains partial pending deeper live integration validation for new advanced execution APIs.
 
 ## Remaining Gaps
 
-1. Add first-class API coverage for batch execution and multi-result traversal.
+1. Add live integration assertions for batch and multi-result execution APIs against a running ScratchBird endpoint.
