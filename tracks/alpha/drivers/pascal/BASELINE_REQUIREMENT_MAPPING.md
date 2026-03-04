@@ -122,24 +122,23 @@
 - Current status: Partial
 - Lane-local source anchors:
   - `src/ScratchBird.Types.pas:53`, `src/ScratchBird.Types.pas:57`, `src/ScratchBird.Types.pas:66`
-  - `src/ScratchBird.Types.pas:530`, `src/ScratchBird.Types.pas:539` (`TIMETZ` encode helpers including zone-offset payload handling)
-  - `src/ScratchBird.Types.pas:759`, `src/ScratchBird.Types.pas:930` (`EncodeParam` scalar/array type routing including `TIMETZ` variant-array encoding)
-  - `src/ScratchBird.Types.pas:243`, `src/ScratchBird.Types.pas:970`, `src/ScratchBird.Types.pas:1027`, `src/ScratchBird.Types.pas:1063`, `src/ScratchBird.Types.pas:1148` (payload-length guardrails and malformed range/interval decode handling via `HasBytes` + guarded per-OID dispatch)
-  - `src/ScratchBird.Types.pas:1000`, `src/ScratchBird.Types.pas:1148` (`TIMETZ` decode and guarded per-OID decode dispatch)
+  - `src/ScratchBird.Types.pas:550`, `src/ScratchBird.Types.pas:559` (`TIMETZ` encode helpers including zone-offset payload handling)
+  - `src/ScratchBird.Types.pas:814`, `src/ScratchBird.Types.pas:845`, `src/ScratchBird.Types.pas:1254` (geometry wrapper OID-preserving encode/decode routing across supported geometry OIDs)
+  - `src/ScratchBird.Types.pas:247`, `src/ScratchBird.Types.pas:992`, `src/ScratchBird.Types.pas:1049`, `src/ScratchBird.Types.pas:1085`, `src/ScratchBird.Types.pas:1170` (payload-length guardrails and malformed range/interval decode handling via `HasBytes` + guarded per-OID dispatch)
+  - `src/ScratchBird.Types.pas:1022`, `src/ScratchBird.Types.pas:1170` (`TIMETZ` decode and guarded per-OID decode dispatch)
   - `src/ScratchBird.Client.pas:274`
 - Lane-local test anchors:
   - `tests/TypesCodecTests.pas:166`, `tests/TypesCodecTests.pas:441` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
   - `tests/TypesCodecTests.pas:272`, `tests/TypesCodecTests.pas:285` (`BYTEA` variant-array decode semantics and unknown fixed-width fallback decode behavior including 1/2/4/8/16-byte widths)
   - `tests/TypesCodecTests.pas:309`, `tests/TypesCodecTests.pas:335` (null/limit plus malformed/truncated payload-shape coverage for empty payloads, short `TIMETZ`, empty vectors, empty/infinite ranges, and truncated scalar/temporal/range frames)
   - `tests/TypesCodecTests.pas:364`, `tests/TypesCodecTests.pas:405` (scalar, text-family, temporal, and interval per-OID decode coverage)
-  - `tests/TypesCodecTests.pas:487` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
-  - `tests/TypesCodecTests.pas:583` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
-  - `tests/TypesCodecTests.pas:604`, `tests/TypesCodecTests.pas:622`, `tests/TypesCodecTests.pas:638` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
+  - `tests/TypesCodecTests.pas:487` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families, including custom geometry OID encode path)
+  - `tests/TypesCodecTests.pas:597` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs, including OID preservation on decoded wrappers)
+  - `tests/TypesCodecTests.pas:620`, `tests/TypesCodecTests.pas:638`, `tests/TypesCodecTests.pas:654` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
   - `tests/IntegrationTest.pas:377`, `tests/IntegrationTest.pas:451` (env-gated live `type_coverage` fixture execution path)
 - Gaps/next actions:
   - Extend deterministic codec coverage to additional corner-case payload permutations across composite/vector/range families to approach exhaustive wire-type fidelity.
   - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:436-440`).
-  - Object geometry encode path uses `OID_POINT` (`src/ScratchBird.Types.pas:793`, `src/ScratchBird.Types.pas:821`); broaden this if other geometry OIDs are required.
 
 ## ERR (JDBCBL: ERR)
 - Current status: Implemented

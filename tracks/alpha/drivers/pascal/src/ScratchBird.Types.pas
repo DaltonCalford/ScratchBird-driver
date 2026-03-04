@@ -90,6 +90,7 @@ type
     function GetWkb: TBytes;
     function GetSrid: Integer;
     function GetWkt: string;
+    function GetGeometryOid: Cardinal;
   end;
 
   IScratchBirdRange = interface
@@ -129,14 +130,17 @@ type
     FWkb: TBytes;
     FSrid: Integer;
     FWkt: string;
+    FGeometryOid: Cardinal;
   public
-    constructor Create(const AWkb: TBytes; ASrid: Integer = 0; const AWkt: string = '');
+    constructor Create(const AWkb: TBytes; ASrid: Integer = 0; const AWkt: string = ''; AGeometryOid: Cardinal = OID_POINT);
     function GetWkb: TBytes;
     function GetSrid: Integer;
     function GetWkt: string;
+    function GetGeometryOid: Cardinal;
     property Wkb: TBytes read FWkb;
     property Srid: Integer read FSrid;
     property Wkt: string read FWkt;
+    property GeometryOid: Cardinal read FGeometryOid;
   end;
 
   TScratchBirdRange = class(TInterfacedObject, IScratchBirdRange)
@@ -245,6 +249,13 @@ begin
   Result := (Offset >= 0) and (Count >= 0) and
     (Offset <= System.Length(Data)) and
     (Count <= (System.Length(Data) - Offset));
+end;
+
+function IsGeometryOid(Value: Cardinal): Boolean;
+begin
+  Result := (Value = OID_POINT) or (Value = OID_LSEG) or (Value = OID_PATH) or
+    (Value = OID_BOX) or (Value = OID_POLYGON) or (Value = OID_LINE) or
+    (Value = OID_CIRCLE);
 end;
 
 function ReadUInt32LE(const Data: TBytes; Offset: Integer): Cardinal;
@@ -363,12 +374,16 @@ begin
   Result := FText;
 end;
 
-constructor TScratchBirdGeometry.Create(const AWkb: TBytes; ASrid: Integer; const AWkt: string);
+constructor TScratchBirdGeometry.Create(const AWkb: TBytes; ASrid: Integer; const AWkt: string; AGeometryOid: Cardinal);
 begin
   inherited Create;
   FWkb := AWkb;
   FSrid := ASrid;
   FWkt := AWkt;
+  if IsGeometryOid(AGeometryOid) then
+    FGeometryOid := AGeometryOid
+  else
+    FGeometryOid := OID_POINT;
 end;
 
 function TScratchBirdGeometry.GetWkb: TBytes;
@@ -384,6 +399,11 @@ end;
 function TScratchBirdGeometry.GetWkt: string;
 begin
   Result := FWkt;
+end;
+
+function TScratchBirdGeometry.GetGeometryOid: Cardinal;
+begin
+  Result := FGeometryOid;
 end;
 
 function TScratchBirdRange.GetLower: Variant;
@@ -797,7 +817,7 @@ begin
     if System.Length(Geometry.Wkb) = 0 then
       raise Exception.Create('geometry requires WKB payload');
     Param.Data := EncodeLengthPrefixed(Geometry.Wkb);
-    Oid := OID_POINT;
+    Oid := Geometry.GeometryOid;
     Exit;
   end;
 
@@ -825,7 +845,9 @@ begin
   if (VarType(Value) = varUnknown) and Supports(IInterface(Value), IScratchBirdGeometry, GeometryIntf) then
   begin
     Param.Data := EncodeLengthPrefixed(GeometryIntf.GetWkb);
-    Oid := OID_POINT;
+    Oid := GeometryIntf.GetGeometryOid;
+    if not IsGeometryOid(Oid) then
+      Oid := OID_POINT;
     Exit;
   end;
 
@@ -1231,7 +1253,7 @@ begin
       Result := ParseVectorLiteral(TEncoding.UTF8.GetString(StripLengthPrefixed(Data)));
     OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE:
       begin
-        Geometry := TScratchBirdGeometry.Create(StripLengthPrefixed(Data));
+        Geometry := TScratchBirdGeometry.Create(StripLengthPrefixed(Data), 0, '', TypeOid);
         Result := IInterface(Geometry);
       end;
     OID_RECORD:

@@ -44,6 +44,13 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
    - Added interval payload-length validation in `DecodeInterval(...)`.
    - Added range frame/bound guardrails in `DecodeRange(...)`/`DecodeRangeBound(...)` so truncated bounds return `Null` instead of decoding partial payloads.
 
+5. Geometry wrapper OID preservation for encode/decode
+   - Files: `src/ScratchBird.Types.pas`, `tests/TypesCodecTests.pas`
+   - Extended `IScratchBirdGeometry`/`TScratchBirdGeometry` with geometry OID exposure.
+   - `EncodeParam(...)` now honors wrapper-provided geometry OID (defaults to `OID_POINT` when unspecified/unsupported).
+   - Geometry decode path now preserves the incoming OID on returned geometry wrappers.
+   - Added deterministic assertions for custom geometry OID encode and geometry-family decode OID preservation.
+
 ## Targeted Tests Run
 
 1. Type codec suite

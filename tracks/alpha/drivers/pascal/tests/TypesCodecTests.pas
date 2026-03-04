@@ -522,6 +522,20 @@ begin
   AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdGeometry, GeometryIntf),
     'geometry object decode should return wrapper');
   AssertEqualBytes(TBytes.Create($01, $02, $03, $04), GeometryIntf.GetWkb, 'geometry object WKB');
+  AssertEqualCardinal(OID_POINT, GeometryIntf.GetGeometryOid, 'geometry object default oid');
+
+  GeometryObj := TScratchBirdGeometry.Create(TBytes.Create($05, $06, $07, $08), 0, '', OID_LINE);
+  try
+    AssertTrue(EncodeParam(Null, GeometryObj, Param, Oid), 'geometry object custom oid encode should succeed');
+  finally
+    GeometryObj.Free;
+  end;
+  AssertEqualCardinal(OID_LINE, Oid, 'geometry object custom oid encode oid');
+  Decoded := DecodeValue(OID_LINE, Param.Data, FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdGeometry, GeometryIntf),
+    'geometry object custom oid decode should return wrapper');
+  AssertEqualBytes(TBytes.Create($05, $06, $07, $08), GeometryIntf.GetWkb, 'geometry object custom oid WKB');
+  AssertEqualCardinal(OID_LINE, GeometryIntf.GetGeometryOid, 'geometry object custom oid');
 
   RangeObj := TScratchBirdRange.Create;
   try
@@ -598,6 +612,8 @@ begin
     AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdGeometry, GeometryIntf),
       'geometry family decode should return wrapper for oid ' + IntToStr(GEOM_OIDS[I]));
     AssertEqualBytes(Wkb, GeometryIntf.GetWkb, 'geometry family WKB for oid ' + IntToStr(GEOM_OIDS[I]));
+    AssertEqualCardinal(GEOM_OIDS[I], GeometryIntf.GetGeometryOid,
+      'geometry family oid preservation for oid ' + IntToStr(GEOM_OIDS[I]));
   end;
 end;
 
