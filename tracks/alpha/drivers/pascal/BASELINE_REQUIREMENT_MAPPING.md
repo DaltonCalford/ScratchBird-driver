@@ -121,9 +121,11 @@
   - `src/ScratchBird.Protocol.pas:821`
   - `src/ScratchBird.Client.pas:997`
 - Lane-local test anchors:
-  - No dedicated SQLSTATE-mapping unit tests in `tests/`.
+  - `tests/ErrorMappingTests.pas:40` (`MapSqlState` category assertions preserve SQLSTATE/detail/hint metadata)
+  - `tests/ErrorMappingTests.pas:55` (category mapping matrix: warning/no-data/connection/not-supported/data/integrity/auth/txn/syntax/resource/limit/operator/system/internal)
+  - `tests/ErrorMappingTests.pas:73` (fallback behavior for unknown SQLSTATE class)
+  - `tests/ErrorMappingTests.pas:78` (fallback behavior for invalid SQLSTATE length)
 - Gaps/next actions:
-  - Add targeted tests for `MapSqlState` category mapping in `src/ScratchBird.Errors.pas`.
   - `BuildQueryError` parses severity from wire payload but categorization is SQLSTATE-driven (`src/ScratchBird.Client.pas:997`).
 
 ## RES (JDBCBL: RES)
