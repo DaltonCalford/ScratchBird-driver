@@ -263,6 +263,35 @@ begin
   AssertEqualInt(42, VarAsType(IntText, varInteger), 'unknown binary trailing-null int decode');
 end;
 
+procedure TestDecodeByteaPayloadReturnsVariantByteArray;
+var
+  Decoded: Variant;
+begin
+  Decoded := DecodeValue(OID_BYTEA, WithLengthPrefix(TBytes.Create($AA, $BB, $CC)), FORMAT_BINARY);
+  AssertTrue(VarIsArray(Decoded), 'bytea decode should return variant array');
+  AssertEqualInt(0, VarArrayLowBound(Decoded, 1), 'bytea decode low bound');
+  AssertEqualInt(2, VarArrayHighBound(Decoded, 1), 'bytea decode high bound');
+  AssertEqualInt($AA, VarAsType(Decoded[0], varInteger), 'bytea decode byte 0');
+  AssertEqualInt($BB, VarAsType(Decoded[1], varInteger), 'bytea decode byte 1');
+  AssertEqualInt($CC, VarAsType(Decoded[2], varInteger), 'bytea decode byte 2');
+end;
+
+procedure TestDecodeUnknownBinaryFixedWidthFallbacks;
+var
+  ByteValue: Variant;
+  IntValue: Variant;
+  UuidValue: Variant;
+begin
+  ByteValue := DecodeValue(0, TBytes.Create($FF), FORMAT_BINARY);
+  AssertEqualInt(255, VarAsType(ByteValue, varInteger), 'unknown binary 1-byte fallback');
+
+  IntValue := DecodeValue(0, WriteInt32LE(123456), FORMAT_BINARY);
+  AssertEqualInt(123456, VarAsType(IntValue, varInteger), 'unknown binary 4-byte fallback');
+
+  UuidValue := DecodeValue(0, HexToBytes('00112233445566778899aabbccddeeff'), FORMAT_BINARY);
+  AssertEqualString('00112233-4455-6677-8899-aabbccddeeff', VarToStr(UuidValue), 'unknown binary 16-byte fallback');
+end;
+
 procedure TestDecodeScalarAndTextOidMatrix;
 const
   TEXT_OIDS: array[0..11] of Cardinal = (
@@ -569,6 +598,8 @@ begin
     TestDecodeJsonbBinaryReturnsWrapper;
     TestDecodeCompositeRoundTripReturnsFields;
     TestDecodeUnknownUsesTextHeuristics;
+    TestDecodeByteaPayloadReturnsVariantByteArray;
+    TestDecodeUnknownBinaryFixedWidthFallbacks;
     TestDecodeScalarAndTextOidMatrix;
     TestDecodeTemporalAndIntervalOidMatrix;
     TestEncodePrimitiveOidMatrix;

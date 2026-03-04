@@ -118,14 +118,15 @@
   - `src/ScratchBird.Types.pas:991`, `src/ScratchBird.Types.pas:1097` (`TIMETZ` decode and per-OID decode dispatch)
   - `src/ScratchBird.Client.pas:274`
 - Lane-local test anchors:
-  - `tests/TypesCodecTests.pas:160`, `tests/TypesCodecTests.pas:343` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
-  - `tests/TypesCodecTests.pas:266`, `tests/TypesCodecTests.pas:307` (scalar, text-family, temporal, and interval per-OID decode coverage)
-  - `tests/TypesCodecTests.pas:389` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
-  - `tests/TypesCodecTests.pas:485` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
-  - `tests/TypesCodecTests.pas:506`, `tests/TypesCodecTests.pas:524`, `tests/TypesCodecTests.pas:540` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
+  - `tests/TypesCodecTests.pas:160`, `tests/TypesCodecTests.pas:372` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
+  - `tests/TypesCodecTests.pas:266`, `tests/TypesCodecTests.pas:279` (`BYTEA` variant-array decode semantics and unknown fixed-width fallback decode behavior)
+  - `tests/TypesCodecTests.pas:295`, `tests/TypesCodecTests.pas:336` (scalar, text-family, temporal, and interval per-OID decode coverage)
+  - `tests/TypesCodecTests.pas:418` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
+  - `tests/TypesCodecTests.pas:514` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
+  - `tests/TypesCodecTests.pas:535`, `tests/TypesCodecTests.pas:553`, `tests/TypesCodecTests.pas:569` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
   - `tests/IntegrationTest.pas:45`
 - Gaps/next actions:
-  - Extend deterministic codec coverage to remaining edge cases and payload variants (for example bytea-focused assertions and additional null/limit payload shapes) to approach exhaustive wire-type fidelity.
+  - Extend deterministic codec coverage to remaining null/limit payload shapes and additional corner-case payload permutations to approach exhaustive wire-type fidelity.
   - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:24-28`).
   - Object geometry encode path uses `OID_POINT` (`src/ScratchBird.Types.pas:793`, `src/ScratchBird.Types.pas:821`); broaden this if other geometry OIDs are required.
 

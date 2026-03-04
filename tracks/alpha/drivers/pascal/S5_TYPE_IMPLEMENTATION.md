@@ -29,6 +29,8 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
      - scalar decode matrix (`INT2/INT4/INT8/FLOAT4/FLOAT8/NUMERIC/MONEY`)
      - text-family decode matrix (`TEXT/VARCHAR/CHAR/BPCHAR/JSON/XML/TSVECTOR/TSQUERY/INET/CIDR/MACADDR/MACADDR8`)
      - temporal/interval decode matrix (`DATE/TIME/TIMESTAMP/TIMESTAMPTZ/INTERVAL`)
+     - `BYTEA` decode shape assertions (variant byte-array semantics)
+     - unknown fixed-width binary fallback matrix (1-byte integer, 4-byte integer, 16-byte UUID)
      - primitive encode matrix (int/float/text/date-variant + mixed array fallback behavior)
      - object wrapper encode/decode matrix (JSONB, geometry object path, range object path including int/timestamp ranges)
      - geometry-family decode matrix (`POINT/LSEG/PATH/BOX/POLYGON/LINE/CIRCLE`)
@@ -71,9 +73,10 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
 - Recommendation: keep `PARTIAL`
 - Rationale:
   - Deterministic `TIMETZ` handling remains implemented and now sits inside a broader scalar/temporal/text/range/geometry codec matrix.
+  - Deterministic `BYTEA` and unknown fixed-width binary fallback decode behavior is now explicitly asserted.
   - Remaining work is no longer the original `TIMETZ` gap; it is final edge-case matrix depth plus live integration breadth.
 
 ## Remaining Gaps
 
-1. Continue extending deterministic coverage toward exhaustive edge payload variants (for example additional bytea/null/limit shape assertions).
+1. Continue extending deterministic coverage toward exhaustive edge payload variants (null/limit permutations and broader corner-case payload permutations).
 2. Add non-env-gated live type integration assertions (current integration fixture remains env-gated).
