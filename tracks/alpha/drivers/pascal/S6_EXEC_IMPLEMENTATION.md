@@ -39,6 +39,7 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
      - `StreamControl` message emission and payload encoding (`MSG_STREAM_CONTROL`, control/window/timeout).
      - `TScratchBirdResultStream.ReadRow` portal-suspended path emitting `MSG_EXECUTE` resume (`BuildExecutePayload('', CurrentMaxRows)`).
      - command completion metadata (`CommandTag`, `RowsAffected`) through the resume path.
+     - generated-key metadata capture (`LastInsertId`, `HasLastInsertId`) from `MSG_COMMAND_COMPLETE` payload `LastId`.
 
 ## Targeted Tests Run
 
@@ -66,8 +67,9 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
 - Rationale:
   - adapter prepare lifecycle behavior now has explicit deterministic lane-local assertions.
   - stream-control/backpressure wire behavior now has deterministic lane-local assertions.
-  - remaining EXEC gap is first-class batch/multi-result/generated-key API coverage.
+  - generated-key retrieval now has first-class result-stream exposure with deterministic tests.
+  - remaining EXEC gap is first-class batch/multi-result API coverage.
 
 ## Remaining Gaps
 
-1. Add first-class API coverage for batch execution, multi-result traversal, and generated-key retrieval.
+1. Add first-class API coverage for batch execution and multi-result traversal.

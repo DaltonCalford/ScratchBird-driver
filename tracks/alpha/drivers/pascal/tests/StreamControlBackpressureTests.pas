@@ -59,6 +59,12 @@ begin
     Fail(MessageText + ': expected=' + IntToStr(Expected) + ' actual=' + IntToStr(Actual));
 end;
 
+procedure AssertEqualUInt64(Expected, Actual: UInt64; const MessageText: string);
+begin
+  if Expected <> Actual then
+    Fail(MessageText + ': expected=' + IntToStr(Int64(Expected)) + ' actual=' + IntToStr(Int64(Actual)));
+end;
+
 procedure AssertEqualString(const Expected, Actual, MessageText: string);
 begin
   if Expected <> Actual then
@@ -248,10 +254,40 @@ begin
   end;
 end;
 
+procedure TestResultStreamCapturesLastInsertId;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  Stream: TScratchBirdResultStream;
+  Row: TArray<Variant>;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport);
+  try
+    Transport.QueueInbound(EncodeMessage(MSG_COMMAND_COMPLETE, BuildCommandCompletePayload(0, 1, 4242, 'INSERT 0 1'), 0, 1, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
+
+    Stream := TScratchBirdResultStream.Create(Client);
+    try
+      Row := Stream.ReadRow;
+      AssertTrue(Row = nil, 'insert command stream should complete with no row');
+      AssertEqualInt64(1, Stream.RowsAffected, 'insert rows affected');
+      AssertEqualString('INSERT 0 1', Stream.CommandTag, 'insert command tag');
+      AssertTrue(Stream.HasLastInsertId, 'insert stream should expose last insert id');
+      AssertEqualUInt64(4242, Stream.LastInsertId, 'insert stream last insert id');
+    finally
+      Stream.Free;
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
 begin
   try
     TestStreamControlWritesEncodedWindowMessage;
     TestPortalSuspendedTriggersExecuteResume;
+    TestResultStreamCapturesLastInsertId;
     Writeln('StreamControlBackpressureTests: OK');
   except
     on E: Exception do

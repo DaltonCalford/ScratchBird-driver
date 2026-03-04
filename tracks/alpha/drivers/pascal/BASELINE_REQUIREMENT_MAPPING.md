@@ -44,8 +44,9 @@
 ## EXEC (JDBCBL: EXEC)
 - Current status: Partial
 - Lane-local source anchors:
-  - `src/ScratchBird.Client.pas:657`, `src/ScratchBird.Client.pas:642`, `src/ScratchBird.Client.pas:647`, `src/ScratchBird.Client.pas:680`, `src/ScratchBird.Client.pas:1243`, `src/ScratchBird.Client.pas:1262`
-  - `src/ScratchBird.Client.pas:344` (`MSG_PORTAL_SUSPENDED` resume path emits `MSG_EXECUTE` with current max rows)
+  - `src/ScratchBird.Client.pas:632`, `src/ScratchBird.Client.pas:665`, `src/ScratchBird.Client.pas:689`, `src/ScratchBird.Client.pas:694`, `src/ScratchBird.Client.pas:1542`, `src/ScratchBird.Client.pas:1557`
+  - `src/ScratchBird.Client.pas:352` (`MSG_PORTAL_SUSPENDED` resume path emits `MSG_EXECUTE` with current max rows)
+  - `src/ScratchBird.Client.pas:48`, `src/ScratchBird.Client.pas:346`, `src/ScratchBird.Client.pas:349` (`TScratchBirdResultStream` generated-key exposure via `LastInsertId`/`HasLastInsertId` from `MSG_COMMAND_COMPLETE`)
   - `src/ScratchBird.Client.pas:274`, `src/ScratchBird.Common.pas:111`
   - `src/ScratchBird.Sql.pas:50`, `src/ScratchBird.Sql.pas:114`, `src/ScratchBird.Sql.pas:151`, `src/ScratchBird.Sql.pas:157`
   - `src/ScratchBird.FireDAC.pas:35`, `src/ScratchBird.FireDAC.pas:149`, `src/ScratchBird.FireDAC.pas:178` (adapter query prepare + exec routed through overridable execution hooks)
@@ -53,8 +54,9 @@
   - `src/ScratchBird.Zeos.pas:34`, `src/ScratchBird.Zeos.pas:168`, `src/ScratchBird.Zeos.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
   - `src/ScratchBird.SQLdb.pas:34`, `src/ScratchBird.SQLdb.pas:168`, `src/ScratchBird.SQLdb.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
 - Lane-local test anchors:
-  - `tests/StreamControlBackpressureTests.pas:194` (client `StreamControl` emits `MSG_STREAM_CONTROL` with encoded window/timeout payload)
-  - `tests/StreamControlBackpressureTests.pas:215` (`MSG_PORTAL_SUSPENDED` read loop triggers `MSG_EXECUTE` resume/backpressure follow-up)
+  - `tests/StreamControlBackpressureTests.pas:200` (client `StreamControl` emits `MSG_STREAM_CONTROL` with encoded window/timeout payload)
+  - `tests/StreamControlBackpressureTests.pas:221` (`MSG_PORTAL_SUSPENDED` read loop triggers `MSG_EXECUTE` resume/backpressure follow-up)
+  - `tests/StreamControlBackpressureTests.pas:257` (result stream captures generated key metadata via `LastInsertId`/`HasLastInsertId`)
   - `tests/AdapterPrepareLifecycleTests.pas:146` (adapter prepare guardrails for missing connection/database assignment)
   - `tests/AdapterPrepareLifecycleTests.pas:218` (FireDAC prepare snapshot and normalized parameter ordering reuse on exec)
   - `tests/AdapterPrepareLifecycleTests.pas:247` (IBX prepare snapshot and normalized parameter ordering reuse on exec)
@@ -64,7 +66,7 @@
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
   - `tests/IntegrationTest.pas:33`, `tests/IntegrationTest.pas:40`, `tests/IntegrationTest.pas:53`, `tests/IntegrationTest.pas:54`
 - Gaps/next actions:
-  - Add dedicated API coverage for batch execution, multi-result traversal, and generated-key retrieval (currently not first-class in this lane).
+  - Add dedicated API coverage for batch execution and multi-result traversal (currently not first-class in this lane).
 
 ## META (JDBCBL: META)
 - Current status: Partial

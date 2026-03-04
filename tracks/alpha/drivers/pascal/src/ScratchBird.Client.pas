@@ -37,12 +37,16 @@ type
     FCommandTag: string;
     FDone: Boolean;
     FSeenRows: Int64;
+    FLastInsertId: UInt64;
+    FHasLastInsertId: Boolean;
   public
     constructor Create(Client: TObject);
     function ReadRow: TArray<Variant>;
     property Columns: TArray<TColumnInfo> read FColumns;
     property RowsAffected: Int64 read FRowsAffected;
     property CommandTag: string read FCommandTag;
+    property LastInsertId: UInt64 read FLastInsertId;
+    property HasLastInsertId: Boolean read FHasLastInsertId;
   end;
 
   TNotification = record
@@ -295,6 +299,8 @@ begin
   FCommandTag := '';
   FDone := False;
   FSeenRows := 0;
+  FLastInsertId := 0;
+  FHasLastInsertId := False;
 end;
 
 function TScratchBirdResultStream.ReadRow: TArray<Variant>;
@@ -340,6 +346,8 @@ begin
         ParseCommandComplete(Msg.Payload, CommandType, Rows, LastId, Tag);
         FCommandTag := Tag;
         FRowsAffected := Rows;
+        FLastInsertId := LastId;
+        FHasLastInsertId := LastId <> 0;
       end;
       MSG_PORTAL_SUSPENDED:
       begin
