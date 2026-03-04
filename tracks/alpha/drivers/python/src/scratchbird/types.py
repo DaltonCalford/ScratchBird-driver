@@ -175,7 +175,7 @@ def encode_param(value: Any) -> tuple[ParamValue, int]:
         return ParamValue(FORMAT_BINARY, _encode_time(value)), OID_TIME
     if isinstance(value, _dt.timedelta):
         micros = int(value.total_seconds() * 1_000_000)
-        data = struct.pack("<qii", micros, 0, 0)
+        data = struct.pack("<iiq", 0, 0, micros)
         return ParamValue(FORMAT_BINARY, data), OID_INTERVAL
     if isinstance(value, uuid.UUID):
         return ParamValue(FORMAT_BINARY, value.bytes), OID_UUID
@@ -341,10 +341,7 @@ def _encode_composite(value: Composite) -> tuple[bytes, int]:
             param, oid = encode_param(field.value)
             if field_oid == 0:
                 field_oid = oid
-            if param.is_null:
-                data = None
-            else:
-                data = param.data or b""
+            data = param.data
 
         if field_oid == 0:
             raise ValueError("composite field OID is required")

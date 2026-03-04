@@ -73,6 +73,9 @@ python/.mypy_cache/
 python/.tox/
 python/.coverage
 python/htmlcov/
+tracks/**/__pycache__/
+tracks/**/*.py[cod]
+tracks/**/.pytest_cache/
 
 # ===================
 # Node.js
