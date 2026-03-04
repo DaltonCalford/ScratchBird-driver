@@ -562,6 +562,52 @@ sb_decode_row <- function(columns, values) {
   row
 }
 
+sb_sqlstate_error_class <- function(sqlstate) {
+  if (!is.character(sqlstate) || length(sqlstate) != 1L || nchar(sqlstate) != 5L) {
+    return(NULL)
+  }
+
+  if (sqlstate == "01000") return("scratchbird_warning")
+  if (sqlstate == "02000") return("scratchbird_no_data")
+  if (sqlstate %in% c("08001", "08003", "08004", "08006", "08P01")) return("scratchbird_connection_error")
+  if (sqlstate == "0A000") return("scratchbird_not_supported")
+  if (sqlstate %in% c("22001", "22003", "22007", "22012", "22023", "22P02", "22P03")) return("scratchbird_data_error")
+  if (sqlstate %in% c("23000", "23502", "23503", "23505", "23514")) return("scratchbird_integrity_error")
+  if (sqlstate %in% c("28000", "28P01")) return("scratchbird_auth_error")
+  if (sqlstate %in% c("40001", "40P01")) return("scratchbird_transaction_error")
+  if (sqlstate %in% c("42501", "42601", "42703", "42704", "42710", "42883", "42P01", "42P07")) return("scratchbird_syntax_error")
+  if (sqlstate %in% c("53P00", "53100", "53200", "53300")) return("scratchbird_resource_error")
+  if (sqlstate == "54000") return("scratchbird_limit_error")
+  if (sqlstate %in% c("57014", "57P01", "57P03")) return("scratchbird_operator_intervention_error")
+  if (sqlstate == "58000") return("scratchbird_system_error")
+  if (sqlstate == "XX000") return("scratchbird_internal_error")
+
+  prefix <- substr(sqlstate, 1, 2)
+  if (prefix == "01") return("scratchbird_warning")
+  if (prefix == "02") return("scratchbird_no_data")
+  if (prefix == "08") return("scratchbird_connection_error")
+  if (prefix == "0A") return("scratchbird_not_supported")
+  if (prefix == "22") return("scratchbird_data_error")
+  if (prefix == "23") return("scratchbird_integrity_error")
+  if (prefix == "28") return("scratchbird_auth_error")
+  if (prefix == "40") return("scratchbird_transaction_error")
+  if (prefix == "42") return("scratchbird_syntax_error")
+  if (prefix == "53") return("scratchbird_resource_error")
+  if (prefix == "54") return("scratchbird_limit_error")
+  if (prefix == "57") return("scratchbird_operator_intervention_error")
+  if (prefix == "58") return("scratchbird_system_error")
+  if (prefix == "XX") return("scratchbird_internal_error")
+  NULL
+}
+
+sb_error_condition_classes <- function(sqlstate) {
+  classes <- c()
+  mapped <- sb_sqlstate_error_class(sqlstate)
+  if (!is.null(mapped)) classes <- c(classes, mapped)
+  if (nzchar(sqlstate)) classes <- c(classes, "scratchbird_sqlstate_error")
+  unique(c(classes, "scratchbird_error", "error", "condition"))
+}
+
 sb_raise_query_error <- function(payload) {
   parsed <- parse_error_message(payload)
   parts <- c()
@@ -570,7 +616,17 @@ sb_raise_query_error <- function(payload) {
   if (parsed$hint != "") parts <- c(parts, paste0("HINT: ", parsed$hint))
   message <- if (length(parts) == 0) "query failed" else paste(parts, collapse = "\n")
   if (parsed$sqlstate != "") message <- paste0("[", parsed$sqlstate, "] ", message)
-  stop(message)
+  stop(structure(
+    list(
+      message = message,
+      call = NULL,
+      sqlstate = parsed$sqlstate,
+      detail = parsed$detail,
+      hint = parsed$hint,
+      severity = parsed$severity
+    ),
+    class = sb_error_condition_classes(parsed$sqlstate)
+  ))
 }
 
 parse_uuid_bytes <- function(value) {

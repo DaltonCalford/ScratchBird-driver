@@ -124,18 +124,20 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
 
 ## ERR -> JDBCBL-ERR
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
-  - `R/protocol.R:588` (`parse_error_message`)
-  - `R/client.R:565` (`sb_raise_query_error`)
-  - `R/client.R:518` / `R/client.R:630` (error handling in query and drain loops)
-  - `R/client.R:653` (parameter-count mismatch guard)
+  - `R/protocol.R:590` (`parse_error_message`)
+  - `R/client.R:565` (`sb_sqlstate_error_class`)
+  - `R/client.R:615` (`sb_raise_query_error`)
+  - `R/client.R:518` / `R/client.R:680` (error handling in query/drain loops and describe flow)
+  - `R/client.R:711` (parameter-count mismatch guard)
 - Lane-local test anchors:
+  - `tests/testthat/test_error_parity.R:25` (exact + class-prefix SQLSTATE mapping coverage)
+  - `tests/testthat/test_error_parity.R:34` (typed condition class + SQLSTATE/detail/hint propagation)
+  - `tests/testthat/test_error_parity.R:59` (unknown SQLSTATE class fallback)
+  - `tests/testthat/test_error_parity.R:74` (empty-SQLSTATE generic fallback)
   - `tests/testthat/test_integration.R:42` (cancel path expects error)
   - `tests/testthat/test_config.R:40` (config validation error path)
-- Gaps / next actions:
-  - Add lane tests that assert SQLSTATE-tagged server error propagation.
-  - Introduce structured condition classes for callers that need typed error handling.
 
 ## RES -> JDBCBL-RES
 
