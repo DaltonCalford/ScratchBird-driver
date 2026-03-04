@@ -79,6 +79,7 @@ Integration tests use:
 
 - `SCRATCHBIRD_TEST_DSN`
 - `SCRATCHBIRD_TEST_MANAGER_DSN`
+- `SCRATCHBIRD_TEST_BAD_AUTH_DSN` (optional: DSN with intentionally invalid credentials for auth-failure mapping test)
 
 Run all tests:
 

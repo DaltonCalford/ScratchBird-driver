@@ -112,9 +112,9 @@
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:13-53` protocol header decode guardrails (`invalidHeader`, `unsupportedVersion`, `payloadTooLarge`).
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-154` wire-error payload parsing, typed SQLSTATE mapping, structured SQLSTATE/detail/hint propagation, and malformed-payload fallback assertions.
-  - `Tests/ScratchBirdTests/IntegrationTests.swift:78-99` env-gated live SQLSTATE propagation for programming/data execution failures.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:78-132` env-gated live SQLSTATE propagation for execution failures plus optional bad-auth connect mapping (`SCRATCHBIRD_TEST_BAD_AUTH_DSN`).
 - Gaps/next actions:
-  - Add live auth/connect `.error` propagation assertions (invalid credentials, manager auth errors, and read-loop teardown paths).
+  - Expand live auth/connect `.error` propagation to include manager auth failures and explicit read-loop teardown paths.
 
 ## RES (`JDBCBL-RES`)
 

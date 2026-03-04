@@ -128,6 +128,16 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationAuthFailureMapsTypedAuthorizationException() async throws {
+        let config = try badAuthIntegrationConfig()
+        do {
+            _ = try await ScratchBirdConnection.connect(config)
+            XCTFail("Expected authentication failure")
+        } catch let error as ScratchBirdAuthorizationException {
+            XCTAssertEqual(error.sqlState?.prefix(2), "28")
+        }
+    }
+
     private func integrationConfig() throws -> ScratchBirdConfig {
         let env = ProcessInfo.processInfo.environment
         let dsn = env["SCRATCHBIRD_TEST_DSN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -145,6 +155,13 @@ final class IntegrationTests: XCTestCase {
             "SCRATCHBIRD_TEST_MANAGER_DSN must include front_door_mode=manager_proxy"
         )
         return config
+    }
+
+    private func badAuthIntegrationConfig() throws -> ScratchBirdConfig {
+        let env = ProcessInfo.processInfo.environment
+        let dsn = env["SCRATCHBIRD_TEST_BAD_AUTH_DSN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        try XCTSkipIf(dsn.isEmpty, "SCRATCHBIRD_TEST_BAD_AUTH_DSN not set")
+        return ScratchBirdConfig(dsn: dsn)
     }
 
     private func withConnection(
