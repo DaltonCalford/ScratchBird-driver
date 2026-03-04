@@ -39,6 +39,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - validates `BeginTransactionEx` option-matrix payload encoding for:
     - full option path (`isolation/access/deferrable/wait/timeout/autocommit/conflict`),
     - minimal option path (`isolation` only).
+  - validates deterministic conflict-path behavior for `BeginTransactionEx` via injected `MSG_ERROR` (`40001`) with retry + no-active-txn guard assertions after failed begin.
 - Expanded env-gated live integration coverage in:
   - `tests/IntegrationTest.pas`
   - validates live begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle execution.
@@ -90,9 +91,10 @@ Rationale:
 - Deterministic lane-local TXN guardrails now exist and are covered by dedicated tests (disconnected begin, no-active-txn commit/rollback behavior, savepoint active-txn and name validation, txn payload encoding checks).
 - Deterministic transaction state transitions are now asserted end-to-end against wire `READY` transaction ids for begin/savepoint/release/rollback-to/commit and begin/rollback paths.
 - Deterministic `BeginTransactionEx` option-matrix payload encoding is now asserted directly against emitted wire payloads.
+- Deterministic `BeginTransactionEx` conflict-path behavior is now asserted via injected `40001` error frames, including SQLSTATE mapping, emitted begin payload verification, and retry begin/rollback flow after failure.
 - Adapter surfaces now expose advanced transaction options via `StartTransactionEx` forwarding, with deterministic lane-local guard tests.
 - Env-gated live integration now exercises begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths.
-- Remaining gaps preventing `MET`: live coverage is env-gated/skippable and does not yet include conflict-path assertions for `BeginTransactionEx` option matrices against running fixtures.
+- Remaining gaps preventing `MET`: live coverage is env-gated/skippable and does not yet include live conflict-path assertions for `BeginTransactionEx` option matrices against running fixtures.
 
 ## EXEC Status
 

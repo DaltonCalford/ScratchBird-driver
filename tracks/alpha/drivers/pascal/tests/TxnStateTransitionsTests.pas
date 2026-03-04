@@ -70,6 +70,36 @@ begin
       Fail(MessageText + ': mismatch at index ' + IntToStr(I));
 end;
 
+procedure AppendErrorField(var Payload: TBytes; FieldTag: Byte; const Value: string);
+var
+  ValueBytes: TBytes;
+  Start: Integer;
+begin
+  Start := Length(Payload);
+  SetLength(Payload, Start + 1);
+  Payload[Start] := FieldTag;
+  ValueBytes := TEncoding.UTF8.GetBytes(Value);
+  Start := Length(Payload);
+  SetLength(Payload, Start + Length(ValueBytes) + 1);
+  if Length(ValueBytes) > 0 then
+    Move(ValueBytes[0], Payload[Start], Length(ValueBytes));
+  Payload[Start + Length(ValueBytes)] := 0;
+end;
+
+function BuildErrorPayload(const Severity, SqlState, MessageText, DetailText, HintText: string): TBytes;
+begin
+  SetLength(Result, 0);
+  AppendErrorField(Result, Byte(AnsiChar('S')), Severity);
+  AppendErrorField(Result, Byte(AnsiChar('C')), SqlState);
+  AppendErrorField(Result, Byte(AnsiChar('M')), MessageText);
+  if DetailText <> '' then
+    AppendErrorField(Result, Byte(AnsiChar('D')), DetailText);
+  if HintText <> '' then
+    AppendErrorField(Result, Byte(AnsiChar('H')), HintText);
+  SetLength(Result, Length(Result) + 1);
+  Result[High(Result)] := 0;
+end;
+
 procedure WriteUInt64LEAt(var Buffer: TBytes; Offset: Integer; Value: UInt64);
 begin
   Buffer[Offset] := Byte(Value and $FF);
@@ -242,6 +272,70 @@ begin
   end;
 end;
 
+procedure TestBeginTransactionExConflictPathLeavesTxnInactive;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  MsgType: TScratchBirdMessageType;
+  Payload: TBytes;
+  ExpectedPayload: TBytes;
+  ErrorPayload: TBytes;
+  Flags: Word;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    ErrorPayload := BuildErrorPayload(
+      'ERROR', '40001', 'serialization failure during begin', 'conflicting transaction',
+      'retry the transaction');
+    Transport.QueueInbound(EncodeMessage(MSG_ERROR, ErrorPayload, 0, 1, nil, 0));
+
+    try
+      Client.BeginTransactionEx(ISOLATION_SERIALIZABLE, 1, True, False, 0, 0, 2);
+      Fail('BeginTransactionEx conflict path should raise transaction error');
+    except
+      on E: EScratchbirdTransactionError do
+      begin
+        AssertEqualString('40001', E.SQLState, 'begin conflict SQLSTATE');
+        AssertTrue(Pos('serialization failure during begin', E.Message) > 0,
+          'begin conflict message should round-trip');
+      end;
+    end;
+
+    Flags := TXN_FLAG_HAS_ISOLATION or TXN_FLAG_HAS_ACCESS or TXN_FLAG_HAS_DEFERRABLE;
+    ExpectedPayload := BuildTxnBeginPayload(Flags, 2, 0, ISOLATION_SERIALIZABLE, 1, 1, 0, 0);
+    DecodeOutboundFrame(Transport.WriteAt(0), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'conflict path first write should be txn begin');
+    AssertEqualBytes(ExpectedPayload, Payload, 'conflict path begin payload');
+
+    try
+      Client.Savepoint('sp_after_conflict');
+      Fail('savepoint after failed begin should fail without active txn');
+    except
+      on E: EScratchbirdTransactionError do
+        AssertEqualString('25000', E.SQLState, 'savepoint after failed begin SQLSTATE');
+    end;
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9010, 0), 0, 2, nil, 9010));
+    Client.BeginTransactionEx(ISOLATION_READ_COMMITTED, 0, False, False, 0, 0, 0);
+
+    Flags := TXN_FLAG_HAS_ISOLATION;
+    ExpectedPayload := BuildTxnBeginPayload(Flags, 0, 0, ISOLATION_READ_COMMITTED, 0, 0, 0, 0);
+    DecodeOutboundFrame(Transport.WriteAt(1), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'retry begin should emit txn begin');
+    AssertEqualBytes(ExpectedPayload, Payload, 'retry begin payload');
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 3, nil, 0));
+    Client.Rollback;
+
+    AssertEqualInt(3, Transport.WriteCount, 'conflict path lifecycle write count');
+    DecodeOutboundType(Transport.WriteAt(2), MsgType);
+    AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'third write should be rollback after retry begin');
+  finally
+    Client.Free;
+  end;
+end;
+
 procedure TFakeTransport.Configure(const Config: TScratchBirdConfig);
 begin
   // no-op for deterministic unit tests
@@ -310,6 +404,7 @@ begin
     TestBeginSavepointCommitLifecycleTransitions;
     TestBeginRollbackClearsActiveTxnState;
     TestBeginTransactionExOptionMatrixEncodesPayload;
+    TestBeginTransactionExConflictPathLeavesTxnInactive;
     Writeln('TxnStateTransitionsTests: OK');
   except
     on E: Exception do

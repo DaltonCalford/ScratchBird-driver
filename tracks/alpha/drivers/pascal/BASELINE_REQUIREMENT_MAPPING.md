@@ -38,11 +38,11 @@
 - Lane-local test anchors:
   - `tests/TxnExecParityTests.pas:66`, `tests/TxnExecParityTests.pas:87`, `tests/TxnExecParityTests.pas:100`, `tests/TxnExecParityTests.pas:121`, `tests/TxnExecParityTests.pas:174`
   - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
-  - `tests/TxnStateTransitionsTests.pas:117`, `tests/TxnStateTransitionsTests.pas:165`, `tests/TxnStateTransitionsTests.pas:198` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths plus `BeginTransactionEx` option-matrix payload assertions)
+  - `tests/TxnStateTransitionsTests.pas:228`, `tests/TxnStateTransitionsTests.pas:275` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths, `BeginTransactionEx` option-matrix payload assertions, and injected `40001` conflict-path retry/no-active-txn guard behavior)
   - `tests/IntegrationTest.pas:225`, `tests/IntegrationTest.pas:251`, `tests/IntegrationTest.pas:446` (env-gated live transaction lifecycle coverage for begin/savepoint/release/rollback-to/commit and begin/rollback)
 - Gaps/next actions:
   - Live transaction lifecycle coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
-  - Expand live integration assertions for `BeginTransactionEx` option matrices to include conflict-path behavior against running fixtures.
+  - Expand live integration assertions for `BeginTransactionEx` option matrices to include live conflict-path behavior against running fixtures.
 
 ## EXEC (JDBCBL: EXEC)
 - Current status: Partial
