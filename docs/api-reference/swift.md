@@ -13,6 +13,10 @@
 - `executeSblr(_ hash, bytecode:, params:)`
 - `streamControl(controlType:windowSize:timeoutMs:)`
 - `attachCreate(emulationMode:dbName:)`, `attachDetach()`, `attachList()`
+- `metadataSchemas()`, `metadataTables()`, `metadataColumns()`
+- `metadataIndexes()`, `metadataIndexColumns()`, `metadataConstraints()`
+- `metadataProcedures()`, `metadataFunctions()`
+- `metadataSchemaTree(expandSchemaParents:)`, `metadataSchemaTreeRows(expandSchemaParents:)`
 - `onNotification(_ handler)`
 - `lastQueryPlan()`, `lastSblrCompiled()`
 

@@ -137,6 +137,58 @@ public final class ScratchBirdConnection {
         }.value
     }
 
+    public func metadataSchemas() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.schemasQuery)
+    }
+
+    public func metadataTables() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.tablesQuery)
+    }
+
+    public func metadataColumns() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.columnsQuery)
+    }
+
+    public func metadataIndexes() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.indexesQuery)
+    }
+
+    public func metadataIndexColumns() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.indexColumnsQuery)
+    }
+
+    public func metadataConstraints() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.constraintsQuery)
+    }
+
+    public func metadataProcedures() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.proceduresQuery)
+    }
+
+    public func metadataFunctions() async throws -> ScratchBirdResult {
+        return try await query(ScratchBirdMetadata.functionsQuery)
+    }
+
+    public func metadataSchemaTree(expandSchemaParents: Bool = false) async throws -> ScratchBirdMetadataSchemaTree {
+        let schemas = try await metadataSchemas()
+        let schemaNames = metadataSchemaNames(from: schemas)
+        return buildMetadataSchemaTree(
+            schemaNames,
+            database: config.database,
+            expandSchemaParents: expandSchemaParents
+        )
+    }
+
+    public func metadataSchemaTreeRows(expandSchemaParents: Bool = false) async throws -> [ScratchBirdMetadataSchemaTreeRow] {
+        let schemas = try await metadataSchemas()
+        let schemaNames = metadataSchemaNames(from: schemas)
+        return buildMetadataSchemaTreeRows(
+            schemaNames,
+            database: config.database,
+            expandSchemaParents: expandSchemaParents
+        )
+    }
+
     public func onNotification(_ handler: @escaping (NotificationMessage) -> Void) {
         notificationHandlers.append(handler)
     }

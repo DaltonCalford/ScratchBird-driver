@@ -34,6 +34,30 @@ public enum ScratchBirdMetadata {
         "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
 }
 
+public func metadataSchemaNames(from result: ScratchBirdResult) -> [String] {
+    let index = metadataSchemaNameColumnIndex(result.columns) ?? inferredSchemaNameColumnIndex(result.rows)
+    guard let index else { return [] }
+
+    var out: [String] = []
+    var seen: Set<String> = []
+    for row in result.rows {
+        if index >= row.count {
+            continue
+        }
+        guard let value = metadataStringValue(row[index]) else {
+            continue
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            continue
+        }
+        if seen.insert(normalized).inserted {
+            out.append(normalized)
+        }
+    }
+    return out
+}
+
 public enum ScratchBirdMetadataTreeRowKind: Equatable {
     case database
     case schema
@@ -241,4 +265,42 @@ private func appendMetadataTreeRowsDepthFirst(
             rows: &rows
         )
     }
+}
+
+private func metadataSchemaNameColumnIndex(_ columns: [ScratchBirdColumn]) -> Int? {
+    for (index, column) in columns.enumerated() {
+        let lowered = column.name.lowercased()
+        if lowered == "schema_name" || lowered == "nspname" || lowered == "schema" {
+            return index
+        }
+    }
+    return nil
+}
+
+private func inferredSchemaNameColumnIndex(_ rows: [[Any?]]) -> Int? {
+    guard let first = rows.first else { return nil }
+    if first.count > 1 {
+        return 1
+    }
+    if first.count == 1 {
+        return 0
+    }
+    return nil
+}
+
+private func metadataStringValue(_ value: Any?) -> String? {
+    guard let value else { return nil }
+    if let text = value as? String {
+        return text
+    }
+    if let raw = value as? RawValue {
+        return String(data: raw.data, encoding: .utf8)
+    }
+    if let data = value as? Data {
+        return String(data: data, encoding: .utf8)
+    }
+    if let value = value as? CustomStringConvertible {
+        return value.description
+    }
+    return nil
 }

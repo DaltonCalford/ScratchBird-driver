@@ -64,6 +64,15 @@ Wire errors are mapped into typed Swift exceptions by SQLSTATE class/exact code:
 All typed exceptions carry structured fields (`sqlState`, `severity`, `detail`,
 `hint`) and preserve `NSError` compatibility via `errorUserInfo`.
 
+## Metadata Helpers
+
+Connection-level metadata wrappers are available for `sys.*` catalog families:
+
+- `metadataSchemas`, `metadataTables`, `metadataColumns`
+- `metadataIndexes`, `metadataIndexColumns`, `metadataConstraints`
+- `metadataProcedures`, `metadataFunctions`
+- `metadataSchemaTree`, `metadataSchemaTreeRows`
+
 ## Tests
 
 Integration tests use:

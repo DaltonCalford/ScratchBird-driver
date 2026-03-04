@@ -61,14 +61,15 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `Sources/ScratchBird/Metadata.swift:11-35` catalog query constants.
-  - `Sources/ScratchBird/Metadata.swift:37-244` metadata-only recursive schema tree shaping (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`) with optional parent expansion and per-parent uniqueness.
+  - `Sources/ScratchBird/Metadata.swift:37-323` metadata-only recursive schema tree shaping plus schema-name extraction (`metadataSchemaNames`, `metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`) with optional parent expansion and per-parent uniqueness.
+  - `Sources/ScratchBird/Connection.swift:140-191` client-facing metadata query wrappers (`metadataSchemas`, `metadataTables`, `metadataColumns`, `metadataIndexes`, `metadataIndexColumns`, `metadataConstraints`, `metadataProcedures`, `metadataFunctions`) and schema-tree accessors (`metadataSchemaTree`, `metadataSchemaTreeRows`).
 - Lane-local test anchors:
-  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:13-28` database/default root row + top-branch metadata row shape.
-  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:30-40` dotted parent expansion behavior for schema navigation paths.
-  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:42-54` uniqueness within the same parent branch.
-  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:56-70` same leaf name preserved under different parents.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:13-45` schema-name extraction/normalization paths (named-column and fallback-column modes).
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:47-62` database/default root row + top-branch metadata row shape.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:64-74` dotted parent expansion behavior for schema navigation paths.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:76-88` uniqueness within the same parent branch.
+  - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:90-104` same leaf name preserved under different parents.
 - Gaps/next actions:
-  - Wire recursive schema shaping helpers through client-facing metadata execution APIs (metadata collection query wrappers and schema-tree accessors).
   - Add live metadata integration coverage validating engine-backed metadata payload completeness beyond schema-tree shaping.
 
 ## TYPE (`JDBCBL-TYPE`)

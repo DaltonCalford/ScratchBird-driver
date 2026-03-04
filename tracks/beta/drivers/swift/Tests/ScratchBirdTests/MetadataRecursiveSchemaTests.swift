@@ -10,6 +10,41 @@ import XCTest
 @testable import ScratchBird
 
 final class MetadataRecursiveSchemaTests: XCTestCase {
+    func testMetadataSchemaNamesUsesNamedSchemaColumnAndDeduplicates() {
+        let result = ScratchBirdResult(
+            rows: [
+                [1, "sys", 0, 0],
+                [2, "users.alice", 0, 0],
+                [3, "users.alice", 0, 0],
+                [4, " analytics.prod ", 0, 0],
+            ],
+            columns: [
+                ScratchBirdColumn(name: "schema_id", typeOid: TypeOid.int8, format: 1),
+                ScratchBirdColumn(name: "schema_name", typeOid: TypeOid.text, format: 1),
+                ScratchBirdColumn(name: "owner_id", typeOid: TypeOid.int8, format: 1),
+                ScratchBirdColumn(name: "default_tablespace_id", typeOid: TypeOid.int8, format: 1),
+            ]
+        )
+
+        let names = metadataSchemaNames(from: result)
+        XCTAssertEqual(names, ["sys", "users.alice", "analytics.prod"])
+    }
+
+    func testMetadataSchemaNamesFallsBackToSecondColumnWhenColumnMetadataMissing() {
+        let result = ScratchBirdResult(
+            rows: [
+                [1, "sys"],
+                [2, RawValue(oid: TypeOid.text, data: Data("users.bob".utf8))],
+                [3, Data("users.bob.dev".utf8)],
+                [4, ""],
+            ],
+            columns: []
+        )
+
+        let names = metadataSchemaNames(from: result)
+        XCTAssertEqual(names, ["sys", "users.bob", "users.bob.dev"])
+    }
+
     func testTreeRowsStartAtDefaultDatabaseAndExposeTopBranches() {
         let rows = buildMetadataSchemaTreeRows(
             ["sys", "users.alice.dev", "users.bob.dev", "analytics.prod"],
