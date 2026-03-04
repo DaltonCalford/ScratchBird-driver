@@ -16,7 +16,14 @@ CREATE TABLE basic_table (
     amount DECIMAL(10,2)
 );
 
+CREATE TABLE generated_key_fixture (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    note TEXT,
+    created_at TIMESTAMP
+);
+
 DELETE FROM basic_table;
+DELETE FROM generated_key_fixture;
 
 INSERT INTO basic_table (
     id, name, created_at, active, amount

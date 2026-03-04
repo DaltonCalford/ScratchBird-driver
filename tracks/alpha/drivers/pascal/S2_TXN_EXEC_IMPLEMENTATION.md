@@ -44,7 +44,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - validates live begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle execution.
   - validates live batch (`ExecuteBatch`) and multi-result (`QueryMulti`) execution paths.
   - validates live stream-control command path during active query execution.
-  - validates optional generated-key assertions when `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL` is provided.
+  - validates fixture-backed generated-key assertions by default, with optional SQL/expected-id overrides via `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL` and `SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED`.
+- Added shared generated-key fixture provisioning:
+  - `docs/fixtures/core_fixture.sql` now seeds `generated_key_fixture` (identity-backed key table).
+  - `scripts/driver_runtime_stack.sh` fixture reset now drops/reloads `generated_key_fixture`.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -98,8 +101,8 @@ Rationale:
 Rationale:
 - Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, adapter `Prepare` normalization/cache behavior, stream-control/backpressure assertions, and generated-key metadata exposure.
 - Env-gated live integration now exercises prepared query execution plus live batch/multi-result and stream-control paths.
-- Env-gated live integration also supports optional generated-key assertions via `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`.
-- Remaining gaps prevent `MET`: live advanced execution coverage remains env-gated/skippable and generated-key validation still depends on optional env-provided SQL instead of fixture-backed defaults.
+- Env-gated live integration now includes fixture-backed generated-key assertions with optional SQL/expected-id overrides.
+- Remaining gaps prevent `MET`: live advanced execution coverage remains env-gated/skippable.
 
 ## Remaining Concrete Gaps
 
@@ -109,4 +112,3 @@ Rationale:
 - EXEC:
   - Add non-skippable gate execution for live advanced execution assertions.
   - Expand live stream-control/backpressure assertions beyond command acceptance to explicit suspended/resume behavior against running server fixtures.
-  - Add fixture-backed live generated-key assertions that do not require env-provided SQL.

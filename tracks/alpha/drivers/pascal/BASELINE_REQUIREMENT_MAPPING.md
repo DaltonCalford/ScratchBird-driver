@@ -21,9 +21,9 @@
   - `tests/ConnectionDirectAuthMatrixTests.pas:166`, `tests/ConnectionDirectAuthMatrixTests.pas:194` (deterministic direct front-door password + SCRAM auth matrix coverage through READY state with startup/auth frame assertions)
   - `tests/ConnectionAuthProtocolTests.pas:48`, `tests/ConnectionAuthProtocolTests.pas:59`, `tests/ConnectionAuthProtocolTests.pas:77`, `tests/ConnectionAuthProtocolTests.pas:98`, `tests/ConnectionAuthProtocolTests.pas:124`
   - `tests/TlsCryptoAndPolicyTests.pas:127`, `tests/TlsCryptoAndPolicyTests.pas:149`
-  - `tests/IntegrationTest.pas:429`, `tests/IntegrationTest.pas:437` (env-gated live connect path and connected client setup)
+  - `tests/IntegrationTest.pas:437`, `tests/IntegrationTest.pas:444` (env-gated live connect path and connected client setup)
 - Gaps/next actions:
-  - Integration connect checks are env-gated and can be skipped (`tests/IntegrationTest.pas:429-433`).
+  - Integration connect checks are env-gated and can be skipped (`tests/IntegrationTest.pas:436-440`).
 
 ## TXN (JDBCBL: TXN)
 - Current status: Partial
@@ -39,9 +39,9 @@
   - `tests/TxnExecParityTests.pas:66`, `tests/TxnExecParityTests.pas:87`, `tests/TxnExecParityTests.pas:100`, `tests/TxnExecParityTests.pas:121`, `tests/TxnExecParityTests.pas:174`
   - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
   - `tests/TxnStateTransitionsTests.pas:117`, `tests/TxnStateTransitionsTests.pas:165`, `tests/TxnStateTransitionsTests.pas:198` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths plus `BeginTransactionEx` option-matrix payload assertions)
-  - `tests/IntegrationTest.pas:220`, `tests/IntegrationTest.pas:246`, `tests/IntegrationTest.pas:439` (env-gated live transaction lifecycle coverage for begin/savepoint/release/rollback-to/commit and begin/rollback)
+  - `tests/IntegrationTest.pas:225`, `tests/IntegrationTest.pas:251`, `tests/IntegrationTest.pas:446` (env-gated live transaction lifecycle coverage for begin/savepoint/release/rollback-to/commit and begin/rollback)
 - Gaps/next actions:
-  - Live transaction lifecycle coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:429-433`).
+  - Live transaction lifecycle coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
   - Expand live integration assertions for `BeginTransactionEx` option matrices to include conflict-path behavior against running fixtures.
 
 ## EXEC (JDBCBL: EXEC)
@@ -58,6 +58,7 @@
   - `src/ScratchBird.IBX.pas:34`, `src/ScratchBird.IBX.pas:167`, `src/ScratchBird.IBX.pas:196` (adapter query prepare + exec routed through overridable execution hooks)
   - `src/ScratchBird.Zeos.pas:34`, `src/ScratchBird.Zeos.pas:168`, `src/ScratchBird.Zeos.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
   - `src/ScratchBird.SQLdb.pas:34`, `src/ScratchBird.SQLdb.pas:168`, `src/ScratchBird.SQLdb.pas:197` (adapter query prepare + exec routed through overridable execution hooks)
+  - `docs/fixtures/core_fixture.sql:19`, `scripts/driver_runtime_stack.sh:185` (fixture-backed generated-key table provisioning for env-gated live integration default path)
 - Lane-local test anchors:
   - `tests/BatchExecutionTests.pas:200` (`ExecuteBatch` returns per-statement rows/tag/generated-key summaries and emits expected wire query payloads)
   - `tests/BatchExecutionTests.pas:244` (`ExecuteBatch` preserves SQL blank-text guard behavior with `42601`)
@@ -73,10 +74,9 @@
   - `tests/AdapterPrepareLifecycleTests.pas:305` (SQLdb prepare snapshot and normalized parameter ordering reuse on exec)
   - `tests/TxnExecParityTests.pas:142`, `tests/TxnExecParityTests.pas:193`
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
-  - `tests/IntegrationTest.pas:193`, `tests/IntegrationTest.pas:204`, `tests/IntegrationTest.pas:250`, `tests/IntegrationTest.pas:253`, `tests/IntegrationTest.pas:266`, `tests/IntegrationTest.pas:278`, `tests/IntegrationTest.pas:438`, `tests/IntegrationTest.pas:440`, `tests/IntegrationTest.pas:442`, `tests/IntegrationTest.pas:447` (env-gated live prepared query, batch, multi-result, stream-control, and optional generated-key execution coverage)
+  - `tests/IntegrationTest.pas:198`, `tests/IntegrationTest.pas:215`, `tests/IntegrationTest.pas:255`, `tests/IntegrationTest.pas:263`, `tests/IntegrationTest.pas:271`, `tests/IntegrationTest.pas:277`, `tests/IntegrationTest.pas:408`, `tests/IntegrationTest.pas:422`, `tests/IntegrationTest.pas:445`, `tests/IntegrationTest.pas:447`, `tests/IntegrationTest.pas:449`, `tests/IntegrationTest.pas:454` (env-gated live prepared query, batch, multi-result, stream-control, and fixture-backed generated-key execution coverage with optional SQL/expected-id overrides)
 - Gaps/next actions:
-  - Live advanced execution coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:429-433`).
-  - Expand generated-key assertions beyond env-provided SQL to deterministic fixture-backed live paths.
+  - Live advanced execution coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
   - Add non-skippable gate execution for stream-control/backpressure and generated-key live assertions.
 
 ## META (JDBCBL: META)
@@ -110,9 +110,9 @@
   - `tests/MetadataRecursiveSchemaTests.pas:405` (client metadata rows API guards for unsupported/disconnected paths)
   - `tests/MetadataRecursiveSchemaTests.pas:434` (typed metadata wrapper API guards on disconnected client)
   - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320`, `tests/MetadataExecutionFlowTests.pas:361` (deterministic metadata execution flow coverage for schema/table/column/index/constraint/routine wrapper query paths plus restriction-aware `QueryMetadataRows` materialization across routines and additional metadata families)
-  - `tests/IntegrationTest.pas:134`, `tests/IntegrationTest.pas:149`, `tests/IntegrationTest.pas:286`, `tests/IntegrationTest.pas:351`, `tests/IntegrationTest.pas:366`, `tests/IntegrationTest.pas:443` (env-gated live metadata stream/wrapper execution plus restriction-aware `QueryMetadataRows` assertions across supported metadata families)
+  - `tests/IntegrationTest.pas:139`, `tests/IntegrationTest.pas:154`, `tests/IntegrationTest.pas:291`, `tests/IntegrationTest.pas:356`, `tests/IntegrationTest.pas:367`, `tests/IntegrationTest.pas:450` (env-gated live metadata stream/wrapper execution plus restriction-aware `QueryMetadataRows` assertions across supported metadata families)
 - Gaps/next actions:
-  - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:429-433`).
+  - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
   - Live restriction checks are family-local and may skip when a collection has no rows or no compatible filter field in the current fixture; add fixture-backed coverage so these paths are non-skippable.
   - Extend result-shape parity fields to align more tightly with JDBC metadata contracts across collection families.
 
@@ -132,10 +132,10 @@
   - `tests/TypesCodecTests.pas:458` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
   - `tests/TypesCodecTests.pas:554` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
   - `tests/TypesCodecTests.pas:575`, `tests/TypesCodecTests.pas:593`, `tests/TypesCodecTests.pas:609` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
-  - `tests/IntegrationTest.pas:372`, `tests/IntegrationTest.pas:444` (env-gated live `type_coverage` fixture execution path)
+  - `tests/IntegrationTest.pas:377`, `tests/IntegrationTest.pas:451` (env-gated live `type_coverage` fixture execution path)
 - Gaps/next actions:
   - Extend deterministic codec coverage to remaining null/limit payload shapes and additional corner-case payload permutations to approach exhaustive wire-type fidelity.
-  - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:429-433`).
+  - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:436-440`).
   - Object geometry encode path uses `OID_POINT` (`src/ScratchBird.Types.pas:793`, `src/ScratchBird.Types.pas:821`); broaden this if other geometry OIDs are required.
 
 ## ERR (JDBCBL: ERR)
@@ -166,6 +166,6 @@
   - `tests/ResourceResilienceTests.pas:126` (checkout metadata capture semantics)
   - `tests/ResourceResilienceTests.pas:139` (leak detector checkout/checkin replacement and active-count lifecycle)
   - `tests/ResourceResilienceTests.pas:168` (leak detector background thread start/stop lifecycle)
-  - `tests/IntegrationTest.pas:386`, `tests/IntegrationTest.pas:393`, `tests/IntegrationTest.pas:449` (env-gated optional cancel path under live execution)
+  - `tests/IntegrationTest.pas:391`, `tests/IntegrationTest.pas:398`, `tests/IntegrationTest.pas:456` (env-gated optional cancel path under live execution)
 - Gaps/next actions:
   - Add live integration assertions for keepalive/leak behavior under real network disruption and reconnect scenarios (current coverage is deterministic lane-local behavior and lifecycle tests).

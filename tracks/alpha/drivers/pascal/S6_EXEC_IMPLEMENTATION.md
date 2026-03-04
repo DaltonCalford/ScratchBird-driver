@@ -84,15 +84,17 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
 6. Expanded env-gated live execution integration coverage
    - File:
      - `tests/IntegrationTest.pas`
+     - `docs/fixtures/core_fixture.sql`
+     - `scripts/driver_runtime_stack.sh`
    - Added:
      - live stream-control assertion path (`StreamControl(STREAM_RESUME, ...)`) during active query execution.
-     - optional generated-key assertion path controlled by:
+     - fixture-backed generated-key assertion path (default `generated_key_fixture` insert) with optional overrides:
        - `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`
        - `SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED`
      - optional custom stream query control via:
        - `SCRATCHBIRD_PASCAL_STREAM_SQL`
    - Result:
-     - live execution integration now covers prepared query, batch, multi-result, stream-control, and optional generated-key paths in one env-gated suite.
+     - live execution integration now covers prepared query, batch, multi-result, stream-control, and fixture-backed generated-key paths in one env-gated suite.
 
 ## Targeted Tests Run
 
@@ -138,11 +140,10 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
   - generated-key retrieval now has first-class result-stream exposure with deterministic tests.
   - first-class batch execution now has deterministic lane-local API coverage.
   - first-class multi-result traversal now has deterministic lane-local API coverage.
-  - env-gated live integration now exercises batch/multi-result plus stream-control command paths, with optional generated-key assertions.
-  - status remains partial because advanced live assertions are env-gated/skippable and generated-key validation still depends on env-provided SQL.
+  - env-gated live integration now exercises batch/multi-result plus stream-control command paths, with fixture-backed generated-key assertions.
+  - status remains partial because advanced live assertions are env-gated/skippable.
 
 ## Remaining Gaps
 
 1. Add non-skippable gate execution for advanced live execution assertions (batch/multi-result/stream-control/generated-key).
-2. Add fixture-backed generated-key live assertions so coverage does not depend on environment-provided SQL.
-3. Expand live stream-control assertions from command acceptance to explicit suspended/resume behavior against running fixtures.
+2. Expand live stream-control assertions from command acceptance to explicit suspended/resume behavior against running fixtures.

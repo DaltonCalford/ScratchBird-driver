@@ -182,6 +182,7 @@ load_fixtures() {
   log "resetting driver fixture tables"
   "${SCRATCHBIRD_SB_ISQL}" "${common_args[@]}" -c "DROP TABLE IF EXISTS type_coverage;"
   "${SCRATCHBIRD_SB_ISQL}" "${common_args[@]}" -c "DROP TABLE IF EXISTS basic_table;"
+  "${SCRATCHBIRD_SB_ISQL}" "${common_args[@]}" -c "DROP TABLE IF EXISTS generated_key_fixture;"
 
   log "loading core fixture: ${FIXTURE_CORE}"
   "${SCRATCHBIRD_SB_ISQL}" "${common_args[@]}" -f "${FIXTURE_CORE}"

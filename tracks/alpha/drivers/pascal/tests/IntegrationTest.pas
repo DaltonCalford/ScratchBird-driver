@@ -48,6 +48,11 @@ begin
     Fail(MessageText + ': expected=' + IntToStr(Int64(Expected)) + ' actual=' + IntToStr(Int64(Actual)));
 end;
 
+function DefaultGeneratedKeySql: string;
+begin
+  Result := 'INSERT INTO generated_key_fixture (note, created_at) VALUES (''pascal-live-generated-key'', CURRENT_TIMESTAMP)';
+end;
+
 function RequireVariantInt64(const Value: Variant; const MessageText: string): Int64;
 begin
   if VarIsNull(Value) or VarIsEmpty(Value) then
@@ -400,16 +405,18 @@ begin
   end;
 end;
 
-procedure TestOptionalGeneratedKeyPath(AClient: TScratchBirdClient; const SqlText, ExpectedText: string);
+procedure TestGeneratedKeyPath(AClient: TScratchBirdClient; const SqlText, ExpectedText: string);
 var
   Stream: TScratchBirdResultStream;
   RowCount: Integer;
   Expected: UInt64;
+  EffectiveSql: string;
 begin
-  if Trim(SqlText) = '' then
-    Exit;
+  EffectiveSql := Trim(SqlText);
+  if EffectiveSql = '' then
+    EffectiveSql := DefaultGeneratedKeySql;
 
-  Stream := AClient.ExecuteQuery(SqlText);
+  Stream := AClient.ExecuteQuery(EffectiveSql);
   try
     DrainStream(Stream, RowCount);
     AssertTrue(Stream.HasLastInsertId, 'generated-key SQL should expose last insert id');
@@ -444,7 +451,7 @@ begin
     TestTypeCoverageFixture(Client);
     GeneratedKeySql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL');
     GeneratedKeyExpectedText := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED');
-    TestOptionalGeneratedKeyPath(Client, GeneratedKeySql, GeneratedKeyExpectedText);
+    TestGeneratedKeyPath(Client, GeneratedKeySql, GeneratedKeyExpectedText);
     CancelSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_CANCEL_SQL');
     TestOptionalCancelPath(Client, CancelSql);
     Writeln('IntegrationTest: OK');
