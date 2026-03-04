@@ -216,8 +216,8 @@ end;
 
 procedure TestMetadataWrappersEmitExpectedCollectionQueries;
 const
-  CollectionCount = 6;
-  Collections: array[0..CollectionCount - 1] of string = ('schemas', 'tables', 'columns', 'indexes', 'constraints', 'routines');
+  CollectionCount = 7;
+  Collections: array[0..CollectionCount - 1] of string = ('schemas', 'tables', 'columns', 'indexes', 'index_columns', 'constraints', 'routines');
 var
   Transport: TFakeTransport;
   Client: TScratchBirdClient;
@@ -247,6 +247,8 @@ begin
         Stream := Client.GetColumns
       else if Collections[I] = 'indexes' then
         Stream := Client.GetIndexes
+      else if Collections[I] = 'index_columns' then
+        Stream := Client.GetIndexColumns
       else if Collections[I] = 'constraints' then
         Stream := Client.GetConstraints
       else

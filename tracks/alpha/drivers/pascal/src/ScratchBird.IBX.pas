@@ -46,6 +46,7 @@ type
     function GetTables: TScratchBirdResultStream;
     function GetColumns: TScratchBirdResultStream;
     function GetIndexes: TScratchBirdResultStream;
+    function GetIndexColumns: TScratchBirdResultStream;
     function GetConstraints: TScratchBirdResultStream;
     function GetProcedures: TScratchBirdResultStream;
     function GetFunctions: TScratchBirdResultStream;
@@ -199,6 +200,11 @@ end;
 function TScratchBirdIBDatabase.GetIndexes: TScratchBirdResultStream;
 begin
   Result := FClient.GetIndexes;
+end;
+
+function TScratchBirdIBDatabase.GetIndexColumns: TScratchBirdResultStream;
+begin
+  Result := FClient.GetIndexColumns;
 end;
 
 function TScratchBirdIBDatabase.GetConstraints: TScratchBirdResultStream;

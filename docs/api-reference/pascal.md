@@ -20,7 +20,7 @@
   - Materializes metadata rows and applies in-lane restriction filtering.
   - Restriction matching supports key aliases, `%`/`_` wildcards, and `null` literal matching for nullable columns.
 - Typed metadata wrappers:
-  - `GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetConstraints`
+  - `GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetIndexColumns`, `GetConstraints`
   - `GetProcedures`, `GetFunctions`, `GetRoutines`
   - `GetPrimaryKeys`, `GetForeignKeys`
   - `GetTablePrivileges`, `GetColumnPrivileges`, `GetTypeInfo`

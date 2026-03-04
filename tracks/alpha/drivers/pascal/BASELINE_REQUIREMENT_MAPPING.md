@@ -94,7 +94,7 @@
   - `src/ScratchBird.Metadata.pas:1077` (`BuildMetadataSchemaTree`, recursive schema tree with per-parent uniqueness and terminal-node semantics)
   - `src/ScratchBird.Client.pas:724`, `src/ScratchBird.Client.pas:729` (generic client metadata stream API via `QueryMetadata`/`GetSchema`)
   - `src/ScratchBird.Client.pas:734`, `src/ScratchBird.Client.pas:742`, `src/ScratchBird.Client.pas:779`, `src/ScratchBird.Client.pas:784` (materialized metadata-row API with optional restrictions via `QueryMetadataRows`/`GetSchemaRows`)
-  - `src/ScratchBird.Client.pas:789`, `src/ScratchBird.Client.pas:829`, `src/ScratchBird.Client.pas:854` (typed metadata wrapper methods for catalogs/routines/type_info)
+  - `src/ScratchBird.Client.pas:789`, `src/ScratchBird.Client.pas:834`, `src/ScratchBird.Client.pas:859` (typed metadata wrapper methods, including `index_columns`, for catalogs/routines/type_info families)
   - `src/ScratchBird.FireDAC.pas:148`, `src/ScratchBird.FireDAC.pas:158`, `src/ScratchBird.FireDAC.pas:178`, `src/ScratchBird.FireDAC.pas:243` (adapter-level metadata stream/rows/typed wrapper forwarding)
   - `src/ScratchBird.IBX.pas:141`, `src/ScratchBird.IBX.pas:151`, `src/ScratchBird.IBX.pas:171`, `src/ScratchBird.IBX.pas:236` (adapter-level metadata stream/rows/typed wrapper forwarding)
   - `src/ScratchBird.Zeos.pas:142`, `src/ScratchBird.Zeos.pas:152`, `src/ScratchBird.Zeos.pas:172`, `src/ScratchBird.Zeos.pas:237` (adapter-level metadata stream/rows/typed wrapper forwarding)
@@ -111,7 +111,7 @@
   - `tests/MetadataRecursiveSchemaTests.pas:373` (client metadata stream API guards: unsupported collection => `0A000`, disconnected supported collection => `08003`)
   - `tests/MetadataRecursiveSchemaTests.pas:405` (client metadata rows API guards for unsupported/disconnected paths)
   - `tests/MetadataRecursiveSchemaTests.pas:434` (typed metadata wrapper API guards on disconnected client)
-  - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320`, `tests/MetadataExecutionFlowTests.pas:361` (deterministic metadata execution flow coverage for schema/table/column/index/constraint/routine wrapper query paths plus restriction-aware `QueryMetadataRows` materialization across routines and additional metadata families, including `index_columns`)
+  - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320`, `tests/MetadataExecutionFlowTests.pas:361` (deterministic metadata execution flow coverage for schema/table/column/index/index-column/constraint/routine wrapper query paths plus restriction-aware `QueryMetadataRows` materialization across routines and additional metadata families, including `index_columns`)
   - `tests/IntegrationTest.pas:139`, `tests/IntegrationTest.pas:154`, `tests/IntegrationTest.pas:291`, `tests/IntegrationTest.pas:356`, `tests/IntegrationTest.pas:367`, `tests/IntegrationTest.pas:450` (env-gated live metadata stream/wrapper execution plus restriction-aware `QueryMetadataRows` assertions across supported metadata families)
 - Gaps/next actions:
   - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).

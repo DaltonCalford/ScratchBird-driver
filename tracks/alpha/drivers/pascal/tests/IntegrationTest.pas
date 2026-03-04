@@ -166,6 +166,8 @@ begin
     Stream := AClient.GetColumns
   else if WrapperName = 'indexes' then
     Stream := AClient.GetIndexes
+  else if WrapperName = 'index_columns' then
+    Stream := AClient.GetIndexColumns
   else if WrapperName = 'constraints' then
     Stream := AClient.GetConstraints
   else if WrapperName = 'primary_keys' then
@@ -301,6 +303,7 @@ begin
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'tables');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'columns');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'indexes');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'index_columns');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'constraints');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'primary_keys');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'foreign_keys');
@@ -315,6 +318,7 @@ begin
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'tables');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'columns');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'indexes');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'index_columns');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'constraints');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'primary_keys');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'foreign_keys');
@@ -357,6 +361,7 @@ begin
   AssertMetadataRestrictionRoundTrip(AClient, 'tables', 'table', ['table_name', 'TABLE_NAME', 'table']);
   AssertMetadataRestrictionRoundTrip(AClient, 'columns', 'column', ['column_name', 'COLUMN_NAME', 'column']);
   AssertMetadataRestrictionRoundTrip(AClient, 'indexes', 'index', ['index_name', 'INDEX_NAME', 'index']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'index_columns', 'index', ['index_name', 'INDEX_NAME', 'index']);
   AssertMetadataRestrictionRoundTrip(AClient, 'constraints', 'constraint', ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);
   AssertMetadataRestrictionRoundTrip(AClient, 'primary_keys', 'constraint',
     ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);

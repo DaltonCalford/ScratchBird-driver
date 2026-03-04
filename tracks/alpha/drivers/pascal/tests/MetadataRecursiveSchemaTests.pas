@@ -460,6 +460,14 @@ begin
     end;
 
     try
+      Client.GetIndexColumns;
+      Fail('GetIndexColumns should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'GetIndexColumns disconnected SQLSTATE');
+    end;
+
+    try
       Client.GetTypeInfo;
       Fail('GetTypeInfo should require connected client');
     except

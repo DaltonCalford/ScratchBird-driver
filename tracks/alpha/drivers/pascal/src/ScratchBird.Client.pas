@@ -185,6 +185,7 @@ type
     function GetTables: TScratchBirdResultStream;
     function GetColumns: TScratchBirdResultStream;
     function GetIndexes: TScratchBirdResultStream;
+    function GetIndexColumns: TScratchBirdResultStream;
     function GetConstraints: TScratchBirdResultStream;
     function GetProcedures: TScratchBirdResultStream;
     function GetFunctions: TScratchBirdResultStream;
@@ -915,6 +916,11 @@ end;
 function TScratchBirdClient.GetIndexes: TScratchBirdResultStream;
 begin
   Result := QueryMetadata('indexes');
+end;
+
+function TScratchBirdClient.GetIndexColumns: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('index_columns');
 end;
 
 function TScratchBirdClient.GetConstraints: TScratchBirdResultStream;

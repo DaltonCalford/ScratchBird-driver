@@ -37,7 +37,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - restriction filtering behavior for aliases/wildcards/null semantics and unsupported key ignore behavior,
   - client metadata API guard behavior (`unsupported` -> `0A000`, disconnected supported collection -> `08003`).
 - Added typed metadata wrapper methods on `TScratchBirdClient` for first-class metadata families:
-  - `GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetConstraints`,
+  - `GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetIndexColumns`, `GetConstraints`,
   - `GetProcedures`, `GetFunctions`, `GetRoutines`,
   - `GetPrimaryKeys`, `GetForeignKeys`,
   - `GetTablePrivileges`, `GetColumnPrivileges`, `GetTypeInfo`.
@@ -53,13 +53,13 @@ Scope: `tracks/alpha/drivers/pascal` only.
   including:
   - generic metadata stream APIs (`QueryMetadata` / `GetSchema`),
   - materialized row APIs (`QueryMetadataRows` / `GetSchemaRows`, with restriction overloads),
-  - typed metadata wrapper families (`GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetConstraints`, `GetProcedures`, `GetFunctions`, `GetRoutines`, `GetPrimaryKeys`, `GetForeignKeys`, `GetTablePrivileges`, `GetColumnPrivileges`, `GetTypeInfo`).
+  - typed metadata wrapper families (`GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetIndexColumns`, `GetConstraints`, `GetProcedures`, `GetFunctions`, `GetRoutines`, `GetPrimaryKeys`, `GetForeignKeys`, `GetTablePrivileges`, `GetColumnPrivileges`, `GetTypeInfo`).
 - Added deterministic adapter metadata API guard suite:
   - `tests/AdapterMetadataApiTests.pas`
   - validates disconnected supported-collection behavior (`08003`) and unsupported collection behavior (`0A000`) across all four adapter surfaces.
 - Added deterministic metadata execution-flow suite:
   - `tests/MetadataExecutionFlowTests.pas`
-  - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` query paths.
+  - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `index_columns`, `constraints`, and `routines` query paths.
   - validates restriction-aware `QueryMetadataRows(...)` materialization from wire row payloads for:
     - `tables`, `routines`,
     - `catalogs`, `columns`, `indexes`, `constraints`,

@@ -98,6 +98,15 @@ begin
     end;
 
     try
+      Stream := Connection.GetIndexColumns;
+      Stream.Free;
+      Fail('FireDAC GetIndexColumns: expected disconnected connection error');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'FireDAC GetIndexColumns SQLSTATE');
+    end;
+
+    try
       Stream := Connection.GetTypeInfo;
       Stream.Free;
       Fail('FireDAC GetTypeInfo: expected disconnected connection error');
@@ -184,6 +193,15 @@ begin
     except
       on E: EScratchbirdConnectionError do
         AssertEqualString('08003', E.SQLState, 'IBX GetRoutines SQLSTATE');
+    end;
+
+    try
+      Stream := Database.GetIndexColumns;
+      Stream.Free;
+      Fail('IBX GetIndexColumns: expected disconnected connection error');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'IBX GetIndexColumns SQLSTATE');
     end;
 
     try
@@ -276,6 +294,15 @@ begin
     end;
 
     try
+      Stream := Connection.GetIndexColumns;
+      Stream.Free;
+      Fail('Zeos GetIndexColumns: expected disconnected connection error');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'Zeos GetIndexColumns SQLSTATE');
+    end;
+
+    try
       Stream := Connection.GetTypeInfo;
       Stream.Free;
       Fail('Zeos GetTypeInfo: expected disconnected connection error');
@@ -362,6 +389,15 @@ begin
     except
       on E: EScratchbirdConnectionError do
         AssertEqualString('08003', E.SQLState, 'SQLdb GetRoutines SQLSTATE');
+    end;
+
+    try
+      Stream := Connection.GetIndexColumns;
+      Stream.Free;
+      Fail('SQLdb GetIndexColumns: expected disconnected connection error');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'SQLdb GetIndexColumns SQLSTATE');
     end;
 
     try
