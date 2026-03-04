@@ -31,6 +31,8 @@ def _error_payload(**fields: str) -> bytes:
         ("23505", errors.IntegrityError),
         ("42601", errors.ProgrammingError),
         ("08006", errors.OperationalError),
+        ("08ZZZ", errors.OperationalError),
+        ("42ZZZ", errors.ProgrammingError),
         ("XX000", errors.InternalError),
         ("40001", errors.DatabaseError),
         ("99999", errors.DatabaseError),

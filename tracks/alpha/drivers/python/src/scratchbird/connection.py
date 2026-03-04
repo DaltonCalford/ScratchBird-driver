@@ -1407,6 +1407,25 @@ def _map_sqlstate(sqlstate: str):
         mapped = full_map.get(sqlstate)
         if mapped:
             return mapped
+        class_map = {
+            "01": errors.Warning,
+            "02": errors.DatabaseError,
+            "08": errors.OperationalError,
+            "0A": errors.NotSupportedError,
+            "22": errors.DataError,
+            "23": errors.IntegrityError,
+            "28": errors.OperationalError,
+            "40": errors.DatabaseError,
+            "42": errors.ProgrammingError,
+            "53": errors.OperationalError,
+            "54": errors.OperationalError,
+            "57": errors.OperationalError,
+            "58": errors.InternalError,
+            "XX": errors.InternalError,
+        }
+        mapped = class_map.get(sqlstate[:2])
+        if mapped:
+            return mapped
     return errors.DatabaseError
 
 

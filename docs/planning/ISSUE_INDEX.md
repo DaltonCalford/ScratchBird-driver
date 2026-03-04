@@ -52,7 +52,7 @@ Map checklist items to issue IDs once created.
 - [pascal.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/pascal/tests/` -> DONE (2026-02-04)
 - [php.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/php/src/Errors.php` -> OPEN (2026-02-04)
 - [php.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/php/tests/` -> DONE (2026-02-04)
-- [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py` -> OPEN (2026-02-04)
+- [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py` -> DONE (2026-03-04)
 - [python.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/` -> DONE (2026-02-04)
 - [r.md] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R` -> DEFERRED (2026-02-04)
 - [r.md] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/` -> DEFERRED (2026-02-04)
