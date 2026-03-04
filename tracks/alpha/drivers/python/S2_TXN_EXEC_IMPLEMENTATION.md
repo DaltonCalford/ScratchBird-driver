@@ -20,6 +20,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_cursor_get_generated_keys_integration` validates direct generated-keys retrieval against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_cursor_nextset_integration` validates DB-API multi-result traversal against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_connection_call_callable_escape_integration` validates callable escape execution through `Connection.call(...)` against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_query_multi_summary_shape_integration` validates structured multi-result summary payload shape against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_execute_batch_summary_shape_integration` validates structured batch summary payload shape against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_query_batch_alias_integration` validates `query_batch(...)` alias behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
 - Hardened parameter error behavior for execution paths in `src/scratchbird/connection.py`:
@@ -64,14 +67,11 @@ Scope: `tracks/alpha/drivers/python` lane only.
 
 ## Tests Run
 
-1. `PYTHONPATH=src pytest -q`
-- Result: PASS (`68 passed, 4 skipped`)
+1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
+- Result: PASS (`19 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
-2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
-- Result: PASS (`41 passed`)
-
-3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`68 passed, 14 skipped`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`140 passed, 19 skipped`)
 
 ## TXN Status
 
@@ -89,12 +89,12 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Recommendation: `PARTIAL`
 - Reason:
   - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
-  - Env-gated live integration assertions now include generated-keys, `nextset()`, and callable escape execution.
-  - Remaining gap: broader live integration depth is still limited.
+  - Env-gated live integration assertions now include generated-keys, `nextset()`, callable escape execution, and summary-shape checks for `query_multi` and `execute_batch`/`query_batch`.
+  - Remaining gap: live coverage remains env-gated and therefore not guaranteed in default/CI runs.
 
 ## Remaining Gaps
 
 - TXN:
   - Live integration transaction coverage is env-gated and still limited in breadth.
 - EXEC:
-  - Live integration coverage is env-gated and still limited in breadth.
+  - Live integration coverage remains env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.

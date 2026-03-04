@@ -111,6 +111,22 @@ def test_query_multi_integration():
         conn.close()
 
 
+def test_query_multi_summary_shape_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        result_sets = conn.query_multi("SELECT 1; SELECT 2")
+        assert len(result_sets) == 2
+        for result_set in result_sets:
+            assert set(result_set) == {"rows", "rowCount", "fields", "command", "lastId"}
+            assert isinstance(result_set["rows"], list)
+            assert isinstance(result_set["fields"], list)
+    finally:
+        conn.close()
+
+
 def test_execute_multi_alias_integration():
     dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
     if not dsn:
@@ -135,6 +151,37 @@ def test_execute_batch_integration():
         assert batch["totalRowCount"] >= 0
         assert [item["index"] for item in batch["items"]] == [0, 1]
         assert len(batch["items"]) == 2
+    finally:
+        conn.close()
+
+
+def test_execute_batch_summary_shape_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        batch = conn.execute_batch("SELECT ?::INTEGER", [(11,), (22,)])
+        assert set(batch) == {"items", "totalRowCount"}
+        assert len(batch["items"]) == 2
+        for expected_index, item in enumerate(batch["items"]):
+            assert set(item) == {"index", "rowCount", "fields", "command", "lastId"}
+            assert item["index"] == expected_index
+            assert isinstance(item["fields"], list)
+    finally:
+        conn.close()
+
+
+def test_query_batch_alias_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        batch = conn.query_batch("SELECT ?::INTEGER", [(7,), (8,)])
+        assert set(batch) == {"items", "totalRowCount"}
+        assert len(batch["items"]) == 2
+        assert [item["index"] for item in batch["items"]] == [0, 1]
     finally:
         conn.close()
 
