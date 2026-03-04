@@ -17,9 +17,9 @@
   - `lib/src/client.dart:294-297` close path.
 - Lane-local test anchors:
   - `test/config_test.dart:13-37` DSN parsing, manager proxy parameters, invalid front-door validation.
+  - `test/connect_validation_test.dart:24-63` connect-time policy rejection coverage (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
 - Gaps/next actions:
   - Add connection integration tests for direct and manager-proxy paths (`_connect`, `_performManagerConnect`, `_handshake`).
-  - Add tests for rejected options in connect validation (`sslmode=disable`, `binary_transfer=false`, `compression=zstd` at `lib/src/client.dart:118-126`).
 
 ## TXN (JDBCBL)
 

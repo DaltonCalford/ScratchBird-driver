@@ -4,9 +4,9 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [ ] Enforce TLS required (reject `sslmode=disable`) in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: Open
-- [ ] Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/dart/lib/src/client.dart` or `tracks/beta/drivers/dart/lib/src/config.dart`. Issue: Open
-- [ ] Reject `compression=zstd` until server support exists in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: Open
+- [x] Enforce TLS required (reject `sslmode=disable`) in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
+- [x] Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/dart/lib/src/client.dart` or `tracks/beta/drivers/dart/lib/src/config.dart`. Issue: DONE (2026-03-04)
+- [x] Reject `compression=zstd` until server support exists in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
 
 ## P1 (Core)
 
