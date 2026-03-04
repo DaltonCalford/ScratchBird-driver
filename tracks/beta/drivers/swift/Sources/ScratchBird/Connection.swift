@@ -262,7 +262,11 @@ public final class ScratchBirdConnection {
                     return
                 }
                 if msg.header.type == .error {
-                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Ping failed"])
+                    throw buildScratchBirdError(
+                        from: msg.payload,
+                        fallbackMessage: "Ping failed",
+                        defaultSqlState: "08006"
+                    )
                 }
             }
         }.value
@@ -382,7 +386,11 @@ public final class ScratchBirdConnection {
             case .ready:
                 return
             case .error:
-                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Authentication failed")
+                throw buildScratchBirdError(
+                    from: msg.payload,
+                    fallbackMessage: "Authentication failed",
+                    defaultSqlState: "28000"
+                )
             default:
                 continue
             }
@@ -412,7 +420,11 @@ public final class ScratchBirdConnection {
                 return ScratchBirdResult(rows: rows, columns: columns)
             case .error:
                 lastQuerySequence = 0
-                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Query failed")
+                throw buildScratchBirdError(
+                    from: msg.payload,
+                    fallbackMessage: "Query failed",
+                    defaultSqlState: "42000"
+                )
             case .portalSuspended:
                 let resumeMaxRows = normalizePortalResumeMaxRows(fetchSize: config.fetchSize)
                 lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: resumeMaxRows))
@@ -517,7 +529,7 @@ public final class ScratchBirdConnection {
         try await validateIfIdle()
         let span = telemetry.startSpan(operation)
         if let span, let sql {
-            span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql))
+            _ = span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql))
         }
         do {
             let result = try await body()
@@ -787,7 +799,11 @@ public final class ScratchBirdConnection {
                 return true
             }
             if msg.header.type == .error {
-                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Request failed")
+                throw buildScratchBirdError(
+                    from: msg.payload,
+                    fallbackMessage: "Request failed",
+                    defaultSqlState: "42000"
+                )
             }
         }
     }

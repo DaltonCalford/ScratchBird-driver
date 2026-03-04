@@ -10,15 +10,17 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [ ] Add array encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Open
-- [ ] Add composite encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Open
-- [ ] Add range encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Open
-- [ ] Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Open
-- [ ] Add vector literal encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Open
-- [ ] Add sys.* metadata helpers in `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift`. Issue: Open
+- [x] Add array encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
+- [x] Add composite encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
+- [x] Add range encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
+- [x] Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
+- [x] Add vector literal encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
+- [x] Add sys.* metadata helpers in `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift`. Issue: Complete (2026-03-03)
+- [x] Add typed wire-error mapping (SQLSTATE class/exact-state) in `tracks/beta/drivers/swift/Sources/ScratchBird/Errors.swift` and `tracks/beta/drivers/swift/Sources/ScratchBird/Protocol.swift`. Issue: Complete (2026-03-04)
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests in `tracks/beta/drivers/swift/Tests/`. Issue: Open
+- [x] Add deterministic conformance/unit tests in `tracks/beta/drivers/swift/Tests/` for TXN/EXEC validation, recursive metadata shaping, codec parity, and typed wire-error mapping. Issue: Complete (2026-03-04)
+- [ ] Add live handshake/TXN/EXEC/error/resilience integration tests in `tracks/beta/drivers/swift/Tests/` (env-gated) to close remaining parity gaps. Issue: Open
 
 ## P3 (Future)

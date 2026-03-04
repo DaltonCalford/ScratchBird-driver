@@ -244,19 +244,28 @@ func parseErrorMessage(_ payload: Data) throws -> WireErrorMessage {
     )
 }
 
-func buildScratchBirdNSError(from payload: Data, fallbackMessage: String, code: Int = -1) -> NSError {
+func buildScratchBirdError(
+    from payload: Data,
+    fallbackMessage: String,
+    code: Int = -1,
+    defaultSqlState: String? = nil
+) -> ScratchBirdDriverException {
     guard let parsed = try? parseErrorMessage(payload) else {
-        return NSError(
-            domain: "ScratchBird",
-            code: code,
-            userInfo: [NSLocalizedDescriptionKey: fallbackMessage]
+        return mapSqlStateError(
+            message: fallbackMessage,
+            sqlState: defaultSqlState,
+            severity: nil,
+            detail: nil,
+            hint: nil,
+            code: code
         )
     }
 
+    let sqlState = parsed.sqlState.isEmpty ? defaultSqlState : parsed.sqlState
     let base = parsed.message.isEmpty ? fallbackMessage : parsed.message
     var message = base
-    if !parsed.sqlState.isEmpty {
-        message += " [SQLSTATE \(parsed.sqlState)]"
+    if let sqlState, !sqlState.isEmpty {
+        message += " [SQLSTATE \(sqlState)]"
     }
     if !parsed.detail.isEmpty {
         message += " DETAIL: \(parsed.detail)"
@@ -265,23 +274,29 @@ func buildScratchBirdNSError(from payload: Data, fallbackMessage: String, code: 
         message += " HINT: \(parsed.hint)"
     }
 
-    var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
-    if !parsed.sqlState.isEmpty {
-        userInfo[scratchBirdErrorSQLStateKey] = parsed.sqlState
-    }
-    if !parsed.severity.isEmpty {
-        userInfo[scratchBirdErrorSeverityKey] = parsed.severity
-    }
-    if !parsed.detail.isEmpty {
-        userInfo[scratchBirdErrorDetailKey] = parsed.detail
-        userInfo[NSLocalizedFailureReasonErrorKey] = parsed.detail
-    }
-    if !parsed.hint.isEmpty {
-        userInfo[scratchBirdErrorHintKey] = parsed.hint
-        userInfo[NSLocalizedRecoverySuggestionErrorKey] = parsed.hint
-    }
+    return mapSqlStateError(
+        message: message,
+        sqlState: sqlState,
+        severity: parsed.severity.isEmpty ? nil : parsed.severity,
+        detail: parsed.detail.isEmpty ? nil : parsed.detail,
+        hint: parsed.hint.isEmpty ? nil : parsed.hint,
+        code: code
+    )
+}
 
-    return NSError(domain: "ScratchBird", code: code, userInfo: userInfo)
+func buildScratchBirdNSError(
+    from payload: Data,
+    fallbackMessage: String,
+    code: Int = -1,
+    defaultSqlState: String? = nil
+) -> NSError {
+    let typed = buildScratchBirdError(
+        from: payload,
+        fallbackMessage: fallbackMessage,
+        code: code,
+        defaultSqlState: defaultSqlState
+    )
+    return NSError(domain: ScratchBirdDriverException.errorDomain, code: typed.errorCode, userInfo: typed.errorUserInfo)
 }
 
 func buildStartupPayload(features: UInt64, params: [String: String]) -> Data {

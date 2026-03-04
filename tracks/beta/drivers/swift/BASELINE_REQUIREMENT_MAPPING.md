@@ -81,20 +81,23 @@
   - `Sources/ScratchBird/Connection.swift:398`
   - `Sources/ScratchBird/Connection.swift:425-427`
 - Lane-local test anchors:
-  - `Tests/ScratchBirdTests/TypeMappingTests.swift:5-74`
+  - `Tests/ScratchBirdTests/TypeMappingTests.swift:5-180`
 - Gaps/next actions:
-  - Expand lane tests to cover additional scalar/date-time/JSON paths and negative encode/decode cases.
+  - Add live integration codec coverage (wire roundtrip against engine fixtures for scalar, temporal, JSON, and advanced container types).
 
 ## ERR (`JDBCBL-ERR`)
 
 - Current status: `Partial`
 - Lane-local source anchors:
   - `Sources/ScratchBird/Protocol.swift:11-28`
-  - `Sources/ScratchBird/Protocol.swift:196-290` (`parseErrorMessage`, `buildScratchBirdNSError`, structured SQLSTATE/detail/hint extraction).
+  - `Sources/ScratchBird/Protocol.swift:197-300` (`parseErrorMessage`, `buildScratchBirdError`, `buildScratchBirdNSError`, structured SQLSTATE/detail/hint extraction).
+  - `Sources/ScratchBird/Errors.swift:11-289` typed driver exception hierarchy and SQLSTATE exact/class mappers.
   - `Sources/ScratchBird/Config.swift:11-57`
   - `Sources/ScratchBird/Connection.swift:91-99`
-  - `Sources/ScratchBird/Connection.swift:376`
-  - `Sources/ScratchBird/Connection.swift:404`
+  - `Sources/ScratchBird/Connection.swift:265-269` ping `.error` mapped with connection SQLSTATE default.
+  - `Sources/ScratchBird/Connection.swift:389-393` auth `.error` mapped with authorization SQLSTATE default.
+  - `Sources/ScratchBird/Connection.swift:423-427` query `.error` mapped with execution SQLSTATE default.
+  - `Sources/ScratchBird/Connection.swift:802-806` drain/request `.error` mapped with execution SQLSTATE default.
   - `Sources/ScratchBird/Connection.swift:657-667`
   - `Sources/ScratchBird/Connection.swift:675-763`
   - `Sources/ScratchBird/Socket.swift:157-178`
@@ -103,10 +106,9 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:13-53` protocol header decode guardrails (`invalidHeader`, `unsupportedVersion`, `payloadTooLarge`).
-  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-115` wire-error payload parsing and structured SQLSTATE/detail/hint propagation with malformed-payload fallback assertions.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-154` wire-error payload parsing, typed SQLSTATE mapping, structured SQLSTATE/detail/hint propagation, and malformed-payload fallback assertions.
 - Gaps/next actions:
   - Add integration tests that validate `.error` propagation across live socket reads in end-to-end query/auth flows.
-  - Standardize error typing beyond generic `NSError` for execute/query failure paths.
 
 ## RES (`JDBCBL-RES`)
 

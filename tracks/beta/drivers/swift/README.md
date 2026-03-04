@@ -47,6 +47,23 @@ TLS is required and implemented for ScratchBird connections.
 
 `sslkey`/`sslpassword` are currently loaded through NIOSSL when present.
 
+## Error Model
+
+Wire errors are mapped into typed Swift exceptions by SQLSTATE class/exact code:
+
+- `ScratchBirdConnectionException`
+- `ScratchBirdAuthorizationException`
+- `ScratchBirdDataException`
+- `ScratchBirdIntegrityException`
+- `ScratchBirdTransactionException`
+- `ScratchBirdProgrammingException`
+- `ScratchBirdNotSupportedException`
+- `ScratchBirdTimeoutException`
+- `ScratchBirdOperationalException`
+
+All typed exceptions carry structured fields (`sqlState`, `severity`, `detail`,
+`hint`) and preserve `NSError` compatibility via `errorUserInfo`.
+
 ## Tests
 
 Integration tests use:

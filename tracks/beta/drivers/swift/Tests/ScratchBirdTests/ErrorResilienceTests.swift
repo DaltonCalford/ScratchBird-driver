@@ -110,6 +110,49 @@ final class ErrorResilienceTests: XCTestCase {
         XCTAssertNil(nsError.userInfo[scratchBirdErrorSQLStateKey])
     }
 
+    func testBuildScratchBirdErrorMapsSqlStateToTypedIntegrityException() {
+        let payload = makeErrorPayload(
+            severity: "ERROR",
+            sqlState: "23505",
+            message: "duplicate key",
+            detail: "",
+            hint: ""
+        )
+
+        let error = buildScratchBirdError(from: payload, fallbackMessage: "Query failed")
+        XCTAssertTrue(error is ScratchBirdIntegrityException)
+        XCTAssertEqual(error.sqlState, "23505")
+        XCTAssertEqual(error.severity, "ERROR")
+        XCTAssertTrue(error.message.contains("SQLSTATE 23505"))
+    }
+
+    func testBuildScratchBirdErrorMapsSqlStateClassToTypedDataException() {
+        let payload = makeErrorPayload(
+            severity: "ERROR",
+            sqlState: "22ABC",
+            message: "bad numeric",
+            detail: "",
+            hint: ""
+        )
+
+        let error = buildScratchBirdError(from: payload, fallbackMessage: "Query failed")
+        XCTAssertTrue(error is ScratchBirdDataException)
+        XCTAssertEqual(error.sqlState, "22ABC")
+    }
+
+    func testBuildScratchBirdErrorUsesDefaultSqlStateForMalformedPayload() {
+        let payload = Data([ascii("M"), ascii("x"), ascii("y"), ascii("z")])
+        let error = buildScratchBirdError(
+            from: payload,
+            fallbackMessage: "Authentication failed",
+            defaultSqlState: "28000"
+        )
+
+        XCTAssertTrue(error is ScratchBirdAuthorizationException)
+        XCTAssertEqual(error.sqlState, "28000")
+        XCTAssertEqual(error.message, "Authentication failed")
+    }
+
     func testCircuitBreakerTransitionsClosedOpenHalfOpenClosed() async {
         let breaker = CircuitBreaker(
             config: .init(

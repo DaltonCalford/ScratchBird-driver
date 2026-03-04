@@ -28,3 +28,11 @@
 - `Geometry`
 - `Interval`
 - `RawValue`
+
+## Error Types
+
+- Base: `ScratchBirdDriverException`
+- Connection/auth: `ScratchBirdConnectionException`, `ScratchBirdAuthorizationException`
+- Data/constraint: `ScratchBirdDataException`, `ScratchBirdIntegrityException`
+- SQL execution: `ScratchBirdTransactionException`, `ScratchBirdProgrammingException`
+- Capability/runtime: `ScratchBirdNotSupportedException`, `ScratchBirdTimeoutException`, `ScratchBirdOperationalException`
