@@ -12,15 +12,16 @@
   - `src/ScratchBird.Transport.Native.pas:51`, `src/ScratchBird.Transport.Native.pas:59`, `src/ScratchBird.Transport.Native.pas:82`
   - `src/ScratchBird.Tls.Context.pas:136`, `src/ScratchBird.Tls.Context.pas:303`, `src/ScratchBird.Tls.Context.pas:334`
   - `src/ScratchBird.Tls.X509.pas:72`, `src/ScratchBird.Tls.X509.pas:173`
-  - `src/ScratchBird.Client.pas:374`, `src/ScratchBird.Client.pas:396`, `src/ScratchBird.Client.pas:406`, `src/ScratchBird.Client.pas:772`
+  - `src/ScratchBird.Client.pas:449`, `src/ScratchBird.Client.pas:481`, `src/ScratchBird.Client.pas:1070`, `src/ScratchBird.Client.pas:1201`
   - `src/ScratchBird.Protocol.pas:362`, `src/ScratchBird.Protocol.pas:627`
 - Lane-local test anchors:
   - `tests/ConfigTests.pas:38`, `tests/ConfigTests.pas:55`, `tests/ConfigTests.pas:61`
+  - `tests/ConnectionManagerProxyTests.pas:250` (deterministic manager-proxy connect success path with MCP negotiation + password auth handshake)
+  - `tests/ConnectionManagerProxyTests.pas:290` (deterministic manager-proxy auth failure path maps to `28000` and remains disconnected)
   - `tests/ConnectionAuthProtocolTests.pas:48`, `tests/ConnectionAuthProtocolTests.pas:59`, `tests/ConnectionAuthProtocolTests.pas:77`, `tests/ConnectionAuthProtocolTests.pas:98`, `tests/ConnectionAuthProtocolTests.pas:124`
   - `tests/TlsCryptoAndPolicyTests.pas:127`, `tests/TlsCryptoAndPolicyTests.pas:149`
   - `tests/IntegrationTest.pas:24`, `tests/IntegrationTest.pas:33`
 - Gaps/next actions:
-  - Add deterministic lane tests that exercise end-to-end manager-proxy handshake/auth success and failure against a controllable MCP fixture (`src/ScratchBird.Client.pas:772`).
   - Add deterministic lane tests for direct front-door end-to-end auth negotiation matrix (password/SCRAM) without relying on external environment setup.
   - Integration connect checks are env-gated and can be skipped (`tests/IntegrationTest.pas:24-28`).
 

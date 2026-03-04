@@ -15,6 +15,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - manager-proxy missing token fail-fast behavior at `TScratchBirdClient.Connect`.
   - native transport `sslmode=disable` configure-time rejection.
   - protocol parser behavior: oversized header rejection and truncated `AUTH_CONTINUE` rejection.
+- Added deterministic manager-proxy fixture coverage in `tests/ConnectionManagerProxyTests.pas`:
+  - manager-proxy connect success path across MCP negotiation and front-door password auth handshake.
+  - manager-proxy auth failure path (`MCP_MSG_AUTH_RESPONSE` failure) mapping to SQLSTATE `28000` and disconnected final state.
+  - outbound frame ordering assertions across MCP and native protocol writes.
 - Updated CONN evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -31,16 +35,21 @@ Scope: `tracks/alpha/drivers/pascal` only.
 4. `./tracks/alpha/drivers/pascal/tests/ConfigTests`
 - Result: PASS (`ConfigTests: OK`).
 
+5. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_conn_mgr_build -FE/tmp/sb_pascal_conn_mgr_bin ./tracks/alpha/drivers/pascal/tests/ConnectionManagerProxyTests.pas`
+- Result: PASS (compile succeeded).
+
+6. `/tmp/sb_pascal_conn_mgr_bin/ConnectionManagerProxyTests`
+- Result: PASS (`ConnectionManagerProxyTests: OK`).
+
 ## CONN Status Recommendation
 
 - Recommendation: `PARTIAL`
 
 Rationale:
-- Lane-local coverage now includes deterministic fail-fast checks for manager-proxy auth prerequisites, TLS mode policy, and key protocol parser guardrails.
-- Remaining evidence is still insufficient for `MET` because full end-to-end manager-proxy and direct auth negotiation matrices are not covered by deterministic lane tests.
+- Lane-local coverage now includes deterministic fail-fast checks for manager-proxy auth prerequisites, TLS mode policy, key protocol parser guardrails, and deterministic end-to-end manager-proxy handshake/auth success and auth-failure paths.
+- Remaining evidence is still insufficient for `MET` because direct front-door auth negotiation matrix depth (password/SCRAM variants) remains incomplete in deterministic lane tests.
 
 ## Remaining Concrete Gaps
 
-- No deterministic lane fixture test for end-to-end manager-proxy handshake/auth success and auth-failure variants.
 - No deterministic lane fixture test matrix for direct front-door auth negotiation variants (password and SCRAM) independent of external environment setup.
 - Integration connection tests remain environment-gated (`SCRATCHBIRD_PASCAL_URL`) and can be skipped.
