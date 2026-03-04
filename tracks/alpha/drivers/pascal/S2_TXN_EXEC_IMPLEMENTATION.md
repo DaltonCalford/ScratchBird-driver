@@ -40,6 +40,8 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `tests/IntegrationTest.pas`
   - validates live begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle execution.
   - validates live batch (`ExecuteBatch`) and multi-result (`QueryMulti`) execution paths.
+  - validates live stream-control command path during active query execution.
+  - validates optional generated-key assertions when `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL` is provided.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -91,8 +93,9 @@ Rationale:
 
 Rationale:
 - Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, adapter `Prepare` normalization/cache behavior, stream-control/backpressure assertions, and generated-key metadata exposure.
-- Env-gated live integration now exercises prepared query execution plus live batch/multi-result paths.
-- Remaining gaps prevent `MET`: stream-control/generated-key depth remains deterministic-only and live coverage is env-gated/skippable.
+- Env-gated live integration now exercises prepared query execution plus live batch/multi-result and stream-control paths.
+- Env-gated live integration also supports optional generated-key assertions via `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`.
+- Remaining gaps prevent `MET`: live advanced execution coverage remains env-gated/skippable and generated-key validation still depends on optional env-provided SQL instead of fixture-backed defaults.
 
 ## Remaining Concrete Gaps
 
@@ -101,4 +104,5 @@ Rationale:
   - Expand live assertions for `BeginTransactionEx` option matrices (isolation/access/timeout/deferrable/wait/conflict).
 - EXEC:
   - Add non-skippable gate execution for live advanced execution assertions.
-  - Expand live assertions for stream-control/backpressure and generated-key semantics.
+  - Expand live stream-control/backpressure assertions beyond command acceptance to explicit suspended/resume behavior against running server fixtures.
+  - Add fixture-backed live generated-key assertions that do not require env-provided SQL.

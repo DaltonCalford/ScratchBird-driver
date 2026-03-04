@@ -2,7 +2,7 @@
 
 Date: 2026-03-04  
 Lane: `tracks/alpha/drivers/pascal`  
-Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `Prepare` lifecycle, stream-control/backpressure behavior, and first-class batch + multi-result API coverage).
+Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `Prepare` lifecycle, stream-control/backpressure behavior, and first-class batch + multi-result API coverage) plus expanded env-gated live integration assertions.
 
 ## Changes Implemented
 
@@ -81,6 +81,19 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
      - command metadata and generated-key propagation for DML result sets,
      - emitted wire query payloads per statement.
 
+6. Expanded env-gated live execution integration coverage
+   - File:
+     - `tests/IntegrationTest.pas`
+   - Added:
+     - live stream-control assertion path (`StreamControl(STREAM_RESUME, ...)`) during active query execution.
+     - optional generated-key assertion path controlled by:
+       - `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`
+       - `SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED`
+     - optional custom stream query control via:
+       - `SCRATCHBIRD_PASCAL_STREAM_SQL`
+   - Result:
+     - live execution integration now covers prepared query, batch, multi-result, stream-control, and optional generated-key paths in one env-gated suite.
+
 ## Targeted Tests Run
 
 1. Adapter lifecycle suite
@@ -111,6 +124,11 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
    - `/tmp/sb_pascal_multi_bin/QueryMultiTests`
    - Result: PASS (`QueryMultiTests: OK`)
 
+6. Live integration suite (env-gated compile/run path)
+   - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_next -FE/tmp/sb_pascal_next ./tracks/alpha/drivers/pascal/tests/IntegrationTest.pas`
+   - `/tmp/sb_pascal_next/IntegrationTest`
+   - Result: PASS (`IntegrationTest: SKIPPED (SCRATCHBIRD_PASCAL_URL not set)` in non-env-gated local run)
+
 ## EXEC Status Recommendation
 
 - Recommendation: keep `PARTIAL`
@@ -120,8 +138,11 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
   - generated-key retrieval now has first-class result-stream exposure with deterministic tests.
   - first-class batch execution now has deterministic lane-local API coverage.
   - first-class multi-result traversal now has deterministic lane-local API coverage.
-  - status remains partial pending deeper live integration validation for new advanced execution APIs.
+  - env-gated live integration now exercises batch/multi-result plus stream-control command paths, with optional generated-key assertions.
+  - status remains partial because advanced live assertions are env-gated/skippable and generated-key validation still depends on env-provided SQL.
 
 ## Remaining Gaps
 
-1. Add live integration assertions for batch and multi-result execution APIs against a running ScratchBird endpoint.
+1. Add non-skippable gate execution for advanced live execution assertions (batch/multi-result/stream-control/generated-key).
+2. Add fixture-backed generated-key live assertions so coverage does not depend on environment-provided SQL.
+3. Expand live stream-control assertions from command acceptance to explicit suspended/resume behavior against running fixtures.

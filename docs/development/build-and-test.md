@@ -216,6 +216,9 @@ Integration env:
 Run the test projects under `tracks/alpha/drivers/pascal/tests/` with:
 
 - `SCRATCHBIRD_PASCAL_URL`
+- `SCRATCHBIRD_PASCAL_STREAM_SQL` (optional)
+- `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL` (optional)
+- `SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED` (optional)
 - `SCRATCHBIRD_PASCAL_CANCEL_SQL`
 
 ## .NET

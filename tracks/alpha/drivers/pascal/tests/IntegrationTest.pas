@@ -15,11 +15,14 @@ uses
   cthreads,
   {$ENDIF}
   SysUtils, Variants,
-  ScratchBird.Client, ScratchBird.Sql, ScratchBird.Metadata;
+  ScratchBird.Client, ScratchBird.Sql, ScratchBird.Metadata, ScratchBird.Protocol;
 
 var
   Dsn: string;
+  StreamSql: string;
   CancelSql: string;
+  GeneratedKeySql: string;
+  GeneratedKeyExpectedText: string;
   Client: TScratchBirdClient;
 
 procedure Fail(const MessageText: string);
@@ -37,6 +40,12 @@ procedure AssertEqualInt64(Expected, Actual: Int64; const MessageText: string);
 begin
   if Expected <> Actual then
     Fail(MessageText + ': expected=' + IntToStr(Expected) + ' actual=' + IntToStr(Actual));
+end;
+
+procedure AssertEqualUInt64(Expected, Actual: UInt64; const MessageText: string);
+begin
+  if Expected <> Actual then
+    Fail(MessageText + ': expected=' + IntToStr(Int64(Expected)) + ' actual=' + IntToStr(Int64(Actual)));
 end;
 
 function RequireVariantInt64(const Value: Variant; const MessageText: string): Int64;
@@ -181,6 +190,26 @@ begin
   AssertEqualInt64(404, RequireVariantInt64(Rowsets[1].Rows[0][0], 'QueryMulti second row value'), 'QueryMulti second row payload');
 end;
 
+procedure TestLiveStreamControlPath(AClient: TScratchBirdClient; const CustomSql: string);
+var
+  Stream: TScratchBirdResultStream;
+  QuerySql: string;
+  RowCount: Integer;
+begin
+  QuerySql := Trim(CustomSql);
+  if QuerySql = '' then
+    QuerySql := 'SELECT 1 AS v UNION ALL SELECT 2 AS v UNION ALL SELECT 3 AS v';
+
+  Stream := AClient.ExecuteQuery(QuerySql);
+  try
+    AClient.StreamControl(STREAM_RESUME, 64, 1000);
+    DrainStream(Stream, RowCount);
+    AssertTrue(RowCount >= 1, 'stream-control query should return at least one row');
+  finally
+    Stream.Free;
+  end;
+end;
+
 procedure TestMetadataFamiliesAndRestrictions(AClient: TScratchBirdClient);
 var
   SchemaRows: TMetadataRows;
@@ -262,6 +291,31 @@ begin
   end;
 end;
 
+procedure TestOptionalGeneratedKeyPath(AClient: TScratchBirdClient; const SqlText, ExpectedText: string);
+var
+  Stream: TScratchBirdResultStream;
+  RowCount: Integer;
+  Expected: UInt64;
+begin
+  if Trim(SqlText) = '' then
+    Exit;
+
+  Stream := AClient.ExecuteQuery(SqlText);
+  try
+    DrainStream(Stream, RowCount);
+    AssertTrue(Stream.HasLastInsertId, 'generated-key SQL should expose last insert id');
+    AssertTrue(Stream.LastInsertId > 0, 'generated-key SQL should expose non-zero last insert id');
+    if Trim(ExpectedText) <> '' then
+    begin
+      if not TryStrToQWord(Trim(ExpectedText), Expected) then
+        Fail('SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED must be an unsigned integer');
+      AssertEqualUInt64(Expected, Stream.LastInsertId, 'generated-key SQL expected last insert id');
+    end;
+  finally
+    Stream.Free;
+  end;
+end;
+
 begin
   Dsn := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_URL');
   if Dsn = '' then
@@ -275,8 +329,13 @@ begin
     TestQueryAndPrepareBind(Client);
     TestTransactionLifecycle(Client);
     TestLiveBatchAndMulti(Client);
+    StreamSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_STREAM_SQL');
+    TestLiveStreamControlPath(Client, StreamSql);
     TestMetadataFamiliesAndRestrictions(Client);
     TestTypeCoverageFixture(Client);
+    GeneratedKeySql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL');
+    GeneratedKeyExpectedText := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED');
+    TestOptionalGeneratedKeyPath(Client, GeneratedKeySql, GeneratedKeyExpectedText);
     CancelSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_CANCEL_SQL');
     TestOptionalCancelPath(Client, CancelSql);
     Writeln('IntegrationTest: OK');
