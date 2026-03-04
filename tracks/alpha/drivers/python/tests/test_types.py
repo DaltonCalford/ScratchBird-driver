@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import decimal
+import enum
 import struct
 import uuid
 
@@ -123,6 +124,25 @@ def test_encode_sqlxml_wrapper_uses_xml_oid():
     param, oid = encode_param(SqlXml(value="<doc/>"))
     assert oid == OID_XML
     assert decode_value(oid, param.data, FORMAT_BINARY) == "<doc/>"
+
+
+def test_encode_enum_parameter_uses_text_name():
+    class WorkerState(enum.Enum):
+        RUNNABLE = 1
+
+    param, oid = encode_param(WorkerState.RUNNABLE)
+    assert oid == OID_TEXT
+    assert decode_value(oid, param.data, FORMAT_BINARY) == "RUNNABLE"
+
+
+def test_encode_custom_object_falls_back_to_text():
+    class CustomParameter:
+        def __str__(self) -> str:
+            return "custom-parameter"
+
+    param, oid = encode_param(CustomParameter())
+    assert oid == OID_TEXT
+    assert decode_value(oid, param.data, FORMAT_BINARY) == "custom-parameter"
 
 
 def test_decode_vector_literal():

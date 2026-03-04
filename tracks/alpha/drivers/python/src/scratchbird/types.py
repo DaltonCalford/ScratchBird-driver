@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import decimal as _decimal
+import enum as _enum
 import ipaddress as _ip
 import json as _json
 import re
@@ -250,12 +251,15 @@ def encode_param(value: Any) -> tuple[ParamValue, int]:
             return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), OID_SB_VECTOR
         text = _format_array_literal(value)
         return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), _infer_array_oid(value)
+    if isinstance(value, _enum.Enum):
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.name.encode("utf-8"))), OID_TEXT
     if isinstance(value, str):
         return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.encode("utf-8"))), OID_TEXT
     if isinstance(value, dict):
         encoded = _json.dumps(value, ensure_ascii=True).encode("utf-8")
         return ParamValue(FORMAT_BINARY, _encode_length_prefixed(encoded)), OID_JSON
-    raise ValueError("unsupported parameter type")
+    text = str(value)
+    return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), OID_TEXT
 
 
 def decode_value(type_oid: int, data: Optional[bytes], format_code: int) -> Any:

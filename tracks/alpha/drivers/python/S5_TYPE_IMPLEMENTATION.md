@@ -36,12 +36,17 @@ Scope: `tracks/alpha/drivers/python` lane only.
     - `Clob`/`Ref` -> `OID_TEXT`
     - `SqlXml` -> `OID_XML`
   - Package exports now include these wrappers for lane-visible API usage.
+- Added JDBC-style fallback object encode parity in `src/scratchbird/types.py`:
+  - `encode_param(...)` now encodes Python `Enum` values as text using enum member names.
+  - Previously unsupported object values now fall back to `str(value)` text encoding (`OID_TEXT`) instead of hard-failing.
 - Added deterministic tests in `tests/test_types.py`:
   - `test_encode_blob_wrapper_uses_bytea_oid`
   - `test_encode_clob_wrapper_uses_text_oid`
   - `test_encode_rowid_wrapper_uses_bytea_oid`
   - `test_encode_ref_wrapper_uses_text_oid`
   - `test_encode_sqlxml_wrapper_uses_xml_oid`
+  - `test_encode_enum_parameter_uses_text_name`
+  - `test_encode_custom_object_falls_back_to_text`
   - `test_decode_bytea_binary_prefixed_hex_payload`
   - `test_decode_bytea_binary_escaped_octal_payload`
   - `test_decode_bytea_text_payload`
@@ -77,10 +82,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`44 passed`)
+- Result: PASS (`46 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`189 passed, 27 skipped, 1 warning`)
+- Result: PASS (`191 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -92,5 +97,6 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Temporal text decode and temporal range-bound encode now include `Z`-suffix and string-bound coercion behavior for UTC-stable parity.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
+  - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.
   - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.
   - Remaining gap: deeper live type coverage is still env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.
