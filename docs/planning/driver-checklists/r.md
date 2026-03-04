@@ -7,7 +7,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 
 ## P2 (Follow-ups)
-- [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: Deferred Status: DEFERRED (2026-02-04)
+- [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: DONE (2026-03-04)
 
 ## P3 (Future)
 

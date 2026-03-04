@@ -106,7 +106,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
 
 ## TYPE -> JDBCBL-TYPE
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `R/types.R:88` (`encode_param`)
   - `R/types.R:174` (`decode_value`)
@@ -115,12 +115,13 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/types.R:448` / `R/types.R:475` (composite encode/decode)
   - `R/client.R:556` (row decode calls `decode_value`)
 - Lane-local test anchors:
-  - `tests/testthat/test_types.R:8`
-  - `tests/testthat/test_types.R:14`
+  - `tests/testthat/test_types.R:8` (UUID decode)
+  - `tests/testthat/test_types.R:14` (primitive scalar decode matrix)
+  - `tests/testthat/test_types.R:29` (temporal + interval decode matrix)
+  - `tests/testthat/test_types.R:47` (vector/range/composite decode matrix)
+  - `tests/testthat/test_types.R:69` (`encode_param` primitive + wrapper dispatch)
+  - `tests/testthat/test_types.R:98` (vector/array literal family coverage)
   - `tests/testthat/test_integration.R:31`
-- Gaps / next actions:
-  - Add focused tests for JSON/JSONB, temporal types, range/composite, geometry, and array encoding/decoding paths in `R/types.R`.
-  - Add assertions for round-trip behavior through query execution paths, not just unit-level decoders.
 
 ## ERR -> JDBCBL-ERR
 

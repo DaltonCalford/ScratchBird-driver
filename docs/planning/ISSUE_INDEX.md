@@ -55,7 +55,7 @@ Map checklist items to issue IDs once created.
 - [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py` -> DONE (2026-03-04)
 - [python.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/` -> DONE (2026-02-04)
 - [r.md] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R` -> DONE (2026-03-04)
-- [r.md] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/` -> DEFERRED (2026-02-04)
+- [r.md] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/` -> DONE (2026-03-04)
 - [ruby.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb` -> DONE (2026-03-04)
 - [ruby.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/ruby/test/` -> DONE (2026-02-04)
 - [rust.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs` -> DONE (2026-03-04)
