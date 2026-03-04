@@ -37,12 +37,14 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
      - geometry-family decode matrix (`POINT/LSEG/PATH/BOX/POLYGON/LINE/CIRCLE`)
      - existing `TIMETZ` decode/encode coverage (12-byte, backward-compatible 8-byte, payload sign semantics)
      - malformed/truncated payload decode guards for scalar temporal/range payloads (`INT4/FLOAT8/DATE/TIME/TIMESTAMP/INTERVAL/INT4RANGE`)
+     - malformed composite payload decode guards (negative field count, truncated field header, truncated field payload)
 
 4. Malformed payload decode hardening in lane codec
    - File: `src/ScratchBird.Types.pas`
    - Added explicit payload-length guardrails in `DecodeValue(...)` for fixed-width scalar/temporal types.
    - Added interval payload-length validation in `DecodeInterval(...)`.
    - Added range frame/bound guardrails in `DecodeRange(...)`/`DecodeRangeBound(...)` so truncated bounds return `Null` instead of decoding partial payloads.
+   - Added composite-frame guardrails in `DecodeComposite(...)` so invalid count/truncated frames fail closed (`Null` via `OID_RECORD`) instead of returning partial composite objects.
 
 5. Geometry wrapper OID preservation for encode/decode
    - Files: `src/ScratchBird.Types.pas`, `tests/TypesCodecTests.pas`
@@ -88,10 +90,10 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
 - Recommendation: keep `PARTIAL`
 - Rationale:
   - Deterministic `TIMETZ` handling remains implemented and now sits inside a broader scalar/temporal/text/range/geometry codec matrix.
-  - Deterministic `BYTEA`, unknown fixed-width binary fallback, null/limit payload-shape behavior, and malformed/truncated payload guard behavior are now explicitly asserted.
+  - Deterministic `BYTEA`, unknown fixed-width binary fallback, null/limit payload-shape behavior, and malformed/truncated guard behavior across scalar/range/composite payload families are now explicitly asserted.
   - Remaining work is no longer the original `TIMETZ` gap; it is final edge-case matrix depth plus live integration breadth.
 
 ## Remaining Gaps
 
-1. Continue extending deterministic coverage toward exhaustive edge payload variants (broader corner-case permutations across composite/vector/range families beyond current malformed scalar+range guards).
+1. Continue extending deterministic coverage toward exhaustive edge payload variants (broader corner-case permutations across vector/range/composite families beyond current malformed-frame guards).
 2. Add non-env-gated live type integration assertions (current integration fixture remains env-gated).

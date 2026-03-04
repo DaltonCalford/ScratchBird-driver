@@ -748,13 +748,15 @@ begin
   if System.Length(Data) < 4 then
     Exit(nil);
   Count := ReadInt32LE(Data, 0);
+  if Count < 0 then
+    Exit(nil);
   Offset := 4;
   SetLength(FieldOids, Count);
   SetLength(FieldValues, Count);
   for I := 0 to Count - 1 do
   begin
     if Offset + 8 > System.Length(Data) then
-      Break;
+      Exit(nil);
     FieldOid := ReadUInt32LE(Data, Offset);
     Inc(Offset, 4);
     FieldLen := ReadInt32LE(Data, Offset);
@@ -766,7 +768,7 @@ begin
       Continue;
     end;
     if Offset + FieldLen > System.Length(Data) then
-      Break;
+      Exit(nil);
     SetLength(FieldData, FieldLen);
     if FieldLen > 0 then
       Move(Data[Offset], FieldData[0], FieldLen);
@@ -1171,6 +1173,7 @@ function DecodeValue(TypeOid: Cardinal; const Data: TBytes; Format: Word): Varia
 var
   Jsonb: TScratchBirdJsonb;
   Geometry: TScratchBirdGeometry;
+  Composite: IInterface;
 begin
   if System.Length(Data) = 0 then
     Exit(Null);
@@ -1257,7 +1260,13 @@ begin
         Result := IInterface(Geometry);
       end;
     OID_RECORD:
-      Result := DecodeComposite(Data);
+      begin
+        Composite := DecodeComposite(Data);
+        if Composite = nil then
+          Result := Null
+        else
+          Result := Composite;
+      end;
   else
     Result := Data;
   end;

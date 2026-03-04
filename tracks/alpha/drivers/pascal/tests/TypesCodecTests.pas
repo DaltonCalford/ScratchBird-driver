@@ -258,6 +258,27 @@ begin
   AssertEqualInt(77, VarAsType(DecodedComposite.GetFieldValue(0), varInteger), 'composite field value');
 end;
 
+procedure TestDecodeMalformedCompositePayloadReturnsNull;
+var
+  Decoded: Variant;
+begin
+  Decoded := DecodeValue(OID_RECORD, WriteInt32LE(-1), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'negative composite field count should decode as null');
+
+  Decoded := DecodeValue(OID_RECORD, ConcatBytes(WriteInt32LE(1), WriteInt32LE(OID_INT4)), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'truncated composite field header should decode as null');
+
+  Decoded := DecodeValue(
+    OID_RECORD,
+    ConcatBytes(
+      WriteInt32LE(1),
+      ConcatBytes(
+        WriteInt32LE(OID_INT4),
+        ConcatBytes(WriteInt32LE(4), TBytes.Create($01, $02)))),
+    FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'truncated composite field payload should decode as null');
+end;
+
 procedure TestDecodeUnknownUsesTextHeuristics;
 var
   BoolText: Variant;
@@ -682,6 +703,7 @@ begin
     TestDecodeVectorBinaryReturnsNumericVariantArray;
     TestDecodeJsonbBinaryReturnsWrapper;
     TestDecodeCompositeRoundTripReturnsFields;
+    TestDecodeMalformedCompositePayloadReturnsNull;
     TestDecodeUnknownUsesTextHeuristics;
     TestDecodeByteaPayloadReturnsVariantByteArray;
     TestDecodeUnknownBinaryFixedWidthFallbacks;
