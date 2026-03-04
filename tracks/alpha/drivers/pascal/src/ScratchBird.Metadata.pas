@@ -69,9 +69,18 @@ function MetadataIndexColumnsQuery: string;
 function MetadataConstraintsQuery: string;
 function MetadataProceduresQuery: string;
 function MetadataFunctionsQuery: string;
+function MetadataRoutinesQuery: string;
+function MetadataCatalogsQuery: string;
+function MetadataPrimaryKeysQuery: string;
+function MetadataForeignKeysQuery: string;
+function MetadataTablePrivilegesQuery: string;
+function MetadataColumnPrivilegesQuery: string;
+function MetadataTypeInfoQuery: string;
 function NormalizeMetadataCollectionName(const CollectionName: string): string;
 function ResolveMetadataCollectionQuery(const CollectionName: string): string;
 function MetadataRowTryGetValue(const Row: TMetadataRow; const Key: string; out Value: Variant): Boolean;
+function FilterMetadataRowsByRestrictions(const Rows: TMetadataRows; const Restrictions: TMetadataRow;
+  const CollectionName: string = 'tables'): TMetadataRows;
 function ExpandSchemaPaths(const SchemaPaths: array of string): TArray<string>;
 function ListMetadataSchemaPaths(const Rows: TMetadataRows; ExpandParents: Boolean): TArray<string>;
 function ExpandSchemaMetadataRows(const Rows: TMetadataRows): TMetadataRows;
@@ -89,7 +98,7 @@ const
     'TABLE_SCHEMA',
     'schema'
   );
-  METADATA_COLLECTION_ALIASES: array[0..15, 0..1] of string = (
+  METADATA_COLLECTION_ALIASES: array[0..34, 0..1] of string = (
     ('schemas', 'schemas'),
     ('schema', 'schemas'),
     ('tables', 'tables'),
@@ -105,8 +114,34 @@ const
     ('procedures', 'procedures'),
     ('procedure', 'procedures'),
     ('functions', 'functions'),
-    ('function', 'functions')
+    ('function', 'functions'),
+    ('routines', 'routines'),
+    ('routine', 'routines'),
+    ('catalogs', 'catalogs'),
+    ('catalog', 'catalogs'),
+    ('primary_keys', 'primary_keys'),
+    ('primarykeys', 'primary_keys'),
+    ('primarykey', 'primary_keys'),
+    ('pk', 'primary_keys'),
+    ('foreign_keys', 'foreign_keys'),
+    ('foreignkeys', 'foreign_keys'),
+    ('foreignkey', 'foreign_keys'),
+    ('fk', 'foreign_keys'),
+    ('table_privileges', 'table_privileges'),
+    ('tableprivileges', 'table_privileges'),
+    ('column_privileges', 'column_privileges'),
+    ('columnprivileges', 'column_privileges'),
+    ('type_info', 'type_info'),
+    ('typeinfo', 'type_info'),
+    ('types', 'type_info')
   );
+
+type
+  TMetadataRestrictionBinding = record
+    Aliases: TArray<string>;
+    ExpectNull: Boolean;
+    Pattern: string;
+  end;
 
 function NormalizeCollectionKey(const Value: string): string;
 var
@@ -167,6 +202,20 @@ begin
     Exit(MetadataProceduresQuery);
   if Normalized = 'functions' then
     Exit(MetadataFunctionsQuery);
+  if Normalized = 'routines' then
+    Exit(MetadataRoutinesQuery);
+  if Normalized = 'catalogs' then
+    Exit(MetadataCatalogsQuery);
+  if Normalized = 'primary_keys' then
+    Exit(MetadataPrimaryKeysQuery);
+  if Normalized = 'foreign_keys' then
+    Exit(MetadataForeignKeysQuery);
+  if Normalized = 'table_privileges' then
+    Exit(MetadataTablePrivilegesQuery);
+  if Normalized = 'column_privileges' then
+    Exit(MetadataColumnPrivilegesQuery);
+  if Normalized = 'type_info' then
+    Exit(MetadataTypeInfoQuery);
   raise EScratchbirdNotSupported.CreateWithInfo(
     'Metadata collection "' + CollectionName + '" is not supported',
     '0A000',
@@ -262,6 +311,11 @@ begin
   end;
 end;
 
+function NormalizeMetadataIdentifier(const Value: string): string;
+begin
+  Result := NormalizeCollectionKey(Value);
+end;
+
 function MetadataRowTryGetValue(const Row: TMetadataRow; const Key: string; out Value: Variant): Boolean;
 var
   I: Integer;
@@ -276,6 +330,390 @@ begin
   end;
   Value := Null;
   Result := False;
+end;
+
+function MetadataRowTryGetValueByAlias(const Row: TMetadataRow; const Alias: string; out Value: Variant): Boolean;
+var
+  I: Integer;
+  Target, Candidate: string;
+begin
+  Target := NormalizeMetadataIdentifier(Alias);
+  if Target = '' then
+  begin
+    Value := Null;
+    Exit(False);
+  end;
+
+  for I := 0 to High(Row) do
+  begin
+    Candidate := NormalizeMetadataIdentifier(Row[I].Name);
+    if Candidate = Target then
+    begin
+      Value := Row[I].Value;
+      Exit(True);
+    end;
+  end;
+
+  Value := Null;
+  Result := False;
+end;
+
+function StringArray(const Values: array of string): TArray<string>;
+var
+  I: Integer;
+begin
+  Result := nil;
+  SetLength(Result, Length(Values));
+  for I := 0 to High(Values) do
+    Result[I] := Values[I];
+end;
+
+function MetadataRestrictionAliases(const Key: string): TArray<string>;
+var
+  Canonical: string;
+begin
+  Canonical := NormalizeMetadataIdentifier(Key);
+  if Canonical = 'catalog' then
+    Result := StringArray(['catalog_name', 'table_catalog', 'table_cat', 'catalog'])
+  else if Canonical = 'schema' then
+    Result := StringArray(['schema_name', 'table_schema', 'table_schem', 'schema'])
+  else if Canonical = 'table' then
+    Result := StringArray(['table_name', 'table', 'relname'])
+  else if Canonical = 'column' then
+    Result := StringArray(['column_name', 'column'])
+  else if Canonical = 'index' then
+    Result := StringArray(['index_name', 'index'])
+  else if Canonical = 'constraint' then
+    Result := StringArray(['constraint_name', 'constraint'])
+  else if Canonical = 'procedure' then
+    Result := StringArray(['procedure_name', 'routine_name', 'procedure'])
+  else if Canonical = 'function' then
+    Result := StringArray(['function_name', 'routine_name', 'function'])
+  else if Canonical = 'type' then
+    Result := StringArray(['type_name', 'data_type_name', 'data_type', 'udt_name'])
+  else
+    Result := nil;
+
+  if Canonical <> '' then
+  begin
+    SetLength(Result, Length(Result) + 1);
+    Result[High(Result)] := Canonical;
+  end;
+end;
+
+function MetadataCollectionRestrictionKeys(const CollectionName: string): TArray<string>;
+var
+  Resolved: string;
+begin
+  Result := nil;
+  Resolved := '';
+  try
+    Resolved := NormalizeMetadataCollectionName(CollectionName);
+  except
+    on EScratchbirdNotSupported do
+      Exit(nil);
+  end;
+
+  if Resolved = 'catalogs' then
+    Exit(StringArray(['catalog']));
+  if Resolved = 'schemas' then
+    Exit(StringArray(['catalog', 'schema']));
+  if Resolved = 'tables' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'type']));
+  if Resolved = 'columns' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'column', 'type']));
+  if Resolved = 'indexes' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'index']));
+  if Resolved = 'index_columns' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'index', 'column']));
+  if Resolved = 'constraints' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'constraint']));
+  if Resolved = 'primary_keys' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'constraint']));
+  if Resolved = 'foreign_keys' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'constraint']));
+  if Resolved = 'table_privileges' then
+    Exit(StringArray(['catalog', 'schema', 'table']));
+  if Resolved = 'column_privileges' then
+    Exit(StringArray(['catalog', 'schema', 'table', 'column']));
+  if Resolved = 'procedures' then
+    Exit(StringArray(['catalog', 'schema', 'procedure']));
+  if Resolved = 'functions' then
+    Exit(StringArray(['catalog', 'schema', 'function']));
+  if Resolved = 'type_info' then
+    Exit(StringArray(['type']));
+end;
+
+function BuildAllowedRestrictionAliases(const CollectionName: string): TStringList;
+var
+  RestrictionKeys, Aliases: TArray<string>;
+  I, J: Integer;
+  Normalized: string;
+begin
+  Result := TStringList.Create;
+  Result.CaseSensitive := True;
+  Result.Sorted := False;
+  RestrictionKeys := MetadataCollectionRestrictionKeys(CollectionName);
+  for I := 0 to High(RestrictionKeys) do
+  begin
+    Aliases := MetadataRestrictionAliases(RestrictionKeys[I]);
+    for J := 0 to High(Aliases) do
+    begin
+      Normalized := NormalizeMetadataIdentifier(Aliases[J]);
+      if (Normalized = '') or (Result.IndexOf(Normalized) >= 0) then
+        Continue;
+      Result.Add(Normalized);
+    end;
+  end;
+end;
+
+function IsAllowedAlias(AllowedAliases: TStringList; const Alias: string): Boolean;
+var
+  Normalized: string;
+begin
+  if (AllowedAliases = nil) or (AllowedAliases.Count = 0) then
+    Exit(True);
+  Normalized := NormalizeMetadataIdentifier(Alias);
+  if Normalized = '' then
+    Exit(False);
+  Result := AllowedAliases.IndexOf(Normalized) >= 0;
+end;
+
+function RowContainsAnyAlias(const Row: TMetadataRow; const Aliases: TArray<string>): Boolean;
+var
+  I: Integer;
+  Value: Variant;
+begin
+  for I := 0 to High(Aliases) do
+  begin
+    if MetadataRowTryGetValueByAlias(Row, Aliases[I], Value) then
+      Exit(True);
+  end;
+  Result := False;
+end;
+
+function AnyRowContainsAnyAlias(const Rows: TMetadataRows; const Aliases: TArray<string>): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Rows) do
+  begin
+    if RowContainsAnyAlias(Rows[I], Aliases) then
+      Exit(True);
+  end;
+  Result := False;
+end;
+
+function RestrictionExpectsNull(const Value: Variant; out Pattern: string): Boolean;
+begin
+  if VarIsNull(Value) or VarIsEmpty(Value) then
+  begin
+    Pattern := '';
+    Exit(True);
+  end;
+
+  Pattern := Trim(VarToStr(Value));
+  if Pattern = '' then
+    Exit(False);
+  Result := SameText(Pattern, 'null');
+end;
+
+function ContainsWildcard(const Pattern: string): Boolean;
+begin
+  Result := (Pos('%', Pattern) > 0) or (Pos('_', Pattern) > 0);
+end;
+
+function MatchesWildcardPattern(const Value, Pattern: string): Boolean;
+var
+  ValueLower, PatternLower: string;
+  ValueIdx, PatternIdx: Integer;
+  LastPercentIdx, RetryValueIdx: Integer;
+begin
+  ValueLower := LowerCase(Value);
+  PatternLower := LowerCase(Pattern);
+  ValueIdx := 1;
+  PatternIdx := 1;
+  LastPercentIdx := 0;
+  RetryValueIdx := 0;
+
+  while ValueIdx <= Length(ValueLower) do
+  begin
+    if (PatternIdx <= Length(PatternLower)) and
+       ((PatternLower[PatternIdx] = '_') or (PatternLower[PatternIdx] = ValueLower[ValueIdx])) then
+    begin
+      Inc(ValueIdx);
+      Inc(PatternIdx);
+      Continue;
+    end;
+
+    if (PatternIdx <= Length(PatternLower)) and (PatternLower[PatternIdx] = '%') then
+    begin
+      LastPercentIdx := PatternIdx;
+      Inc(PatternIdx);
+      RetryValueIdx := ValueIdx;
+      Continue;
+    end;
+
+    if LastPercentIdx > 0 then
+    begin
+      PatternIdx := LastPercentIdx + 1;
+      Inc(RetryValueIdx);
+      ValueIdx := RetryValueIdx;
+      Continue;
+    end;
+
+    Exit(False);
+  end;
+
+  while (PatternIdx <= Length(PatternLower)) and (PatternLower[PatternIdx] = '%') do
+    Inc(PatternIdx);
+
+  Result := PatternIdx > Length(PatternLower);
+end;
+
+function MatchesRestrictionPattern(const Value, Pattern: string): Boolean;
+begin
+  if not ContainsWildcard(Pattern) then
+    Exit(SameText(Value, Pattern));
+  Result := MatchesWildcardPattern(Value, Pattern);
+end;
+
+function BuildRestrictionBindings(const Rows: TMetadataRows; const Restrictions: TMetadataRow;
+  const CollectionName: string): TArray<TMetadataRestrictionBinding>;
+var
+  AllowedAliases, AliasSet: TStringList;
+  I, J, BindingCount: Integer;
+  Restriction: TMetadataField;
+  RawAliases, EffectiveAliases: TArray<string>;
+  AliasId: string;
+  Pattern: string;
+  ExpectsNull: Boolean;
+begin
+  Result := nil;
+  SetLength(Result, 0);
+  if Length(Restrictions) = 0 then
+    Exit;
+
+  AllowedAliases := BuildAllowedRestrictionAliases(CollectionName);
+  try
+    for I := 0 to High(Restrictions) do
+    begin
+      Restriction := Restrictions[I];
+      if NormalizeMetadataIdentifier(Restriction.Name) = '' then
+        Continue;
+
+      RawAliases := MetadataRestrictionAliases(Restriction.Name);
+      if Length(RawAliases) = 0 then
+        Continue;
+
+      AliasSet := TStringList.Create;
+      try
+        AliasSet.CaseSensitive := True;
+        AliasSet.Sorted := False;
+        for J := 0 to High(RawAliases) do
+        begin
+          AliasId := NormalizeMetadataIdentifier(RawAliases[J]);
+          if AliasId = '' then
+            Continue;
+          if not IsAllowedAlias(AllowedAliases, AliasId) then
+            Continue;
+          if AliasSet.IndexOf(AliasId) >= 0 then
+            Continue;
+          AliasSet.Add(AliasId);
+        end;
+
+        SetLength(EffectiveAliases, AliasSet.Count);
+        for J := 0 to AliasSet.Count - 1 do
+          EffectiveAliases[J] := AliasSet[J];
+      finally
+        AliasSet.Free;
+      end;
+
+      if Length(EffectiveAliases) = 0 then
+        Continue;
+      if not AnyRowContainsAnyAlias(Rows, EffectiveAliases) then
+        Continue;
+
+      ExpectsNull := RestrictionExpectsNull(Restriction.Value, Pattern);
+      if (not ExpectsNull) and (Pattern = '') then
+        Continue;
+
+      BindingCount := Length(Result);
+      SetLength(Result, BindingCount + 1);
+      Result[BindingCount].Aliases := EffectiveAliases;
+      Result[BindingCount].ExpectNull := ExpectsNull;
+      Result[BindingCount].Pattern := Pattern;
+    end;
+  finally
+    AllowedAliases.Free;
+  end;
+end;
+
+function RowMatchesRestrictionBindings(const Row: TMetadataRow;
+  const Bindings: TArray<TMetadataRestrictionBinding>): Boolean;
+var
+  I, J: Integer;
+  Binding: TMetadataRestrictionBinding;
+  Value: Variant;
+  Matched: Boolean;
+begin
+  for I := 0 to High(Bindings) do
+  begin
+    Binding := Bindings[I];
+    Matched := False;
+    for J := 0 to High(Binding.Aliases) do
+    begin
+      if not MetadataRowTryGetValueByAlias(Row, Binding.Aliases[J], Value) then
+        Continue;
+      if Binding.ExpectNull then
+      begin
+        if VarIsNull(Value) or VarIsEmpty(Value) then
+        begin
+          Matched := True;
+          Break;
+        end;
+        Continue;
+      end;
+
+      if VarIsNull(Value) or VarIsEmpty(Value) then
+        Continue;
+      if MatchesRestrictionPattern(VarToStr(Value), Binding.Pattern) then
+      begin
+        Matched := True;
+        Break;
+      end;
+    end;
+
+    if not Matched then
+      Exit(False);
+  end;
+
+  Result := True;
+end;
+
+function FilterMetadataRowsByRestrictions(const Rows: TMetadataRows; const Restrictions: TMetadataRow;
+  const CollectionName: string): TMetadataRows;
+var
+  Bindings: TArray<TMetadataRestrictionBinding>;
+  I, Count: Integer;
+begin
+  if Length(Restrictions) = 0 then
+    Exit(Rows);
+
+  Bindings := BuildRestrictionBindings(Rows, Restrictions, CollectionName);
+  if Length(Bindings) = 0 then
+    Exit(Rows);
+
+  Result := nil;
+  SetLength(Result, 0);
+  for I := 0 to High(Rows) do
+  begin
+    if not RowMatchesRestrictionBindings(Rows[I], Bindings) then
+      Continue;
+    Count := Length(Result);
+    SetLength(Result, Count + 1);
+    Result[Count] := CloneMetadataRow(Rows[I]);
+  end;
 end;
 
 function TryReadSchemaPath(const Row: TMetadataRow; out SchemaPath: string): Boolean;
@@ -365,6 +803,41 @@ end;
 function MetadataFunctionsQuery: string;
 begin
   Result := 'SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name';
+end;
+
+function MetadataRoutinesQuery: string;
+begin
+  Result := 'SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, ''FUNCTION'' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name';
+end;
+
+function MetadataCatalogsQuery: string;
+begin
+  Result := 'SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name';
+end;
+
+function MetadataPrimaryKeysQuery: string;
+begin
+  Result := 'SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN (''primary key'', ''primary'') ORDER BY table_id, constraint_name';
+end;
+
+function MetadataForeignKeysQuery: string;
+begin
+  Result := 'SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN (''foreign key'', ''foreign'') ORDER BY table_id, constraint_name';
+end;
+
+function MetadataTablePrivilegesQuery: string;
+begin
+  Result := 'SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, ''ALL'' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name';
+end;
+
+function MetadataColumnPrivilegesQuery: string;
+begin
+  Result := 'SELECT table_id, column_id, column_name, ''ALL'' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position';
+end;
+
+function MetadataTypeInfoQuery: string;
+begin
+  Result := 'SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name';
 end;
 
 function ExpandSchemaPaths(const SchemaPaths: array of string): TArray<string>;

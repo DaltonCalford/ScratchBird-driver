@@ -14,7 +14,7 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  SysUtils, Variants, ScratchBird.Metadata, ScratchBird.Errors;
+  SysUtils, Variants, ScratchBird.Metadata, ScratchBird.Errors, ScratchBird.Client;
 
 procedure Fail(const MessageText: string);
 begin
@@ -237,8 +237,27 @@ var
 begin
   AssertEqualString('schemas', NormalizeMetadataCollectionName('schema'), 'schema alias normalization');
   AssertEqualString('index_columns', NormalizeMetadataCollectionName('indexColumns'), 'index columns alias normalization');
+  AssertEqualString('catalogs', NormalizeMetadataCollectionName('catalog'), 'catalog alias normalization');
+  AssertEqualString('primary_keys', NormalizeMetadataCollectionName('pk'), 'primary keys alias normalization');
+  AssertEqualString('foreign_keys', NormalizeMetadataCollectionName('fk'), 'foreign keys alias normalization');
+  AssertEqualString('type_info', NormalizeMetadataCollectionName('typeinfo'), 'type info alias normalization');
+  AssertEqualString('routines', NormalizeMetadataCollectionName('routine'), 'routine alias normalization');
   SqlText := ResolveMetadataCollectionQuery('constraints');
   AssertContains('FROM sys.constraints', SqlText, 'constraints query resolution');
+  SqlText := ResolveMetadataCollectionQuery('catalogs');
+  AssertContains('AS catalog_name', SqlText, 'catalogs query resolution');
+  SqlText := ResolveMetadataCollectionQuery('routines');
+  AssertContains('UNION ALL', SqlText, 'routines query resolution');
+  SqlText := ResolveMetadataCollectionQuery('primary_keys');
+  AssertContains('lower(constraint_type)', SqlText, 'primary keys query resolution');
+  SqlText := ResolveMetadataCollectionQuery('foreign_keys');
+  AssertContains('foreign key', SqlText, 'foreign keys query resolution');
+  SqlText := ResolveMetadataCollectionQuery('table_privileges');
+  AssertContains('privilege_type', SqlText, 'table privileges query resolution');
+  SqlText := ResolveMetadataCollectionQuery('column_privileges');
+  AssertContains('FROM sys.columns', SqlText, 'column privileges query resolution');
+  SqlText := ResolveMetadataCollectionQuery('type_info');
+  AssertContains('SELECT DISTINCT', SqlText, 'type info query resolution');
 
   try
     ResolveMetadataCollectionQuery('unsupported_metadata_family');
@@ -252,6 +271,165 @@ begin
   end;
 end;
 
+procedure TestFilterMetadataRowsByRestrictionsSupportsAliasesWildcardAndNull;
+var
+  Rows: TMetadataRows;
+  Restrictions: TMetadataRow;
+  Filtered: TMetadataRows;
+begin
+  SetLength(Rows, 3);
+  Rows[0] := MetadataRow([
+    MetadataField('table_schema', 'users'),
+    MetadataField('table_name', 'accounts'),
+    MetadataField('column_name', 'id'),
+    MetadataField('data_type_name', 'INTEGER')
+  ]);
+  Rows[1] := MetadataRow([
+    MetadataField('table_schema', 'users'),
+    MetadataField('table_name', 'accounts'),
+    MetadataField('column_name', 'email'),
+    MetadataField('data_type_name', Null)
+  ]);
+  Rows[2] := MetadataRow([
+    MetadataField('table_schema', 'sys'),
+    MetadataField('table_name', 'catalog_tables'),
+    MetadataField('column_name', 'table_name'),
+    MetadataField('data_type_name', 'VARCHAR')
+  ]);
+
+  Restrictions := MetadataRow([
+    MetadataField('schema', 'users'),
+    MetadataField('table', 'acc%')
+  ]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'columns');
+  AssertEqualStringArray(
+    StringArray(['id', 'email']),
+    CollectSchemaValues(Filtered, 'column_name'),
+    'schema/table restriction filtering');
+
+  Restrictions := MetadataRow([
+    MetadataField('schema', 'users'),
+    MetadataField('column', 'e%')
+  ]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'columns');
+  AssertEqualStringArray(
+    StringArray(['email']),
+    CollectSchemaValues(Filtered, 'column_name'),
+    'wildcard column restriction filtering');
+
+  Restrictions := MetadataRow([MetadataField('type', 'null')]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'columns');
+  AssertEqualStringArray(
+    StringArray(['email']),
+    CollectSchemaValues(Filtered, 'column_name'),
+    'null-literal restriction filtering');
+
+  Restrictions := MetadataRow([
+    MetadataField('schema', 'users'),
+    MetadataField('unsupported_key', 'ignored')
+  ]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'columns');
+  AssertEqualStringArray(
+    StringArray(['id', 'email']),
+    CollectSchemaValues(Filtered, 'column_name'),
+    'unsupported restriction keys are ignored');
+end;
+
+procedure TestClientMetadataApiGuards;
+var
+  Client: TScratchBirdClient;
+begin
+  Client := TScratchBirdClient.Create;
+  try
+    try
+      Client.QueryMetadata('unsupported_metadata_family');
+      Fail('unsupported metadata collection should fail before connect');
+    except
+      on E: EScratchbirdNotSupported do
+      begin
+        AssertEqualString('0A000', E.SQLState, 'client metadata unsupported SQLSTATE');
+        AssertContains('not supported', E.Message, 'client metadata unsupported message');
+      end;
+    end;
+
+    try
+      Client.GetSchema('tables');
+      Fail('supported metadata collection should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+      begin
+        AssertEqualString('08003', E.SQLState, 'client metadata disconnected SQLSTATE');
+        AssertContains('not connected', E.Message, 'client metadata disconnected message');
+      end;
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
+procedure TestClientMetadataRowsApiGuards;
+var
+  Client: TScratchBirdClient;
+  Restrictions: TMetadataRow;
+begin
+  Client := TScratchBirdClient.Create;
+  try
+    Restrictions := MetadataRow([MetadataField('schema', 'users')]);
+
+    try
+      Client.QueryMetadataRows('unsupported_metadata_family', Restrictions);
+      Fail('unsupported metadata collection should fail for QueryMetadataRows');
+    except
+      on E: EScratchbirdNotSupported do
+        AssertEqualString('0A000', E.SQLState, 'QueryMetadataRows unsupported SQLSTATE');
+    end;
+
+    try
+      Client.QueryMetadataRows('tables', Restrictions);
+      Fail('supported metadata QueryMetadataRows should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'QueryMetadataRows disconnected SQLSTATE');
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
+procedure TestTypedMetadataApiGuards;
+var
+  Client: TScratchBirdClient;
+begin
+  Client := TScratchBirdClient.Create;
+  try
+    try
+      Client.GetCatalogs;
+      Fail('GetCatalogs should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'GetCatalogs disconnected SQLSTATE');
+    end;
+
+    try
+      Client.GetRoutines;
+      Fail('GetRoutines should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'GetRoutines disconnected SQLSTATE');
+    end;
+
+    try
+      Client.GetTypeInfo;
+      Fail('GetTypeInfo should require connected client');
+    except
+      on E: EScratchbirdConnectionError do
+        AssertEqualString('08003', E.SQLState, 'GetTypeInfo disconnected SQLSTATE');
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
 begin
   try
     TestExpandMetadataRowsSupportsDatabaseDefaultBranchStyleRows;
@@ -259,6 +437,10 @@ begin
     TestBuildMetadataSchemaTreeEnforcesPerParentUniqueness;
     TestBuildMetadataSchemaTreeAllowsSameLeafUnderDifferentParents;
     TestMetadataCollectionResolution;
+    TestFilterMetadataRowsByRestrictionsSupportsAliasesWildcardAndNull;
+    TestClientMetadataApiGuards;
+    TestClientMetadataRowsApiGuards;
+    TestTypedMetadataApiGuards;
     Writeln('MetadataRecursiveSchemaTests: OK');
   except
     on E: Exception do

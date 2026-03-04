@@ -148,6 +148,24 @@ type
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
     function QueryMetadata(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
+    function QueryMetadataRows(const CollectionName: string = 'tables'): TMetadataRows; overload;
+    function QueryMetadataRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows; overload;
+    function GetSchemaRows(const CollectionName: string = 'tables'): TMetadataRows; overload;
+    function GetSchemaRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows; overload;
+    function GetCatalogs: TScratchBirdResultStream;
+    function GetSchemas: TScratchBirdResultStream;
+    function GetTables: TScratchBirdResultStream;
+    function GetColumns: TScratchBirdResultStream;
+    function GetIndexes: TScratchBirdResultStream;
+    function GetConstraints: TScratchBirdResultStream;
+    function GetProcedures: TScratchBirdResultStream;
+    function GetFunctions: TScratchBirdResultStream;
+    function GetRoutines: TScratchBirdResultStream;
+    function GetPrimaryKeys: TScratchBirdResultStream;
+    function GetForeignKeys: TScratchBirdResultStream;
+    function GetTablePrivileges: TScratchBirdResultStream;
+    function GetColumnPrivileges: TScratchBirdResultStream;
+    function GetTypeInfo: TScratchBirdResultStream;
     procedure Cancel;
     function GetLastPlan(out Plan: TQueryPlan): Boolean;
     function GetLastSblr(out Compiled: TSblrCompiled): Boolean;
@@ -711,6 +729,131 @@ end;
 function TScratchBirdClient.GetSchema(const CollectionName: string): TScratchBirdResultStream;
 begin
   Result := QueryMetadata(CollectionName);
+end;
+
+function TScratchBirdClient.QueryMetadataRows(const CollectionName: string): TMetadataRows;
+var
+  EmptyRestrictions: TMetadataRow;
+begin
+  SetLength(EmptyRestrictions, 0);
+  Result := QueryMetadataRows(CollectionName, EmptyRestrictions);
+end;
+
+function TScratchBirdClient.QueryMetadataRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows;
+var
+  Stream: TScratchBirdResultStream;
+  RawRow: TArray<Variant>;
+  Columns: TArray<TColumnInfo>;
+  RowIndex, I: Integer;
+begin
+  Stream := QueryMetadata(CollectionName);
+  try
+    Result := nil;
+    SetLength(Result, 0);
+    while True do
+    begin
+      RawRow := Stream.ReadRow;
+      if RawRow = nil then
+        Break;
+
+      Columns := Stream.Columns;
+      RowIndex := Length(Result);
+      SetLength(Result, RowIndex + 1);
+      SetLength(Result[RowIndex], Length(RawRow));
+      for I := 0 to High(RawRow) do
+      begin
+        if I < Length(Columns) then
+          Result[RowIndex][I].Name := Columns[I].Name
+        else
+          Result[RowIndex][I].Name := 'column_' + IntToStr(I + 1);
+        Result[RowIndex][I].Value := RawRow[I];
+      end;
+    end;
+  finally
+    Stream.Free;
+  end;
+
+  Result := FilterMetadataRowsByRestrictions(Result, Restrictions, CollectionName);
+end;
+
+function TScratchBirdClient.GetSchemaRows(const CollectionName: string): TMetadataRows;
+begin
+  Result := QueryMetadataRows(CollectionName);
+end;
+
+function TScratchBirdClient.GetSchemaRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows;
+begin
+  Result := QueryMetadataRows(CollectionName, Restrictions);
+end;
+
+function TScratchBirdClient.GetCatalogs: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('catalogs');
+end;
+
+function TScratchBirdClient.GetSchemas: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('schemas');
+end;
+
+function TScratchBirdClient.GetTables: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('tables');
+end;
+
+function TScratchBirdClient.GetColumns: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('columns');
+end;
+
+function TScratchBirdClient.GetIndexes: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('indexes');
+end;
+
+function TScratchBirdClient.GetConstraints: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('constraints');
+end;
+
+function TScratchBirdClient.GetProcedures: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('procedures');
+end;
+
+function TScratchBirdClient.GetFunctions: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('functions');
+end;
+
+function TScratchBirdClient.GetRoutines: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('routines');
+end;
+
+function TScratchBirdClient.GetPrimaryKeys: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('primary_keys');
+end;
+
+function TScratchBirdClient.GetForeignKeys: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('foreign_keys');
+end;
+
+function TScratchBirdClient.GetTablePrivileges: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('table_privileges');
+end;
+
+function TScratchBirdClient.GetColumnPrivileges: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('column_privileges');
+end;
+
+function TScratchBirdClient.GetTypeInfo: TScratchBirdResultStream;
+begin
+  Result := QueryMetadata('type_info');
 end;
 
 procedure TScratchBirdClient.Cancel;

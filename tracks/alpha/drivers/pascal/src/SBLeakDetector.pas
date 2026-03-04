@@ -36,6 +36,8 @@ type
     FConfig: TLeakDetectionConfig;
     FCheckouts: TThreadList;
     FRunning: Boolean;
+    FStarted: Boolean;
+    procedure ClearCheckouts;
     procedure CheckLeaks;
     procedure LogLeak(const ConnId: string; Info: TCheckoutInfo);
   protected
@@ -54,6 +56,15 @@ function DefaultLeakDetectionConfig: TLeakDetectionConfig;
 
 implementation
 
+type
+  TLeakCheckoutEntry = class
+  public
+    ConnectionId: string;
+    Info: TCheckoutInfo;
+    constructor Create(const AConnectionId: string; AInfo: TCheckoutInfo);
+    destructor Destroy; override;
+  end;
+
 {$IFDEF FPC}
 function GetStackTraceInfo: string;
 begin
@@ -69,13 +80,38 @@ begin
   Result.LogLevel := llWarn;
 end;
 
+{ TLeakCheckoutEntry }
+
+constructor TLeakCheckoutEntry.Create(const AConnectionId: string; AInfo: TCheckoutInfo);
+begin
+  ConnectionId := AConnectionId;
+  Info := AInfo;
+end;
+
+destructor TLeakCheckoutEntry.Destroy;
+begin
+  Info.Free;
+  inherited Destroy;
+end;
+
 { TCheckoutInfo }
 
 constructor TCheckoutInfo.Create(CaptureStackTrace: Boolean; const Meta: array of string);
+var
+  I: Integer;
 begin
   CheckoutTime := Now;
   ThreadId := ThreadID;
   Metadata := TStringList.Create;
+  I := 0;
+  while I <= High(Meta) do
+  begin
+    if I = High(Meta) then
+      Metadata.Values['meta_' + IntToStr(I div 2)] := Meta[I]
+    else
+      Metadata.Values[Meta[I]] := Meta[I + 1];
+    Inc(I, 2);
+  end;
   if CaptureStackTrace then
     StackTrace := GetStackTraceInfo
   else
@@ -101,38 +137,79 @@ begin
   FConfig := Config;
   FCheckouts := TThreadList.Create;
   FRunning := False;
+  FStarted := False;
 end;
 
 destructor TLeakDetector.Destroy;
 begin
   Stop;
+  ClearCheckouts;
   FCheckouts.Free;
   inherited Destroy;
 end;
 
 procedure TLeakDetector.Start;
 begin
+  if FStarted then
+    Exit;
   FRunning := True;
+  FStarted := True;
   inherited Start;
 end;
 
 procedure TLeakDetector.Stop;
 begin
+  if not FStarted then
+    Exit;
   FRunning := False;
+  Terminate;
   WaitFor;
 end;
 
 procedure TLeakDetector.Checkout(const ConnectionId: string; const Metadata: array of string);
 var
-  Info: TCheckoutInfo;
+  Entry: TLeakCheckoutEntry;
+  List: TList;
+  I: Integer;
 begin
-  Info := TCheckoutInfo.Create(FConfig.CaptureStackTrace, Metadata);
-  // Add to list
+  Entry := TLeakCheckoutEntry.Create(ConnectionId, TCheckoutInfo.Create(FConfig.CaptureStackTrace, Metadata));
+  List := FCheckouts.LockList;
+  try
+    for I := List.Count - 1 downto 0 do
+      if SameText(TLeakCheckoutEntry(List[I]).ConnectionId, ConnectionId) then
+      begin
+        TObject(List[I]).Free;
+        List.Delete(I);
+      end;
+    List.Add(Entry);
+    Entry := nil;
+  finally
+    FCheckouts.UnlockList;
+    Entry.Free;
+  end;
 end;
 
 procedure TLeakDetector.Checkin(const ConnectionId: string);
+var
+  List: TList;
+  I: Integer;
+  Entry: TLeakCheckoutEntry;
 begin
-  // Remove from list
+  List := FCheckouts.LockList;
+  try
+    for I := List.Count - 1 downto 0 do
+    begin
+      Entry := TLeakCheckoutEntry(List[I]);
+      if SameText(Entry.ConnectionId, ConnectionId) then
+      begin
+        List.Delete(I);
+        Entry.Free;
+        Break;
+      end;
+    end;
+  finally
+    FCheckouts.UnlockList;
+  end;
 end;
 
 function TLeakDetector.GetActiveCount: Integer;
@@ -151,15 +228,46 @@ procedure TLeakDetector.Execute;
 begin
   while FRunning and not Terminated do
   begin
-    Sleep(FConfig.CheckIntervalMs);
+    Sleep(Integer(FConfig.CheckIntervalMs));
     if FRunning then
       CheckLeaks;
   end;
 end;
 
-procedure TLeakDetector.CheckLeaks;
+procedure TLeakDetector.ClearCheckouts;
+var
+  List: TList;
+  I: Integer;
 begin
-  // Check for leaks
+  List := FCheckouts.LockList;
+  try
+    for I := List.Count - 1 downto 0 do
+      TObject(List[I]).Free;
+    List.Clear;
+  finally
+    FCheckouts.UnlockList;
+  end;
+end;
+
+procedure TLeakDetector.CheckLeaks;
+var
+  List: TList;
+  I: Integer;
+  Entry: TLeakCheckoutEntry;
+begin
+  List := FCheckouts.LockList;
+  try
+    for I := 0 to List.Count - 1 do
+    begin
+      Entry := TLeakCheckoutEntry(List[I]);
+      if (Entry = nil) or (Entry.Info = nil) then
+        Continue;
+      if Entry.Info.GetHeldDurationMs > FConfig.ThresholdMs then
+        LogLeak(Entry.ConnectionId, Entry.Info);
+    end;
+  finally
+    FCheckouts.UnlockList;
+  end;
 end;
 
 procedure TLeakDetector.LogLeak(const ConnId: string; Info: TCheckoutInfo);

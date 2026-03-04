@@ -60,34 +60,50 @@
 ## META (JDBCBL: META)
 - Current status: Partial
 - Lane-local source anchors:
-  - `src/ScratchBird.Metadata.pas:64`, `src/ScratchBird.Metadata.pas:65`, `src/ScratchBird.Metadata.pas:66`, `src/ScratchBird.Metadata.pas:67`
-  - `src/ScratchBird.Metadata.pas:68`, `src/ScratchBird.Metadata.pas:69`, `src/ScratchBird.Metadata.pas:70`, `src/ScratchBird.Metadata.pas:71`
-  - `src/ScratchBird.Metadata.pas:283` (`ExpandSchemaPaths`, dotted parent expansion + de-duplication)
-  - `src/ScratchBird.Metadata.pas:318` (`ListMetadataSchemaPaths`, metadata-row schema extraction + optional parent expansion)
-  - `src/ScratchBird.Metadata.pas:346` (`ExpandSchemaMetadataRows`, synthetic ancestor-row shaping for recursive navigation)
-  - `src/ScratchBird.Metadata.pas:517` (`BuildMetadataSchemaTree`, recursive schema tree with per-parent uniqueness and terminal-node semantics)
+  - `src/ScratchBird.Metadata.pas:160` (`NormalizeMetadataCollectionName`, alias normalization across schema/table/index/constraint/routine/catalog/key/privilege/type metadata families)
+  - `src/ScratchBird.Metadata.pas:184` (`ResolveMetadataCollectionQuery`, metadata collection to SQL resolution)
+  - `src/ScratchBird.Metadata.pas:694` (`FilterMetadataRowsByRestrictions`, collection-scoped restriction filtering with wildcard and null semantics)
+  - `src/ScratchBird.Metadata.pas:808`, `src/ScratchBird.Metadata.pas:813`, `src/ScratchBird.Metadata.pas:818`, `src/ScratchBird.Metadata.pas:823`, `src/ScratchBird.Metadata.pas:828`, `src/ScratchBird.Metadata.pas:833`, `src/ScratchBird.Metadata.pas:838` (routines/catalogs/primary_keys/foreign_keys/table_privileges/column_privileges/type_info query builders)
+  - `src/ScratchBird.Metadata.pas:843` (`ExpandSchemaPaths`, dotted parent expansion + de-duplication)
+  - `src/ScratchBird.Metadata.pas:878` (`ListMetadataSchemaPaths`, metadata-row schema extraction + optional parent expansion)
+  - `src/ScratchBird.Metadata.pas:906` (`ExpandSchemaMetadataRows`, synthetic ancestor-row shaping for recursive navigation)
+  - `src/ScratchBird.Metadata.pas:1077` (`BuildMetadataSchemaTree`, recursive schema tree with per-parent uniqueness and terminal-node semantics)
+  - `src/ScratchBird.Client.pas:724`, `src/ScratchBird.Client.pas:729` (generic client metadata stream API via `QueryMetadata`/`GetSchema`)
+  - `src/ScratchBird.Client.pas:734`, `src/ScratchBird.Client.pas:742`, `src/ScratchBird.Client.pas:779`, `src/ScratchBird.Client.pas:784` (materialized metadata-row API with optional restrictions via `QueryMetadataRows`/`GetSchemaRows`)
+  - `src/ScratchBird.Client.pas:789`, `src/ScratchBird.Client.pas:829`, `src/ScratchBird.Client.pas:854` (typed metadata wrapper methods for catalogs/routines/type_info)
 - Lane-local test anchors:
-  - `tests/MetadataRecursiveSchemaTests.pas:123` (database/default branch-style metadata-row expansion)
-  - `tests/MetadataRecursiveSchemaTests.pas:158` (dotted parent expansion ordering + uniqueness)
-  - `tests/MetadataRecursiveSchemaTests.pas:178` (per-parent uniqueness semantics)
-  - `tests/MetadataRecursiveSchemaTests.pas:202` (same leaf name under different parents)
+  - `tests/MetadataRecursiveSchemaTests.pas:129` (database/default branch-style metadata-row expansion)
+  - `tests/MetadataRecursiveSchemaTests.pas:164` (dotted parent expansion ordering + uniqueness)
+  - `tests/MetadataRecursiveSchemaTests.pas:184` (per-parent uniqueness semantics)
+  - `tests/MetadataRecursiveSchemaTests.pas:208` (same leaf name under different parents)
+  - `tests/MetadataRecursiveSchemaTests.pas:234` (metadata collection alias/query resolution coverage including catalogs/keys/privileges/type_info/routines)
+  - `tests/MetadataRecursiveSchemaTests.pas:274` (restriction filtering coverage for aliases/wildcards/null semantics and unsupported restriction ignore behavior)
+  - `tests/MetadataRecursiveSchemaTests.pas:338` (client metadata stream API guards: unsupported collection => `0A000`, disconnected supported collection => `08003`)
+  - `tests/MetadataRecursiveSchemaTests.pas:370` (client metadata rows API guards for unsupported/disconnected paths)
+  - `tests/MetadataRecursiveSchemaTests.pas:399` (typed metadata wrapper API guards on disconnected client)
 - Gaps/next actions:
-  - Add client/adapter metadata APIs that execute these metadata helpers for first-class metadata collections.
+  - Add adapter-level metadata APIs and per-family typed overloads on top of the existing client metadata wrappers/row materialization surface.
   - Add metadata integration tests for schema/table/column/index/constraint/routine query paths.
-  - Add broader JDBC metadata-family parity coverage (catalog/key/privilege/type families and restriction mapping).
+  - Extend result-shape parity fields to align more tightly with JDBC metadata contracts across collection families.
 
 ## TYPE (JDBCBL: TYPE)
 - Current status: Partial
 - Lane-local source anchors:
-  - `src/ScratchBird.Types.pas:184`, `src/ScratchBird.Types.pas:612`, `src/ScratchBird.Types.pas:733`, `src/ScratchBird.Types.pas:975`, `src/ScratchBird.Types.pas:1041`
   - `src/ScratchBird.Types.pas:53`, `src/ScratchBird.Types.pas:57`, `src/ScratchBird.Types.pas:66`
+  - `src/ScratchBird.Types.pas:523`, `src/ScratchBird.Types.pas:532` (`TIMETZ` encode helpers including zone-offset payload handling)
+  - `src/ScratchBird.Types.pas:752`, `src/ScratchBird.Types.pas:923` (`EncodeParam` scalar/array type routing including `TIMETZ` variant-array encoding)
+  - `src/ScratchBird.Types.pas:991`, `src/ScratchBird.Types.pas:1097` (`TIMETZ` decode and per-OID decode dispatch)
   - `src/ScratchBird.Client.pas:274`
 - Lane-local test anchors:
+  - `tests/TypesCodecTests.pas:131` (scalar encode/decode anchors: bool/uuid/vector/jsonb/composite/unknown heuristics)
+  - `tests/TypesCodecTests.pas:237` (`TIMETZ` decode coverage for 12-byte payload normalization and zone-offset conversion)
+  - `tests/TypesCodecTests.pas:255` (`TIMETZ` backward-compatible 8-byte decode defaulting to UTC offset)
+  - `tests/TypesCodecTests.pas:271` (`TIMETZ` encode payload shape + sign semantics for zone displacement)
   - `tests/IntegrationTest.pas:45`
 - Gaps/next actions:
-  - Add lane-local codec tests that assert per-OID encode/decode behavior (beyond fixture-presence checks).
-  - `OID_TIMETZ` is declared (`src/ScratchBird.Types.pas:53`) but has no explicit decode branch in `DecodeValue` (`src/ScratchBird.Types.pas:1041` onward).
-  - Object geometry encode path uses `OID_POINT` (`src/ScratchBird.Types.pas:773`, `src/ScratchBird.Types.pas:801`); broaden this if other geometry OIDs are required.
+  - Expand deterministic lane-local per-OID matrix beyond representative coverage to full wire-type fidelity (current tests cover key scalar/advanced paths but not exhaustive OID matrix).
+  - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:24-28`).
+  - Object geometry encode path uses `OID_POINT` (`src/ScratchBird.Types.pas:793`, `src/ScratchBird.Types.pas:821`); broaden this if other geometry OIDs are required.
 
 ## ERR (JDBCBL: ERR)
 - Current status: Implemented
@@ -102,16 +118,19 @@
   - `BuildQueryError` parses severity from wire payload but categorization is SQLSTATE-driven (`src/ScratchBird.Client.pas:997`).
 
 ## RES (JDBCBL: RES)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
-  - `src/ScratchBird.Client.pas:411`, `src/ScratchBird.Client.pas:663`, `src/ScratchBird.Client.pas:1234`
-  - `src/ScratchBird.Client.pas:1205`, `src/SBCircuitBreaker.pas:136`, `src/SBCircuitBreaker.pas:173`, `src/SBCircuitBreaker.pas:197`
-  - `src/SBKeepalive.pas:129`
-  - `src/SBKeepalive.pas:178`, `src/SBKeepalive.pas:183`, `src/SBKeepalive.pas:210`
-  - `src/SBLeakDetector.pas:130`, `src/SBLeakDetector.pas:135`, `src/SBLeakDetector.pas:162`
+  - `src/ScratchBird.Client.pas:375`, `src/ScratchBird.Client.pas:385`, `src/ScratchBird.Client.pas:435`, `src/ScratchBird.Client.pas:448`, `src/ScratchBird.Client.pas:1426`
+  - `src/SBCircuitBreaker.pas:136`, `src/SBCircuitBreaker.pas:173`, `src/SBCircuitBreaker.pas:197`
+  - `src/SBKeepalive.pas:55`, `src/SBKeepalive.pas:177`, `src/SBKeepalive.pas:205`, `src/SBKeepalive.pas:264`
+  - `src/SBLeakDetector.pas:40`, `src/SBLeakDetector.pas:148`, `src/SBLeakDetector.pas:193`, `src/SBLeakDetector.pas:253`
   - `src/ScratchBird.Common.pas:45`, `src/ScratchBird.Common.pas:111`, `src/ScratchBird.Common.pas:117`
 - Lane-local test anchors:
+  - `tests/ResourceResilienceTests.pas:69` (keepalive tracker idle-window validation and `MarkActive` reset behavior)
+  - `tests/ResourceResilienceTests.pas:92` (keepalive manager register/update/unregister plus idle pinger invocation)
+  - `tests/ResourceResilienceTests.pas:126` (checkout metadata capture semantics)
+  - `tests/ResourceResilienceTests.pas:139` (leak detector checkout/checkin replacement and active-count lifecycle)
+  - `tests/ResourceResilienceTests.pas:168` (leak detector background thread start/stop lifecycle)
   - `tests/IntegrationTest.pas:50`, `tests/IntegrationTest.pas:54`, `tests/IntegrationTest.pas:60`
 - Gaps/next actions:
-  - Implement placeholder keepalive manager and leak detector list/check routines (`src/SBKeepalive.pas`, `src/SBLeakDetector.pas` anchors above).
-  - Add explicit resource-lifecycle tests for cancel/close/stream ownership behavior.
+  - Add live integration assertions for keepalive/leak behavior under real network disruption and reconnect scenarios (current coverage is deterministic lane-local behavior and lifecycle tests).

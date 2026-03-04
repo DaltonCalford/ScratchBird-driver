@@ -520,6 +520,25 @@ begin
   Result := WriteInt64LE(Micros);
 end;
 
+function NormalizeMicrosOfDay(Value: Int64): Int64;
+const
+  MICROS_PER_DAY = Int64(24 * 60 * 60 * 1000000);
+begin
+  Result := Value mod MICROS_PER_DAY;
+  if Result < 0 then
+    Inc(Result, MICROS_PER_DAY);
+end;
+
+function EncodeTimeTzValue(const TimeValue: TDateTime; OffsetSecondsEast: Integer): TBytes;
+var
+  Micros: Int64;
+  ZoneSecondsWest: Integer;
+begin
+  Micros := Trunc(Frac(TimeValue) * 86400 * 1000000);
+  ZoneSecondsWest := -OffsetSecondsEast;
+  Result := ConcatBytes(WriteInt64LE(Micros), WriteInt32LE(ZoneSecondsWest));
+end;
+
 function FormatArrayLiteral(const Values: array of Variant): string;
 var
   I: Integer;
@@ -747,6 +766,7 @@ var
   FieldOids: TArray<Cardinal>;
   FieldValues: TArray<Variant>;
   FieldCount: Integer;
+  IntValue64: Int64;
 begin
   Param.Format := FORMAT_BINARY;
   Param.IsNull := False;
@@ -847,10 +867,19 @@ begin
         Param.Data := BytesOf([Ord(Boolean(Value))]);
         Oid := OID_BOOL;
       end;
-    varSmallint, varInteger:
+    varByte, varShortInt, varWord, varLongWord, varSmallint, varInteger:
       begin
-        Param.Data := WriteInt32LE(VarAsType(Value, varInteger));
-        Oid := OID_INT4;
+        IntValue64 := VarAsType(Value, varInt64);
+        if (IntValue64 >= Low(Integer)) and (IntValue64 <= High(Integer)) then
+        begin
+          Param.Data := WriteInt32LE(Integer(IntValue64));
+          Oid := OID_INT4;
+        end
+        else
+        begin
+          Param.Data := WriteInt64LE(IntValue64);
+          Oid := OID_INT8;
+        end;
       end;
     varInt64:
       begin
@@ -893,24 +922,34 @@ begin
   else
     if TryGetVariantArray(Value, Items) then
     begin
-      AllNumeric := True;
-      for I := 0 to High(Items) do
+      if (System.Length(Items) = 2) and
+         (VarType(Items[0]) = varDate) and
+         (VarType(Items[1]) in [varByte, varShortInt, varWord, varLongWord, varSmallint, varInteger, varInt64, varSingle, varDouble, varCurrency]) then
       begin
-        if not (VarType(Items[I]) in [varSmallint, varInteger, varInt64, varSingle, varDouble, varCurrency]) then
-        begin
-          AllNumeric := False;
-          Break;
-        end;
-      end;
-      if AllNumeric then
-      begin
-        Param.Data := EncodeLengthPrefixed(TEncoding.UTF8.GetBytes(FormatVectorLiteral(Items)));
-        Oid := OID_SB_VECTOR;
+        Param.Data := EncodeTimeTzValue(VarToDateTime(Items[0]), VarAsType(Items[1], varInteger));
+        Oid := OID_TIMETZ;
       end
       else
       begin
-        Param.Data := EncodeLengthPrefixed(TEncoding.UTF8.GetBytes(FormatArrayLiteral(Items)));
-        Oid := 0;
+        AllNumeric := True;
+        for I := 0 to High(Items) do
+        begin
+          if not (VarType(Items[I]) in [varByte, varShortInt, varWord, varLongWord, varSmallint, varInteger, varInt64, varSingle, varDouble, varCurrency]) then
+          begin
+            AllNumeric := False;
+            Break;
+          end;
+        end;
+        if AllNumeric then
+        begin
+          Param.Data := EncodeLengthPrefixed(TEncoding.UTF8.GetBytes(FormatVectorLiteral(Items)));
+          Oid := OID_SB_VECTOR;
+        end
+        else
+        begin
+          Param.Data := EncodeLengthPrefixed(TEncoding.UTF8.GetBytes(FormatArrayLiteral(Items)));
+          Oid := 0;
+        end;
       end;
     end
     else
@@ -947,6 +986,23 @@ var
 begin
   Micros := Int64(ReadUInt64LE(Data, 0));
   Result := EncodeTime(0, 0, 0, 0) + (Micros / 86400 / 1000000);
+end;
+
+function DecodeTimeTzValue(const Data: TBytes): Variant;
+var
+  Micros: Int64;
+  ZoneSecondsWest: Integer;
+  TimeValue: TDateTime;
+begin
+  if System.Length(Data) < 8 then
+    Exit(Null);
+  Micros := NormalizeMicrosOfDay(ReadInt64LE(Data, 0));
+  TimeValue := EncodeTime(0, 0, 0, 0) + (Micros / 86400 / 1000000);
+  if System.Length(Data) >= 12 then
+    ZoneSecondsWest := ReadInt32LE(Data, 8)
+  else
+    ZoneSecondsWest := 0;
+  Result := VarArrayOf([TimeValue, -ZoneSecondsWest]);
 end;
 
 function DecodeTimestampValue(const Data: TBytes): TDateTime;
@@ -1077,6 +1133,8 @@ begin
       Result := DecodeDateValue(Data);
     OID_TIME:
       Result := DecodeTimeValue(Data);
+    OID_TIMETZ:
+      Result := DecodeTimeTzValue(Data);
     OID_TIMESTAMP, OID_TIMESTAMPTZ:
       Result := DecodeTimestampValue(Data);
     OID_INTERVAL:

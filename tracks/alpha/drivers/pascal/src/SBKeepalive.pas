@@ -51,8 +51,9 @@ type
   private
     FConfig: TKeepaliveConfig;
     FTrackers: TThreadList;
-    FConnections: TThreadList;
     FRunning: Boolean;
+    FStarted: Boolean;
+    procedure ClearEntries;
     procedure CheckConnections;
   protected
     procedure Execute; override;
@@ -69,6 +70,16 @@ type
 function DefaultKeepaliveConfig: TKeepaliveConfig;
 
 implementation
+
+type
+  TKeepaliveEntry = class
+  public
+    ConnectionId: string;
+    Tracker: TKeepaliveTracker;
+    Pinger: TPingerFunction;
+    constructor Create(const AConnectionId: string; ATracker: TKeepaliveTracker; APinger: TPingerFunction);
+    destructor Destroy; override;
+  end;
 
 {$IFDEF FPC}
 constructor TCriticalSection.Create;
@@ -99,6 +110,21 @@ begin
   Result.IntervalMs := 120000;         // 2 minutes
   Result.MaxIdleBeforeCheckMs := 600000; // 10 minutes
   Result.ValidationTimeoutMs := 5000;    // 5 seconds
+end;
+
+{ TKeepaliveEntry }
+
+constructor TKeepaliveEntry.Create(const AConnectionId: string; ATracker: TKeepaliveTracker; APinger: TPingerFunction);
+begin
+  ConnectionId := AConnectionId;
+  Tracker := ATracker;
+  Pinger := APinger;
+end;
+
+destructor TKeepaliveEntry.Destroy;
+begin
+  Tracker.Free;
+  inherited Destroy;
 end;
 
 { TKeepaliveTracker }
@@ -148,39 +174,83 @@ begin
   inherited Create(True);
   FConfig := Config;
   FTrackers := TThreadList.Create;
-  FConnections := TThreadList.Create;
   FRunning := False;
+  FStarted := False;
 end;
 
 destructor TKeepaliveManager.Destroy;
 begin
   Stop;
+  ClearEntries;
   FTrackers.Free;
-  FConnections.Free;
   inherited Destroy;
 end;
 
 procedure TKeepaliveManager.Start;
 begin
+  if FStarted then
+    Exit;
   FRunning := True;
+  FStarted := True;
   inherited Start;
 end;
 
 procedure TKeepaliveManager.Stop;
 begin
+  if not FStarted then
+    Exit;
   FRunning := False;
+  Terminate;
   WaitFor;
 end;
 
 function TKeepaliveManager.Register(const ConnectionId: string; Pinger: TPingerFunction): TKeepaliveTracker;
+var
+  List: TList;
+  I: Integer;
+  Entry: TKeepaliveEntry;
 begin
-  Result := TKeepaliveTracker.Create(FConfig);
-  // Store in lists - simplified for brevity
+  List := FTrackers.LockList;
+  try
+    for I := 0 to List.Count - 1 do
+    begin
+      Entry := TKeepaliveEntry(List[I]);
+      if SameText(Entry.ConnectionId, ConnectionId) then
+      begin
+        Entry.Pinger := Pinger;
+        Entry.Tracker.MarkActive;
+        Exit(Entry.Tracker);
+      end;
+    end;
+    Result := TKeepaliveTracker.Create(FConfig);
+    Entry := TKeepaliveEntry.Create(ConnectionId, Result, Pinger);
+    List.Add(Entry);
+  finally
+    FTrackers.UnlockList;
+  end;
 end;
 
 procedure TKeepaliveManager.Unregister(const ConnectionId: string);
+var
+  List: TList;
+  I: Integer;
+  Entry: TKeepaliveEntry;
 begin
-  // Remove from lists
+  List := FTrackers.LockList;
+  try
+    for I := List.Count - 1 downto 0 do
+    begin
+      Entry := TKeepaliveEntry(List[I]);
+      if SameText(Entry.ConnectionId, ConnectionId) then
+      begin
+        List.Delete(I);
+        Entry.Free;
+        Break;
+      end;
+    end;
+  finally
+    FTrackers.UnlockList;
+  end;
 end;
 
 function TKeepaliveManager.GetMonitoredCount: Integer;
@@ -199,15 +269,56 @@ procedure TKeepaliveManager.Execute;
 begin
   while FRunning and not Terminated do
   begin
-    Sleep(FConfig.IntervalMs);
+    Sleep(Integer(FConfig.IntervalMs));
     if FRunning then
       CheckConnections;
   end;
 end;
 
-procedure TKeepaliveManager.CheckConnections;
+procedure TKeepaliveManager.ClearEntries;
+var
+  List: TList;
+  I: Integer;
 begin
-  // Iterate trackers and validate idle connections
+  List := FTrackers.LockList;
+  try
+    for I := List.Count - 1 downto 0 do
+      TObject(List[I]).Free;
+    List.Clear;
+  finally
+    FTrackers.UnlockList;
+  end;
+end;
+
+procedure TKeepaliveManager.CheckConnections;
+var
+  List: TList;
+  I: Integer;
+  Entry: TKeepaliveEntry;
+  IsHealthy: Boolean;
+begin
+  List := FTrackers.LockList;
+  try
+    for I := 0 to List.Count - 1 do
+    begin
+      Entry := TKeepaliveEntry(List[I]);
+      if (Entry = nil) or (Entry.Tracker = nil) then
+        Continue;
+      if not Entry.Tracker.NeedsValidation then
+        Continue;
+      IsHealthy := False;
+      try
+        if Assigned(Entry.Pinger) then
+          IsHealthy := Entry.Pinger();
+      except
+        IsHealthy := False;
+      end;
+      if IsHealthy then
+        Entry.Tracker.MarkActive;
+    end;
+  finally
+    FTrackers.UnlockList;
+  end;
 end;
 
 end.
