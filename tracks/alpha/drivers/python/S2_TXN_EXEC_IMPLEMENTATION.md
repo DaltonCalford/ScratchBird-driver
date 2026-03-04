@@ -16,6 +16,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Added env-gated live integration coverage in `tests/test_integration.py`:
   - `test_autocommit_mode_transition_integration` validates runtime autocommit toggles against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_transaction_savepoint_lifecycle_integration` validates savepoint lifecycle behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+- Added env-gated live EXEC integration coverage in `tests/test_integration.py`:
+  - `test_cursor_get_generated_keys_integration` validates direct generated-keys retrieval against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_cursor_nextset_integration` validates DB-API multi-result traversal against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_connection_call_callable_escape_integration` validates callable escape execution through `Connection.call(...)` against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
 - Hardened parameter error behavior for execution paths in `src/scratchbird/connection.py`:
@@ -67,7 +71,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Result: PASS (`41 passed`)
 
 3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`68 passed, 11 skipped`)
+- Result: PASS (`68 passed, 14 skipped`)
 
 ## TXN Status
 
@@ -85,11 +89,12 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Recommendation: `PARTIAL`
 - Reason:
   - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
-  - Remaining gap: limited live integration depth.
+  - Env-gated live integration assertions now include generated-keys, `nextset()`, and callable escape execution.
+  - Remaining gap: broader live integration depth is still limited.
 
 ## Remaining Gaps
 
 - TXN:
   - Live integration transaction coverage is env-gated and still limited in breadth.
 - EXEC:
-  - Live integration coverage depth remains limited for extended execution surfaces.
+  - Live integration coverage is env-gated and still limited in breadth.

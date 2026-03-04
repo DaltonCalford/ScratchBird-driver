@@ -153,6 +153,53 @@ def test_execute_with_generated_keys_integration():
         conn.close()
 
 
+def test_cursor_get_generated_keys_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchall()
+        keys = cur.get_generated_keys()
+        rows = keys.fetchall()
+        assert len(rows) == 1
+        assert isinstance(rows[0][0], int)
+    finally:
+        conn.close()
+
+
+def test_cursor_nextset_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1; SELECT 2")
+        assert cur.fetchone() == (1,)
+        assert cur.fetchone() is None
+        assert cur.nextset() is True
+        assert cur.fetchone() == (2,)
+        assert cur.fetchone() is None
+        assert cur.nextset() is None
+    finally:
+        conn.close()
+
+
+def test_connection_call_callable_escape_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        cur = conn.call("{? = call abs(?)}", [9])
+        assert cur.fetchone() == (9,)
+    finally:
+        conn.close()
+
+
 def test_session_schema_runtime_integration():
     dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
     if not dsn:
