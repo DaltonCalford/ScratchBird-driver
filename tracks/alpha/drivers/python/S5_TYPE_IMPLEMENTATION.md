@@ -12,6 +12,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
     - Backward-compatible 8-byte payloads (UTC fallback when zone bytes are absent).
   - Text decode now routes through `_decode_text_typed_value(...)`, with typed parsing for scalar and temporal families (`bool`/`int`/`float`/`numeric`/`date`/`time`/`timetz`/`timestamp`/`timestamptz`/`uuid`).
   - Typed text decode now follows JDBC fail-fast semantics for invalid non-boolean typed payloads (parse errors are surfaced), while boolean decode remains token-based (`true`/`t` -> `True`, others -> `False`).
+  - Temporal typed-text parsing now enforces JDBC family semantics:
+    - `time` rejects timezone-offset payloads.
+    - `timestamp` rejects timezone-offset payloads.
+    - `timetz` requires an explicit timezone offset.
   - Temporal text normalization now accepts trailing `Z` and normalizes it to UTC offset form.
   - `type_name(...)` now maps `OID_TIMETZ` to `"timetz"`.
 - Added JDBC-style `BYTEA` decode parity in `src/scratchbird/types.py`:
@@ -61,9 +65,12 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_bool_scalar_text_non_true_tokens_map_to_false`
   - `test_decode_typed_text_payloads_raise_on_invalid_parse`
   - `test_decode_time_text_payload_to_time`
+  - `test_decode_time_text_payload_with_offset_raises`
   - `test_decode_timestamp_text_payload_to_naive_datetime`
+  - `test_decode_timestamp_text_payload_with_offset_raises`
   - `test_decode_timestamptz_text_payload_to_aware_datetime`
   - `test_decode_timestamptz_text_payload_with_z_suffix_to_aware_datetime`
+  - `test_decode_timetz_text_payload_without_offset_raises`
   - `test_decode_uuid_text_payload_to_uuid`
   - `test_type_name_includes_timetz`
   - `test_encode_string_array_infers_text_array_oid`
@@ -88,10 +95,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`50 passed`)
+- Result: PASS (`53 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`195 passed, 27 skipped, 1 warning`)
+- Result: PASS (`198 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -103,6 +110,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Temporal text decode and temporal range-bound encode now include `Z`-suffix and string-bound coercion behavior for UTC-stable parity.
   - Mixed numeric collection encode now aligns with JDBC array inference (`float8[]`) while float-only vectors retain explicit `vector` encode behavior.
   - Typed text decode now also aligns with JDBC fail-fast parse semantics for invalid non-boolean typed payloads.
+  - Temporal typed-text decode now enforces JDBC timezone rules for `time`/`timestamp`/`timetz` families.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.

@@ -234,9 +234,19 @@ def test_decode_time_text_payload_to_time():
     assert decoded == dt.time(12, 34, 56, 123000)
 
 
+def test_decode_time_text_payload_with_offset_raises():
+    with pytest.raises(ValueError):
+        decode_value(OID_TIME, b"12:34:56+02", FORMAT_TEXT)
+
+
 def test_decode_timestamp_text_payload_to_naive_datetime():
     decoded = decode_value(OID_TIMESTAMP, b"2026-03-01 12:34:56", FORMAT_TEXT)
     assert decoded == dt.datetime(2026, 3, 1, 12, 34, 56)
+
+
+def test_decode_timestamp_text_payload_with_offset_raises():
+    with pytest.raises(ValueError):
+        decode_value(OID_TIMESTAMP, b"2026-03-01 12:34:56+02", FORMAT_TEXT)
 
 
 def test_decode_timestamptz_text_payload_to_aware_datetime():
@@ -247,6 +257,11 @@ def test_decode_timestamptz_text_payload_to_aware_datetime():
 def test_decode_timestamptz_text_payload_with_z_suffix_to_aware_datetime():
     decoded = decode_value(OID_TIMESTAMPTZ, b"2026-03-01T12:34:56Z", FORMAT_TEXT)
     assert decoded == dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone.utc)
+
+
+def test_decode_timetz_text_payload_without_offset_raises():
+    with pytest.raises(ValueError):
+        decode_value(OID_TIMETZ, b"08:09:10", FORMAT_TEXT)
 
 
 def test_decode_uuid_text_payload_to_uuid():

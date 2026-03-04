@@ -365,11 +365,20 @@ def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
     if type_oid == OID_DATE:
         return _dt.date.fromisoformat(stripped)
     if type_oid == OID_TIME:
-        return _dt.time.fromisoformat(stripped)
+        parsed = _dt.time.fromisoformat(stripped)
+        if parsed.tzinfo is not None:
+            raise ValueError("time text payload includes unexpected timezone offset")
+        return parsed
     if type_oid == OID_TIMETZ:
-        return _dt.time.fromisoformat(_normalize_temporal_text(stripped))
+        parsed = _dt.time.fromisoformat(_normalize_temporal_text(stripped))
+        if parsed.tzinfo is None:
+            raise ValueError("timetz text payload is missing timezone offset")
+        return parsed
     if type_oid == OID_TIMESTAMP:
-        return _dt.datetime.fromisoformat(_normalize_temporal_text(stripped)).replace(tzinfo=None)
+        parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(stripped))
+        if parsed.tzinfo is not None:
+            raise ValueError("timestamp text payload includes unexpected timezone offset")
+        return parsed
     if type_oid == OID_TIMESTAMPTZ:
         parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(stripped))
         if parsed.tzinfo is None:
