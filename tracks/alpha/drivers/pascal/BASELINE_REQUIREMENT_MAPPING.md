@@ -80,7 +80,12 @@
   - `src/ScratchBird.Client.pas:724`, `src/ScratchBird.Client.pas:729` (generic client metadata stream API via `QueryMetadata`/`GetSchema`)
   - `src/ScratchBird.Client.pas:734`, `src/ScratchBird.Client.pas:742`, `src/ScratchBird.Client.pas:779`, `src/ScratchBird.Client.pas:784` (materialized metadata-row API with optional restrictions via `QueryMetadataRows`/`GetSchemaRows`)
   - `src/ScratchBird.Client.pas:789`, `src/ScratchBird.Client.pas:829`, `src/ScratchBird.Client.pas:854` (typed metadata wrapper methods for catalogs/routines/type_info)
+  - `src/ScratchBird.FireDAC.pas:148`, `src/ScratchBird.FireDAC.pas:158`, `src/ScratchBird.FireDAC.pas:178`, `src/ScratchBird.FireDAC.pas:243` (adapter-level metadata stream/rows/typed wrapper forwarding)
+  - `src/ScratchBird.IBX.pas:141`, `src/ScratchBird.IBX.pas:151`, `src/ScratchBird.IBX.pas:171`, `src/ScratchBird.IBX.pas:236` (adapter-level metadata stream/rows/typed wrapper forwarding)
+  - `src/ScratchBird.Zeos.pas:142`, `src/ScratchBird.Zeos.pas:152`, `src/ScratchBird.Zeos.pas:172`, `src/ScratchBird.Zeos.pas:237` (adapter-level metadata stream/rows/typed wrapper forwarding)
+  - `src/ScratchBird.SQLdb.pas:142`, `src/ScratchBird.SQLdb.pas:152`, `src/ScratchBird.SQLdb.pas:172`, `src/ScratchBird.SQLdb.pas:237` (adapter-level metadata stream/rows/typed wrapper forwarding)
 - Lane-local test anchors:
+  - `tests/AdapterMetadataApiTests.pas:33`, `tests/AdapterMetadataApiTests.pas:122`, `tests/AdapterMetadataApiTests.pas:211`, `tests/AdapterMetadataApiTests.pas:300` (adapter metadata API disconnected/not-supported guard and forwarding coverage across FireDAC/IBX/Zeos/SQLdb)
   - `tests/MetadataRecursiveSchemaTests.pas:129` (database/default branch-style metadata-row expansion)
   - `tests/MetadataRecursiveSchemaTests.pas:164` (dotted parent expansion ordering + uniqueness)
   - `tests/MetadataRecursiveSchemaTests.pas:184` (per-parent uniqueness semantics)
@@ -91,7 +96,6 @@
   - `tests/MetadataRecursiveSchemaTests.pas:370` (client metadata rows API guards for unsupported/disconnected paths)
   - `tests/MetadataRecursiveSchemaTests.pas:399` (typed metadata wrapper API guards on disconnected client)
 - Gaps/next actions:
-  - Add adapter-level metadata APIs and per-family typed overloads on top of the existing client metadata wrappers/row materialization surface.
   - Add metadata integration tests for schema/table/column/index/constraint/routine query paths.
   - Extend result-shape parity fields to align more tightly with JDBC metadata contracts across collection families.
 

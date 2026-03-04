@@ -15,7 +15,7 @@ interface
 
 uses
   SysUtils, Classes, Variants,
-  ScratchBird.Client, ScratchBird.Common, ScratchBird.Sql;
+  ScratchBird.Client, ScratchBird.Common, ScratchBird.Sql, ScratchBird.Metadata;
 
 type
   TScratchBirdSQLConnection = class(TComponent)
@@ -33,7 +33,26 @@ type
     procedure Rollback;
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput); virtual;
     function ExecuteQueryParams(const Sql: string; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream; virtual;
+    function QueryMetadata(const CollectionName: string = 'tables'): TScratchBirdResultStream;
     function GetSchema(const CollectionName: string = 'tables'): TScratchBirdResultStream;
+    function QueryMetadataRows(const CollectionName: string = 'tables'): TMetadataRows; overload;
+    function QueryMetadataRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows; overload;
+    function GetSchemaRows(const CollectionName: string = 'tables'): TMetadataRows; overload;
+    function GetSchemaRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows; overload;
+    function GetCatalogs: TScratchBirdResultStream;
+    function GetSchemas: TScratchBirdResultStream;
+    function GetTables: TScratchBirdResultStream;
+    function GetColumns: TScratchBirdResultStream;
+    function GetIndexes: TScratchBirdResultStream;
+    function GetConstraints: TScratchBirdResultStream;
+    function GetProcedures: TScratchBirdResultStream;
+    function GetFunctions: TScratchBirdResultStream;
+    function GetRoutines: TScratchBirdResultStream;
+    function GetPrimaryKeys: TScratchBirdResultStream;
+    function GetForeignKeys: TScratchBirdResultStream;
+    function GetTablePrivileges: TScratchBirdResultStream;
+    function GetColumnPrivileges: TScratchBirdResultStream;
+    function GetTypeInfo: TScratchBirdResultStream;
     property Connected: Boolean read FConnected;
     property Dsn: string read FDsn write FDsn;
     property Client: TScratchBirdClient read FClient;
@@ -120,9 +139,104 @@ begin
   Result := FClient.ExecuteQueryParams(Sql, Params);
 end;
 
+function TScratchBirdSQLConnection.QueryMetadata(const CollectionName: string): TScratchBirdResultStream;
+begin
+  Result := FClient.QueryMetadata(CollectionName);
+end;
+
 function TScratchBirdSQLConnection.GetSchema(const CollectionName: string): TScratchBirdResultStream;
 begin
   Result := FClient.GetSchema(CollectionName);
+end;
+
+function TScratchBirdSQLConnection.QueryMetadataRows(const CollectionName: string): TMetadataRows;
+begin
+  Result := FClient.QueryMetadataRows(CollectionName);
+end;
+
+function TScratchBirdSQLConnection.QueryMetadataRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows;
+begin
+  Result := FClient.QueryMetadataRows(CollectionName, Restrictions);
+end;
+
+function TScratchBirdSQLConnection.GetSchemaRows(const CollectionName: string): TMetadataRows;
+begin
+  Result := FClient.GetSchemaRows(CollectionName);
+end;
+
+function TScratchBirdSQLConnection.GetSchemaRows(const CollectionName: string; const Restrictions: TMetadataRow): TMetadataRows;
+begin
+  Result := FClient.GetSchemaRows(CollectionName, Restrictions);
+end;
+
+function TScratchBirdSQLConnection.GetCatalogs: TScratchBirdResultStream;
+begin
+  Result := FClient.GetCatalogs;
+end;
+
+function TScratchBirdSQLConnection.GetSchemas: TScratchBirdResultStream;
+begin
+  Result := FClient.GetSchemas;
+end;
+
+function TScratchBirdSQLConnection.GetTables: TScratchBirdResultStream;
+begin
+  Result := FClient.GetTables;
+end;
+
+function TScratchBirdSQLConnection.GetColumns: TScratchBirdResultStream;
+begin
+  Result := FClient.GetColumns;
+end;
+
+function TScratchBirdSQLConnection.GetIndexes: TScratchBirdResultStream;
+begin
+  Result := FClient.GetIndexes;
+end;
+
+function TScratchBirdSQLConnection.GetConstraints: TScratchBirdResultStream;
+begin
+  Result := FClient.GetConstraints;
+end;
+
+function TScratchBirdSQLConnection.GetProcedures: TScratchBirdResultStream;
+begin
+  Result := FClient.GetProcedures;
+end;
+
+function TScratchBirdSQLConnection.GetFunctions: TScratchBirdResultStream;
+begin
+  Result := FClient.GetFunctions;
+end;
+
+function TScratchBirdSQLConnection.GetRoutines: TScratchBirdResultStream;
+begin
+  Result := FClient.GetRoutines;
+end;
+
+function TScratchBirdSQLConnection.GetPrimaryKeys: TScratchBirdResultStream;
+begin
+  Result := FClient.GetPrimaryKeys;
+end;
+
+function TScratchBirdSQLConnection.GetForeignKeys: TScratchBirdResultStream;
+begin
+  Result := FClient.GetForeignKeys;
+end;
+
+function TScratchBirdSQLConnection.GetTablePrivileges: TScratchBirdResultStream;
+begin
+  Result := FClient.GetTablePrivileges;
+end;
+
+function TScratchBirdSQLConnection.GetColumnPrivileges: TScratchBirdResultStream;
+begin
+  Result := FClient.GetColumnPrivileges;
+end;
+
+function TScratchBirdSQLConnection.GetTypeInfo: TScratchBirdResultStream;
+begin
+  Result := FClient.GetTypeInfo;
 end;
 
 constructor TScratchBirdSQLQuery.Create(AOwner: TComponent);

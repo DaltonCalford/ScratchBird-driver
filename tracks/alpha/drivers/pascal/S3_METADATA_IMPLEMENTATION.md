@@ -41,6 +41,18 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `QueryMetadataRows(collectionName, restrictions)`
   - `GetSchemaRows(collectionName, restrictions)`
   which execute metadata SQL, materialize `TMetadataRows`, and apply restriction filtering in-lane.
+- Added adapter-level metadata API forwarding surfaces for:
+  - `TScratchBirdFDConnection` (`ScratchBird.FireDAC.pas`)
+  - `TScratchBirdIBDatabase` (`ScratchBird.IBX.pas`)
+  - `TScratchBirdZConnection` (`ScratchBird.Zeos.pas`)
+  - `TScratchBirdSQLConnection` (`ScratchBird.SQLdb.pas`)
+  including:
+  - generic metadata stream APIs (`QueryMetadata` / `GetSchema`),
+  - materialized row APIs (`QueryMetadataRows` / `GetSchemaRows`, with restriction overloads),
+  - typed metadata wrapper families (`GetCatalogs`, `GetSchemas`, `GetTables`, `GetColumns`, `GetIndexes`, `GetConstraints`, `GetProcedures`, `GetFunctions`, `GetRoutines`, `GetPrimaryKeys`, `GetForeignKeys`, `GetTablePrivileges`, `GetColumnPrivileges`, `GetTypeInfo`).
+- Added deterministic adapter metadata API guard suite:
+  - `tests/AdapterMetadataApiTests.pas`
+  - validates disconnected supported-collection behavior (`08003`) and unsupported collection behavior (`0A000`) across all four adapter surfaces.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence/notes for the new S3 metadata shaping coverage.
 
 ## Targeted Tests Run
@@ -51,6 +63,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 2. `./tracks/alpha/drivers/pascal/tests/MetadataRecursiveSchemaTests`
 - Result: PASS (`MetadataRecursiveSchemaTests: OK`).
 
+3. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_meta_adapter_build -FE/tmp/sb_pascal_meta_adapter_bin ./tracks/alpha/drivers/pascal/tests/AdapterMetadataApiTests.pas`
+- Result: PASS (compile succeeded).
+
+4. `/tmp/sb_pascal_meta_adapter_bin/AdapterMetadataApiTests`
+- Result: PASS (`AdapterMetadataApiTests: OK`).
+
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
@@ -60,10 +78,10 @@ Rationale:
 - Generic executable metadata APIs now exist on the client (`QueryMetadata` / `GetSchema`) with expanded metadata family coverage.
 - Typed client metadata wrappers now exist for the expanded metadata family surface.
 - Restriction-aware filtering parity now exists for materialized metadata rows (`FilterMetadataRowsByRestrictions` + `QueryMetadataRows`/`GetSchemaRows`).
-- Status remains partial because adapter-level metadata surfaces, live integration depth, and JDBC result-shape parity are still incomplete.
+- Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
+- Status remains partial because live integration depth and JDBC result-shape parity are still incomplete.
 
 ## Remaining Concrete Gaps
 
-- No adapter-level metadata execution API parity yet (current executable surface is client-level and generic).
 - No metadata-focused live integration assertions against a running ScratchBird endpoint.
 - JDBC metadata result-shape parity remains incomplete for richer per-family columns/flags.
