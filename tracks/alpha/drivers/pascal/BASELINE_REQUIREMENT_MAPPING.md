@@ -109,7 +109,7 @@
   - `tests/MetadataRecursiveSchemaTests.pas:373` (client metadata stream API guards: unsupported collection => `0A000`, disconnected supported collection => `08003`)
   - `tests/MetadataRecursiveSchemaTests.pas:405` (client metadata rows API guards for unsupported/disconnected paths)
   - `tests/MetadataRecursiveSchemaTests.pas:434` (typed metadata wrapper API guards on disconnected client)
-  - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320` (deterministic metadata execution flow coverage for schema/table/column/index/constraint/routine wrapper query paths and restriction-aware `QueryMetadataRows` materialization including routines restrictions)
+  - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320`, `tests/MetadataExecutionFlowTests.pas:361` (deterministic metadata execution flow coverage for schema/table/column/index/constraint/routine wrapper query paths plus restriction-aware `QueryMetadataRows` materialization across routines and additional metadata families)
   - `tests/IntegrationTest.pas:134`, `tests/IntegrationTest.pas:149`, `tests/IntegrationTest.pas:286`, `tests/IntegrationTest.pas:351`, `tests/IntegrationTest.pas:366`, `tests/IntegrationTest.pas:443` (env-gated live metadata stream/wrapper execution plus restriction-aware `QueryMetadataRows` assertions across supported metadata families)
 - Gaps/next actions:
   - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:429-433`).

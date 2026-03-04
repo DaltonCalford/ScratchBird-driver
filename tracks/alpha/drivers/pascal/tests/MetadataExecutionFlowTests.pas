@@ -358,6 +358,170 @@ begin
   end;
 end;
 
+procedure TestQueryMetadataRowsAppliesRestrictionsAcrossAdditionalFamilies;
+type
+  TRestrictionScenario = record
+    CollectionName: string;
+    RestrictionName: string;
+    RestrictionValue: string;
+    ValueColumn: string;
+    AuxColumn: string;
+    MatchAuxValue: string;
+    OtherValue: string;
+    OtherAuxValue: string;
+  end;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  Scenarios: array[0..10] of TRestrictionScenario;
+  Restrictions: TMetadataRow;
+  Rows: TMetadataRows;
+  FilterValue: Variant;
+  MsgType: TScratchBirdMessageType;
+  Payload: TBytes;
+  BaseSeq: Cardinal;
+  I: Integer;
+begin
+  Scenarios[0].CollectionName := 'catalogs';
+  Scenarios[0].RestrictionName := 'catalog';
+  Scenarios[0].RestrictionValue := 'users';
+  Scenarios[0].ValueColumn := 'catalog_name';
+  Scenarios[0].AuxColumn := 'catalog_id';
+  Scenarios[0].MatchAuxValue := '11';
+  Scenarios[0].OtherValue := 'sys';
+  Scenarios[0].OtherAuxValue := '12';
+
+  Scenarios[1].CollectionName := 'columns';
+  Scenarios[1].RestrictionName := 'column';
+  Scenarios[1].RestrictionValue := 'email';
+  Scenarios[1].ValueColumn := 'column_name';
+  Scenarios[1].AuxColumn := 'table_name';
+  Scenarios[1].MatchAuxValue := 'accounts';
+  Scenarios[1].OtherValue := 'id';
+  Scenarios[1].OtherAuxValue := 'accounts';
+
+  Scenarios[2].CollectionName := 'indexes';
+  Scenarios[2].RestrictionName := 'index';
+  Scenarios[2].RestrictionValue := 'idx_accounts_email';
+  Scenarios[2].ValueColumn := 'index_name';
+  Scenarios[2].AuxColumn := 'table_name';
+  Scenarios[2].MatchAuxValue := 'accounts';
+  Scenarios[2].OtherValue := 'idx_accounts_id';
+  Scenarios[2].OtherAuxValue := 'accounts';
+
+  Scenarios[3].CollectionName := 'constraints';
+  Scenarios[3].RestrictionName := 'constraint';
+  Scenarios[3].RestrictionValue := 'pk_accounts';
+  Scenarios[3].ValueColumn := 'constraint_name';
+  Scenarios[3].AuxColumn := 'constraint_type';
+  Scenarios[3].MatchAuxValue := 'PRIMARY KEY';
+  Scenarios[3].OtherValue := 'fk_accounts_user';
+  Scenarios[3].OtherAuxValue := 'FOREIGN KEY';
+
+  Scenarios[4].CollectionName := 'primary_keys';
+  Scenarios[4].RestrictionName := 'constraint';
+  Scenarios[4].RestrictionValue := 'pk_users';
+  Scenarios[4].ValueColumn := 'constraint_name';
+  Scenarios[4].AuxColumn := 'table_name';
+  Scenarios[4].MatchAuxValue := 'users';
+  Scenarios[4].OtherValue := 'pk_roles';
+  Scenarios[4].OtherAuxValue := 'roles';
+
+  Scenarios[5].CollectionName := 'foreign_keys';
+  Scenarios[5].RestrictionName := 'constraint';
+  Scenarios[5].RestrictionValue := 'fk_users_role';
+  Scenarios[5].ValueColumn := 'constraint_name';
+  Scenarios[5].AuxColumn := 'table_name';
+  Scenarios[5].MatchAuxValue := 'users';
+  Scenarios[5].OtherValue := 'fk_accounts_user';
+  Scenarios[5].OtherAuxValue := 'accounts';
+
+  Scenarios[6].CollectionName := 'table_privileges';
+  Scenarios[6].RestrictionName := 'table';
+  Scenarios[6].RestrictionValue := 'accounts';
+  Scenarios[6].ValueColumn := 'table_name';
+  Scenarios[6].AuxColumn := 'privilege_type';
+  Scenarios[6].MatchAuxValue := 'ALL';
+  Scenarios[6].OtherValue := 'users';
+  Scenarios[6].OtherAuxValue := 'ALL';
+
+  Scenarios[7].CollectionName := 'column_privileges';
+  Scenarios[7].RestrictionName := 'column';
+  Scenarios[7].RestrictionValue := 'email';
+  Scenarios[7].ValueColumn := 'column_name';
+  Scenarios[7].AuxColumn := 'privilege_type';
+  Scenarios[7].MatchAuxValue := 'ALL';
+  Scenarios[7].OtherValue := 'id';
+  Scenarios[7].OtherAuxValue := 'ALL';
+
+  Scenarios[8].CollectionName := 'procedures';
+  Scenarios[8].RestrictionName := 'procedure';
+  Scenarios[8].RestrictionValue := 'refresh_cache';
+  Scenarios[8].ValueColumn := 'procedure_name';
+  Scenarios[8].AuxColumn := 'routine_type';
+  Scenarios[8].MatchAuxValue := 'PROCEDURE';
+  Scenarios[8].OtherValue := 'vacuum_stats';
+  Scenarios[8].OtherAuxValue := 'PROCEDURE';
+
+  Scenarios[9].CollectionName := 'functions';
+  Scenarios[9].RestrictionName := 'function';
+  Scenarios[9].RestrictionValue := 'to_json_text';
+  Scenarios[9].ValueColumn := 'function_name';
+  Scenarios[9].AuxColumn := 'return_type';
+  Scenarios[9].MatchAuxValue := 'TEXT';
+  Scenarios[9].OtherValue := 'to_uuid_text';
+  Scenarios[9].OtherAuxValue := 'TEXT';
+
+  Scenarios[10].CollectionName := 'type_info';
+  Scenarios[10].RestrictionName := 'type';
+  Scenarios[10].RestrictionValue := 'INTEGER';
+  Scenarios[10].ValueColumn := 'type_name';
+  Scenarios[10].AuxColumn := 'type_oid';
+  Scenarios[10].MatchAuxValue := '23';
+  Scenarios[10].OtherValue := 'TEXT';
+  Scenarios[10].OtherAuxValue := '25';
+
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    for I := Low(Scenarios) to High(Scenarios) do
+    begin
+      BaseSeq := 200 + Cardinal(I * 5);
+      Transport.QueueInbound(EncodeMessage(
+        MSG_ROW_DESCRIPTION,
+        BuildRowDescriptionPayloadText([Scenarios[I].ValueColumn, Scenarios[I].AuxColumn]),
+        0, BaseSeq, nil, 0));
+      Transport.QueueInbound(EncodeMessage(MSG_DATA_ROW,
+        BuildDataRowPayloadText([Scenarios[I].RestrictionValue, Scenarios[I].MatchAuxValue]),
+        0, BaseSeq + 1, nil, 0));
+      Transport.QueueInbound(EncodeMessage(MSG_DATA_ROW,
+        BuildDataRowPayloadText([Scenarios[I].OtherValue, Scenarios[I].OtherAuxValue]),
+        0, BaseSeq + 2, nil, 0));
+      Transport.QueueInbound(EncodeMessage(MSG_COMMAND_COMPLETE, BuildCommandCompletePayload(0, 2, 0, 'SELECT 2'), 0, BaseSeq + 3, nil, 0));
+      Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, BaseSeq + 4, nil, 0));
+
+      Restrictions := MetadataRow([MetadataField(Scenarios[I].RestrictionName, Scenarios[I].RestrictionValue)]);
+      Rows := Client.QueryMetadataRows(Scenarios[I].CollectionName, Restrictions);
+
+      AssertEqualInt(1, Length(Rows), Scenarios[I].CollectionName + ' filtered row count');
+      AssertTrue(MetadataRowTryGetValue(Rows[0], Scenarios[I].ValueColumn, FilterValue),
+        Scenarios[I].CollectionName + ' value column should exist');
+      AssertEqualString(Scenarios[I].RestrictionValue, VarToStr(FilterValue),
+        Scenarios[I].CollectionName + ' restriction value');
+
+      AssertEqualInt(I + 1, Transport.WriteCount, Scenarios[I].CollectionName + ' metadata rows write count');
+      DecodeOutboundFrame(Transport.WriteAt(I), MsgType, Payload);
+      AssertTrue(MsgType = MSG_QUERY, Scenarios[I].CollectionName + ' metadata rows should send query message');
+      AssertEqualBytes(
+        BuildQueryPayload(ResolveMetadataCollectionQuery(Scenarios[I].CollectionName), 0, 0, 0),
+        Payload,
+        Scenarios[I].CollectionName + ' query payload');
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
 procedure TFakeTransport.Configure(const Config: TScratchBirdConfig);
 begin
   // no-op for deterministic unit tests
@@ -426,6 +590,7 @@ begin
     TestMetadataWrappersEmitExpectedCollectionQueries;
     TestQueryMetadataRowsAppliesRestrictionsFromWireRows;
     TestQueryMetadataRowsAppliesRoutineRestrictionsFromWireRows;
+    TestQueryMetadataRowsAppliesRestrictionsAcrossAdditionalFamilies;
     Writeln('MetadataExecutionFlowTests: OK');
   except
     on E: Exception do

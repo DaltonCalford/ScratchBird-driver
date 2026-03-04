@@ -57,7 +57,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added deterministic metadata execution-flow suite:
   - `tests/MetadataExecutionFlowTests.pas`
   - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` query paths.
-  - validates restriction-aware `QueryMetadataRows('tables', restrictions)` and `QueryMetadataRows('routines', restrictions)` materialization from wire row payloads.
+  - validates restriction-aware `QueryMetadataRows(...)` materialization from wire row payloads for:
+    - `tables`, `routines`,
+    - `catalogs`, `columns`, `indexes`, `constraints`,
+    - `primary_keys`, `foreign_keys`,
+    - `table_privileges`, `column_privileges`,
+    - `procedures`, `functions`, `type_info`.
 - Expanded env-gated live metadata coverage in:
   - `tests/IntegrationTest.pas`
   - validates executable metadata stream paths for supported metadata families, including `catalogs`, `schemas`, `tables`, `columns`, `indexes`, `constraints`, `primary_keys`, `foreign_keys`, `table_privileges`, `column_privileges`, `procedures`, `functions`, `routines`, and `type_info`.
@@ -100,7 +105,7 @@ Rationale:
 - Generic executable metadata APIs now exist on the client (`QueryMetadata` / `GetSchema`) with expanded metadata family coverage.
 - Typed client metadata wrappers now exist for the expanded metadata family surface.
 - Restriction-aware filtering parity now exists for materialized metadata rows (`FilterMetadataRowsByRestrictions` + `QueryMetadataRows`/`GetSchemaRows`).
-- Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and restriction-aware row materialization from wire payloads.
+- Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and broader restriction-aware row materialization from wire payloads across additional metadata families.
 - Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
 - Env-gated live integration now validates executable metadata stream and typed-wrapper paths across supported metadata families (catalogs/schemas/tables/columns/indexes/constraints/keys/privileges/procedures/functions/routines/type_info).
 - Env-gated live integration now also validates restriction-aware `QueryMetadataRows(...)` materialization across supported metadata families.
