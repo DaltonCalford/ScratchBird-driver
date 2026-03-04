@@ -61,14 +61,15 @@
   - `lib/src/metadata.dart:33-135` metadata collection normalization + query resolution helpers.
   - `lib/src/metadata.dart:137-215` metadata-only recursive schema tree shaping (`expandParents`, database root, per-parent uniqueness).
   - `lib/src/metadata.dart:217-360` metadata row shaping with optional dotted-parent expansion and catalog-preserving synthetic parent rows.
+  - `lib/src/client.dart:329-354` `queryMetadata`, `getSchema`, and `getSchemaTree` client metadata APIs.
   - `lib/scratchbird.dart:14` metadata export.
 - Lane-local test anchors:
+  - `test/metadata_execution_test.dart:28-107` metadata query alias resolution and runtime schema expansion/tree APIs.
   - `test/metadata_recursive_schema_test.dart:6-33` database->default-branch style metadata rows and dotted parent expansion behavior.
   - `test/metadata_recursive_schema_test.dart:35-58` dotted schema parent expansion ordering/uniqueness in path extraction.
   - `test/metadata_recursive_schema_test.dart:60-79` per-parent uniqueness for duplicate leaf paths.
   - `test/metadata_recursive_schema_test.dart:81-107` same leaf name under different parents remains distinct in recursive schema tree.
 - Gaps/next actions:
-  - Wire metadata shaping helpers through client-facing metadata execution APIs (for example `getSchema`/`getSchemaTree`) with runtime-configurable parent-expansion mode.
   - Add live metadata integration tests validating engine-backed metadata query execution and DDL-editor payload fields.
 
 ## TYPE (JDBCBL)
@@ -80,10 +81,10 @@
   - `lib/src/types.dart:413-670` range/composite encode/decode handling.
   - `lib/src/types.dart:672-760` unknown-binary/text coercion and array literal parsing.
 - Lane-local test anchors:
-  - `test/type_mapping_test.dart:5-68` array/vector/range/composite/inet-cidr-macaddr round-trip coverage.
+  - `test/type_mapping_test.dart:38-101` array/vector/range/composite/inet-cidr-macaddr round-trip coverage.
+  - `test/type_mapping_test.dart:103-230` scalar decode coverage, text-vs-unknown decode behavior, and negative-path range/composite/unsupported-type checks.
 - Gaps/next actions:
-  - Add tests for scalar decode paths (bool/int/date/time/uuid/json/jsonb) and binary/text mode cross-checks.
-  - Add negative-path tests for unsupported encodings and range-bound inference errors.
+  - Add live integration tests validating binary wire round-trip behavior for scalar and complex types against a running ScratchBird server.
 
 ## ERR (JDBCBL)
 

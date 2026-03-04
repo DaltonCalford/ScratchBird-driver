@@ -10,11 +10,11 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [ ] Add array encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: Open
-- [ ] Add composite encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: Open
-- [ ] Add vector literal encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: Open
-- [ ] Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: Open
-- [ ] Add sys.* metadata helpers in `tracks/beta/drivers/dart/lib/src/metadata.dart` and export via `tracks/beta/drivers/dart/lib/scratchbird.dart`. Issue: Open
+- [x] Add array encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add composite encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add vector literal encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add sys.* metadata helpers in `tracks/beta/drivers/dart/lib/src/metadata.dart` and export via `tracks/beta/drivers/dart/lib/scratchbird.dart`. Issue: DONE (2026-03-04)
 
 ## P2 (Follow-ups)
 
