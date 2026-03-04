@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:scratchbird/scratchbird.dart';
 import 'package:test/test.dart';
@@ -90,6 +92,38 @@ void main() {
   );
 
   test(
+    'integration transaction savepoint lifecycle',
+    () async {
+      final client = await _connectClient();
+      try {
+        await client.begin();
+        await client.savepoint('sp_dart_live');
+        await client.rollbackToSavepoint('sp_dart_live');
+        await client.releaseSavepoint('sp_dart_live');
+        await client.commit();
+      } finally {
+        await client.close();
+      }
+    },
+    skip: _integrationSkipReason,
+  );
+
+  test(
+    'integration nested begin is rejected while active',
+    () async {
+      final client = await _connectClient();
+      try {
+        await client.begin();
+        await expectLater(client.begin(), throwsStateError);
+        await client.rollback();
+      } finally {
+        await client.close();
+      }
+    },
+    skip: _integrationSkipReason,
+  );
+
+  test(
     'integration metadata wrappers',
     () async {
       final client = await _connectClient();
@@ -102,6 +136,40 @@ void main() {
 
         final tree = await client.getSchemaTree(expandParents: true);
         expect(tree.database, equals(_integrationConfig().database));
+      } finally {
+        await client.close();
+      }
+    },
+    skip: _integrationSkipReason,
+  );
+
+  test(
+    'integration json and jsonb roundtrip',
+    () async {
+      final client = await _connectClient();
+      try {
+        final result = await client.query(
+          'SELECT ?::JSON, ?::JSONB',
+          <dynamic>[
+            <String, dynamic>{'driver': 'dart', 'version': 1},
+            ScratchBirdJsonb(
+              Uint8List.fromList(
+                utf8.encode('{"kind":"jsonb","enabled":true}'),
+              ),
+            ),
+          ],
+        );
+        expect(result.rows, isNotEmpty);
+        final row = result.rows.first;
+        expect(row, hasLength(2));
+        expect(jsonDecode(row[0] as String),
+            equals(<String, dynamic>{'driver': 'dart', 'version': 1}));
+        expect(row[1], isA<ScratchBirdJsonb>());
+        final jsonb = row[1] as ScratchBirdJsonb;
+        expect(
+          jsonDecode(utf8.decode(jsonb.raw)),
+          equals(<String, dynamic>{'kind': 'jsonb', 'enabled': true}),
+        );
       } finally {
         await client.close();
       }
