@@ -38,9 +38,9 @@
 - Lane-local test anchors:
   - `tests/TxnExecParityTests.pas:66`, `tests/TxnExecParityTests.pas:87`, `tests/TxnExecParityTests.pas:100`, `tests/TxnExecParityTests.pas:121`, `tests/TxnExecParityTests.pas:174`
   - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
+  - `tests/TxnStateTransitionsTests.pas:95`, `tests/TxnStateTransitionsTests.pas:146` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths)
 - Gaps/next actions:
   - Add live transaction integration tests that validate begin/commit/rollback/savepoint behavior against a running server (current lane tests are local-only guardrail tests).
-  - Nested-begin rejection is covered locally, but transaction-state transitions are not yet asserted end-to-end against wire-reported READY states.
 
 ## EXEC (JDBCBL: EXEC)
 - Current status: Partial

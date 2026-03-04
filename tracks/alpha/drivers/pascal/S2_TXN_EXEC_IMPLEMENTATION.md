@@ -32,6 +32,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `src/ScratchBird.Zeos.pas`
   so adapter callers can access `BeginTransactionEx` options parity without dropping to the raw client API.
 - Added `tests/AdapterTransactionOptionsTests.pas` for disconnected guard parity on adapter `StartTransactionEx` across all four adapter surfaces.
+- Added deterministic transaction-state transition suite:
+  - `tests/TxnStateTransitionsTests.pas`
+  - validates wire-`READY` lifecycle transitions for begin/savepoint/release/rollback-to/commit and begin/rollback flows.
+  - validates post-commit/post-rollback active-transaction guard behavior via savepoint/release calls.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -54,12 +58,19 @@ Scope: `tracks/alpha/drivers/pascal` only.
 6. `/tmp/sb_pascal_txn_opts_bin/AdapterTransactionOptionsTests`
 - Result: PASS (`AdapterTransactionOptionsTests: OK`).
 
+7. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_txn_state_build -FE/tmp/sb_pascal_txn_state_bin ./tracks/alpha/drivers/pascal/tests/TxnStateTransitionsTests.pas`
+- Result: PASS (compile succeeded).
+
+8. `/tmp/sb_pascal_txn_state_bin/TxnStateTransitionsTests`
+- Result: PASS (`TxnStateTransitionsTests: OK`).
+
 ## TXN Status
 
 - Recommendation: `PARTIAL`
 
 Rationale:
 - Deterministic lane-local TXN guardrails now exist and are covered by dedicated tests (disconnected begin, no-active-txn commit/rollback behavior, savepoint active-txn and name validation, txn payload encoding checks).
+- Deterministic transaction state transitions are now asserted end-to-end against wire `READY` transaction ids for begin/savepoint/release/rollback-to/commit and begin/rollback paths.
 - Adapter surfaces now expose advanced transaction options via `StartTransactionEx` forwarding, with deterministic lane-local guard tests.
 - Remaining gap preventing `MET`: no live server transaction lifecycle integration coverage for begin/commit/rollback/savepoint.
 
@@ -69,11 +80,11 @@ Rationale:
 
 Rationale:
 - Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, adapter `Prepare` normalization/cache behavior, stream-control/backpressure assertions, and generated-key metadata exposure.
-- Remaining gaps prevent `MET`: no first-class lane API/test coverage yet for batch execution and multi-result traversal.
+- Remaining gaps prevent `MET`: no live execution integration depth yet for advanced execution paths against a running server.
 
 ## Remaining Concrete Gaps
 
 - TXN:
   - Add live integration tests for full transaction lifecycle against a running ScratchBird endpoint.
 - EXEC:
-  - Add explicit batch/multi-result API coverage.
+  - Add live integration assertions for advanced execution APIs (batch/multi-result/stream-control) against a running ScratchBird endpoint.
