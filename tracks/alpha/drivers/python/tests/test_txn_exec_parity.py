@@ -25,6 +25,7 @@ def _new_connection(txn_id: int = 0) -> Connection:
     conn = Connection.__new__(Connection)
     conn._closed = False
     conn._txn_id = txn_id
+    conn._autocommit = True
     conn._cursors = []
     return conn
 
@@ -145,6 +146,43 @@ def test_rollback_noop_without_active_transaction(monkeypatch):
     monkeypatch.setattr(conn, "_drain_until_ready", lambda: calls.append(("drain", (), {})))
     conn.rollback()
     assert calls == []
+
+
+def test_autocommit_true_commits_active_transaction_before_switch(monkeypatch):
+    conn = _new_connection(txn_id=13)
+    conn._autocommit = False
+    calls = []
+
+    def _fake_commit():
+        calls.append("commit")
+        conn._txn_id = 0
+
+    monkeypatch.setattr(conn, "commit", _fake_commit)
+
+    conn.autocommit = True
+
+    assert calls == ["commit"]
+    assert conn.autocommit is True
+
+
+def test_autocommit_true_skips_commit_without_active_transaction(monkeypatch):
+    conn = _new_connection(txn_id=0)
+    conn._autocommit = False
+    monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
+
+    conn.autocommit = True
+
+    assert conn.autocommit is True
+
+
+def test_autocommit_setter_noops_when_value_unchanged(monkeypatch):
+    conn = _new_connection(txn_id=17)
+    conn._autocommit = True
+    monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
+
+    conn.autocommit = True
+
+    assert conn.autocommit is True
 
 
 def test_savepoint_requires_active_transaction():

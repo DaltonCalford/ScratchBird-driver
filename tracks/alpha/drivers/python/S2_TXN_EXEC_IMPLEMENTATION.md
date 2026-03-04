@@ -8,6 +8,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `begin()` now rejects nested begin when a transaction is already active.
   - `commit()` and `rollback()` now no-op when no transaction is active (avoids unnecessary wire calls on txn id `0`).
   - `savepoint()`, `release_savepoint()`, and `rollback_to_savepoint()` now require an active transaction and validate savepoint names.
+- Added JDBC-aligned autocommit transition behavior in `src/scratchbird/connection.py`:
+  - `autocommit=True` now commits an active transaction before switching modes.
+  - No-op transitions (`autocommit` already set to requested value) now short-circuit.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
 - Hardened parameter error behavior for execution paths in `src/scratchbird/connection.py`:
@@ -55,12 +58,16 @@ Scope: `tracks/alpha/drivers/python` lane only.
 1. `PYTHONPATH=src pytest -q`
 - Result: PASS (`68 passed, 4 skipped`)
 
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
+- Result: PASS (`35 passed`)
+
 ## TXN Status
 
 - Recommendation: `PARTIAL`
 - Reason:
   - Explicit begin/commit/rollback/savepoint APIs now have deterministic local guardrails and focused unit coverage.
-  - Remaining gap: `autocommit` remains local-state only (no explicit wire/session toggle behavior in this lane), and TXN behavior is not yet covered by live integration transaction tests.
+  - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
+  - Remaining gap: no explicit wire/session autocommit toggle operation is implemented in this lane, and TXN behavior is not yet covered by live integration transaction tests.
 
 ## EXEC Status
 

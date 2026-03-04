@@ -865,7 +865,12 @@ class Connection:
     @autocommit.setter
     def autocommit(self, value: bool) -> None:
         self._ensure_open()
-        self._autocommit = bool(value)
+        next_value = bool(value)
+        if self._autocommit == next_value:
+            return
+        if next_value and self._transaction_active():
+            self.commit()
+        self._autocommit = next_value
 
     def cancel(self) -> None:
         self._ensure_open()
