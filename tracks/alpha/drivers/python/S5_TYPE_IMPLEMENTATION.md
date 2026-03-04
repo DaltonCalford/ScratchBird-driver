@@ -16,6 +16,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
     - `time` rejects timezone-offset payloads.
     - `timestamp` rejects timezone-offset payloads.
     - `timetz` requires an explicit timezone offset.
+  - Binary temporal decode now enforces JDBC family semantics:
+    - `timestamp` binary decode materializes naive datetimes.
+    - `timestamptz` binary decode materializes UTC-aware datetimes.
   - Temporal text normalization now accepts trailing `Z` and normalizes it to UTC offset form.
   - `type_name(...)` now maps `OID_TIMETZ` to `"timetz"`.
 - Added JDBC-style `BYTEA` decode parity in `src/scratchbird/types.py`:
@@ -62,6 +65,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_encode_timetz_uses_binary_layout_and_zone_seconds_west`
   - `test_decode_timetz_binary_payload_roundtrip`
   - `test_decode_timetz_binary_payload_supports_legacy_8byte_form`
+  - `test_decode_timestamp_binary_payload_to_naive_datetime`
+  - `test_decode_timestamptz_binary_payload_to_aware_utc_datetime`
   - `test_decode_timetz_text_payload_to_offset_time`
   - `test_decode_date_text_payload_to_date`
   - `test_decode_numeric_scalar_text_payloads`
@@ -102,10 +107,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`57 passed`)
+- Result: PASS (`59 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`202 passed, 27 skipped, 1 warning`)
+- Result: PASS (`204 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -120,6 +125,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Temporal typed-text decode now enforces JDBC timezone rules for `time`/`timestamp`/`timetz` families.
   - Temporal typed-array conversion now enforces the same JDBC timezone rules for `time[]`/`timestamp[]`/`timetz[]` families.
   - Unknown-text integer inference now matches JDBC int64 limits; out-of-range integer text is preserved as text.
+  - Binary `timestamp` vs `timestamptz` decode now aligns with JDBC timezone materialization behavior.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.

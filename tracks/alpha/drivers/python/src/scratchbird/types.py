@@ -314,7 +314,7 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
     if type_oid == OID_TIMETZ:
         return _decode_timetz(data)
     if type_oid == OID_TIMESTAMP:
-        return _decode_timestamp(data)
+        return _decode_timestamp(data).replace(tzinfo=None)
     if type_oid == OID_TIMESTAMPTZ:
         return _decode_timestamp(data)
     if type_oid == OID_INTERVAL:

@@ -203,6 +203,26 @@ def test_decode_timetz_binary_payload_supports_legacy_8byte_form():
     assert decoded == dt.time(1, 1, 1, tzinfo=dt.timezone.utc)
 
 
+def test_decode_timestamp_binary_payload_to_naive_datetime():
+    base = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)
+    target = dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone.utc)
+    micros = int((target - base).total_seconds() * 1_000_000)
+    raw = struct.pack("<q", micros)
+    decoded = decode_value(OID_TIMESTAMP, raw, FORMAT_BINARY)
+    assert decoded == dt.datetime(2026, 3, 1, 12, 34, 56)
+    assert decoded.tzinfo is None
+
+
+def test_decode_timestamptz_binary_payload_to_aware_utc_datetime():
+    base = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)
+    target = dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone.utc)
+    micros = int((target - base).total_seconds() * 1_000_000)
+    raw = struct.pack("<q", micros)
+    decoded = decode_value(OID_TIMESTAMPTZ, raw, FORMAT_BINARY)
+    assert decoded == target
+    assert decoded.tzinfo == dt.timezone.utc
+
+
 def test_decode_timetz_text_payload_to_offset_time():
     decoded = decode_value(OID_TIMETZ, b"08:09:10+03", FORMAT_TEXT)
     assert decoded == dt.time(8, 9, 10, tzinfo=dt.timezone(dt.timedelta(hours=3)))
