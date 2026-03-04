@@ -62,7 +62,17 @@ Legend:
 | **C/C++ (libscratchbird_client)** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong C API base, transport gaps |
 | **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | 🟡 | Execution/type/error parity is strongest; CONN/TXN/META/RES depth remains in progress |
 | **Swift (Async/Await)** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | CONN implemented with expanding deterministic parity tests; broader live integration remains pending |
-| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | CONN implemented with metadata/schema-tree and parity scaffolding; broader live integration remains pending |
+| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | CONN implemented; TYPE/ERR parity significantly expanded (typed exceptions + SQLSTATE parsing/mapping), with direct + manager-proxy integration scaffolding now in place; broader live runtime depth remains pending |
+
+---
+
+## Recent Driver Progress (2026-03-04)
+
+- **Dart lane:** Added connection-policy rejection parity tests (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`) and aligned checklist/mapping artifacts.
+- **Dart lane:** Expanded type decode and negative-path coverage (core scalar decode paths, text-vs-unknown behavior, range/composite guardrails, unsupported-type checks).
+- **Dart lane:** Added env-gated integration suite for direct and manager-proxy connection paths (`SCRATCHBIRD_TEST_DSN`, `SCRATCHBIRD_TEST_MANAGER_DSN`) covering query, transaction lifecycle, metadata wrappers, and JSON/JSONB roundtrips.
+- **Dart lane:** Introduced typed driver exception hierarchy and structured server error parsing with SQLSTATE/code propagation + SQLSTATE class-based mapping.
+- **Python lane:** Continued JDBC parity hardening for type decode semantics (temporal/unknown/binary edge cases) with expanded deterministic tests and updated lane baseline artifacts.
 
 ---
 
