@@ -52,6 +52,23 @@ begin
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
 end;
 
+procedure AssertEqualDoubleNear(Expected, Actual, Tolerance: Double; const MessageText: string);
+begin
+  if Abs(Expected - Actual) > Tolerance then
+    Fail(MessageText + ': expected=' + FloatToStr(Expected) + ' actual=' + FloatToStr(Actual));
+end;
+
+procedure AssertEqualBytes(const Expected, Actual: TBytes; const MessageText: string);
+var
+  I: Integer;
+begin
+  if Length(Expected) <> Length(Actual) then
+    Fail(MessageText + ': expected length=' + IntToStr(Length(Expected)) + ' actual length=' + IntToStr(Length(Actual)));
+  for I := 0 to High(Expected) do
+    if Expected[I] <> Actual[I] then
+      Fail(MessageText + ': mismatch at index ' + IntToStr(I));
+end;
+
 function ConcatBytes(const Left, Right: TBytes): TBytes;
 begin
   SetLength(Result, Length(Left) + Length(Right));
@@ -71,6 +88,18 @@ begin
 end;
 
 function WriteInt64LE(Value: Int64): TBytes;
+begin
+  SetLength(Result, 8);
+  Move(Value, Result[0], 8);
+end;
+
+function WriteSingleLE(Value: Single): TBytes;
+begin
+  SetLength(Result, 4);
+  Move(Value, Result[0], 4);
+end;
+
+function WriteDoubleLE(Value: Double): TBytes;
 begin
   SetLength(Result, 8);
   Move(Value, Result[0], 8);
@@ -234,6 +263,246 @@ begin
   AssertEqualInt(42, VarAsType(IntText, varInteger), 'unknown binary trailing-null int decode');
 end;
 
+procedure TestDecodeScalarAndTextOidMatrix;
+const
+  TEXT_OIDS: array[0..11] of Cardinal = (
+    OID_TEXT, OID_VARCHAR, OID_CHAR, OID_BPCHAR, OID_JSON, OID_XML,
+    OID_TSVECTOR, OID_TSQUERY, OID_INET, OID_CIDR, OID_MACADDR, OID_MACADDR8);
+var
+  Decoded: Variant;
+  I: Integer;
+  Payload: TBytes;
+  TextValue: string;
+begin
+  Decoded := DecodeValue(OID_INT2, TBytes.Create($2E, $FB), FORMAT_BINARY);
+  AssertEqualInt(-1234, VarAsType(Decoded, varInteger), 'int2 decode');
+
+  Decoded := DecodeValue(OID_INT4, WriteInt32LE(-54321), FORMAT_BINARY);
+  AssertEqualInt(-54321, VarAsType(Decoded, varInteger), 'int4 decode');
+
+  Decoded := DecodeValue(OID_INT8, WriteInt64LE(-9876543210), FORMAT_BINARY);
+  AssertEqualInt64(-9876543210, VarAsType(Decoded, varInt64), 'int8 decode');
+
+  Decoded := DecodeValue(OID_FLOAT4, WriteSingleLE(1.5), FORMAT_BINARY);
+  AssertEqualDoubleNear(1.5, VarAsType(Decoded, varDouble), 0.000001, 'float4 decode');
+
+  Decoded := DecodeValue(OID_FLOAT8, WriteDoubleLE(-2.25), FORMAT_BINARY);
+  AssertEqualDoubleNear(-2.25, VarAsType(Decoded, varDouble), 0.0000000001, 'float8 decode');
+
+  Decoded := DecodeValue(OID_NUMERIC, WithLengthPrefix(TEncoding.UTF8.GetBytes('123.7500')), FORMAT_BINARY);
+  AssertEqualString('123.7500', VarToStr(Decoded), 'numeric decode');
+
+  Decoded := DecodeValue(OID_MONEY, WriteInt64LE(12345), FORMAT_BINARY);
+  AssertEqualDoubleNear(123.45, VarAsType(Decoded, varDouble), 0.000001, 'money decode');
+
+  for I := 0 to High(TEXT_OIDS) do
+  begin
+    TextValue := 'value-' + IntToStr(TEXT_OIDS[I]);
+    Payload := WithLengthPrefix(TEncoding.UTF8.GetBytes(TextValue));
+    Decoded := DecodeValue(TEXT_OIDS[I], Payload, FORMAT_BINARY);
+    AssertEqualString(TextValue, VarToStr(Decoded), 'text family decode ' + IntToStr(TEXT_OIDS[I]));
+  end;
+end;
+
+procedure TestDecodeTemporalAndIntervalOidMatrix;
+var
+  Decoded: Variant;
+  Payload: TBytes;
+  TimeMicrosValue: Int64;
+  ExpectedTimestamp: TDateTime;
+  ExpectedTimestampMicros: Int64;
+  BaseDate: TDateTime;
+  ExpectedDate: TDateTime;
+begin
+  ExpectedDate := EncodeDate(2000, 1, 3);
+  Decoded := DecodeValue(OID_DATE, WriteInt32LE(2), FORMAT_BINARY);
+  AssertEqualInt(Trunc(ExpectedDate), Trunc(VarToDateTime(Decoded)), 'date decode');
+
+  TimeMicrosValue := Int64((12 * 60 * 60 + 34 * 60 + 56) * 1000000) + 789000;
+  Decoded := DecodeValue(OID_TIME, WriteInt64LE(TimeMicrosValue), FORMAT_BINARY);
+  AssertTimeMicrosNear(EncodeTime(12, 34, 56, 789), VarToDateTime(Decoded), 8, 'time decode');
+
+  BaseDate := EncodeDate(2000, 1, 1);
+  ExpectedTimestamp := EncodeDate(2004, 5, 6) + EncodeTime(7, 8, 9, 123);
+  ExpectedTimestampMicros := Trunc((ExpectedTimestamp - BaseDate) * 86400 * 1000000);
+
+  Decoded := DecodeValue(OID_TIMESTAMP, WriteInt64LE(ExpectedTimestampMicros), FORMAT_BINARY);
+  AssertTimeMicrosNear(ExpectedTimestamp, VarToDateTime(Decoded), 32, 'timestamp decode');
+
+  Decoded := DecodeValue(OID_TIMESTAMPTZ, WriteInt64LE(ExpectedTimestampMicros), FORMAT_BINARY);
+  AssertTimeMicrosNear(ExpectedTimestamp, VarToDateTime(Decoded), 32, 'timestamptz decode');
+
+  Payload := ConcatBytes(WriteInt64LE(5000000), ConcatBytes(WriteInt32LE(3), WriteInt32LE(2)));
+  Decoded := DecodeValue(OID_INTERVAL, Payload, FORMAT_BINARY);
+  AssertTrue(VarIsArray(Decoded), 'interval decode should return array');
+  AssertEqualInt(2, VarAsType(Decoded[0], varInteger), 'interval months');
+  AssertEqualInt(3, VarAsType(Decoded[1], varInteger), 'interval days');
+  AssertEqualInt64(5000000, VarAsType(Decoded[2], varInt64), 'interval micros');
+end;
+
+procedure TestEncodePrimitiveOidMatrix;
+var
+  Param: TParamValue;
+  Oid: Cardinal;
+  Decoded: Variant;
+  ExpectedTimestamp: TDateTime;
+  MixedArray: Variant;
+begin
+  AssertTrue(EncodeParam(321, nil, Param, Oid), 'int encode should succeed');
+  AssertEqualCardinal(OID_INT4, Oid, 'int encode oid');
+  Decoded := DecodeValue(OID_INT4, Param.Data, FORMAT_BINARY);
+  AssertEqualInt(321, VarAsType(Decoded, varInteger), 'int encode/decode');
+
+  AssertTrue(EncodeParam(Int64(3000000000), nil, Param, Oid), 'int64 encode should succeed');
+  AssertEqualCardinal(OID_INT8, Oid, 'int64 encode oid');
+  Decoded := DecodeValue(OID_INT8, Param.Data, FORMAT_BINARY);
+  AssertEqualInt64(3000000000, VarAsType(Decoded, varInt64), 'int64 encode/decode');
+
+  AssertTrue(EncodeParam(VarAsType(1.25, varSingle), nil, Param, Oid), 'single encode should succeed');
+  AssertEqualCardinal(OID_FLOAT4, Oid, 'single encode oid');
+  Decoded := DecodeValue(OID_FLOAT4, Param.Data, FORMAT_BINARY);
+  AssertEqualDoubleNear(1.25, VarAsType(Decoded, varDouble), 0.000001, 'single encode/decode');
+
+  AssertTrue(EncodeParam(Double(-9.5), nil, Param, Oid), 'double encode should succeed');
+  AssertEqualCardinal(OID_FLOAT8, Oid, 'double encode oid');
+  Decoded := DecodeValue(OID_FLOAT8, Param.Data, FORMAT_BINARY);
+  AssertEqualDoubleNear(-9.5, VarAsType(Decoded, varDouble), 0.0000000001, 'double encode/decode');
+
+  AssertTrue(EncodeParam('plain-text', nil, Param, Oid), 'text encode should succeed');
+  AssertEqualCardinal(OID_TEXT, Oid, 'text encode oid');
+  Decoded := DecodeValue(OID_TEXT, Param.Data, FORMAT_BINARY);
+  AssertEqualString('plain-text', VarToStr(Decoded), 'text encode/decode');
+
+  ExpectedTimestamp := EncodeDate(2020, 1, 2) + EncodeTime(3, 4, 5, 6);
+  AssertTrue(EncodeParam(VarFromDateTime(ExpectedTimestamp), nil, Param, Oid), 'date variant encode should succeed');
+  AssertEqualCardinal(OID_TIMESTAMPTZ, Oid, 'date variant encode oid');
+  Decoded := DecodeValue(OID_TIMESTAMPTZ, Param.Data, FORMAT_BINARY);
+  AssertTimeMicrosNear(ExpectedTimestamp, VarToDateTime(Decoded), 32, 'date variant encode/decode');
+
+  MixedArray := VarArrayOf([1, 'two']);
+  AssertTrue(EncodeParam(MixedArray, nil, Param, Oid), 'mixed array encode should succeed');
+  AssertEqualCardinal(0, Oid, 'mixed array encode oid');
+  AssertTrue(Length(Param.Data) > 4, 'mixed array payload should be length-prefixed text');
+  AssertEqualInt(Ord('{'), Param.Data[4], 'mixed array literal should start with "{"');
+end;
+
+procedure TestEncodeObjectWrappersAndRangeMatrix;
+var
+  JsonbObj: TScratchBirdJsonb;
+  GeometryObj: TScratchBirdGeometry;
+  RangeObj: TScratchBirdRange;
+  AutoRange: TScratchBirdRange;
+  TsRange: TScratchBirdRange;
+  Param: TParamValue;
+  Oid: Cardinal;
+  Decoded: Variant;
+  JsonbIntf: IScratchBirdJsonb;
+  GeometryIntf: IScratchBirdGeometry;
+  RangeIntf: IScratchBirdRange;
+  ExpectedLower, ExpectedUpper: TDateTime;
+begin
+  JsonbObj := TScratchBirdJsonb.CreateText('{"ok":true}');
+  try
+    AssertTrue(EncodeParam(Null, JsonbObj, Param, Oid), 'jsonb object encode should succeed');
+  finally
+    JsonbObj.Free;
+  end;
+  AssertEqualCardinal(OID_JSONB, Oid, 'jsonb object encode oid');
+  Decoded := DecodeValue(OID_JSONB, Param.Data, FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdJsonb, JsonbIntf),
+    'jsonb object decode should return wrapper');
+  AssertEqualString('{"ok":true}', TEncoding.UTF8.GetString(JsonbIntf.GetRaw), 'jsonb object raw payload');
+
+  GeometryObj := TScratchBirdGeometry.Create(TBytes.Create($01, $02, $03, $04));
+  try
+    AssertTrue(EncodeParam(Null, GeometryObj, Param, Oid), 'geometry object encode should succeed');
+  finally
+    GeometryObj.Free;
+  end;
+  AssertEqualCardinal(OID_POINT, Oid, 'geometry object encode oid');
+  Decoded := DecodeValue(OID_POINT, Param.Data, FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdGeometry, GeometryIntf),
+    'geometry object decode should return wrapper');
+  AssertEqualBytes(TBytes.Create($01, $02, $03, $04), GeometryIntf.GetWkb, 'geometry object WKB');
+
+  RangeObj := TScratchBirdRange.Create;
+  try
+    RangeObj.RangeOid := OID_INT4RANGE;
+    RangeObj.Lower := 1;
+    RangeObj.Upper := 10;
+    RangeObj.LowerInclusive := True;
+    RangeObj.UpperInclusive := False;
+    RangeObj.LowerInfinite := False;
+    RangeObj.UpperInfinite := False;
+    RangeObj.Empty := False;
+    AssertTrue(EncodeParam(Null, RangeObj, Param, Oid), 'int4 range encode should succeed');
+  finally
+    RangeObj.Free;
+  end;
+  AssertEqualCardinal(OID_INT4RANGE, Oid, 'int4 range oid');
+  Decoded := DecodeValue(OID_INT4RANGE, Param.Data, FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdRange, RangeIntf),
+    'int4 range decode should return wrapper');
+  AssertEqualCardinal(OID_INT4RANGE, RangeIntf.GetRangeOid, 'int4 range decoded oid');
+  AssertTrue(RangeIntf.GetLowerInclusive, 'int4 range lower inclusive');
+  AssertTrue(not RangeIntf.GetUpperInclusive, 'int4 range upper exclusive');
+  AssertEqualInt(1, VarAsType(RangeIntf.GetLower, varInteger), 'int4 range lower');
+  AssertEqualInt(10, VarAsType(RangeIntf.GetUpper, varInteger), 'int4 range upper');
+
+  AutoRange := TScratchBirdRange.Create;
+  try
+    AutoRange.Lower := VarAsType(1, varInteger);
+    AutoRange.Upper := VarAsType(2, varInteger);
+    AutoRange.LowerInclusive := True;
+    AutoRange.UpperInclusive := True;
+    AssertTrue(EncodeParam(Null, AutoRange, Param, Oid), 'auto range encode should succeed');
+  finally
+    AutoRange.Free;
+  end;
+  AssertEqualCardinal(OID_INT8RANGE, Oid, 'auto range should resolve to int8 range');
+
+  ExpectedLower := EncodeDate(2020, 1, 1) + EncodeTime(1, 2, 3, 4);
+  ExpectedUpper := EncodeDate(2020, 1, 2) + EncodeTime(5, 6, 7, 8);
+  TsRange := TScratchBirdRange.Create;
+  try
+    TsRange.RangeOid := OID_TSRANGE;
+    TsRange.Lower := VarFromDateTime(ExpectedLower);
+    TsRange.Upper := VarFromDateTime(ExpectedUpper);
+    TsRange.LowerInclusive := True;
+    TsRange.UpperInclusive := True;
+    AssertTrue(EncodeParam(Null, TsRange, Param, Oid), 'ts range encode should succeed');
+  finally
+    TsRange.Free;
+  end;
+  AssertEqualCardinal(OID_TSRANGE, Oid, 'ts range oid');
+  Decoded := DecodeValue(OID_TSRANGE, Param.Data, FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdRange, RangeIntf),
+    'ts range decode should return wrapper');
+  AssertTimeMicrosNear(ExpectedLower, VarToDateTime(RangeIntf.GetLower), 32, 'ts range lower');
+  AssertTimeMicrosNear(ExpectedUpper, VarToDateTime(RangeIntf.GetUpper), 32, 'ts range upper');
+end;
+
+procedure TestDecodeGeometryFamilyOidMatrix;
+const
+  GEOM_OIDS: array[0..6] of Cardinal = (OID_POINT, OID_LSEG, OID_PATH, OID_BOX, OID_POLYGON, OID_LINE, OID_CIRCLE);
+var
+  I: Integer;
+  Payload: TBytes;
+  Decoded: Variant;
+  GeometryIntf: IScratchBirdGeometry;
+  Wkb: TBytes;
+begin
+  Wkb := TBytes.Create($10, $20, $30, $40, $50);
+  Payload := WithLengthPrefix(Wkb);
+  for I := 0 to High(GEOM_OIDS) do
+  begin
+    Decoded := DecodeValue(GEOM_OIDS[I], Payload, FORMAT_BINARY);
+    AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdGeometry, GeometryIntf),
+      'geometry family decode should return wrapper for oid ' + IntToStr(GEOM_OIDS[I]));
+    AssertEqualBytes(Wkb, GeometryIntf.GetWkb, 'geometry family WKB for oid ' + IntToStr(GEOM_OIDS[I]));
+  end;
+end;
+
 procedure TestDecodeTimeTzTwelveBytePayloadPreservesOffsetAndNormalizesDay;
 var
   Payload: TBytes;
@@ -300,6 +569,11 @@ begin
     TestDecodeJsonbBinaryReturnsWrapper;
     TestDecodeCompositeRoundTripReturnsFields;
     TestDecodeUnknownUsesTextHeuristics;
+    TestDecodeScalarAndTextOidMatrix;
+    TestDecodeTemporalAndIntervalOidMatrix;
+    TestEncodePrimitiveOidMatrix;
+    TestEncodeObjectWrappersAndRangeMatrix;
+    TestDecodeGeometryFamilyOidMatrix;
     TestDecodeTimeTzTwelveBytePayloadPreservesOffsetAndNormalizesDay;
     TestDecodeTimeTzEightBytePayloadDefaultsToUtc;
     TestEncodeTimeTzVariantArrayUsesTimetzOidAndPayloadShape;
