@@ -208,6 +208,20 @@ def test_autocommit_false_updates_wire_option(monkeypatch):
     conn._autocommit = True
     calls = []
     monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
+    monkeypatch.setattr(conn, "begin", lambda **_kwargs: calls.append(("begin",)))
+
+    conn.autocommit = False
+
+    assert calls == [("autocommit", "off"), ("begin",)]
+    assert conn.autocommit is False
+
+
+def test_autocommit_false_skips_begin_when_transaction_active(monkeypatch):
+    conn = _new_connection(txn_id=8)
+    conn._autocommit = True
+    calls = []
+    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
+    monkeypatch.setattr(conn, "begin", lambda **_kwargs: pytest.fail("begin should not be called"))
 
     conn.autocommit = False
 

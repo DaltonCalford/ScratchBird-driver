@@ -44,7 +44,7 @@ Scope: `tracks/alpha/drivers/python` only.
 - Result: PASS (`5 passed`)
 
 3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
-- Result: PASS (`40 passed`)
+- Result: PASS (`41 passed`)
 
 ## CONN Status Recommendation
 

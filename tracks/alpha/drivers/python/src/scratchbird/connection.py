@@ -890,6 +890,8 @@ class Connection:
             self.commit()
         self.set_option("autocommit", "on" if next_value else "off")
         self._autocommit = next_value
+        if not next_value and not self._transaction_active():
+            self.begin()
 
     def cancel(self) -> None:
         self._ensure_open()
