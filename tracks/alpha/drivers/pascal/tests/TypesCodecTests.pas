@@ -69,6 +69,12 @@ begin
       Fail(MessageText + ': mismatch at index ' + IntToStr(I));
 end;
 
+procedure AssertVariantIsNullOrEmpty(const Value: Variant; const MessageText: string);
+begin
+  if not (VarIsNull(Value) or VarIsEmpty(Value)) then
+    Fail(MessageText + ': expected null/empty variant');
+end;
+
 function ConcatBytes(const Left, Right: TBytes): TBytes;
 begin
   SetLength(Result, Length(Left) + Length(Right));
@@ -279,17 +285,51 @@ end;
 procedure TestDecodeUnknownBinaryFixedWidthFallbacks;
 var
   ByteValue: Variant;
+  Int16Value: Variant;
   IntValue: Variant;
+  Int64Value: Variant;
   UuidValue: Variant;
 begin
   ByteValue := DecodeValue(0, TBytes.Create($FF), FORMAT_BINARY);
   AssertEqualInt(255, VarAsType(ByteValue, varInteger), 'unknown binary 1-byte fallback');
 
+  Int16Value := DecodeValue(0, TBytes.Create($D2, $04), FORMAT_BINARY);
+  AssertEqualInt(1234, VarAsType(Int16Value, varInteger), 'unknown binary 2-byte fallback');
+
   IntValue := DecodeValue(0, WriteInt32LE(123456), FORMAT_BINARY);
   AssertEqualInt(123456, VarAsType(IntValue, varInteger), 'unknown binary 4-byte fallback');
 
+  Int64Value := DecodeValue(0, WriteInt64LE(1234567890123), FORMAT_BINARY);
+  AssertEqualInt64(1234567890123, VarAsType(Int64Value, varInt64), 'unknown binary 8-byte fallback');
+
   UuidValue := DecodeValue(0, HexToBytes('00112233445566778899aabbccddeeff'), FORMAT_BINARY);
   AssertEqualString('00112233-4455-6677-8899-aabbccddeeff', VarToStr(UuidValue), 'unknown binary 16-byte fallback');
+end;
+
+procedure TestDecodeNullAndLimitPayloadShapes;
+var
+  Decoded: Variant;
+  RangeIntf: IScratchBirdRange;
+begin
+  Decoded := DecodeValue(OID_INT4, nil, FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'empty payload should decode as null');
+
+  Decoded := DecodeValue(OID_TIMETZ, TBytes.Create($01, $02, $03), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'timetz short payload should decode as null');
+
+  Decoded := DecodeValue(OID_SB_VECTOR, WithLengthPrefix(TEncoding.UTF8.GetBytes('[]')), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'empty vector literal should decode as null');
+
+  Decoded := DecodeValue(OID_INT4RANGE, TBytes.Create(RANGE_EMPTY, 0, 0, 0), FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdRange, RangeIntf),
+    'empty range should decode to range wrapper');
+  AssertTrue(RangeIntf.GetEmpty, 'empty range flag should be preserved');
+
+  Decoded := DecodeValue(OID_INT8RANGE, TBytes.Create(RANGE_LB_INF or RANGE_UB_INF, 0, 0, 0), FORMAT_BINARY);
+  AssertTrue((VarType(Decoded) = varUnknown) and Supports(IInterface(Decoded), IScratchBirdRange, RangeIntf),
+    'infinite-bound range should decode to range wrapper');
+  AssertTrue(RangeIntf.GetLowerInfinite, 'infinite lower bound should be preserved');
+  AssertTrue(RangeIntf.GetUpperInfinite, 'infinite upper bound should be preserved');
 end;
 
 procedure TestDecodeScalarAndTextOidMatrix;
@@ -600,6 +640,7 @@ begin
     TestDecodeUnknownUsesTextHeuristics;
     TestDecodeByteaPayloadReturnsVariantByteArray;
     TestDecodeUnknownBinaryFixedWidthFallbacks;
+    TestDecodeNullAndLimitPayloadShapes;
     TestDecodeScalarAndTextOidMatrix;
     TestDecodeTemporalAndIntervalOidMatrix;
     TestEncodePrimitiveOidMatrix;

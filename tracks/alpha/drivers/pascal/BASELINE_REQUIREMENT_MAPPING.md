@@ -123,12 +123,13 @@
   - `src/ScratchBird.Types.pas:991`, `src/ScratchBird.Types.pas:1097` (`TIMETZ` decode and per-OID decode dispatch)
   - `src/ScratchBird.Client.pas:274`
 - Lane-local test anchors:
-  - `tests/TypesCodecTests.pas:160`, `tests/TypesCodecTests.pas:372` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
-  - `tests/TypesCodecTests.pas:266`, `tests/TypesCodecTests.pas:279` (`BYTEA` variant-array decode semantics and unknown fixed-width fallback decode behavior)
-  - `tests/TypesCodecTests.pas:295`, `tests/TypesCodecTests.pas:336` (scalar, text-family, temporal, and interval per-OID decode coverage)
-  - `tests/TypesCodecTests.pas:418` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
-  - `tests/TypesCodecTests.pas:514` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
-  - `tests/TypesCodecTests.pas:535`, `tests/TypesCodecTests.pas:553`, `tests/TypesCodecTests.pas:569` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
+  - `tests/TypesCodecTests.pas:166`, `tests/TypesCodecTests.pas:420` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
+  - `tests/TypesCodecTests.pas:272`, `tests/TypesCodecTests.pas:285` (`BYTEA` variant-array decode semantics and unknown fixed-width fallback decode behavior including 1/2/4/8/16-byte widths)
+  - `tests/TypesCodecTests.pas:309` (null/limit payload-shape coverage for empty payloads, short `TIMETZ`, empty vectors, and empty/infinite range payload flags)
+  - `tests/TypesCodecTests.pas:335`, `tests/TypesCodecTests.pas:376` (scalar, text-family, temporal, and interval per-OID decode coverage)
+  - `tests/TypesCodecTests.pas:458` (jsonb/geometry/range object encode paths plus range decode assertions for int and timestamp range families)
+  - `tests/TypesCodecTests.pas:554` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs)
+  - `tests/TypesCodecTests.pas:575`, `tests/TypesCodecTests.pas:593`, `tests/TypesCodecTests.pas:609` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
   - `tests/IntegrationTest.pas:234`, `tests/IntegrationTest.pas:279` (env-gated live `type_coverage` fixture execution path)
 - Gaps/next actions:
   - Extend deterministic codec coverage to remaining null/limit payload shapes and additional corner-case payload permutations to approach exhaustive wire-type fidelity.

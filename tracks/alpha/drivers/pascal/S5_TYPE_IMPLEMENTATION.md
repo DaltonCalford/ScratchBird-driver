@@ -30,7 +30,8 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
      - text-family decode matrix (`TEXT/VARCHAR/CHAR/BPCHAR/JSON/XML/TSVECTOR/TSQUERY/INET/CIDR/MACADDR/MACADDR8`)
      - temporal/interval decode matrix (`DATE/TIME/TIMESTAMP/TIMESTAMPTZ/INTERVAL`)
      - `BYTEA` decode shape assertions (variant byte-array semantics)
-     - unknown fixed-width binary fallback matrix (1-byte integer, 4-byte integer, 16-byte UUID)
+     - unknown fixed-width binary fallback matrix (1-byte, 2-byte, 4-byte, 8-byte integers, and 16-byte UUID)
+     - null/limit payload-shape assertions (empty payload -> null, short `TIMETZ` payload, empty vector literal, empty/infinite range flags)
      - primitive encode matrix (int/float/text/date-variant + mixed array fallback behavior)
      - object wrapper encode/decode matrix (JSONB, geometry object path, range object path including int/timestamp ranges)
      - geometry-family decode matrix (`POINT/LSEG/PATH/BOX/POLYGON/LINE/CIRCLE`)
@@ -73,7 +74,7 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
 - Recommendation: keep `PARTIAL`
 - Rationale:
   - Deterministic `TIMETZ` handling remains implemented and now sits inside a broader scalar/temporal/text/range/geometry codec matrix.
-  - Deterministic `BYTEA` and unknown fixed-width binary fallback decode behavior is now explicitly asserted.
+  - Deterministic `BYTEA`, unknown fixed-width binary fallback, and null/limit payload-shape decode behavior are now explicitly asserted.
   - Remaining work is no longer the original `TIMETZ` gap; it is final edge-case matrix depth plus live integration breadth.
 
 ## Remaining Gaps
