@@ -151,7 +151,9 @@ var
   Stream: TScratchBirdResultStream;
   RowCount: Integer;
 begin
-  if WrapperName = 'schemas' then
+  if WrapperName = 'catalogs' then
+    Stream := AClient.GetCatalogs
+  else if WrapperName = 'schemas' then
     Stream := AClient.GetSchemas
   else if WrapperName = 'tables' then
     Stream := AClient.GetTables
@@ -161,8 +163,22 @@ begin
     Stream := AClient.GetIndexes
   else if WrapperName = 'constraints' then
     Stream := AClient.GetConstraints
+  else if WrapperName = 'primary_keys' then
+    Stream := AClient.GetPrimaryKeys
+  else if WrapperName = 'foreign_keys' then
+    Stream := AClient.GetForeignKeys
+  else if WrapperName = 'table_privileges' then
+    Stream := AClient.GetTablePrivileges
+  else if WrapperName = 'column_privileges' then
+    Stream := AClient.GetColumnPrivileges
+  else if WrapperName = 'procedures' then
+    Stream := AClient.GetProcedures
+  else if WrapperName = 'functions' then
+    Stream := AClient.GetFunctions
   else if WrapperName = 'routines' then
     Stream := AClient.GetRoutines
+  else if WrapperName = 'type_info' then
+    Stream := AClient.GetTypeInfo
   else
     Fail('unsupported wrapper: ' + WrapperName);
   try
@@ -275,18 +291,34 @@ var
   SchemaValue: Variant;
   SchemaName: string;
 begin
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'catalogs');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'schemas');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'tables');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'columns');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'indexes');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'constraints');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'primary_keys');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'foreign_keys');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'table_privileges');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'column_privileges');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'procedures');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'functions');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'routines');
+  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'type_info');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'catalogs');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'schemas');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'tables');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'columns');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'indexes');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'constraints');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'primary_keys');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'foreign_keys');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'table_privileges');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'column_privileges');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'procedures');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'functions');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'routines');
+  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'type_info');
 
   SchemaRows := AClient.QueryMetadataRows('schemas');
   AssertTrue(Length(SchemaRows) > 0, 'QueryMetadataRows(schemas) should return at least one row');
@@ -316,12 +348,25 @@ begin
   else
     Fail('restricted QueryMetadataRows(schemas) row does not expose schema name field');
 
+  AssertMetadataRestrictionRoundTrip(AClient, 'catalogs', 'catalog', ['catalog_name', 'TABLE_CATALOG', 'catalog']);
   AssertMetadataRestrictionRoundTrip(AClient, 'tables', 'table', ['table_name', 'TABLE_NAME', 'table']);
   AssertMetadataRestrictionRoundTrip(AClient, 'columns', 'column', ['column_name', 'COLUMN_NAME', 'column']);
   AssertMetadataRestrictionRoundTrip(AClient, 'indexes', 'index', ['index_name', 'INDEX_NAME', 'index']);
   AssertMetadataRestrictionRoundTrip(AClient, 'constraints', 'constraint', ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'primary_keys', 'constraint',
+    ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'foreign_keys', 'constraint',
+    ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'table_privileges', 'table', ['table_name', 'TABLE_NAME', 'table']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'column_privileges', 'column', ['column_name', 'COLUMN_NAME', 'column']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'procedures', 'procedure',
+    ['procedure_name', 'PROCEDURE_NAME', 'routine_name']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'functions', 'function',
+    ['function_name', 'FUNCTION_NAME', 'routine_name']);
   AssertMetadataRestrictionRoundTrip(AClient, 'routines', 'procedure',
     ['routine_name', 'ROUTINE_NAME', 'procedure_name', 'function_name']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'type_info', 'type',
+    ['type_name', 'TYPE_NAME', 'data_type_name', 'DATA_TYPE_NAME']);
 end;
 
 procedure TestTypeCoverageFixture(AClient: TScratchBirdClient);
