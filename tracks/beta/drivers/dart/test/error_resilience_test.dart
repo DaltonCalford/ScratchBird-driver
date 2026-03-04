@@ -244,6 +244,52 @@ void main() {
       expect(info.metadata['lane'], equals('dart'));
       expect(info.heldDurationMs(), greaterThanOrEqualTo(0));
     });
+
+    test('timer callback reports held checkout beyond threshold', () async {
+      final reports = <String>[];
+      final firstReport = Completer<void>();
+      final detector = LeakDetector(
+        LeakDetectionConfig(
+          thresholdMs: 0,
+          checkIntervalMs: 5,
+          onLeakDetected: (connectionId, _, heldDurationMs) {
+            reports.add('$connectionId:$heldDurationMs');
+            if (!firstReport.isCompleted) {
+              firstReport.complete();
+            }
+          },
+        ),
+      );
+      detector.start();
+      detector.checkout('conn-leak');
+
+      await firstReport.future.timeout(const Duration(milliseconds: 250));
+      detector.stop();
+
+      expect(reports, isNotEmpty);
+      expect(reports.first.startsWith('conn-leak:'), isTrue);
+    });
+
+    test('timer callback does not fire after checkout is released', () async {
+      var reportCount = 0;
+      final detector = LeakDetector(
+        LeakDetectionConfig(
+          thresholdMs: 0,
+          checkIntervalMs: 10,
+          onLeakDetected: (_, __, ___) {
+            reportCount += 1;
+          },
+        ),
+      );
+      detector.start();
+      final guard = detector.checkout('conn-clean');
+      guard.release();
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      detector.stop();
+
+      expect(reportCount, equals(0));
+    });
   });
 
   group('res telemetry', () {
@@ -278,6 +324,40 @@ void main() {
       );
       expect(
           sanitized, equals("SELECT * FROM users WHERE name='?' AND city='?'"));
+    });
+
+    test('slow query log enforces retention cap of 100 entries', () {
+      final cfg = TelemetryConfig()
+        ..slowQueryThresholdMs = -1
+        ..enableSlowQueryLog = true;
+      final collector = TelemetryCollector(cfg);
+
+      for (var i = 0; i < 105; i++) {
+        final span = collector.startSpan('slow_$i');
+        expect(span, isNotNull);
+        collector.endSpan(span, true);
+      }
+
+      expect(collector.slowQueryCount, equals(100));
+      final spanNames = collector.slowQueries
+          .map((entry) => entry['spanName'] as String)
+          .toList(growable: false);
+      expect(spanNames.first, equals('slow_5'));
+      expect(spanNames.last, equals('slow_104'));
+    });
+
+    test('slow query log respects enableSlowQueryLog flag', () {
+      final cfg = TelemetryConfig()
+        ..slowQueryThresholdMs = -1
+        ..enableSlowQueryLog = false;
+      final collector = TelemetryCollector(cfg);
+
+      final span = collector.startSpan('slow_disabled');
+      expect(span, isNotNull);
+      collector.endSpan(span, true);
+
+      expect(collector.slowQueryCount, equals(0));
+      expect(collector.slowQueries, isEmpty);
     });
   });
 }

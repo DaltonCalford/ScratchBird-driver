@@ -40,7 +40,8 @@ class SpanContext {
   static String _randomHex(int length) {
     final rand = Random.secure();
     const chars = '0123456789abcdef';
-    return List.generate(length, (_) => chars[rand.nextInt(chars.length)]).join();
+    return List.generate(length, (_) => chars[rand.nextInt(chars.length)])
+        .join();
   }
 }
 
@@ -53,7 +54,8 @@ class TelemetryCollector {
   int totalQueryTimeMs = 0;
   final List<Map<String, dynamic>> _slowQueries = [];
 
-  TelemetryCollector([TelemetryConfig? config]) : config = config ?? TelemetryConfig();
+  TelemetryCollector([TelemetryConfig? config])
+      : config = config ?? TelemetryConfig();
 
   SpanContext? startSpan(String name) {
     if (!config.enableTracing) return null;
@@ -83,6 +85,16 @@ class TelemetryCollector {
       }
     }
   }
+
+  int get slowQueryCount => _slowQueries.length;
+
+  List<Map<String, dynamic>> get slowQueries =>
+      List<Map<String, dynamic>>.unmodifiable(
+        _slowQueries.map(
+          (entry) => Map<String, dynamic>.unmodifiable(
+              Map<String, dynamic>.from(entry)),
+        ),
+      );
 
   static String sanitizeQuery(String sql) {
     return sql.replaceAll(RegExp(r"'[^']*'"), "'?'");

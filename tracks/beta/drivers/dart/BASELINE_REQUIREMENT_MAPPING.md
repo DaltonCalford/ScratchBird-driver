@@ -119,14 +119,13 @@
 - Lane-local source anchors:
   - `lib/src/circuit_breaker.dart:9-114` circuit-breaker implementation.
   - `lib/src/keepalive.dart:11-87` idle validation and periodic ping orchestration.
-  - `lib/src/leak_detector.dart:11-82` connection leak tracking/guarding.
-  - `lib/src/telemetry.dart:11-101` tracing/metrics/slow-query collection.
-  - `lib/src/client.dart:832-891` resilience integration (`_startResilience`, `_stopResilience`, `_withResilience`).
+  - `lib/src/leak_detector.dart:11-95` connection leak tracking/guarding with timer callback hook (`onLeakDetected`).
+  - `lib/src/telemetry.dart:11-113` tracing/metrics/slow-query collection with retention/read-only accessors.
+  - `lib/src/client.dart:1053-1103` resilience integration (`_startResilience`, `_stopResilience`, `_withResilience`).
 - Lane-local test anchors:
-  - `test/error_resilience_test.dart:61-112` circuit-breaker transition and recovery tests.
-  - `test/error_resilience_test.dart:114-153` keepalive tracker/manager validation and ping trigger tests.
-  - `test/error_resilience_test.dart:155-180` leak detector guard release + stack-capture behavior tests.
-  - `test/error_resilience_test.dart:182-214` telemetry tracing/metrics/sanitization coverage.
+  - `test/error_resilience_test.dart:126-177` circuit-breaker transition and recovery tests.
+  - `test/error_resilience_test.dart:179-220` keepalive tracker/manager validation and ping trigger tests.
+  - `test/error_resilience_test.dart:223-293` leak detector guard/stack-capture and timer callback coverage.
+  - `test/error_resilience_test.dart:295-361` telemetry tracing/metrics/sanitization and slow-query retention coverage.
 - Gaps/next actions:
   - Add integration tests covering idle-validation ping against live sockets and resilience state cleanup on client close.
-  - Add deterministic tests for timer-driven leak reports and slow-query log retention boundaries.

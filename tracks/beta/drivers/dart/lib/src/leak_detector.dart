@@ -12,11 +12,14 @@ class LeakDetectionConfig {
   int thresholdMs;
   bool captureStackTrace;
   int checkIntervalMs;
+  void Function(String connectionId, CheckoutInfo info, int heldDurationMs)?
+      onLeakDetected;
 
   LeakDetectionConfig({
     this.thresholdMs = 30000,
     this.captureStackTrace = false,
     this.checkIntervalMs = 10000,
+    this.onLeakDetected,
   });
 }
 
@@ -50,11 +53,13 @@ class LeakDetector {
   final Map<String, CheckoutInfo> _checkouts = {};
   Timer? _timer;
 
-  LeakDetector([LeakDetectionConfig? config]) : config = config ?? LeakDetectionConfig();
+  LeakDetector([LeakDetectionConfig? config])
+      : config = config ?? LeakDetectionConfig();
 
   void start() {
     if (_timer != null) return;
-    _timer = Timer.periodic(Duration(milliseconds: config.checkIntervalMs), (_) => _checkLeaks());
+    _timer = Timer.periodic(
+        Duration(milliseconds: config.checkIntervalMs), (_) => _checkLeaks());
   }
 
   void stop() {
@@ -62,8 +67,10 @@ class LeakDetector {
     _timer = null;
   }
 
-  LeakDetectionGuard checkout(String connectionId, {Map<String, String> metadata = const {}}) {
-    _checkouts[connectionId] = CheckoutInfo(Map<String, String>.from(metadata), captureStackTrace: config.captureStackTrace);
+  LeakDetectionGuard checkout(String connectionId,
+      {Map<String, String> metadata = const {}}) {
+    _checkouts[connectionId] = CheckoutInfo(Map<String, String>.from(metadata),
+        captureStackTrace: config.captureStackTrace);
     return LeakDetectionGuard(this, connectionId);
   }
 
@@ -73,9 +80,15 @@ class LeakDetector {
 
   void _checkLeaks() {
     for (final entry in _checkouts.entries) {
-      if (entry.value.heldDurationMs() > config.thresholdMs) {
+      final heldDurationMs = entry.value.heldDurationMs();
+      if (heldDurationMs > config.thresholdMs) {
+        if (config.onLeakDetected != null) {
+          config.onLeakDetected!(entry.key, entry.value, heldDurationMs);
+          continue;
+        }
         // ignore: avoid_print
-        print("POSSIBLE CONNECTION LEAK: conn=${entry.key} held=${entry.value.heldDurationMs()}ms");
+        print(
+            "POSSIBLE CONNECTION LEAK: conn=${entry.key} held=${heldDurationMs}ms");
       }
     }
   }
