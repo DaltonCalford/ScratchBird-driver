@@ -10,6 +10,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `savepoint()`, `release_savepoint()`, and `rollback_to_savepoint()` now require an active transaction and validate savepoint names.
 - Added JDBC-aligned autocommit transition behavior in `src/scratchbird/connection.py`:
   - `autocommit=True` now commits an active transaction before switching modes.
+  - `autocommit` mode transitions now emit wire-level session updates via `SET_OPTION autocommit=on/off`.
   - No-op transitions (`autocommit` already set to requested value) now short-circuit.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
@@ -59,7 +60,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Result: PASS (`68 passed, 4 skipped`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
-- Result: PASS (`39 passed`)
+- Result: PASS (`40 passed`)
 
 ## TXN Status
 
@@ -67,7 +68,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Reason:
   - Explicit begin/commit/rollback/savepoint APIs now have deterministic local guardrails and focused unit coverage.
   - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
-  - Remaining gap: no explicit wire/session autocommit toggle operation is implemented in this lane, and TXN behavior is not yet covered by live integration transaction tests.
+  - Wire-level autocommit mode transitions are now emitted via `SET_OPTION autocommit=on/off`.
+  - Remaining gap: `autocommit=False` does not force an immediate begin operation, and TXN behavior is not yet covered by live integration transaction tests.
 
 ## EXEC Status
 
@@ -79,7 +81,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Remaining Gaps
 
 - TXN:
-  - Wire-level autocommit parity is not implemented as a dedicated transaction-state operation.
+  - `autocommit=False` does not force an immediate begin operation.
   - No integration test that validates transaction lifecycle against a live server in this lane.
 - EXEC:
   - Live integration coverage depth remains limited for extended execution surfaces.

@@ -888,6 +888,7 @@ class Connection:
             return
         if next_value and self._transaction_active():
             self.commit()
+        self.set_option("autocommit", "on" if next_value else "off")
         self._autocommit = next_value
 
     def cancel(self) -> None:

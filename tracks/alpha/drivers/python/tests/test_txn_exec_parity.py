@@ -164,24 +164,31 @@ def test_autocommit_true_commits_active_transaction_before_switch(monkeypatch):
     calls = []
 
     def _fake_commit():
-        calls.append("commit")
+        calls.append(("commit",))
         conn._txn_id = 0
 
+    def _fake_set_option(name, value):
+        calls.append(("set_option", name, value))
+
     monkeypatch.setattr(conn, "commit", _fake_commit)
+    monkeypatch.setattr(conn, "set_option", _fake_set_option)
 
     conn.autocommit = True
 
-    assert calls == ["commit"]
+    assert calls == [("commit",), ("set_option", "autocommit", "on")]
     assert conn.autocommit is True
 
 
 def test_autocommit_true_skips_commit_without_active_transaction(monkeypatch):
     conn = _new_connection(txn_id=0)
     conn._autocommit = False
+    calls = []
     monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
+    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
 
     conn.autocommit = True
 
+    assert calls == [("autocommit", "on")]
     assert conn.autocommit is True
 
 
@@ -189,10 +196,23 @@ def test_autocommit_setter_noops_when_value_unchanged(monkeypatch):
     conn = _new_connection(txn_id=17)
     conn._autocommit = True
     monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
+    monkeypatch.setattr(conn, "set_option", lambda _name, _value: pytest.fail("set_option should not be called"))
 
     conn.autocommit = True
 
     assert conn.autocommit is True
+
+
+def test_autocommit_false_updates_wire_option(monkeypatch):
+    conn = _new_connection(txn_id=0)
+    conn._autocommit = True
+    calls = []
+    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
+
+    conn.autocommit = False
+
+    assert calls == [("autocommit", "off")]
+    assert conn.autocommit is False
 
 
 def test_set_session_schema_executes_schema_statement(monkeypatch):
