@@ -20,7 +20,7 @@ from .errors import (
     ProgrammingError,
     NotSupportedError,
 )
-from .types import Geometry, Json, Jsonb, Range, RawValue
+from .types import Blob, Clob, Geometry, Json, Jsonb, Range, RawValue, Ref, RowId, SqlXml
 from .protocol import COPY_FORMAT_TEXT, COPY_FORMAT_BINARY
 from .pool import (
     ConnectionPool,
@@ -81,6 +81,11 @@ __all__ = [
     "NotSupportedError",
     "Json",
     "Jsonb",
+    "Blob",
+    "Clob",
+    "RowId",
+    "Ref",
+    "SqlXml",
     "Geometry",
     "Range",
     "RawValue",

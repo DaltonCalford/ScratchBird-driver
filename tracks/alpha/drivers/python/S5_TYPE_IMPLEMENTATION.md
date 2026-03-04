@@ -18,7 +18,19 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Array literal parsing now handles quoted and escaped string elements while preserving nested-array behavior.
   - Typed array decode now materializes element families deterministically (`date`, `timetz`, `timestamptz`, `numeric`, `uuid`, etc.) instead of returning string-only payloads.
   - `type_name(...)` now includes array OID names (`text[]`, `boolean[]`, `timetz[]`, etc.).
+- Added explicit wrapper-family parity in `src/scratchbird/types.py` and `src/scratchbird/__init__.py`:
+  - Added lightweight wrapper types: `Blob`, `Clob`, `RowId`, `Ref`, `SqlXml`.
+  - `encode_param(...)` now routes wrappers deterministically:
+    - `Blob`/`RowId` -> `OID_BYTEA`
+    - `Clob`/`Ref` -> `OID_TEXT`
+    - `SqlXml` -> `OID_XML`
+  - Package exports now include these wrappers for lane-visible API usage.
 - Added deterministic tests in `tests/test_types.py`:
+  - `test_encode_blob_wrapper_uses_bytea_oid`
+  - `test_encode_clob_wrapper_uses_text_oid`
+  - `test_encode_rowid_wrapper_uses_bytea_oid`
+  - `test_encode_ref_wrapper_uses_text_oid`
+  - `test_encode_sqlxml_wrapper_uses_xml_oid`
   - `test_encode_timetz_uses_binary_layout_and_zone_seconds_west`
   - `test_decode_timetz_binary_payload_roundtrip`
   - `test_decode_timetz_binary_payload_supports_legacy_8byte_form`
@@ -38,10 +50,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`23 passed`)
+- Result: PASS (`28 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`168 passed, 27 skipped, 1 warning`)
+- Result: PASS (`173 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -49,5 +61,6 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Reason:
   - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads.
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
+  - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.
   - Remaining gap: deeper live type coverage is still env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.

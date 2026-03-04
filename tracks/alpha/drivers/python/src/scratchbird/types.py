@@ -105,6 +105,33 @@ class Json:
 
 
 @dataclass
+class Blob:
+    raw: bytes
+
+
+@dataclass
+class Clob:
+    text: str
+
+
+@dataclass
+class RowId:
+    raw: bytes
+
+
+@dataclass
+class Ref:
+    type_name: str = ""
+    value: Optional[Any] = None
+
+
+@dataclass
+class SqlXml:
+    raw: bytes = b""
+    value: Optional[str] = None
+
+
+@dataclass
 class Geometry:
     wkb: bytes
     srid: Optional[int] = None
@@ -145,6 +172,20 @@ class RawValue:
 def encode_param(value: Any) -> tuple[ParamValue, int]:
     if value is None:
         return ParamValue(FORMAT_BINARY, None), 0
+    if isinstance(value, Blob):
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.raw or b"")), OID_BYTEA
+    if isinstance(value, Clob):
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.text.encode("utf-8"))), OID_TEXT
+    if isinstance(value, RowId):
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.raw or b"")), OID_BYTEA
+    if isinstance(value, Ref):
+        payload = "" if value.value is None else str(value.value)
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(payload.encode("utf-8"))), OID_TEXT
+    if isinstance(value, SqlXml):
+        raw = value.raw
+        if (not raw) and value.value is not None:
+            raw = value.value.encode("utf-8")
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(raw)), OID_XML
     if isinstance(value, Composite):
         data, oid = _encode_composite(value)
         return ParamValue(FORMAT_BINARY, data), oid

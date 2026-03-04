@@ -64,6 +64,11 @@ Use these helper types for complex values:
 
 - `scratchbird.Json`
 - `scratchbird.Jsonb`
+- `scratchbird.Blob`
+- `scratchbird.Clob`
+- `scratchbird.RowId`
+- `scratchbird.Ref`
+- `scratchbird.SqlXml`
 - `scratchbird.Geometry`
 - `scratchbird.Range`
 - `scratchbird.RawValue`

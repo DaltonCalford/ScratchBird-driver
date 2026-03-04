@@ -13,10 +13,13 @@ import struct
 import uuid
 
 from scratchbird.types import (
+    Blob,
+    Clob,
     Composite,
     CompositeField,
     FORMAT_TEXT,
     OID_BOOL_ARRAY,
+    OID_BYTEA,
     OID_DATE_ARRAY,
     OID_INT4_ARRAY,
     OID_INT4,
@@ -26,16 +29,21 @@ from scratchbird.types import (
     OID_NUMERIC_ARRAY,
     OID_RECORD,
     OID_SB_VECTOR,
+    OID_TEXT,
     OID_TEXT_ARRAY,
     OID_TIMETZ,
     OID_TIMETZ_ARRAY,
     OID_TIMESTAMPTZ_ARRAY,
     OID_UUID_ARRAY,
+    OID_XML,
     FORMAT_BINARY,
     decode_value,
     encode_param,
     Jsonb,
+    Ref,
     Range,
+    RowId,
+    SqlXml,
     type_name,
 )
 
@@ -51,6 +59,38 @@ def test_decode_jsonb():
     value = decode_value(OID_JSONB, raw, FORMAT_BINARY)
     assert isinstance(value, Jsonb)
     assert value.raw == payload
+
+
+def test_encode_blob_wrapper_uses_bytea_oid():
+    payload = b"\x01\x02\x03"
+    param, oid = encode_param(Blob(raw=payload))
+    assert oid == OID_BYTEA
+    assert decode_value(oid, param.data, FORMAT_BINARY) == payload
+
+
+def test_encode_clob_wrapper_uses_text_oid():
+    param, oid = encode_param(Clob(text="scratchbird-clob"))
+    assert oid == OID_TEXT
+    assert decode_value(oid, param.data, FORMAT_BINARY) == "scratchbird-clob"
+
+
+def test_encode_rowid_wrapper_uses_bytea_oid():
+    payload = b"rid-42"
+    param, oid = encode_param(RowId(raw=payload))
+    assert oid == OID_BYTEA
+    assert decode_value(oid, param.data, FORMAT_BINARY) == payload
+
+
+def test_encode_ref_wrapper_uses_text_oid():
+    param, oid = encode_param(Ref(type_name="demo_ref", value="rid-100"))
+    assert oid == OID_TEXT
+    assert decode_value(oid, param.data, FORMAT_BINARY) == "rid-100"
+
+
+def test_encode_sqlxml_wrapper_uses_xml_oid():
+    param, oid = encode_param(SqlXml(value="<doc/>"))
+    assert oid == OID_XML
+    assert decode_value(oid, param.data, FORMAT_BINARY) == "<doc/>"
 
 
 def test_decode_vector_literal():
