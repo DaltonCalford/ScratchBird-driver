@@ -54,6 +54,7 @@ from .metadata import (
     schema_paths_for_navigation,
     expand_schema_parent_paths,
     build_schema_tree,
+    build_ddl_editor_schema_payload,
 )
 
 apilevel = "2.0"
@@ -109,4 +110,5 @@ __all__ = [
     "schema_paths_for_navigation",
     "expand_schema_parent_paths",
     "build_schema_tree",
+    "build_ddl_editor_schema_payload",
 ]

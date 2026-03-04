@@ -208,6 +208,50 @@ def test_connection_indexes_wrapper_handles_missing_restrictions():
     assert captured == {"collection_name": "indexes", "restrictions": None}
 
 
+def test_connection_ddl_editor_schema_payload_uses_config_parent_expansion_and_forwards_pattern():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    conn._config = type("Cfg", (), {"metadata_expand_schema_parents": True})()
+    captured = {}
+
+    class DummyCursor:
+        def __init__(self):
+            self.description = [("schema_name", None, None, None, None, None, True)]
+
+        def fetchall(self):
+            return [("users.alice.dev",), ("sys",)]
+
+    def fake_query_metadata(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return DummyCursor()
+
+    conn.query_metadata = fake_query_metadata
+
+    payload = Connection.ddl_editor_schema_payload(conn, schema_pattern="users.%")
+    assert captured == {"collection_name": "schemas", "restrictions": {"schema": "users.%"}}
+    assert payload["expandSchemaParents"] is True
+    assert payload["schemaPaths"] == ["users.alice", "users.alice.dev"]
+
+
+def test_connection_ddl_editor_schema_payload_allows_expansion_override():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    conn._config = type("Cfg", (), {"metadata_expand_schema_parents": True})()
+
+    class DummyCursor:
+        description = [("schema_name", None, None, None, None, None, True)]
+
+        def fetchall(self):
+            return [("users.alice.dev",)]
+
+    conn.query_metadata = lambda *_args, **_kwargs: DummyCursor()
+
+    payload = Connection.ddl_editor_schema_payload(conn, expand_schema_parents=False)
+    assert payload["expandSchemaParents"] is False
+    assert payload["schemaPaths"] == ["users.alice.dev"]
+
+
 @pytest.mark.parametrize(
     ("method_name", "kwargs", "expected_collection", "expected_restrictions"),
     [

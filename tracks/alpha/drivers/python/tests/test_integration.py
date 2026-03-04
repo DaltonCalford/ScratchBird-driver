@@ -453,3 +453,18 @@ def test_metadata_restriction_wildcard_integration():
         assert len(wildcard_tables) == len(all_tables)
     finally:
         conn.close()
+
+
+def test_metadata_ddl_editor_schema_payload_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        payload = conn.ddl_editor_schema_payload(schema_pattern="%")
+        assert set(payload) == {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"}
+        assert payload["schemaPattern"] == "%"
+        assert isinstance(payload["schemaPaths"], list)
+        assert isinstance(payload["schemaTree"], list)
+    finally:
+        conn.close()

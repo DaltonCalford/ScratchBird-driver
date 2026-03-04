@@ -416,6 +416,40 @@ def build_schema_tree(schema_paths: Iterable[str]) -> List[SchemaTreeNode]:
     return roots
 
 
+def build_ddl_editor_schema_payload(
+    schema_rows: Iterable[Any],
+    *,
+    schema_pattern: Optional[str] = None,
+    expand_schema_parents: bool = False,
+    column_names: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Build a deterministic metadata payload for DDL-editor schema navigation.
+
+    Input rows can be mapping rows (for example dict-like) or tuple/list rows.
+    Tuple/list rows require `column_names` to map schema values.
+    """
+    schema_names: List[str] = []
+    for row in schema_rows:
+        schema_name = _schema_name_from_row(row, column_names=column_names)
+        if schema_name is None:
+            continue
+        schema_names.append(schema_name)
+
+    schema_paths = schema_paths_for_navigation(
+        schema_names,
+        expand_schema_parents=expand_schema_parents,
+        schema_pattern=schema_pattern,
+    )
+    schema_tree = build_schema_tree(schema_paths)
+    return {
+        "schemaPattern": schema_pattern,
+        "expandSchemaParents": bool(expand_schema_parents),
+        "schemaPaths": schema_paths,
+        "schemaTree": _schema_tree_nodes_to_payload(schema_tree),
+    }
+
+
 def _normalize_schema_name(schema_name: Optional[str]) -> Optional[str]:
     parts = _split_schema_path(schema_name)
     if not parts:
@@ -617,3 +651,27 @@ def _normalize_identifier(value: Any) -> str:
 
 def _normalize_match_text(value: Any) -> str:
     return str(value).strip().lower()
+
+
+def _schema_name_from_row(row: Any, *, column_names: Optional[Sequence[str]]) -> Optional[str]:
+    aliases = ["schema_name", "table_schema", "table_schem", "schema"]
+    values = _row_values_for_aliases(row, aliases, column_names=column_names)
+    for value in values:
+        normalized = _normalize_schema_name(value)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _schema_tree_nodes_to_payload(nodes: Sequence[SchemaTreeNode]) -> List[Dict[str, Any]]:
+    payload_nodes: List[Dict[str, Any]] = []
+    for node in nodes:
+        payload_nodes.append(
+            {
+                "name": node.name,
+                "fullPath": node.full_path,
+                "isTerminal": node.is_terminal,
+                "children": _schema_tree_nodes_to_payload(node.children),
+            }
+        )
+    return payload_nodes

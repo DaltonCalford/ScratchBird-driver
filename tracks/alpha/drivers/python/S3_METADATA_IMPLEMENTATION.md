@@ -19,6 +19,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Added first-class executable metadata APIs on `Connection`:
   - `query_metadata(collection_name='tables', restrictions=None)` executes normalized metadata queries via the existing query path.
   - `get_schema(collection_name='tables', restrictions=None)` materializes metadata rows by draining cursor results.
+  - `ddl_editor_schema_payload(schema_pattern=None, expand_schema_parents=None)` now emits a deterministic schema-navigation payload for DDL-editor consumers.
   - Added convenience metadata wrappers for supported families:
     - Existing: `schemas`, `tables`, `columns`, `indexes`
     - Newly expanded: `index_columns`, `constraints`, `catalogs`, `primary_keys`, `foreign_keys`, `procedures`, `functions`, `routines`, `table_privileges`, `column_privileges`, `type_info`
@@ -29,33 +30,36 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Supports mapping-row and tuple-row inputs (tuple rows use cursor description column names).
   - Supports null matching with `"null"`, JDBC-style `%`/`_` wildcard restriction matching (including escaped wildcard literals), and ignores unmappable restriction keys.
   - `Connection.query_metadata(...)` now returns an in-memory filtered cursor when restrictions are provided.
+- Added deterministic DDL-editor payload shaping in `src/scratchbird/metadata.py`:
+  - `build_ddl_editor_schema_payload(...)` normalizes schema rows, applies pattern/parent-expansion mode, and emits a stable `schemaPaths` + recursive `schemaTree` payload.
 - Added targeted lane tests:
   - New `tests/test_metadata_recursive_schema.py` validates wildcard matching, parent expansion, pattern-filter preservation, per-parent uniqueness, and cross-schema same-name identity behavior.
+  - Added fixed fixture snapshot tests for deterministic DDL-editor payload output (mapping and tuple-row inputs).
   - New `tests/test_metadata_execution.py` validates alias normalization/query resolution for extended families and `Connection.query_metadata(...)`/`get_schema(...)` behavior (including unsupported collection mapping).
+  - Added `Connection.ddl_editor_schema_payload(...)` wrapper tests for config-driven parent expansion and explicit override behavior.
   - Added metadata restriction tests for alias-based filtering, tuple-row filtering with descriptions, null matching, wildcard matching, escaped wildcard literals, unknown key handling, and invalid restriction input mapping.
   - Added wrapper forwarding tests to validate collection + restriction mapping for the expanded convenience wrapper surface.
   - Extended `tests/test_connection_auth_protocol.py` with alias mapping coverage for `metadata_expand_schema_parents`.
-  - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior, including wildcard table restrictions.
+  - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior, including wildcard table restrictions and DDL-editor payload shape.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META row evidence/notes to reflect recursive metadata behavior and tests.
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`43 passed, 20 skipped`)
+- Result: PASS (`52 passed, 27 skipped`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`143 passed, 20 skipped`)
+- Result: PASS (`153 passed, 27 skipped`)
 
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering with JDBC-style wildcard support.
+  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, deterministic DDL-editor payload shaping (`ddl_editor_schema_payload` / `build_ddl_editor_schema_payload`) with fixed fixture snapshots, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering with JDBC-style wildcard support.
   - Recursive schema shaping coverage remains in place for nested metadata navigation behavior.
-  - Env-gated live integration assertions now cover wrapper execution and restriction filtering behavior, including wildcard table filters.
+  - Env-gated live integration assertions now cover wrapper execution, restriction filtering behavior, and DDL-editor payload shape, including wildcard table filters.
   - Status remains partial because live metadata validation is still environment-gated and not guaranteed in always-on CI.
 
 ## Remaining Gaps
 
 - Live metadata assertions still depend on `SCRATCHBIRD_TEST_DSN`, so default runs can skip this lane.
-- DDL-editor payload stability checks are not yet pinned to a fixed fixture schema snapshot in this lane.

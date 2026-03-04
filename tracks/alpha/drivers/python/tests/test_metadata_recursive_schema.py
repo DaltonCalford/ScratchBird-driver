@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from scratchbird.metadata import (
+    build_ddl_editor_schema_payload,
     build_schema_tree,
     expand_schema_parent_paths,
     schema_name_matches_pattern,
@@ -90,3 +91,97 @@ def test_build_schema_tree_enforces_per_parent_uniqueness_and_cross_path_identit
     assert alice_dev.full_path == "users.alice.dev"
     assert bob_dev.full_path == "users.bob.dev"
     assert alice_dev is not bob_dev
+
+
+def test_build_ddl_editor_schema_payload_snapshot_with_parent_expansion():
+    rows = [
+        {"schema_name": "users.alice.dev"},
+        {"schema_name": "users.alice.prod"},
+        {"schema_name": "sys"},
+    ]
+
+    payload = build_ddl_editor_schema_payload(rows, expand_schema_parents=True)
+
+    assert payload == {
+        "schemaPattern": None,
+        "expandSchemaParents": True,
+        "schemaPaths": [
+            "users",
+            "users.alice",
+            "users.alice.dev",
+            "users.alice.prod",
+            "sys",
+        ],
+        "schemaTree": [
+            {
+                "name": "users",
+                "fullPath": "users",
+                "isTerminal": True,
+                "children": [
+                    {
+                        "name": "alice",
+                        "fullPath": "users.alice",
+                        "isTerminal": True,
+                        "children": [
+                            {
+                                "name": "dev",
+                                "fullPath": "users.alice.dev",
+                                "isTerminal": True,
+                                "children": [],
+                            },
+                            {
+                                "name": "prod",
+                                "fullPath": "users.alice.prod",
+                                "isTerminal": True,
+                                "children": [],
+                            },
+                        ],
+                    }
+                ],
+            },
+            {
+                "name": "sys",
+                "fullPath": "sys",
+                "isTerminal": True,
+                "children": [],
+            },
+        ],
+    }
+
+
+def test_build_ddl_editor_schema_payload_supports_tuple_rows_and_pattern_filter():
+    rows = [
+        (1, "users.alice.dev"),
+        (2, "sys"),
+    ]
+
+    payload = build_ddl_editor_schema_payload(
+        rows,
+        schema_pattern="users.%",
+        expand_schema_parents=False,
+        column_names=["schema_id", "schema_name"],
+    )
+
+    assert payload["schemaPaths"] == ["users.alice.dev"]
+    assert payload["schemaTree"] == [
+        {
+            "name": "users",
+            "fullPath": "users",
+            "isTerminal": False,
+            "children": [
+                {
+                    "name": "alice",
+                    "fullPath": "users.alice",
+                    "isTerminal": False,
+                    "children": [
+                        {
+                            "name": "dev",
+                            "fullPath": "users.alice.dev",
+                            "isTerminal": True,
+                            "children": [],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]

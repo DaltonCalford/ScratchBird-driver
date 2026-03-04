@@ -96,6 +96,7 @@ from .protocol import (
 from .scram import ScramExchange
 from .sql import normalize_callable_query, normalize_query
 from .metadata import (
+    build_ddl_editor_schema_payload,
     filter_rows_by_restrictions,
     normalize_collection_name,
     resolve_collection_query,
@@ -919,6 +920,27 @@ class Connection:
     def type_info(self, type_name: Optional[str] = None):
         restrictions = self._metadata_restrictions(type=type_name)
         return self.get_schema("type_info", restrictions=restrictions)
+
+    def ddl_editor_schema_payload(
+        self,
+        schema_pattern: Optional[str] = None,
+        expand_schema_parents: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        restrictions = self._metadata_restrictions(schema=schema_pattern)
+        cur = self.query_metadata("schemas", restrictions=restrictions)
+        rows = cur.fetchall()
+        column_names = self._metadata_column_names(cur.description)
+        expand = (
+            bool(self._config.metadata_expand_schema_parents)
+            if expand_schema_parents is None
+            else bool(expand_schema_parents)
+        )
+        return build_ddl_editor_schema_payload(
+            rows,
+            schema_pattern=schema_pattern,
+            expand_schema_parents=expand,
+            column_names=column_names,
+        )
 
     def get_session_schema(self) -> Optional[str]:
         return self._session_schema

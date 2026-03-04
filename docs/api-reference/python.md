@@ -42,6 +42,7 @@ Connection helpers available on `Connection`:
 - `cancel()`
 - `query_metadata(collection_name="tables", restrictions=None)`
 - `get_schema(collection_name="tables", restrictions=None)`
+- `ddl_editor_schema_payload(schema_pattern=None, expand_schema_parents=None)`
 - `schemas(catalog=None)`, `tables(schema=None, table=None, table_type=None)`
 - `columns(schema=None, table=None, column=None, column_type=None)`, `indexes(schema=None, table=None, index=None)`
 - `index_columns(schema=None, table=None, index=None, column=None)`, `constraints(schema=None, table=None, constraint=None)`
