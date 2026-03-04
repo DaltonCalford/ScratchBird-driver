@@ -18,8 +18,9 @@
 - Lane-local test anchors:
   - `test/config_test.dart:13-37` DSN parsing, manager proxy parameters, invalid front-door validation.
   - `test/connect_validation_test.dart:24-63` connect-time policy rejection coverage (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
+  - `test/integration_test.dart:25-39` live direct connect/query smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
-  - Add connection integration tests for direct and manager-proxy paths (`_connect`, `_performManagerConnect`, `_handshake`).
+  - Add manager-proxy integration coverage for `_performManagerConnect` and manager handshake/auth failure paths.
 
 ## TXN (JDBCBL)
 
@@ -33,9 +34,10 @@
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:19-60` TXN guardrail checks (`commit`/`rollback`/`savepoint` require active transaction).
   - `test/txn_exec_parity_test.dart:63-101` TXN payload encoding coverage for begin and savepoint/release/rollback-to payloads.
+  - `test/integration_test.dart:76-89` live begin/commit/rollback cycle coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
-  - Add live integration tests for begin/commit/rollback/savepoint flows and server-side TXN failure paths.
-  - Add coverage for nested-begin rejection and active-transaction commit/rollback success paths against a real server.
+  - Add live integration tests for savepoint/release/rollback-to flows and server-side TXN failure paths.
+  - Add nested-begin rejection coverage against a real server.
 
 ## EXEC (JDBCBL)
 
@@ -49,8 +51,9 @@
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:104-131` EXEC guardrail checks (`query` empty SQL rejection, cancel-without-inflight rejection).
   - `test/txn_exec_parity_test.dart:134-171` EXEC payload encoding coverage for query/execute/cancel payload contracts.
+  - `test/integration_test.dart:25-55` live simple and parameterized query coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
-  - Add integration tests for simple query, parameterized query, pagination (`portalSuspended` path), and SBLR execution.
+  - Add integration tests for pagination (`portalSuspended` path) and SBLR execution.
   - Add focused execution tests for async message capture paths (`queryPlan`, `notification`, `sblrCompiled`) under live wire flow.
 
 ## META (JDBCBL)
@@ -69,8 +72,9 @@
   - `test/metadata_recursive_schema_test.dart:35-58` dotted schema parent expansion ordering/uniqueness in path extraction.
   - `test/metadata_recursive_schema_test.dart:60-79` per-parent uniqueness for duplicate leaf paths.
   - `test/metadata_recursive_schema_test.dart:81-107` same leaf name under different parents remains distinct in recursive schema tree.
+  - `test/integration_test.dart:92-110` live metadata wrapper execution coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
-  - Add live metadata integration tests validating engine-backed metadata query execution and DDL-editor payload fields.
+  - Add live metadata integration coverage for restrictions/wildcards and DDL-editor payload fields.
 
 ## TYPE (JDBCBL)
 
@@ -83,8 +87,9 @@
 - Lane-local test anchors:
   - `test/type_mapping_test.dart:38-101` array/vector/range/composite/inet-cidr-macaddr round-trip coverage.
   - `test/type_mapping_test.dart:103-230` scalar decode coverage, text-vs-unknown decode behavior, and negative-path range/composite/unsupported-type checks.
+  - `test/integration_test.dart:57-74` live scalar type round-trip smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
-  - Add live integration tests validating binary wire round-trip behavior for scalar and complex types against a running ScratchBird server.
+  - Add live integration tests validating binary wire round-trip behavior for complex types (json/jsonb/range/composite/vector/inet-cidr-macaddr).
 
 ## ERR (JDBCBL)
 

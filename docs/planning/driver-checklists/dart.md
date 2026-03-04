@@ -18,6 +18,6 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests in `tracks/beta/drivers/dart/test/`. Issue: Open
+- [x] Add conformance/integration tests in `tracks/beta/drivers/dart/test/`. Issue: DONE (2026-03-04)
 
 ## P3 (Future)
