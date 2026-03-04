@@ -68,6 +68,22 @@ OID_INT8RANGE = 3926
 OID_TSVECTOR = 3614
 OID_TSQUERY = 3615
 OID_SB_VECTOR = 16386
+OID_BOOL_ARRAY = 1000
+OID_BYTEA_ARRAY = 1001
+OID_INT2_ARRAY = 1005
+OID_INT4_ARRAY = 1007
+OID_INT8_ARRAY = 1016
+OID_FLOAT4_ARRAY = 1021
+OID_FLOAT8_ARRAY = 1022
+OID_TEXT_ARRAY = 1009
+OID_VARCHAR_ARRAY = 1015
+OID_DATE_ARRAY = 1182
+OID_TIME_ARRAY = 1183
+OID_TIMESTAMP_ARRAY = 1115
+OID_TIMESTAMPTZ_ARRAY = 1185
+OID_TIMETZ_ARRAY = 1270
+OID_NUMERIC_ARRAY = 1231
+OID_UUID_ARRAY = 2951
 
 _RANGE_EMPTY = 0x01
 _RANGE_LB_INC = 0x02
@@ -192,7 +208,7 @@ def encode_param(value: Any) -> tuple[ParamValue, int]:
             text = _format_vector_literal(value)
             return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), OID_SB_VECTOR
         text = _format_array_literal(value)
-        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), 0
+        return ParamValue(FORMAT_BINARY, _encode_length_prefixed(text.encode("utf-8"))), _infer_array_oid(value)
     if isinstance(value, str):
         return ParamValue(FORMAT_BINARY, _encode_length_prefixed(value.encode("utf-8"))), OID_TEXT
     if isinstance(value, dict):
@@ -262,6 +278,8 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
         return Geometry(_strip_length_prefix(data))
     if type_oid == OID_RECORD:
         return _decode_composite(data)
+    if _is_array_oid(type_oid):
+        return _parse_array_literal(_strip_length_prefix(data).decode("utf-8", errors="replace"))
     return data
 
 
@@ -484,9 +502,105 @@ def _is_vector_candidate(values: Any) -> bool:
     for item in values:
         if isinstance(item, (list, tuple)):
             return False
+        if isinstance(item, bool):
+            return False
         if not isinstance(item, (int, float)):
             return False
     return True
+
+
+def _infer_array_oid(values: Any) -> int:
+    if not values:
+        return OID_TEXT_ARRAY
+    scalar_oid = 0
+    for value in values:
+        candidate = _infer_scalar_oid(value)
+        if candidate == 0:
+            continue
+        if scalar_oid == 0:
+            scalar_oid = candidate
+            continue
+        if scalar_oid == candidate:
+            continue
+        if _is_numeric_scalar_oid(scalar_oid) and _is_numeric_scalar_oid(candidate):
+            scalar_oid = _widen_numeric_scalar_oid(scalar_oid, candidate)
+            continue
+        return OID_TEXT_ARRAY
+
+    if scalar_oid == 0:
+        return OID_TEXT_ARRAY
+    return _scalar_to_array_oid(scalar_oid)
+
+
+def _infer_scalar_oid(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return OID_BOOL
+    if isinstance(value, int):
+        if -2**31 <= value <= 2**31 - 1:
+            return OID_INT4
+        if -2**63 <= value <= 2**63 - 1:
+            return OID_INT8
+        return OID_NUMERIC
+    if isinstance(value, float):
+        return OID_FLOAT8
+    if isinstance(value, _decimal.Decimal):
+        return OID_NUMERIC
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return OID_BYTEA
+    if isinstance(value, uuid.UUID):
+        return OID_UUID
+    if isinstance(value, _dt.datetime):
+        return OID_TIMESTAMPTZ if value.tzinfo is not None else OID_TIMESTAMP
+    if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
+        return OID_DATE
+    if isinstance(value, _dt.time):
+        return OID_TIMETZ if value.tzinfo is not None else OID_TIME
+    if isinstance(value, str):
+        return OID_TEXT
+    return 0
+
+
+def _scalar_to_array_oid(scalar_oid: int) -> int:
+    return {
+        OID_BOOL: OID_BOOL_ARRAY,
+        OID_BYTEA: OID_BYTEA_ARRAY,
+        OID_INT2: OID_INT2_ARRAY,
+        OID_INT4: OID_INT4_ARRAY,
+        OID_INT8: OID_INT8_ARRAY,
+        OID_FLOAT4: OID_FLOAT4_ARRAY,
+        OID_FLOAT8: OID_FLOAT8_ARRAY,
+        OID_TEXT: OID_TEXT_ARRAY,
+        OID_VARCHAR: OID_VARCHAR_ARRAY,
+        OID_CHAR: OID_TEXT_ARRAY,
+        OID_BPCHAR: OID_TEXT_ARRAY,
+        OID_DATE: OID_DATE_ARRAY,
+        OID_TIME: OID_TIME_ARRAY,
+        OID_TIMETZ: OID_TIMETZ_ARRAY,
+        OID_TIMESTAMP: OID_TIMESTAMP_ARRAY,
+        OID_TIMESTAMPTZ: OID_TIMESTAMPTZ_ARRAY,
+        OID_NUMERIC: OID_NUMERIC_ARRAY,
+        OID_UUID: OID_UUID_ARRAY,
+    }.get(scalar_oid, OID_TEXT_ARRAY)
+
+
+def _is_numeric_scalar_oid(oid: int) -> bool:
+    return oid in (OID_INT2, OID_INT4, OID_INT8, OID_FLOAT4, OID_FLOAT8, OID_NUMERIC)
+
+
+def _widen_numeric_scalar_oid(left: int, right: int) -> int:
+    if left == OID_NUMERIC or right == OID_NUMERIC:
+        return OID_NUMERIC
+    if left == OID_FLOAT8 or right == OID_FLOAT8:
+        return OID_FLOAT8
+    if left == OID_FLOAT4 or right == OID_FLOAT4:
+        return OID_FLOAT8
+    if left == OID_INT8 or right == OID_INT8:
+        return OID_INT8
+    if left == OID_INT4 or right == OID_INT4:
+        return OID_INT4
+    return OID_INT2
 
 
 def _format_array_literal(values) -> str:
@@ -519,10 +633,25 @@ def _split_array_items(text: str):
     items = []
     buf = []
     depth = 0
+    in_quotes = False
+    escape = False
     i = 0
     while i < len(text):
         ch = text[i]
-        if ch == "{":
+        if in_quotes:
+            buf.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_quotes = False
+            i += 1
+            continue
+        if ch == '"':
+            in_quotes = True
+            buf.append(ch)
+        elif ch == "{":
             depth += 1
             buf.append(ch)
         elif ch == "}":
@@ -549,6 +678,8 @@ def _parse_array_item(raw: str):
         return _parse_array_literal(token)
     if token.startswith("[") and token.endswith("]"):
         return _parse_vector_literal(token)
+    if token.startswith('"') and token.endswith('"') and len(token) >= 2:
+        return token[1:-1].replace('\\"', '"').replace("\\\\", "\\")
     if token.lower() in ("true", "false"):
         return token.lower() == "true"
     try:
@@ -691,6 +822,27 @@ def _decode_range_bound(range_oid: int, data: bytes) -> Any:
     return None
 
 
+def _is_array_oid(type_oid: int) -> bool:
+    return type_oid in (
+        OID_BOOL_ARRAY,
+        OID_BYTEA_ARRAY,
+        OID_INT2_ARRAY,
+        OID_INT4_ARRAY,
+        OID_INT8_ARRAY,
+        OID_FLOAT4_ARRAY,
+        OID_FLOAT8_ARRAY,
+        OID_TEXT_ARRAY,
+        OID_VARCHAR_ARRAY,
+        OID_DATE_ARRAY,
+        OID_TIME_ARRAY,
+        OID_TIMETZ_ARRAY,
+        OID_TIMESTAMP_ARRAY,
+        OID_TIMESTAMPTZ_ARRAY,
+        OID_NUMERIC_ARRAY,
+        OID_UUID_ARRAY,
+    )
+
+
 def type_name(type_oid: int) -> str:
     return {
         OID_BOOL: "boolean",
@@ -729,4 +881,20 @@ def type_name(type_oid: int) -> str:
         OID_TSTZRANGE: "tstzrange",
         OID_DATERANGE: "daterange",
         OID_SB_VECTOR: "vector",
+        OID_BOOL_ARRAY: "boolean[]",
+        OID_BYTEA_ARRAY: "bytea[]",
+        OID_INT2_ARRAY: "int2[]",
+        OID_INT4_ARRAY: "int4[]",
+        OID_INT8_ARRAY: "int8[]",
+        OID_FLOAT4_ARRAY: "float4[]",
+        OID_FLOAT8_ARRAY: "float8[]",
+        OID_TEXT_ARRAY: "text[]",
+        OID_VARCHAR_ARRAY: "varchar[]",
+        OID_DATE_ARRAY: "date[]",
+        OID_TIME_ARRAY: "time[]",
+        OID_TIMETZ_ARRAY: "timetz[]",
+        OID_TIMESTAMP_ARRAY: "timestamp[]",
+        OID_TIMESTAMPTZ_ARRAY: "timestamptz[]",
+        OID_NUMERIC_ARRAY: "numeric[]",
+        OID_UUID_ARRAY: "uuid[]",
     }.get(type_oid, "unknown")

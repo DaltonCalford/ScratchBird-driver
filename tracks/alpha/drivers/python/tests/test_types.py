@@ -14,12 +14,15 @@ from scratchbird.types import (
     Composite,
     CompositeField,
     FORMAT_TEXT,
+    OID_BOOL_ARRAY,
+    OID_INT4_ARRAY,
     OID_INT4,
     OID_INT4RANGE,
     OID_INTERVAL,
     OID_JSONB,
     OID_RECORD,
     OID_SB_VECTOR,
+    OID_TEXT_ARRAY,
     OID_TIMETZ,
     FORMAT_BINARY,
     decode_value,
@@ -97,6 +100,34 @@ def test_decode_timetz_text_payload_to_offset_time():
 
 def test_type_name_includes_timetz():
     assert type_name(OID_TIMETZ) == "timetz"
+
+
+def test_encode_string_array_infers_text_array_oid():
+    param, oid = encode_param(["alpha", "beta"])
+    assert oid == OID_TEXT_ARRAY
+    assert decode_value(oid, param.data, FORMAT_BINARY) == ["alpha", "beta"]
+
+
+def test_encode_bool_array_infers_boolean_array_oid():
+    param, oid = encode_param([True, False, True])
+    assert oid == OID_BOOL_ARRAY
+    assert decode_value(oid, param.data, FORMAT_BINARY) == [True, False, True]
+
+
+def test_decode_int4_array_literal_payload():
+    literal = b"{1,2,3}"
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_INT4_ARRAY, raw, FORMAT_BINARY) == [1, 2, 3]
+
+
+def test_decode_text_array_literal_with_quotes_and_nested_arrays():
+    literal = b'{{"a,b","c\\\"d"},{"x","y"}}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_TEXT_ARRAY, raw, FORMAT_BINARY) == [["a,b", 'c"d'], ["x", "y"]]
+
+
+def test_type_name_includes_array_names():
+    assert type_name(OID_TEXT_ARRAY) == "text[]"
 
 
 def test_encode_decode_range_roundtrip():
