@@ -87,7 +87,7 @@
   - `src/ScratchBird.Metadata.pas:160` (`NormalizeMetadataCollectionName`, alias normalization across schema/table/index/constraint/routine/catalog/key/privilege/type metadata families)
   - `src/ScratchBird.Metadata.pas:184` (`ResolveMetadataCollectionQuery`, metadata collection to SQL resolution)
   - `src/ScratchBird.Metadata.pas:443`, `src/ScratchBird.Metadata.pas:696` (`MetadataCollectionRestrictionKeys` includes routines restriction aliases; `FilterMetadataRowsByRestrictions` provides collection-scoped wildcard/null filtering)
-  - `src/ScratchBird.Metadata.pas:808`, `src/ScratchBird.Metadata.pas:813`, `src/ScratchBird.Metadata.pas:818`, `src/ScratchBird.Metadata.pas:823`, `src/ScratchBird.Metadata.pas:828`, `src/ScratchBird.Metadata.pas:833`, `src/ScratchBird.Metadata.pas:838` (routines/catalogs/primary_keys/foreign_keys/table_privileges/column_privileges/type_info query builders)
+  - `src/ScratchBird.Metadata.pas:808`, `src/ScratchBird.Metadata.pas:813`, `src/ScratchBird.Metadata.pas:818`, `src/ScratchBird.Metadata.pas:823`, `src/ScratchBird.Metadata.pas:828`, `src/ScratchBird.Metadata.pas:833`, `src/ScratchBird.Metadata.pas:838` (routines/catalogs/primary_keys/foreign_keys/table_privileges/column_privileges/type_info query builders; procedures/functions/routines sourced via `information_schema.routines`)
   - `src/ScratchBird.Metadata.pas:843` (`ExpandSchemaPaths`, dotted parent expansion + de-duplication)
   - `src/ScratchBird.Metadata.pas:878` (`ListMetadataSchemaPaths`, metadata-row schema extraction + optional parent expansion)
   - `src/ScratchBird.Metadata.pas:906` (`ExpandSchemaMetadataRows`, synthetic ancestor-row shaping for recursive navigation)

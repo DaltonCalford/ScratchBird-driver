@@ -799,17 +799,17 @@ end;
 
 function MetadataProceduresQuery: string;
 begin
-  Result := 'SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_name AS procedure_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' ORDER BY schema_id, procedure_name';
 end;
 
 function MetadataFunctionsQuery: string;
 begin
-  Result := 'SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_name AS function_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_id, function_name';
 end;
 
 function MetadataRoutinesQuery: string;
 begin
-  Result := 'SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, ''FUNCTION'' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' UNION ALL SELECT routine_schema AS schema_id, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_id, routine_name';
 end;
 
 function MetadataCatalogsQuery: string;

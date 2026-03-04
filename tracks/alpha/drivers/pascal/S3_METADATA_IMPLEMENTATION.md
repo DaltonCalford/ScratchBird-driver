@@ -11,6 +11,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
     - `table_privileges`, `column_privileges`,
     - `routines`, `type_info`,
     alongside existing schema/table/column/index/constraint/procedure/function collections.
+  - Switched procedure/function/routine metadata query builders to `information_schema.routines` so metadata execution avoids direct dependency on `sys.procedures`/`sys.functions` catalogs.
   - Added `ExpandSchemaPaths` for dotted parent expansion with first-seen ordering and de-duplication.
   - Added `ListMetadataSchemaPaths` for schema-path extraction from metadata rows with optional parent expansion mode.
   - Added `ExpandSchemaMetadataRows` for metadata-row parent expansion that emits synthetic ancestor rows and preserves physical leaf rows.
