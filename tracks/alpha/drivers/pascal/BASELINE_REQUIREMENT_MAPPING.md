@@ -30,15 +30,15 @@
   - `src/ScratchBird.Client.pas:451`, `src/ScratchBird.Client.pas:457`, `src/ScratchBird.Client.pas:459`, `src/ScratchBird.Client.pas:477`, `src/ScratchBird.Client.pas:489`, `src/ScratchBird.Client.pas:501`, `src/ScratchBird.Client.pas:512`, `src/ScratchBird.Client.pas:523`
   - `src/ScratchBird.Client.pas:1243`, `src/ScratchBird.Client.pas:1249`, `src/ScratchBird.Client.pas:1255`
   - `src/ScratchBird.Protocol.pas:545`, `src/ScratchBird.Protocol.pas:553`, `src/ScratchBird.Protocol.pas:558`, `src/ScratchBird.Protocol.pas:563`, `src/ScratchBird.Protocol.pas:571`, `src/ScratchBird.Protocol.pas:576`
-  - `src/ScratchBird.FireDAC.pas:93`, `src/ScratchBird.FireDAC.pas:98`, `src/ScratchBird.FireDAC.pas:103`
-  - `src/ScratchBird.IBX.pas:91`, `src/ScratchBird.IBX.pas:96`, `src/ScratchBird.IBX.pas:101`
-  - `src/ScratchBird.Zeos.pas:92`, `src/ScratchBird.Zeos.pas:97`, `src/ScratchBird.Zeos.pas:102`
-  - `src/ScratchBird.SQLdb.pas:92`, `src/ScratchBird.SQLdb.pas:97`, `src/ScratchBird.SQLdb.pas:102`
+  - `src/ScratchBird.FireDAC.pas:120`, `src/ScratchBird.FireDAC.pas:125`, `src/ScratchBird.FireDAC.pas:131`, `src/ScratchBird.FireDAC.pas:136` (adapter transaction begin/begin-ex/commit/rollback forwarding)
+  - `src/ScratchBird.IBX.pas:118`, `src/ScratchBird.IBX.pas:123`, `src/ScratchBird.IBX.pas:129`, `src/ScratchBird.IBX.pas:134` (adapter transaction begin/begin-ex/commit/rollback forwarding)
+  - `src/ScratchBird.Zeos.pas:119`, `src/ScratchBird.Zeos.pas:124`, `src/ScratchBird.Zeos.pas:130`, `src/ScratchBird.Zeos.pas:135` (adapter transaction begin/begin-ex/commit/rollback forwarding)
+  - `src/ScratchBird.SQLdb.pas:119`, `src/ScratchBird.SQLdb.pas:124`, `src/ScratchBird.SQLdb.pas:130`, `src/ScratchBird.SQLdb.pas:135` (adapter transaction begin/begin-ex/commit/rollback forwarding)
 - Lane-local test anchors:
   - `tests/TxnExecParityTests.pas:66`, `tests/TxnExecParityTests.pas:87`, `tests/TxnExecParityTests.pas:100`, `tests/TxnExecParityTests.pas:121`, `tests/TxnExecParityTests.pas:174`
+  - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
 - Gaps/next actions:
   - Add live transaction integration tests that validate begin/commit/rollback/savepoint behavior against a running server (current lane tests are local-only guardrail tests).
-  - Adapter-level access to advanced transaction options is still limited; `BeginTransactionEx` remains client-only (`src/ScratchBird.Client.pas:451`).
   - Nested-begin rejection is covered locally, but transaction-state transitions are not yet asserted end-to-end against wire-reported READY states.
 
 ## EXEC (JDBCBL: EXEC)

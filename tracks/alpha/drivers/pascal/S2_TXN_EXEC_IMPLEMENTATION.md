@@ -25,6 +25,13 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `src/ScratchBird.SQLdb.pas`
   - `src/ScratchBird.Zeos.pas`
   so `Prepare` now normalizes/caches SQL and parameter ordering for reuse by `Open`/`ExecSQL`.
+- Added adapter advanced transaction forwarding surface (`StartTransactionEx`) in:
+  - `src/ScratchBird.FireDAC.pas`
+  - `src/ScratchBird.IBX.pas`
+  - `src/ScratchBird.SQLdb.pas`
+  - `src/ScratchBird.Zeos.pas`
+  so adapter callers can access `BeginTransactionEx` options parity without dropping to the raw client API.
+- Added `tests/AdapterTransactionOptionsTests.pas` for disconnected guard parity on adapter `StartTransactionEx` across all four adapter surfaces.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -41,27 +48,32 @@ Scope: `tracks/alpha/drivers/pascal` only.
 4. `./tracks/alpha/drivers/pascal/tests/SqlTests`
 - Result: PASS (`SqlTests: OK`).
 
+5. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_txn_opts_build -FE/tmp/sb_pascal_txn_opts_bin ./tracks/alpha/drivers/pascal/tests/AdapterTransactionOptionsTests.pas`
+- Result: PASS (compile succeeded).
+
+6. `/tmp/sb_pascal_txn_opts_bin/AdapterTransactionOptionsTests`
+- Result: PASS (`AdapterTransactionOptionsTests: OK`).
+
 ## TXN Status
 
 - Recommendation: `PARTIAL`
 
 Rationale:
 - Deterministic lane-local TXN guardrails now exist and are covered by dedicated tests (disconnected begin, no-active-txn commit/rollback behavior, savepoint active-txn and name validation, txn payload encoding checks).
-- Remaining gaps prevent `MET`: no live server transaction lifecycle integration test coverage for begin/commit/rollback/savepoint and no adapter-surface parity for advanced transaction options exposed by `BeginTransactionEx`.
+- Adapter surfaces now expose advanced transaction options via `StartTransactionEx` forwarding, with deterministic lane-local guard tests.
+- Remaining gap preventing `MET`: no live server transaction lifecycle integration coverage for begin/commit/rollback/savepoint.
 
 ## EXEC Status
 
 - Recommendation: `PARTIAL`
 
 Rationale:
-- Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, and adapter `Prepare` normalization/cache behavior.
-- Remaining gaps prevent `MET`: no first-class lane API/test coverage yet for batch execution, multi-result traversal, or generated-key retrieval.
+- Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, adapter `Prepare` normalization/cache behavior, stream-control/backpressure assertions, and generated-key metadata exposure.
+- Remaining gaps prevent `MET`: no first-class lane API/test coverage yet for batch execution and multi-result traversal.
 
 ## Remaining Concrete Gaps
 
 - TXN:
   - Add live integration tests for full transaction lifecycle against a running ScratchBird endpoint.
-  - Surface advanced transaction option parity at adapter APIs (currently client-level only).
 - EXEC:
-  - Add stream-control/backpressure tests on execution flows.
-  - Add explicit batch/multi-result/generated-key API coverage.
+  - Add explicit batch/multi-result API coverage.

@@ -29,6 +29,8 @@ type
     procedure Open;
     procedure Close;
     procedure StartTransaction;
+    procedure StartTransactionEx(IsolationLevel, AccessMode: Byte; Deferrable, WaitMode: Boolean;
+      TimeoutMs: Cardinal; AutocommitMode, ConflictAction: Byte);
     procedure Commit;
     procedure Rollback;
     procedure ExecSQL(const Sql: string);
@@ -118,6 +120,12 @@ end;
 procedure TScratchBirdFDConnection.StartTransaction;
 begin
   FClient.BeginTransaction;
+end;
+
+procedure TScratchBirdFDConnection.StartTransactionEx(IsolationLevel, AccessMode: Byte; Deferrable, WaitMode: Boolean;
+  TimeoutMs: Cardinal; AutocommitMode, ConflictAction: Byte);
+begin
+  FClient.BeginTransactionEx(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs, AutocommitMode, ConflictAction);
 end;
 
 procedure TScratchBirdFDConnection.Commit;
