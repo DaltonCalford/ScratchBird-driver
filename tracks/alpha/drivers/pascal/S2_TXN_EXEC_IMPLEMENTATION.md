@@ -36,6 +36,9 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `tests/TxnStateTransitionsTests.pas`
   - validates wire-`READY` lifecycle transitions for begin/savepoint/release/rollback-to/commit and begin/rollback flows.
   - validates post-commit/post-rollback active-transaction guard behavior via savepoint/release calls.
+  - validates `BeginTransactionEx` option-matrix payload encoding for:
+    - full option path (`isolation/access/deferrable/wait/timeout/autocommit/conflict`),
+    - minimal option path (`isolation` only).
 - Expanded env-gated live integration coverage in:
   - `tests/IntegrationTest.pas`
   - validates live begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle execution.
@@ -83,9 +86,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
 Rationale:
 - Deterministic lane-local TXN guardrails now exist and are covered by dedicated tests (disconnected begin, no-active-txn commit/rollback behavior, savepoint active-txn and name validation, txn payload encoding checks).
 - Deterministic transaction state transitions are now asserted end-to-end against wire `READY` transaction ids for begin/savepoint/release/rollback-to/commit and begin/rollback paths.
+- Deterministic `BeginTransactionEx` option-matrix payload encoding is now asserted directly against emitted wire payloads.
 - Adapter surfaces now expose advanced transaction options via `StartTransactionEx` forwarding, with deterministic lane-local guard tests.
 - Env-gated live integration now exercises begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths.
-- Remaining gaps preventing `MET`: live coverage is env-gated/skippable and does not yet include broader isolation/timeout conflict-path assertions.
+- Remaining gaps preventing `MET`: live coverage is env-gated/skippable and does not yet include conflict-path assertions for `BeginTransactionEx` option matrices against running fixtures.
 
 ## EXEC Status
 
@@ -101,7 +105,7 @@ Rationale:
 
 - TXN:
   - Add non-skippable gate execution for live transaction lifecycle assertions.
-  - Expand live assertions for `BeginTransactionEx` option matrices (isolation/access/timeout/deferrable/wait/conflict).
+  - Expand live assertions for `BeginTransactionEx` option matrices to include conflict-path behavior against running fixtures.
 - EXEC:
   - Add non-skippable gate execution for live advanced execution assertions.
   - Expand live stream-control/backpressure assertions beyond command acceptance to explicit suspended/resume behavior against running server fixtures.

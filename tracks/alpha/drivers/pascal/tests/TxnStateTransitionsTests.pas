@@ -59,6 +59,17 @@ begin
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
 end;
 
+procedure AssertEqualBytes(const Expected, Actual: TBytes; const MessageText: string);
+var
+  I: Integer;
+begin
+  if Length(Expected) <> Length(Actual) then
+    Fail(MessageText + ': expected length=' + IntToStr(Length(Expected)) + ' actual length=' + IntToStr(Length(Actual)));
+  for I := 0 to High(Expected) do
+    if Expected[I] <> Actual[I] then
+      Fail(MessageText + ': mismatch at index ' + IntToStr(I));
+end;
+
 procedure WriteUInt64LEAt(var Buffer: TBytes; Offset: Integer; Value: UInt64);
 begin
   Buffer[Offset] := Byte(Value and $FF);
@@ -80,7 +91,7 @@ begin
   WriteUInt64LEAt(Result, 12, Visibility);
 end;
 
-procedure DecodeOutboundType(const Frame: TBytes; out MsgType: TScratchBirdMessageType);
+procedure DecodeOutboundFrame(const Frame: TBytes; out MsgType: TScratchBirdMessageType; out Payload: TBytes);
 var
   Header: TBytes;
   Flags: Byte;
@@ -92,6 +103,15 @@ begin
   AssertTrue(Length(Frame) >= HEADER_SIZE, 'outbound frame includes header');
   Header := Copy(Frame, 0, HEADER_SIZE);
   AssertTrue(DecodeHeader(Header, MsgType, Flags, PayloadLength, Sequence, AttachmentId, TxnId), 'decode outbound header');
+  AssertEqualInt(HEADER_SIZE + PayloadLength, Length(Frame), 'outbound frame length');
+  Payload := Copy(Frame, HEADER_SIZE, PayloadLength);
+end;
+
+procedure DecodeOutboundType(const Frame: TBytes; out MsgType: TScratchBirdMessageType);
+var
+  Payload: TBytes;
+begin
+  DecodeOutboundFrame(Frame, MsgType, Payload);
 end;
 
 procedure TestBeginSavepointCommitLifecycleTransitions;
@@ -175,6 +195,53 @@ begin
   end;
 end;
 
+procedure TestBeginTransactionExOptionMatrixEncodesPayload;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  MsgType: TScratchBirdMessageType;
+  Payload: TBytes;
+  ExpectedPayload: TBytes;
+  Flags: Word;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9001, 0), 0, 1, nil, 9001));
+    Client.BeginTransactionEx(ISOLATION_SERIALIZABLE, 1, True, True, 250, 1, 2);
+
+    Flags := TXN_FLAG_HAS_ISOLATION or TXN_FLAG_HAS_ACCESS or TXN_FLAG_HAS_DEFERRABLE or
+      TXN_FLAG_HAS_WAIT or TXN_FLAG_HAS_TIMEOUT or TXN_FLAG_HAS_AUTOCOMMIT;
+    ExpectedPayload := BuildTxnBeginPayload(Flags, 2, 1, ISOLATION_SERIALIZABLE, 1, 1, 1, 250);
+    DecodeOutboundFrame(Transport.WriteAt(0), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'full matrix write should be txn begin');
+    AssertEqualBytes(ExpectedPayload, Payload, 'full matrix begin payload');
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
+    Client.Commit;
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9002, 0), 0, 3, nil, 9002));
+    Client.BeginTransactionEx(ISOLATION_REPEATABLE_READ, 0, False, False, 0, 0, 0);
+
+    Flags := TXN_FLAG_HAS_ISOLATION;
+    ExpectedPayload := BuildTxnBeginPayload(Flags, 0, 0, ISOLATION_REPEATABLE_READ, 0, 0, 0, 0);
+    DecodeOutboundFrame(Transport.WriteAt(2), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'minimal matrix write should be txn begin');
+    AssertEqualBytes(ExpectedPayload, Payload, 'minimal matrix begin payload');
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 4, nil, 0));
+    Client.Rollback;
+
+    AssertEqualInt(4, Transport.WriteCount, 'option matrix lifecycle write count');
+    DecodeOutboundType(Transport.WriteAt(1), MsgType);
+    AssertTrue(MsgType = MSG_TXN_COMMIT, 'second write should be commit');
+    DecodeOutboundType(Transport.WriteAt(3), MsgType);
+    AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'fourth write should be rollback');
+  finally
+    Client.Free;
+  end;
+end;
+
 procedure TFakeTransport.Configure(const Config: TScratchBirdConfig);
 begin
   // no-op for deterministic unit tests
@@ -242,6 +309,7 @@ begin
   try
     TestBeginSavepointCommitLifecycleTransitions;
     TestBeginRollbackClearsActiveTxnState;
+    TestBeginTransactionExOptionMatrixEncodesPayload;
     Writeln('TxnStateTransitionsTests: OK');
   except
     on E: Exception do
