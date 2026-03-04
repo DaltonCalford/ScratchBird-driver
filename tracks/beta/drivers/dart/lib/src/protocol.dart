@@ -148,6 +148,7 @@ class ProtocolError {
   final String message;
   final String detail;
   final String hint;
+  final int? code;
 
   const ProtocolError({
     required this.severity,
@@ -155,6 +156,7 @@ class ProtocolError {
     required this.message,
     required this.detail,
     required this.hint,
+    required this.code,
   });
 }
 
@@ -165,6 +167,7 @@ ProtocolError parseErrorMessage(Uint8List payload) {
   var message = '';
   var detail = '';
   var hint = '';
+  int? code;
 
   while (offset < payload.length) {
     final field = payload[offset];
@@ -198,6 +201,9 @@ ProtocolError parseErrorMessage(Uint8List payload) {
       case 'H':
         hint = value;
         break;
+      case 'N':
+        code = int.tryParse(value.trim());
+        break;
     }
   }
 
@@ -207,6 +213,7 @@ ProtocolError parseErrorMessage(Uint8List payload) {
     message: message,
     detail: detail,
     hint: hint,
+    code: code,
   );
 }
 

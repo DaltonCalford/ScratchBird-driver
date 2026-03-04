@@ -69,3 +69,111 @@ class ScratchBirdExecutionException extends ScratchBirdException {
     super.code,
   });
 }
+
+class ScratchBirdOperationalException extends ScratchBirdExecutionException {
+  const ScratchBirdOperationalException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+class ScratchBirdDataException extends ScratchBirdExecutionException {
+  const ScratchBirdDataException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+class ScratchBirdIntegrityException extends ScratchBirdExecutionException {
+  const ScratchBirdIntegrityException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+class ScratchBirdProgrammingException extends ScratchBirdExecutionException {
+  const ScratchBirdProgrammingException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+class ScratchBirdNotSupportedException extends ScratchBirdExecutionException {
+  const ScratchBirdNotSupportedException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+class ScratchBirdInternalException extends ScratchBirdExecutionException {
+  const ScratchBirdInternalException(
+    super.message, {
+    super.sqlState,
+    super.code,
+  });
+}
+
+ScratchBirdExecutionException mapSqlStateExecutionException(
+  String message, {
+  String? sqlState,
+  int? code,
+}) {
+  final normalized = (sqlState ?? '').trim().toUpperCase();
+  if (normalized.isEmpty) {
+    return ScratchBirdExecutionException(message, code: code);
+  }
+
+  final sqlStateOut = normalized;
+  if (normalized.length >= 2) {
+    final cls = normalized.substring(0, 2);
+    switch (cls) {
+      case '08':
+        return ScratchBirdOperationalException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+      case '22':
+        return ScratchBirdDataException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+      case '23':
+        return ScratchBirdIntegrityException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+      case '42':
+        return ScratchBirdProgrammingException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+      case '0A':
+        return ScratchBirdNotSupportedException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+      case 'XX':
+        return ScratchBirdInternalException(
+          message,
+          sqlState: sqlStateOut,
+          code: code,
+        );
+    }
+  }
+
+  return ScratchBirdExecutionException(
+    message,
+    sqlState: sqlStateOut,
+    code: code,
+  );
+}

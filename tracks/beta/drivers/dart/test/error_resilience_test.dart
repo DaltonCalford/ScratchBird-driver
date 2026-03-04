@@ -87,6 +87,7 @@ void main() {
         'M': 'duplicate key value violates unique constraint',
         'D': 'Key (id)=(1) already exists.',
         'H': 'Use a different primary key value.',
+        'N': '9001',
       });
       final parsed = parseErrorMessage(payload);
       expect(parsed.severity, equals('ERROR'));
@@ -97,6 +98,7 @@ void main() {
       );
       expect(parsed.detail, equals('Key (id)=(1) already exists.'));
       expect(parsed.hint, equals('Use a different primary key value.'));
+      expect(parsed.code, equals(9001));
 
       final formatted = formatProtocolErrorMessage(
         parsed,

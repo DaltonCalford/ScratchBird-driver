@@ -882,6 +882,7 @@ class ScratchBirdClient {
     return ScratchBirdAuthException(
       formatProtocolErrorMessage(parsed, fallbackMessage: fallbackMessage),
       sqlState: sqlState.isEmpty ? null : sqlState,
+      code: parsed.code,
     );
   }
 
@@ -891,9 +892,10 @@ class ScratchBirdClient {
   }) {
     final parsed = parseErrorMessage(payload);
     final sqlState = parsed.sqlState.trim();
-    return ScratchBirdExecutionException(
+    return mapSqlStateExecutionException(
       formatProtocolErrorMessage(parsed, fallbackMessage: fallbackMessage),
       sqlState: sqlState.isEmpty ? null : sqlState,
+      code: parsed.code,
     );
   }
 
