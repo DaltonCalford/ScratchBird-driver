@@ -35,7 +35,7 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-03)
+# Driver Capability Matrix (Audit Snapshot: 2026-03-04)
 
 ## Alpha Drivers
 
@@ -43,14 +43,14 @@ Legend:
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **Java / JDBC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Most complete lane |
 | **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
-| **.NET** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Core usable, parity gaps remain in TXN/EXEC/META/TYPE |
-| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong core, extended features partial |
-| **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Baseline working, not fully certified |
-| **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Infrastructure solid, parity incomplete |
-| **Rust** | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ✅ | Strong type/error/resource layer, CONN/TXN/EXEC/META still partial |
-| **Ruby** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Metadata execution APIs added, integration depth still shallow |
-| **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | Resource lifecycle strongest surface |
-| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | 🟡 | TLS/protocol solid, metadata execution added, integration limited |
+| **.NET** | ✅ | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | Core usable, EXEC parity now implemented; TXN/META/TYPE depth remains |
+| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Strong core with implemented CONN/ERR/RES surfaces; extended TXN/EXEC/META/TYPE parity remains partial |
+| **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Baseline working with implemented ERR/RES surfaces; CONN/TXN/EXEC/META/TYPE remain partial |
+| **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Core protocol plus ERR/RES are stable; broader CONN/TXN/EXEC/META/TYPE parity remains partial |
+| **Rust** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | Strong core; EXEC parity implemented, remaining depth in CONN/TXN/META |
+| **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
+| **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Error/resource surfaces are strongest; broader parity remains partial |
+| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Resilience lifecycle is now implemented with deterministic lane tests; execution/metadata/type integration depth remains |
 | **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Python-bridge adapter, partial baseline |
 
 ---
@@ -60,7 +60,7 @@ Legend:
 | Driver | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State |
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **C/C++ (libscratchbird_client)** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong C API base, transport gaps |
-| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | Execution parity strongest surface, DBI metadata methods now present |
+| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | Execution parity is strongest; metadata/DBI surface expansion remains in progress |
 | **Swift (Async/Await)** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Connect complete, integration pending |
 | **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Client metadata/schema-tree APIs added, live coverage pending |
 
@@ -175,4 +175,4 @@ Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for 
 
 ---
 
-**Last Updated:** 2026-03-03
+**Last Updated:** 2026-03-04
