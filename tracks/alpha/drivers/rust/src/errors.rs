@@ -107,10 +107,56 @@ pub fn error_from_sqlstate(
             "57014" | "57P01" | "57P03" => ErrorKind::OperatorIntervention,
             "58000" => ErrorKind::System,
             "XX000" => ErrorKind::Internal,
-            _ => ErrorKind::Unknown,
+            _ => match &sqlstate[..2] {
+                "01" => ErrorKind::Warning,
+                "02" => ErrorKind::NoData,
+                "08" => ErrorKind::Connection,
+                "0A" => ErrorKind::NotSupported,
+                "22" => ErrorKind::Data,
+                "23" => ErrorKind::Integrity,
+                "28" => ErrorKind::Auth,
+                "40" => ErrorKind::Transaction,
+                "42" => ErrorKind::Syntax,
+                "53" => ErrorKind::Resource,
+                "54" => ErrorKind::Limit,
+                "57" => ErrorKind::OperatorIntervention,
+                "58" => ErrorKind::System,
+                "XX" => ErrorKind::Internal,
+                _ => ErrorKind::Unknown,
+            },
         }
     } else {
         ErrorKind::Unknown
     };
     Error::with_sqlstate(kind, message, Some(sqlstate.to_string()), detail, hint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{error_from_sqlstate, ErrorKind};
+
+    #[test]
+    fn exact_sqlstate_mapping_prefers_known_codes() {
+        let err = error_from_sqlstate("23505", "duplicate key", None, None);
+        assert_eq!(err.kind, ErrorKind::Integrity);
+        assert_eq!(err.sqlstate.as_deref(), Some("23505"));
+    }
+
+    #[test]
+    fn class_fallback_maps_unknown_codes_with_known_prefix() {
+        let conn = error_from_sqlstate("08ZZZ", "network issue", None, None);
+        assert_eq!(conn.kind, ErrorKind::Connection);
+
+        let data = error_from_sqlstate("22ZZZ", "bad input", None, None);
+        assert_eq!(data.kind, ErrorKind::Data);
+    }
+
+    #[test]
+    fn unknown_or_short_sqlstate_falls_back_to_unknown_kind() {
+        let unknown = error_from_sqlstate("ZZZZZ", "unexpected", None, None);
+        assert_eq!(unknown.kind, ErrorKind::Unknown);
+
+        let short = error_from_sqlstate("123", "short", None, None);
+        assert_eq!(short.kind, ErrorKind::Unknown);
+    }
 }

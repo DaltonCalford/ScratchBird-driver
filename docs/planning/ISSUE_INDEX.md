@@ -58,7 +58,7 @@ Map checklist items to issue IDs once created.
 - [r.md] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/` -> DEFERRED (2026-02-04)
 - [ruby.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb` -> OPEN (2026-02-04)
 - [ruby.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/ruby/test/` -> DONE (2026-02-04)
-- [rust.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs` -> OPEN (2026-02-04)
+- [rust.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs` -> DONE (2026-03-04)
 - [rust.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/rust/tests/` -> DONE (2026-02-04)
 - [superset.md] Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback) in `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/dialect.py` -> DONE (2026-02-04)
 - [superset.md] Expand type mapping for arrays, ranges, geometry to richer SQLAlchemy types in `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/dialect.py` -> DONE (2026-02-04)
