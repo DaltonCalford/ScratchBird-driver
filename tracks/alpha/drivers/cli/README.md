@@ -41,3 +41,27 @@ Optional:
 - `-DSB_BUILD_CLI_FDW=ON` builds `sb_pg_isql`, `sb_my_isql`, `sb_fb_isql` (requires FDW adapters from the engine repo).
 
 See `docs/BUILD_MATRIX.md` for dependencies.
+
+## Conformance Sample
+
+Lane-local sample manifest and one-command runner:
+
+- Manifest: `conformance/sbwp_conformance_manifest.sample.json`
+- Runner: `conformance/run_sbdriver_conformance_sample.sh`
+- The adapter now supports manifest-level typed assertions via
+  `expect_columns`, `expect_column_type_oids`, `expect_first_row_json`,
+  `expect_first_row_types`, and `expect_rows_json`.
+
+Run:
+
+```bash
+export SB_CONFORMANCE_DSN="scratchbird://user:pass@localhost:3092/mydb?protocol=native"
+tracks/alpha/drivers/cli/conformance/run_sbdriver_conformance_sample.sh
+```
+
+Optional runner flags:
+
+- `--binary-params` or `--text-params`
+- `--manifest <path>`
+- `--output <path>`
+- `--no-build`

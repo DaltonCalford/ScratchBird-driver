@@ -1,6 +1,6 @@
 # DLB-CLI-003 S2 TXN/EXEC Implementation
 
-Date: 2026-03-03
+Date: 2026-03-04
 Lane: `tracks/alpha/drivers/cli`
 
 ## Changes
@@ -20,6 +20,7 @@ Lane: `tracks/alpha/drivers/cli`
      - `native_exec` success and mismatch behavior.
      - `txn_exec` commit/verify and rollback/verify flows.
      - rollback-on-error behavior when transactional execution fails.
+     - savepoint lifecycle parity (`SAVEPOINT`, `RELEASE SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) and guardrails for savepoint-only options.
 4. Updated lane build wiring in `CMakeLists.txt`:
    - Fixed `SB_CPP_DRIVER_DIR` path to the actual lane-relative beta C++ driver location.
    - Added `txn_exec_parity.cpp` to `sbdriver_conformance`.
@@ -39,7 +40,7 @@ Recommendation: `PARTIAL`
 
 Rationale:
 - `txn_exec` now provides lane-local begin/commit/rollback conformance behavior and targeted tests.
-- Savepoint/release/rollback-to conformance coverage is still missing in this harness path.
+- Savepoint/release/rollback-to conformance coverage is implemented and validated in deterministic lane tests.
 
 ## EXEC Status
 
@@ -52,5 +53,4 @@ Rationale:
 ## Remaining Gaps
 
 1. Add live-connection manifest tests that execute `native_exec` and `txn_exec` against runtime fixtures in CI.
-2. Extend TXN conformance coverage to savepoint lifecycle operations once supported by the harness/client path.
-3. `sb_isql` `\\sblr` remains a documented placeholder pending client support.
+2. `sb_isql` `\\sblr` remains a documented placeholder pending client support.

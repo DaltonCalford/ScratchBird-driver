@@ -35,22 +35,32 @@ A JSON manifest defines the test suite and required capabilities:
     {"id": "prepare_bind", "kind": "native_prepare_bind", "sql": "SELECT $1::int32", "params": [42]},
     {"id": "describe_mismatch", "kind": "native_prepare_bind", "sql": "SELECT $1, $2", "params": [1], "expect_sqlstate": "07001"},
     {"id": "paging_basic", "kind": "native_query", "sql": "SELECT id FROM basic_table", "dsn_append": "fetch_size=1"},
-    {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]}
+    {"id": "cancel_stream", "kind": "cancel", "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e", "cancel_after_rows": 1, "expect_sqlstate": "57014", "requires": ["cancel"]},
+    {"id": "res_loop_smoke", "kind": "res_loop_exec", "sql": "SELECT 1", "loop_iterations": 25, "expect_total_rows_affected": 0, "expect_total_rows": 25}
   ]
 }
 ```
 
 Supported test fields:
-- `kind`: auth | native_query | native_prepare_bind | cancel
-- `kind` compatibility aliases: `query` maps to `native_query`, `prepare_bind` maps to `native_prepare_bind`
-- `sql`: SQL to execute (`native_query`/`native_prepare_bind`/`cancel`)
+- `kind`: auth | native_query | native_prepare_bind | cancel | res_loop_exec
+- `kind` compatibility aliases: `query` maps to `native_query`, `prepare_bind` maps to `native_prepare_bind`, `res` and `resource_loop` map to `res_loop_exec`
+- `sql`: SQL to execute (`native_query`/`native_prepare_bind`/`cancel`/`res_loop_exec`)
 - `params`: bound parameters for `native_prepare_bind`
 - `expect_rows`: optional row count assertion
+- `expect_row_count`: optional normalized row-count assertion against emitted `rows`
 - `expect_sqlstate`: expected SQLSTATE on failure
-- `timeout_ms`: per-test timeout in milliseconds (`native_query`/`native_prepare_bind`)
+- `timeout_ms`: per-test timeout in milliseconds (`native_query`/`native_prepare_bind`/`res_loop_exec`)
 - `dsn_append`: query-string or key-value suffix appended to base DSN
 - `requires`: optional list of env-gated requirements
 - `cancel_after_rows`: rows to read before issuing CANCEL (cancel kind)
+- `loop_iterations`: connect/execute/disconnect loop count (`res_loop_exec`, default `1`)
+- `expect_total_rows_affected`: optional sum assertion across all loop iterations (`res_loop_exec`)
+- `expect_total_rows`: optional total returned-row assertion across all loop iterations (`res_loop_exec`)
+- `expect_columns`: optional exact column-name assertion
+- `expect_column_type_oids`: optional exact OID assertion for result columns
+- `expect_first_row_json`: optional exact first-row assertion (numeric coercion allowed)
+- `expect_first_row_types`: optional type-tag assertion for first row (`null|boolean|integer|number|string|array|object`)
+- `expect_rows_json` / `expect_rows_exact`: optional exact full-row payload assertion (numeric coercion allowed)
 
 ### 2. Driver Adapter Contract
 
@@ -86,6 +96,7 @@ Adapters must emit a normalized JSON result:
   "test_id": "prepare_bind",
   "rows": [[42]],
   "columns": ["int32"],
+  "column_type_oids": [23],
   "status": "ok",
   "errors": []
 }

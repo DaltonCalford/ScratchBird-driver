@@ -152,11 +152,11 @@ Use one of these states for each ticket:
 | JDBC-201 | 5 | DOTNET-101 | JDBC Team | Add reactive API execution path and cancellation; enforce timeout/interrupt cleanup | `artifacts/enterprise-readiness/JDBC-201` | Non-blocking cancel and timeout stress suite | 3–5w | verification_complete |
 | JDBC-202 | 5 | JDBC-201 | JDBC Team + QA | Expand metadata/protocol parity coverage; refine prepared statement and LOB lifecycle tests | `artifacts/enterprise-readiness/JDBC-202` | JDBC conformance suite pass with parity checks | 4–6w | verification_complete |
 | JDBC-203 | 5 | DOTNET-101, JDBC-201, DOTNET-102 | Core Runtime + JVM/Platform | Build cross-runtime contract harness and shared expected behavior document | `artifacts/enterprise-readiness/JDBC-203` | Unified .NET/JDBC pooling contract pass | 1w | blocked |
-| ECOSYS-405 | 6 | None (can start after Platform-302) | Platform + Python/Go Drivers | Standardize cancellation/timeouts patterns; publish API signatures and semantics | `artifacts/enterprise-readiness/ECOSYS-405` | Async timeout/cancel suites in both ecosystems | 4–6w | in_progress |
-| ECOSYS-402 | 6 | JDBC-202, JDBC-201 | Ecosystem Team | Author SQLAlchemy dialect package with metadata and transaction coverage | `artifacts/enterprise-readiness/ECOSYS-402` | SQLAlchemy integration tests across dialect features | 4–8w | in_progress |
-| ECOSYS-401 | 6 | ECOSYS-402 | Ecosystem Team | Add Prisma adapter and mapping layer; connect sample CRUD/transaction tests | `artifacts/enterprise-readiness/ECOSYS-401` | Prisma app integration tests | 4–8w | in_progress |
-| ECOSYS-403 | 6 | JDBC-202 | Ecosystem Team | Produce Hibernate dialect and entity lifecycle tests | `artifacts/enterprise-readiness/ECOSYS-403` | JPA bootstrap + migration tests pass | 6–8w | in_progress |
-| ECOSYS-404 | 6 | Node driver baseline + PLATFORM-304 | Ecosystem Team | Add TypeORM adapter with schema + CRUD + transaction support | `artifacts/enterprise-readiness/ECOSYS-404` | Node TypeORM sample tests complete | 4–8w | in_progress |
+| ECOSYS-405 | 6 | None (can start after Platform-302) | Platform + Python/Go Drivers | Standardize cancellation/timeouts patterns; publish API signatures and semantics | `artifacts/enterprise-readiness/ECOSYS-405` | Async timeout/cancel suites in both ecosystems | 4–6w | code_complete |
+| ECOSYS-402 | 6 | JDBC-202, JDBC-201 | Ecosystem Team | Author SQLAlchemy dialect package with metadata and transaction coverage | `artifacts/enterprise-readiness/ECOSYS-402` | SQLAlchemy integration tests across dialect features | 4–8w | code_complete |
+| ECOSYS-401 | 6 | ECOSYS-402 | Ecosystem Team | Add Prisma adapter and mapping layer; connect sample CRUD/transaction tests | `artifacts/enterprise-readiness/ECOSYS-401` | Prisma app integration tests | 4–8w | code_complete |
+| ECOSYS-403 | 6 | JDBC-202 | Ecosystem Team | Produce Hibernate dialect and entity lifecycle tests | `artifacts/enterprise-readiness/ECOSYS-403` | JPA bootstrap + migration tests pass | 6–8w | code_complete |
+| ECOSYS-404 | 6 | Node driver baseline + PLATFORM-304 | Ecosystem Team | Add TypeORM adapter with schema + CRUD + transaction support | `artifacts/enterprise-readiness/ECOSYS-404` | Node TypeORM sample tests complete | 4–8w | code_complete |
 
 ## Weekly Progress Cadence
 

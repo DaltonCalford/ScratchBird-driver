@@ -245,6 +245,85 @@ void testTxnExecFailureRollsBack(int* failures) {
     expect(client.consumedAll(), "txn_exec failure should rollback and consume script", failures);
 }
 
+void testTxnExecSavepointReleaseCommit(int* failures) {
+    FakeTxnExecClient client({
+        {CallType::kBegin, "", Status::OK, {}, ""},
+        {CallType::kExecute, "SAVEPOINT sp_cli", Status::OK, {0, 0}, ""},
+        {CallType::kExecute, "INSERT INTO basic_table (id) VALUES (7010)", Status::OK, {1, 0}, ""},
+        {CallType::kExecute, "RELEASE SAVEPOINT sp_cli", Status::OK, {0, 0}, ""},
+        {CallType::kCommit, "", Status::OK, {}, ""},
+        {CallType::kExecute, "SELECT id FROM basic_table WHERE id = 7010", Status::OK, {0, 1}, ""},
+        {CallType::kExecute, "DELETE FROM basic_table WHERE id = 7010", Status::OK, {1, 0}, ""}
+    });
+    json test = {
+        {"id", "txn_exec_savepoint_release"},
+        {"sql", "INSERT INTO basic_table (id) VALUES (7010)"},
+        {"savepoint_name", "sp_cli"},
+        {"release_savepoint", true},
+        {"txn_end", "commit"},
+        {"expect_rows_affected", 1},
+        {"verify_sql", "SELECT id FROM basic_table WHERE id = 7010"},
+        {"verify_expect_rows", 1},
+        {"cleanup_sql", "DELETE FROM basic_table WHERE id = 7010"}
+    };
+    json result = makeBaseResult("txn_exec_savepoint_release");
+    ErrorContext ctx;
+    bool had_error = false;
+    scratchbird::cli::parity::runTxnExecCase(client, test, result, &had_error, &ctx);
+
+    expect(result.value("status", "") == "ok", "txn_exec savepoint/release should pass", failures);
+    expect(!had_error, "txn_exec savepoint/release should not set had_error", failures);
+    expect(result.value("observed_rows", -1) == 1, "txn_exec savepoint/release verify row count", failures);
+    expect(client.consumedAll(), "txn_exec savepoint/release should consume script", failures);
+}
+
+void testTxnExecSavepointRollbackToCommit(int* failures) {
+    FakeTxnExecClient client({
+        {CallType::kBegin, "", Status::OK, {}, ""},
+        {CallType::kExecute, "SAVEPOINT sp_cli2", Status::OK, {0, 0}, ""},
+        {CallType::kExecute, "INSERT INTO basic_table (id) VALUES (7011)", Status::OK, {1, 0}, ""},
+        {CallType::kExecute, "ROLLBACK TO SAVEPOINT sp_cli2", Status::OK, {0, 0}, ""},
+        {CallType::kCommit, "", Status::OK, {}, ""},
+        {CallType::kExecute, "SELECT id FROM basic_table WHERE id = 7011", Status::OK, {0, 0}, ""}
+    });
+    json test = {
+        {"id", "txn_exec_savepoint_rollback_to"},
+        {"sql", "INSERT INTO basic_table (id) VALUES (7011)"},
+        {"savepoint_name", "sp_cli2"},
+        {"rollback_to_savepoint", true},
+        {"txn_end", "commit"},
+        {"expect_rows_affected", 1},
+        {"verify_sql", "SELECT id FROM basic_table WHERE id = 7011"},
+        {"verify_expect_rows", 0}
+    };
+    json result = makeBaseResult("txn_exec_savepoint_rollback_to");
+    ErrorContext ctx;
+    bool had_error = false;
+    scratchbird::cli::parity::runTxnExecCase(client, test, result, &had_error, &ctx);
+
+    expect(result.value("status", "") == "ok", "txn_exec rollback-to-savepoint should pass", failures);
+    expect(!had_error, "txn_exec rollback-to-savepoint should not set had_error", failures);
+    expect(result.value("observed_rows", -1) == 0, "txn_exec rollback-to-savepoint verify row count", failures);
+    expect(client.consumedAll(), "txn_exec rollback-to-savepoint should consume script", failures);
+}
+
+void testTxnExecSavepointFlagsRequireName(int* failures) {
+    FakeTxnExecClient client({});
+    json test = {
+        {"id", "txn_exec_savepoint_requires_name"},
+        {"sql", "INSERT INTO basic_table (id) VALUES (7012)"},
+        {"rollback_to_savepoint", true}
+    };
+    json result = makeBaseResult("txn_exec_savepoint_requires_name");
+    ErrorContext ctx;
+    bool had_error = false;
+    scratchbird::cli::parity::runTxnExecCase(client, test, result, &had_error, &ctx);
+
+    expect(result.value("status", "") == "error", "rollback_to_savepoint without name should fail", failures);
+    expect(had_error, "rollback_to_savepoint without name should set had_error", failures);
+    expect(client.consumedAll(), "rollback_to_savepoint without name should not consume script", failures);
+}
+
 }  // namespace
 
 int main() {
@@ -254,6 +333,9 @@ int main() {
     testTxnExecCommitAndVerify(&failures);
     testTxnExecRollbackAndVerify(&failures);
     testTxnExecFailureRollsBack(&failures);
+    testTxnExecSavepointReleaseCommit(&failures);
+    testTxnExecSavepointRollbackToCommit(&failures);
+    testTxnExecSavepointFlagsRequireName(&failures);
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

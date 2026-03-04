@@ -7,6 +7,8 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 from __future__ import annotations
 
+import socket
+
 import pytest
 
 from scratchbird import errors
@@ -139,4 +141,54 @@ def test_connect_rejects_manager_proxy_without_token_before_socket(monkeypatch):
     monkeypatch.setattr(connection_mod.socket, "create_connection", fail_create_connection)
 
     with pytest.raises(errors.InterfaceError, match="manager_proxy mode requires manager_auth_token"):
+        conn._connect()
+
+
+def test_read_exact_maps_socket_timeout_to_operational_error():
+    conn = Connection.__new__(Connection)
+
+    class _TimeoutSocket:
+        def recv(self, _size):
+            raise socket.timeout("timed out")
+
+    conn._socket = _TimeoutSocket()
+    with pytest.raises(errors.OperationalError, match="08006"):
+        conn._read_exact(8)
+
+
+def test_read_exact_maps_oserror_to_operational_error():
+    conn = Connection.__new__(Connection)
+
+    class _FailingSocket:
+        def recv(self, _size):
+            raise OSError("socket read failure")
+
+    conn._socket = _FailingSocket()
+    with pytest.raises(errors.OperationalError, match="08006"):
+        conn._read_exact(8)
+
+
+def test_connect_maps_timeout_to_operational_error(monkeypatch):
+    conn = Connection.__new__(Connection)
+    conn._config = ConnectionConfig(user="alice", database="db1")
+
+    def fail_create_connection(*_args, **_kwargs):
+        raise TimeoutError("connect timed out")
+
+    monkeypatch.setattr(connection_mod.socket, "create_connection", fail_create_connection)
+
+    with pytest.raises(errors.OperationalError, match="08001"):
+        conn._connect()
+
+
+def test_connect_maps_oserror_to_operational_error(monkeypatch):
+    conn = Connection.__new__(Connection)
+    conn._config = ConnectionConfig(user="alice", database="db1")
+
+    def fail_create_connection(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(connection_mod.socket, "create_connection", fail_create_connection)
+
+    with pytest.raises(errors.OperationalError, match="08001"):
         conn._connect()

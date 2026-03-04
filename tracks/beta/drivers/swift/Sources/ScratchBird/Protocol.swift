@@ -12,7 +12,21 @@ enum ProtocolError: Error {
     case invalidHeader
     case unsupportedVersion
     case payloadTooLarge
+    case errorMessageTruncated
 }
+
+struct WireErrorMessage {
+    let severity: String
+    let sqlState: String
+    let message: String
+    let detail: String
+    let hint: String
+}
+
+let scratchBirdErrorSQLStateKey = "ScratchBirdSQLState"
+let scratchBirdErrorSeverityKey = "ScratchBirdSeverity"
+let scratchBirdErrorDetailKey = "ScratchBirdDetail"
+let scratchBirdErrorHintKey = "ScratchBirdHint"
 
 enum MessageType: UInt8 {
     case startup = 0x01
@@ -178,6 +192,96 @@ func decodeHeader(_ data: Data) throws -> MessageHeader {
     let attachment = data.subdata(in: 16..<32)
     let txnId = data.subdata(in: 32..<40).withUnsafeBytes { $0.load(as: UInt64.self) }.littleEndian
     return MessageHeader(type: type, flags: flags, length: length, sequence: sequence, attachmentId: attachment, txnId: txnId)
+}
+
+func parseErrorMessage(_ payload: Data) throws -> WireErrorMessage {
+    var severity = ""
+    var sqlState = ""
+    var message = ""
+    var detail = ""
+    var hint = ""
+
+    var offset = 0
+    while offset < payload.count {
+        let field = payload[offset]
+        offset += 1
+        if field == 0 {
+            break
+        }
+        let start = offset
+        while offset < payload.count && payload[offset] != 0 {
+            offset += 1
+        }
+        if offset >= payload.count {
+            throw ProtocolError.errorMessageTruncated
+        }
+        let valueData = payload.subdata(in: start..<offset)
+        let value = String(data: valueData, encoding: .utf8) ?? ""
+        offset += 1
+
+        switch field {
+        case UInt8(ascii: "S"):
+            severity = value
+        case UInt8(ascii: "C"):
+            sqlState = value
+        case UInt8(ascii: "M"):
+            message = value
+        case UInt8(ascii: "D"):
+            detail = value
+        case UInt8(ascii: "H"):
+            hint = value
+        default:
+            continue
+        }
+    }
+
+    return WireErrorMessage(
+        severity: severity,
+        sqlState: sqlState,
+        message: message,
+        detail: detail,
+        hint: hint
+    )
+}
+
+func buildScratchBirdNSError(from payload: Data, fallbackMessage: String, code: Int = -1) -> NSError {
+    guard let parsed = try? parseErrorMessage(payload) else {
+        return NSError(
+            domain: "ScratchBird",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: fallbackMessage]
+        )
+    }
+
+    let base = parsed.message.isEmpty ? fallbackMessage : parsed.message
+    var message = base
+    if !parsed.sqlState.isEmpty {
+        message += " [SQLSTATE \(parsed.sqlState)]"
+    }
+    if !parsed.detail.isEmpty {
+        message += " DETAIL: \(parsed.detail)"
+    }
+    if !parsed.hint.isEmpty {
+        message += " HINT: \(parsed.hint)"
+    }
+
+    var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
+    if !parsed.sqlState.isEmpty {
+        userInfo[scratchBirdErrorSQLStateKey] = parsed.sqlState
+    }
+    if !parsed.severity.isEmpty {
+        userInfo[scratchBirdErrorSeverityKey] = parsed.severity
+    }
+    if !parsed.detail.isEmpty {
+        userInfo[scratchBirdErrorDetailKey] = parsed.detail
+        userInfo[NSLocalizedFailureReasonErrorKey] = parsed.detail
+    }
+    if !parsed.hint.isEmpty {
+        userInfo[scratchBirdErrorHintKey] = parsed.hint
+        userInfo[NSLocalizedRecoverySuggestionErrorKey] = parsed.hint
+    }
+
+    return NSError(domain: "ScratchBird", code: code, userInfo: userInfo)
 }
 
 func buildStartupPayload(features: UInt64, params: [String: String]) -> Data {

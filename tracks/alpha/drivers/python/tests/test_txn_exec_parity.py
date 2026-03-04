@@ -9,12 +9,14 @@ from scratchbird.connection import Connection, ResultStream
 from scratchbird.cursor import Cursor
 from scratchbird.protocol import (
     MessageType,
+    MSG_FLAG_URGENT,
     TXN_FLAG_HAS_ACCESS,
     TXN_FLAG_HAS_AUTOCOMMIT,
     TXN_FLAG_HAS_DEFERRABLE,
     TXN_FLAG_HAS_ISOLATION,
     TXN_FLAG_HAS_TIMEOUT,
     TXN_FLAG_HAS_WAIT,
+    build_cancel_payload,
     build_txn_savepoint_payload,
 )
 
@@ -105,6 +107,26 @@ def test_begin_rejects_nested_transaction():
     conn = _new_connection(txn_id=9)
     with pytest.raises(errors.ProgrammingError, match="transaction already active"):
         conn.begin()
+
+
+def test_cancel_sends_urgent_cancel_message(monkeypatch):
+    conn = _new_connection()
+    sent = {}
+
+    def _capture(msg_type, payload, flags=0, force_zero=False):
+        sent["msg_type"] = msg_type
+        sent["payload"] = payload
+        sent["flags"] = flags
+        sent["force_zero"] = force_zero
+
+    monkeypatch.setattr(conn, "_send_message", _capture)
+
+    conn.cancel()
+
+    assert sent["msg_type"] == MessageType.CANCEL
+    assert sent["payload"] == build_cancel_payload(0, 0)
+    assert sent["flags"] == MSG_FLAG_URGENT
+    assert sent["force_zero"] is False
 
 
 def test_commit_noop_without_active_transaction(monkeypatch):

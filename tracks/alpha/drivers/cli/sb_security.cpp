@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -154,7 +155,7 @@ struct SecurityConfig {
 // =============================================================================
 
 static SecurityConfig g_config;
-static Connection* g_connection = nullptr;
+static std::unique_ptr<Connection> g_connection;
 
 // =============================================================================
 // Output helpers
@@ -706,19 +707,17 @@ bool checkAll() {
 // =============================================================================
 
 bool connectToDatabase() {
-    Connection conn;
-    g_connection = new Connection();
+    auto candidate = std::make_unique<Connection>();
 
     std::string conn_target = buildConnectionTarget();
     core::ErrorContext ctx;
-    core::Status status = g_connection->connect(conn_target, g_config.admin_user, g_config.admin_password, &ctx);
+    core::Status status = candidate->connect(conn_target, g_config.admin_user, g_config.admin_password, &ctx);
 
     if (status != core::Status::OK) {
         printError("Connection failed: " + ctx.message);
-        delete g_connection;
-        g_connection = nullptr;
         return false;
     }
+    g_connection = std::move(candidate);
 
     logVerbose("Connected to " + g_config.database_path);
     return true;
@@ -727,8 +726,7 @@ bool connectToDatabase() {
 void disconnectFromDatabase() {
     if (g_connection) {
         g_connection->disconnect();
-        delete g_connection;
-        g_connection = nullptr;
+        g_connection.reset();
     }
 }
 

@@ -223,8 +223,8 @@ Artifacts path: `artifacts/enterprise-readiness/PLATFORM-304`
 ### ECOSYS-401
 Title: Prisma adapter integration  
 Priority: P1  
-Status: In progress  
-Gap: No Prisma adapter  
+Status: Code complete (deterministic adapter contract, migration/reflection helpers, and Node suite implemented; live Prisma CLI matrix provider-gated)  
+Gap: Prisma CLI currently rejects `provider = \"scratchbird\"` (`P1012`), blocking live CLI/runtime CRUD matrix  
 Acceptance Test: CRUD/transaction/reflection tests in a Prisma sample app  
 Owner: Ecosystem Team  
 Risk: Medium  
@@ -234,8 +234,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-401`
 ### ECOSYS-402
 Title: Production-ready SQLAlchemy dialect  
 Priority: P1  
-Status: In progress  
-Gap: No production-ready SQLAlchemy dialect package  
+Status: Code complete (deterministic dialect contract, expanded reflection suite, and ORM sample assets implemented; live ORM/session matrix runtime-gated)  
+Gap: Live SQLAlchemy ORM/session integration matrix remains pending TLS-capable runtime DSN coverage  
 Acceptance Test: SQLAlchemy introspection and ORM session/transaction tests across model types  
 Owner: Ecosystem Team  
 Risk: Medium  
@@ -245,8 +245,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-402`
 ### ECOSYS-403
 Title: Hibernate dialect package  
 Priority: P1  
-Status: In progress  
-Gap: No Hibernate integration package  
+Status: Code complete (deterministic Hibernate dialect package + contract suite implemented; live JPA runtime matrix bootstrap-gated)  
+Gap: Runtime bootstrap currently fails without ScratchBird JDBC driver on runtime classpath (`No suitable driver`)  
 Acceptance Test: JPA bootstrapping plus entity lifecycle and migration-mapping tests in a sample service  
 Owner: Ecosystem Team  
 Risk: Medium  
@@ -256,8 +256,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-403`
 ### ECOSYS-404
 Title: TypeORM adapter  
 Priority: P1  
-Status: In progress  
-Gap: No TypeORM driver/adapter  
+Status: Code complete (deterministic TypeORM adapter package + contract suite implemented; live TypeORM runtime matrix driver-gated)  
+Gap: TypeORM runtime currently rejects `type = \"scratchbird\"` (`MissingDriverError`), blocking live schema/CRUD/transaction matrix  
 Acceptance Test: TypeORM schema + CRUD + transaction tests in sample Node service  
 Owner: Ecosystem Team  
 Risk: Medium  
@@ -267,8 +267,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-404`
 ### ECOSYS-405
 Title: Native async consistency across languages  
 Priority: P1  
-Status: In progress  
-Gap: Python asyncio and Go context cancellation are not fully standardized  
+Status: Code complete (deterministic gate implemented; live runtime matrix env-gated)  
+Gap: Live runtime cancellation parity remains environment-gated until both ecosystem DSNs/cancel SQL endpoints are available  
 Acceptance Test: Async integration tests with cancellation/timeouts in both ecosystems and comparable API patterns across drivers  
 Owner: Platform + Python/Go Drivers  
 Risk: High  

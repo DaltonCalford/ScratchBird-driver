@@ -1,0 +1,15 @@
+datasource db {
+  provider = "scratchbird"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model UsersAccount {
+  id      Int   @id @default(autoincrement())
+  profile Json?
+
+  @@map("account")
+}

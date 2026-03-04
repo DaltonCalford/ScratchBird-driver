@@ -43,15 +43,15 @@ Legend:
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **Java / JDBC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Most complete lane |
 | **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
-| **.NET** | ✅ | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | Core usable, EXEC parity now implemented; TXN/META/TYPE depth remains |
-| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Strong core with implemented CONN/ERR/RES surfaces; extended TXN/EXEC/META/TYPE parity remains partial |
-| **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Baseline working with implemented ERR/RES surfaces; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Core protocol plus ERR/RES are stable; broader CONN/TXN/EXEC/META/TYPE parity remains partial |
+| **.NET** | ✅ | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | CONN/EXEC/ERR/RES implemented; TXN/META/TYPE breadth and live-depth remain partial |
+| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | CONN/ERR/RES implemented; TXN/EXEC/META/TYPE parity breadth remains partial |
+| **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
+| **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Rust** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | Strong core; EXEC parity implemented, remaining depth in CONN/TXN/META |
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
-| **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Error/resource surfaces are strongest; broader parity remains partial |
-| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | Resilience lifecycle is now implemented with deterministic lane tests; execution/metadata/type integration depth remains |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Python-bridge adapter, partial baseline |
+| **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
+| **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane, parity hardening in progress |
 
 ---
 
@@ -60,9 +60,9 @@ Legend:
 | Driver | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State |
 |--------|------|-----|------|------|------|-----|-----|--------------|
 | **C/C++ (libscratchbird_client)** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Strong C API base, transport gaps |
-| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | Execution parity is strongest; metadata/DBI surface expansion remains in progress |
-| **Swift (Async/Await)** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Connect complete, integration pending |
-| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Client metadata/schema-tree APIs added, live coverage pending |
+| **R (DBI)** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | 🟡 | Execution/type/error parity is strongest; CONN/TXN/META/RES depth remains in progress |
+| **Swift (Async/Await)** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | CONN implemented with expanding deterministic parity tests; broader live integration remains pending |
+| **Dart** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | CONN implemented with metadata/schema-tree and parity scaffolding; broader live integration remains pending |
 
 ---
 
@@ -117,7 +117,7 @@ This README provides a high-level executive summary. The planning documents rema
 | **sb_backup** | Backup/restore CLI | Baseline implemented |
 | **sb_security** | User/role management CLI | Baseline implemented |
 | **sb_verify** | Database verification CLI | Baseline implemented |
-| **sbdriver-conformance** | SBWP conformance adapter | Baseline implemented |
+| **sbdriver-conformance** | SBWP conformance adapter | Baseline implemented with `txn_exec`/`res_loop_exec` parity and manifest-level typed assertions |
 
 FDW-based emulation CLI tools remain gated by engine-side adapters.
 

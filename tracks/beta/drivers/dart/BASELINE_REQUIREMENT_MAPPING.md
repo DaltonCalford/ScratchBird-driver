@@ -95,10 +95,10 @@
   - `lib/src/client.dart:521-523`, `559-560`, `719-720` generic auth/query/describe error handling.
   - `lib/src/protocol.dart:59` `MessageType.error` constant.
 - Lane-local test anchors:
-  - None in `test/`.
+  - `test/error_resilience_test.dart:24-58` protocol framing error-path tests (`decodeHeader` invalid length/magic/version/max payload).
 - Gaps/next actions:
   - Parse and expose structured server error payload fields instead of only generic `Exception` messages.
-  - Introduce typed driver exception classes and add focused error-path tests.
+  - Introduce typed driver exception classes and map server SQLSTATE/class data into driver errors.
 
 ## RES (JDBCBL)
 
@@ -110,7 +110,10 @@
   - `lib/src/telemetry.dart:11-101` tracing/metrics/slow-query collection.
   - `lib/src/client.dart:832-891` resilience integration (`_startResilience`, `_stopResilience`, `_withResilience`).
 - Lane-local test anchors:
-  - None in `test/`.
+  - `test/error_resilience_test.dart:61-112` circuit-breaker transition and recovery tests.
+  - `test/error_resilience_test.dart:114-153` keepalive tracker/manager validation and ping trigger tests.
+  - `test/error_resilience_test.dart:155-180` leak detector guard release + stack-capture behavior tests.
+  - `test/error_resilience_test.dart:182-214` telemetry tracing/metrics/sanitization coverage.
 - Gaps/next actions:
-  - Add deterministic unit tests for circuit/keepalive/leak/telemetry behaviors.
-  - Add integration tests covering idle validation ping, circuit-open rejection, and resilience state cleanup on close.
+  - Add integration tests covering idle-validation ping against live sockets and resilience state cleanup on client close.
+  - Add deterministic tests for timer-driven leak reports and slow-query log retention boundaries.

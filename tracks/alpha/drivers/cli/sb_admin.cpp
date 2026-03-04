@@ -23,6 +23,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -78,7 +79,7 @@ struct AdminConfig {
 };
 
 static AdminConfig g_config;
-static Connection* g_connection = nullptr;
+static std::unique_ptr<Connection> g_connection;
 
 void printUsage(const char* program) {
     std::cout << "sb_admin - ScratchBird Administration Tool\n\n"
@@ -251,25 +252,23 @@ std::string buildConnectionTarget() {
 }
 
 bool connectToDatabase() {
-    g_connection = new Connection();
+    auto candidate = std::make_unique<Connection>();
 
     std::string conn_target = buildConnectionTarget();
     core::ErrorContext ctx;
-    core::Status status = g_connection->connect(conn_target, g_config.admin_user, g_config.admin_password, &ctx);
+    core::Status status = candidate->connect(conn_target, g_config.admin_user, g_config.admin_password, &ctx);
     if (status != core::Status::OK) {
         printError("Connection failed: " + ctx.message);
-        delete g_connection;
-        g_connection = nullptr;
         return false;
     }
+    g_connection = std::move(candidate);
     return true;
 }
 
 void disconnectFromDatabase() {
     if (g_connection) {
         g_connection->disconnect();
-        delete g_connection;
-        g_connection = nullptr;
+        g_connection.reset();
     }
 }
 

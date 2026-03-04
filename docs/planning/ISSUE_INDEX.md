@@ -2,8 +2,10 @@
 
 Map checklist items to issue IDs once created.
 
-- [cli.md] Validate `sb_isql` against SBWP v1.1 conformance harness in `tracks/alpha/drivers/cli/sb_isql.cpp` -> DEFERRED (2026-02-04)
-- [cli.md] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md` -> DEFERRED (2026-02-04)
+- [cli.md] Validate `sb_isql` against SBWP v1.1 conformance harness in `tracks/alpha/drivers/cli/sb_isql.cpp` -> DONE (2026-03-04)
+- [cli.md] Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md` -> DONE (2026-03-04)
+- [cli.md] Add manifest-driven typed assertions (`expect_columns`, `expect_column_type_oids`, `expect_first_row_json`, `expect_first_row_types`, `expect_rows_json`) to `tracks/alpha/drivers/cli/sbdriver_conformance.cpp` -> DONE (2026-03-04)
+- [cli.md] Add deterministic assertion unit tests for conformance manifest expectations in `tracks/alpha/drivers/cli/conformance_assertions_test.cpp` -> DONE (2026-03-04)
 - [cpp.md] Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h` -> DONE (2026-02-04)
 - [cpp.md] Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `tracks/beta/drivers/cpp/src/` -> DONE (2026-02-04)
 - [cpp.md] Expose SET_OPTION and PING helpers in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h` and `tracks/beta/drivers/cpp/src/scratchbird_client_c.cpp` -> DONE (2026-02-04)
@@ -32,6 +34,7 @@ Map checklist items to issue IDs once created.
 - [elixir.md] Add conformance/integration tests in `tracks/p3/drivers/elixir/test/` -> DONE (2026-02-04)
 - [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/go/errors.go` -> DONE (2026-03-04)
 - [go.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/go/conformance/` -> DONE (2026-02-04)
+- [go.md] Add deterministic context cancel + deadline timeout contract tests in `tracks/alpha/drivers/go/cancel_timeout_contract_test.go` -> DONE (2026-03-04)
 - [jdbc.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping) -> DONE (2026-03-04)
 - [jdbc.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/jdbc/src/test/` -> DONE (2026-02-04)
 - [metabase.md] Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage in `tracks/alpha/integrations/scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` -> DONE (2026-02-04)
@@ -54,6 +57,8 @@ Map checklist items to issue IDs once created.
 - [php.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/php/tests/` -> DONE (2026-02-04)
 - [python.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py` -> DONE (2026-03-04)
 - [python.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/` -> DONE (2026-02-04)
+- [python.md] Map connect/read timeout failures to deterministic operational errors (`08001`/`08006`) in `tracks/alpha/drivers/python/src/scratchbird/connection.py` -> DONE (2026-03-04)
+- [python.md] Add deterministic cancel/timeout contract coverage in `tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py` and `tracks/alpha/drivers/python/tests/test_txn_exec_parity.py` -> DONE (2026-03-04)
 - [r.md] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R` -> DONE (2026-03-04)
 - [r.md] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/` -> DONE (2026-03-04)
 - [ruby.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb` -> DONE (2026-03-04)
@@ -72,6 +77,8 @@ Map checklist items to issue IDs once created.
 - [swift.md] Add vector literal encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift` -> DONE (2026-02-04)
 - [swift.md] Add sys.* metadata helpers in `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift` -> DONE (2026-02-04)
 - [swift.md] Add conformance/integration tests in `tracks/beta/drivers/swift/Tests/` -> DONE (2026-02-04)
+- [swift.md] Parse wire `.error` payload fields and propagate SQLSTATE/detail/hint in `tracks/beta/drivers/swift/Sources/ScratchBird/Protocol.swift` and `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift` -> DONE (2026-03-04)
+- [swift.md] Add deterministic wire-error payload parsing/fallback coverage in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/ErrorResilienceTests.swift` -> DONE (2026-03-04)
 - [ruby.md] Fix missing `Scratchbird::Types::WIRE_ARRAY` / `WIRE_UUID` constants causing `test_types.rb` failures -> DONE (2026-02-06)
 - [pascal.md] Provide Base64 unit dependency or inline Base64 implementation for `ScratchBird.Scram` (FPC build fails) -> DONE (2026-03-04)
 - [jdbc.md] Resolve Gradle build failure: unsupported class file major version 65 (toolchain/JDK mismatch) -> DONE (2026-02-06)

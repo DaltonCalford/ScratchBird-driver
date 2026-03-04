@@ -382,7 +382,7 @@ public final class ScratchBirdConnection {
             case .ready:
                 return
             case .error:
-                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Authentication failed"])
+                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Authentication failed")
             default:
                 continue
             }
@@ -412,7 +412,7 @@ public final class ScratchBirdConnection {
                 return ScratchBirdResult(rows: rows, columns: columns)
             case .error:
                 lastQuerySequence = 0
-                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Query failed"])
+                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Query failed")
             case .portalSuspended:
                 let resumeMaxRows = normalizePortalResumeMaxRows(fetchSize: config.fetchSize)
                 lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: resumeMaxRows))
@@ -787,7 +787,7 @@ public final class ScratchBirdConnection {
                 return true
             }
             if msg.header.type == .error {
-                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Request failed"])
+                throw buildScratchBirdNSError(from: msg.payload, fallbackMessage: "Request failed")
             }
         }
     }

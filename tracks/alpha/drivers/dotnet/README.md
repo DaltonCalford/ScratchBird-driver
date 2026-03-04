@@ -35,3 +35,33 @@ dotnet test
 Integration env:
 
 - `SCRATCHBIRD_DOTNET_URL`
+
+## Enterprise soak/fault harnesses
+
+Deterministic mode:
+
+```bash
+bash artifacts/enterprise-readiness/run_dotnet_soak_suite.sh
+
+# or per-ticket:
+bash artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak.sh
+bash artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_soak.sh
+bash artifacts/enterprise-readiness/DOTNET-103/verification_dotnet_fault_matrix.sh
+```
+
+Runtime mode (requires live DSN):
+
+```bash
+DOTNET_HARNESS_MODE=runtime SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+bash artifacts/enterprise-readiness/run_dotnet_soak_suite.sh
+
+# or per-ticket:
+DOTNET_HARNESS_MODE=runtime SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+bash artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak.sh
+
+DOTNET_HARNESS_MODE=runtime SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+bash artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_soak.sh
+
+DOTNET_HARNESS_MODE=runtime SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+bash artifacts/enterprise-readiness/DOTNET-103/verification_dotnet_fault_matrix.sh
+```

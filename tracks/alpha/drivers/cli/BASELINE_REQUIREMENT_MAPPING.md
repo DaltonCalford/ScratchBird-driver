@@ -28,13 +28,12 @@
   - `sb_isql.cpp:935-949` exposes `SET AUTODDL`; `sb_isql.cpp:175` stores `autoddl` in config.
   - `sb_isql.cpp:2678-2688` applies stop/exit behavior after execution errors.
   - `sbdriver_conformance.cpp:712-748` adapts network client begin/commit/rollback operations for conformance runs.
-  - `txn_exec_parity.cpp:128-243` implements `txn_exec` flow (`begin -> sql -> commit/rollback -> verify_sql`) with error-safe rollback.
+  - `txn_exec_parity.cpp:168-349` implements `txn_exec` flow (`begin -> optional savepoint operations -> sql -> commit/rollback -> verify_sql`) with error-safe rollback and savepoint option validation.
 - Lane-local test anchors:
   - `sbdriver_conformance.cpp:829-833,895-897` normalizes `txn` alias and dispatches `txn_exec`.
-  - `txn_exec_parity_test.cpp:173-246` covers commit/rollback verification and rollback-on-error behavior.
+  - `txn_exec_parity_test.cpp:173-338` covers commit/rollback verification, rollback-on-error behavior, savepoint release/rollback-to flows, and savepoint option guardrails.
   - `CMakeLists.txt:208-215` adds the dedicated `sbdriver_txn_exec_tests` lane test target.
 - Gaps/next actions:
-  - `txn_exec` currently validates begin/commit/rollback only; savepoint/release/rollback-to coverage is still pending.
   - `AUTODDL` is configurable (`sb_isql.cpp:935-949`) but not consumed by a separate transaction-control path in this lane.
 
 ## EXEC (JDBCBL: EXEC)
@@ -73,13 +72,16 @@
 - Lane-local source anchors:
   - `sbdriver_conformance.cpp:138-580` decodes array/vector/range/network/macaddr/uuid and other OID-tagged values.
   - `sbdriver_conformance.cpp:585-620` encodes JSON params to text/binary bind payloads.
-  - `sbdriver_conformance.cpp:689-709` projects typed row values into JSON output.
+  - `sbdriver_conformance.cpp:689-709,861-880` projects typed row values into normalized JSON output with per-column OID metadata.
+  - `conformance_assertions.cpp:96-244` applies manifest-driven typed assertions (`expect_column_type_oids`, `expect_first_row_json`, `expect_first_row_types`, `expect_rows_json`).
 - Lane-local test anchors:
   - `sbdriver_conformance.cpp:849-885` exercises parameter binding and SQLSTATE checks for prepared execution.
   - `sbdriver_conformance.cpp:1062-1097` validates LOB payload and checksum behavior.
+  - `conformance_assertions_test.cpp:1-104` validates expectation pass/fail behavior, numeric coercion, and explicit type-tag mismatch detection.
+  - `CMakeLists.txt:241-250` adds the dedicated `sbdriver_conformance_assertion_tests` target.
 - Gaps/next actions:
   - Unsupported/unknown OIDs fall back to raw byte-string conversion (`sbdriver_conformance.cpp:580`).
-  - Add explicit manifests that assert output shape for each decoded type family.
+  - Expand typed manifests beyond lane smoke coverage (`conformance/sbwp_conformance_manifest.sample.json`) to assert every decoded type family in DSN-backed runtime gates.
 
 ## ERR (JDBCBL: ERR)
 - Current status: Implemented
@@ -97,12 +99,16 @@
 ## RES (JDBCBL: RES)
 - Current status: Partial
 - Lane-local source anchors:
-  - `sb_isql.cpp:3602-3618` disconnects client and closes output/error file handles.
-  - `sb_admin.cpp:268-273,658-659` and `sb_security.cpp:727-732,1086-1089` disconnect and free connection state.
-  - `sbdriver_conformance.cpp:885,916,957,1153,1187` closes prepared statements and disconnects clients.
+  - `sb_admin.cpp:82,254-273` connection ownership converted to `std::unique_ptr<Connection>` with explicit disconnect/reset lifecycle.
+  - `sb_security.cpp:158,709-731` connection ownership converted to `std::unique_ptr<Connection>` with explicit disconnect/reset lifecycle.
+  - `sb_isql.cpp:197-199,1500-1538,1890-1907,3554-3643` output/error stream ownership converted to `std::unique_ptr<std::ofstream>` with deterministic stderr restoration.
+  - `sbdriver_conformance.cpp:1018,1176,1257,1296,1327,1368,1564,1606` closes prepared statements and disconnects clients across normal/fallback/cancel paths.
+  - `sbdriver_conformance.cpp:1078-1168` adds `res_loop_exec` manifest kind normalization/dispatch and routes to lifecycle loop parity without one-time preconnect coupling.
+  - `res_lifecycle_parity.cpp:67-160` provides deterministic connect/execute/disconnect loop orchestration with explicit cleanup on execute failures.
 - Lane-local test anchors:
   - `sbdriver_conformance.cpp:887-958` exercises repeated statement prepare/execute/close cycles.
   - `sbdriver_conformance.cpp:1106-1169` runs threaded cancel flow with explicit statement close/join.
+  - `res_lifecycle_parity_test.cpp:92-194` stress-tests repeated connect/execute/disconnect iterations plus cleanup semantics on connect/execute failure paths.
 - Gaps/next actions:
-  - Connection and stream lifetime management is still manual (`new/delete`) in multiple CLI entry points; move to RAII wrappers.
-  - Add leak/stability checks that loop connect/execute/disconnect paths under this lane.
+  - `sb_isql` still uses a global non-owning `Connection*` alias to a stack connection object; migrate this global state to an explicit RAII session/context object.
+  - Collect live `res_loop_exec` conformance artifacts under DSN-backed runtime (current shell is env-gated).

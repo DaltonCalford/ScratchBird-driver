@@ -158,6 +158,9 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_integration.R:37`
   - `tests/testthat/test_integration.R:52`
   - `tests/testthat/test_integration.R:42`
+  - `tests/testthat/test_resilience_lifecycle.R:36` (`sb_disconnect` repeated-call behavior with non-NULL close followed by NULL-safe close handling).
+  - `tests/testthat/test_resilience_lifecycle.R:62` (`dbDisconnect` repeated-call idempotence with stable TRUE return and one real close).
+  - `tests/testthat/test_resilience_lifecycle.R:88` (`dbClearResult` idempotent completion path).
+  - `tests/testthat/test_resilience_lifecycle.R:98` deterministic server-error fetch path followed by explicit result cleanup.
 - Gaps / next actions:
-  - Add explicit tests for `dbClearResult`, repeated disconnect/close behavior, and cleanup after errors.
   - Add resource lifecycle checks for long-running fetch/cancel scenarios.

@@ -27,7 +27,9 @@ add_executable(sb_security sb_security.cpp)
 add_executable(sb_verify sb_verify.cpp)
 add_executable(sbdriver_conformance
     sbdriver_conformance.cpp
+    conformance_assertions.cpp
     txn_exec_parity.cpp
+    res_lifecycle_parity.cpp
 )
 
 set(cli_targets
@@ -222,3 +224,23 @@ add_executable(sbdriver_metadata_shaping_tests
     metadata_shaping_test.cpp
     metadata_shaping.cpp
 )
+
+add_executable(sbdriver_res_lifecycle_tests
+    res_lifecycle_parity_test.cpp
+    res_lifecycle_parity.cpp
+)
+target_include_directories(sbdriver_res_lifecycle_tests
+    PRIVATE
+        "${SB_CPP_DRIVER_DIR}/include"
+)
+target_link_libraries(sbdriver_res_lifecycle_tests PRIVATE scratchbird_client)
+
+add_executable(sbdriver_conformance_assertion_tests
+    conformance_assertions_test.cpp
+    conformance_assertions.cpp
+)
+target_include_directories(sbdriver_conformance_assertion_tests
+    PRIVATE
+        "${SB_CPP_DRIVER_DIR}/include"
+)
+target_link_libraries(sbdriver_conformance_assertion_tests PRIVATE scratchbird_client)

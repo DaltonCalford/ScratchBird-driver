@@ -369,10 +369,15 @@ class Connection:
             raise errors.NotSupportedError("compression=zstd is not supported")
         if self._config.front_door_mode == "manager_proxy" and not self._config.manager_auth_token:
             raise errors.InterfaceError("manager_proxy mode requires manager_auth_token")
-        raw_sock = socket.create_connection(
-            (self._config.host, self._config.port),
-            timeout=self._config.connect_timeout,
-        )
+        try:
+            raw_sock = socket.create_connection(
+                (self._config.host, self._config.port),
+                timeout=self._config.connect_timeout,
+            )
+        except TimeoutError as exc:
+            raise errors.OperationalError("[08001] connection timed out") from exc
+        except OSError as exc:
+            raise errors.OperationalError(f"[08001] failed to connect: {exc}") from exc
         raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         raw_sock.settimeout(self._config.socket_timeout or None)
 
@@ -397,9 +402,9 @@ class Connection:
 
         try:
             sock = ctx.wrap_socket(raw_sock, server_hostname=self._config.host)
-        except ssl.SSLError:
+        except ssl.SSLError as exc:
             raw_sock.close()
-            raise
+            raise errors.OperationalError(f"[08001] TLS handshake failed: {exc}") from exc
         self._socket = sock
 
         if self._config.front_door_mode == "manager_proxy":
@@ -1066,9 +1071,16 @@ class Connection:
         return header, payload
 
     def _read_exact(self, n: int) -> bytes:
+        if not self._socket:
+            raise errors.InterfaceError("no active socket")
         buf = bytearray()
         while len(buf) < n:
-            chunk = self._socket.recv(n - len(buf))
+            try:
+                chunk = self._socket.recv(n - len(buf))
+            except TimeoutError as exc:
+                raise errors.OperationalError("[08006] socket timeout while reading from server") from exc
+            except OSError as exc:
+                raise errors.OperationalError(f"[08006] socket read failed: {exc}") from exc
             if not chunk:
                 raise errors.OperationalError("connection closed")
             buf.extend(chunk)

@@ -194,8 +194,8 @@ struct IsqlConfig {
 static Connection* g_connection = nullptr;
 static bool g_running = true;
 static IsqlConfig g_config;
-static std::ofstream* g_output_file = nullptr;
-static std::ofstream* g_error_file = nullptr;
+static std::unique_ptr<std::ofstream> g_output_file;
+static std::unique_ptr<std::ofstream> g_error_file;
 static std::streambuf* g_original_cerr = nullptr;  // To restore stderr
 
 std::string buildConnectionTarget(const std::string& database_override = "");
@@ -1503,9 +1503,7 @@ bool executeSQL(const std::string& sql) {
                         std::cerr.rdbuf(g_original_cerr);
                         g_original_cerr = nullptr;
                     }
-                    g_error_file->close();
-                    delete g_error_file;
-                    g_error_file = nullptr;
+                    g_error_file.reset();
                     out << "Errors redirected to stderr\n";
                 } else {
                     out << "Errors are already going to stderr\n";
@@ -1519,22 +1517,20 @@ bool executeSQL(const std::string& sql) {
                     if (g_original_cerr) {
                         std::cerr.rdbuf(g_original_cerr);
                     }
-                    g_error_file->close();
-                    delete g_error_file;
+                    g_error_file.reset();
                 }
 
                 // Open new error file
-                g_error_file = new std::ofstream(filename);
-                if (!g_error_file->is_open()) {
+                auto error_file = std::make_unique<std::ofstream>(filename);
+                if (!error_file->is_open()) {
                     std::cerr << "Error: Cannot open error file: " << filename << "\n";
-                    delete g_error_file;
-                    g_error_file = nullptr;
                     return false;
                 }
 
                 // Redirect cerr to the file
                 g_original_cerr = std::cerr.rdbuf();
-                std::cerr.rdbuf(g_error_file->rdbuf());
+                std::cerr.rdbuf(error_file->rdbuf());
+                g_error_file = std::move(error_file);
                 out << "Errors redirected to " << filename << "\n";
             }
             return true;
@@ -1893,23 +1889,19 @@ bool handleMetaCommand(const std::string& cmd) {
         if (arg.empty()) {
             // Stop output to file
             if (g_output_file) {
-                g_output_file->close();
-                delete g_output_file;
-                g_output_file = nullptr;
+                g_output_file.reset();
                 std::cout << "Output redirected to stdout\n";
             }
         } else {
             // Start output to file
             if (g_output_file) {
-                g_output_file->close();
-                delete g_output_file;
+                g_output_file.reset();
             }
-            g_output_file = new std::ofstream(arg);
-            if (!g_output_file->is_open()) {
+            auto output_file = std::make_unique<std::ofstream>(arg);
+            if (!output_file->is_open()) {
                 std::cerr << "Error: Cannot open file: " << arg << "\n";
-                delete g_output_file;
-                g_output_file = nullptr;
             } else {
+                g_output_file = std::move(output_file);
                 std::cout << "Output redirected to " << arg << "\n";
             }
         }
@@ -3560,11 +3552,12 @@ int main(int argc, char* argv[]) {
 
     // Setup output file if specified
     if (!g_config.output_file.empty()) {
-        g_output_file = new std::ofstream(g_config.output_file);
-        if (!g_output_file->is_open()) {
+        auto output_file = std::make_unique<std::ofstream>(g_config.output_file);
+        if (!output_file->is_open()) {
             std::cerr << "Error: Cannot open output file: " << g_config.output_file << "\n";
             return 1;
         }
+        g_output_file = std::move(output_file);
     }
 
     // Prompt for password if username given but no password
@@ -3638,17 +3631,16 @@ int main(int argc, char* argv[]) {
     g_connection = nullptr;
 
     if (g_output_file) {
-        g_output_file->close();
-        delete g_output_file;
+        g_output_file.reset();
     }
 
     if (g_error_file) {
         // Restore original cerr buffer before closing
         if (g_original_cerr) {
             std::cerr.rdbuf(g_original_cerr);
+            g_original_cerr = nullptr;
         }
-        g_error_file->close();
-        delete g_error_file;
+        g_error_file.reset();
     }
 
     return result;

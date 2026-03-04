@@ -74,6 +74,46 @@ bool readOptionalInt64(const nlohmann::json& test,
     return true;
 }
 
+bool readOptionalBool(const nlohmann::json& test,
+                      const char* key,
+                      bool* out,
+                      bool* has_value,
+                      std::string* error) {
+    if (has_value != nullptr) {
+        *has_value = false;
+    }
+    auto it = test.find(key);
+    if (it == test.end()) {
+        return true;
+    }
+    if (!it->is_boolean()) {
+        if (error != nullptr) {
+            *error = std::string("Field '") + key + "' must be a boolean";
+        }
+        return false;
+    }
+    if (out != nullptr) {
+        *out = it->get<bool>();
+    }
+    if (has_value != nullptr) {
+        *has_value = true;
+    }
+    return true;
+}
+
+bool isSimpleIdentifier(const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+    for (char ch : value) {
+        const unsigned char uch = static_cast<unsigned char>(ch);
+        if (std::isalnum(uch) == 0 && ch != '_') {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 void runNativeExecCase(TxnExecClient& client,
@@ -141,11 +181,16 @@ void runTxnExecCase(TxnExecClient& client,
         addError(result, had_error, "txn_end must be commit or rollback");
         return;
     }
+    const std::string savepoint_name = trimCopy(test.value("savepoint_name", ""));
 
     int64_t expect_rows_affected = std::numeric_limits<int64_t>::min();
     int64_t verify_expect_rows = std::numeric_limits<int64_t>::min();
     bool has_expect_rows_affected = false;
     bool has_verify_expect_rows = false;
+    bool rollback_to_savepoint = false;
+    bool has_rollback_to_savepoint = false;
+    bool release_savepoint = false;
+    bool has_release_savepoint = false;
     std::string parse_error;
 
     if (!readOptionalInt64(test, "expect_rows_affected", &expect_rows_affected,
@@ -165,6 +210,30 @@ void runTxnExecCase(TxnExecClient& client,
             return;
         }
     }
+    if (!readOptionalBool(test, "rollback_to_savepoint", &rollback_to_savepoint,
+                          &has_rollback_to_savepoint, &parse_error)) {
+        addError(result, had_error, parse_error);
+        return;
+    }
+    if (!readOptionalBool(test, "release_savepoint", &release_savepoint,
+                          &has_release_savepoint, &parse_error)) {
+        addError(result, had_error, parse_error);
+        return;
+    }
+
+    const bool has_savepoint = !savepoint_name.empty();
+    if (has_savepoint && !isSimpleIdentifier(savepoint_name)) {
+        addError(result, had_error, "savepoint_name must use [A-Za-z0-9_]+");
+        return;
+    }
+    if ((has_rollback_to_savepoint && rollback_to_savepoint) && !has_savepoint) {
+        addError(result, had_error, "rollback_to_savepoint requires savepoint_name");
+        return;
+    }
+    if ((has_release_savepoint && release_savepoint) && !has_savepoint) {
+        addError(result, had_error, "release_savepoint requires savepoint_name");
+        return;
+    }
 
     bool transaction_open = false;
     auto rollback_if_open = [&]() {
@@ -183,12 +252,45 @@ void runTxnExecCase(TxnExecClient& client,
     }
     transaction_open = true;
 
+    if (has_savepoint) {
+        ExecObservation savepoint_observation;
+        const std::string savepoint_sql = "SAVEPOINT " + savepoint_name;
+        status = client.executeStatement(savepoint_sql, &savepoint_observation, ctx);
+        if (status != core::Status::OK) {
+            rollback_if_open();
+            addError(result, had_error, bestError(client, ctx));
+            return;
+        }
+    }
+
     ExecObservation txn_observation;
     status = client.executeStatement(sql, &txn_observation, ctx);
     if (status != core::Status::OK) {
         rollback_if_open();
         addError(result, had_error, bestError(client, ctx));
         return;
+    }
+
+    if (has_savepoint && rollback_to_savepoint) {
+        ExecObservation rollback_to_savepoint_observation;
+        const std::string rollback_to_savepoint_sql = "ROLLBACK TO SAVEPOINT " + savepoint_name;
+        status = client.executeStatement(rollback_to_savepoint_sql, &rollback_to_savepoint_observation, ctx);
+        if (status != core::Status::OK) {
+            rollback_if_open();
+            addError(result, had_error, bestError(client, ctx));
+            return;
+        }
+    }
+
+    if (has_savepoint && release_savepoint) {
+        ExecObservation release_savepoint_observation;
+        const std::string release_savepoint_sql = "RELEASE SAVEPOINT " + savepoint_name;
+        status = client.executeStatement(release_savepoint_sql, &release_savepoint_observation, ctx);
+        if (status != core::Status::OK) {
+            rollback_if_open();
+            addError(result, had_error, bestError(client, ctx));
+            return;
+        }
     }
 
     if (has_expect_rows_affected && txn_observation.rows_affected != expect_rows_affected) {

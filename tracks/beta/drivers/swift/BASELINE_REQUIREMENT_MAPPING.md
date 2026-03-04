@@ -89,8 +89,8 @@
 
 - Current status: `Partial`
 - Lane-local source anchors:
-  - `Sources/ScratchBird/Protocol.swift:11-15`
-  - `Sources/ScratchBird/Protocol.swift:166-180`
+  - `Sources/ScratchBird/Protocol.swift:11-28`
+  - `Sources/ScratchBird/Protocol.swift:196-290` (`parseErrorMessage`, `buildScratchBirdNSError`, structured SQLSTATE/detail/hint extraction).
   - `Sources/ScratchBird/Config.swift:11-57`
   - `Sources/ScratchBird/Connection.swift:91-99`
   - `Sources/ScratchBird/Connection.swift:376`
@@ -102,8 +102,11 @@
   - `Sources/ScratchBird/Socket.swift:338`
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:13-53` protocol header decode guardrails (`invalidHeader`, `unsupportedVersion`, `payloadTooLarge`).
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-115` wire-error payload parsing and structured SQLSTATE/detail/hint propagation with malformed-payload fallback assertions.
 - Gaps/next actions:
-  - Add tests for wire-level `.error` responses and standardize error typing beyond generic `NSError`.
+  - Add integration tests that validate `.error` propagation across live socket reads in end-to-end query/auth flows.
+  - Standardize error typing beyond generic `NSError` for execute/query failure paths.
 
 ## RES (`JDBCBL-RES`)
 
@@ -116,6 +119,9 @@
   - `Sources/ScratchBird/Connection.swift:466-528`
   - `Sources/ScratchBird/Connection.swift:122-125`
 - Lane-local test anchors:
-  - None in `Tests/ScratchBirdTests`.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-99` deterministic circuit-breaker closed/open/half-open transition and reopen-on-failure behavior.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:102-140` keepalive idle-threshold checks plus manager-driven ping verification.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:142-170` leak detector guard idempotency and checkout metadata/stack capture.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:172-203` telemetry tracing-disabled gate, success/failure metrics accounting, SQL sanitization.
 - Gaps/next actions:
-  - Add deterministic tests for circuit-breaker transitions, keepalive validation, and leak-check lifecycle behavior.
+  - Add live integration coverage for keepalive timeout behavior and leak warnings under real pooled connection workloads.

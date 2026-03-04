@@ -42,6 +42,9 @@ void runNativeExecCase(TxnExecClient& client,
 // Optional fields:
 // - txn_end: "commit" (default) or "rollback"
 // - expect_rows_affected
+// - savepoint_name
+// - rollback_to_savepoint (bool, requires savepoint_name)
+// - release_savepoint (bool, requires savepoint_name)
 // - verify_sql
 // - verify_expect_rows (falls back to expect_rows if omitted)
 // - cleanup_sql
