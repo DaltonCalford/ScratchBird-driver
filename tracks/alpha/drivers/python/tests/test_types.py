@@ -21,6 +21,7 @@ from scratchbird.types import (
     OID_BOOL_ARRAY,
     OID_BYTEA,
     OID_DATE_ARRAY,
+    OID_DATE,
     OID_INT4_ARRAY,
     OID_INT4,
     OID_INT4RANGE,
@@ -31,10 +32,14 @@ from scratchbird.types import (
     OID_SB_VECTOR,
     OID_TEXT,
     OID_TEXT_ARRAY,
+    OID_TIME,
     OID_TIMETZ,
     OID_TIMETZ_ARRAY,
+    OID_TIMESTAMP,
     OID_TIMESTAMPTZ_ARRAY,
+    OID_TIMESTAMPTZ,
     OID_UUID_ARRAY,
+    OID_UUID,
     OID_XML,
     FORMAT_BINARY,
     decode_value,
@@ -143,6 +148,31 @@ def test_decode_timetz_binary_payload_supports_legacy_8byte_form():
 def test_decode_timetz_text_payload_to_offset_time():
     decoded = decode_value(OID_TIMETZ, b"08:09:10+03", FORMAT_TEXT)
     assert decoded == dt.time(8, 9, 10, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+
+
+def test_decode_date_text_payload_to_date():
+    decoded = decode_value(OID_DATE, b"2026-03-01", FORMAT_TEXT)
+    assert decoded == dt.date(2026, 3, 1)
+
+
+def test_decode_time_text_payload_to_time():
+    decoded = decode_value(OID_TIME, b"12:34:56.123000", FORMAT_TEXT)
+    assert decoded == dt.time(12, 34, 56, 123000)
+
+
+def test_decode_timestamp_text_payload_to_naive_datetime():
+    decoded = decode_value(OID_TIMESTAMP, b"2026-03-01 12:34:56", FORMAT_TEXT)
+    assert decoded == dt.datetime(2026, 3, 1, 12, 34, 56)
+
+
+def test_decode_timestamptz_text_payload_to_aware_datetime():
+    decoded = decode_value(OID_TIMESTAMPTZ, b"2026-03-01 12:34:56+02", FORMAT_TEXT)
+    assert decoded == dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+
+
+def test_decode_uuid_text_payload_to_uuid():
+    decoded = decode_value(OID_UUID, b"12345678-1234-1234-1234-123456789abc", FORMAT_TEXT)
+    assert decoded == uuid.UUID("12345678-1234-1234-1234-123456789abc")
 
 
 def test_type_name_includes_timetz():

@@ -10,7 +10,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `_decode_timetz(...)` handles:
     - 12-byte payloads with zone displacement.
     - Backward-compatible 8-byte payloads (UTC fallback when zone bytes are absent).
-  - Text decode now routes through `_decode_text_typed_value(...)`, with `OID_TIMETZ` parsing to offset-aware `datetime.time` via ISO offset parsing.
+  - Text decode now routes through `_decode_text_typed_value(...)`, with typed parsing for `date`/`time`/`timetz`/`timestamp`/`timestamptz`/`uuid` OIDs.
   - `type_name(...)` now maps `OID_TIMETZ` to `"timetz"`.
 - Added JDBC-style typed array parity in `src/scratchbird/types.py`:
   - Non-vector Python list/tuple payloads now infer stable array OIDs (for bool/bytea/int/float/text/date/time/timetz/timestamp/timestamptz/numeric/uuid families) instead of always using OID `0`.
@@ -35,6 +35,11 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_timetz_binary_payload_roundtrip`
   - `test_decode_timetz_binary_payload_supports_legacy_8byte_form`
   - `test_decode_timetz_text_payload_to_offset_time`
+  - `test_decode_date_text_payload_to_date`
+  - `test_decode_time_text_payload_to_time`
+  - `test_decode_timestamp_text_payload_to_naive_datetime`
+  - `test_decode_timestamptz_text_payload_to_aware_datetime`
+  - `test_decode_uuid_text_payload_to_uuid`
   - `test_type_name_includes_timetz`
   - `test_encode_string_array_infers_text_array_oid`
   - `test_encode_bool_array_infers_boolean_array_oid`
@@ -50,16 +55,16 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`28 passed`)
+- Result: PASS (`33 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`173 passed, 27 skipped, 1 warning`)
+- Result: PASS (`178 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads.
+  - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for date/time/timestamp/timestamptz/uuid families.
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.

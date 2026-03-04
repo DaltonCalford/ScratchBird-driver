@@ -334,12 +334,50 @@ def _decode_text_value(data: bytes) -> str:
 
 def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
     text = _decode_text_value(data)
+    stripped = text.strip()
+    if type_oid == OID_DATE:
+        try:
+            return _dt.date.fromisoformat(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_TIME:
+        try:
+            return _dt.time.fromisoformat(stripped)
+        except ValueError:
+            return text
     if type_oid == OID_TIMETZ:
         try:
-            return _dt.time.fromisoformat(text.strip())
+            return _dt.time.fromisoformat(_normalize_temporal_text(stripped))
+        except ValueError:
+            return text
+    if type_oid == OID_TIMESTAMP:
+        try:
+            return _dt.datetime.fromisoformat(_normalize_temporal_text(stripped)).replace(tzinfo=None)
+        except ValueError:
+            return text
+    if type_oid == OID_TIMESTAMPTZ:
+        try:
+            parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(stripped))
+        except ValueError:
+            return text
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=_dt.timezone.utc)
+        return parsed
+    if type_oid == OID_UUID:
+        try:
+            return uuid.UUID(stripped)
         except ValueError:
             return text
     return text
+
+
+def _normalize_temporal_text(value: str) -> str:
+    normalized = value.strip()
+    if " " in normalized and "T" not in normalized:
+        normalized = normalized.replace(" ", "T")
+    if re.fullmatch(r".*[+-]\d{2}", normalized):
+        normalized = normalized + ":00"
+    return normalized
 
 
 def _decode_unknown_binary(data: bytes) -> Any:
