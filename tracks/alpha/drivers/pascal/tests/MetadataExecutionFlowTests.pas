@@ -317,6 +317,47 @@ begin
   end;
 end;
 
+procedure TestQueryMetadataRowsAppliesRoutineRestrictionsFromWireRows;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  Restrictions: TMetadataRow;
+  Rows: TMetadataRows;
+  RoutineValue: Variant;
+  MsgType: TScratchBirdMessageType;
+  Payload: TBytes;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    Transport.QueueInbound(EncodeMessage(
+      MSG_ROW_DESCRIPTION,
+      BuildRowDescriptionPayloadText(['routine_name', 'routine_type']),
+      0, 80, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_DATA_ROW, BuildDataRowPayloadText(['refresh_cache', 'PROCEDURE']), 0, 81, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_DATA_ROW, BuildDataRowPayloadText(['to_json_text', 'FUNCTION']), 0, 82, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_COMMAND_COMPLETE, BuildCommandCompletePayload(0, 2, 0, 'SELECT 2'), 0, 83, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 84, nil, 0));
+
+    Restrictions := MetadataRow([MetadataField('procedure', 'refresh_cache')]);
+    Rows := Client.QueryMetadataRows('routines', Restrictions);
+
+    AssertEqualInt(1, Length(Rows), 'filtered routines row count');
+    AssertTrue(MetadataRowTryGetValue(Rows[0], 'routine_name', RoutineValue), 'routine_name value should exist');
+    AssertEqualString('refresh_cache', VarToStr(RoutineValue), 'filtered routine_name');
+
+    AssertEqualInt(1, Transport.WriteCount, 'routines metadata rows write count');
+    DecodeOutboundFrame(Transport.WriteAt(0), MsgType, Payload);
+    AssertTrue(MsgType = MSG_QUERY, 'routines metadata rows should send query message');
+    AssertEqualBytes(
+      BuildQueryPayload(ResolveMetadataCollectionQuery('routines'), 0, 0, 0),
+      Payload,
+      'routines query payload');
+  finally
+    Client.Free;
+  end;
+end;
+
 procedure TFakeTransport.Configure(const Config: TScratchBirdConfig);
 begin
   // no-op for deterministic unit tests
@@ -384,6 +425,7 @@ begin
   try
     TestMetadataWrappersEmitExpectedCollectionQueries;
     TestQueryMetadataRowsAppliesRestrictionsFromWireRows;
+    TestQueryMetadataRowsAppliesRoutineRestrictionsFromWireRows;
     Writeln('MetadataExecutionFlowTests: OK');
   except
     on E: Exception do

@@ -440,6 +440,8 @@ begin
     Exit(StringArray(['catalog', 'schema', 'procedure']));
   if Resolved = 'functions' then
     Exit(StringArray(['catalog', 'schema', 'function']));
+  if Resolved = 'routines' then
+    Exit(StringArray(['catalog', 'schema', 'procedure', 'function']));
   if Resolved = 'type_info' then
     Exit(StringArray(['type']));
 end;

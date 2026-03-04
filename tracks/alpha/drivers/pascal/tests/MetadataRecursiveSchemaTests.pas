@@ -335,6 +335,41 @@ begin
     'unsupported restriction keys are ignored');
 end;
 
+procedure TestFilterMetadataRowsByRestrictionsSupportsRoutineAliases;
+var
+  Rows: TMetadataRows;
+  Restrictions: TMetadataRow;
+  Filtered: TMetadataRows;
+begin
+  SetLength(Rows, 3);
+  Rows[0] := MetadataRow([
+    MetadataField('routine_name', 'refresh_cache'),
+    MetadataField('routine_type', 'PROCEDURE')
+  ]);
+  Rows[1] := MetadataRow([
+    MetadataField('routine_name', 'to_json_text'),
+    MetadataField('routine_type', 'FUNCTION')
+  ]);
+  Rows[2] := MetadataRow([
+    MetadataField('routine_name', 'cleanup_expired_tokens'),
+    MetadataField('routine_type', 'PROCEDURE')
+  ]);
+
+  Restrictions := MetadataRow([MetadataField('procedure', 'refresh_cache')]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'routines');
+  AssertEqualStringArray(
+    StringArray(['refresh_cache']),
+    CollectSchemaValues(Filtered, 'routine_name'),
+    'routines procedure restriction filtering');
+
+  Restrictions := MetadataRow([MetadataField('function', 'to_json%')]);
+  Filtered := FilterMetadataRowsByRestrictions(Rows, Restrictions, 'routines');
+  AssertEqualStringArray(
+    StringArray(['to_json_text']),
+    CollectSchemaValues(Filtered, 'routine_name'),
+    'routines function wildcard restriction filtering');
+end;
+
 procedure TestClientMetadataApiGuards;
 var
   Client: TScratchBirdClient;
@@ -438,6 +473,7 @@ begin
     TestBuildMetadataSchemaTreeAllowsSameLeafUnderDifferentParents;
     TestMetadataCollectionResolution;
     TestFilterMetadataRowsByRestrictionsSupportsAliasesWildcardAndNull;
+    TestFilterMetadataRowsByRestrictionsSupportsRoutineAliases;
     TestClientMetadataApiGuards;
     TestClientMetadataRowsApiGuards;
     TestTypedMetadataApiGuards;

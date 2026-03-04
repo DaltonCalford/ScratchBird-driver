@@ -19,6 +19,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
     - `%` / `_` wildcard matching semantics,
     - `null` literal handling for nullable-column restriction matching,
     - unsupported restriction-key ignore behavior.
+  - Extended metadata restriction key routing so `routines` now accepts `procedure`/`function`-style restriction aliases and filters against `routine_name`.
   - Added `TMetadataSchemaTreeNode`/`TMetadataSchemaTree` plus `BuildMetadataSchemaTree` for recursive schema tree shaping with:
     - per-parent uniqueness semantics,
     - terminal-node tracking,
@@ -56,12 +57,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added deterministic metadata execution-flow suite:
   - `tests/MetadataExecutionFlowTests.pas`
   - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` query paths.
-  - validates restriction-aware `QueryMetadataRows('tables', restrictions)` materialization from wire row payloads.
+  - validates restriction-aware `QueryMetadataRows('tables', restrictions)` and `QueryMetadataRows('routines', restrictions)` materialization from wire row payloads.
 - Expanded env-gated live metadata coverage in:
   - `tests/IntegrationTest.pas`
   - validates executable metadata stream paths for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines`.
   - validates typed wrapper metadata stream paths for the same family set.
-  - validates restriction-aware `QueryMetadataRows('schemas', restrictions)` materialization against a running endpoint.
+  - validates restriction-aware `QueryMetadataRows(...)` materialization against a running endpoint for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` (with family-local skip behavior when no rows are present).
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence/notes for the new S3 metadata shaping coverage.
 
 ## Targeted Tests Run
@@ -102,11 +103,11 @@ Rationale:
 - Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and restriction-aware row materialization from wire payloads.
 - Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
 - Env-gated live integration now validates executable metadata stream and typed wrapper paths for schema/table/column/index/constraint/routine families.
-- Env-gated live integration now also validates restriction-aware `QueryMetadataRows('schemas', restrictions)` materialization.
+- Env-gated live integration now also validates restriction-aware `QueryMetadataRows(...)` materialization across schemas/tables/columns/indexes/constraints/routines.
 - Status remains partial because live coverage is env-gated/skippable, restriction-aware live assertions are not yet broadened across all metadata families, and JDBC result-shape parity is still incomplete.
 
 ## Remaining Concrete Gaps
 
 - Add non-skippable gate execution for metadata live integration assertions.
-- Expand live restriction-aware metadata row materialization assertions (`QueryMetadataRows`/`GetSchemaRows`) from `schemas` into tables/columns/indexes/constraints/routines collections.
+- Expand live restriction-aware metadata row materialization assertions (`QueryMetadataRows`/`GetSchemaRows`) into additional metadata families (catalogs/privileges/type_info/procedures/functions).
 - JDBC metadata result-shape parity remains incomplete for richer per-family columns/flags.

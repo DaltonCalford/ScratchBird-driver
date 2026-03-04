@@ -74,6 +74,63 @@ begin
   end;
 end;
 
+function TryReadMetadataTextValue(const Row: TMetadataRow; const CandidateFields: array of string; out TextValue: string): Boolean;
+var
+  I: Integer;
+  FieldValue: Variant;
+begin
+  for I := Low(CandidateFields) to High(CandidateFields) do
+  begin
+    if not MetadataRowTryGetValue(Row, CandidateFields[I], FieldValue) then
+      Continue;
+    if VarIsNull(FieldValue) or VarIsEmpty(FieldValue) then
+      Continue;
+    TextValue := Trim(VarToStr(FieldValue));
+    if TextValue <> '' then
+      Exit(True);
+  end;
+  TextValue := '';
+  Result := False;
+end;
+
+procedure AssertMetadataRestrictionRoundTrip(AClient: TScratchBirdClient; const CollectionName, RestrictionKey: string;
+  const CandidateFields: array of string);
+var
+  BaseRows: TMetadataRows;
+  FilteredRows: TMetadataRows;
+  Restrictions: TMetadataRow;
+  TargetValue: string;
+  RowValue: string;
+  I: Integer;
+begin
+  BaseRows := AClient.QueryMetadataRows(CollectionName);
+  if Length(BaseRows) = 0 then
+  begin
+    Writeln('MetadataRestrictionTest: SKIPPED (' + CollectionName + ' has no rows)');
+    Exit;
+  end;
+
+  if not TryReadMetadataTextValue(BaseRows[0], CandidateFields, TargetValue) then
+  begin
+    Writeln('MetadataRestrictionTest: SKIPPED (' + CollectionName + ' does not expose expected filter field)');
+    Exit;
+  end;
+
+  SetLength(Restrictions, 1);
+  Restrictions[0].Name := RestrictionKey;
+  Restrictions[0].Value := TargetValue;
+  FilteredRows := AClient.QueryMetadataRows(CollectionName, Restrictions);
+  AssertTrue(Length(FilteredRows) > 0, 'restricted QueryMetadataRows(' + CollectionName + ') should return rows');
+
+  for I := 0 to High(FilteredRows) do
+  begin
+    if not TryReadMetadataTextValue(FilteredRows[I], CandidateFields, RowValue) then
+      Fail('restricted QueryMetadataRows(' + CollectionName + ') row does not expose expected field');
+    AssertTrue(SameText(RowValue, TargetValue),
+      'restricted QueryMetadataRows(' + CollectionName + ') should match requested ' + RestrictionKey);
+  end;
+end;
+
 procedure RequireMetadataCollectionHasColumnsAndExecutes(AClient: TScratchBirdClient; const CollectionName: string);
 var
   Stream: TScratchBirdResultStream;
@@ -258,6 +315,13 @@ begin
   end
   else
     Fail('restricted QueryMetadataRows(schemas) row does not expose schema name field');
+
+  AssertMetadataRestrictionRoundTrip(AClient, 'tables', 'table', ['table_name', 'TABLE_NAME', 'table']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'columns', 'column', ['column_name', 'COLUMN_NAME', 'column']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'indexes', 'index', ['index_name', 'INDEX_NAME', 'index']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'constraints', 'constraint', ['constraint_name', 'CONSTRAINT_NAME', 'constraint']);
+  AssertMetadataRestrictionRoundTrip(AClient, 'routines', 'procedure',
+    ['routine_name', 'ROUTINE_NAME', 'procedure_name', 'function_name']);
 end;
 
 procedure TestTypeCoverageFixture(AClient: TScratchBirdClient);
