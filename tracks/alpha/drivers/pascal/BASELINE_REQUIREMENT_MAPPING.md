@@ -125,12 +125,14 @@
   - `src/ScratchBird.Types.pas:550`, `src/ScratchBird.Types.pas:559` (`TIMETZ` encode helpers including zone-offset payload handling)
   - `src/ScratchBird.Types.pas:814`, `src/ScratchBird.Types.pas:845`, `src/ScratchBird.Types.pas:1254` (geometry wrapper OID-preserving encode/decode routing across supported geometry OIDs)
   - `src/ScratchBird.Types.pas:737`, `src/ScratchBird.Types.pas:1172` (composite decode guardrails and `OID_RECORD` fail-closed null materialization on malformed composite frames)
+  - `src/ScratchBird.Types.pas:1147` (strict vector literal parsing rejects malformed/non-numeric token sequences instead of coercing to zero)
   - `src/ScratchBird.Types.pas:247`, `src/ScratchBird.Types.pas:994`, `src/ScratchBird.Types.pas:1051`, `src/ScratchBird.Types.pas:1087`, `src/ScratchBird.Types.pas:1172` (payload-length guardrails and malformed range/interval decode handling via `HasBytes` + guarded per-OID dispatch)
   - `src/ScratchBird.Types.pas:1024`, `src/ScratchBird.Types.pas:1172` (`TIMETZ` decode and guarded per-OID decode dispatch)
   - `src/ScratchBird.Client.pas:274`
 - Lane-local test anchors:
   - `tests/TypesCodecTests.pas:166`, `tests/TypesCodecTests.pas:441` (primitive encode/decode matrix coverage for bool/int/float/text/date-variant routes and mixed-array fallback behavior)
   - `tests/TypesCodecTests.pas:272`, `tests/TypesCodecTests.pas:285` (`BYTEA` variant-array decode semantics and unknown fixed-width fallback decode behavior including 1/2/4/8/16-byte widths)
+  - `tests/TypesCodecTests.pas:215`, `tests/TypesCodecTests.pas:227` (vector decode success path plus malformed vector literal null-guard coverage)
   - `tests/TypesCodecTests.pas:309`, `tests/TypesCodecTests.pas:335` (null/limit plus malformed/truncated payload-shape coverage for empty payloads, short `TIMETZ`, empty vectors, empty/infinite ranges, and truncated scalar/temporal/range frames)
   - `tests/TypesCodecTests.pas:238`, `tests/TypesCodecTests.pas:261` (composite round-trip coverage plus malformed composite frame guards for negative/truncated payloads)
   - `tests/TypesCodecTests.pas:364`, `tests/TypesCodecTests.pas:405` (scalar, text-family, temporal, and interval per-OID decode coverage)

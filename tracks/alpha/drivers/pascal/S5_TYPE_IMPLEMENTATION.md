@@ -38,6 +38,7 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
      - existing `TIMETZ` decode/encode coverage (12-byte, backward-compatible 8-byte, payload sign semantics)
      - malformed/truncated payload decode guards for scalar temporal/range payloads (`INT4/FLOAT8/DATE/TIME/TIMESTAMP/INTERVAL/INT4RANGE`)
      - malformed composite payload decode guards (negative field count, truncated field header, truncated field payload)
+     - malformed vector literal guards (non-numeric token and trailing-separator rejection)
 
 4. Malformed payload decode hardening in lane codec
    - File: `src/ScratchBird.Types.pas`
@@ -45,6 +46,7 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
    - Added interval payload-length validation in `DecodeInterval(...)`.
    - Added range frame/bound guardrails in `DecodeRange(...)`/`DecodeRangeBound(...)` so truncated bounds return `Null` instead of decoding partial payloads.
    - Added composite-frame guardrails in `DecodeComposite(...)` so invalid count/truncated frames fail closed (`Null` via `OID_RECORD`) instead of returning partial composite objects.
+   - Tightened `ParseVectorLiteral(...)` so malformed vectors fail closed (`Null`) rather than coercing invalid tokens/trailing separators into numeric values.
 
 5. Geometry wrapper OID preservation for encode/decode
    - Files: `src/ScratchBird.Types.pas`, `tests/TypesCodecTests.pas`
@@ -90,7 +92,7 @@ Scope: expand deterministic `TYPE` lane codec coverage from representative asser
 - Recommendation: keep `PARTIAL`
 - Rationale:
   - Deterministic `TIMETZ` handling remains implemented and now sits inside a broader scalar/temporal/text/range/geometry codec matrix.
-  - Deterministic `BYTEA`, unknown fixed-width binary fallback, null/limit payload-shape behavior, and malformed/truncated guard behavior across scalar/range/composite payload families are now explicitly asserted.
+  - Deterministic `BYTEA`, unknown fixed-width binary fallback, null/limit payload-shape behavior, and malformed/truncated guard behavior across scalar/range/composite/vector payload families are now explicitly asserted.
   - Remaining work is no longer the original `TIMETZ` gap; it is final edge-case matrix depth plus live integration breadth.
 
 ## Remaining Gaps

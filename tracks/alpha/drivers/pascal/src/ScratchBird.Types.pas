@@ -1149,10 +1149,16 @@ var
   Trimmed: string;
   Parts: TStringList;
   I: Integer;
+  NumericValue: Double;
 begin
   Trimmed := Trim(Text);
   if (Length(Trimmed) >= 2) and (Trimmed[1] = '[') and (Trimmed[Length(Trimmed)] = ']') then
     Trimmed := Copy(Trimmed, 2, Length(Trimmed) - 2);
+  Trimmed := Trim(Trimmed);
+  if Trimmed = '' then
+    Exit(Null);
+  if (Trimmed[1] = ',') or (Trimmed[Length(Trimmed)] = ',') or (Pos(',,', Trimmed) > 0) then
+    Exit(Null);
   Parts := TStringList.Create;
   try
     ExtractStrings([','], [], PChar(Trimmed), Parts);
@@ -1160,7 +1166,11 @@ begin
       Exit(Null);
     Result := VarArrayCreate([0, Parts.Count - 1], varDouble);
     for I := 0 to Parts.Count - 1 do
-      Result[I] := StrToFloatDef(Trim(Parts[I]), 0);
+    begin
+      if not TryStrToFloat(Trim(Parts[I]), NumericValue) then
+        Exit(Null);
+      Result[I] := NumericValue;
+    end;
   finally
     Parts.Free;
   end;

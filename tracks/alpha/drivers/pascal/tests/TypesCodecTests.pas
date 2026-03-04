@@ -224,6 +224,17 @@ begin
   AssertTrue(Abs(VarAsType(Decoded[2], varDouble) - 3.25) < 0.000001, 'vector value 2');
 end;
 
+procedure TestDecodeVectorBinaryInvalidLiteralReturnsNull;
+var
+  Decoded: Variant;
+begin
+  Decoded := DecodeValue(OID_SB_VECTOR, WithLengthPrefix(TEncoding.UTF8.GetBytes('[1.5,abc,3.25]')), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'vector invalid token should decode as null');
+
+  Decoded := DecodeValue(OID_SB_VECTOR, WithLengthPrefix(TEncoding.UTF8.GetBytes('[1.5,]')), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'vector trailing separator should decode as null');
+end;
+
 procedure TestDecodeJsonbBinaryReturnsWrapper;
 var
   Decoded: Variant;
@@ -701,6 +712,7 @@ begin
     TestEncodeNumericArrayStillUsesVectorOid;
     TestDecodeUuidBinaryCanonicalizesHyphenFormat;
     TestDecodeVectorBinaryReturnsNumericVariantArray;
+    TestDecodeVectorBinaryInvalidLiteralReturnsNull;
     TestDecodeJsonbBinaryReturnsWrapper;
     TestDecodeCompositeRoundTripReturnsFields;
     TestDecodeMalformedCompositePayloadReturnsNull;
