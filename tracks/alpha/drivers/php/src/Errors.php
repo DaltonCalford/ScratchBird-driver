@@ -46,7 +46,7 @@ final class ErrorMapper
     public static function map(string $sqlState, string $message, string $detail = '', string $hint = ''): ScratchBirdException
     {
         if (strlen($sqlState) === 5) {
-            return match ($sqlState) {
+            $mapped = match ($sqlState) {
                 '01000' => new ScratchBirdWarning($message, $sqlState, $detail, $hint),
                 '02000' => new ScratchBirdNoDataException($message, $sqlState, $detail, $hint),
                 '08001', '08003', '08004', '08006', '08P01' => new ScratchBirdConnectionException($message, $sqlState, $detail, $hint),
@@ -61,6 +61,27 @@ final class ErrorMapper
                 '57014', '57P01', '57P03' => new ScratchBirdOperatorInterventionException($message, $sqlState, $detail, $hint),
                 '58000' => new ScratchBirdSystemException($message, $sqlState, $detail, $hint),
                 'XX000' => new ScratchBirdInternalException($message, $sqlState, $detail, $hint),
+                default => null,
+            };
+            if ($mapped !== null) {
+                return $mapped;
+            }
+
+            return match (substr($sqlState, 0, 2)) {
+                '01' => new ScratchBirdWarning($message, $sqlState, $detail, $hint),
+                '02' => new ScratchBirdNoDataException($message, $sqlState, $detail, $hint),
+                '08' => new ScratchBirdConnectionException($message, $sqlState, $detail, $hint),
+                '0A' => new ScratchBirdNotSupportedException($message, $sqlState, $detail, $hint),
+                '22' => new ScratchBirdDataException($message, $sqlState, $detail, $hint),
+                '23' => new ScratchBirdIntegrityException($message, $sqlState, $detail, $hint),
+                '28' => new ScratchBirdAuthException($message, $sqlState, $detail, $hint),
+                '40' => new ScratchBirdTransactionException($message, $sqlState, $detail, $hint),
+                '42' => new ScratchBirdSyntaxException($message, $sqlState, $detail, $hint),
+                '53' => new ScratchBirdResourceException($message, $sqlState, $detail, $hint),
+                '54' => new ScratchBirdLimitException($message, $sqlState, $detail, $hint),
+                '57' => new ScratchBirdOperatorInterventionException($message, $sqlState, $detail, $hint),
+                '58' => new ScratchBirdSystemException($message, $sqlState, $detail, $hint),
+                'XX' => new ScratchBirdInternalException($message, $sqlState, $detail, $hint),
                 default => new ScratchBirdException($message, $sqlState, $detail, $hint),
             };
         }
