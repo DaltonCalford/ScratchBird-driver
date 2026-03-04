@@ -41,9 +41,15 @@ func TestMapSQLStateKnownMappings(t *testing.T) {
 	}
 }
 
-func TestMapSQLStateUnknownAndInvalidLength(t *testing.T) {
+func TestMapSQLStateClassFallbackAndInvalidLength(t *testing.T) {
+	if got := mapSQLState("08ZZZ"); got != ErrConnection {
+		t.Fatalf("expected class fallback connection kind, got %q", got)
+	}
+	if got := mapSQLState("22ZZZ"); got != ErrData {
+		t.Fatalf("expected class fallback data kind, got %q", got)
+	}
 	if got := mapSQLState("ZZZZZ"); got != ErrUnknown {
-		t.Fatalf("expected unknown kind for unmapped SQLSTATE, got %q", got)
+		t.Fatalf("expected unknown kind for unknown SQLSTATE class, got %q", got)
 	}
 	if got := mapSQLState("123"); got != ErrUnknown {
 		t.Fatalf("expected unknown kind for short SQLSTATE, got %q", got)

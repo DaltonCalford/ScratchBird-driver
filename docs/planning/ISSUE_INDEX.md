@@ -30,7 +30,7 @@ Map checklist items to issue IDs once created.
 - [elixir.md] Add sys.* metadata helpers in `tracks/p3/drivers/elixir/lib/scratchbird/metadata.ex` and export from `tracks/p3/drivers/elixir/lib/scratchbird.ex` -> DONE (2026-02-04)
 - [elixir.md] Add SQLSTATE class-prefix mapping in `tracks/p3/drivers/elixir/lib/scratchbird/errors.ex` -> DONE (2026-02-04)
 - [elixir.md] Add conformance/integration tests in `tracks/p3/drivers/elixir/test/` -> DONE (2026-02-04)
-- [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/go/errors.go` -> OPEN (2026-02-04)
+- [go.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/go/errors.go` -> DONE (2026-03-04)
 - [go.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/go/conformance/` -> DONE (2026-02-04)
 - [jdbc.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping) -> OPEN (2026-02-04)
 - [jdbc.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/jdbc/src/test/` -> DONE (2026-02-04)
