@@ -59,7 +59,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - validates disconnected supported-collection behavior (`08003`) and unsupported collection behavior (`0A000`) across all four adapter surfaces.
 - Added deterministic metadata execution-flow suite:
   - `tests/MetadataExecutionFlowTests.pas`
-  - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `index_columns`, `constraints`, and `routines` query paths.
+  - validates connected metadata wrapper query execution for all typed metadata wrappers:
+    `catalogs`, `schemas`, `tables`, `columns`, `indexes`, `index_columns`, `constraints`,
+    `procedures`, `functions`, `routines`, `primary_keys`, `foreign_keys`,
+    `table_privileges`, `column_privileges`, and `type_info`.
   - validates restriction-aware `QueryMetadataRows(...)` materialization from wire row payloads for:
     - `tables`, `routines`,
     - `catalogs`, `columns`, `indexes`, `constraints`,

@@ -216,8 +216,11 @@ end;
 
 procedure TestMetadataWrappersEmitExpectedCollectionQueries;
 const
-  CollectionCount = 7;
-  Collections: array[0..CollectionCount - 1] of string = ('schemas', 'tables', 'columns', 'indexes', 'index_columns', 'constraints', 'routines');
+  CollectionCount = 15;
+  Collections: array[0..CollectionCount - 1] of string =
+    ('catalogs', 'schemas', 'tables', 'columns', 'indexes', 'index_columns', 'constraints',
+     'procedures', 'functions', 'routines', 'primary_keys', 'foreign_keys',
+     'table_privileges', 'column_privileges', 'type_info');
 var
   Transport: TFakeTransport;
   Client: TScratchBirdClient;
@@ -239,7 +242,9 @@ begin
 
     for I := 0 to CollectionCount - 1 do
     begin
-      if Collections[I] = 'schemas' then
+      if Collections[I] = 'catalogs' then
+        Stream := Client.GetCatalogs
+      else if Collections[I] = 'schemas' then
         Stream := Client.GetSchemas
       else if Collections[I] = 'tables' then
         Stream := Client.GetTables
@@ -251,8 +256,22 @@ begin
         Stream := Client.GetIndexColumns
       else if Collections[I] = 'constraints' then
         Stream := Client.GetConstraints
+      else if Collections[I] = 'procedures' then
+        Stream := Client.GetProcedures
+      else if Collections[I] = 'functions' then
+        Stream := Client.GetFunctions
+      else if Collections[I] = 'routines' then
+        Stream := Client.GetRoutines
+      else if Collections[I] = 'primary_keys' then
+        Stream := Client.GetPrimaryKeys
+      else if Collections[I] = 'foreign_keys' then
+        Stream := Client.GetForeignKeys
+      else if Collections[I] = 'table_privileges' then
+        Stream := Client.GetTablePrivileges
+      else if Collections[I] = 'column_privileges' then
+        Stream := Client.GetColumnPrivileges
       else
-        Stream := Client.GetRoutines;
+        Stream := Client.GetTypeInfo;
       try
         Row := Stream.ReadRow;
         AssertEqualInt(0, Length(Row), Collections[I] + ' expected zero-row stream');
