@@ -71,6 +71,11 @@ def test_decode_int4():
     assert decode_value(OID_INT4, raw, FORMAT_BINARY) == 42
 
 
+def test_decode_unknown_text_integer_outside_int64_returns_text():
+    assert decode_value(0, b"9223372036854775808", FORMAT_TEXT) == "9223372036854775808"
+    assert decode_value(0, b"-9223372036854775809", FORMAT_TEXT) == "-9223372036854775809"
+
+
 def test_decode_jsonb():
     payload = b"{\"a\":1}"
     raw = len(payload).to_bytes(4, byteorder="little") + payload

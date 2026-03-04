@@ -488,9 +488,12 @@ def _parse_unknown_text(text: str) -> Any:
         return False
     if re.fullmatch(r"[+-]?\d+", trimmed):
         try:
-            return int(trimmed)
+            value = int(trimmed)
         except ValueError:
             return trimmed
+        if -(2**63) <= value <= (2**63 - 1):
+            return value
+        return text
     if re.fullmatch(r"[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?", trimmed):
         try:
             return float(trimmed)

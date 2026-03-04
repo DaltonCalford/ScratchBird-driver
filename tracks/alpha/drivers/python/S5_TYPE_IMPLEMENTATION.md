@@ -34,6 +34,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `type_name(...)` now includes array OID names (`text[]`, `boolean[]`, `timetz[]`, etc.).
 - Added JDBC-style unknown-binary scalar parity in `src/scratchbird/types.py`:
   - `_decode_unknown_binary(...)` now decodes 1-byte payloads as signed int8 values (matching JDBC `byte` semantics) instead of unsigned byte values.
+- Added JDBC-style unknown-text integer bounds parity in `src/scratchbird/types.py`:
+  - `_parse_unknown_text(...)` now limits integer auto-coercion to signed int64 range; out-of-range integer text remains text (matching JDBC `Long.parseLong` behavior).
 - Added JDBC-style temporal range-bound coercion parity in `src/scratchbird/types.py`:
   - `_encode_range_bound(...)` now accepts string temporal bounds for `daterange`/`tsrange`/`tstzrange` and coerces them deterministically to UTC-backed binary payloads.
 - Added explicit wrapper-family parity in `src/scratchbird/types.py` and `src/scratchbird/__init__.py`:
@@ -92,6 +94,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_timestamptz_array_to_aware_datetimes`
   - `test_decode_bytea_array_to_bytes_values`
   - `test_decode_unknown_binary_single_byte_is_signed`
+  - `test_decode_unknown_text_integer_outside_int64_returns_text`
   - `test_encode_daterange_with_string_bounds_roundtrip`
   - `test_encode_tstzrange_with_string_bounds_roundtrip`
   - `test_encode_tsrange_with_string_bounds_roundtrip`
@@ -99,10 +102,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`56 passed`)
+- Result: PASS (`57 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`201 passed, 27 skipped, 1 warning`)
+- Result: PASS (`202 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -116,6 +119,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Typed text decode now also aligns with JDBC fail-fast parse semantics for invalid non-boolean typed payloads.
   - Temporal typed-text decode now enforces JDBC timezone rules for `time`/`timestamp`/`timetz` families.
   - Temporal typed-array conversion now enforces the same JDBC timezone rules for `time[]`/`timestamp[]`/`timetz[]` families.
+  - Unknown-text integer inference now matches JDBC int64 limits; out-of-range integer text is preserved as text.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.
