@@ -117,10 +117,12 @@ type
     procedure EnsureTransactionActive(const Operation: string);
     function NormalizeSavepointName(const Name: string): string;
     function NormalizeSqlText(const Sql: string): string;
+    procedure InitializeClient(const Transport: IScratchBirdTransport);
     function BeginOperation(const Name, Sql: string): TSpanContext;
     procedure EndOperation(Span: TSpanContext; Success: Boolean);
   public
-    constructor Create;
+    constructor Create; overload;
+    constructor CreateWithTransport(const Transport: IScratchBirdTransport); overload;
     destructor Destroy; override;
     procedure Connect(const Dsn: string);
     procedure Disconnect;
@@ -354,14 +356,12 @@ begin
   end;
 end;
 
-constructor TScratchBirdClient.Create;
+procedure TScratchBirdClient.InitializeClient(const Transport: IScratchBirdTransport);
 begin
-  inherited Create;
-  {$IFDEF SCRATCHBIRD_USE_INDY}
-  FTransport := TIndyScratchBirdTransport.Create;
-  {$ELSE}
-  FTransport := TNativeScratchBirdTransport.Create;
-  {$ENDIF}
+  FTransport := Transport;
+  if not Assigned(FTransport) then
+    raise EScratchbirdConnectionError.CreateWithInfo('Transport is not assigned', '08001', '', '');
+
   SetLength(FAttachmentId, 16);
   FillChar(FAttachmentId[0], 16, 0);
   FSequence := 0;
@@ -377,6 +377,25 @@ begin
   FKeepaliveTracker := TKeepaliveTracker.Create(DefaultKeepaliveConfig);
   FLeakDetector := TLeakDetector.Create(DefaultLeakDetectionConfig);
   FLeakDetector.Start;
+end;
+
+constructor TScratchBirdClient.Create;
+var
+  Transport: IScratchBirdTransport;
+begin
+  inherited Create;
+  {$IFDEF SCRATCHBIRD_USE_INDY}
+  Transport := TIndyScratchBirdTransport.Create;
+  {$ELSE}
+  Transport := TNativeScratchBirdTransport.Create;
+  {$ENDIF}
+  InitializeClient(Transport);
+end;
+
+constructor TScratchBirdClient.CreateWithTransport(const Transport: IScratchBirdTransport);
+begin
+  inherited Create;
+  InitializeClient(Transport);
 end;
 
 destructor TScratchBirdClient.Destroy;

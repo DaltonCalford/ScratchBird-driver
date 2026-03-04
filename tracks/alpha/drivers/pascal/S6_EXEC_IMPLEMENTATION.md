@@ -2,7 +2,7 @@
 
 Date: 2026-03-04  
 Lane: `tracks/alpha/drivers/pascal`  
-Scope: close the adapter `Prepare` lifecycle evidence gap in `EXEC` with deterministic lane-local tests.
+Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `Prepare` lifecycle and stream-control/backpressure behavior).
 
 ## Changes Implemented
 
@@ -29,6 +29,17 @@ Scope: close the adapter `Prepare` lifecycle evidence gap in `EXEC` with determi
        - Zeos adapter
        - SQLdb adapter
 
+3. Deterministic stream-control/backpressure suite
+   - File: `tests/StreamControlBackpressureTests.pas`
+   - Added constructor-based transport injection support to client for deterministic wire-flow assertions:
+     - `src/ScratchBird.Client.pas`:
+       - `constructor CreateWithTransport(const Transport: IScratchBirdTransport)`
+       - `procedure InitializeClient(const Transport: IScratchBirdTransport)`
+   - Covers:
+     - `StreamControl` message emission and payload encoding (`MSG_STREAM_CONTROL`, control/window/timeout).
+     - `TScratchBirdResultStream.ReadRow` portal-suspended path emitting `MSG_EXECUTE` resume (`BuildExecutePayload('', CurrentMaxRows)`).
+     - command completion metadata (`CommandTag`, `RowsAffected`) through the resume path.
+
 ## Targeted Tests Run
 
 1. Adapter lifecycle suite
@@ -42,16 +53,21 @@ Scope: close the adapter `Prepare` lifecycle evidence gap in `EXEC` with determi
    - `/tmp/sb_pascal_exec_reg_bin/TxnExecParityTests`
    - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_exec_reg_build -FE/tmp/sb_pascal_exec_reg_bin ./tracks/alpha/drivers/pascal/tests/SqlTests.pas`
    - `/tmp/sb_pascal_exec_reg_bin/SqlTests`
-   - Result: PASS (`TxnExecParityTests: OK`, `SqlTests: OK`)
+  - Result: PASS (`TxnExecParityTests: OK`, `SqlTests: OK`)
+
+3. Stream-control/backpressure suite
+   - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_exec_stream_build -FE/tmp/sb_pascal_exec_stream_bin ./tracks/alpha/drivers/pascal/tests/StreamControlBackpressureTests.pas`
+   - `/tmp/sb_pascal_exec_stream_bin/StreamControlBackpressureTests`
+   - Result: PASS (`StreamControlBackpressureTests: OK`)
 
 ## EXEC Status Recommendation
 
 - Recommendation: keep `PARTIAL`
 - Rationale:
   - adapter prepare lifecycle behavior now has explicit deterministic lane-local assertions.
-  - remaining EXEC gaps are stream-control/backpressure assertions and first-class batch/multi-result/generated-key APIs.
+  - stream-control/backpressure wire behavior now has deterministic lane-local assertions.
+  - remaining EXEC gap is first-class batch/multi-result/generated-key API coverage.
 
 ## Remaining Gaps
 
-1. Add stream-control/backpressure tests (`src/ScratchBird.Client.pas:618` path).
-2. Add first-class API coverage for batch execution, multi-result traversal, and generated-key retrieval.
+1. Add first-class API coverage for batch execution, multi-result traversal, and generated-key retrieval.
