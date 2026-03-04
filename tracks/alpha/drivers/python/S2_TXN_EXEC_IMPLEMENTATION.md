@@ -70,10 +70,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`25 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+- Result: PASS (`26 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`143 passed, 25 skipped`)
+- Result: PASS (`149 passed, 26 skipped`)
 
 ## TXN Status
 

@@ -158,6 +158,85 @@ def test_rollback_noop_without_active_transaction(monkeypatch):
     assert calls == []
 
 
+def test_is_valid_returns_false_when_closed(monkeypatch):
+    conn = _new_connection()
+    conn._closed = True
+    monkeypatch.setattr(conn, "ping", lambda: pytest.fail("ping should not be called"))
+    assert conn.is_valid() is False
+
+
+def test_is_valid_returns_true_on_successful_ping(monkeypatch):
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "ping", lambda: None)
+    assert conn.is_valid() is True
+
+
+def test_is_valid_returns_false_on_ping_error(monkeypatch):
+    conn = _new_connection()
+
+    def _fail_ping():
+        raise errors.OperationalError("ping failed")
+
+    monkeypatch.setattr(conn, "ping", _fail_ping)
+    assert conn.is_valid() is False
+
+
+def test_is_valid_rejects_negative_timeout():
+    conn = _new_connection()
+    with pytest.raises(errors.ProgrammingError, match="timeout_ms must be >= 0"):
+        conn.is_valid(-1)
+
+
+def test_is_valid_applies_and_restores_socket_timeout(monkeypatch):
+    conn = _new_connection()
+    observed = {}
+
+    class _Socket:
+        def __init__(self):
+            self.timeout = None
+
+        def gettimeout(self):
+            return self.timeout
+
+        def settimeout(self, value):
+            self.timeout = value
+
+    conn._socket = _Socket()
+
+    def _ping():
+        observed["during_ping_timeout"] = conn._socket.gettimeout()
+
+    monkeypatch.setattr(conn, "ping", _ping)
+
+    assert conn.is_valid(250) is True
+    assert observed["during_ping_timeout"] == 0.25
+    assert conn._socket.gettimeout() is None
+
+
+def test_is_valid_restores_timeout_when_ping_fails(monkeypatch):
+    conn = _new_connection()
+
+    class _Socket:
+        def __init__(self):
+            self.timeout = 1.5
+
+        def gettimeout(self):
+            return self.timeout
+
+        def settimeout(self, value):
+            self.timeout = value
+
+    conn._socket = _Socket()
+
+    def _fail_ping():
+        raise errors.OperationalError("down")
+
+    monkeypatch.setattr(conn, "ping", _fail_ping)
+
+    assert conn.is_valid(500) is False
+    assert conn._socket.gettimeout() == 1.5
+
+
 def test_autocommit_true_commits_active_transaction_before_switch(monkeypatch):
     conn = _new_connection(txn_id=13)
     conn._autocommit = False

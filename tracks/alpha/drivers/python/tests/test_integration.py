@@ -310,6 +310,19 @@ def test_connection_ping_integration():
         conn.close()
 
 
+def test_connection_is_valid_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        assert conn.is_valid() is True
+        assert conn.is_valid(250) is True
+    finally:
+        conn.close()
+    assert conn.is_valid() is False
+
+
 def test_transaction_begin_commit_rollback_cycle_integration():
     dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
     if not dsn:

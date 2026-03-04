@@ -577,6 +577,38 @@ class Connection:
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
 
+    def is_valid(self, timeout_ms: int = 0) -> bool:
+        if self._closed:
+            return False
+        try:
+            timeout_value = int(timeout_ms)
+        except (TypeError, ValueError) as exc:
+            raise errors.ProgrammingError("timeout_ms must be an integer") from exc
+        if timeout_value < 0:
+            raise errors.ProgrammingError("timeout_ms must be >= 0")
+
+        sock = getattr(self, "_socket", None)
+        original_timeout = None
+        timeout_applied = False
+        if timeout_value > 0 and sock is not None and hasattr(sock, "gettimeout") and hasattr(sock, "settimeout"):
+            try:
+                original_timeout = sock.gettimeout()
+                sock.settimeout(timeout_value / 1000.0)
+                timeout_applied = True
+            except Exception:
+                timeout_applied = False
+        try:
+            self.ping()
+            return True
+        except Exception:
+            return False
+        finally:
+            if timeout_applied:
+                try:
+                    sock.settimeout(original_timeout)
+                except Exception:
+                    pass
+
     def subscribe(self, channel: str, sub_type: int = 0, filter_expr: str = "") -> None:
         self._ensure_open()
         payload = build_subscribe_payload(sub_type, channel, filter_expr)

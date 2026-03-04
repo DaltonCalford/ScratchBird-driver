@@ -32,6 +32,7 @@ Connection helpers available on `Connection`:
 - `get_session_schema()`, `set_session_schema(schema)`
 - `set_option(name, value)`
 - `ping()`
+- `is_valid(timeout_ms=0)`
 - `subscribe(channel, sub_type=0, filter_expr="")`, `unsubscribe(channel)`
 - `execute_sblr(sblr_hash, sblr_bytecode=None, params=None)`
 - `stream_control(control_type, window_size, timeout_ms)`

@@ -22,6 +22,10 @@ Scope: `tracks/alpha/drivers/python` only.
 - Added runtime session-schema parity helpers in `src/scratchbird/connection.py`:
   - `get_session_schema()` returns the normalized active session-schema setting.
   - `set_session_schema(schema)` updates local session-schema state and executes `SET SCHEMA`/`SET SEARCH_PATH` (resetting `None` to `public`).
+- Added JDBC-style liveness helper in `src/scratchbird/connection.py`:
+  - `is_valid(timeout_ms=0)` returns a boolean health probe backed by `ping()`.
+  - Closed connections return `False`; negative timeout raises `ProgrammingError`.
+  - When possible, timeout is applied/restored via socket timeout mutation around `ping()`.
 - Added targeted unit tests in `tests/test_connection_auth_protocol.py` covering:
   - semicolon DSN parsing
   - alias-based connection config normalization
@@ -37,6 +41,7 @@ Scope: `tracks/alpha/drivers/python` only.
 - Added env-gated live integration coverage in `tests/test_integration.py`:
   - `test_session_schema_runtime_integration` validates runtime session-schema transitions against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_connection_ping_integration` validates wire-level connection liveness checks against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_connection_is_valid_integration` validates boolean liveness probing and closed-connection behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 
 ## Test Commands Run
 
@@ -53,10 +58,10 @@ Scope: `tracks/alpha/drivers/python` only.
 - Result: PASS (`68 passed, 14 skipped`)
 
 5. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`25 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+- Result: PASS (`26 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
 6. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`143 passed, 25 skipped`)
+- Result: PASS (`149 passed, 26 skipped`)
 
 ## CONN Status Recommendation
 
