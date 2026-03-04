@@ -41,6 +41,15 @@ Connection helpers available on `Connection`:
 - `cancel()`
 - `query_metadata(collection_name="tables", restrictions=None)`
 - `get_schema(collection_name="tables", restrictions=None)`
+- `schemas(catalog=None)`, `tables(schema=None, table=None, table_type=None)`
+- `columns(schema=None, table=None, column=None, column_type=None)`, `indexes(schema=None, table=None, index=None)`
+- `index_columns(schema=None, table=None, index=None, column=None)`, `constraints(schema=None, table=None, constraint=None)`
+- `catalogs(catalog=None)`, `primary_keys(schema=None, table=None, constraint=None, catalog=None)`
+- `foreign_keys(schema=None, table=None, constraint=None, catalog=None)`
+- `procedures(schema=None, procedure=None, catalog=None)`, `functions(schema=None, function=None, catalog=None)`
+- `routines(schema=None, routine=None, catalog=None)`
+- `table_privileges(schema=None, table=None, catalog=None)`, `column_privileges(schema=None, table=None, column=None, catalog=None)`
+- `type_info(type_name=None)`
 
 ## Parameters
 

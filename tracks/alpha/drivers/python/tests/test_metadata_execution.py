@@ -134,6 +134,165 @@ def test_connection_get_schema_forwards_restrictions():
     assert captured == {"collection_name": "schemas", "restrictions": {"schema": "users"}}
 
 
+def test_connection_schemas_wrapper_forwards_catalog_restriction():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    def fake_get_schema(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return [("users",)]
+
+    conn.get_schema = fake_get_schema
+
+    rows = Connection.schemas(conn, catalog="main")
+    assert rows == [("users",)]
+    assert captured == {"collection_name": "schemas", "restrictions": {"catalog": "main"}}
+
+
+def test_connection_tables_wrapper_forwards_restrictions():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    def fake_get_schema(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return [("events",)]
+
+    conn.get_schema = fake_get_schema
+
+    rows = Connection.tables(conn, schema="users", table="events", table_type="BASE TABLE")
+    assert rows == [("events",)]
+    assert captured == {
+        "collection_name": "tables",
+        "restrictions": {"schema": "users", "table": "events", "type": "BASE TABLE"},
+    }
+
+
+def test_connection_columns_wrapper_forwards_restrictions():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    def fake_get_schema(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return [("column",)]
+
+    conn.get_schema = fake_get_schema
+
+    rows = Connection.columns(conn, schema="users", table="events", column="event_id", column_type="INTEGER")
+    assert rows == [("column",)]
+    assert captured == {
+        "collection_name": "columns",
+        "restrictions": {"schema": "users", "table": "events", "column": "event_id", "type": "INTEGER"},
+    }
+
+
+def test_connection_indexes_wrapper_handles_missing_restrictions():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    def fake_get_schema(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return [("idx",)]
+
+    conn.get_schema = fake_get_schema
+
+    rows = Connection.indexes(conn)
+    assert rows == [("idx",)]
+    assert captured == {"collection_name": "indexes", "restrictions": None}
+
+
+@pytest.mark.parametrize(
+    ("method_name", "kwargs", "expected_collection", "expected_restrictions"),
+    [
+        (
+            "index_columns",
+            {"schema": "users", "table": "events", "index": "idx_events", "column": "event_id"},
+            "index_columns",
+            {"schema": "users", "table": "events", "index": "idx_events", "column": "event_id"},
+        ),
+        (
+            "constraints",
+            {"schema": "users", "table": "events", "constraint": "events_pk"},
+            "constraints",
+            {"schema": "users", "table": "events", "constraint": "events_pk"},
+        ),
+        ("catalogs", {}, "catalogs", None),
+        ("catalogs", {"catalog": "main"}, "catalogs", {"catalog": "main"}),
+        (
+            "primary_keys",
+            {"catalog": "main", "schema": "users", "table": "events", "constraint": "events_pk"},
+            "primary_keys",
+            {"catalog": "main", "schema": "users", "table": "events", "constraint": "events_pk"},
+        ),
+        (
+            "foreign_keys",
+            {"schema": "users", "table": "events"},
+            "foreign_keys",
+            {"schema": "users", "table": "events"},
+        ),
+        (
+            "procedures",
+            {"schema": "users", "procedure": "upsert_event"},
+            "procedures",
+            {"schema": "users", "procedure": "upsert_event"},
+        ),
+        (
+            "functions",
+            {"catalog": "main", "schema": "users", "function": "event_count"},
+            "functions",
+            {"catalog": "main", "schema": "users", "function": "event_count"},
+        ),
+        (
+            "routines",
+            {"schema": "users", "routine": "event_count"},
+            "routines",
+            {"schema": "users", "routine": "event_count"},
+        ),
+        (
+            "table_privileges",
+            {"schema": "users", "table": "events"},
+            "table_privileges",
+            {"schema": "users", "table": "events"},
+        ),
+        (
+            "column_privileges",
+            {"schema": "users", "table": "events", "column": "event_id"},
+            "column_privileges",
+            {"schema": "users", "table": "events", "column": "event_id"},
+        ),
+        ("type_info", {}, "type_info", None),
+        ("type_info", {"type_name": "INTEGER"}, "type_info", {"type": "INTEGER"}),
+    ],
+)
+def test_connection_metadata_wrappers_forward_expected_restrictions(
+    method_name: str,
+    kwargs: dict,
+    expected_collection: str,
+    expected_restrictions: dict | None,
+):
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    def fake_get_schema(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return [("ok",)]
+
+    conn.get_schema = fake_get_schema
+
+    rows = getattr(Connection, method_name)(conn, **kwargs)
+    assert rows == [("ok",)]
+    assert captured == {"collection_name": expected_collection, "restrictions": expected_restrictions}
+
+
 def test_filter_rows_by_restrictions_filters_mapping_rows_with_aliases():
     rows = [
         {"schema_name": "sys", "table_name": "events"},

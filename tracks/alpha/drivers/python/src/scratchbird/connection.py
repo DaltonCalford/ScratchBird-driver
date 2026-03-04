@@ -773,6 +773,121 @@ class Connection:
         cur = self.query_metadata(collection_name, restrictions=restrictions)
         return cur.fetchall()
 
+    def schemas(self, catalog: Optional[str] = None):
+        restrictions = self._metadata_restrictions(catalog=catalog)
+        return self.get_schema("schemas", restrictions=restrictions)
+
+    def tables(self, schema: Optional[str] = None, table: Optional[str] = None, table_type: Optional[str] = None):
+        restrictions = self._metadata_restrictions(schema=schema, table=table, type=table_type)
+        return self.get_schema("tables", restrictions=restrictions)
+
+    def columns(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        column: Optional[str] = None,
+        column_type: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(schema=schema, table=table, column=column, type=column_type)
+        return self.get_schema("columns", restrictions=restrictions)
+
+    def indexes(self, schema: Optional[str] = None, table: Optional[str] = None, index: Optional[str] = None):
+        restrictions = self._metadata_restrictions(schema=schema, table=table, index=index)
+        return self.get_schema("indexes", restrictions=restrictions)
+
+    def index_columns(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        index: Optional[str] = None,
+        column: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(schema=schema, table=table, index=index, column=column)
+        return self.get_schema("index_columns", restrictions=restrictions)
+
+    def constraints(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        constraint: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(schema=schema, table=table, constraint=constraint)
+        return self.get_schema("constraints", restrictions=restrictions)
+
+    def catalogs(self, catalog: Optional[str] = None):
+        restrictions = self._metadata_restrictions(catalog=catalog)
+        return self.get_schema("catalogs", restrictions=restrictions)
+
+    def primary_keys(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        constraint: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, table=table, constraint=constraint)
+        return self.get_schema("primary_keys", restrictions=restrictions)
+
+    def foreign_keys(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        constraint: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, table=table, constraint=constraint)
+        return self.get_schema("foreign_keys", restrictions=restrictions)
+
+    def procedures(
+        self,
+        schema: Optional[str] = None,
+        procedure: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, procedure=procedure)
+        return self.get_schema("procedures", restrictions=restrictions)
+
+    def functions(
+        self,
+        schema: Optional[str] = None,
+        function: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, function=function)
+        return self.get_schema("functions", restrictions=restrictions)
+
+    def routines(
+        self,
+        schema: Optional[str] = None,
+        routine: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, routine=routine)
+        return self.get_schema("routines", restrictions=restrictions)
+
+    def table_privileges(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, table=table)
+        return self.get_schema("table_privileges", restrictions=restrictions)
+
+    def column_privileges(
+        self,
+        schema: Optional[str] = None,
+        table: Optional[str] = None,
+        column: Optional[str] = None,
+        catalog: Optional[str] = None,
+    ):
+        restrictions = self._metadata_restrictions(catalog=catalog, schema=schema, table=table, column=column)
+        return self.get_schema("column_privileges", restrictions=restrictions)
+
+    def type_info(self, type_name: Optional[str] = None):
+        restrictions = self._metadata_restrictions(type=type_name)
+        return self.get_schema("type_info", restrictions=restrictions)
+
     def get_session_schema(self) -> Optional[str]:
         return self._session_schema
 
@@ -845,6 +960,11 @@ class Connection:
         cur.statusmessage = statusmessage
         cur.lastrowid = lastrowid
         return cur
+
+    @staticmethod
+    def _metadata_restrictions(**kwargs) -> Optional[Dict[str, Any]]:
+        restrictions = {key: value for key, value in kwargs.items() if value is not None}
+        return restrictions or None
 
     def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
         if header.msg_type == MessageType.PARAMETER_STATUS:

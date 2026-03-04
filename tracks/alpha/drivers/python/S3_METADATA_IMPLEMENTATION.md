@@ -19,6 +19,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Added first-class executable metadata APIs on `Connection`:
   - `query_metadata(collection_name='tables', restrictions=None)` executes normalized metadata queries via the existing query path.
   - `get_schema(collection_name='tables', restrictions=None)` materializes metadata rows by draining cursor results.
+  - Added convenience metadata wrappers for supported families:
+    - Existing: `schemas`, `tables`, `columns`, `indexes`
+    - Newly expanded: `index_columns`, `constraints`, `catalogs`, `primary_keys`, `foreign_keys`, `procedures`, `functions`, `routines`, `table_privileges`, `column_privileges`, `type_info`
   - Unsupported metadata collections map to `errors.NotSupportedError`.
 - Added first-class metadata restriction filtering:
   - `metadata.normalize_restrictions(...)` validates and normalizes restriction keys.
@@ -30,25 +33,29 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - New `tests/test_metadata_recursive_schema.py` validates wildcard matching, parent expansion, pattern-filter preservation, per-parent uniqueness, and cross-schema same-name identity behavior.
   - New `tests/test_metadata_execution.py` validates alias normalization/query resolution for extended families and `Connection.query_metadata(...)`/`get_schema(...)` behavior (including unsupported collection mapping).
   - Added metadata restriction tests for alias-based filtering, tuple-row filtering with descriptions, null matching, unknown key handling, and invalid restriction input mapping.
+  - Added wrapper forwarding tests to validate collection + restriction mapping for the expanded convenience wrapper surface.
   - Extended `tests/test_connection_auth_protocol.py` with alias mapping coverage for `metadata_expand_schema_parents`.
+  - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META row evidence/notes to reflect recursive metadata behavior and tests.
 
 ## Tests Run
 
-1. `pytest -q tests/test_metadata_recursive_schema.py tests/test_metadata_execution.py tests/test_connection_auth_protocol.py`
-- Result: PASS (`35 passed`)
+1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py`
+- Result: PASS (`40 passed, 16 skipped`)
 
-2. `pytest -q`
-- Result: PASS (`87 passed, 8 skipped`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
+- Result: PASS (`108 passed, 16 skipped`)
 
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`) with extended family coverage, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering.
+  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering.
   - Recursive schema shaping coverage remains in place for nested metadata navigation behavior.
-  - Status remains partial because end-to-end DDL-editor payload validation against a live connection is still pending.
+  - Env-gated live integration assertions now cover wrapper execution and restriction filtering behavior.
+  - Status remains partial because live metadata validation is still environment-gated and not guaranteed in always-on CI.
 
 ## Remaining Gaps
 
-- No integration-level metadata assertions for DDL editor payload stability against a live ScratchBird endpoint.
+- Live metadata assertions still depend on `SCRATCHBIRD_TEST_DSN`, so default runs can skip this lane.
+- DDL-editor payload stability checks are not yet pinned to a fixed fixture schema snapshot in this lane.

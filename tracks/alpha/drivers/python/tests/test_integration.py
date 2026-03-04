@@ -248,3 +248,48 @@ def test_transaction_savepoint_lifecycle_integration():
         conn.commit()
     finally:
         conn.close()
+
+
+def test_metadata_wrappers_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        assert isinstance(conn.schemas(), list)
+        assert isinstance(conn.tables(), list)
+        assert isinstance(conn.columns(), list)
+        assert isinstance(conn.indexes(), list)
+        assert isinstance(conn.index_columns(), list)
+        assert isinstance(conn.constraints(), list)
+        assert isinstance(conn.catalogs(), list)
+        assert isinstance(conn.primary_keys(), list)
+        assert isinstance(conn.foreign_keys(), list)
+        assert isinstance(conn.procedures(), list)
+        assert isinstance(conn.functions(), list)
+        assert isinstance(conn.routines(), list)
+        assert isinstance(conn.table_privileges(), list)
+        assert isinstance(conn.column_privileges(), list)
+        assert isinstance(conn.type_info(), list)
+    finally:
+        conn.close()
+
+
+def test_metadata_restriction_wrappers_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        missing_name = "__scratchbird_metadata_missing_object__"
+        assert conn.tables(table=missing_name) == []
+        assert conn.columns(table=missing_name) == []
+        assert conn.indexes(table=missing_name) == []
+        assert conn.index_columns(table=missing_name) == []
+        assert conn.constraints(table=missing_name) == []
+        assert conn.primary_keys(table=missing_name) == []
+        assert conn.foreign_keys(table=missing_name) == []
+        assert conn.table_privileges(table=missing_name) == []
+        assert conn.column_privileges(table=missing_name) == []
+    finally:
+        conn.close()
