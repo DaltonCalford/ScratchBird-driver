@@ -172,6 +172,8 @@ def encode_param(value: Any) -> tuple[ParamValue, int]:
     if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
         return ParamValue(FORMAT_BINARY, _encode_date(value)), OID_DATE
     if isinstance(value, _dt.time):
+        if value.tzinfo is not None:
+            return ParamValue(FORMAT_BINARY, _encode_timetz(value)), OID_TIMETZ
         return ParamValue(FORMAT_BINARY, _encode_time(value)), OID_TIME
     if isinstance(value, _dt.timedelta):
         micros = int(value.total_seconds() * 1_000_000)
@@ -207,7 +209,7 @@ def decode_value(type_oid: int, data: Optional[bytes], format_code: int) -> Any:
             return _parse_unknown_text(_decode_text_value(data))
         return _decode_unknown_binary(data)
     if format_code == FORMAT_TEXT:
-        return _decode_text_value(data)
+        return _decode_text_typed_value(type_oid, data)
     return _decode_binary_value(type_oid, data)
 
 
@@ -239,6 +241,8 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
         return _decode_date(data)
     if type_oid == OID_TIME:
         return _decode_time(data)
+    if type_oid == OID_TIMETZ:
+        return _decode_timetz(data)
     if type_oid == OID_TIMESTAMP:
         return _decode_timestamp(data)
     if type_oid == OID_TIMESTAMPTZ:
@@ -267,6 +271,16 @@ def _decode_text_value(data: bytes) -> str:
         if 0 <= length <= len(data) - 4:
             return data[4 : 4 + length].decode("utf-8", errors="replace")
     return data.decode("utf-8", errors="replace")
+
+
+def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
+    text = _decode_text_value(data)
+    if type_oid == OID_TIMETZ:
+        try:
+            return _dt.time.fromisoformat(text.strip())
+        except ValueError:
+            return text
+    return text
 
 
 def _decode_unknown_binary(data: bytes) -> Any:
@@ -403,6 +417,19 @@ def _encode_time(value: _dt.time) -> bytes:
     return struct.pack("<q", micros)
 
 
+def _encode_timetz(value: _dt.time) -> bytes:
+    offset = value.utcoffset()
+    if offset is None:
+        raise ValueError("timetz requires explicit offset")
+    micros = (
+        (value.hour * 3600 + value.minute * 60 + value.second) * 1_000_000
+        + value.microsecond
+    )
+    # PostgreSQL stores timetz zone as seconds west of UTC.
+    zone_seconds_west = -int(offset.total_seconds())
+    return struct.pack("<qi", micros, zone_seconds_west)
+
+
 def _encode_timestamp(value: _dt.datetime) -> bytes:
     base = _dt.datetime(2000, 1, 1, tzinfo=_dt.timezone.utc)
     delta = value - base
@@ -421,6 +448,28 @@ def _decode_time(data: bytes) -> _dt.time:
     hours, rem = divmod(secs, 3600)
     mins, secs = divmod(rem, 60)
     return _dt.time(int(hours % 24), int(mins), int(secs), int(micro))
+
+
+def _decode_timetz(data: bytes) -> _dt.time:
+    if len(data) < 8:
+        raise ValueError("invalid timetz binary payload")
+    micros = struct.unpack_from("<q", data, 0)[0]
+    day_micros = 24 * 60 * 60 * 1_000_000
+    micros %= day_micros
+    secs, micro = divmod(micros, 1_000_000)
+    hours, rem = divmod(secs, 3600)
+    mins, secs = divmod(rem, 60)
+
+    if len(data) < 12:
+        zone = _dt.timezone.utc
+    else:
+        zone_seconds_west = struct.unpack_from("<i", data, 8)[0]
+        try:
+            zone = _dt.timezone(_dt.timedelta(seconds=-zone_seconds_west))
+        except Exception as exc:
+            raise ValueError("invalid timetz zone displacement") from exc
+
+    return _dt.time(int(hours), int(mins), int(secs), int(micro), tzinfo=zone)
 
 
 def _decode_timestamp(data: bytes) -> _dt.datetime:
@@ -659,6 +708,7 @@ def type_name(type_oid: int) -> str:
         OID_BYTEA: "bytea",
         OID_DATE: "date",
         OID_TIME: "time",
+        OID_TIMETZ: "timetz",
         OID_TIMESTAMP: "timestamp",
         OID_TIMESTAMPTZ: "timestamptz",
         OID_INTERVAL: "interval",

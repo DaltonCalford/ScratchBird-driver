@@ -13,17 +13,20 @@ import struct
 from scratchbird.types import (
     Composite,
     CompositeField,
+    FORMAT_TEXT,
     OID_INT4,
     OID_INT4RANGE,
     OID_INTERVAL,
     OID_JSONB,
     OID_RECORD,
     OID_SB_VECTOR,
+    OID_TIMETZ,
     FORMAT_BINARY,
     decode_value,
     encode_param,
     Jsonb,
     Range,
+    type_name,
 )
 
 
@@ -63,6 +66,37 @@ def test_decode_interval_binary_payload():
         "days": 3,
         "micros": 5_000_000,
     }
+
+
+def test_encode_timetz_uses_binary_layout_and_zone_seconds_west():
+    value = dt.time(12, 34, 56, 123000, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30)))
+    param, oid = encode_param(value)
+
+    assert oid == OID_TIMETZ
+    micros, zone_seconds_west = struct.unpack("<qi", param.data)
+    assert micros == 45_296_123_000
+    assert zone_seconds_west == -19_800
+
+
+def test_decode_timetz_binary_payload_roundtrip():
+    raw = struct.pack("<qi", 45_296_123_000, -19_800)
+    decoded = decode_value(OID_TIMETZ, raw, FORMAT_BINARY)
+    assert decoded == dt.time(12, 34, 56, 123000, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30)))
+
+
+def test_decode_timetz_binary_payload_supports_legacy_8byte_form():
+    raw = struct.pack("<q", 3_661_000_000)
+    decoded = decode_value(OID_TIMETZ, raw, FORMAT_BINARY)
+    assert decoded == dt.time(1, 1, 1, tzinfo=dt.timezone.utc)
+
+
+def test_decode_timetz_text_payload_to_offset_time():
+    decoded = decode_value(OID_TIMETZ, b"08:09:10+03", FORMAT_TEXT)
+    assert decoded == dt.time(8, 9, 10, tzinfo=dt.timezone(dt.timedelta(hours=3)))
+
+
+def test_type_name_includes_timetz():
+    assert type_name(OID_TIMETZ) == "timetz"
 
 
 def test_encode_decode_range_roundtrip():
