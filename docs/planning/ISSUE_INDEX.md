@@ -43,7 +43,7 @@ Map checklist items to issue IDs once created.
 - [mojo.md] Add array, composite, range, geometry, vector, inet/cidr/macaddr support -> DONE (2026-02-04)
 - [mojo.md] Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo` -> DONE (2026-02-04)
 - [mojo.md] Add conformance/integration tests -> DONE (2026-02-04)
-- [node.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/node/src/errors.ts` -> OPEN (2026-02-04)
+- [node.md] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/node/src/errors.ts` -> DONE (2026-03-04)
 - [node.md] Add conformance tests for full type matrix in `tracks/alpha/drivers/node/test/` -> DONE (2026-02-04)
 - [odbc.md] Expand type mapping to cover complex SBWP types where applicable in `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp` -> DONE (2026-02-04)
 - [odbc.md] Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp` -> DONE (2026-02-04)

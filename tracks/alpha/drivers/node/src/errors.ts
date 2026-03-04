@@ -97,5 +97,36 @@ export function mapSqlState(code?: string): new (...args: any[]) => ScratchbirdE
         return ScratchbirdInternalError;
     }
   }
+  const stateClass = code.slice(0, 2);
+  switch (stateClass) {
+    case "01":
+      return ScratchbirdWarning;
+    case "02":
+      return ScratchbirdNoDataError;
+    case "08":
+      return ScratchbirdConnectionError;
+    case "0A":
+      return ScratchbirdNotSupportedError;
+    case "22":
+      return ScratchbirdDataError;
+    case "23":
+      return ScratchbirdIntegrityError;
+    case "28":
+      return ScratchbirdAuthError;
+    case "40":
+      return ScratchbirdTransactionError;
+    case "42":
+      return ScratchbirdSyntaxError;
+    case "53":
+      return ScratchbirdResourceError;
+    case "54":
+      return ScratchbirdLimitError;
+    case "57":
+      return ScratchbirdOperatorInterventionError;
+    case "58":
+      return ScratchbirdSystemError;
+    case "XX":
+      return ScratchbirdInternalError;
+  }
   return ScratchbirdError;
 }

@@ -30,6 +30,7 @@ const {
   mapSqlState,
   ScratchbirdSyntaxError,
   ScratchbirdConnectionError,
+  ScratchbirdDataError,
   ScratchbirdError,
   CircuitBreaker,
   KeepaliveManager,
@@ -585,6 +586,8 @@ test("getSchemaTree builds metadata-only tree from schema rows", async () => {
 test("mapSqlState resolves typed driver errors for known classes", () => {
   assert.equal(mapSqlState("42P01"), ScratchbirdSyntaxError);
   assert.equal(mapSqlState("08006"), ScratchbirdConnectionError);
+  assert.equal(mapSqlState("08ZZZ"), ScratchbirdConnectionError);
+  assert.equal(mapSqlState("22ZZZ"), ScratchbirdDataError);
   assert.equal(mapSqlState("99999"), ScratchbirdError);
   assert.equal(mapSqlState(undefined), ScratchbirdError);
 });
