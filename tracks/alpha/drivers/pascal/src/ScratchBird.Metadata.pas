@@ -789,7 +789,7 @@ end;
 
 function MetadataIndexColumnsQuery: string;
 begin
-  Result := 'SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position';
+  Result := 'SELECT ic.index_id, i.index_name, i.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, ic.column_id, ic.column_name, ic.ordinal_position, ic.is_included FROM sys.index_columns ic LEFT JOIN sys.indexes i ON i.index_id = ic.index_id LEFT JOIN sys.tables t ON t.table_id = i.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE (i.index_id IS NULL OR i.is_valid = 1) AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name, i.index_name, ic.ordinal_position';
 end;
 
 function MetadataConstraintsQuery: string;

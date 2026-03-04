@@ -252,6 +252,10 @@ begin
   AssertContains('lower(constraint_type)', SqlText, 'primary keys query resolution');
   SqlText := ResolveMetadataCollectionQuery('foreign_keys');
   AssertContains('foreign key', SqlText, 'foreign keys query resolution');
+  SqlText := ResolveMetadataCollectionQuery('index_columns');
+  AssertContains('JOIN sys.indexes', SqlText, 'index columns query resolution');
+  AssertContains('index_name', SqlText, 'index columns includes index_name');
+  AssertContains('AS table_schema', SqlText, 'index columns includes table_schema alias');
   SqlText := ResolveMetadataCollectionQuery('table_privileges');
   AssertContains('privilege_type', SqlText, 'table privileges query resolution');
   SqlText := ResolveMetadataCollectionQuery('column_privileges');

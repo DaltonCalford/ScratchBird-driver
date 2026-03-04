@@ -373,7 +373,7 @@ type
 var
   Transport: TFakeTransport;
   Client: TScratchBirdClient;
-  Scenarios: array[0..10] of TRestrictionScenario;
+  Scenarios: array[0..11] of TRestrictionScenario;
   Restrictions: TMetadataRow;
   Rows: TMetadataRows;
   FilterValue: Variant;
@@ -480,6 +480,15 @@ begin
   Scenarios[10].MatchAuxValue := '23';
   Scenarios[10].OtherValue := 'TEXT';
   Scenarios[10].OtherAuxValue := '25';
+
+  Scenarios[11].CollectionName := 'index_columns';
+  Scenarios[11].RestrictionName := 'index';
+  Scenarios[11].RestrictionValue := 'idx_accounts_email';
+  Scenarios[11].ValueColumn := 'index_name';
+  Scenarios[11].AuxColumn := 'column_name';
+  Scenarios[11].MatchAuxValue := 'email';
+  Scenarios[11].OtherValue := 'idx_accounts_id';
+  Scenarios[11].OtherAuxValue := 'id';
 
   Transport := TFakeTransport.Create;
   Client := TScratchBirdClient.CreateWithTransport(Transport, True);
