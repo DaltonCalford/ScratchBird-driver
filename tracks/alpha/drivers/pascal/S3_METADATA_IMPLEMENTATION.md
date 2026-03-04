@@ -61,6 +61,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `tests/IntegrationTest.pas`
   - validates executable metadata stream paths for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines`.
   - validates typed wrapper metadata stream paths for the same family set.
+  - validates restriction-aware `QueryMetadataRows('schemas', restrictions)` materialization against a running endpoint.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence/notes for the new S3 metadata shaping coverage.
 
 ## Targeted Tests Run
@@ -101,10 +102,11 @@ Rationale:
 - Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and restriction-aware row materialization from wire payloads.
 - Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
 - Env-gated live integration now validates executable metadata stream and typed wrapper paths for schema/table/column/index/constraint/routine families.
-- Status remains partial because live coverage is env-gated/skippable, restriction-aware materialization is still deterministic-only, and JDBC result-shape parity is still incomplete.
+- Env-gated live integration now also validates restriction-aware `QueryMetadataRows('schemas', restrictions)` materialization.
+- Status remains partial because live coverage is env-gated/skippable, restriction-aware live assertions are not yet broadened across all metadata families, and JDBC result-shape parity is still incomplete.
 
 ## Remaining Concrete Gaps
 
 - Add non-skippable gate execution for metadata live integration assertions.
-- Add live restriction-aware metadata row materialization assertions (`QueryMetadataRows`/`GetSchemaRows`) against a running endpoint.
+- Expand live restriction-aware metadata row materialization assertions (`QueryMetadataRows`/`GetSchemaRows`) from `schemas` into tables/columns/indexes/constraints/routines collections.
 - JDBC metadata result-shape parity remains incomplete for richer per-family columns/flags.

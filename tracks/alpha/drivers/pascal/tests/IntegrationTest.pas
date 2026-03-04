@@ -15,7 +15,7 @@ uses
   cthreads,
   {$ENDIF}
   SysUtils, Variants,
-  ScratchBird.Client, ScratchBird.Sql;
+  ScratchBird.Client, ScratchBird.Sql, ScratchBird.Metadata;
 
 var
   Dsn: string;
@@ -182,6 +182,12 @@ begin
 end;
 
 procedure TestMetadataFamiliesAndRestrictions(AClient: TScratchBirdClient);
+var
+  SchemaRows: TMetadataRows;
+  FilteredRows: TMetadataRows;
+  Restrictions: TMetadataRow;
+  SchemaValue: Variant;
+  SchemaName: string;
 begin
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'schemas');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'tables');
@@ -195,6 +201,34 @@ begin
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'indexes');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'constraints');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'routines');
+
+  SchemaRows := AClient.QueryMetadataRows('schemas');
+  AssertTrue(Length(SchemaRows) > 0, 'QueryMetadataRows(schemas) should return at least one row');
+  if MetadataRowTryGetValue(SchemaRows[0], 'schema_name', SchemaValue) or
+     MetadataRowTryGetValue(SchemaRows[0], 'TABLE_SCHEM', SchemaValue) or
+     MetadataRowTryGetValue(SchemaRows[0], 'table_schema', SchemaValue) then
+  begin
+    AssertTrue((not VarIsNull(SchemaValue)) and (not VarIsEmpty(SchemaValue)), 'schema value should not be null');
+    SchemaName := VarToStr(SchemaValue);
+  end
+  else
+    Fail('QueryMetadataRows(schemas) row does not expose schema name field');
+  AssertTrue(SchemaName <> '', 'schema value should not be empty');
+
+  SetLength(Restrictions, 1);
+  Restrictions[0].Name := 'schema';
+  Restrictions[0].Value := SchemaName;
+  FilteredRows := AClient.QueryMetadataRows('schemas', Restrictions);
+  AssertTrue(Length(FilteredRows) > 0, 'restricted QueryMetadataRows(schemas) should return rows');
+  if MetadataRowTryGetValue(FilteredRows[0], 'schema_name', SchemaValue) or
+     MetadataRowTryGetValue(FilteredRows[0], 'TABLE_SCHEM', SchemaValue) or
+     MetadataRowTryGetValue(FilteredRows[0], 'table_schema', SchemaValue) then
+  begin
+    AssertTrue((not VarIsNull(SchemaValue)) and (not VarIsEmpty(SchemaValue)), 'restricted schema value should not be null');
+    AssertTrue(VarToStr(SchemaValue) = SchemaName, 'restricted schema value should match requested schema');
+  end
+  else
+    Fail('restricted QueryMetadataRows(schemas) row does not expose schema name field');
 end;
 
 procedure TestTypeCoverageFixture(AClient: TScratchBirdClient);
