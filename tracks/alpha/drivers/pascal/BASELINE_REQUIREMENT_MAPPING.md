@@ -87,7 +87,7 @@
   - `src/ScratchBird.Metadata.pas:160` (`NormalizeMetadataCollectionName`, alias normalization across schema/table/index/constraint/routine/catalog/key/privilege/type metadata families)
   - `src/ScratchBird.Metadata.pas:184` (`ResolveMetadataCollectionQuery`, metadata collection to SQL resolution)
   - `src/ScratchBird.Metadata.pas:443`, `src/ScratchBird.Metadata.pas:696` (`MetadataCollectionRestrictionKeys` includes routines restriction aliases; `FilterMetadataRowsByRestrictions` provides collection-scoped wildcard/null filtering)
-  - `src/ScratchBird.Metadata.pas:808`, `src/ScratchBird.Metadata.pas:813`, `src/ScratchBird.Metadata.pas:818`, `src/ScratchBird.Metadata.pas:823`, `src/ScratchBird.Metadata.pas:828`, `src/ScratchBird.Metadata.pas:833`, `src/ScratchBird.Metadata.pas:838` (routines/catalogs/primary_keys/foreign_keys/table_privileges/column_privileges/type_info query builders; procedures/functions/routines sourced via `information_schema.routines`)
+  - `src/ScratchBird.Metadata.pas:775`, `src/ScratchBird.Metadata.pas:780`, `src/ScratchBird.Metadata.pas:785`, `src/ScratchBird.Metadata.pas:795`, `src/ScratchBird.Metadata.pas:800`, `src/ScratchBird.Metadata.pas:805`, `src/ScratchBird.Metadata.pas:810`, `src/ScratchBird.Metadata.pas:815`, `src/ScratchBird.Metadata.pas:820`, `src/ScratchBird.Metadata.pas:825`, `src/ScratchBird.Metadata.pas:830`, `src/ScratchBird.Metadata.pas:835`, `src/ScratchBird.Metadata.pas:840` (table/column/index/constraint/routine/catalog/key/privilege/type query builders with schema/table alias enrichment; procedures/functions/routines sourced via `information_schema.routines`)
   - `src/ScratchBird.Metadata.pas:843` (`ExpandSchemaPaths`, dotted parent expansion + de-duplication)
   - `src/ScratchBird.Metadata.pas:878` (`ListMetadataSchemaPaths`, metadata-row schema extraction + optional parent expansion)
   - `src/ScratchBird.Metadata.pas:906` (`ExpandSchemaMetadataRows`, synthetic ancestor-row shaping for recursive navigation)
@@ -116,7 +116,7 @@
 - Gaps/next actions:
   - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
   - Live restriction checks are family-local and may skip when a collection has no rows or no compatible filter field in the current fixture; add fixture-backed coverage so these paths are non-skippable.
-  - Extend result-shape parity fields to align more tightly with JDBC metadata contracts across collection families.
+  - Extend remaining JDBC-parity metadata fields/flags across collection families beyond current schema/table alias enrichment.
 
 ## TYPE (JDBCBL: TYPE)
 - Current status: Partial

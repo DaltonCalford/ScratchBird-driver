@@ -774,17 +774,17 @@ end;
 
 function MetadataTablesQuery: string;
 begin
-  Result := 'SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name';
+  Result := 'SELECT t.table_id, t.schema_id, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, t.table_name, t.table_type, t.owner_id FROM sys.tables t LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_valid = 1 AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name';
 end;
 
 function MetadataColumnsQuery: string;
 begin
-  Result := 'SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position';
+  Result := 'SELECT c.column_id, c.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, c.column_name, c.data_type_id, c.data_type_name, c.ordinal_position, c.is_nullable, c.default_value, c.domain_id, c.collation_id, c.charset_id, c.is_identity, c.is_generated, c.generation_expression FROM sys.columns c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name, c.ordinal_position';
 end;
 
 function MetadataIndexesQuery: string;
 begin
-  Result := 'SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name';
+  Result := 'SELECT i.index_id, i.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, i.index_name, i.index_type, i.is_unique FROM sys.indexes i LEFT JOIN sys.tables t ON t.table_id = i.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE i.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name, i.index_name';
 end;
 
 function MetadataIndexColumnsQuery: string;
@@ -794,22 +794,22 @@ end;
 
 function MetadataConstraintsQuery: string;
 begin
-  Result := 'SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name';
+  Result := 'SELECT c.constraint_id, c.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name, c.constraint_name';
 end;
 
 function MetadataProceduresQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_name AS procedure_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' ORDER BY schema_id, procedure_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS procedure_name, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' ORDER BY schema_name, procedure_name';
 end;
 
 function MetadataFunctionsQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_name AS function_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_id, function_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS function_name, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, function_name';
 end;
 
 function MetadataRoutinesQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' UNION ALL SELECT routine_schema AS schema_id, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_id, routine_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' UNION ALL SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, routine_name';
 end;
 
 function MetadataCatalogsQuery: string;
@@ -819,22 +819,22 @@ end;
 
 function MetadataPrimaryKeysQuery: string;
 begin
-  Result := 'SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN (''primary key'', ''primary'') ORDER BY table_id, constraint_name';
+  Result := 'SELECT c.constraint_id, c.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) AND lower(constraint_type) IN (''primary key'', ''primary'') ORDER BY s.schema_name, t.table_name, c.constraint_name';
 end;
 
 function MetadataForeignKeysQuery: string;
 begin
-  Result := 'SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN (''foreign key'', ''foreign'') ORDER BY table_id, constraint_name';
+  Result := 'SELECT c.constraint_id, c.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) AND lower(constraint_type) IN (''foreign key'', ''foreign'') ORDER BY s.schema_name, t.table_name, c.constraint_name';
 end;
 
 function MetadataTablePrivilegesQuery: string;
 begin
-  Result := 'SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, ''ALL'' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name';
+  Result := 'SELECT t.table_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, t.owner_id AS grantor_id, t.owner_id AS grantee_id, ''ALL'' AS privilege_type FROM sys.tables t LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_valid = 1 AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name';
 end;
 
 function MetadataColumnPrivilegesQuery: string;
 begin
-  Result := 'SELECT table_id, column_id, column_name, ''ALL'' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position';
+  Result := 'SELECT c.table_id, c.column_id, t.table_name, s.schema_name, s.schema_name AS table_schema, s.schema_name AS table_schem, c.column_name, ''ALL'' AS privilege_type FROM sys.columns c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND (t.table_id IS NULL OR t.is_valid = 1) AND (s.schema_id IS NULL OR s.is_valid = 1) ORDER BY s.schema_name, t.table_name, c.ordinal_position';
 end;
 
 function MetadataTypeInfoQuery: string;
