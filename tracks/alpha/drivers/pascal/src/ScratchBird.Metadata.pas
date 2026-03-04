@@ -799,17 +799,17 @@ end;
 
 function MetadataProceduresQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS procedure_name, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' ORDER BY schema_name, procedure_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS procedure_name, routine_name AS routine_name, routine_name AS specific_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' ORDER BY schema_name, procedure_name';
 end;
 
 function MetadataFunctionsQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS function_name, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, function_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS function_name, routine_name AS routine_name, routine_name AS specific_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, function_name';
 end;
 
 function MetadataRoutinesQuery: string;
 begin
-  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' UNION ALL SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, routine_name';
+  Result := 'SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_name AS specific_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''procedure'' UNION ALL SELECT routine_schema AS schema_id, routine_schema AS schema_name, routine_schema AS table_schema, routine_schema AS table_schem, routine_name AS routine_name, routine_name AS specific_name, routine_type FROM information_schema.routines WHERE lower(routine_type) = ''function'' ORDER BY schema_name, routine_name';
 end;
 
 function MetadataCatalogsQuery: string;
@@ -839,7 +839,7 @@ end;
 
 function MetadataTypeInfoQuery: string;
 begin
-  Result := 'SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name';
+  Result := 'SELECT DISTINCT data_type_id, data_type_name, data_type_name AS type_name, data_type_name AS data_type FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name';
 end;
 
 function ExpandSchemaPaths(const SchemaPaths: array of string): TArray<string>;

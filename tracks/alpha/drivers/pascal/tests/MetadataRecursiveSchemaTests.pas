@@ -248,6 +248,7 @@ begin
   AssertContains('AS catalog_name', SqlText, 'catalogs query resolution');
   SqlText := ResolveMetadataCollectionQuery('routines');
   AssertContains('UNION ALL', SqlText, 'routines query resolution');
+  AssertContains('specific_name', SqlText, 'routines query includes specific_name alias');
   SqlText := ResolveMetadataCollectionQuery('primary_keys');
   AssertContains('lower(constraint_type)', SqlText, 'primary keys query resolution');
   SqlText := ResolveMetadataCollectionQuery('foreign_keys');
@@ -262,6 +263,7 @@ begin
   AssertContains('FROM sys.columns', SqlText, 'column privileges query resolution');
   SqlText := ResolveMetadataCollectionQuery('type_info');
   AssertContains('SELECT DISTINCT', SqlText, 'type info query resolution');
+  AssertContains('AS type_name', SqlText, 'type info query includes type_name alias');
 
   try
     ResolveMetadataCollectionQuery('unsupported_metadata_family');
