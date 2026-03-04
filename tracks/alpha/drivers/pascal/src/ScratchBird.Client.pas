@@ -1355,6 +1355,10 @@ begin
         FLastSblr := Compiled;
         FHasLastSblr := True;
       end;
+    MSG_NOTICE:
+      begin
+        // Notice payloads are informational; keep result-stream processing uninterrupted.
+      end;
   else
     Result := False;
   end;

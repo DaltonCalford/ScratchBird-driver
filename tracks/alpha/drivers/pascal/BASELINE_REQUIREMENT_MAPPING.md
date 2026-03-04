@@ -51,6 +51,7 @@
   - `src/ScratchBird.Client.pas:175`, `src/ScratchBird.Client.pas:775` (first-class `ExecuteBatch` API with per-statement summary output)
   - `src/ScratchBird.Client.pas:176`, `src/ScratchBird.Client.pas:798` (first-class `QueryMulti` API with rowset materialization per statement)
   - `src/ScratchBird.Client.pas:374` (`MSG_PORTAL_SUSPENDED` resume path emits `MSG_EXECUTE` with current max rows)
+  - `src/ScratchBird.Client.pas:1358` (`HandleAsyncMessage` now treats `MSG_NOTICE` as informational async traffic during result-stream reads)
   - `src/ScratchBird.Client.pas:48`, `src/ScratchBird.Client.pas:371`, `src/ScratchBird.Client.pas:372` (`TScratchBirdResultStream` generated-key exposure via `LastInsertId`/`HasLastInsertId` from `MSG_COMMAND_COMPLETE`)
   - `src/ScratchBird.Client.pas:274`, `src/ScratchBird.Common.pas:111`
   - `src/ScratchBird.Sql.pas:50`, `src/ScratchBird.Sql.pas:114`, `src/ScratchBird.Sql.pas:151`, `src/ScratchBird.Sql.pas:157`
@@ -67,6 +68,7 @@
   - `tests/StreamControlBackpressureTests.pas:200` (client `StreamControl` emits `MSG_STREAM_CONTROL` with encoded window/timeout payload)
   - `tests/StreamControlBackpressureTests.pas:221` (`MSG_PORTAL_SUSPENDED` read loop triggers `MSG_EXECUTE` resume/backpressure follow-up)
   - `tests/StreamControlBackpressureTests.pas:257` (result stream captures generated key metadata via `LastInsertId`/`HasLastInsertId`)
+  - `tests/StreamControlBackpressureTests.pas:286` (result stream ignores async `MSG_NOTICE` frames without surfacing unsupported-message failures)
   - `tests/AdapterPrepareLifecycleTests.pas:146` (adapter prepare guardrails for missing connection/database assignment)
   - `tests/AdapterPrepareLifecycleTests.pas:218` (FireDAC prepare snapshot and normalized parameter ordering reuse on exec)
   - `tests/AdapterPrepareLifecycleTests.pas:247` (IBX prepare snapshot and normalized parameter ordering reuse on exec)

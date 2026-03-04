@@ -283,11 +283,40 @@ begin
   end;
 end;
 
+procedure TestResultStreamIgnoresNoticeMessages;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  Stream: TScratchBirdResultStream;
+  Row: TArray<Variant>;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport);
+  try
+    Transport.QueueInbound(EncodeMessage(MSG_NOTICE, nil, 0, 1, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_COMMAND_COMPLETE, BuildCommandCompletePayload(0, 0, 0, 'SELECT 0'), 0, 2, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 3, nil, 0));
+
+    Stream := TScratchBirdResultStream.Create(Client);
+    try
+      Row := Stream.ReadRow;
+      AssertTrue(Row = nil, 'notice-prefixed stream should complete with no row');
+      AssertEqualInt64(0, Stream.RowsAffected, 'notice-prefixed rows affected');
+      AssertEqualString('SELECT 0', Stream.CommandTag, 'notice-prefixed command tag');
+    finally
+      Stream.Free;
+    end;
+  finally
+    Client.Free;
+  end;
+end;
+
 begin
   try
     TestStreamControlWritesEncodedWindowMessage;
     TestPortalSuspendedTriggersExecuteResume;
     TestResultStreamCapturesLastInsertId;
+    TestResultStreamIgnoresNoticeMessages;
     Writeln('StreamControlBackpressureTests: OK');
   except
     on E: Exception do

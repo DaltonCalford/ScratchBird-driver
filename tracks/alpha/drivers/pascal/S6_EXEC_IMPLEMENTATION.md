@@ -40,6 +40,7 @@ Scope: close `EXEC` evidence gaps with deterministic lane-local tests (adapter `
      - `TScratchBirdResultStream.ReadRow` portal-suspended path emitting `MSG_EXECUTE` resume (`BuildExecutePayload('', CurrentMaxRows)`).
      - command completion metadata (`CommandTag`, `RowsAffected`) through the resume path.
      - generated-key metadata capture (`LastInsertId`, `HasLastInsertId`) from `MSG_COMMAND_COMPLETE` payload `LastId`.
+     - async `MSG_NOTICE` handling in result streams via `TScratchBirdClient.HandleAsyncMessage`, preventing unsupported-message failures during stream/read loops.
 
 4. First-class batch execution API with deterministic coverage
    - Files:
