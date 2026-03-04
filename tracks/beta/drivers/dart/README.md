@@ -42,3 +42,4 @@ Future<void> main() async {
 Integration tests use:
 
 - `SCRATCHBIRD_TEST_DSN`
+- `SCRATCHBIRD_TEST_MANAGER_DSN` (for manager-proxy connection path)

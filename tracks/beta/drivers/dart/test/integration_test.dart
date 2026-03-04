@@ -10,6 +10,12 @@ final String? _integrationSkipReason =
     (_testDsn == null || _testDsn!.trim().isEmpty)
         ? 'SCRATCHBIRD_TEST_DSN not set'
         : null;
+final String? _managerDsn =
+    Platform.environment['SCRATCHBIRD_TEST_MANAGER_DSN'];
+final String? _managerIntegrationSkipReason =
+    (_managerDsn == null || _managerDsn!.trim().isEmpty)
+        ? 'SCRATCHBIRD_TEST_MANAGER_DSN not set'
+        : null;
 
 ScratchBirdConfig _integrationConfig() {
   final dsn = _testDsn;
@@ -21,6 +27,24 @@ ScratchBirdConfig _integrationConfig() {
 
 Future<ScratchBirdClient> _connectClient() {
   return ScratchBirdClient.connect(_integrationConfig());
+}
+
+ScratchBirdConfig _managerIntegrationConfig() {
+  final dsn = _managerDsn;
+  if (dsn == null || dsn.trim().isEmpty) {
+    throw StateError('SCRATCHBIRD_TEST_MANAGER_DSN not set');
+  }
+  final config = ScratchBirdConfig.fromDsn(dsn);
+  if (config.frontDoorMode != 'manager_proxy') {
+    throw StateError(
+      'SCRATCHBIRD_TEST_MANAGER_DSN must include front_door_mode=manager_proxy',
+    );
+  }
+  return config;
+}
+
+Future<ScratchBirdClient> _connectManagerClient() {
+  return ScratchBirdClient.connect(_managerIntegrationConfig());
 }
 
 void main() {
@@ -38,6 +62,22 @@ void main() {
       }
     },
     skip: _integrationSkipReason,
+  );
+
+  test(
+    'integration manager-proxy connect and basic query',
+    () async {
+      final client = await _connectManagerClient();
+      try {
+        final result = await client.query('SELECT 1');
+        expect(result.rows, isNotEmpty);
+        expect(result.rows.first, isNotEmpty);
+        expect(result.rows.first.first, equals(1));
+      } finally {
+        await client.close();
+      }
+    },
+    skip: _managerIntegrationSkipReason,
   );
 
   test(

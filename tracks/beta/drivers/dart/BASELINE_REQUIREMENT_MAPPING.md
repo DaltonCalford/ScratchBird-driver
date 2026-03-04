@@ -18,9 +18,9 @@
 - Lane-local test anchors:
   - `test/config_test.dart:13-37` DSN parsing, manager proxy parameters, invalid front-door validation.
   - `test/connect_validation_test.dart:24-63` connect-time policy rejection coverage (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
-  - `test/integration_test.dart:27-41` live direct connect/query smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:50-80` live direct and manager-proxy connect/query smoke coverage (gated by `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`).
 - Gaps/next actions:
-  - Add manager-proxy integration coverage for `_performManagerConnect` and manager handshake/auth failure paths.
+  - Add manager-proxy integration coverage for handshake/auth/connect failure paths (invalid token, truncated manager frames, non-success MCP status).
 
 ## TXN (JDBCBL)
 
@@ -34,7 +34,7 @@
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:19-60` TXN guardrail checks (`commit`/`rollback`/`savepoint` require active transaction).
   - `test/txn_exec_parity_test.dart:63-101` TXN payload encoding coverage for begin and savepoint/release/rollback-to payloads.
-  - `test/integration_test.dart:78-124` live begin/commit/rollback/savepoint lifecycle and nested-begin rejection coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:117-166` live begin/commit/rollback/savepoint lifecycle and nested-begin rejection coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
   - Add live integration tests for server-side TXN failure paths (invalid savepoint, conflict, forced rollback conditions).
 
@@ -50,7 +50,7 @@
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:104-131` EXEC guardrail checks (`query` empty SQL rejection, cancel-without-inflight rejection).
   - `test/txn_exec_parity_test.dart:134-171` EXEC payload encoding coverage for query/execute/cancel payload contracts.
-  - `test/integration_test.dart:27-57` live simple and parameterized query coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:50-96` live simple and parameterized query coverage (gated by `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`).
 - Gaps/next actions:
   - Add integration tests for pagination (`portalSuspended` path) and SBLR execution.
   - Add focused execution tests for async message capture paths (`queryPlan`, `notification`, `sblrCompiled`) under live wire flow.
@@ -71,7 +71,7 @@
   - `test/metadata_recursive_schema_test.dart:35-58` dotted schema parent expansion ordering/uniqueness in path extraction.
   - `test/metadata_recursive_schema_test.dart:60-79` per-parent uniqueness for duplicate leaf paths.
   - `test/metadata_recursive_schema_test.dart:81-107` same leaf name under different parents remains distinct in recursive schema tree.
-  - `test/integration_test.dart:126-144` live metadata wrapper execution coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:168-186` live metadata wrapper execution coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
   - Add live metadata integration coverage for restrictions/wildcards and DDL-editor payload fields.
 
@@ -86,8 +86,8 @@
 - Lane-local test anchors:
   - `test/type_mapping_test.dart:38-101` array/vector/range/composite/inet-cidr-macaddr round-trip coverage.
   - `test/type_mapping_test.dart:103-230` scalar decode coverage, text-vs-unknown decode behavior, and negative-path range/composite/unsupported-type checks.
-  - `test/integration_test.dart:59-76` live scalar type round-trip smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
-  - `test/integration_test.dart:146-178` live json/jsonb round-trip coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:98-115` live scalar type round-trip smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:188-220` live json/jsonb round-trip coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
   - Add live integration tests validating binary wire round-trip behavior for complex types (range/composite/vector/inet-cidr-macaddr).
 
