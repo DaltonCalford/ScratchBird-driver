@@ -349,75 +349,34 @@ def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
     text = _decode_text_value(data)
     stripped = text.strip()
     if type_oid == OID_BOOL:
-        lowered = stripped.lower()
-        if lowered in ("t", "true"):
-            return True
-        if lowered in ("f", "false"):
-            return False
-        return text
+        return stripped.lower() in ("t", "true")
     if type_oid == OID_INT2:
-        try:
-            return int(stripped)
-        except ValueError:
-            return text
+        return int(stripped)
     if type_oid == OID_INT4:
-        try:
-            return int(stripped)
-        except ValueError:
-            return text
+        return int(stripped)
     if type_oid == OID_INT8:
-        try:
-            return int(stripped)
-        except ValueError:
-            return text
+        return int(stripped)
     if type_oid == OID_FLOAT4:
-        try:
-            return float(stripped)
-        except ValueError:
-            return text
+        return float(stripped)
     if type_oid == OID_FLOAT8:
-        try:
-            return float(stripped)
-        except ValueError:
-            return text
+        return float(stripped)
     if type_oid == OID_NUMERIC:
-        try:
-            return _decimal.Decimal(stripped)
-        except _decimal.InvalidOperation:
-            return text
+        return _decimal.Decimal(stripped)
     if type_oid == OID_DATE:
-        try:
-            return _dt.date.fromisoformat(stripped)
-        except ValueError:
-            return text
+        return _dt.date.fromisoformat(stripped)
     if type_oid == OID_TIME:
-        try:
-            return _dt.time.fromisoformat(stripped)
-        except ValueError:
-            return text
+        return _dt.time.fromisoformat(stripped)
     if type_oid == OID_TIMETZ:
-        try:
-            return _dt.time.fromisoformat(_normalize_temporal_text(stripped))
-        except ValueError:
-            return text
+        return _dt.time.fromisoformat(_normalize_temporal_text(stripped))
     if type_oid == OID_TIMESTAMP:
-        try:
-            return _dt.datetime.fromisoformat(_normalize_temporal_text(stripped)).replace(tzinfo=None)
-        except ValueError:
-            return text
+        return _dt.datetime.fromisoformat(_normalize_temporal_text(stripped)).replace(tzinfo=None)
     if type_oid == OID_TIMESTAMPTZ:
-        try:
-            parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(stripped))
-        except ValueError:
-            return text
+        parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(stripped))
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=_dt.timezone.utc)
         return parsed
     if type_oid == OID_UUID:
-        try:
-            return uuid.UUID(stripped)
-        except ValueError:
-            return text
+        return uuid.UUID(stripped)
     if type_oid == OID_BYTEA:
         return _decode_bytea_text(stripped)
     return text

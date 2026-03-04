@@ -13,6 +13,8 @@ import enum
 import struct
 import uuid
 
+import pytest
+
 from scratchbird.types import (
     Blob,
     Clob,
@@ -209,6 +211,22 @@ def test_decode_numeric_scalar_text_payloads():
     assert decode_value(OID_INT4, b"42", FORMAT_TEXT) == 42
     assert decode_value(OID_FLOAT8, b"3.5", FORMAT_TEXT) == 3.5
     assert decode_value(OID_NUMERIC, b"12.34", FORMAT_TEXT) == decimal.Decimal("12.34")
+
+
+def test_decode_bool_scalar_text_non_true_tokens_map_to_false():
+    assert decode_value(OID_BOOL, b"f", FORMAT_TEXT) is False
+    assert decode_value(OID_BOOL, b"not-a-bool", FORMAT_TEXT) is False
+
+
+def test_decode_typed_text_payloads_raise_on_invalid_parse():
+    with pytest.raises(ValueError):
+        decode_value(OID_INT4, b"bad-int", FORMAT_TEXT)
+    with pytest.raises(ValueError):
+        decode_value(OID_FLOAT8, b"bad-float", FORMAT_TEXT)
+    with pytest.raises(decimal.InvalidOperation):
+        decode_value(OID_NUMERIC, b"bad-numeric", FORMAT_TEXT)
+    with pytest.raises(ValueError):
+        decode_value(OID_DATE, b"bad-date", FORMAT_TEXT)
 
 
 def test_decode_time_text_payload_to_time():
