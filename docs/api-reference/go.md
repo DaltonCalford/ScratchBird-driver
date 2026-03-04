@@ -36,6 +36,7 @@ Advanced protocol operations are available on `*scratchbird.Conn` (driver.Conn):
 - `QuerySblr(ctx, hash, bytecode, params)`, `ExecSblr(ctx, hash, bytecode, params)`
 - `StreamControl(ctx, controlType, windowSize, timeoutMs)`
 - `AttachCreate(ctx, emulationMode, dbName)`, `AttachDetach(ctx)`, `AttachList(ctx)`
+- `QueryMetadata(ctx, collection)`, `QueryMetadataWithRestrictions(ctx, collection, restrictions)`
 
 ## Wrapper Types
 

@@ -1,6 +1,6 @@
 # DLB-PHP-004 S3 Metadata Implementation
 
-Date: 2026-03-03  
+Date: 2026-03-04  
 Lane: `tracks/alpha/drivers/php`
 
 ## What Changed
@@ -32,9 +32,16 @@ Lane: `tracks/alpha/drivers/php`
 4. Added metadata execution tests in `tests/MetadataExecutionTest.php` covering:
    - extended alias normalization,
    - extended collection query resolution,
-   - connection-level metadata execution path (`Connection::getSchema(...)`) with wire-fixture validation of emitted metadata SQL,
+   - connection-level metadata execution path (`Connection::queryMetadata(...)` / `Connection::getSchema(...)`) with wire-fixture validation of emitted metadata SQL,
+   - restriction-aware metadata filtering (`Metadata::filterRowsByRestrictions(...)`) with alias matching, null matching, and unknown-key ignore behavior,
+   - wire-level restriction filtering behavior through `Connection::getSchema(..., $restrictions)`,
    - unsupported collection mapping to `ScratchBirdNotSupportedException` (`0A000`).
-5. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence anchors and status note.
+5. Added first-class restriction filtering in `src/Metadata.php` and `src/Connection.php`:
+   - `Metadata::normalizeRestrictions(...)`
+   - `Metadata::filterRowsByRestrictions(...)`
+   - alias/collection restriction key maps for metadata families
+   - `Connection::queryMetadata(...)` plus optional restriction-aware filtering in `Connection::getSchema(...)` and `Connection::getSchemaTree(...)`.
+6. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence anchors and status note.
 
 ## Tests Run
 
@@ -47,8 +54,9 @@ Recommendation: `Partial`
 
 Why:
 - The lane now has executable metadata collection routing and validation for extended metadata families plus wire-level execution-path tests.
+- First-class restriction-aware metadata filtering is now implemented and tested in-lane.
 - Recursive schema-tree shaping behavior remains covered with dedicated tests.
-- Status remains `Partial` because live metadata integration assertions and richer restriction-aware metadata shaping are still pending.
+- Status remains `Partial` because live metadata integration assertions are still pending.
 
 ## Blockers
 

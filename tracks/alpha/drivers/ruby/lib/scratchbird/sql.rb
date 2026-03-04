@@ -23,6 +23,38 @@ module Scratchbird
       rewrite_named(sql, params)
     end
 
+    def self.normalize_callable(sql, params = nil)
+      callable_sql = normalize_callable_sql(sql)
+      normalize(callable_sql, params)
+    end
+
+    def self.normalize_callable_sql(sql)
+      trimmed = sql.to_s.strip
+      return sql unless trimmed.start_with?("{") && trimmed.end_with?("}")
+
+      inner = trimmed[1...-1].to_s.strip
+      return sql if inner.empty?
+
+      if inner.start_with?("?")
+        after_question = inner[1..].to_s.lstrip
+        if after_question.start_with?("=")
+          after_equals = after_question[1..].to_s.lstrip
+          if starts_with_call?(after_equals)
+            invocation = parse_callable_invocation(after_equals[4..].to_s.lstrip)
+            args = invocation[:has_parens] ? invocation[:args] : ""
+            return "select #{invocation[:routine]}(#{args}) as return_value"
+          end
+        end
+      end
+
+      if starts_with_call?(inner)
+        invocation = parse_callable_invocation(inner[4..].to_s.lstrip)
+        return invocation[:has_parens] ? "call #{invocation[:routine]}(#{invocation[:args]})" : "call #{invocation[:routine]}"
+      end
+
+      sql
+    end
+
     def self.has_named_params?(sql)
       in_string = false
       i = 0
@@ -114,6 +146,75 @@ module Scratchbird
 
     def self.ident_part?(ch)
       /[A-Za-z0-9_]/.match?(ch)
+    end
+
+    def self.starts_with_call?(value)
+      value.to_s[0, 4].to_s.casecmp("call").zero?
+    end
+
+    def self.parse_callable_invocation(value)
+      text = value.to_s
+      open_paren = text.index("(")
+      if open_paren.nil?
+        routine = text.strip
+        raise ArgumentError, "invalid JDBC escape call syntax" if routine.empty?
+        return { routine: routine, args: "", has_parens: false }
+      end
+
+      in_single = false
+      in_double = false
+      depth = 0
+      close_paren = nil
+      i = open_paren
+      while i < text.length
+        ch = text[i]
+        if ch == "'" && !in_double
+          if in_single && i + 1 < text.length && text[i + 1] == "'"
+            i += 2
+            next
+          end
+          in_single = !in_single
+          i += 1
+          next
+        end
+        if ch == '"' && !in_single
+          if in_double && i + 1 < text.length && text[i + 1] == '"'
+            i += 2
+            next
+          end
+          in_double = !in_double
+          i += 1
+          next
+        end
+        if in_single || in_double
+          i += 1
+          next
+        end
+        if ch == "("
+          depth += 1
+          i += 1
+          next
+        end
+        if ch == ")"
+          depth -= 1
+          if depth == 0
+            close_paren = i
+            break
+          end
+        end
+        i += 1
+      end
+
+      raise ArgumentError, "invalid JDBC escape call syntax" if close_paren.nil?
+
+      routine = text[0...open_paren].to_s.strip
+      raise ArgumentError, "invalid JDBC escape call syntax" if routine.empty?
+
+      trailing = text[(close_paren + 1)..].to_s.strip
+      raise ArgumentError, "invalid JDBC escape call syntax" unless trailing.empty?
+
+      args = text[(open_paren + 1)...close_paren].to_s.strip
+      { routine: routine, args: args, has_parens: true }
     end
   end
 end

@@ -16,6 +16,25 @@ namespace ScratchBird.Data.Tests;
 public class TypeDecoderTests
 {
     [Fact]
+    public void EncodeParam_JsonObject_UsesJsonOid()
+    {
+        var encoded = TypeDecoder.EncodeParam(new { role = "admin", active = true });
+
+        Assert.Equal(TypeDecoder.OidJson, encoded.Oid);
+        Assert.NotNull(encoded.Param.Data);
+        var raw = Encoding.UTF8.GetString(encoded.Param.Data!, 4, encoded.Param.Data!.Length - 4);
+        Assert.Contains("\"role\":\"admin\"", raw);
+    }
+
+    [Fact]
+    public void EncodeParam_RejectsJsonbWithoutPayload()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            TypeDecoder.EncodeParam(new ScratchBirdJsonb(Array.Empty<byte>())));
+        Assert.Contains("JSONB requires raw payload", ex.Message);
+    }
+
+    [Fact]
     public void DecodeUuidBinary_StripsLengthPrefix()
     {
         var guid = Guid.Parse("11111111-2222-3333-4444-555555555555");
@@ -74,6 +93,85 @@ public class TypeDecoderTests
         var decoded = TypeDecoder.Decode(TypeDecoder.OidSbVector, encoded, (byte)TypeDecoder.FormatBinary);
         var vector = Assert.IsType<float[]>(decoded);
         Assert.Equal(new[] { 1.5f, 2.0f, 3.25f }, vector);
+    }
+
+    [Fact]
+    public void DecodeMoneyBinary_ReturnsDecimal()
+    {
+        var encoded = new byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(encoded, 12345);
+
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidMoney, encoded, (byte)TypeDecoder.FormatBinary);
+
+        Assert.Equal(123.45m, Assert.IsType<decimal>(decoded));
+    }
+
+    [Fact]
+    public void DecodeJsonbBinary_ReturnsScratchBirdJsonb()
+    {
+        var encoded = WithLengthPrefix(Encoding.UTF8.GetBytes("{\"k\":1}"));
+
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidJsonb, encoded, (byte)TypeDecoder.FormatBinary);
+        var jsonb = Assert.IsType<ScratchBirdJsonb>(decoded);
+
+        Assert.Equal("{\"k\":1}", Encoding.UTF8.GetString(jsonb.Raw));
+    }
+
+    [Fact]
+    public void DecodeInt8RangeBinary_ReturnsExpectedBounds()
+    {
+        var encoded = new byte[4 + 4 + 8 + 4 + 8];
+        BinaryPrimitives.WriteInt32LittleEndian(encoded.AsSpan(4, 4), 8);
+        BinaryPrimitives.WriteInt64LittleEndian(encoded.AsSpan(8, 8), 10);
+        BinaryPrimitives.WriteInt32LittleEndian(encoded.AsSpan(16, 4), 8);
+        BinaryPrimitives.WriteInt64LittleEndian(encoded.AsSpan(20, 8), 20);
+
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidInt8Range, encoded, (byte)TypeDecoder.FormatBinary);
+        var range = Assert.IsType<ScratchBirdRange<long>>(decoded);
+
+        Assert.False(range.Empty);
+        Assert.Equal(10, range.Lower);
+        Assert.Equal(20, range.Upper);
+    }
+
+    [Fact]
+    public void DecodeCompositeBinary_ReturnsFields()
+    {
+        var composite = new ScratchBirdComposite(
+            new[] { new ScratchBirdCompositeField(TypeDecoder.OidInt4, 77) }
+        );
+        var encoded = TypeDecoder.EncodeParam(composite);
+
+        Assert.Equal(TypeDecoder.OidRecord, encoded.Oid);
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidRecord, encoded.Param.Data, (byte)TypeDecoder.FormatBinary);
+        var value = Assert.IsType<ScratchBirdComposite>(decoded);
+
+        var field = Assert.Single(value.Fields);
+        Assert.Equal(TypeDecoder.OidInt4, field.Oid);
+        Assert.Equal(77, Assert.IsType<int>(field.Value));
+    }
+
+    [Fact]
+    public void DecodeUnknownValues_UsesTextHeuristics()
+    {
+        var boolText = TypeDecoder.Decode(0, Encoding.UTF8.GetBytes("true"), (byte)TypeDecoder.FormatText);
+        Assert.True(Assert.IsType<bool>(boolText));
+
+        var intText = TypeDecoder.Decode(0, Encoding.UTF8.GetBytes("42"), (byte)TypeDecoder.FormatText);
+        Assert.Equal(42, Assert.IsType<int>(intText));
+
+        var binaryTrimmedText = TypeDecoder.Decode(0, new byte[] { (byte)'4', (byte)'2', 0 }, (byte)TypeDecoder.FormatBinary);
+        Assert.Equal(42, Assert.IsType<int>(binaryTrimmedText));
+    }
+
+    [Fact]
+    public void OidAndClrTypeMappings_ResolveKnownAndUnknownTypes()
+    {
+        Assert.Equal("vector", TypeDecoder.OidToString(TypeDecoder.OidSbVector));
+        Assert.Equal("unknown", TypeDecoder.OidToString(999999));
+
+        Assert.Equal(typeof(ScratchBirdRange<long>), TypeDecoder.GetClrType(TypeDecoder.OidInt8Range));
+        Assert.Equal(typeof(object), TypeDecoder.GetClrType(999999));
     }
 
     private static byte[] GuidToDriverBytes(Guid guid)

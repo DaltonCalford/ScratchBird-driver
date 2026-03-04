@@ -339,9 +339,9 @@ final class TypeDecoder
         $len = strlen($data);
         return match ($len) {
             1 => ord($data[0]),
-            2 => self::readInt16LE($data),
-            4 => self::readInt32LE($data),
-            8 => self::readInt64LE($data),
+            2 => self::readInt16($data),
+            4 => self::readInt32($data),
+            8 => self::readInt64($data),
             16 => self::decodeUuid($data),
             default => $data,
         };
@@ -402,7 +402,7 @@ final class TypeDecoder
     {
         $fields = $value->fields ?? [];
         $typeOid = $value->typeOid ?: self::OID_RECORD;
-        $buffer = pack('l<', count($fields));
+        $buffer = self::packInt32(count($fields));
         foreach ($fields as $field) {
             $fieldOid = $field->oid ?? 0;
             $data = null;
@@ -420,10 +420,10 @@ final class TypeDecoder
             }
             $buffer .= pack('V', $fieldOid);
             if ($data === null) {
-                $buffer .= pack('l<', -1);
+                $buffer .= self::packInt32(-1);
                 continue;
             }
-            $buffer .= pack('l<', strlen($data));
+            $buffer .= self::packInt32(strlen($data));
             $buffer .= $data;
         }
         return ['data' => $buffer, 'oid' => $typeOid];
@@ -434,7 +434,7 @@ final class TypeDecoder
         if (strlen($data) < 4) {
             return new Composite([]);
         }
-        $count = unpack('l<', substr($data, 0, 4))[1];
+        $count = self::readInt32(substr($data, 0, 4));
         $offset = 4;
         $fields = [];
         for ($i = 0; $i < $count; $i++) {
@@ -443,7 +443,7 @@ final class TypeDecoder
             }
             $oid = unpack('V', substr($data, $offset, 4))[1];
             $offset += 4;
-            $length = unpack('l<', substr($data, $offset, 4))[1];
+            $length = self::readInt32(substr($data, $offset, 4));
             $offset += 4;
             if ($length < 0) {
                 $fields[] = new CompositeField($oid, null, null);
@@ -642,7 +642,7 @@ final class TypeDecoder
             self::OID_INT8RANGE => self::packInt64((int)$value),
             self::OID_NUMRANGE => self::encodeLengthPrefixed((string)$value),
             self::OID_DATERANGE => self::encodeDate($value),
-            self::OID_TSRANGE, self::OID_TSTZRANGE => self::encodeTimestamp($value instanceof \\DateTimeInterface ? $value : new \\DateTimeImmutable((string)$value)),
+            self::OID_TSRANGE, self::OID_TSTZRANGE => self::encodeTimestamp($value instanceof \DateTimeInterface ? $value : new \DateTimeImmutable((string)$value)),
             default => self::encodeLengthPrefixed((string)$value),
         };
     }

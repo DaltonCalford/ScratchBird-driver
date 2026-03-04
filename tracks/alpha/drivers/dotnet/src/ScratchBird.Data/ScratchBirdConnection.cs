@@ -269,6 +269,166 @@ public sealed class ScratchBirdConnection : DbConnection
         return new ScratchBirdCommand { Connection = this };
     }
 
+    public string NativeSql(string sql, IReadOnlyList<ScratchBirdParameter>? parameters = null)
+    {
+        var normalized = SqlHelpers.Normalize(sql, NormalizeParameterList(parameters));
+        return normalized.Sql;
+    }
+
+    public string NativeCallableSql(string sql, IReadOnlyList<ScratchBirdParameter>? parameters = null)
+    {
+        var normalized = SqlHelpers.NormalizeCallable(sql, NormalizeParameterList(parameters));
+        return normalized.Sql;
+    }
+
+    public ResultSetSummary Call(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter>? parameters = null,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        var normalized = SqlHelpers.NormalizeCallable(sql, NormalizeParameterList(parameters));
+        var resultSets = ExecuteQueryMultiInternal(
+            normalized.Sql,
+            normalized.Parameters,
+            commandTimeoutSeconds,
+            fetchSize);
+        var preferred = resultSets.LastOrDefault(set => set.Rows.Count > 0);
+        if (preferred != null)
+        {
+            return preferred;
+        }
+        return resultSets.Count > 0
+            ? resultSets[^1]
+            : new ResultSetSummary(
+                Array.Empty<object?[]>(),
+                0,
+                Array.Empty<FieldSummary>(),
+                string.Empty,
+                0);
+    }
+
+    public IReadOnlyList<ResultSetSummary> QueryMulti(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter>? parameters = null,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        var normalized = SqlHelpers.Normalize(sql, NormalizeParameterList(parameters));
+        if (normalized.Parameters.Count == 0)
+        {
+            var statements = SplitSqlStatements(normalized.Sql);
+            if (statements.Count > 1)
+            {
+                var expanded = new List<ResultSetSummary>();
+                foreach (var statement in statements)
+                {
+                    if (string.IsNullOrWhiteSpace(statement))
+                    {
+                        continue;
+                    }
+                    expanded.AddRange(ExecuteQueryMultiInternal(
+                        statement,
+                        Array.Empty<ScratchBirdParameter>(),
+                        commandTimeoutSeconds,
+                        fetchSize));
+                }
+                return expanded;
+            }
+        }
+
+        return ExecuteQueryMultiInternal(
+            normalized.Sql,
+            normalized.Parameters,
+            commandTimeoutSeconds,
+            fetchSize);
+    }
+
+    public IReadOnlyList<ResultSetSummary> ExecuteMulti(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter>? parameters = null,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        return QueryMulti(sql, parameters, commandTimeoutSeconds, fetchSize);
+    }
+
+    public BatchSummary ExecuteBatch(
+        string sql,
+        IReadOnlyList<IReadOnlyList<ScratchBirdParameter>> batchParameters,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        ArgumentNullException.ThrowIfNull(batchParameters);
+        if (batchParameters.Count == 0)
+        {
+            throw new ArgumentException("batch parameters are required", nameof(batchParameters));
+        }
+
+        var items = new List<BatchItemSummary>(batchParameters.Count);
+        long totalRowCount = 0;
+        for (var i = 0; i < batchParameters.Count; i++)
+        {
+            var currentParameters = batchParameters[i] ?? Array.Empty<ScratchBirdParameter>();
+            var resultSets = QueryMulti(sql, currentParameters, commandTimeoutSeconds, fetchSize);
+            long rowCount = 0;
+            IReadOnlyList<FieldSummary> fields = Array.Empty<FieldSummary>();
+            var command = string.Empty;
+            long lastInsertId = 0;
+
+            foreach (var set in resultSets)
+            {
+                if (set.RowCount > 0)
+                {
+                    rowCount += set.RowCount;
+                }
+                if (set.Fields.Count > 0)
+                {
+                    fields = set.Fields;
+                }
+                if (!string.IsNullOrEmpty(set.Command))
+                {
+                    command = set.Command;
+                }
+                if (set.LastInsertId != 0)
+                {
+                    lastInsertId = set.LastInsertId;
+                }
+            }
+
+            if (rowCount > 0)
+            {
+                totalRowCount += rowCount;
+            }
+
+            items.Add(new BatchItemSummary(i, rowCount, fields, command, lastInsertId));
+        }
+
+        return new BatchSummary(items, totalRowCount);
+    }
+
+    public BatchSummary QueryBatch(
+        string sql,
+        IReadOnlyList<IReadOnlyList<ScratchBirdParameter>> batchParameters,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        return ExecuteBatch(sql, batchParameters, commandTimeoutSeconds, fetchSize);
+    }
+
+    public IReadOnlyList<long> ExecuteWithGeneratedKeys(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter>? parameters = null,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        var resultSets = QueryMulti(sql, parameters, commandTimeoutSeconds, fetchSize);
+        return resultSets
+            .Where(set => set.LastInsertId != 0)
+            .Select(set => set.LastInsertId)
+            .ToArray();
+    }
+
     public override System.Data.DataTable GetSchema()
     {
         return GetSchema("Tables");
@@ -307,6 +467,7 @@ public sealed class ScratchBirdConnection : DbConnection
             "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
             "procedures" => ScratchBirdMetadata.ProceduresQuery,
             "functions" => ScratchBirdMetadata.FunctionsQuery,
+            "routines" => ScratchBirdMetadata.RoutinesQuery,
             "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
             _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
         };
@@ -352,6 +513,7 @@ public sealed class ScratchBirdConnection : DbConnection
             "columnprivileges" or "column_privileges" => "columnprivileges",
             "procedures" => "procedures",
             "functions" => "functions",
+            "routine" or "routines" => "routines",
             "typeinfo" or "type_info" or "types" => "typeinfo",
             _ => collectionName?.ToLowerInvariant() ?? string.Empty
         };
@@ -497,6 +659,37 @@ public sealed class ScratchBirdConnection : DbConnection
                 (2, new[] { "table_name", "TABLE_NAME" }),
                 (3, new[] { "column_name", "COLUMN_NAME" })
             ],
+            "indexes" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "index_name", "INDEX_NAME", "index_id", "INDEX_ID" })
+            ],
+            "indexcolumns" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "index_name", "INDEX_NAME", "index_id", "INDEX_ID" }),
+                (4, new[] { "column_name", "COLUMN_NAME", "column_id", "COLUMN_ID" })
+            ],
+            "constraints" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "constraint_name", "CONSTRAINT_NAME", "pk_name", "PK_NAME", "fk_name", "FK_NAME" })
+            ],
+            "primarykeys" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "constraint_name", "CONSTRAINT_NAME", "pk_name", "PK_NAME" })
+            ],
+            "foreignkeys" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "constraint_name", "CONSTRAINT_NAME", "fk_name", "FK_NAME" })
+            ],
             "schemas" =>
             [
                 (0, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
@@ -505,6 +698,38 @@ public sealed class ScratchBirdConnection : DbConnection
             "catalogs" =>
             [
                 (0, new[] { "table_catalog", "TABLE_CATALOG", "catalog_name", "CATALOG_NAME" })
+            ],
+            "tableprivileges" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "grantor", "GRANTOR", "grantor_id", "GRANTOR_ID", "grantee", "GRANTEE", "grantee_id", "GRANTEE_ID" })
+            ],
+            "columnprivileges" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "table_schema", "TABLE_SCHEMA", "table_schem", "TABLE_SCHEM" }),
+                (2, new[] { "table_name", "TABLE_NAME", "table_id", "TABLE_ID" }),
+                (3, new[] { "column_name", "COLUMN_NAME", "column_id", "COLUMN_ID" }),
+                (4, new[] { "grantor", "GRANTOR", "grantor_id", "GRANTOR_ID", "grantee", "GRANTEE", "grantee_id", "GRANTEE_ID" })
+            ],
+            "procedures" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "specific_schema", "SPECIFIC_SCHEMA", "routine_schema", "ROUTINE_SCHEMA", "schema_id", "SCHEMA_ID" }),
+                (2, new[] { "procedure_name", "PROCEDURE_NAME", "routine_name", "ROUTINE_NAME", "specific_name", "SPECIFIC_NAME" })
+            ],
+            "functions" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "specific_schema", "SPECIFIC_SCHEMA", "routine_schema", "ROUTINE_SCHEMA", "schema_id", "SCHEMA_ID" }),
+                (2, new[] { "function_name", "FUNCTION_NAME", "routine_name", "ROUTINE_NAME", "specific_name", "SPECIFIC_NAME" })
+            ],
+            "routines" =>
+            [
+                (1, new[] { "schema_name", "SCHEMA_NAME", "specific_schema", "SPECIFIC_SCHEMA", "routine_schema", "ROUTINE_SCHEMA", "schema_id", "SCHEMA_ID" }),
+                (2, new[] { "routine_name", "ROUTINE_NAME", "function_name", "FUNCTION_NAME", "procedure_name", "PROCEDURE_NAME", "specific_name", "SPECIFIC_NAME" })
+            ],
+            "typeinfo" =>
+            [
+                (0, new[] { "type_name", "TYPE_NAME", "data_type_name", "DATA_TYPE_NAME", "udt_name", "UDT_NAME", "data_type", "DATA_TYPE" })
             ],
             _ => Array.Empty<(int, string[])>()
         };
@@ -524,7 +749,17 @@ public sealed class ScratchBirdConnection : DbConnection
                 continue;
             }
 
-            var value = row[columnName] == DBNull.Value ? string.Empty : row[columnName]?.ToString() ?? string.Empty;
+            var rawValue = row[columnName];
+            if (IsNullRestriction(restriction))
+            {
+                if (rawValue != DBNull.Value && rawValue != null)
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            var value = rawValue == DBNull.Value ? string.Empty : rawValue?.ToString() ?? string.Empty;
             if (!MatchesRestriction(value, restriction))
             {
                 return false;
@@ -532,6 +767,11 @@ public sealed class ScratchBirdConnection : DbConnection
         }
 
         return true;
+    }
+
+    private static bool IsNullRestriction(string pattern)
+    {
+        return string.Equals(pattern.Trim(), "null", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool MatchesRestriction(string value, string pattern)
@@ -708,5 +948,82 @@ public sealed class ScratchBirdConnection : DbConnection
         }
         tokens.Add(sb.ToString());
         return tokens;
+    }
+
+    private static IReadOnlyList<string> SplitSqlStatements(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            return Array.Empty<string>();
+        }
+
+        var statements = new List<string>();
+        var builder = new StringBuilder();
+        var inSingle = false;
+        var inDouble = false;
+        for (var i = 0; i < sql.Length; i++)
+        {
+            var ch = sql[i];
+            if (ch == '\'' && !inDouble)
+            {
+                builder.Append(ch);
+                if (inSingle && i + 1 < sql.Length && sql[i + 1] == '\'')
+                {
+                    builder.Append('\'');
+                    i++;
+                    continue;
+                }
+                inSingle = !inSingle;
+                continue;
+            }
+            if (ch == '"' && !inSingle)
+            {
+                builder.Append(ch);
+                if (inDouble && i + 1 < sql.Length && sql[i + 1] == '"')
+                {
+                    builder.Append('"');
+                    i++;
+                    continue;
+                }
+                inDouble = !inDouble;
+                continue;
+            }
+            if (!inSingle && !inDouble && ch == ';')
+            {
+                var statement = builder.ToString().Trim();
+                if (statement.Length > 0)
+                {
+                    statements.Add(statement);
+                }
+                builder.Clear();
+                continue;
+            }
+            builder.Append(ch);
+        }
+
+        var trailing = builder.ToString().Trim();
+        if (trailing.Length > 0)
+        {
+            statements.Add(trailing);
+        }
+
+        return statements;
+    }
+
+    private IReadOnlyList<ResultSetSummary> ExecuteQueryMultiInternal(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter> parameters,
+        int commandTimeoutSeconds,
+        int fetchSize)
+    {
+        var client = EnsureConnectedClient();
+        var timeoutMs = commandTimeoutSeconds > 0 ? checked(commandTimeoutSeconds * 1000) : 0;
+        var maxRows = fetchSize > 0 ? fetchSize : _config.DefaultFetchSize;
+        return client.ExecuteQueryMulti(sql, parameters, timeoutMs, maxRows);
+    }
+
+    private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)
+    {
+        return parameters ?? Array.Empty<ScratchBirdParameter>();
     }
 }

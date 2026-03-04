@@ -42,11 +42,15 @@ impl ScramExchange {
 
     pub fn handle_server_first(&mut self, password: &str, server_first: &str) -> Result<String> {
         let attrs = parse_attributes(server_first);
-        let nonce = attrs.get("r").ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing nonce"))?;
+        let nonce = attrs
+            .get("r")
+            .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing nonce"))?;
         if !nonce.starts_with(&self.client_nonce) {
             return Err(Error::new(ErrorKind::Auth, "SCRAM server nonce mismatch"));
         }
-        let salt_b64 = attrs.get("s").ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing salt"))?;
+        let salt_b64 = attrs
+            .get("s")
+            .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing salt"))?;
         let iter = attrs
             .get("i")
             .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing iterations"))?
@@ -61,7 +65,10 @@ impl ScramExchange {
         let client_key = hmac_bytes(&salted, b"Client Key");
         let stored_key = sha256_bytes(&client_key);
         let client_final_without_proof = format!("c=biws,r={}", nonce);
-        let auth_message = format!("{},{},{}", self.client_first_bare, server_first, client_final_without_proof);
+        let auth_message = format!(
+            "{},{},{}",
+            self.client_first_bare, server_first, client_final_without_proof
+        );
         let client_signature = hmac_bytes(&stored_key, auth_message.as_bytes());
         let client_proof = xor_bytes(&client_key, &client_signature);
         let server_key = hmac_bytes(&salted, b"Server Key");
@@ -72,14 +79,19 @@ impl ScramExchange {
 
     pub fn verify_server_final(&self, server_final: &str) -> Result<()> {
         let attrs = parse_attributes(server_final);
-        let verifier = attrs.get("v").ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing verifier"))?;
+        let verifier = attrs
+            .get("v")
+            .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing verifier"))?;
         let signature = self
             .server_signature
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM missing server signature"))?;
         let expected = general_purpose::STANDARD.encode(signature);
         if &expected != verifier {
-            return Err(Error::new(ErrorKind::Auth, "SCRAM server signature mismatch"));
+            return Err(Error::new(
+                ErrorKind::Auth,
+                "SCRAM server signature mismatch",
+            ));
         }
         Ok(())
     }

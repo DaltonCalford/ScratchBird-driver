@@ -19,8 +19,11 @@ type Rows struct {
 	columns      []columnInfo
 	rowCountHint int64
 	rowsAffected int64
+	lastInsertID int64
 	commandTag   string
 	done         bool
+	hasNextSet   bool
+	setBoundary  bool
 	pageSize     uint32
 	ctx          context.Context
 	cancel       func()
@@ -60,6 +63,12 @@ func (r *Rows) Close() error {
 	for !r.done {
 		if _, err := r.nextRow(); err != nil {
 			if err == io.EOF {
+				if r.hasNextSet {
+					if err := r.NextResultSet(); err != nil && err != io.EOF {
+						return err
+					}
+					continue
+				}
 				break
 			}
 			return err
@@ -83,8 +92,28 @@ func (r *Rows) Next(dest []driver.Value) error {
 	return nil
 }
 
+func (r *Rows) HasNextResultSet() bool {
+	return r.hasNextSet
+}
+
+func (r *Rows) NextResultSet() error {
+	if r.done || !r.hasNextSet {
+		return io.EOF
+	}
+	r.hasNextSet = false
+	r.setBoundary = false
+	r.columns = nil
+	r.rowsAffected = 0
+	r.lastInsertID = 0
+	r.commandTag = ""
+	return nil
+}
+
 func (r *Rows) nextRow() ([]driver.Value, error) {
 	if r.done {
+		return nil, io.EOF
+	}
+	if r.setBoundary {
 		return nil, io.EOF
 	}
 	for {
@@ -127,18 +156,23 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 			}
 			return out, nil
 		case msgCommandComplete:
-			_, rows, _, tag, err := parseCommandComplete(msg.body)
+			_, rows, lastID, tag, err := parseCommandComplete(msg.body)
 			if err != nil {
 				return nil, err
 			}
 			r.commandTag = tag
 			r.rowsAffected = int64(rows)
-	case msgPortalSuspended:
-		execPayload := buildExecutePayload("", r.pageSize)
-		if err := r.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
-			return nil, err
-		}
-	case msgReady:
+			r.lastInsertID = int64(lastID)
+			if err := r.markResultSetBoundary(); err != nil {
+				return nil, err
+			}
+			return nil, io.EOF
+		case msgPortalSuspended:
+			execPayload := buildExecutePayload("", r.pageSize)
+			if err := r.conn.sendMessage(msgExecute, execPayload, 0, false); err != nil {
+				return nil, err
+			}
+		case msgReady:
 			_, txnID, _, err := parseReady(msg.body)
 			if err == nil {
 				r.conn.txnID = txnID
@@ -148,6 +182,32 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 		default:
 			continue
 		}
+	}
+}
+
+func (r *Rows) markResultSetBoundary() error {
+	for {
+		msg, err := r.conn.receive()
+		if err != nil {
+			return err
+		}
+		if r.conn.handleAsyncMessage(msg) {
+			continue
+		}
+		if msg.header.typ == msgReady {
+			_, txnID, _, err := parseReady(msg.body)
+			if err == nil {
+				r.conn.txnID = txnID
+			}
+			r.done = true
+			r.hasNextSet = false
+			r.setBoundary = false
+			return nil
+		}
+		r.conn.queue(msg)
+		r.hasNextSet = true
+		r.setBoundary = true
+		return nil
 	}
 }
 

@@ -7,11 +7,15 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 module Scratchbird
   Column = Struct.new(:name, :type_oid, :type_modifier, :format, :nullable, keyword_init: true)
+  FieldSummary = Struct.new(:name, :type_oid, :format, :nullable, keyword_init: true)
+  ResultSetSummary = Struct.new(:rows, :rowcount, :fields, :command, :last_insert_id, keyword_init: true)
+  BatchItemSummary = Struct.new(:index, :rowcount, :fields, :command, :last_insert_id, keyword_init: true)
+  BatchSummary = Struct.new(:items, :total_rowcount, keyword_init: true)
 
   class Result
-    attr_reader :columns, :rowcount, :command_tag
+    attr_reader :columns, :rowcount, :command_tag, :last_insert_id
 
-    def initialize(columns, rows, rowcount, command_tag = "")
+    def initialize(columns, rows, rowcount, command_tag = "", last_insert_id = 0)
       @columns = (columns || []).map do |col|
         Column.new(
           name: col[:name],
@@ -24,6 +28,7 @@ module Scratchbird
       @rows = rows || []
       @rowcount = rowcount.to_i
       @command_tag = command_tag.to_s
+      @last_insert_id = last_insert_id.to_i
     end
 
     def rows

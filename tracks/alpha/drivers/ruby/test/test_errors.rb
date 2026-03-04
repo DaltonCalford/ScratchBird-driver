@@ -1,0 +1,74 @@
+# ScratchBird-driver
+# Copyright (c) 2025-2026 Dalton Calford
+#
+# Licensed under the Initial Developer's Public License Version 1.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+# https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
+require "test_helper"
+
+class TestErrors < Minitest::Test
+  def test_sqlstate_mappings_cover_core_error_families
+    cases = {
+      "01000" => Scratchbird::Warning,
+      "02000" => Scratchbird::NoDataError,
+      "08006" => Scratchbird::ConnectionError,
+      "0A000" => Scratchbird::NotSupportedError,
+      "22012" => Scratchbird::DataError,
+      "23505" => Scratchbird::IntegrityError,
+      "28P01" => Scratchbird::AuthError,
+      "40001" => Scratchbird::TransactionError,
+      "42P01" => Scratchbird::SyntaxError,
+      "53100" => Scratchbird::ResourceError,
+      "54000" => Scratchbird::LimitError,
+      "57014" => Scratchbird::OperatorInterventionError,
+      "58000" => Scratchbird::SystemError,
+      "XX000" => Scratchbird::InternalError
+    }
+
+    cases.each do |sqlstate, expected_class|
+      err = Scratchbird::ErrorMapper.from_sqlstate(sqlstate, "message", "detail", "hint")
+      assert_instance_of expected_class, err
+      assert_equal sqlstate, err.sqlstate
+      assert_equal "detail", err.detail
+      assert_equal "hint", err.hint
+    end
+  end
+
+  def test_unknown_sqlstate_falls_back_to_base_error
+    err = Scratchbird::ErrorMapper.from_sqlstate("99999", "fallback")
+    assert_instance_of Scratchbird::Error, err
+    refute_instance_of Scratchbird::InternalError, err
+    assert_equal "99999", err.sqlstate
+  end
+
+  def test_client_handle_query_error_preserves_typed_sqlstate_mapping
+    client = Scratchbird::Client.new(Scratchbird::Config.new)
+    payload = build_error_payload(
+      severity: "ERROR",
+      sqlstate: "23505",
+      message: "duplicate key",
+      detail: "Key (id)=(1) already exists",
+      hint: "Use a different id"
+    )
+
+    err = assert_raises(Scratchbird::IntegrityError) { client.send(:handle_query_error, payload) }
+    assert_equal "23505", err.sqlstate
+    assert_includes err.message, "duplicate key"
+    assert_includes err.message, "DETAIL: Key (id)=(1) already exists"
+    assert_includes err.message, "HINT: Use a different id"
+  end
+
+  private
+
+  def build_error_payload(severity:, sqlstate:, message:, detail: "", hint: "")
+    payload = +""
+    payload << "S" << severity << "\0"
+    payload << "C" << sqlstate << "\0"
+    payload << "M" << message << "\0"
+    payload << "D" << detail << "\0" unless detail.empty?
+    payload << "H" << hint << "\0" unless hint.empty?
+    payload << "\0"
+    payload
+  end
+end

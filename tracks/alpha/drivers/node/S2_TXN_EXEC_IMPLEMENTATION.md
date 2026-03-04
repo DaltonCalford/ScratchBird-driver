@@ -14,7 +14,14 @@
 - Added expanded execution API coverage:
   - `queryMulti` and `executeMulti` return distinct result sets.
   - `queryBatch` and `executeBatch` return per-item command summaries.
+  - `queryBatch` and `executeBatch` now reject empty batch parameter sets (`07001`).
   - `call` exposes JDBC callable-style invocation normalization and execution.
+  - Added `executeWithGeneratedKeys(text, params?, options?)` returning non-zero generated key list (`lastId` values).
+- Added normalization error typing parity:
+  - Query normalization failures now map to `ScratchbirdSyntaxError` (`07001`) across:
+    - `query`, `queryMulti`, `queryStream`,
+    - `nativeSQL`, `nativeCallableSQL`,
+    - `call`, `execute`, and `executeMulti`.
 - Added targeted Node lane unit tests for:
   - Transaction lifecycle and invalid-operation guards.
   - Autocommit transitions and implicit transaction behavior.
@@ -22,23 +29,34 @@
   - Savepoint guard behavior and wire call sequence.
   - Extended query wire sequence and named-parameter rewrite.
   - Prepared execute wire sequence and `nativeSQL` normalization.
+  - `nativeSQL` / `nativeCallableSQL` normalization failure typing (`07001`).
   - Multi-result and generated-key (`lastId`) result propagation.
+  - `executeWithGeneratedKeys` key filtering behavior.
+  - Empty-batch rejection for `queryBatch` and `executeBatch`.
   - Callable execution SQL rewrite/delegation.
 
 ## Tests Run
 - `npm run build && node --test test/unit.test.js` -> PASS
-  - 11 tests passed, 0 failed.
+- `npm test` -> PASS
+  - Unit suite passes.
+  - Integration suite now includes env-gated coverage for:
+    - `queryMulti` live result-set separation,
+    - prepared `executeMulti`,
+    - `queryBatch` and `executeBatch` summary surfaces,
+    - callable execution (`call` with JDBC escape syntax),
+    - `executeWithGeneratedKeys` key list surface,
+    - autocommit toggle with implicit transaction lifecycle.
 
 ## TXN Status
 - Recommendation: `PARTIAL`
 - Why:
   - Implemented and tested: explicit begin/commit/rollback, savepoint create/release/rollback-to, deterministic invalid-operation guards, and first-class autocommit/session-schema controls.
-  - Remaining parity gaps: deeper live transaction parity (beyond lane unit coverage).
+  - Remaining parity gaps: deeper live transaction parity beyond current env-gated integration depth.
 
 ## EXEC Status
 - Recommendation: `PARTIAL`
 - Why:
-  - Implemented and tested: simple and prepared execution, positional/named bind normalization, streaming, cancellation, `nativeSQL`, batch execution summaries, multi-result traversal, generated-key propagation, and callable/routine API.
+  - Implemented and tested: simple and prepared execution, positional/named bind normalization, streaming, cancellation, `nativeSQL`/`nativeCallableSQL`, batch execution summaries with empty-batch guards, multi-result traversal, generated-key propagation, explicit generated-key list API, and callable/routine API.
   - Remaining parity gaps: broader live integration depth and additional advanced execution stress cases.
 
 ## Remaining Gaps

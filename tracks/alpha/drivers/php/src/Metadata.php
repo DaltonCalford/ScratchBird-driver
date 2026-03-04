@@ -99,6 +99,35 @@ final class Metadata
         'typeinfo' => 'type_info',
     ];
 
+    private const RESTRICTION_KEY_ALIASES = [
+        'catalog' => ['catalog_name', 'table_catalog', 'table_cat', 'catalog'],
+        'schema' => ['schema_name', 'table_schema', 'table_schem', 'schema'],
+        'table' => ['table_name', 'table', 'relname'],
+        'column' => ['column_name', 'column'],
+        'index' => ['index_name', 'index'],
+        'constraint' => ['constraint_name', 'constraint'],
+        'procedure' => ['procedure_name', 'routine_name', 'procedure'],
+        'function' => ['function_name', 'routine_name', 'function'],
+        'type' => ['type_name', 'data_type_name', 'data_type', 'udt_name'],
+    ];
+
+    private const COLLECTION_RESTRICTION_KEYS = [
+        'catalogs' => ['catalog'],
+        'schemas' => ['catalog', 'schema'],
+        'tables' => ['catalog', 'schema', 'table', 'type'],
+        'columns' => ['catalog', 'schema', 'table', 'column', 'type'],
+        'indexes' => ['catalog', 'schema', 'table', 'index'],
+        'index_columns' => ['catalog', 'schema', 'table', 'index', 'column'],
+        'constraints' => ['catalog', 'schema', 'table', 'constraint'],
+        'primary_keys' => ['catalog', 'schema', 'table', 'constraint'],
+        'foreign_keys' => ['catalog', 'schema', 'table', 'constraint'],
+        'table_privileges' => ['catalog', 'schema', 'table'],
+        'column_privileges' => ['catalog', 'schema', 'table', 'column'],
+        'procedures' => ['catalog', 'schema', 'procedure'],
+        'functions' => ['catalog', 'schema', 'function'],
+        'type_info' => ['type'],
+    ];
+
     public static function normalizeCollectionName(?string $collectionName = null): string
     {
         $value = $collectionName ?? self::DEFAULT_COLLECTION;
@@ -119,6 +148,53 @@ final class Metadata
     {
         $resolved = self::normalizeCollectionName($collectionName);
         return self::COLLECTION_QUERY_MAP[$resolved];
+    }
+
+    /**
+     * @param array<string, mixed> $restrictions
+     * @return array<string, mixed>
+     */
+    public static function normalizeRestrictions(array $restrictions): array
+    {
+        if ($restrictions === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($restrictions as $key => $value) {
+            $normalizedKey = self::normalizeIdentifier((string) $key);
+            if ($normalizedKey === '') {
+                continue;
+            }
+            $out[$normalizedKey] = $value;
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, mixed> $restrictions
+     * @return array<int, array<string, mixed>>
+     */
+    public static function filterRowsByRestrictions(array $rows, array $restrictions, ?string $collectionName = null): array
+    {
+        $normalizedRestrictions = self::normalizeRestrictions($restrictions);
+        if ($normalizedRestrictions === []) {
+            return $rows;
+        }
+
+        $bindings = self::buildRestrictionBindings($rows, $normalizedRestrictions, $collectionName);
+        if ($bindings === []) {
+            return $rows;
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (self::rowMatchesRestrictions($row, $bindings)) {
+                $out[] = $row;
+            }
+        }
+        return $out;
     }
 
     public static function schemasQuery(): string
@@ -442,6 +518,151 @@ final class Metadata
             }
         }
         return null;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, mixed> $restrictions
+     * @return array<int, array{aliases: array<int, string>, expectNull: bool, expectedText: string}>
+     */
+    private static function buildRestrictionBindings(array $rows, array $restrictions, ?string $collectionName): array
+    {
+        $allowedAliases = [];
+        if ($collectionName !== null) {
+            $resolvedCollection = self::normalizeCollectionName($collectionName);
+            foreach (self::COLLECTION_RESTRICTION_KEYS[$resolvedCollection] ?? [] as $key) {
+                foreach (self::restrictionAliases($key) as $alias) {
+                    $allowedAliases[$alias] = true;
+                }
+            }
+        }
+
+        $bindings = [];
+        foreach ($restrictions as $restrictionKey => $restrictionValue) {
+            $aliases = [];
+            foreach (self::restrictionAliases($restrictionKey) as $alias) {
+                if ($allowedAliases !== [] && !isset($allowedAliases[$alias]) && $alias !== $restrictionKey) {
+                    continue;
+                }
+                $aliases[$alias] = true;
+            }
+            if ($aliases === []) {
+                continue;
+            }
+
+            $aliasList = array_keys($aliases);
+            if (!self::rowsHaveAnyAlias($rows, $aliasList)) {
+                continue;
+            }
+
+            $expected = self::normalizeMatchText($restrictionValue);
+            $bindings[] = [
+                'aliases' => $aliasList,
+                'expectNull' => $expected === 'null',
+                'expectedText' => $expected,
+            ];
+        }
+        return $bindings;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<int, string> $aliases
+     */
+    private static function rowsHaveAnyAlias(array $rows, array $aliases): bool
+    {
+        foreach ($rows as $row) {
+            foreach ($aliases as $alias) {
+                $rowKey = self::metadataRowKeyByAlias($row, $alias);
+                if ($rowKey !== null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<int, array{aliases: array<int, string>, expectNull: bool, expectedText: string}> $bindings
+     */
+    private static function rowMatchesRestrictions(array $row, array $bindings): bool
+    {
+        foreach ($bindings as $binding) {
+            $matched = false;
+            foreach ($binding['aliases'] as $alias) {
+                $rowKey = self::metadataRowKeyByAlias($row, $alias);
+                if ($rowKey === null) {
+                    continue;
+                }
+                $value = $row[$rowKey] ?? null;
+                if ($binding['expectNull']) {
+                    if ($value === null) {
+                        $matched = true;
+                        break;
+                    }
+                    continue;
+                }
+                if ($value !== null && self::normalizeMatchText($value) === $binding['expectedText']) {
+                    $matched = true;
+                    break;
+                }
+            }
+            if (!$matched) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function metadataRowKeyByAlias(array $row, string $alias): ?string
+    {
+        if (array_key_exists($alias, $row)) {
+            return $alias;
+        }
+        $target = self::normalizeIdentifier($alias);
+        foreach ($row as $candidate => $_value) {
+            if (!is_string($candidate)) {
+                continue;
+            }
+            if (self::normalizeIdentifier($candidate) === $target) {
+                return $candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function restrictionAliases(string $key): array
+    {
+        $canonical = self::normalizeIdentifier($key);
+        $aliases = self::RESTRICTION_KEY_ALIASES[$canonical] ?? [];
+        if ($canonical !== '') {
+            $aliases[] = $canonical;
+        }
+        return array_values(array_unique(array_map(
+            fn (string $alias): string => self::normalizeIdentifier($alias),
+            $aliases
+        )));
+    }
+
+    private static function normalizeIdentifier(string $value): string
+    {
+        $lower = strtolower(trim($value));
+        if ($lower === '') {
+            return '';
+        }
+        return preg_replace('/[^a-z0-9]/', '', $lower) ?? '';
+    }
+
+    private static function normalizeMatchText(mixed $value): string
+    {
+        return strtolower(trim((string) $value));
     }
 
     /**

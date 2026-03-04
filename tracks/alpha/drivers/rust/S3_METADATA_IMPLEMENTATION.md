@@ -18,18 +18,21 @@ Lane: `tracks/alpha/drivers/rust`
    - metadata collection alias/query resolvers for extended families:
      - `normalize_metadata_collection_name(...)`
      - `resolve_metadata_collection_query(...)`
-     - catalogs/keys/privileges/type-info query constants.
+     - catalogs/keys/privileges/routines/type-info query constants.
 2. Added first-class executable metadata API surface on `Client` in `src/client.rs`:
    - `query_metadata(collection)` for collection-routed metadata execution.
    - `metadata_collection_name(collection)` for normalized metadata collection naming.
+   - `query_metadata_with_restrictions(collection, restrictions)` for restriction-aware metadata filtering over metadata result sets (column alias aware for schema/catalog/table/column/index/constraint/routine/type keys) with collection-scoped allowed restriction families, including unified `routines`.
 3. Added focused lane tests in `tests/metadata_test.rs` for:
    - database->default branch-style metadata rows (`TABLE_SCHEM`) expansion,
    - dotted parent expansion behavior,
    - uniqueness within the same parent,
    - same leaf name under different parents,
-   - metadata alias/query resolver coverage for extended families.
-4. Added metadata API unit coverage in `src/client.rs` tests for unsupported-collection and connected-client requirements.
-5. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence row and recommendation.
+   - metadata alias/query resolver coverage for extended families, including `routines`.
+4. Added metadata API unit coverage in `src/client.rs` tests for unsupported-collection, connected-client requirements, and restriction-filter behavior including collection-scoped allowed-key filtering and multi-alias column matching.
+5. Added live metadata integration assertion in `tests/integration_test.rs`:
+   - `query_metadata_with_restrictions_filters_schema_rows`.
+6. Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence row and recommendation.
 
 ## Tests Run
 
@@ -37,16 +40,19 @@ Lane: `tracks/alpha/drivers/rust`
    Result: PASS (`6 passed, 0 failed`)
 2. `cargo test --lib metadata_collection_name_rejects_unknown_collection query_metadata_rejects_unknown_collection_before_connect query_metadata_requires_connected_client_for_supported_collection`
    Result: PASS (`3 passed, 0 failed`)
+3. `cargo test --lib apply_metadata_restrictions query_metadata_with_restrictions_rejects_unknown_collection_before_connect`
+   Result: PASS (`5 passed, 0 failed` across filtered runs)
+4. `cargo test --test integration_test query_metadata_with_restrictions_filters_schema_rows`
+   Result: PASS (`1 passed, 0 failed` with env-gated early-return semantics preserved when DSN is absent)
 
 ## META Status Recommendation
 
 Recommendation: `PARTIAL`
 
 Why:
-- This lane now has metadata-only recursive schema shaping and first-class metadata collection routing/execution APIs on `Client`.
-- Status remains partial because restriction mapping and live metadata integration coverage are still incomplete across the full metadata surface.
+- This lane now has metadata-only recursive schema shaping, first-class metadata collection routing/execution APIs, and restriction-aware metadata filtering on `Client`.
+- Status remains partial because deeper metadata integration depth and full DDL-editor payload-parity matrices across all metadata families are still incomplete.
 
 ## Remaining Gaps
 
-1. Restriction-value handling and richer metadata payload shaping are not yet exposed as first-class APIs.
-2. No metadata-focused live integration assertions against a running server/tooling flow.
+1. Metadata live integration depth remains limited to focused assertions rather than full DDL-editor payload parity matrices.

@@ -28,4 +28,15 @@ class TestSql < Minitest::Test
     assert_equal "SELECT $1", normalized.sql
     assert_equal ["\x01\x02".b], normalized.params
   end
+
+  def test_normalize_callable_escape_syntax
+    normalized = Scratchbird::Sql.normalize_callable("{ ? = call abs(?) }", [-3])
+    assert_equal "select abs($1) as return_value", normalized.sql
+    assert_equal [-3], normalized.params
+  end
+
+  def test_normalize_callable_sql_passthrough
+    sql = Scratchbird::Sql.normalize_callable_sql("SELECT 1")
+    assert_equal "SELECT 1", sql
+  end
 end

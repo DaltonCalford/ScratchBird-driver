@@ -43,6 +43,11 @@ owned by `ScratchBirdConnection`:
 - `LastPlan`, `LastSblr`
 - `Cancel()`
 
+## Metadata
+
+- `GetSchema(collectionName, restrictionValues)` supports extended metadata families (including unified `Routines`) and collection-scoped restriction filtering.
+- Metadata restriction values support explicit `"null"` literal matching for nullable metadata columns.
+
 ## Errors
 
 Errors map to SQLSTATE codes per

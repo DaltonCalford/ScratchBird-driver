@@ -140,7 +140,9 @@ impl Config {
 
 fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => Some("native"),
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => {
+            Some("native")
+        }
         _ => None,
     }
 }
@@ -217,14 +219,18 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
         "manager_connection_profile" | "mcp_connection_profile" => {
             cfg.manager_connection_profile = value.to_string()
         }
-        "manager_client_intent" | "mcp_client_intent" => cfg.manager_client_intent = value.to_string(),
+        "manager_client_intent" | "mcp_client_intent" => {
+            cfg.manager_client_intent = value.to_string()
+        }
         "manager_client_flags" | "mcp_client_flags" => {
             cfg.manager_client_flags = value.parse::<u16>().unwrap_or(cfg.manager_client_flags)
         }
         "manager_auth_fast_path" | "mcp_auth_fast_path" => {
             let normalized = value.trim().to_ascii_lowercase();
-            cfg.manager_auth_fast_path =
-                normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
+            cfg.manager_auth_fast_path = normalized == "1"
+                || normalized == "true"
+                || normalized == "yes"
+                || normalized == "on";
         }
         other => {
             cfg.extra.insert(other.to_string(), value.to_string());

@@ -7,7 +7,9 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 from __future__ import annotations
 
-from scratchbird.sql import normalize_query
+import pytest
+
+from scratchbird.sql import normalize_callable_query, normalize_callable_sql, normalize_query
 
 
 def test_normalize_positional():
@@ -29,3 +31,23 @@ def test_normalize_named_preserves_cast_syntax():
     rewritten, params = normalize_query(sql, {"id": 1})
     assert rewritten == "SELECT $1::INTEGER"
     assert params == [1]
+
+
+def test_normalize_callable_sql_procedure_and_function_escape_syntax():
+    assert normalize_callable_sql("{call demo.proc(?, :name)}") == "call demo.proc(?, :name)"
+    assert normalize_callable_sql("{? = call demo.fn(:id)}") == "select demo.fn(:id) as return_value"
+
+
+def test_normalize_callable_query_rewrites_escape_and_parameters():
+    sql, params = normalize_callable_query("{call demo.proc(?, ?)}", [1, 2])
+    assert sql == "call demo.proc($1, $2)"
+    assert params == [1, 2]
+
+    sql, params = normalize_callable_query("{? = call demo.fn(:id)}", {"id": 7})
+    assert sql == "select demo.fn($1) as return_value"
+    assert params == [7]
+
+
+def test_normalize_callable_sql_rejects_invalid_escape_call_syntax():
+    with pytest.raises(ValueError, match="invalid JDBC escape call syntax"):
+        normalize_callable_sql("{call ()}")

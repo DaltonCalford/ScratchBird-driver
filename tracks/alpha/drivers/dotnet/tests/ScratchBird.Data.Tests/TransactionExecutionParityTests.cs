@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
 using ScratchBird.Data;
@@ -124,6 +125,28 @@ public class TransactionExecutionParityTests
         Assert.NotNull(prepared);
         var sql = (string?)prepared!.GetType().GetProperty("Sql")?.GetValue(prepared);
         Assert.Equal("CALL \"sys\".\"echo_value\"($1, $2)", sql);
+    }
+
+    [Fact]
+    public void NativeCallableSql_RewritesJdbcEscapeSyntax()
+    {
+        using var connection = new ScratchBirdConnection();
+        var sql = connection.NativeCallableSql(
+            "{ ? = call abs(?) }",
+            new[]
+            {
+                new ScratchBirdParameter("v", -7)
+            });
+        Assert.Equal("select abs($1) as return_value", sql);
+    }
+
+    [Fact]
+    public void ExecuteBatch_ThrowsWhenBatchParametersMissing()
+    {
+        using var connection = CreateOpenConnection();
+        var ex = Assert.Throws<ArgumentException>(() =>
+            connection.ExecuteBatch("SELECT 1", new List<IReadOnlyList<ScratchBirdParameter>>()));
+        Assert.Contains("batch parameters are required", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

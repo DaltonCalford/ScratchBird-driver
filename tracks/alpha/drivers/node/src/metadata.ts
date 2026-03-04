@@ -79,9 +79,11 @@ export interface MetadataSchemaTree {
 export interface MetadataSchemaTreeOptions {
   expandParents?: boolean;
   database?: string;
+  restrictions?: MetadataRestrictions;
 }
 
 export type MetadataSchemaInput = string | Record<string, unknown>;
+export type MetadataRestrictions = Record<string, unknown>;
 
 const METADATA_COLLECTION_QUERIES: Record<MetadataCollectionName, string> = {
   catalogs: METADATA_CATALOGS_QUERY,
@@ -145,6 +147,35 @@ const SCHEMA_FIELD_CANDIDATES = [
   "schema",
 ] as const;
 
+const METADATA_RESTRICTION_KEY_ALIASES: Record<string, readonly string[]> = {
+  catalog: ["catalog_name", "table_catalog", "table_cat", "catalog"],
+  schema: ["schema_name", "table_schema", "table_schem", "schema"],
+  table: ["table_name", "table", "relname"],
+  column: ["column_name", "column"],
+  index: ["index_name", "index"],
+  constraint: ["constraint_name", "constraint"],
+  procedure: ["procedure_name", "routine_name", "procedure"],
+  function: ["function_name", "routine_name", "function"],
+  type: ["type_name", "data_type_name", "data_type", "udt_name"],
+};
+
+const METADATA_COLLECTION_RESTRICTION_KEYS: Record<MetadataCollectionName, readonly string[]> = {
+  catalogs: ["catalog"],
+  schemas: ["catalog", "schema"],
+  tables: ["catalog", "schema", "table", "type"],
+  columns: ["catalog", "schema", "table", "column", "type"],
+  indexes: ["catalog", "schema", "table", "index"],
+  index_columns: ["catalog", "schema", "table", "index", "column"],
+  constraints: ["catalog", "schema", "table", "constraint"],
+  primary_keys: ["catalog", "schema", "table", "constraint"],
+  foreign_keys: ["catalog", "schema", "table", "constraint"],
+  table_privileges: ["catalog", "schema", "table"],
+  column_privileges: ["catalog", "schema", "table", "column"],
+  procedures: ["catalog", "schema", "procedure"],
+  functions: ["catalog", "schema", "function"],
+  type_info: ["type"],
+};
+
 export function normalizeMetadataCollectionName(collectionName?: string): MetadataCollectionName {
   const normalized = (collectionName ?? "tables").trim().toLowerCase();
   const resolved = METADATA_COLLECTION_ALIASES[normalized];
@@ -156,6 +187,37 @@ export function normalizeMetadataCollectionName(collectionName?: string): Metada
 
 export function resolveMetadataCollectionQuery(collectionName?: string): string {
   return METADATA_COLLECTION_QUERIES[normalizeMetadataCollectionName(collectionName)];
+}
+
+export function normalizeMetadataRestrictions(restrictions?: MetadataRestrictions): MetadataRestrictions {
+  if (!restrictions) {
+    return {};
+  }
+  const out: MetadataRestrictions = {};
+  for (const [key, value] of Object.entries(restrictions)) {
+    const normalizedKey = normalizeMetadataIdentifier(key);
+    if (!normalizedKey) {
+      continue;
+    }
+    out[normalizedKey] = value;
+  }
+  return out;
+}
+
+export function filterMetadataRowsByRestrictions<T extends Record<string, unknown>>(
+  rows: readonly T[],
+  restrictions?: MetadataRestrictions,
+  collectionName?: string,
+): T[] {
+  const normalizedRestrictions = normalizeMetadataRestrictions(restrictions);
+  if (Object.keys(normalizedRestrictions).length === 0) {
+    return [...rows];
+  }
+  const bindings = buildMetadataRestrictionBindings(rows, normalizedRestrictions, collectionName);
+  if (!bindings.length) {
+    return [...rows];
+  }
+  return rows.filter((row) => metadataRowMatchesBindings(row, bindings));
 }
 
 export function expandSchemaPaths(schemaPaths: readonly string[]): string[] {
@@ -253,6 +315,122 @@ export function expandSchemaMetadataRows<T extends Record<string, unknown>>(rows
     }
   }
   return out;
+}
+
+interface MetadataRestrictionBinding {
+  aliases: string[];
+  expectNull: boolean;
+  expectedText: string;
+}
+
+function buildMetadataRestrictionBindings(
+  rows: readonly Record<string, unknown>[],
+  restrictions: MetadataRestrictions,
+  collectionName?: string,
+): MetadataRestrictionBinding[] {
+  const allowedAliases = new Set<string>();
+  if (collectionName) {
+    const resolvedCollection = normalizeMetadataCollectionName(collectionName);
+    for (const restrictionKey of METADATA_COLLECTION_RESTRICTION_KEYS[resolvedCollection]) {
+      for (const alias of metadataRestrictionAliases(restrictionKey)) {
+        allowedAliases.add(alias);
+      }
+    }
+  }
+
+  const bindings: MetadataRestrictionBinding[] = [];
+  for (const [restrictionKey, restrictionValue] of Object.entries(restrictions)) {
+    const aliases = new Set<string>();
+    for (const alias of metadataRestrictionAliases(restrictionKey)) {
+      if (allowedAliases.size > 0 && !allowedAliases.has(alias) && alias !== restrictionKey) {
+        continue;
+      }
+      aliases.add(alias);
+    }
+    if (!aliases.size) {
+      continue;
+    }
+    if (!rowsHaveAnyAlias(rows, aliases)) {
+      continue;
+    }
+
+    const expectedText = normalizeMetadataMatchText(restrictionValue);
+    bindings.push({
+      aliases: [...aliases],
+      expectNull: expectedText === "null",
+      expectedText,
+    });
+  }
+  return bindings;
+}
+
+function rowsHaveAnyAlias(rows: readonly Record<string, unknown>[], aliases: Set<string>): boolean {
+  for (const row of rows) {
+    for (const alias of aliases) {
+      if (metadataRowValueByAlias(row, alias).present) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function metadataRowMatchesBindings(row: Record<string, unknown>, bindings: readonly MetadataRestrictionBinding[]): boolean {
+  for (const binding of bindings) {
+    let matched = false;
+    for (const alias of binding.aliases) {
+      const candidate = metadataRowValueByAlias(row, alias);
+      if (!candidate.present) {
+        continue;
+      }
+      if (binding.expectNull) {
+        if (candidate.value === null) {
+          matched = true;
+          break;
+        }
+        continue;
+      }
+      if (candidate.value !== null && normalizeMetadataMatchText(candidate.value) === binding.expectedText) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function metadataRowValueByAlias(
+  row: Record<string, unknown>,
+  alias: string,
+): { present: boolean; value: unknown } {
+  if (Object.prototype.hasOwnProperty.call(row, alias)) {
+    return { present: true, value: row[alias] };
+  }
+
+  const target = normalizeMetadataIdentifier(alias);
+  for (const [key, value] of Object.entries(row)) {
+    if (normalizeMetadataIdentifier(key) === target) {
+      return { present: true, value };
+    }
+  }
+  return { present: false, value: null };
+}
+
+function metadataRestrictionAliases(key: string): string[] {
+  const canonical = normalizeMetadataIdentifier(key);
+  const aliases = METADATA_RESTRICTION_KEY_ALIASES[canonical] ?? [];
+  return [...new Set([...aliases, canonical].map((alias) => normalizeMetadataIdentifier(alias)).filter(Boolean))];
+}
+
+function normalizeMetadataIdentifier(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeMetadataMatchText(value: unknown): string {
+  return String(value).trim().toLowerCase();
 }
 
 function splitSchemaPath(value: string): string[] {

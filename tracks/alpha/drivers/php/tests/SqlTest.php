@@ -45,4 +45,26 @@ final class SqlTest extends TestCase
         $this->assertSame('SELECT $1::bigint AS id', $out['sql']);
         $this->assertSame([7], $out['params']);
     }
+
+    public function testNormalizeCallableProcedureEscape(): void
+    {
+        $sql = '{call admin.refresh_cache(?)}';
+        $out = Sql::normalizeCallable($sql, [42]);
+        $this->assertSame('call admin.refresh_cache($1)', $out['sql']);
+        $this->assertSame([42], $out['params']);
+    }
+
+    public function testNormalizeCallableFunctionEscape(): void
+    {
+        $sql = '{? = call math.add(?, ?)}';
+        $out = Sql::normalizeCallable($sql, [5, 7]);
+        $this->assertSame('select math.add($1, $2) as return_value', $out['sql']);
+        $this->assertSame([5, 7], $out['params']);
+    }
+
+    public function testNormalizeCallableRejectsInvalidEscapeSyntax(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Sql::normalizeCallableSql('{call bad(}');
+    }
 }

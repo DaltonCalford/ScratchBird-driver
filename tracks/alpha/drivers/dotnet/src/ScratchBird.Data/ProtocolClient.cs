@@ -177,6 +177,111 @@ internal sealed class ProtocolClient
         return new QueryStream(this, timeoutMs, maxRows);
     }
 
+    public IReadOnlyList<ResultSetSummary> ExecuteQueryMulti(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter> parameters,
+        int timeoutMs,
+        int maxRows)
+    {
+        EnsureConnected();
+
+        if (IsSchemaMutation(sql))
+        {
+            ClearPreparedStatements();
+        }
+
+        if (parameters.Count == 0)
+        {
+            SendSimpleQuery(sql, timeoutMs, maxRows);
+        }
+        else if (ShouldInlineParameterizedSql(sql))
+        {
+            SendSimpleQuery(InlineSqlParameters(sql, parameters), timeoutMs, maxRows);
+        }
+        else
+        {
+            SendPreparedQuery(sql, parameters, maxRows);
+        }
+
+        var resultSets = new List<ResultSetSummary>();
+        var columns = new List<ColumnInfo>();
+        var rows = new List<object?[]>();
+        var sawResultMetadata = false;
+
+        while (true)
+        {
+            var msg = Receive();
+            if (HandleAsyncMessage(msg))
+            {
+                continue;
+            }
+
+            switch ((MessageType)msg.Header.Type)
+            {
+                case MessageType.ERROR:
+                    throw BuildQueryException(msg.Payload);
+                case MessageType.ROW_DESCRIPTION:
+                    columns = ProtocolCodec.ParseRowDescription(msg.Payload);
+                    sawResultMetadata = true;
+                    break;
+                case MessageType.DATA_ROW:
+                {
+                    var values = ProtocolCodec.ParseDataRow(msg.Payload);
+                    var row = new object?[values.Count];
+                    for (var i = 0; i < values.Count; i++)
+                    {
+                        var typeOid = i < columns.Count ? columns[i].TypeOid : 0;
+                        var format = i < columns.Count ? columns[i].Format : (byte)TypeDecoder.FormatBinary;
+                        row[i] = TypeDecoder.Decode(typeOid, values[i].Data, format);
+                    }
+                    rows.Add(row);
+                    break;
+                }
+                case MessageType.COMMAND_COMPLETE:
+                {
+                    var parsed = ProtocolCodec.ParseCommandComplete(msg.Payload);
+                    var rowCount = parsed.Rows == 0 && rows.Count > 0
+                        ? rows.Count
+                        : SaturatingUlongToLong(parsed.Rows);
+                    resultSets.Add(new ResultSetSummary(
+                        rows.ToArray(),
+                        rowCount,
+                        SummarizeFields(columns),
+                        parsed.Tag,
+                        SaturatingUlongToLong(parsed.LastId)));
+                    rows = new List<object?[]>();
+                    columns = new List<ColumnInfo>();
+                    sawResultMetadata = false;
+                    break;
+                }
+                case MessageType.PORTAL_SUSPENDED:
+                {
+                    var pageSize = maxRows > 0 ? maxRows : 1;
+                    var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)pageSize);
+                    SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                    break;
+                }
+                case MessageType.READY:
+                {
+                    var ready = ProtocolCodec.ParseReady(msg.Payload);
+                    _txnId = ready.TxnId;
+                    if (sawResultMetadata || rows.Count > 0)
+                    {
+                        resultSets.Add(new ResultSetSummary(
+                            rows.ToArray(),
+                            rows.Count,
+                            SummarizeFields(columns),
+                            string.Empty,
+                            0));
+                    }
+                    return resultSets;
+                }
+                case MessageType.EMPTY_QUERY:
+                    break;
+            }
+        }
+    }
+
     internal int PreparedStatementCount => _preparedStatements.Count;
 
     internal void EnsurePreparedStatement(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
@@ -917,6 +1022,21 @@ internal sealed class ProtocolClient
                     throw BuildQueryException(msg.Payload);
             }
         }
+    }
+
+    private static List<FieldSummary> SummarizeFields(IReadOnlyList<ColumnInfo> columns)
+    {
+        var fields = new List<FieldSummary>(columns.Count);
+        foreach (var column in columns)
+        {
+            fields.Add(new FieldSummary(column.Name, column.TypeOid, column.Format, column.Nullable));
+        }
+        return fields;
+    }
+
+    private static long SaturatingUlongToLong(ulong value)
+    {
+        return value > long.MaxValue ? long.MaxValue : (long)value;
     }
 
     private static bool TryParseUuidBytes(string value, out byte[] bytes)

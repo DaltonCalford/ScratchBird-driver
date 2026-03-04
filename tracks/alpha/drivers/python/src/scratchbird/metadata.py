@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 SCHEMAS_QUERY = (
     "SELECT schema_id, schema_name, owner_id, default_tablespace_id "
@@ -140,6 +140,35 @@ COLLECTION_ALIASES: Dict[str, str] = {
     "type_info": "type_info",
     "typeinfo": "type_info",
 }
+RESTRICTION_KEY_ALIASES: Dict[str, List[str]] = {
+    "catalog": ["catalog_name", "table_catalog", "table_cat", "catalog"],
+    "schema": ["schema_name", "table_schema", "table_schem", "schema"],
+    "table": ["table_name", "table", "relname"],
+    "column": ["column_name", "column"],
+    "index": ["index_name", "index"],
+    "constraint": ["constraint_name", "constraint"],
+    "procedure": ["procedure_name", "routine_name", "procedure"],
+    "function": ["function_name", "routine_name", "function"],
+    "routine": ["routine_name", "procedure_name", "function_name", "routine"],
+    "type": ["type_name", "data_type_name", "data_type", "udt_name"],
+}
+COLLECTION_RESTRICTION_KEYS: Dict[str, List[str]] = {
+    "schemas": ["catalog", "schema"],
+    "tables": ["catalog", "schema", "table", "type"],
+    "columns": ["catalog", "schema", "table", "column", "type"],
+    "indexes": ["catalog", "schema", "table", "index"],
+    "index_columns": ["catalog", "schema", "table", "index", "column"],
+    "constraints": ["catalog", "schema", "table", "constraint"],
+    "procedures": ["catalog", "schema", "procedure"],
+    "functions": ["catalog", "schema", "function"],
+    "routines": ["catalog", "schema", "routine"],
+    "catalogs": ["catalog"],
+    "primary_keys": ["catalog", "schema", "table", "constraint"],
+    "foreign_keys": ["catalog", "schema", "table", "constraint"],
+    "table_privileges": ["catalog", "schema", "table"],
+    "column_privileges": ["catalog", "schema", "table", "column"],
+    "type_info": ["type"],
+}
 
 
 @dataclass
@@ -150,6 +179,13 @@ class SchemaTreeNode:
     full_path: str
     is_terminal: bool = False
     children: List["SchemaTreeNode"] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _RestrictionBinding:
+    aliases: List[str]
+    expect_null: bool
+    expected_text: Optional[str]
 
 
 def schemas_query() -> str:
@@ -227,6 +263,51 @@ def normalize_collection_name(collection_name: Optional[str] = None) -> str:
 def resolve_collection_query(collection_name: Optional[str] = None) -> str:
     resolved = normalize_collection_name(collection_name)
     return COLLECTION_QUERY_MAP[resolved]
+
+
+def normalize_restrictions(restrictions: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    if restrictions is None:
+        return {}
+    if hasattr(restrictions, "__len__") and len(restrictions) == 0:
+        return {}
+    if not isinstance(restrictions, Mapping):
+        raise ValueError("metadata restrictions must be provided as a mapping")
+
+    normalized: Dict[str, Any] = {}
+    for key, value in restrictions.items():
+        normalized_key = _normalize_identifier(key)
+        if not normalized_key:
+            continue
+        normalized[normalized_key] = value
+    return normalized
+
+
+def filter_rows_by_restrictions(
+    rows: Iterable[Any],
+    restrictions: Optional[Mapping[str, Any]],
+    *,
+    collection_name: Optional[str] = None,
+    column_names: Optional[Sequence[str]] = None,
+) -> List[Any]:
+    row_list = list(rows)
+    normalized_restrictions = normalize_restrictions(restrictions)
+    if not normalized_restrictions:
+        return row_list
+
+    bindings = _build_restriction_bindings(
+        row_list,
+        normalized_restrictions,
+        collection_name=collection_name,
+        column_names=column_names,
+    )
+    if not bindings:
+        return row_list
+
+    return [
+        row
+        for row in row_list
+        if _row_matches_restrictions(row, bindings, column_names=column_names)
+    ]
 
 
 def schema_name_matches_pattern(schema_name: Optional[str], schema_pattern: Optional[str]) -> bool:
@@ -371,3 +452,142 @@ def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
             out.append(re.escape(ch))
     out.append("$")
     return re.compile("".join(out), re.IGNORECASE)
+
+
+def _build_restriction_bindings(
+    rows: Sequence[Any],
+    normalized_restrictions: Mapping[str, Any],
+    *,
+    collection_name: Optional[str],
+    column_names: Optional[Sequence[str]],
+) -> List[_RestrictionBinding]:
+    allowed_aliases: Set[str] = set()
+    if collection_name:
+        normalized_collection = normalize_collection_name(collection_name)
+        for restriction_key in COLLECTION_RESTRICTION_KEYS.get(normalized_collection, []):
+            for alias in _restriction_aliases_for_key(restriction_key):
+                normalized_alias = _normalize_identifier(alias)
+                if normalized_alias:
+                    allowed_aliases.add(normalized_alias)
+
+    bindings: List[_RestrictionBinding] = []
+    for restriction_key, restriction_value in normalized_restrictions.items():
+        aliases: Set[str] = set()
+        for alias in _restriction_aliases_for_key(restriction_key):
+            normalized_alias = _normalize_identifier(alias)
+            if normalized_alias:
+                aliases.add(normalized_alias)
+        aliases.add(restriction_key)
+
+        if allowed_aliases:
+            aliases = {alias for alias in aliases if alias in allowed_aliases or alias == restriction_key}
+        if not aliases:
+            continue
+
+        expected_text = _normalize_match_text(restriction_value)
+        expect_null = expected_text == "null"
+        binding = _RestrictionBinding(
+            aliases=sorted(aliases),
+            expect_null=expect_null,
+            expected_text=None if expect_null else expected_text,
+        )
+        if _rows_have_binding_aliases(rows, binding, column_names=column_names):
+            bindings.append(binding)
+
+    return bindings
+
+
+def _rows_have_binding_aliases(
+    rows: Sequence[Any],
+    binding: _RestrictionBinding,
+    *,
+    column_names: Optional[Sequence[str]],
+) -> bool:
+    return any(
+        _row_has_any_alias(row, binding.aliases, column_names=column_names)
+        for row in rows
+    )
+
+
+def _row_matches_restrictions(
+    row: Any,
+    bindings: Sequence[_RestrictionBinding],
+    *,
+    column_names: Optional[Sequence[str]],
+) -> bool:
+    for binding in bindings:
+        values = _row_values_for_aliases(row, binding.aliases, column_names=column_names)
+        if not values:
+            return False
+        if binding.expect_null:
+            if not any(value is None for value in values):
+                return False
+            continue
+        if not any(value is not None and _normalize_match_text(value) == binding.expected_text for value in values):
+            return False
+    return True
+
+
+def _row_has_any_alias(row: Any, aliases: Sequence[str], *, column_names: Optional[Sequence[str]]) -> bool:
+    if isinstance(row, Mapping):
+        return any(_mapping_row_value(row, alias)[0] for alias in aliases)
+
+    if isinstance(row, (tuple, list)) and column_names:
+        normalized_aliases = {_normalize_identifier(alias) for alias in aliases}
+        return any(_normalize_identifier(name) in normalized_aliases for name in column_names if name is not None)
+
+    return False
+
+
+def _row_values_for_aliases(
+    row: Any,
+    aliases: Sequence[str],
+    *,
+    column_names: Optional[Sequence[str]],
+) -> List[Any]:
+    if isinstance(row, Mapping):
+        values: List[Any] = []
+        for alias in aliases:
+            present, value = _mapping_row_value(row, alias)
+            if present:
+                values.append(value)
+        return values
+
+    if isinstance(row, (tuple, list)) and column_names:
+        values = []
+        alias_set = {_normalize_identifier(alias) for alias in aliases}
+        for idx, column_name in enumerate(column_names):
+            if idx >= len(row):
+                break
+            if _normalize_identifier(column_name) in alias_set:
+                values.append(row[idx])
+        return values
+
+    return []
+
+
+def _mapping_row_value(row: Mapping[Any, Any], alias: str) -> tuple[bool, Any]:
+    if alias in row:
+        return True, row[alias]
+
+    target = _normalize_identifier(alias)
+    for candidate_key, candidate_value in row.items():
+        if _normalize_identifier(candidate_key) == target:
+            return True, candidate_value
+    return False, None
+
+
+def _restriction_aliases_for_key(key: str) -> List[str]:
+    canonical = _normalize_identifier(key)
+    aliases = list(RESTRICTION_KEY_ALIASES.get(canonical, []))
+    if canonical:
+        aliases.append(canonical)
+    return aliases
+
+
+def _normalize_identifier(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
+
+
+def _normalize_match_text(value: Any) -> str:
+    return str(value).strip().lower()

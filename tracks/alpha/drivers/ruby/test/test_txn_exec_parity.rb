@@ -82,6 +82,36 @@ class TestTxnExecParity < Minitest::Test
       @calls << [:deallocate, name]
       true
     end
+
+    def native_sql(sql, params = nil)
+      @calls << [:native_sql, sql, params]
+      "native_sql_result"
+    end
+
+    def native_callable_sql(sql, params = nil)
+      @calls << [:native_callable_sql, sql, params]
+      "native_callable_sql_result"
+    end
+
+    def call(sql, params = nil, options = nil)
+      @calls << [:call, sql, params, options]
+      :call_result
+    end
+
+    def query_multi(sql, params = nil, options = nil)
+      @calls << [:query_multi, sql, params, options]
+      [:query_multi_result]
+    end
+
+    def execute_batch(sql, batch_params, options = nil)
+      @calls << [:execute_batch, sql, batch_params, options]
+      :execute_batch_result
+    end
+
+    def execute_with_generated_keys(sql, params = nil, options = nil)
+      @calls << [:execute_with_generated_keys, sql, params, options]
+      [101]
+    end
   end
 
   def test_execute_starts_transaction_once_when_autocommit_disabled
@@ -171,6 +201,39 @@ class TestTxnExecParity < Minitest::Test
 
     assert stmt.closed?
     assert_includes client.calls, [:deallocate, name]
+  end
+
+  def test_native_sql_and_native_callable_sql_forward_to_client
+    client = FakeClient.new
+    conn = build_connection(client)
+
+    native = conn.native_sql("SELECT ?::INTEGER", [1])
+    callable = conn.native_callable_sql("{ ? = call abs(?) }", [-1])
+
+    assert_equal "native_sql_result", native
+    assert_equal "native_callable_sql_result", callable
+    assert_includes client.calls, [:native_sql, "SELECT ?::INTEGER", [1]]
+    assert_includes client.calls, [:native_callable_sql, "{ ? = call abs(?) }", [-1]]
+  end
+
+  def test_exec_parity_surfaces_use_transaction_gate_and_forward
+    client = FakeClient.new
+    conn = build_connection(client, autocommit: false)
+
+    call_result = conn.call("{ ? = call abs(?) }", [-3], max_rows: 1)
+    query_multi_result = conn.query_multi("SELECT 1; SELECT 2")
+    batch_result = conn.execute_batch("SELECT ?::INTEGER", [[11], [22]])
+    generated = conn.execute_with_generated_keys("SELECT 1")
+
+    assert_equal :call_result, call_result
+    assert_equal [:query_multi_result], query_multi_result
+    assert_equal :execute_batch_result, batch_result
+    assert_equal [101], generated
+    assert_equal 1, client.calls.count(:begin_transaction)
+    assert_includes client.calls, [:call, "{ ? = call abs(?) }", [-3], { max_rows: 1 }]
+    assert_includes client.calls, [:query_multi, "SELECT 1; SELECT 2", nil, nil]
+    assert_includes client.calls, [:execute_batch, "SELECT ?::INTEGER", [[11], [22]], nil]
+    assert_includes client.calls, [:execute_with_generated_keys, "SELECT 1", nil, nil]
   end
 
   private

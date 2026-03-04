@@ -38,6 +38,8 @@ Connection helpers available on `Connection`:
 - `on_notification(handler)`
 - `last_plan()`, `last_sblr()`
 - `cancel()`
+- `query_metadata(collection_name="tables", restrictions=None)`
+- `get_schema(collection_name="tables", restrictions=None)`
 
 ## Parameters
 

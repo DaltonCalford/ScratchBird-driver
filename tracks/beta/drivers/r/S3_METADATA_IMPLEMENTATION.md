@@ -23,7 +23,14 @@ Scope: `tracks/beta/drivers/r` only.
   - per-parent uniqueness,
   - same leaf name under different parents.
 
-4. Baseline mapping evidence refresh
+4. DBI metadata execution surface (`R/dbi.R`)
+- Added/maintained metadata-only DBI helpers backed by metadata queries:
+  - `dbListTables` (schema-qualified names from metadata),
+  - `dbExistsTable` (character/`Id`/`SQL` table references),
+  - `dbListFields` (table column listing filtered by schema/table reference).
+- Added focused lane tests in `tests/testthat/test_metadata_execution.R` for metadata-only DBI method behavior.
+
+5. Baseline mapping evidence refresh
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META source/test anchors and notes for recursive schema shaping coverage.
 
 ## Targeted Tests Run
@@ -31,6 +38,9 @@ Scope: `tracks/beta/drivers/r` only.
 1. `Rscript -e 'testthat::test_local(filter = "metadata_recursive_schema", reporter = "summary")'`
 - Result: `PASS`
 - Notes: Non-fatal startup warning from `/etc/os-release` in this environment; metadata recursive schema tests completed successfully.
+2. `Rscript -e 'testthat::test_local(filter = "metadata_execution", reporter = "summary")'`
+- Result: `PASS`
+- Notes: Verifies metadata-only `dbListTables` / `dbExistsTable` / `dbListFields` behavior using deterministic local mocks.
 
 ## Final META Status Recommendation
 
@@ -39,9 +49,10 @@ Scope: `tracks/beta/drivers/r` only.
 ## Rationale
 
 - Metadata-only recursive schema shaping parity behaviors for S3 are implemented and covered by lane tests (database/default row shape, dotted parent expansion, parent uniqueness, cross-parent same-name leaf preservation).
-- META remains partial because the lane still lacks broader DBI metadata execution surface parity and live metadata integration validation beyond recursive schema-tree shaping.
+- Lane now includes metadata-only DBI metadata methods (`dbListTables`, `dbExistsTable`, `dbListFields`) with focused local tests.
+- META remains partial because live metadata integration validation and broader metadata-family parity depth are still incomplete.
 
 ## Remaining Gaps
 
-- Add DBI metadata surface methods (for example `dbListTables`, `dbListFields`, `dbExistsTable`) mapped to metadata queries/shaping.
 - Add live integration metadata tests to validate engine-backed metadata payloads for broader JDBC baseline families.
+- Expand metadata-family coverage toward richer privilege/key/type-oriented and DDL-editor payload parity expectations.

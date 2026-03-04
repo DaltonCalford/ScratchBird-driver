@@ -372,14 +372,26 @@ impl From<Range<i64>> for Param {
 
 impl From<Range<BigDecimal>> for Param {
     fn from(value: Range<BigDecimal>) -> Self {
-        let range = map_range(value, |v| RangeValue::Decimal(Decimal { value: v.to_string() }), OID_NUMRANGE);
+        let range = map_range(
+            value,
+            |v| {
+                RangeValue::Decimal(Decimal {
+                    value: v.to_string(),
+                })
+            },
+            OID_NUMRANGE,
+        );
         Param::Range(range)
     }
 }
 
 impl From<Range<NaiveDate>> for Param {
     fn from(value: Range<NaiveDate>) -> Self {
-        let range = map_range(value, |v| RangeValue::Date(Date { value: v }), OID_DATERANGE);
+        let range = map_range(
+            value,
+            |v| RangeValue::Date(Date { value: v }),
+            OID_DATERANGE,
+        );
         Param::Range(range)
     }
 }
@@ -416,61 +428,230 @@ where
 
 pub fn encode_param(param: &Param) -> Result<(ParamValue, u32)> {
     match param {
-        Param::Null => Ok((ParamValue { format: FORMAT_BINARY, data: None }, 0)),
-        Param::Bool(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(vec![if *value { 1 } else { 0 }]) }, OID_BOOL)),
-        Param::Int16(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_INT2)),
-        Param::Int32(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_INT4)),
-        Param::Int64(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_INT8)),
-        Param::Float32(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_FLOAT4)),
-        Param::Float64(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_FLOAT8)),
-        Param::Decimal(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.to_string().as_bytes())) }, OID_NUMERIC)),
-        Param::Money(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.to_le_bytes().to_vec()) }, OID_MONEY)),
-        Param::String(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.as_bytes())) }, OID_TEXT)),
-        Param::Bytes(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value)) }, OID_BYTEA)),
-        Param::Date(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_date(*value)) }, OID_DATE)),
-        Param::Time(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_time(*value)) }, OID_TIME)),
-        Param::Timestamp(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_timestamp(*value)) }, OID_TIMESTAMP)),
-        Param::TimestampTz(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_timestamp(*value)) }, OID_TIMESTAMPTZ)),
-        Param::Interval(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_interval(value)) }, OID_INTERVAL)),
-        Param::Uuid(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(uuid_to_bytes(value)) }, OID_UUID)),
-        Param::Json(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.to_string().as_bytes())) }, OID_JSON)),
+        Param::Null => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: None,
+            },
+            0,
+        )),
+        Param::Bool(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(vec![if *value { 1 } else { 0 }]),
+            },
+            OID_BOOL,
+        )),
+        Param::Int16(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_INT2,
+        )),
+        Param::Int32(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_INT4,
+        )),
+        Param::Int64(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_INT8,
+        )),
+        Param::Float32(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_FLOAT4,
+        )),
+        Param::Float64(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_FLOAT8,
+        )),
+        Param::Decimal(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.to_string().as_bytes())),
+            },
+            OID_NUMERIC,
+        )),
+        Param::Money(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.to_le_bytes().to_vec()),
+            },
+            OID_MONEY,
+        )),
+        Param::String(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.as_bytes())),
+            },
+            OID_TEXT,
+        )),
+        Param::Bytes(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value)),
+            },
+            OID_BYTEA,
+        )),
+        Param::Date(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_date(*value)),
+            },
+            OID_DATE,
+        )),
+        Param::Time(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_time(*value)),
+            },
+            OID_TIME,
+        )),
+        Param::Timestamp(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_timestamp(*value)),
+            },
+            OID_TIMESTAMP,
+        )),
+        Param::TimestampTz(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_timestamp(*value)),
+            },
+            OID_TIMESTAMPTZ,
+        )),
+        Param::Interval(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_interval(value)),
+            },
+            OID_INTERVAL,
+        )),
+        Param::Uuid(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(uuid_to_bytes(value)),
+            },
+            OID_UUID,
+        )),
+        Param::Json(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.to_string().as_bytes())),
+            },
+            OID_JSON,
+        )),
         Param::Jsonb(value) => {
             let raw = if value.raw.is_empty() {
                 if let Some(ref parsed) = value.value {
-                    serde_json::to_vec(parsed).map_err(|e| Error::new(ErrorKind::Data, e.to_string()))?
+                    serde_json::to_vec(parsed)
+                        .map_err(|e| Error::new(ErrorKind::Data, e.to_string()))?
                 } else {
                     return Err(Error::new(ErrorKind::Data, "JSONB requires raw payload"));
                 }
             } else {
                 value.raw.clone()
             };
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(&raw)) }, OID_JSONB))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(encode_length_prefixed(&raw)),
+                },
+                OID_JSONB,
+            ))
         }
         Param::Array(values) => {
             let text = format_array_literal(values);
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(text.as_bytes())) }, 0))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(encode_length_prefixed(text.as_bytes())),
+                },
+                0,
+            ))
         }
         Param::Vector(values) => {
             let text = format_vector_literal(values);
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(text.as_bytes())) }, OID_SB_VECTOR))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(encode_length_prefixed(text.as_bytes())),
+                },
+                OID_SB_VECTOR,
+            ))
         }
-        Param::Inet(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.as_bytes())) }, OID_INET)),
-        Param::Cidr(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.as_bytes())) }, OID_CIDR)),
-        Param::Macaddr(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(value.as_bytes())) }, OID_MACADDR)),
+        Param::Inet(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.as_bytes())),
+            },
+            OID_INET,
+        )),
+        Param::Cidr(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.as_bytes())),
+            },
+            OID_CIDR,
+        )),
+        Param::Macaddr(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(encode_length_prefixed(value.as_bytes())),
+            },
+            OID_MACADDR,
+        )),
         Param::Geometry(value) => {
             if value.wkb.is_empty() {
                 return Err(Error::new(ErrorKind::Data, "geometry requires WKB payload"));
             }
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(encode_length_prefixed(&value.wkb)) }, OID_POINT))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(encode_length_prefixed(&value.wkb)),
+                },
+                OID_POINT,
+            ))
         }
         Param::Range(range) => {
             let (data, oid) = encode_range(range)?;
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(data) }, oid))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(data),
+                },
+                oid,
+            ))
         }
-        Param::Raw(value) => Ok((ParamValue { format: FORMAT_BINARY, data: Some(value.data.clone()) }, value.oid)),
+        Param::Raw(value) => Ok((
+            ParamValue {
+                format: FORMAT_BINARY,
+                data: Some(value.data.clone()),
+            },
+            value.oid,
+        )),
         Param::Composite(value) => {
             let (data, oid) = encode_composite(value)?;
-            Ok((ParamValue { format: FORMAT_BINARY, data: Some(data) }, oid))
+            Ok((
+                ParamValue {
+                    format: FORMAT_BINARY,
+                    data: Some(data),
+                },
+                oid,
+            ))
         }
     }
 }
@@ -510,10 +691,14 @@ fn decode_binary_value(type_oid: u32, data: &[u8]) -> Result<Value> {
             dec /= 100;
             Ok(Value::Decimal(dec))
         }
-        OID_TEXT | OID_VARCHAR | OID_CHAR | OID_BPCHAR | OID_JSON | OID_XML | OID_TSVECTOR | OID_TSQUERY => {
-            Ok(Value::String(String::from_utf8_lossy(strip_length_prefix(data)).to_string()))
-        }
-        OID_JSONB => Ok(Value::Jsonb(Jsonb { raw: strip_length_prefix(data).to_vec(), value: None })),
+        OID_TEXT | OID_VARCHAR | OID_CHAR | OID_BPCHAR | OID_JSON | OID_XML | OID_TSVECTOR
+        | OID_TSQUERY => Ok(Value::String(
+            String::from_utf8_lossy(strip_length_prefix(data)).to_string(),
+        )),
+        OID_JSONB => Ok(Value::Jsonb(Jsonb {
+            raw: strip_length_prefix(data).to_vec(),
+            value: None,
+        })),
         OID_BYTEA => Ok(Value::Bytes(strip_length_prefix(data).to_vec())),
         OID_DATE => Ok(Value::Date(decode_date(data))),
         OID_TIME => Ok(Value::Time(decode_time(data))),
@@ -521,15 +706,20 @@ fn decode_binary_value(type_oid: u32, data: &[u8]) -> Result<Value> {
         OID_TIMESTAMPTZ => Ok(Value::Timestamp(decode_timestamp(data))),
         OID_INTERVAL => Ok(Value::Interval(decode_interval(data))),
         OID_UUID => Ok(Value::Uuid(bytes_to_uuid(data))),
-        OID_INET | OID_CIDR | OID_MACADDR | OID_MACADDR8 => {
-            Ok(Value::String(String::from_utf8_lossy(strip_length_prefix(data)).to_string()))
-        }
-        OID_INT4RANGE | OID_INT8RANGE | OID_NUMRANGE | OID_TSRANGE | OID_TSTZRANGE | OID_DATERANGE => {
-            Ok(Value::Range(decode_range(type_oid, data)?))
-        }
-        OID_SB_VECTOR => Ok(Value::Vector(parse_vector_literal(&String::from_utf8_lossy(strip_length_prefix(data))))),
+        OID_INET | OID_CIDR | OID_MACADDR | OID_MACADDR8 => Ok(Value::String(
+            String::from_utf8_lossy(strip_length_prefix(data)).to_string(),
+        )),
+        OID_INT4RANGE | OID_INT8RANGE | OID_NUMRANGE | OID_TSRANGE | OID_TSTZRANGE
+        | OID_DATERANGE => Ok(Value::Range(decode_range(type_oid, data)?)),
+        OID_SB_VECTOR => Ok(Value::Vector(parse_vector_literal(
+            &String::from_utf8_lossy(strip_length_prefix(data)),
+        ))),
         OID_POINT | OID_LSEG | OID_PATH | OID_BOX | OID_POLYGON | OID_LINE | OID_CIRCLE => {
-            Ok(Value::Geometry(Geometry { wkb: strip_length_prefix(data).to_vec(), srid: None, wkt: None }))
+            Ok(Value::Geometry(Geometry {
+                wkb: strip_length_prefix(data).to_vec(),
+                srid: None,
+                wkt: None,
+            }))
         }
         OID_RECORD => Ok(Value::Composite(decode_composite(data)?)),
         _ => Ok(Value::Bytes(data.to_vec())),
@@ -606,7 +796,11 @@ fn looks_like_text(data: &[u8]) -> bool {
 }
 
 fn encode_composite(value: &Composite) -> Result<(Vec<u8>, u32)> {
-    let type_oid = if value.type_oid != 0 { value.type_oid } else { OID_RECORD };
+    let type_oid = if value.type_oid != 0 {
+        value.type_oid
+    } else {
+        OID_RECORD
+    };
     let mut buf = Vec::new();
     buf.extend_from_slice(&(value.fields.len() as i32).to_le_bytes());
     for field in &value.fields {
@@ -624,7 +818,10 @@ fn encode_composite(value: &Composite) -> Result<(Vec<u8>, u32)> {
         }
 
         if field_oid == 0 {
-            return Err(Error::new(ErrorKind::Data, "composite field OID is required"));
+            return Err(Error::new(
+                ErrorKind::Data,
+                "composite field OID is required",
+            ));
         }
         buf.extend_from_slice(&field_oid.to_le_bytes());
         match data {
@@ -642,7 +839,10 @@ fn encode_composite(value: &Composite) -> Result<(Vec<u8>, u32)> {
 
 fn decode_composite(data: &[u8]) -> Result<Composite> {
     if data.len() < 4 {
-        return Ok(Composite { type_oid: OID_RECORD, fields: Vec::new() });
+        return Ok(Composite {
+            type_oid: OID_RECORD,
+            fields: Vec::new(),
+        });
     }
     let count = i32::from_le_bytes(read_fixed::<4>(data)) as usize;
     let mut offset = 4;
@@ -656,7 +856,11 @@ fn decode_composite(data: &[u8]) -> Result<Composite> {
         let length = i32::from_le_bytes(read_fixed::<4>(&data[offset..]));
         offset += 4;
         if length < 0 {
-            fields.push(CompositeField { oid, value: None, raw: None });
+            fields.push(CompositeField {
+                oid,
+                value: None,
+                raw: None,
+            });
             continue;
         }
         let len = length as usize;
@@ -666,9 +870,16 @@ fn decode_composite(data: &[u8]) -> Result<Composite> {
         let raw = data[offset..offset + len].to_vec();
         offset += len;
         let value = decode_binary_value(oid, &raw).ok();
-        fields.push(CompositeField { oid, value, raw: Some(raw) });
+        fields.push(CompositeField {
+            oid,
+            value,
+            raw: Some(raw),
+        });
     }
-    Ok(Composite { type_oid: OID_RECORD, fields })
+    Ok(Composite {
+        type_oid: OID_RECORD,
+        fields,
+    })
 }
 
 fn value_to_param(value: &Value) -> Result<Param> {
@@ -736,7 +947,8 @@ fn encode_date(value: NaiveDate) -> Vec<u8> {
 }
 
 fn encode_time(value: NaiveTime) -> Vec<u8> {
-    let micros = value.num_seconds_from_midnight() as i64 * 1_000_000 + (value.nanosecond() as i64 / 1000);
+    let micros =
+        value.num_seconds_from_midnight() as i64 * 1_000_000 + (value.nanosecond() as i64 / 1000);
     micros.to_le_bytes().to_vec()
 }
 
@@ -760,7 +972,8 @@ fn decode_date(data: &[u8]) -> NaiveDate {
     }
     let days = i32::from_le_bytes(read_fixed::<4>(data));
     let base = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
-    base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap_or(base)
+    base.checked_add_signed(chrono::Duration::days(days as i64))
+        .unwrap_or(base)
 }
 
 fn decode_time(data: &[u8]) -> NaiveTime {
@@ -785,12 +998,20 @@ fn decode_timestamp(data: &[u8]) -> DateTime<Utc> {
 
 fn decode_interval(data: &[u8]) -> Interval {
     if data.len() < 16 {
-        return Interval { micros: 0, days: 0, months: 0 };
+        return Interval {
+            micros: 0,
+            days: 0,
+            months: 0,
+        };
     }
     let micros = i64::from_le_bytes(read_fixed::<8>(data));
     let days = i32::from_le_bytes(read_fixed::<4>(&data[8..]));
     let months = i32::from_le_bytes(read_fixed::<4>(&data[12..]));
-    Interval { micros, days, months }
+    Interval {
+        micros,
+        days,
+        months,
+    }
 }
 
 fn uuid_to_bytes(value: &str) -> Vec<u8> {
@@ -836,12 +1057,24 @@ fn encode_range(range: &Range<RangeValue>) -> Result<(Vec<u8>, u32)> {
     out.push(flags);
     out.extend_from_slice(&[0, 0, 0]);
     if !range.empty && !range.lower_infinite {
-        let bound = encode_range_bound(oid, range.lower.as_ref().ok_or_else(|| Error::new(ErrorKind::Data, "range lower missing"))?)?;
+        let bound = encode_range_bound(
+            oid,
+            range
+                .lower
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::Data, "range lower missing"))?,
+        )?;
         out.extend_from_slice(&(bound.len() as i32).to_le_bytes());
         out.extend_from_slice(&bound);
     }
     if !range.empty && !range.upper_infinite {
-        let bound = encode_range_bound(oid, range.upper.as_ref().ok_or_else(|| Error::new(ErrorKind::Data, "range upper missing"))?)?;
+        let bound = encode_range_bound(
+            oid,
+            range
+                .upper
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::Data, "range upper missing"))?,
+        )?;
         out.extend_from_slice(&(bound.len() as i32).to_le_bytes());
         out.extend_from_slice(&bound);
     }
@@ -931,10 +1164,18 @@ fn decode_range_bound(oid: u32, data: &[u8]) -> Result<RangeValue> {
     match oid {
         OID_INT4RANGE => Ok(RangeValue::Int32(i32::from_le_bytes(read_fixed::<4>(data)))),
         OID_INT8RANGE => Ok(RangeValue::Int64(i64::from_le_bytes(read_fixed::<8>(data)))),
-        OID_NUMRANGE => Ok(RangeValue::Decimal(Decimal { value: String::from_utf8_lossy(strip_length_prefix(data)).to_string() })),
-        OID_DATERANGE => Ok(RangeValue::Date(Date { value: decode_date(data) })),
-        OID_TSRANGE => Ok(RangeValue::Timestamp(Timestamp { value: decode_timestamp(data) })),
-        OID_TSTZRANGE => Ok(RangeValue::TimestampTz(TimestampTz { value: decode_timestamp(data) })),
+        OID_NUMRANGE => Ok(RangeValue::Decimal(Decimal {
+            value: String::from_utf8_lossy(strip_length_prefix(data)).to_string(),
+        })),
+        OID_DATERANGE => Ok(RangeValue::Date(Date {
+            value: decode_date(data),
+        })),
+        OID_TSRANGE => Ok(RangeValue::Timestamp(Timestamp {
+            value: decode_timestamp(data),
+        })),
+        OID_TSTZRANGE => Ok(RangeValue::TimestampTz(TimestampTz {
+            value: decode_timestamp(data),
+        })),
         _ => Err(Error::new(ErrorKind::Data, "unsupported range bound")),
     }
 }
@@ -981,7 +1222,10 @@ fn parse_array_literal(text: &str) -> Vec<Value> {
     if trimmed.is_empty() || trimmed == "{}" {
         return Vec::new();
     }
-    let inner = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}')).unwrap_or(trimmed);
+    let inner = trimmed
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .unwrap_or(trimmed);
     split_array_items(inner)
 }
 

@@ -45,19 +45,76 @@ pub fn normalize(sql: &str, params: Params) -> Result<NormalizedQuery> {
         Params::Positional(values) => {
             if sql.contains('?') {
                 let (rewritten, ordered) = rewrite_positional(sql, &values)?;
-                Ok(NormalizedQuery { sql: rewritten, params: ordered })
+                Ok(NormalizedQuery {
+                    sql: rewritten,
+                    params: ordered,
+                })
             } else {
-                Ok(NormalizedQuery { sql: sql.to_string(), params: values })
+                Ok(NormalizedQuery {
+                    sql: sql.to_string(),
+                    params: values,
+                })
             }
         }
         Params::Named(values) => {
             if !has_named_params(sql) {
-                return Err(Error::new(ErrorKind::Data, "named parameters provided but query has no placeholders"));
+                return Err(Error::new(
+                    ErrorKind::Data,
+                    "named parameters provided but query has no placeholders",
+                ));
             }
             let (rewritten, ordered) = rewrite_named(sql, &values)?;
-            Ok(NormalizedQuery { sql: rewritten, params: ordered })
+            Ok(NormalizedQuery {
+                sql: rewritten,
+                params: ordered,
+            })
         }
     }
+}
+
+pub fn normalize_callable(sql: &str, params: Params) -> Result<NormalizedQuery> {
+    let callable_sql = normalize_callable_sql(sql)?;
+    normalize(&callable_sql, params)
+}
+
+pub fn normalize_callable_sql(sql: &str) -> Result<String> {
+    let trimmed = sql.trim();
+    if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
+        return Ok(sql.to_string());
+    }
+    let inner = trimmed[1..trimmed.len() - 1].trim();
+    if inner.is_empty() {
+        return Ok(sql.to_string());
+    }
+
+    if let Some(after_qmark) = inner.strip_prefix('?') {
+        let after_qmark = after_qmark.trim_start();
+        if let Some(after_eq) = after_qmark.strip_prefix('=') {
+            let after_eq = after_eq.trim_start();
+            if starts_with_call(after_eq) {
+                let invocation = parse_callable_invocation(after_eq[4..].trim_start())?;
+                let call_args = if invocation.has_parens {
+                    invocation.args
+                } else {
+                    String::new()
+                };
+                return Ok(format!(
+                    "select {}({}) as return_value",
+                    invocation.routine, call_args
+                ));
+            }
+        }
+    }
+
+    if starts_with_call(inner) {
+        let invocation = parse_callable_invocation(inner[4..].trim_start())?;
+        if invocation.has_parens {
+            return Ok(format!("call {}({})", invocation.routine, invocation.args));
+        }
+        return Ok(format!("call {}", invocation.routine));
+    }
+
+    Ok(sql.to_string())
 }
 
 fn has_named_params(sql: &str) -> bool {
@@ -102,15 +159,19 @@ fn rewrite_named(sql: &str, params: &HashMap<String, Param>) -> Result<(String, 
             i += 1;
             continue;
         }
-        if !in_string && (ch == ':' || ch == '@') && i + 1 < chars.len() && is_ident_start(chars[i + 1]) {
+        if !in_string
+            && (ch == ':' || ch == '@')
+            && i + 1 < chars.len()
+            && is_ident_start(chars[i + 1])
+        {
             let mut j = i + 1;
             while j < chars.len() && is_ident_part(chars[j]) {
                 j += 1;
             }
             let key: String = chars[i + 1..j].iter().collect();
-            let value = params
-                .get(&key)
-                .ok_or_else(|| Error::new(ErrorKind::Data, format!("missing named parameter: {}", key)))?;
+            let value = params.get(&key).ok_or_else(|| {
+                Error::new(ErrorKind::Data, format!("missing named parameter: {}", key))
+            })?;
             ordered.push(value.clone());
             out.push('$');
             out.push_str(&(ordered.len()).to_string());
@@ -169,4 +230,89 @@ fn is_ident_start(ch: char) -> bool {
 
 fn is_ident_part(ch: char) -> bool {
     is_ident_start(ch) || ch.is_ascii_digit()
+}
+
+fn starts_with_call(value: &str) -> bool {
+    value
+        .get(0..4)
+        .map(|prefix| prefix.eq_ignore_ascii_case("call"))
+        .unwrap_or(false)
+}
+
+struct CallableInvocation {
+    routine: String,
+    args: String,
+    has_parens: bool,
+}
+
+fn parse_callable_invocation(value: &str) -> Result<CallableInvocation> {
+    let open_paren = match value.find('(') {
+        Some(index) => index,
+        None => {
+            let routine = value.trim();
+            if routine.is_empty() {
+                return Err(Error::new(
+                    ErrorKind::Data,
+                    "invalid JDBC escape call syntax",
+                ));
+            }
+            return Ok(CallableInvocation {
+                routine: routine.to_string(),
+                args: String::new(),
+                has_parens: false,
+            });
+        }
+    };
+
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut depth = 0;
+    let mut close_paren = None;
+    for (idx, ch) in value.char_indices().skip(open_paren) {
+        if ch == '\'' && !in_double {
+            in_single = !in_single;
+            continue;
+        }
+        if ch == '"' && !in_single {
+            in_double = !in_double;
+            continue;
+        }
+        if in_single || in_double {
+            continue;
+        }
+        if ch == '(' {
+            depth += 1;
+            continue;
+        }
+        if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                close_paren = Some(idx);
+                break;
+            }
+        }
+    }
+
+    let close_paren = close_paren
+        .ok_or_else(|| Error::new(ErrorKind::Data, "invalid JDBC escape call syntax"))?;
+    let routine = value[..open_paren].trim();
+    if routine.is_empty() {
+        return Err(Error::new(
+            ErrorKind::Data,
+            "invalid JDBC escape call syntax",
+        ));
+    }
+    let trailing = value[close_paren + 1..].trim();
+    if !trailing.is_empty() {
+        return Err(Error::new(
+            ErrorKind::Data,
+            "invalid JDBC escape call syntax",
+        ));
+    }
+    let args = value[open_paren + 1..close_paren].trim().to_string();
+    Ok(CallableInvocation {
+        routine: routine.to_string(),
+        args,
+        has_parens: true,
+    })
 }

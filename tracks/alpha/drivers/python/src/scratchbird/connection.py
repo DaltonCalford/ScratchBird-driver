@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import socket
 import ssl
@@ -91,8 +91,12 @@ from .protocol import (
     parse_row_description,
 )
 from .scram import ScramExchange
-from .sql import normalize_query
-from .metadata import normalize_collection_name, resolve_collection_query
+from .sql import normalize_callable_query, normalize_query
+from .metadata import (
+    filter_rows_by_restrictions,
+    normalize_collection_name,
+    resolve_collection_query,
+)
 from .types import FORMAT_BINARY, decode_value, encode_param
 
 MANAGER_PROTOCOL_MAGIC = 0x42444253  # SBDB
@@ -627,6 +631,34 @@ class Connection:
         cur.execute(sql, params)
         return cur
 
+    def query_multi(self, sql: str, params=None):
+        self._ensure_open()
+        cur = self.execute(sql, params)
+        results = []
+        while True:
+            rows = cur.fetchall()
+            row_count = int(cur.rowcount) if isinstance(cur.rowcount, int) else -1
+            results.append(
+                {
+                    "rows": rows,
+                    "rowCount": row_count,
+                    "fields": cur.description or [],
+                    "command": cur.statusmessage,
+                    "lastId": cur.lastrowid,
+                }
+            )
+            if cur.nextset() is None:
+                break
+        return results
+
+    def execute_multi(self, sql: str, params=None):
+        return self.query_multi(sql, params)
+
+    def execute_with_generated_keys(self, sql: str, params=None):
+        cur = self.execute(sql, params)
+        cur.fetchall()
+        return cur.get_generated_keys()
+
     def native_sql(self, sql: str, params=None) -> str:
         self._ensure_open()
         if sql is None:
@@ -637,19 +669,90 @@ class Connection:
             raise errors.ProgrammingError(str(exc)) from exc
         return normalized_sql
 
+    def native_callable_sql(self, sql: str, params=None) -> str:
+        self._ensure_open()
+        if sql is None:
+            raise errors.ProgrammingError("sql is required")
+        try:
+            normalized_sql, _ = normalize_callable_query(sql, params)
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
+        return normalized_sql
+
+    def call(self, sql: str, params=None) -> Cursor:
+        self._ensure_open()
+        if sql is None:
+            raise errors.ProgrammingError("sql is required")
+        try:
+            normalized_sql, ordered_params = normalize_callable_query(sql, params)
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
+        return self.execute(normalized_sql, ordered_params)
+
     def executemany(self, sql: str, seq_of_params) -> Cursor:
         cur = self.cursor()
         cur.executemany(sql, seq_of_params)
         return cur
 
-    def query_metadata(self, collection_name: str = "tables") -> Cursor:
+    def execute_batch(self, sql: str, batch_params):
+        self._ensure_open()
+        if sql is None:
+            raise errors.ProgrammingError("sql is required")
+        if batch_params is None:
+            raise errors.ProgrammingError("batch_params is required")
+        items = []
+        total_row_count = 0
+        for index, params in enumerate(batch_params):
+            cur = self.execute(sql, params)
+            cur.fetchall()
+            row_count = int(cur.rowcount) if isinstance(cur.rowcount, int) else -1
+            if row_count > 0:
+                total_row_count += row_count
+            items.append(
+                {
+                    "index": index,
+                    "rowCount": row_count,
+                    "fields": cur.description or [],
+                    "command": cur.statusmessage,
+                    "lastId": cur.lastrowid,
+                }
+            )
+        return {
+            "items": items,
+            "totalRowCount": total_row_count,
+        }
+
+    def query_batch(self, sql: str, batch_params):
+        return self.execute_batch(sql, batch_params)
+
+    def query_metadata(self, collection_name: str = "tables", restrictions: Optional[Dict[str, Any]] = None) -> Cursor:
         self._ensure_open()
         normalized_collection = self._normalize_metadata_collection(collection_name)
         metadata_sql = resolve_collection_query(normalized_collection)
-        return self.execute(metadata_sql)
+        cur = self.execute(metadata_sql)
+        if not restrictions:
+            return cur
 
-    def get_schema(self, collection_name: str = "tables"):
-        cur = self.query_metadata(collection_name)
+        rows = cur.fetchall()
+        column_names = self._metadata_column_names(cur.description)
+        try:
+            filtered_rows = filter_rows_by_restrictions(
+                rows,
+                restrictions,
+                collection_name=normalized_collection,
+                column_names=column_names,
+            )
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
+        return self._cursor_from_rows(
+            filtered_rows,
+            description=cur.description,
+            statusmessage=cur.statusmessage,
+            lastrowid=cur.lastrowid,
+        )
+
+    def get_schema(self, collection_name: str = "tables", restrictions: Optional[Dict[str, Any]] = None):
+        cur = self.query_metadata(collection_name, restrictions=restrictions)
         return cur.fetchall()
 
     def setinputsizes(self, sizes) -> None:
@@ -678,6 +781,36 @@ class Connection:
             return normalize_collection_name(collection_name)
         except ValueError as exc:
             raise errors.NotSupportedError(str(exc)) from exc
+
+    def _metadata_column_names(self, description) -> Sequence[str]:
+        if not description:
+            return []
+
+        column_names = []
+        for column in description:
+            if isinstance(column, (tuple, list)) and column:
+                column_names.append(str(column[0]))
+            elif hasattr(column, "name"):
+                column_names.append(str(column.name))
+            elif column is not None:
+                column_names.append(str(column))
+        return column_names
+
+    def _cursor_from_rows(self, rows, *, description=None, statusmessage=None, lastrowid=None) -> Cursor:
+        cur = Cursor(self)
+        cur._results = list(rows)
+        cur._pos = 0
+        cur._stream = None
+        if description:
+            cur.description = list(description)
+        elif cur._results and isinstance(cur._results[0], dict):
+            cur.description = [(key, None, None, None, None, None, True) for key in cur._results[0].keys()]
+        else:
+            cur.description = None
+        cur.rowcount = len(cur._results)
+        cur.statusmessage = statusmessage
+        cur.lastrowid = lastrowid
+        return cur
 
     def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
         if header.msg_type == MessageType.PARAMETER_STATUS:
@@ -1287,13 +1420,20 @@ class ResultStream:
         self.columns = []
         self.rowcount = -1
         self.lastrowid = None
+        self.command = None
+        self.completion_count = 0
         self._done = False
+        self._has_next_result_set = False
+        self._result_set_boundary = False
+        self._prefetched_message = None
 
     def read_row(self):
         if self._done:
             return None
+        if self._result_set_boundary:
+            return None
         while True:
-            header, payload = self._connection._recv_message()
+            header, payload = self._recv_message()
             if self._connection._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
@@ -1311,9 +1451,13 @@ class ResultStream:
                         decoded.append(decode_value(0, value.data, FORMAT_BINARY))
                 return tuple(decoded)
             elif header.msg_type == MessageType.COMMAND_COMPLETE:
-                _, rows_affected, last_id, _ = parse_command_complete(payload)
+                _, rows_affected, last_id, tag = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
                 self.lastrowid = int(last_id)
+                self.command = tag
+                self.completion_count += 1
+                self._mark_result_set_boundary()
+                return None
             elif header.msg_type == MessageType.PORTAL_SUSPENDED:
                 exec_payload = build_execute_payload("", self._page_size)
                 self._connection._send_message(MessageType.EXECUTE, exec_payload)
@@ -1322,6 +1466,44 @@ class ResultStream:
                 self._connection._txn_id = txn_id
                 self._done = True
                 return None
+
+    def has_next_result_set(self) -> bool:
+        return self._has_next_result_set
+
+    def next_result_set(self) -> bool:
+        if self._done or not self._has_next_result_set:
+            return False
+        self._has_next_result_set = False
+        self._result_set_boundary = False
+        self.columns = []
+        self.rowcount = -1
+        self.lastrowid = None
+        self.command = None
+        return True
+
+    def _recv_message(self):
+        if self._prefetched_message is not None:
+            msg = self._prefetched_message
+            self._prefetched_message = None
+            return msg
+        return self._connection._recv_message()
+
+    def _mark_result_set_boundary(self) -> None:
+        while True:
+            header, payload = self._connection._recv_message()
+            if self._connection._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._connection._txn_id = txn_id
+                self._done = True
+                self._has_next_result_set = False
+                self._result_set_boundary = False
+                return
+            self._prefetched_message = (header, payload)
+            self._has_next_result_set = True
+            self._result_set_boundary = True
+            return
 
 
 def _parse_uuid_bytes(value: str) -> Optional[bytes]:

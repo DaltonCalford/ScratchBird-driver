@@ -84,10 +84,19 @@ fn build_metadata_schema_tree_enforces_uniqueness_within_same_parent() {
     let bob = find_node_by_path(&tree.schemas, "users.bob").expect("missing users.bob");
     assert_eq!(bob.children.len(), 2);
     assert_eq!(
-        bob.children.iter().map(|node| node.path.clone()).collect::<Vec<_>>(),
+        bob.children
+            .iter()
+            .map(|node| node.path.clone())
+            .collect::<Vec<_>>(),
         vec!["users.bob.dev".to_string(), "users.bob.prod".to_string()]
     );
-    assert_eq!(bob.children.iter().filter(|node| node.name == "dev").count(), 1);
+    assert_eq!(
+        bob.children
+            .iter()
+            .filter(|node| node.name == "dev")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -102,7 +111,8 @@ fn build_metadata_schema_tree_allows_same_leaf_name_under_different_parents() {
     );
 
     assert_eq!(tree.database.as_deref(), Some("demo"));
-    let alice_dev = find_node_by_path(&tree.schemas, "users.alice.dev").expect("missing users.alice.dev");
+    let alice_dev =
+        find_node_by_path(&tree.schemas, "users.alice.dev").expect("missing users.alice.dev");
     let bob_dev = find_node_by_path(&tree.schemas, "users.bob.dev").expect("missing users.bob.dev");
     assert_eq!(alice_dev.name, "dev");
     assert_eq!(bob_dev.name, "dev");
@@ -112,10 +122,26 @@ fn build_metadata_schema_tree_allows_same_leaf_name_under_different_parents() {
 
 #[test]
 fn metadata_collection_aliases_resolve_consistently() {
-    assert_eq!(normalize_metadata_collection_name("catalog").unwrap(), "catalogs");
-    assert_eq!(normalize_metadata_collection_name("primary_keys").unwrap(), "primary_keys");
-    assert_eq!(normalize_metadata_collection_name("fk").unwrap(), "foreign_keys");
-    assert_eq!(normalize_metadata_collection_name("typeinfo").unwrap(), "type_info");
+    assert_eq!(
+        normalize_metadata_collection_name("catalog").unwrap(),
+        "catalogs"
+    );
+    assert_eq!(
+        normalize_metadata_collection_name("primary_keys").unwrap(),
+        "primary_keys"
+    );
+    assert_eq!(
+        normalize_metadata_collection_name("fk").unwrap(),
+        "foreign_keys"
+    );
+    assert_eq!(
+        normalize_metadata_collection_name("typeinfo").unwrap(),
+        "type_info"
+    );
+    assert_eq!(
+        normalize_metadata_collection_name("routine").unwrap(),
+        "routines"
+    );
 }
 
 #[test]
@@ -129,6 +155,9 @@ fn metadata_collection_query_resolution_covers_extended_families() {
     assert!(resolve_metadata_collection_query("foreign_keys")
         .unwrap()
         .contains("foreign"));
+    assert!(resolve_metadata_collection_query("routines")
+        .unwrap()
+        .contains("routine_name"));
     assert!(resolve_metadata_collection_query("type_info")
         .unwrap()
         .contains("data_type_name"));
@@ -154,7 +183,10 @@ fn collect_schema_values(rows: &[MetadataRow], key: &str) -> Vec<String> {
         .collect()
 }
 
-fn find_node_by_path<'a>(nodes: &'a [MetadataSchemaTreeNode], path: &str) -> Option<&'a MetadataSchemaTreeNode> {
+fn find_node_by_path<'a>(
+    nodes: &'a [MetadataSchemaTreeNode],
+    path: &str,
+) -> Option<&'a MetadataSchemaTreeNode> {
     for node in nodes {
         if node.path == path {
             return Some(node);

@@ -27,8 +27,11 @@ module Scratchbird
 
     def close
       return if @closed
-      @client.disconnect
-      @closed = true
+      begin
+        @client.disconnect
+      ensure
+        @closed = true
+      end
     end
 
     def closed?
@@ -86,10 +89,58 @@ module Scratchbird
       @client.stream(sql, params, options)
     end
 
+    def native_sql(sql, params = nil)
+      ensure_open
+      @client.native_sql(sql, params)
+    end
+
+    def native_callable_sql(sql, params = nil)
+      ensure_open
+      @client.native_callable_sql(sql, params)
+    end
+
+    def call(sql, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.call(sql, params, options)
+    end
+
+    def query_multi(sql, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.query_multi(sql, params, options)
+    end
+
+    def execute_multi(sql, params = nil, options = nil)
+      query_multi(sql, params, options)
+    end
+
+    def execute_batch(sql, batch_params, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.execute_batch(sql, batch_params, options)
+    end
+
+    def query_batch(sql, batch_params, options = nil)
+      execute_batch(sql, batch_params, options)
+    end
+
+    def execute_with_generated_keys(sql, params = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.execute_with_generated_keys(sql, params, options)
+    end
+
     def query_metadata(collection_name = "tables", options = nil)
       ensure_open
       begin_transaction_if_needed
       @client.query_metadata(collection_name, options)
+    end
+
+    def query_metadata_with_restrictions(collection_name = "tables", restrictions = nil, options = nil)
+      ensure_open
+      begin_transaction_if_needed
+      @client.query_metadata_with_restrictions(collection_name, restrictions, options)
     end
 
     def get_schema(collection_name = "tables", options = nil, expand_schema_parents: nil)
@@ -98,10 +149,26 @@ module Scratchbird
       @client.get_schema(collection_name, options, expand_schema_parents: expand_schema_parents)
     end
 
-    def get_schema_tree(expand_schema_parents: nil, database: nil, default_branch: "default")
+    def get_schema_with_restrictions(collection_name = "tables", restrictions = nil, options = nil, expand_schema_parents: nil)
       ensure_open
       begin_transaction_if_needed
-      rows = get_schema("schemas", nil, expand_schema_parents: expand_schema_parents)
+      @client.get_schema_with_restrictions(
+        collection_name,
+        restrictions,
+        options,
+        expand_schema_parents: expand_schema_parents
+      )
+    end
+
+    def get_schema_tree(expand_schema_parents: nil, database: nil, default_branch: "default", restrictions: nil)
+      ensure_open
+      begin_transaction_if_needed
+      rows = get_schema_with_restrictions(
+        "schemas",
+        restrictions,
+        nil,
+        expand_schema_parents: expand_schema_parents
+      )
       Metadata.build_database_default_metadata_rows(
         rows,
         database: database || @config.database,

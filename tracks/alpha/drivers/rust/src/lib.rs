@@ -22,19 +22,28 @@ pub mod leak_detection;
 pub mod pipeline;
 pub mod telemetry;
 
-pub use client::{Client, QueryResult, QueryStream, CopyState, CopyOptions, CopyResult};
+pub use client::{
+    BatchItemSummary, BatchSummary, Client, CopyOptions, CopyResult, CopyState, FieldSummary,
+    QueryResult, QueryStream, ResultSetSummary,
+};
 pub use config::Config;
 pub use errors::{Error, ErrorKind, Result};
-pub use pool::{ConnectionPool, PoolConfig, PoolStats, PooledConnection, RetryConfig, with_retry};
-pub use sql::{normalize, NormalizedQuery, Params};
+pub use pool::{with_retry, ConnectionPool, PoolConfig, PoolStats, PooledConnection, RetryConfig};
+pub use sql::{normalize, normalize_callable, normalize_callable_sql, NormalizedQuery, Params};
 pub use types::{
-    Column, Decimal, Geometry, Interval, Json, Jsonb, Money, Param, Range, RangeValue, RawValue, Time, Timestamp,
-    TimestampTz, Date, Value,
+    Column, Date, Decimal, Geometry, Interval, Json, Jsonb, Money, Param, Range, RangeValue,
+    RawValue, Time, Timestamp, TimestampTz, Value,
 };
 
 // Re-export key resilience types
-pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState, CircuitBreakerStats, with_circuit_breaker};
-pub use keepalive::{KeepaliveConfig, KeepaliveTracker, KeepaliveTask};
-pub use leak_detection::{LeakDetector, LeakDetectionConfig, LeakDetectionGuard, LeakStatistics, CheckoutInfo};
-pub use pipeline::{QueryPipeline, PipelineConfig, PipelineBuilder, PipelineStats};
-pub use telemetry::{TelemetryCollector, TelemetryConfig, SpanContext, Metrics, export_prometheus_metrics};
+pub use circuit_breaker::{
+    with_circuit_breaker, CircuitBreaker, CircuitBreakerConfig, CircuitBreakerStats, CircuitState,
+};
+pub use keepalive::{KeepaliveConfig, KeepaliveTask, KeepaliveTracker};
+pub use leak_detection::{
+    CheckoutInfo, LeakDetectionConfig, LeakDetectionGuard, LeakDetector, LeakStatistics,
+};
+pub use pipeline::{PipelineBuilder, PipelineConfig, PipelineStats, QueryPipeline};
+pub use telemetry::{
+    export_prometheus_metrics, Metrics, SpanContext, TelemetryCollector, TelemetryConfig,
+};

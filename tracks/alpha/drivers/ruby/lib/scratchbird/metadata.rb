@@ -54,6 +54,27 @@ module Scratchbird
       TABLE_SCHEMA
       SCHEMA
     ].freeze
+    RESTRICTION_KEY_ALIASES = {
+      "catalog" => %w[catalog_name table_catalog table_cat catalog],
+      "schema" => %w[schema_name table_schema table_schem schema],
+      "table" => %w[table_name table relname],
+      "column" => %w[column_name column],
+      "index" => %w[index_name index],
+      "constraint" => %w[constraint_name constraint],
+      "procedure" => %w[procedure_name routine_name],
+      "function" => %w[function_name routine_name],
+      "type" => %w[type_name data_type_name data_type udt_name]
+    }.freeze
+    COLLECTION_RESTRICTION_KEYS = {
+      "schemas" => %w[catalog schema],
+      "tables" => %w[catalog schema table type],
+      "columns" => %w[catalog schema table column type],
+      "indexes" => %w[catalog schema table index],
+      "index_columns" => %w[catalog schema table index column],
+      "constraints" => %w[catalog schema table constraint],
+      "procedures" => %w[catalog schema procedure],
+      "functions" => %w[catalog schema function]
+    }.freeze
 
     class SchemaTreeNode
       attr_reader :name, :full_path, :children
@@ -111,6 +132,33 @@ module Scratchbird
 
     def self.resolve_collection_query(collection_name = "tables")
       COLLECTION_QUERIES.fetch(normalize_collection_name(collection_name))
+    end
+
+    def self.normalize_restrictions(restrictions)
+      return {} if restrictions.nil?
+      return {} if restrictions.respond_to?(:empty?) && restrictions.empty?
+      unless restrictions.respond_to?(:each_pair)
+        raise ArgumentError, "metadata restrictions must be provided as a hash"
+      end
+
+      out = {}
+      restrictions.each_pair do |key, value|
+        normalized = normalize_identifier(key)
+        next if normalized.empty?
+
+        out[normalized] = value
+      end
+      out
+    end
+
+    def self.filter_rows_by_restrictions(rows, restrictions, collection_name: nil)
+      normalized_restrictions = normalize_restrictions(restrictions)
+      return rows if normalized_restrictions.empty?
+
+      bindings = build_restriction_bindings(rows, normalized_restrictions, collection_name)
+      return rows if bindings.empty?
+
+      rows.select { |row| row_matches_restrictions?(row, bindings) }
     end
 
     def self.schema_paths_for_navigation(rows_or_names, expand_schema_parents: false)
@@ -357,5 +405,107 @@ module Scratchbird
       row[target_key] = schema_path
     end
     private_class_method :assign_schema_path
+
+    def self.build_restriction_bindings(rows, normalized_restrictions, collection_name)
+      aliases_allowed =
+        if collection_name
+          normalized_collection = normalize_collection_name(collection_name)
+          Array(COLLECTION_RESTRICTION_KEYS[normalized_collection]).flat_map do |key|
+            metadata_restriction_key_aliases(key)
+          end.uniq
+        else
+          []
+        end
+
+      bindings = normalized_restrictions.map do |key, value|
+        aliases = metadata_restriction_key_aliases(key)
+        aliases &= aliases_allowed unless aliases_allowed.empty?
+        aliases |= [key]
+        aliases = aliases.map { |alias_key| normalize_identifier(alias_key) }.reject(&:empty?).uniq
+        next if aliases.empty?
+
+        expected_text = normalize_match_text(value)
+        expect_null = expected_text == "null"
+        {
+          aliases: aliases,
+          expect_null: expect_null,
+          expected_text: expect_null ? nil : expected_text
+        }
+      end.compact
+
+      bindings.select do |binding|
+        rows_have_binding_aliases?(rows: rows, binding: binding)
+      end
+    end
+    private_class_method :build_restriction_bindings
+
+    def self.row_matches_restrictions?(row, bindings)
+      bindings.all? do |binding|
+        values = metadata_values_for_aliases(row, binding[:aliases])
+        next false if values.empty?
+
+        values.any? do |value|
+          if binding[:expect_null]
+            value.nil?
+          else
+            !value.nil? && normalize_match_text(value) == binding[:expected_text]
+          end
+        end
+      end
+    end
+    private_class_method :row_matches_restrictions?
+
+    def self.metadata_restriction_key_aliases(key)
+      canonical = normalize_identifier(key)
+      aliases = Array(RESTRICTION_KEY_ALIASES[canonical])
+      aliases << canonical unless canonical.empty?
+      aliases
+    end
+    private_class_method :metadata_restriction_key_aliases
+
+    def self.metadata_values_for_aliases(row, aliases)
+      return [] unless row.is_a?(Hash)
+
+      values = []
+      aliases.each do |alias_key|
+        present, value = metadata_row_value(row, alias_key)
+        values << value if present
+      end
+      values
+    end
+    private_class_method :metadata_values_for_aliases
+
+    def self.metadata_row_value(row, alias_key)
+      return [true, row[alias_key]] if row.key?(alias_key)
+
+      symbol = alias_key.to_sym
+      return [true, row[symbol]] if row.key?(symbol)
+
+      target = normalize_identifier(alias_key)
+      row.each do |candidate, value|
+        return [true, value] if normalize_identifier(candidate) == target
+      end
+      [false, nil]
+    end
+    private_class_method :metadata_row_value
+
+    def self.rows_have_binding_aliases?(rows:, binding:)
+      return false unless rows.respond_to?(:any?)
+
+      rows.any? do |row|
+        binding[:aliases].any? { |alias_key| metadata_row_value(row, alias_key).first }
+      end
+    end
+    private_class_method :rows_have_binding_aliases?
+
+    def self.normalize_identifier(value)
+      value.to_s.strip.downcase.gsub(/[^a-z0-9]/, "")
+    end
+    private_class_method :normalize_identifier
+
+    def self.normalize_match_text(value)
+      value.to_s.strip.downcase
+    end
+    private_class_method :normalize_match_text
   end
 end

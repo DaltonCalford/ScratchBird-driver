@@ -113,6 +113,117 @@ final class ConnectionTxnExecTest extends TestCase
         }
     }
 
+    public function testQueryMultiTraversesMultipleResultBoundaries(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 2, 'UPDATE 2', 7);
+            $this->queueCommandComplete($server, 1, 'UPDATE 1', 9);
+            $this->queueReady($server, 0);
+
+            $results = $conn->queryMulti('UPDATE t SET v = 1; UPDATE t SET v = 2');
+            $this->assertCount(2, $results);
+            $this->assertSame(2, $results[0]['rowCount']);
+            $this->assertSame('UPDATE 2', $results[0]['command']);
+            $this->assertSame(7, $results[0]['lastId']);
+            $this->assertSame(1, $results[1]['rowCount']);
+            $this->assertSame('UPDATE 1', $results[1]['command']);
+            $this->assertSame(9, $results[1]['lastId']);
+            $this->assertSame(Protocol::MSG_QUERY, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testExecuteBatchReturnsSummaryAndTotalRowCount(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 2, 'UPDATE 2', 10);
+            $this->queueReady($server, 0);
+            $this->queueCommandComplete($server, 3, 'UPDATE 3', 11);
+            $this->queueReady($server, 0);
+
+            $result = $conn->executeBatch('UPDATE t SET v = 1', [[], []]);
+            $this->assertSame(5, $result['totalRowCount']);
+            $this->assertCount(2, $result['items']);
+            $this->assertSame(0, $result['items'][0]['index']);
+            $this->assertSame(2, $result['items'][0]['rowCount']);
+            $this->assertSame('UPDATE 2', $result['items'][0]['command']);
+            $this->assertSame(10, $result['items'][0]['lastId']);
+            $this->assertSame(1, $result['items'][1]['index']);
+            $this->assertSame(3, $result['items'][1]['rowCount']);
+            $this->assertSame('UPDATE 3', $result['items'][1]['command']);
+            $this->assertSame(11, $result['items'][1]['lastId']);
+            $this->assertSame(Protocol::MSG_QUERY, $this->readSentMessageType($server));
+            $this->assertSame(Protocol::MSG_QUERY, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testExecuteWithGeneratedKeysAccumulatesAcrossResultSets(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 1, 'INSERT 1', 101);
+            $this->queueCommandComplete($server, 1, 'INSERT 1', 102);
+            $this->queueReady($server, 0);
+
+            $keys = $conn->executeWithGeneratedKeys('INSERT INTO t(v) VALUES (1)');
+            $this->assertSame([[101], [102]], $keys);
+            $this->assertSame(Protocol::MSG_QUERY, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testCallTranslatesJdbcCallableEscapeForSimpleCall(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 0, 'CALL', 0);
+            $this->queueReady($server, 0);
+            $stmt = $conn->call('{call maintenance.reindex}');
+            $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame('call maintenance.reindex', $this->parseSimpleQuerySql($payload));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testNativeSqlAndNativeCallableSqlNormalizePlaceholders(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->assertSame('SELECT $1::int AS id', $conn->nativeSql('SELECT ?::int AS id', [42]));
+            $this->assertSame(
+                'select math.add($1, $2) as return_value',
+                $conn->nativeCallableSql('{? = call math.add(?, ?)}', [5, 7])
+            );
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
     private function newConnectionWithSocket($socket): Connection
     {
         $class = new ReflectionClass(Connection::class);
@@ -135,6 +246,8 @@ final class ConnectionTxnExecTest extends TestCase
         $this->setPrivate($conn, 'notificationHandlers', []);
         $this->setPrivate($conn, 'lastPlan', null);
         $this->setPrivate($conn, 'lastSblr', null);
+        $this->setPrivate($conn, 'hasLastInsertId', false);
+        $this->setPrivate($conn, 'lastInsertIdValue', 0);
         return $conn;
     }
 
@@ -167,15 +280,39 @@ final class ConnectionTxnExecTest extends TestCase
         return $type;
     }
 
+    /**
+     * @return array{0: int, 1: string}
+     */
+    private function readSentMessage($server): array
+    {
+        $header = $this->readExact($server, Protocol::HEADER_SIZE);
+        [$type, , $length] = Protocol::decodeHeader($header);
+        $payload = $length > 0 ? $this->readExact($server, $length) : '';
+        return [$type, $payload];
+    }
+
+    private function parseSimpleQuerySql(string $payload): string
+    {
+        if (strlen($payload) < 12) {
+            $this->fail('query payload is truncated');
+        }
+        $sqlBytes = substr($payload, 12);
+        $nullPos = strpos($sqlBytes, "\0");
+        if ($nullPos === false) {
+            return $sqlBytes;
+        }
+        return substr($sqlBytes, 0, $nullPos);
+    }
+
     private function queueReady($server, int $txnId): void
     {
         $payload = chr(0) . "\0\0\0" . $this->uint64Le($txnId) . $this->uint64Le(0);
         $this->sendServerMessage($server, Protocol::MSG_READY, $payload);
     }
 
-    private function queueCommandComplete($server, int $rows, string $tag): void
+    private function queueCommandComplete($server, int $rows, string $tag, int $lastId = 0): void
     {
-        $payload = chr(0) . "\0\0\0" . $this->uint64Le($rows) . $this->uint64Le(0) . $tag . "\0";
+        $payload = chr(0) . "\0\0\0" . $this->uint64Le($rows) . $this->uint64Le($lastId) . $tag . "\0";
         $this->sendServerMessage($server, Protocol::MSG_COMMAND_COMPLETE, $payload);
     }
 

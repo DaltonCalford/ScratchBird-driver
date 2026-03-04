@@ -20,6 +20,17 @@ async function connectClient(t) {
   return client;
 }
 
+function isNotSupported(err) {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  if (err.code === "0A000") {
+    return true;
+  }
+  const message = String(err.message || "").toLowerCase();
+  return message.includes("not supported");
+}
+
 test("connects and runs query", async (t) => {
   const client = await connectClient(t);
   if (!client) return;
@@ -68,6 +79,119 @@ test("cancel query", async (t) => {
     await assert.rejects(client.query(cancelSql, [], { signal: controller.signal }));
   } finally {
     clearTimeout(timer);
+    await client.end();
+  }
+});
+
+test("queryMulti returns independent result sets", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    let results;
+    try {
+      results = await client.queryMulti("SELECT 1 as first_value; SELECT 2 as second_value");
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`queryMulti not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    assert.equal(results.length, 2);
+    assert.equal(results[0].rows[0].first_value, 1);
+    assert.equal(results[1].rows[0].second_value, 2);
+  } finally {
+    await client.end();
+  }
+});
+
+test("executeMulti on prepared statement returns independent result sets", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    await client.prepare("integration_multi_stmt", "SELECT ?::INTEGER as first_value; SELECT ?::INTEGER as second_value");
+    let results;
+    try {
+      results = await client.executeMulti("integration_multi_stmt", [7, 9]);
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`executeMulti not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    assert.equal(results.length, 2);
+    assert.equal(results[0].rows[0].first_value, 7);
+    assert.equal(results[1].rows[0].second_value, 9);
+  } finally {
+    await client.end();
+  }
+});
+
+test("queryBatch and executeBatch return batch summaries", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    const queryBatch = await client.queryBatch("SELECT ?::INTEGER as value", [[11], [22], [33]]);
+    assert.equal(queryBatch.items.length, 3);
+    assert.equal(queryBatch.totalRowCount, queryBatch.items.reduce((sum, item) => sum + item.rowCount, 0));
+
+    await client.prepare("integration_batch_stmt", "SELECT ?::INTEGER as value");
+    const execBatch = await client.executeBatch("integration_batch_stmt", [[101], [202]]);
+    assert.equal(execBatch.items.length, 2);
+    assert.equal(execBatch.totalRowCount, execBatch.items.reduce((sum, item) => sum + item.rowCount, 0));
+  } finally {
+    await client.end();
+  }
+});
+
+test("call executes JDBC callable escape syntax", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    const result = await client.call("{ ? = call abs(?) }", [-3]);
+    assert.ok(result.rows.length >= 1);
+    const firstRow = result.rows[0];
+    const value = firstRow.return_value ?? Object.values(firstRow)[0];
+    assert.equal(Number(value), 3);
+  } finally {
+    await client.end();
+  }
+});
+
+test("executeWithGeneratedKeys returns key list", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    let keys;
+    try {
+      keys = await client.executeWithGeneratedKeys("SELECT 1");
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`executeWithGeneratedKeys not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    assert.ok(Array.isArray(keys));
+    assert.ok(keys.every((value) => typeof value === "bigint" && value >= 0n));
+  } finally {
+    await client.end();
+  }
+});
+
+test("autocommit toggle drives implicit transaction lifecycle", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    assert.equal(client.getAutoCommit(), true);
+    await client.setAutoCommit(false);
+    assert.equal(client.getAutoCommit(), false);
+    await client.query("SELECT 1 as one");
+    await client.commitTransaction();
+    await client.setAutoCommit(true);
+    assert.equal(client.getAutoCommit(), true);
+  } finally {
     await client.end();
   }
 });

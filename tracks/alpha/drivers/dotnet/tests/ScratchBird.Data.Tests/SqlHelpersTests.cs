@@ -48,4 +48,27 @@ public class SqlHelpersTests
         Assert.Equal("Ada", normalized.Parameters[0].Value);
         Assert.Equal(true, normalized.Parameters[1].Value);
     }
+
+    [Fact]
+    public void NormalizeCallableRewritesEscapeCallSyntax()
+    {
+        var parameters = new ScratchBirdParameterCollection
+        {
+            new ScratchBirdParameter("v", -3)
+        };
+        var normalized = SqlHelpers.NormalizeCallable(
+            "{ ? = call abs(?) }",
+            parameters.Cast<ScratchBirdParameter>().ToList());
+
+        Assert.Equal("select abs($1) as return_value", normalized.Sql);
+        Assert.Single(normalized.Parameters);
+        Assert.Equal(-3, normalized.Parameters[0].Value);
+    }
+
+    [Fact]
+    public void NormalizeCallableSqlPassesThroughNonEscapeSql()
+    {
+        var normalized = SqlHelpers.NormalizeCallableSql("SELECT 1");
+        Assert.Equal("SELECT 1", normalized);
+    }
 }

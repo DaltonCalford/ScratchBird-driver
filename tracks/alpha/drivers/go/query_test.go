@@ -49,3 +49,44 @@ func TestRewriteNamed(t *testing.T) {
 		t.Fatalf("unexpected args: %d", len(out.args))
 	}
 }
+
+func TestNormalizeCallableProcedureEscape(t *testing.T) {
+	query := "{call admin.refresh_cache(?)}"
+	args := []driver.NamedValue{
+		{Ordinal: 1, Value: int64(42)},
+	}
+	out, err := normalizeCallableQuery(query, args)
+	if err != nil {
+		t.Fatalf("callable rewrite error: %v", err)
+	}
+	if out.sql != "call admin.refresh_cache($1)" {
+		t.Fatalf("unexpected callable query: %s", out.sql)
+	}
+	if len(out.args) != 1 {
+		t.Fatalf("unexpected args: %d", len(out.args))
+	}
+}
+
+func TestNormalizeCallableFunctionEscape(t *testing.T) {
+	query := "{? = call math.add(?, ?)}"
+	args := []driver.NamedValue{
+		{Ordinal: 1, Value: int64(5)},
+		{Ordinal: 2, Value: int64(7)},
+	}
+	out, err := normalizeCallableQuery(query, args)
+	if err != nil {
+		t.Fatalf("callable function rewrite error: %v", err)
+	}
+	if out.sql != "select math.add($1, $2) as return_value" {
+		t.Fatalf("unexpected callable function query: %s", out.sql)
+	}
+	if len(out.args) != 2 {
+		t.Fatalf("unexpected args: %d", len(out.args))
+	}
+}
+
+func TestNormalizeCallableRejectsInvalidEscapeSyntax(t *testing.T) {
+	if _, err := normalizeCallableSQL("{call bad(}"); err == nil {
+		t.Fatalf("expected invalid callable escape syntax error")
+	}
+}

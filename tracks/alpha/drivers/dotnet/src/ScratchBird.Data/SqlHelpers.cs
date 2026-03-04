@@ -34,6 +34,52 @@ internal static class SqlHelpers
         return new NormalizedQuery(sql, parameters.ToList());
     }
 
+    public static NormalizedQuery NormalizeCallable(string sql, IReadOnlyList<ScratchBirdParameter> parameters)
+    {
+        var callableSql = NormalizeCallableSql(sql);
+        return Normalize(callableSql, parameters);
+    }
+
+    public static string NormalizeCallableSql(string sql)
+    {
+        var trimmed = sql.Trim();
+        if (!(trimmed.StartsWith('{') && trimmed.EndsWith('}')))
+        {
+            return sql;
+        }
+
+        var inner = trimmed[1..^1].Trim();
+        if (inner.Length == 0)
+        {
+            return sql;
+        }
+
+        if (inner.StartsWith('?'))
+        {
+            var afterQuestion = inner[1..].TrimStart();
+            if (afterQuestion.StartsWith('='))
+            {
+                var afterEquals = afterQuestion[1..].TrimStart();
+                if (StartsWithCall(afterEquals))
+                {
+                    var invocation = ParseCallableInvocation(afterEquals[4..].TrimStart());
+                    var args = invocation.HasParens ? invocation.Args : string.Empty;
+                    return $"select {invocation.Routine}({args}) as return_value";
+                }
+            }
+        }
+
+        if (StartsWithCall(inner))
+        {
+            var invocation = ParseCallableInvocation(inner[4..].TrimStart());
+            return invocation.HasParens
+                ? $"call {invocation.Routine}({invocation.Args})"
+                : $"call {invocation.Routine}";
+        }
+
+        return sql;
+    }
+
     private static bool HasNamedParameters(string sql)
     {
         var inString = false;
@@ -166,4 +212,81 @@ internal static class SqlHelpers
     {
         return char.IsLetterOrDigit(ch) || ch == '_';
     }
+
+    private static bool StartsWithCall(string value)
+    {
+        return value.StartsWith("call", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CallableInvocation ParseCallableInvocation(string value)
+    {
+        var openParen = value.IndexOf('(');
+        if (openParen < 0)
+        {
+            var routineOnly = value.Trim();
+            if (routineOnly.Length == 0)
+            {
+                throw new InvalidOperationException("invalid JDBC escape call syntax");
+            }
+            return new CallableInvocation(routineOnly, string.Empty, false);
+        }
+
+        var inSingle = false;
+        var inDouble = false;
+        var depth = 0;
+        var closeParen = -1;
+        for (var i = openParen; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (ch == '\'' && !inDouble)
+            {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (ch == '"' && !inSingle)
+            {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble)
+            {
+                continue;
+            }
+            if (ch == '(')
+            {
+                depth++;
+                continue;
+            }
+            if (ch == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    closeParen = i;
+                    break;
+                }
+            }
+        }
+
+        if (closeParen < 0)
+        {
+            throw new InvalidOperationException("invalid JDBC escape call syntax");
+        }
+
+        var routine = value[..openParen].Trim();
+        if (routine.Length == 0)
+        {
+            throw new InvalidOperationException("invalid JDBC escape call syntax");
+        }
+        var trailing = value[(closeParen + 1)..].Trim();
+        if (trailing.Length > 0)
+        {
+            throw new InvalidOperationException("invalid JDBC escape call syntax");
+        }
+
+        var args = value[(openParen + 1)..closeParen].Trim();
+        return new CallableInvocation(routine, args, true);
+    }
+
+    private readonly record struct CallableInvocation(string Routine, string Args, bool HasParens);
 }

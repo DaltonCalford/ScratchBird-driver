@@ -1,7 +1,7 @@
 // Circuit Breaker Module
 // Prevents cascading failures by stopping requests after consecutive failures
 
-use std::sync::atomic::{AtomicU32, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -57,7 +57,7 @@ pub struct CircuitBreakerStats {
 /// Circuit breaker for database operations
 pub struct CircuitBreaker {
     config: CircuitBreakerConfig,
-    state: AtomicI32,  // 0=Closed, 1=Open, 2=HalfOpen
+    state: AtomicI32, // 0=Closed, 1=Open, 2=HalfOpen
     failure_count: AtomicU32,
     success_count: AtomicU32,
     half_open_requests: AtomicU32,
@@ -81,17 +81,23 @@ impl CircuitBreaker {
         let state = self.state.load(Ordering::SeqCst);
 
         match state {
-            0 => { // Closed
+            0 => {
+                // Closed
                 true
             }
-            1 => { // Open
+            1 => {
+                // Open
                 // Check if recovery timeout has passed
                 let last_failure = *self.last_failure_time.read().await;
-                
+
                 if let Some(time) = last_failure {
                     if time.elapsed() >= self.config.recovery_timeout {
                         // Try to transition to half-open
-                        if self.state.compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                        if self
+                            .state
+                            .compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst)
+                            .is_ok()
+                        {
                             self.failure_count.store(0, Ordering::SeqCst);
                             self.success_count.store(0, Ordering::SeqCst);
                             self.half_open_requests.store(0, Ordering::SeqCst);
@@ -102,7 +108,8 @@ impl CircuitBreaker {
 
                 false
             }
-            2 => { // HalfOpen
+            2 => {
+                // HalfOpen
                 self.allow_half_open_request().await
             }
             _ => false,
@@ -111,7 +118,7 @@ impl CircuitBreaker {
 
     async fn allow_half_open_request(&self) -> bool {
         let current = self.half_open_requests.load(Ordering::SeqCst);
-        
+
         if current >= self.config.half_open_max_requests {
             return false;
         }
@@ -125,17 +132,23 @@ impl CircuitBreaker {
         let state = self.state.load(Ordering::SeqCst);
 
         match state {
-            0 => { // Closed
+            0 => {
+                // Closed
                 self.failure_count.store(0, Ordering::SeqCst);
             }
-            2 => { // HalfOpen
+            2 => {
+                // HalfOpen
                 self.half_open_requests.fetch_sub(1, Ordering::SeqCst);
-                
+
                 let successes = self.success_count.fetch_add(1, Ordering::SeqCst) + 1;
-                
+
                 if successes >= self.config.success_threshold {
                     // Transition to closed
-                    if self.state.compare_exchange(2, 0, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                    if self
+                        .state
+                        .compare_exchange(2, 0, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
                         self.failure_count.store(0, Ordering::SeqCst);
                         self.success_count.store(0, Ordering::SeqCst);
                     }
@@ -150,24 +163,35 @@ impl CircuitBreaker {
         let state = self.state.load(Ordering::SeqCst);
 
         match state {
-            0 => { // Closed
+            0 => {
+                // Closed
                 let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
 
                 if failures >= self.config.failure_threshold {
                     // Transition to open
-                    if self.state.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                    if self
+                        .state
+                        .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
                         *self.last_failure_time.write().await = Some(Instant::now());
                     }
                 }
             }
-            2 => { // HalfOpen
+            2 => {
+                // HalfOpen
                 self.half_open_requests.fetch_sub(1, Ordering::SeqCst);
                 // Any failure in half-open immediately opens circuit again
-                if self.state.compare_exchange(2, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                if self
+                    .state
+                    .compare_exchange(2, 1, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     *self.last_failure_time.write().await = Some(Instant::now());
                 }
             }
-            1 => { // Open
+            1 => {
+                // Open
                 *self.last_failure_time.write().await = Some(Instant::now());
             }
             _ => {}

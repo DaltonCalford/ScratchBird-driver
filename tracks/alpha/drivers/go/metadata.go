@@ -8,6 +8,7 @@
 package scratchbird
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"regexp"
 	"strings"
@@ -103,6 +104,41 @@ var metadataCollectionAliases = map[string]string{
 	"types":             "type_info",
 }
 
+var metadataRestrictionKeyAliases = map[string][]string{
+	"catalog":    {"catalog_name", "table_catalog", "table_cat", "catalog"},
+	"schema":     {"schema_name", "table_schema", "table_schem", "schema"},
+	"table":      {"table_name", "table", "relname"},
+	"column":     {"column_name", "column"},
+	"index":      {"index_name", "index"},
+	"constraint": {"constraint_name", "constraint"},
+	"procedure":  {"procedure_name", "routine_name", "procedure"},
+	"function":   {"function_name", "routine_name", "function"},
+	"type":       {"type_name", "data_type_name", "data_type", "udt_name"},
+}
+
+var metadataCollectionRestrictionKeys = map[string][]string{
+	"catalogs":          {"catalog"},
+	"schemas":           {"catalog", "schema"},
+	"tables":            {"catalog", "schema", "table", "type"},
+	"columns":           {"catalog", "schema", "table", "column", "type"},
+	"indexes":           {"catalog", "schema", "table", "index"},
+	"index_columns":     {"catalog", "schema", "table", "index", "column"},
+	"constraints":       {"catalog", "schema", "table", "constraint"},
+	"primary_keys":      {"catalog", "schema", "table", "constraint"},
+	"foreign_keys":      {"catalog", "schema", "table", "constraint"},
+	"table_privileges":  {"catalog", "schema", "table"},
+	"column_privileges": {"catalog", "schema", "table", "column"},
+	"procedures":        {"catalog", "schema", "procedure"},
+	"functions":         {"catalog", "schema", "function"},
+	"type_info":         {"type"},
+}
+
+type metadataRestrictionBinding struct {
+	columnIndexes []int
+	expectNull    bool
+	expectedText  string
+}
+
 func NormalizeMetadataCollectionName(collection string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(collection))
 	if normalized == "" {
@@ -125,6 +161,41 @@ func ResolveMetadataCollectionQuery(collection string) (string, error) {
 		return "", fmt.Errorf("metadata collection %q is not supported", collection)
 	}
 	return query, nil
+}
+
+func normalizeMetadataRestrictions(restrictions map[string]any) map[string]any {
+	if len(restrictions) == 0 {
+		return map[string]any{}
+	}
+
+	normalized := make(map[string]any, len(restrictions))
+	for key, value := range restrictions {
+		normalizedKey := metadataNormalizeIdentifier(key)
+		if normalizedKey == "" {
+			continue
+		}
+		normalized[normalizedKey] = value
+	}
+	return normalized
+}
+
+func filterMetadataRowsByRestrictions(rows [][]driver.Value, columnNames []string, restrictions map[string]any, collection string) [][]driver.Value {
+	normalizedRestrictions := normalizeMetadataRestrictions(restrictions)
+	if len(normalizedRestrictions) == 0 {
+		return rows
+	}
+	bindings := metadataBuildRestrictionBindings(columnNames, normalizedRestrictions, collection)
+	if len(bindings) == 0 {
+		return rows
+	}
+
+	filtered := make([][]driver.Value, 0, len(rows))
+	for _, row := range rows {
+		if metadataRowMatchesBindings(row, bindings) {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
 }
 
 // MetadataSchemaTreeNode represents one node in a dotted-schema navigation tree.
@@ -282,4 +353,129 @@ func metadataPatternToRegex(pattern string) string {
 
 	out.WriteByte('$')
 	return out.String()
+}
+
+func metadataBuildRestrictionBindings(columnNames []string, restrictions map[string]any, collection string) []metadataRestrictionBinding {
+	if len(columnNames) == 0 || len(restrictions) == 0 {
+		return nil
+	}
+
+	allowedAliases := map[string]struct{}{}
+	if resolvedCollection, err := NormalizeMetadataCollectionName(collection); err == nil {
+		for _, restrictionKey := range metadataCollectionRestrictionKeys[resolvedCollection] {
+			for _, alias := range metadataRestrictionAliases(restrictionKey) {
+				allowedAliases[metadataNormalizeIdentifier(alias)] = struct{}{}
+			}
+		}
+	}
+
+	columnIndexesByName := make(map[string][]int, len(columnNames))
+	for idx, columnName := range columnNames {
+		normalized := metadataNormalizeIdentifier(columnName)
+		if normalized == "" {
+			continue
+		}
+		columnIndexesByName[normalized] = append(columnIndexesByName[normalized], idx)
+	}
+
+	bindings := make([]metadataRestrictionBinding, 0, len(restrictions))
+	for restrictionKey, restrictionValue := range restrictions {
+		aliases := make(map[string]struct{})
+		for _, alias := range metadataRestrictionAliases(restrictionKey) {
+			normalizedAlias := metadataNormalizeIdentifier(alias)
+			if normalizedAlias == "" {
+				continue
+			}
+			if len(allowedAliases) > 0 {
+				if _, ok := allowedAliases[normalizedAlias]; !ok && normalizedAlias != restrictionKey {
+					continue
+				}
+			}
+			aliases[normalizedAlias] = struct{}{}
+		}
+		if len(aliases) == 0 {
+			continue
+		}
+
+		indexSet := map[int]struct{}{}
+		for alias := range aliases {
+			for _, idx := range columnIndexesByName[alias] {
+				indexSet[idx] = struct{}{}
+			}
+		}
+		if len(indexSet) == 0 {
+			continue
+		}
+
+		columnIndexes := make([]int, 0, len(indexSet))
+		for idx := range indexSet {
+			columnIndexes = append(columnIndexes, idx)
+		}
+
+		expected := metadataNormalizeMatchText(restrictionValue)
+		bindings = append(bindings, metadataRestrictionBinding{
+			columnIndexes: columnIndexes,
+			expectNull:    expected == "null",
+			expectedText:  expected,
+		})
+	}
+	return bindings
+}
+
+func metadataRowMatchesBindings(row []driver.Value, bindings []metadataRestrictionBinding) bool {
+	for _, binding := range bindings {
+		matched := false
+		for _, idx := range binding.columnIndexes {
+			if idx < 0 || idx >= len(row) {
+				continue
+			}
+			value := row[idx]
+			if binding.expectNull {
+				if value == nil {
+					matched = true
+					break
+				}
+				continue
+			}
+			if value == nil {
+				continue
+			}
+			if metadataNormalizeMatchText(value) == binding.expectedText {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func metadataRestrictionAliases(key string) []string {
+	canonical := metadataNormalizeIdentifier(key)
+	aliases := append([]string{}, metadataRestrictionKeyAliases[canonical]...)
+	if canonical != "" {
+		aliases = append(aliases, canonical)
+	}
+	return aliases
+}
+
+func metadataNormalizeIdentifier(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	var out strings.Builder
+	out.Grow(len(value))
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			out.WriteRune(ch)
+		}
+	}
+	return out.String()
+}
+
+func metadataNormalizeMatchText(value any) string {
+	return strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
 }

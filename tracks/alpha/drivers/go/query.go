@@ -10,6 +10,7 @@ package scratchbird
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -37,6 +38,64 @@ func normalizeQuery(query string, args []driver.NamedValue) (normalizedQuery, er
 		return normalizedQuery{sql: sql, args: ordered}, nil
 	}
 	return normalizedQuery{sql: query, args: args}, nil
+}
+
+func normalizeCallableQuery(query string, args []driver.NamedValue) (normalizedQuery, error) {
+	callableSQL, err := normalizeCallableSQL(query)
+	if err != nil {
+		return normalizedQuery{}, err
+	}
+	return normalizeQuery(callableSQL, args)
+}
+
+func normalizeCallableSQL(query string) (string, error) {
+	trimmed := strings.TrimSpace(query)
+	if !strings.HasPrefix(trimmed, "{") || !strings.HasSuffix(trimmed, "}") {
+		return query, nil
+	}
+	if len(trimmed) < 2 {
+		return query, nil
+	}
+
+	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	if inner == "" {
+		return query, nil
+	}
+
+	remaining, ok := trimPrefixFold(inner, "?")
+	if ok {
+		remaining = strings.TrimSpace(remaining)
+		if strings.HasPrefix(remaining, "=") {
+			remaining = strings.TrimSpace(remaining[1:])
+			remaining, ok = trimPrefixFold(remaining, "call")
+			if !ok {
+				return query, nil
+			}
+			invocation, parseErr := parseCallableInvocation(strings.TrimSpace(remaining))
+			if parseErr != nil {
+				return "", parseErr
+			}
+			callArgs := ""
+			if invocation.hasParens {
+				callArgs = invocation.args
+			}
+			return fmt.Sprintf("select %s(%s) as return_value", invocation.routine, callArgs), nil
+		}
+	}
+
+	remaining, ok = trimPrefixFold(inner, "call")
+	if ok {
+		invocation, parseErr := parseCallableInvocation(strings.TrimSpace(remaining))
+		if parseErr != nil {
+			return "", parseErr
+		}
+		if invocation.hasParens {
+			return fmt.Sprintf("call %s(%s)", invocation.routine, invocation.args), nil
+		}
+		return fmt.Sprintf("call %s", invocation.routine), nil
+	}
+
+	return query, nil
 }
 
 func hasNamedParams(query string) bool {
@@ -159,4 +218,75 @@ func isIdentStart(ch byte) bool {
 
 func isIdentPart(ch byte) bool {
 	return isIdentStart(ch) || (ch >= '0' && ch <= '9')
+}
+
+func trimPrefixFold(value, prefix string) (string, bool) {
+	if len(value) < len(prefix) {
+		return value, false
+	}
+	if strings.EqualFold(value[:len(prefix)], prefix) {
+		return value[len(prefix):], true
+	}
+	return value, false
+}
+
+type callableInvocation struct {
+	routine   string
+	args      string
+	hasParens bool
+}
+
+func parseCallableInvocation(value string) (callableInvocation, error) {
+	open := strings.IndexByte(value, '(')
+	if open < 0 {
+		routine := strings.TrimSpace(value)
+		if routine == "" {
+			return callableInvocation{}, errors.New("invalid JDBC escape call syntax")
+		}
+		return callableInvocation{routine: routine, args: "", hasParens: false}, nil
+	}
+
+	inSingle := false
+	inDouble := false
+	depth := 0
+	closeIndex := -1
+	for i := open; i < len(value); i++ {
+		ch := value[i]
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if inSingle || inDouble {
+			continue
+		}
+		if ch == '(' {
+			depth++
+			continue
+		}
+		if ch == ')' {
+			depth--
+			if depth == 0 {
+				closeIndex = i
+				break
+			}
+		}
+	}
+	if closeIndex < 0 {
+		return callableInvocation{}, errors.New("invalid JDBC escape call syntax")
+	}
+
+	routine := strings.TrimSpace(value[:open])
+	if routine == "" {
+		return callableInvocation{}, errors.New("invalid JDBC escape call syntax")
+	}
+	trailing := strings.TrimSpace(value[closeIndex+1:])
+	if trailing != "" {
+		return callableInvocation{}, errors.New("invalid JDBC escape call syntax")
+	}
+	args := strings.TrimSpace(value[open+1 : closeIndex])
+	return callableInvocation{routine: routine, args: args, hasParens: true}, nil
 }

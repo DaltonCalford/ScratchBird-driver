@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test",
-    "test:integration": "node --test node/test/integration.test.js"
+    "test:integration": "node --test test/integration.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.30",

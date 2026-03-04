@@ -22,12 +22,38 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Added targeted tests:
   - Extended `tests/test_txn_exec_parity.py` with result-stream `last_id` to `lastrowid` propagation and `executemany` final-`lastrowid` behavior checks.
   - Extended `tests/test_sql.py` with a cast-syntax rewrite regression test.
+- Added callable and multi-result execution parity in `src/scratchbird/connection.py`, `src/scratchbird/cursor.py`, and `src/scratchbird/sql.py`:
+  - `native_callable_sql(sql, params=None)` and `call(sql, params=None)` now expose callable normalization/execution on `Connection`.
+  - `Cursor.callproc(procname, params=None)` now routes through callable normalization with placeholder rewriting.
+  - `ResultStream` now tracks result-set boundaries and exposes next-result navigation; `Cursor.nextset()` now advances across result sets.
+- Added first-class batch execution summaries in `src/scratchbird/connection.py`:
+  - `execute_batch(sql, batch_params)` now returns per-item summaries (`index`, `rowCount`, `fields`, `command`, `lastId`) plus `totalRowCount`.
+  - `query_batch(sql, batch_params)` now aliases `execute_batch(...)`.
+- Added first-class multi-result summary helpers in `src/scratchbird/connection.py`:
+  - `query_multi(sql, params)` now returns all result sets as structured summaries (`rows`, `rowCount`, `fields`, `command`, `lastId`).
+  - `execute_multi(sql, params)` now aliases `query_multi(...)`.
+- Added status-message propagation in `src/scratchbird/connection.py` and `src/scratchbird/cursor.py`:
+  - `ResultStream` now captures `COMMAND_COMPLETE.tag` as `command`.
+  - Cursor drain paths now expose that as `cursor.statusmessage`.
+- Added dedicated generated-keys result-set API in `src/scratchbird/cursor.py` and `src/scratchbird/connection.py`:
+  - `Cursor.get_generated_keys()` now returns a generated-keys result-set object (`fetchone/fetchmany/fetchall`, `description`, `rowcount`).
+  - Generated keys are accumulated across execute, executemany, and multi-result boundaries.
+  - `Connection.execute_with_generated_keys(sql, params)` now provides convenience execution + generated-keys retrieval.
+- Added callable and next-result tests:
+  - Extended `tests/test_txn_exec_parity.py` with `Connection.call`, `native_callable_sql`, and `Cursor.callproc/nextset` coverage.
+  - Extended `tests/test_sql.py` with JDBC escape callable normalization coverage.
+- Added batch/statusmessage tests:
+  - Extended `tests/test_txn_exec_parity.py` with `Connection.execute_batch/query_batch` coverage and status-message assertions.
+- Added generated-keys tests:
+  - Extended `tests/test_txn_exec_parity.py` with `Cursor.get_generated_keys` and `Connection.execute_with_generated_keys` coverage, including multi-result accumulation.
+- Added multi-result summary tests:
+  - Extended `tests/test_txn_exec_parity.py` with `Connection.query_multi/execute_multi` coverage.
 - Updated TXN/EXEC rows in `BASELINE_REQUIREMENT_MAPPING.md` with current evidence and status notes.
 
 ## Tests Run
 
-1. `pytest -q tests/test_txn_exec_parity.py tests/test_sql.py tests/test_connection_auth_protocol.py`
-- Result: PASS (`25 passed`)
+1. `PYTHONPATH=src pytest -q`
+- Result: PASS (`68 passed, 4 skipped`)
 
 ## TXN Status
 
@@ -40,8 +66,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - Execution normalization and dispatch parity improved via `native_sql`, normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, and `COMMAND_COMPLETE.last_id` to `cursor.lastrowid` propagation across execute/executemany paths, all with lane-local tests.
-  - Remaining gap: no first-class batch API, multi-result traversal API, dedicated generated-keys result-set API, or callable/routine API.
+  - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
+  - Remaining gap: limited live integration depth.
 
 ## Remaining Gaps
 
@@ -49,7 +75,4 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Wire-level autocommit/session parity is not implemented as a dedicated transaction-state operation.
   - No integration test that validates transaction lifecycle against a live server in this lane.
 - EXEC:
-  - No dedicated batch execution API surface.
-  - No dedicated multi-result traversal API surface.
-  - No dedicated generated-keys result-set API (current coverage is `lastrowid` parity from command-complete metadata only).
-  - No dedicated callable/routine execution API.
+  - Live integration coverage depth remains limited for extended execution surfaces.

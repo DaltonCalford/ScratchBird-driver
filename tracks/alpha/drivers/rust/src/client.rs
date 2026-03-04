@@ -5,7 +5,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,15 +16,15 @@ use tokio::time::timeout;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
-use crate::config::Config;
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+use crate::config::Config;
 use crate::errors::{error_from_sqlstate, Error, ErrorKind, Result};
 use crate::keepalive::{KeepaliveConfig, KeepaliveTracker};
 use crate::metadata::{normalize_metadata_collection_name, resolve_metadata_collection_query};
 use crate::protocol;
 use crate::protocol::MessageHeader;
 use crate::scram::ScramExchange;
-use crate::sql::{normalize, Params};
+use crate::sql::{normalize, normalize_callable, Params};
 use crate::telemetry::{SpanContext, TelemetryCollector, TelemetryConfig};
 use crate::types::{decode_value, encode_param, Column, Param, Value, FORMAT_BINARY};
 
@@ -47,7 +47,9 @@ const MCP_AUTH_METHOD_TOKEN: u8 = 4;
 
 fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => Some("native"),
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => {
+            Some("native")
+        }
         _ => None,
     }
 }
@@ -99,6 +101,38 @@ pub struct QueryResult {
     pub command_tag: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct FieldSummary {
+    pub name: String,
+    pub type_oid: u32,
+    pub format: u16,
+    pub nullable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResultSetSummary {
+    pub rows: Vec<Vec<Value>>,
+    pub row_count: i64,
+    pub fields: Vec<FieldSummary>,
+    pub command: String,
+    pub last_insert_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct BatchItemSummary {
+    pub index: usize,
+    pub row_count: i64,
+    pub fields: Vec<FieldSummary>,
+    pub command: String,
+    pub last_insert_id: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BatchSummary {
+    pub items: Vec<BatchItemSummary>,
+    pub total_row_count: i64,
+}
+
 pub struct QueryStream<'a> {
     client: &'a mut Client,
     columns: Vec<protocol::ColumnInfo>,
@@ -120,7 +154,10 @@ pub enum CopyState {
     /// Copy data can be sent to the server (COPY FROM)
     Sending { format: u8, window_bytes: u32 },
     /// Copy data is being received from the server (COPY TO)
-    Receiving { format: u8, column_formats: Vec<u32> },
+    Receiving {
+        format: u8,
+        column_formats: Vec<u32>,
+    },
     /// Bidirectional copy is active
     Both { format: u8, window_bytes: u32 },
     /// Copy operation completed successfully
@@ -222,19 +259,23 @@ impl Client {
         })?;
         self.config.protocol = protocol.to_string();
 
-        let front_door_mode = normalize_front_door_mode(&self.config.front_door_mode).ok_or_else(|| {
-            Error::with_sqlstate(
-                ErrorKind::NotSupported,
-                "front_door_mode must be direct or manager_proxy",
-                Some("0A000".to_string()),
-                None,
-                None,
-            )
-        })?;
+        let front_door_mode =
+            normalize_front_door_mode(&self.config.front_door_mode).ok_or_else(|| {
+                Error::with_sqlstate(
+                    ErrorKind::NotSupported,
+                    "front_door_mode must be direct or manager_proxy",
+                    Some("0A000".to_string()),
+                    None,
+                    None,
+                )
+            })?;
         self.config.front_door_mode = front_door_mode.to_string();
 
         if self.config.user.is_empty() || self.config.database.is_empty() {
-            return Err(Error::new(ErrorKind::Connection, "user and database are required"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "user and database are required",
+            ));
         }
         if !self.config.binary_transfer {
             return Err(Error::with_sqlstate(
@@ -254,7 +295,9 @@ impl Client {
                 None,
             ));
         }
-        if self.config.front_door_mode == "manager_proxy" && self.config.manager_auth_token.is_empty() {
+        if self.config.front_door_mode == "manager_proxy"
+            && self.config.manager_auth_token.is_empty()
+        {
             return Err(Error::new(
                 ErrorKind::Connection,
                 "manager_proxy mode requires manager_auth_token",
@@ -271,7 +314,10 @@ impl Client {
             params.insert("role".to_string(), self.config.role.clone());
         }
         if !self.config.application_name.is_empty() {
-            params.insert("application_name".to_string(), self.config.application_name.clone());
+            params.insert(
+                "application_name".to_string(),
+                self.config.application_name.clone(),
+            );
         }
         let auth_plugin_selection = protocol::AuthPluginSelection {
             method_id: self
@@ -322,6 +368,11 @@ impl Client {
         Ok(normalized.sql)
     }
 
+    pub fn native_callable_sql(&self, sql: &str, params: Params) -> Result<String> {
+        let normalized = normalize_callable(sql, params)?;
+        Ok(normalized.sql)
+    }
+
     pub async fn query_params(&mut self, sql: &str, params: Params) -> Result<QueryResult> {
         self.ensure_connected()?;
         let span = self.begin_operation("query").await?;
@@ -329,11 +380,127 @@ impl Client {
         if normalized.params.is_empty() {
             self.send_simple_query(&normalized.sql, 0, 0).await?;
         } else {
-            self.send_extended_query(&normalized.sql, &normalized.params, 0).await?;
+            self.send_extended_query(&normalized.sql, &normalized.params, 0)
+                .await?;
         }
         let result = self.collect_results().await;
         self.end_operation(span, result.is_ok()).await;
         result
+    }
+
+    pub async fn call(&mut self, sql: &str, params: Params) -> Result<QueryResult> {
+        self.ensure_connected()?;
+        let span = self.begin_operation("call").await?;
+        let normalized = normalize_callable(sql, params)?;
+        if normalized.params.is_empty() {
+            self.send_simple_query(&normalized.sql, 0, 0).await?;
+        } else {
+            self.send_extended_query(&normalized.sql, &normalized.params, 0)
+                .await?;
+        }
+        let result = self.collect_results().await;
+        self.end_operation(span, result.is_ok()).await;
+        result
+    }
+
+    pub async fn query_multi(
+        &mut self,
+        sql: &str,
+        params: Params,
+    ) -> Result<Vec<ResultSetSummary>> {
+        self.ensure_connected()?;
+        let span = self.begin_operation("query_multi").await?;
+        let normalized = normalize(sql, params)?;
+        if normalized.params.is_empty() {
+            self.send_simple_query(&normalized.sql, 0, 0).await?;
+        } else {
+            self.send_extended_query(&normalized.sql, &normalized.params, 0)
+                .await?;
+        }
+        let result = self.collect_result_sets().await;
+        self.end_operation(span, result.is_ok()).await;
+        result
+    }
+
+    pub async fn execute_multi(
+        &mut self,
+        sql: &str,
+        params: Params,
+    ) -> Result<Vec<ResultSetSummary>> {
+        self.query_multi(sql, params).await
+    }
+
+    pub async fn execute_batch(
+        &mut self,
+        sql: &str,
+        batch_params: Vec<Params>,
+    ) -> Result<BatchSummary> {
+        if batch_params.is_empty() {
+            return Err(Error::with_sqlstate(
+                ErrorKind::Syntax,
+                "batch arguments are required",
+                Some("07001".to_string()),
+                None,
+                None,
+            ));
+        }
+        let mut summary = BatchSummary::default();
+        for (index, params) in batch_params.into_iter().enumerate() {
+            let result_sets = self.query_multi(sql, params).await?;
+            let mut row_count = 0_i64;
+            let mut fields = Vec::new();
+            let mut command = String::new();
+            let mut last_insert_id = 0_i64;
+
+            for set in &result_sets {
+                if set.row_count > 0 {
+                    row_count += set.row_count;
+                }
+                if !set.fields.is_empty() {
+                    fields = set.fields.clone();
+                }
+                if !set.command.is_empty() {
+                    command = set.command.clone();
+                }
+                if set.last_insert_id != 0 {
+                    last_insert_id = set.last_insert_id;
+                }
+            }
+            if row_count > 0 {
+                summary.total_row_count += row_count;
+            }
+            summary.items.push(BatchItemSummary {
+                index,
+                row_count,
+                fields,
+                command,
+                last_insert_id,
+            });
+        }
+        Ok(summary)
+    }
+
+    pub async fn query_batch(
+        &mut self,
+        sql: &str,
+        batch_params: Vec<Params>,
+    ) -> Result<BatchSummary> {
+        self.execute_batch(sql, batch_params).await
+    }
+
+    pub async fn execute_with_generated_keys(
+        &mut self,
+        sql: &str,
+        params: Params,
+    ) -> Result<Vec<i64>> {
+        let sets = self.query_multi(sql, params).await?;
+        let mut keys = Vec::with_capacity(sets.len());
+        for set in sets {
+            if set.last_insert_id != 0 {
+                keys.push(set.last_insert_id);
+            }
+        }
+        Ok(keys)
     }
 
     pub async fn query_stream(&mut self, sql: &str) -> Result<QueryStream<'_>> {
@@ -357,7 +524,11 @@ impl Client {
         })
     }
 
-    pub async fn query_stream_params(&mut self, sql: &str, params: Params) -> Result<QueryStream<'_>> {
+    pub async fn query_stream_params(
+        &mut self,
+        sql: &str,
+        params: Params,
+    ) -> Result<QueryStream<'_>> {
         self.ensure_connected()?;
         let span = self.begin_operation("query_stream").await?;
         let telemetry = Arc::clone(&self.telemetry);
@@ -365,9 +536,11 @@ impl Client {
         let normalized = normalize(sql, params)?;
         let page_size = self.config.fetch_size.max(1);
         if normalized.params.is_empty() {
-            self.send_simple_query(&normalized.sql, page_size, 0).await?;
+            self.send_simple_query(&normalized.sql, page_size, 0)
+                .await?;
         } else {
-            self.send_extended_query(&normalized.sql, &normalized.params, page_size).await?;
+            self.send_extended_query(&normalized.sql, &normalized.params, page_size)
+                .await?;
         }
         Ok(QueryStream {
             client: self,
@@ -394,6 +567,19 @@ impl Client {
             ));
         };
         self.query(query).await
+    }
+
+    pub async fn query_metadata_with_restrictions(
+        &mut self,
+        collection: &str,
+        restrictions: &HashMap<String, String>,
+    ) -> Result<QueryResult> {
+        let result = self.query_metadata(collection).await?;
+        Ok(apply_metadata_restrictions(
+            result,
+            restrictions,
+            Some(collection),
+        ))
     }
 
     pub fn metadata_collection_name(collection: &str) -> Result<&'static str> {
@@ -425,7 +611,9 @@ impl Client {
         self.ensure_no_active_transaction()?;
         let opts = options.unwrap_or_default();
         let mut flags = 0u16;
-        let isolation = opts.isolation_level.unwrap_or(protocol::ISOLATION_READ_COMMITTED);
+        let isolation = opts
+            .isolation_level
+            .unwrap_or(protocol::ISOLATION_READ_COMMITTED);
         if opts.isolation_level.is_some() {
             flags |= protocol::TXN_FLAG_HAS_ISOLATION;
         }
@@ -450,11 +638,16 @@ impl Client {
             opts.autocommit_mode.unwrap_or(0),
             isolation,
             opts.access_mode.unwrap_or(0),
-            if opts.deferrable.unwrap_or(false) { 1 } else { 0 },
+            if opts.deferrable.unwrap_or(false) {
+                1
+            } else {
+                0
+            },
             if opts.wait.unwrap_or(false) { 1 } else { 0 },
             opts.timeout_ms.unwrap_or(0),
         );
-        self.send_message(protocol::MSG_TXN_BEGIN, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_BEGIN, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -463,7 +656,8 @@ impl Client {
         self.ensure_transaction_active("commit")?;
         let flags = options.map(|opt| opt.flags).unwrap_or(0);
         let payload = protocol::build_txn_commit_payload(flags);
-        self.send_message(protocol::MSG_TXN_COMMIT, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_COMMIT, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -472,7 +666,8 @@ impl Client {
         self.ensure_transaction_active("rollback")?;
         let flags = options.map(|opt| opt.flags).unwrap_or(0);
         let payload = protocol::build_txn_rollback_payload(flags);
-        self.send_message(protocol::MSG_TXN_ROLLBACK, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_ROLLBACK, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -481,7 +676,8 @@ impl Client {
         self.ensure_transaction_active("savepoint")?;
         let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_savepoint_payload(name);
-        self.send_message(protocol::MSG_TXN_SAVEPOINT, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_SAVEPOINT, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -490,7 +686,8 @@ impl Client {
         self.ensure_transaction_active("release savepoint")?;
         let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_release_payload(name);
-        self.send_message(protocol::MSG_TXN_RELEASE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_RELEASE, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -499,14 +696,16 @@ impl Client {
         self.ensure_transaction_active("rollback to savepoint")?;
         let name = Self::validate_savepoint_name(name)?;
         let payload = protocol::build_txn_rollback_to_payload(name);
-        self.send_message(protocol::MSG_TXN_ROLLBACK_TO, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_TXN_ROLLBACK_TO, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
     pub async fn set_option(&mut self, name: &str, value: &str) -> Result<()> {
         self.ensure_connected()?;
         let payload = protocol::build_set_option_payload(name, value);
-        self.send_message(protocol::MSG_SET_OPTION, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_SET_OPTION, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
@@ -518,7 +717,9 @@ impl Client {
             if self.handle_async_message(&msg)? {
                 continue;
             }
-            if msg.header.msg_type == protocol::MSG_PONG || msg.header.msg_type == protocol::MSG_READY {
+            if msg.header.msg_type == protocol::MSG_PONG
+                || msg.header.msg_type == protocol::MSG_READY
+            {
                 if msg.header.msg_type == protocol::MSG_READY {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
                     self.apply_txn_state(txn_id);
@@ -536,26 +737,39 @@ impl Client {
             self.close().await;
             return Ok(());
         }
-        self.send_message(protocol::MSG_TERMINATE, &[], 0, false).await?;
+        self.send_message(protocol::MSG_TERMINATE, &[], 0, false)
+            .await?;
         self.close().await;
         Ok(())
     }
 
-    pub async fn subscribe(&mut self, subscribe_type: u8, channel: &str, filter_expr: &str) -> Result<()> {
+    pub async fn subscribe(
+        &mut self,
+        subscribe_type: u8,
+        channel: &str,
+        filter_expr: &str,
+    ) -> Result<()> {
         self.ensure_connected()?;
         let payload = protocol::build_subscribe_payload(subscribe_type, channel, filter_expr);
-        self.send_message(protocol::MSG_SUBSCRIBE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_SUBSCRIBE, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
     pub async fn unsubscribe(&mut self, channel: &str) -> Result<()> {
         self.ensure_connected()?;
         let payload = protocol::build_unsubscribe_payload(channel);
-        self.send_message(protocol::MSG_UNSUBSCRIBE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_UNSUBSCRIBE, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
-    pub async fn execute_sblr(&mut self, sblr_hash: u64, sblr_bytecode: &[u8], params: &[Param]) -> Result<QueryResult> {
+    pub async fn execute_sblr(
+        &mut self,
+        sblr_hash: u64,
+        sblr_bytecode: &[u8],
+        params: &[Param],
+    ) -> Result<QueryResult> {
         self.ensure_connected()?;
         let span = self.begin_operation("sblr_execute").await?;
         let mut encoded = Vec::with_capacity(params.len());
@@ -566,7 +780,9 @@ impl Client {
         let payload = protocol::build_sblr_execute_payload(sblr_hash, sblr_bytecode, &encoded);
         self.last_plan = None;
         self.last_sblr = None;
-        let sequence = self.send_message(protocol::MSG_SBLR_EXECUTE, &payload, 0, false).await?;
+        let sequence = self
+            .send_message(protocol::MSG_SBLR_EXECUTE, &payload, 0, false)
+            .await?;
         self.last_query_sequence = sequence;
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
         let result = self.collect_results().await;
@@ -574,29 +790,38 @@ impl Client {
         result
     }
 
-    pub async fn stream_control(&mut self, control_type: u8, window_size: u32, timeout_ms: u32) -> Result<()> {
+    pub async fn stream_control(
+        &mut self,
+        control_type: u8,
+        window_size: u32,
+        timeout_ms: u32,
+    ) -> Result<()> {
         self.ensure_connected()?;
         let payload = protocol::build_stream_control_payload(control_type, window_size, timeout_ms);
-        self.send_message(protocol::MSG_STREAM_CONTROL, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_STREAM_CONTROL, &payload, 0, false)
+            .await?;
         Ok(())
     }
 
     pub async fn attach_create(&mut self, emulation_mode: &str, db_name: &str) -> Result<()> {
         self.ensure_connected()?;
         let payload = protocol::build_attach_create_payload(emulation_mode, db_name);
-        self.send_message(protocol::MSG_ATTACH_CREATE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_ATTACH_CREATE, &payload, 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
     pub async fn attach_detach(&mut self) -> Result<()> {
         self.ensure_connected()?;
-        self.send_message(protocol::MSG_ATTACH_DETACH, &[], 0, false).await?;
+        self.send_message(protocol::MSG_ATTACH_DETACH, &[], 0, false)
+            .await?;
         self.drain_until_ready().await
     }
 
     pub async fn attach_list(&mut self) -> Result<QueryResult> {
         self.ensure_connected()?;
-        self.send_message(protocol::MSG_ATTACH_LIST, &[], 0, false).await?;
+        self.send_message(protocol::MSG_ATTACH_LIST, &[], 0, false)
+            .await?;
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
         self.collect_results().await
     }
@@ -621,74 +846,87 @@ impl Client {
     // ============================================================================
 
     /// Execute a COPY FROM operation (client sends data to server).
-    /// 
+    ///
     /// # Arguments
     /// * `sql` - The COPY SQL statement (e.g., "COPY table FROM STDIN")
     /// * `data` - The data to be copied
     /// * `options` - Optional copy options
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// let data = b"1,hello\n2,world\n".to_vec();
     /// let result = client.copy_in("COPY my_table FROM STDIN (FORMAT csv)", data, None).await?;
     /// ```
-    pub async fn copy_in(&mut self, sql: &str, data: Vec<u8>, options: Option<CopyOptions>) -> Result<CopyResult> {
+    pub async fn copy_in(
+        &mut self,
+        sql: &str,
+        data: Vec<u8>,
+        options: Option<CopyOptions>,
+    ) -> Result<CopyResult> {
         self.ensure_connected()?;
         let span = self.begin_operation("copy_in").await?;
         let opts = options.unwrap_or_default();
-        
+
         // Request binary copy feature if using binary format
         if opts.format == protocol::COPY_FORMAT_BINARY {
             self.request_binary_copy_feature().await?;
         }
-        
+
         // Send the COPY query
         self.send_simple_query(sql, 0, 0).await?;
-        
+
         // Wait for CopyInResponse
         let copy_response = self.wait_for_copy_in_response().await?;
-        
+
         let result = match copy_response {
-            CopyState::Sending { format: _, window_bytes: _ } => {
+            CopyState::Sending {
+                format: _,
+                window_bytes: _,
+            } => {
                 // Send the copy data in chunks
-                self.send_copy_data_in_chunks(&data, opts.buffer_size).await?;
-                
+                self.send_copy_data_in_chunks(&data, opts.buffer_size)
+                    .await?;
+
                 // Send CopyDone
                 self.send_copy_done().await?;
-                
+
                 // Wait for CommandComplete
                 self.wait_for_copy_complete().await
             }
-            CopyState::Failed { error } => {
-                Err(Error::new(ErrorKind::Data, format!("copy failed: {}", error)))
-            }
-            _ => Err(Error::new(ErrorKind::Connection, "unexpected copy response")),
+            CopyState::Failed { error } => Err(Error::new(
+                ErrorKind::Data,
+                format!("copy failed: {}", error),
+            )),
+            _ => Err(Error::new(
+                ErrorKind::Connection,
+                "unexpected copy response",
+            )),
         };
         self.end_operation(span, result.is_ok()).await;
         result
     }
 
     /// Execute a COPY TO operation (server sends data to client).
-    /// 
+    ///
     /// # Arguments
     /// * `sql` - The COPY SQL statement (e.g., "COPY table TO STDOUT")
     /// * `options` - Optional copy options
-    /// 
+    ///
     /// # Returns
     /// The data received from the server
     pub async fn copy_out(&mut self, sql: &str, options: Option<CopyOptions>) -> Result<Vec<u8>> {
         self.ensure_connected()?;
         let span = self.begin_operation("copy_out").await?;
         let opts = options.unwrap_or_default();
-        
+
         // Request binary copy feature if using binary format
         if opts.format == protocol::COPY_FORMAT_BINARY {
             self.request_binary_copy_feature().await?;
         }
-        
+
         // Send the COPY query
         self.send_simple_query(sql, 0, 0).await?;
-        
+
         // Wait for CopyOutResponse and collect data
         let result = self.collect_copy_out_data().await;
         self.end_operation(span, result.is_ok()).await;
@@ -696,24 +934,28 @@ impl Client {
     }
 
     /// Send copy data in chunks to avoid memory issues with large datasets.
-    /// 
+    ///
     /// # Arguments
     /// * `sql` - The COPY SQL statement
     /// * `data_stream` - Async stream of data chunks
-    pub async fn copy_in_streaming<F, Fut>(&mut self, sql: &str, mut data_stream: F) -> Result<CopyResult>
+    pub async fn copy_in_streaming<F, Fut>(
+        &mut self,
+        sql: &str,
+        mut data_stream: F,
+    ) -> Result<CopyResult>
     where
         F: FnMut() -> Fut,
         Fut: std::future::Future<Output = Result<Option<Vec<u8>>>>,
     {
         self.ensure_connected()?;
         let span = self.begin_operation("copy_in_stream").await?;
-        
+
         // Send the COPY query
         self.send_simple_query(sql, 0, 0).await?;
-        
+
         // Wait for CopyInResponse
         let copy_response = self.wait_for_copy_in_response().await?;
-        
+
         let result = match copy_response {
             CopyState::Sending { .. } => {
                 // Stream the data
@@ -721,22 +963,27 @@ impl Client {
                     match data_stream().await? {
                         Some(chunk) => {
                             let payload = protocol::build_copy_data_payload(&chunk);
-                            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+                            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false)
+                                .await?;
                         }
                         None => break,
                     }
                 }
-                
+
                 // Send CopyDone
                 self.send_copy_done().await?;
-                
+
                 // Wait for CommandComplete
                 self.wait_for_copy_complete().await
             }
-            CopyState::Failed { error } => {
-                Err(Error::new(ErrorKind::Data, format!("copy failed: {}", error)))
-            }
-            _ => Err(Error::new(ErrorKind::Connection, "unexpected copy response")),
+            CopyState::Failed { error } => Err(Error::new(
+                ErrorKind::Data,
+                format!("copy failed: {}", error),
+            )),
+            _ => Err(Error::new(
+                ErrorKind::Connection,
+                "unexpected copy response",
+            )),
         };
         self.end_operation(span, result.is_ok()).await;
         result
@@ -746,7 +993,8 @@ impl Client {
     /// This is a low-level method for advanced use cases.
     pub async fn send_copy_data(&mut self, data: &[u8]) -> Result<()> {
         let payload = protocol::build_copy_data_payload(data);
-        self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false)
+            .await?;
         Ok(())
     }
 
@@ -754,7 +1002,8 @@ impl Client {
     /// This is a low-level method for advanced use cases.
     pub async fn send_copy_done(&mut self) -> Result<()> {
         let payload = protocol::build_copy_done_payload();
-        self.send_message(protocol::MSG_COPY_DONE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_COPY_DONE, &payload, 0, false)
+            .await?;
         Ok(())
     }
 
@@ -762,7 +1011,8 @@ impl Client {
     /// This is a low-level method for advanced use cases.
     pub async fn send_copy_fail(&mut self, error_message: &str) -> Result<()> {
         let payload = protocol::build_copy_fail_payload(error_message);
-        self.send_message(protocol::MSG_COPY_FAIL, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_COPY_FAIL, &payload, 0, false)
+            .await?;
         Ok(())
     }
 
@@ -807,7 +1057,8 @@ impl Client {
     async fn send_copy_data_in_chunks(&mut self, data: &[u8], chunk_size: usize) -> Result<()> {
         for chunk in data.chunks(chunk_size) {
             let payload = protocol::build_copy_data_payload(chunk);
-            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false).await?;
+            self.send_message(protocol::MSG_COPY_DATA, &payload, 0, false)
+                .await?;
         }
         Ok(())
     }
@@ -820,7 +1071,8 @@ impl Client {
             }
             match msg.header.msg_type {
                 protocol::MSG_COMMAND_COMPLETE => {
-                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
+                    let (_cmd_type, rows_affected, _last_id, tag) =
+                        protocol::parse_command_complete(&msg.payload)?;
                     return Ok(CopyResult {
                         rows_affected,
                         command_tag: tag,
@@ -842,7 +1094,7 @@ impl Client {
 
     async fn collect_copy_out_data(&mut self) -> Result<Vec<u8>> {
         let mut result = Vec::new();
-        
+
         loop {
             let msg = self.recv_message().await?;
             if self.handle_async_message(&msg)? {
@@ -879,13 +1131,21 @@ impl Client {
 
     pub async fn cancel(&mut self) -> Result<()> {
         let payload = protocol::build_cancel_payload(0, self.last_query_sequence);
-        self.send_message(protocol::MSG_CANCEL, &payload, protocol::MSG_FLAG_URGENT, false)
-            .await
-            .map(|_| ())
+        self.send_message(
+            protocol::MSG_CANCEL,
+            &payload,
+            protocol::MSG_FLAG_URGENT,
+            false,
+        )
+        .await
+        .map(|_| ())
     }
 
     async fn send_manager_frame(&mut self, msg_type: u8, payload: &[u8]) -> Result<()> {
-        let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
         let mut frame = Vec::with_capacity(MANAGER_HEADER_SIZE + payload.len());
         append_u32(&mut frame, MANAGER_PROTOCOL_MAGIC);
         append_u16(&mut frame, MANAGER_PROTOCOL_VERSION);
@@ -894,9 +1154,12 @@ impl Client {
         append_u32(&mut frame, payload.len() as u32);
         frame.extend_from_slice(payload);
         if self.config.socket_timeout_ms > 0 {
-            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.write_all(&frame))
-                .await
-                .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
+            timeout(
+                Duration::from_millis(self.config.socket_timeout_ms),
+                stream.write_all(&frame),
+            )
+            .await
+            .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
         } else {
             stream.write_all(&frame).await?;
         }
@@ -908,16 +1171,25 @@ impl Client {
         self.read_exact(&mut header).await?;
         let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
         if magic != MANAGER_PROTOCOL_MAGIC {
-            return Err(Error::new(ErrorKind::Connection, "manager frame magic mismatch"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "manager frame magic mismatch",
+            ));
         }
         let version = u16::from_le_bytes([header[4], header[5]]);
         if version != MANAGER_PROTOCOL_VERSION {
-            return Err(Error::new(ErrorKind::Connection, "manager frame version mismatch"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "manager frame version mismatch",
+            ));
         }
         let msg_type = header[6];
         let payload_len = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
         if payload_len > MANAGER_MAX_PAYLOAD_SIZE {
-            return Err(Error::new(ErrorKind::Connection, "manager payload too large"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "manager payload too large",
+            ));
         }
         let mut payload = vec![0u8; payload_len as usize];
         if payload_len > 0 {
@@ -965,7 +1237,10 @@ impl Client {
         self.send_manager_frame(MCP_MSG_HELLO, &hello).await?;
         let (mut msg_type, mut payload) = self.recv_manager_frame().await?;
         if msg_type != MCP_MSG_STATUS_RESPONSE {
-            return Err(Error::new(ErrorKind::Connection, "expected MCP hello status response"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "expected MCP hello status response",
+            ));
         }
 
         let mut auth_start = Vec::new();
@@ -977,20 +1252,31 @@ impl Client {
         } else {
             append_u32(&mut auth_start, 0);
         }
-        self.send_manager_frame(MCP_MSG_AUTH_START, &auth_start).await?;
+        self.send_manager_frame(MCP_MSG_AUTH_START, &auth_start)
+            .await?;
         (msg_type, payload) = self.recv_manager_frame().await?;
         if msg_type == MCP_MSG_AUTH_CHALLENGE {
             let mut auth_continue = Vec::new();
-            append_u32(&mut auth_continue, self.config.manager_auth_token.len() as u32);
+            append_u32(
+                &mut auth_continue,
+                self.config.manager_auth_token.len() as u32,
+            );
             auth_continue.extend_from_slice(self.config.manager_auth_token.as_bytes());
-            self.send_manager_frame(MCP_MSG_AUTH_CONTINUE, &auth_continue).await?;
+            self.send_manager_frame(MCP_MSG_AUTH_CONTINUE, &auth_continue)
+                .await?;
             (msg_type, payload) = self.recv_manager_frame().await?;
         }
         if msg_type != MCP_MSG_AUTH_RESPONSE {
-            return Err(Error::new(ErrorKind::Connection, "expected MCP auth response"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "expected MCP auth response",
+            ));
         }
         if payload.len() < 1 + 4 + 256 {
-            return Err(Error::new(ErrorKind::Connection, "truncated MCP auth response"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "truncated MCP auth response",
+            ));
         }
         if payload[0] != 0 {
             let mut error_bytes = payload[5..(5 + 256)].to_vec();
@@ -1019,13 +1305,20 @@ impl Client {
         rand::thread_rng().fill_bytes(&mut nonce);
         append_u16(&mut db_connect, nonce.len() as u16);
         db_connect.extend_from_slice(&nonce);
-        self.send_manager_frame(MCP_MSG_DB_CONNECT, &db_connect).await?;
+        self.send_manager_frame(MCP_MSG_DB_CONNECT, &db_connect)
+            .await?;
         let (msg_type, payload) = self.recv_manager_frame().await?;
         if msg_type != MCP_MSG_CONNECT_RESPONSE {
-            return Err(Error::new(ErrorKind::Connection, "expected MCP connect response"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "expected MCP connect response",
+            ));
         }
         if payload.len() < 1 + 2 + 2 + 16 + 64 + 32 {
-            return Err(Error::new(ErrorKind::Connection, "truncated MCP connect response"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "truncated MCP connect response",
+            ));
         }
         if payload[0] != 0 {
             let mut err_text = "MCP database connect failed".to_string();
@@ -1060,7 +1353,8 @@ impl Client {
         self.parameters.clear();
         let features = self.requested_features();
         let payload = protocol::build_startup_payload(features, &params);
-        self.send_message(protocol::MSG_STARTUP, &payload, 0, true).await?;
+        self.send_message(protocol::MSG_STARTUP, &payload, 0, true)
+            .await?;
         let mut scram: Option<ScramExchange> = None;
 
         loop {
@@ -1073,7 +1367,8 @@ impl Client {
                         protocol::AUTH_OK => continue,
                         protocol::AUTH_PASSWORD => {
                             let payload = self.config.password.as_bytes().to_vec();
-                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true).await?;
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true)
+                                .await?;
                         }
                         protocol::AUTH_SCRAM_SHA256 => {
                             if scram.is_none() {
@@ -1081,7 +1376,8 @@ impl Client {
                             }
                             let exchange = scram.as_mut().unwrap();
                             let payload = exchange.client_first_message().into_bytes();
-                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true).await?;
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true)
+                                .await?;
                         }
                         _ => return Err(Error::new(ErrorKind::Auth, "unsupported auth method")),
                     }
@@ -1091,14 +1387,24 @@ impl Client {
                     if method != protocol::AUTH_SCRAM_SHA256 {
                         return Err(Error::new(ErrorKind::Auth, "unsupported auth continue"));
                     }
-                    let exchange = scram.as_mut().ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM state missing"))?;
+                    let exchange = scram
+                        .as_mut()
+                        .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM state missing"))?;
                     let server_first = String::from_utf8_lossy(&data).to_string();
-                    let client_final = exchange.handle_server_first(&self.config.password, &server_first)?;
-                    self.send_message(protocol::MSG_AUTH_RESPONSE, client_final.as_bytes(), 0, true).await?;
+                    let client_final =
+                        exchange.handle_server_first(&self.config.password, &server_first)?;
+                    self.send_message(
+                        protocol::MSG_AUTH_RESPONSE,
+                        client_final.as_bytes(),
+                        0,
+                        true,
+                    )
+                    .await?;
                 }
                 protocol::MSG_AUTH_OK => {
                     let (_session_id, info) = protocol::parse_auth_ok(&msg.payload)?;
-                    self.attachment_id.copy_from_slice(&msg.header.attachment_id);
+                    self.attachment_id
+                        .copy_from_slice(&msg.header.attachment_id);
                     self.apply_txn_state(msg.header.txn_id);
                     self.authed = true;
                     if let Some(ref exchange) = scram {
@@ -1158,14 +1464,16 @@ impl Client {
                     rows.push(self.decode_row(&columns, &values)?);
                 }
                 protocol::MSG_COMMAND_COMPLETE => {
-                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
+                    let (_cmd_type, rows_affected, _last_id, tag) =
+                        protocol::parse_command_complete(&msg.payload)?;
                     command_tag = tag;
                     row_count = rows_affected as i64;
                 }
                 protocol::MSG_PORTAL_SUSPENDED => {
                     let rows_to_fetch = self.config.fetch_size.max(1);
                     let payload = protocol::build_execute_payload("", rows_to_fetch);
-                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false).await?;
+                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+                        .await?;
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
@@ -1183,7 +1491,77 @@ impl Client {
                             nullable: col.nullable,
                         })
                         .collect();
-                    return Ok(QueryResult { columns: mapped, rows, row_count, command_tag });
+                    return Ok(QueryResult {
+                        columns: mapped,
+                        rows,
+                        row_count,
+                        command_tag,
+                    });
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    async fn collect_result_sets(&mut self) -> Result<Vec<ResultSetSummary>> {
+        let mut result_sets = Vec::new();
+        let mut columns = Vec::new();
+        let mut rows = Vec::new();
+        let mut saw_result_metadata = false;
+
+        loop {
+            let msg = self.recv_message().await?;
+            if self.handle_async_message(&msg)? {
+                continue;
+            }
+            match msg.header.msg_type {
+                protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                protocol::MSG_ROW_DESCRIPTION => {
+                    columns = protocol::parse_row_description(&msg.payload)?;
+                    saw_result_metadata = true;
+                }
+                protocol::MSG_DATA_ROW => {
+                    let values = protocol::parse_data_row(&msg.payload, columns.len())?;
+                    rows.push(self.decode_row(&columns, &values)?);
+                }
+                protocol::MSG_COMMAND_COMPLETE => {
+                    let (_cmd_type, rows_affected, last_id, tag) =
+                        protocol::parse_command_complete(&msg.payload)?;
+                    let row_count = if rows_affected == 0 && !rows.is_empty() {
+                        rows.len() as i64
+                    } else {
+                        saturating_u64_to_i64(rows_affected)
+                    };
+                    result_sets.push(ResultSetSummary {
+                        rows: std::mem::take(&mut rows),
+                        row_count,
+                        fields: summarize_fields(&columns),
+                        command: tag,
+                        last_insert_id: saturating_u64_to_i64(last_id),
+                    });
+                    columns.clear();
+                    saw_result_metadata = false;
+                }
+                protocol::MSG_PORTAL_SUSPENDED => {
+                    let rows_to_fetch = self.config.fetch_size.max(1);
+                    let payload = protocol::build_execute_payload("", rows_to_fetch);
+                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+                        .await?;
+                }
+                protocol::MSG_READY => {
+                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_txn_state(txn_id);
+                    if saw_result_metadata || !rows.is_empty() {
+                        let pending_row_count = rows.len() as i64;
+                        result_sets.push(ResultSetSummary {
+                            rows: std::mem::take(&mut rows),
+                            row_count: pending_row_count,
+                            fields: summarize_fields(&columns),
+                            command: String::new(),
+                            last_insert_id: 0,
+                        });
+                    }
+                    return Ok(result_sets);
                 }
                 _ => continue,
             }
@@ -1249,16 +1627,27 @@ impl Client {
     }
 
     async fn send_simple_query(&mut self, sql: &str, max_rows: u32, timeout_ms: u32) -> Result<()> {
-        let flags = if self.config.binary_transfer { QUERY_FLAG_BINARY_RESULT } else { 0 };
+        let flags = if self.config.binary_transfer {
+            QUERY_FLAG_BINARY_RESULT
+        } else {
+            0
+        };
         let payload = protocol::build_query_payload(sql, flags, max_rows, timeout_ms);
         self.last_plan = None;
         self.last_sblr = None;
-        let sequence = self.send_message(protocol::MSG_QUERY, &payload, 0, false).await?;
+        let sequence = self
+            .send_message(protocol::MSG_QUERY, &payload, 0, false)
+            .await?;
         self.last_query_sequence = sequence;
         Ok(())
     }
 
-    async fn send_extended_query(&mut self, sql: &str, params: &[Param], max_rows: u32) -> Result<()> {
+    async fn send_extended_query(
+        &mut self,
+        sql: &str,
+        params: &[Param],
+        max_rows: u32,
+    ) -> Result<()> {
         let mut param_values = Vec::with_capacity(params.len());
         let mut param_types = Vec::with_capacity(params.len());
         for param in params {
@@ -1267,7 +1656,8 @@ impl Client {
             param_types.push(oid);
         }
         let parse_payload = protocol::build_parse_payload("", sql, &param_types);
-        self.send_message(protocol::MSG_PARSE, &parse_payload, 0, false).await?;
+        self.send_message(protocol::MSG_PARSE, &parse_payload, 0, false)
+            .await?;
         let described = self.describe_statement("").await?;
         if described > 0 && described != params.len() {
             return Err(Error::with_sqlstate(
@@ -1279,14 +1669,21 @@ impl Client {
             ));
         }
 
-        let result_formats = if self.config.binary_transfer { vec![FORMAT_BINARY] } else { Vec::new() };
+        let result_formats = if self.config.binary_transfer {
+            vec![FORMAT_BINARY]
+        } else {
+            Vec::new()
+        };
         let bind_payload = protocol::build_bind_payload("", "", &param_values, &result_formats);
-        self.send_message(protocol::MSG_BIND, &bind_payload, 0, false).await?;
+        self.send_message(protocol::MSG_BIND, &bind_payload, 0, false)
+            .await?;
 
         let exec_payload = protocol::build_execute_payload("", max_rows);
         self.last_plan = None;
         self.last_sblr = None;
-        let sequence = self.send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false).await?;
+        let sequence = self
+            .send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false)
+            .await?;
         self.last_query_sequence = sequence;
         if max_rows == 0 {
             self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
@@ -1296,7 +1693,8 @@ impl Client {
 
     async fn describe_statement(&mut self, statement_name: &str) -> Result<usize> {
         let payload = protocol::build_describe_payload(b'S', statement_name);
-        self.send_message(protocol::MSG_DESCRIBE, &payload, 0, false).await?;
+        self.send_message(protocol::MSG_DESCRIBE, &payload, 0, false)
+            .await?;
         self.send_message(protocol::MSG_SYNC, &[], 0, false).await?;
         let mut param_count = 0usize;
         loop {
@@ -1347,7 +1745,8 @@ impl Client {
             }
         }
         if let Some(ref path) = self.config.sslrootcert {
-            let data = std::fs::read(path).map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
+            let data = std::fs::read(path)
+                .map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
             let mut cursor = std::io::Cursor::new(data);
             let certs = rustls_pemfile::certs(&mut cursor).unwrap_or_default();
             for cert in certs {
@@ -1359,9 +1758,13 @@ impl Client {
             .with_safe_defaults()
             .with_root_certificates(root_store);
 
-        let mut client_config = if let (Some(cert_path), Some(key_path)) = (&self.config.sslcert, &self.config.sslkey) {
-            let cert_bytes = std::fs::read(cert_path).map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
-            let key_bytes = std::fs::read(key_path).map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
+        let mut client_config = if let (Some(cert_path), Some(key_path)) =
+            (&self.config.sslcert, &self.config.sslkey)
+        {
+            let cert_bytes = std::fs::read(cert_path)
+                .map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
+            let key_bytes = std::fs::read(key_path)
+                .map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
             let mut cert_cursor = std::io::Cursor::new(cert_bytes);
             let mut key_cursor = std::io::Cursor::new(key_bytes);
             let certs = rustls_pemfile::certs(&mut cert_cursor).unwrap_or_default();
@@ -1394,12 +1797,24 @@ impl Client {
         let connector = TlsConnector::from(Arc::new(client_config));
         let server_name = rustls::ServerName::try_from(self.config.host.as_str())
             .map_err(|_| Error::new(ErrorKind::Connection, "invalid tls server name"))?;
-        let tls = connector.connect(server_name, stream).await.map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
+        let tls = connector
+            .connect(server_name, stream)
+            .await
+            .map_err(|e| Error::new(ErrorKind::Connection, e.to_string()))?;
         Ok(tls)
     }
 
-    async fn send_message(&mut self, msg_type: u8, payload: &[u8], flags: u8, force_zero: bool) -> Result<u32> {
-        let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
+    async fn send_message(
+        &mut self,
+        msg_type: u8,
+        payload: &[u8],
+        flags: u8,
+        force_zero: bool,
+    ) -> Result<u32> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
         let sequence = self.sequence;
         self.sequence = self.sequence.wrapping_add(1);
         let header = MessageHeader {
@@ -1407,14 +1822,25 @@ impl Client {
             flags,
             length: payload.len() as u32,
             sequence,
-            attachment_id: if self.authed && !force_zero { self.attachment_id } else { [0u8; 16] },
-            txn_id: if self.authed && !force_zero { self.txn_id } else { 0 },
+            attachment_id: if self.authed && !force_zero {
+                self.attachment_id
+            } else {
+                [0u8; 16]
+            },
+            txn_id: if self.authed && !force_zero {
+                self.txn_id
+            } else {
+                0
+            },
         };
         let data = protocol::encode_message(&header, payload);
         if self.config.socket_timeout_ms > 0 {
-            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.write_all(&data))
-                .await
-                .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
+            timeout(
+                Duration::from_millis(self.config.socket_timeout_ms),
+                stream.write_all(&data),
+            )
+            .await
+            .map_err(|_| Error::new(ErrorKind::Connection, "socket write timeout"))??;
         } else {
             stream.write_all(&data).await?;
         }
@@ -1433,18 +1859,28 @@ impl Client {
     }
 
     async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
-        let stream = self.stream.as_mut().ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::Connection, "no active socket"))?;
         if self.config.socket_timeout_ms > 0 {
-            timeout(Duration::from_millis(self.config.socket_timeout_ms), stream.read_exact(buf))
-                .await
-                .map_err(|_| Error::new(ErrorKind::Connection, "socket read timeout"))??;
+            timeout(
+                Duration::from_millis(self.config.socket_timeout_ms),
+                stream.read_exact(buf),
+            )
+            .await
+            .map_err(|_| Error::new(ErrorKind::Connection, "socket read timeout"))??;
         } else {
             stream.read_exact(buf).await?;
         }
         Ok(())
     }
 
-    fn decode_row(&self, columns: &[protocol::ColumnInfo], values: &[protocol::ColumnValue]) -> Result<Vec<Value>> {
+    fn decode_row(
+        &self,
+        columns: &[protocol::ColumnInfo],
+        values: &[protocol::ColumnValue],
+    ) -> Result<Vec<Value>> {
         let mut row = Vec::with_capacity(values.len());
         for (idx, value) in values.iter().enumerate() {
             let col = columns.get(idx);
@@ -1467,8 +1903,17 @@ impl Client {
         if !hint.is_empty() {
             parts.push(format!("HINT: {}", hint));
         }
-        let combined = if parts.is_empty() { "query failed".to_string() } else { parts.join("\n") };
-        Err(error_from_sqlstate(&sqlstate, combined, Some(detail), Some(hint)))
+        let combined = if parts.is_empty() {
+            "query failed".to_string()
+        } else {
+            parts.join("\n")
+        };
+        Err(error_from_sqlstate(
+            &sqlstate,
+            combined,
+            Some(detail),
+            Some(hint),
+        ))
     }
 
     fn ensure_connected(&self) -> Result<()> {
@@ -1491,7 +1936,10 @@ impl Client {
 
     fn ensure_transaction_active(&self, operation: &str) -> Result<()> {
         if !self.has_active_transaction() {
-            return Err(Self::invalid_txn_state(format!("cannot {} without an active transaction", operation)));
+            return Err(Self::invalid_txn_state(format!(
+                "cannot {} without an active transaction",
+                operation
+            )));
         }
         Ok(())
     }
@@ -1587,13 +2035,16 @@ impl<'a> QueryStream<'a> {
                     return Ok(Some(row));
                 }
                 protocol::MSG_COMMAND_COMPLETE => {
-                    let (_cmd_type, rows_affected, _last_id, tag) = protocol::parse_command_complete(&msg.payload)?;
+                    let (_cmd_type, rows_affected, _last_id, tag) =
+                        protocol::parse_command_complete(&msg.payload)?;
                     self.command_tag = tag;
                     self.row_count = rows_affected as i64;
                 }
                 protocol::MSG_PORTAL_SUSPENDED => {
                     let payload = protocol::build_execute_payload("", self.page_size);
-                    self.client.send_message(protocol::MSG_EXECUTE, &payload, 0, false).await?;
+                    self.client
+                        .send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+                        .await?;
                 }
                 protocol::MSG_READY => {
                     let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
@@ -1675,6 +2126,270 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+fn summarize_fields(columns: &[protocol::ColumnInfo]) -> Vec<FieldSummary> {
+    columns
+        .iter()
+        .map(|col| FieldSummary {
+            name: col.name.clone(),
+            type_oid: col.type_oid,
+            format: col.format as u16,
+            nullable: col.nullable,
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+struct MetadataRestrictionBinding {
+    indexes: Vec<usize>,
+    expected: String,
+    expect_null: bool,
+}
+
+fn apply_metadata_restrictions(
+    mut result: QueryResult,
+    restrictions: &HashMap<String, String>,
+    collection: Option<&str>,
+) -> QueryResult {
+    if restrictions.is_empty() {
+        return result;
+    }
+
+    let mut allowed_aliases = HashSet::new();
+    if let Some(collection_name) = collection {
+        if let Some(resolved_collection) = normalize_metadata_collection_name(collection_name) {
+            for key in metadata_collection_restriction_keys(resolved_collection) {
+                for alias in metadata_restriction_key_aliases(key) {
+                    let normalized_alias = normalize_metadata_identifier(&alias);
+                    if !normalized_alias.is_empty() {
+                        allowed_aliases.insert(normalized_alias);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut column_index: HashMap<String, Vec<usize>> = HashMap::new();
+    for (idx, column) in result.columns.iter().enumerate() {
+        column_index
+            .entry(normalize_metadata_identifier(&column.name))
+            .or_default()
+            .push(idx);
+    }
+
+    let mut bindings = Vec::new();
+    for (key, value) in restrictions {
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+
+        let normalized_key = normalize_metadata_identifier(key);
+        if normalized_key.is_empty() {
+            continue;
+        }
+
+        let mut aliases = HashSet::new();
+        aliases.insert(normalized_key.clone());
+        for alias in metadata_restriction_key_aliases(key) {
+            let normalized_alias = normalize_metadata_identifier(&alias);
+            if normalized_alias.is_empty() {
+                continue;
+            }
+            if !allowed_aliases.is_empty()
+                && !allowed_aliases.contains(&normalized_alias)
+                && normalized_alias != normalized_key
+            {
+                continue;
+            }
+            aliases.insert(normalized_alias);
+        }
+        if aliases.is_empty() {
+            continue;
+        }
+
+        let mut index_set = HashSet::new();
+        for alias in aliases {
+            if let Some(indexes) = column_index.get(&alias) {
+                for index in indexes {
+                    index_set.insert(*index);
+                }
+            }
+        }
+        if index_set.is_empty() {
+            continue;
+        }
+        let indexes = index_set.into_iter().collect::<Vec<_>>();
+
+        let normalized = normalize_metadata_match_text(value);
+        bindings.push(MetadataRestrictionBinding {
+            indexes,
+            expected: normalized.clone(),
+            expect_null: normalized == "null",
+        });
+    }
+
+    if bindings.is_empty() {
+        return result;
+    }
+
+    result.rows.retain(|row| {
+        bindings.iter().all(|binding| {
+            let mut matched = false;
+            for index in &binding.indexes {
+                let Some(value) = row.get(*index) else {
+                    continue;
+                };
+
+                if binding.expect_null {
+                    if matches!(value, Value::Null) {
+                        matched = true;
+                        break;
+                    }
+                    continue;
+                }
+
+                if metadata_value_text(value)
+                    .map(|text| normalize_metadata_match_text(&text) == binding.expected)
+                    .unwrap_or(false)
+                {
+                    matched = true;
+                    break;
+                }
+            }
+            matched
+        })
+    });
+    result.row_count = saturating_u64_to_i64(result.rows.len() as u64);
+    result
+}
+
+fn metadata_collection_restriction_keys(collection: &str) -> &'static [&'static str] {
+    match collection {
+        "catalogs" => &["catalog"],
+        "schemas" => &["catalog", "schema"],
+        "tables" => &["catalog", "schema", "table", "type"],
+        "columns" => &["catalog", "schema", "table", "column", "type"],
+        "indexes" => &["catalog", "schema", "table", "index"],
+        "index_columns" => &["catalog", "schema", "table", "index", "column"],
+        "constraints" => &["catalog", "schema", "table", "constraint"],
+        "primary_keys" => &["catalog", "schema", "table", "constraint"],
+        "foreign_keys" => &["catalog", "schema", "table", "constraint"],
+        "table_privileges" => &["catalog", "schema", "table"],
+        "column_privileges" => &["catalog", "schema", "table", "column"],
+        "procedures" => &["catalog", "schema", "procedure"],
+        "functions" => &["catalog", "schema", "function"],
+        "routines" => &["catalog", "schema", "routine"],
+        "type_info" => &["type"],
+        _ => &[],
+    }
+}
+
+fn metadata_restriction_key_aliases(key: &str) -> Vec<String> {
+    match normalize_metadata_identifier(key).as_str() {
+        "catalog" | "catalogs" | "tablecat" | "tablecatalog" | "catalogname" => vec![
+            "catalog_name".to_string(),
+            "table_cat".to_string(),
+            "table_catalog".to_string(),
+            "TABLE_CAT".to_string(),
+            "TABLE_CATALOG".to_string(),
+        ],
+        "schema" | "schemas" | "tableschem" | "tableschema" | "schemaname" => vec![
+            "schema_name".to_string(),
+            "table_schem".to_string(),
+            "table_schema".to_string(),
+            "TABLE_SCHEM".to_string(),
+            "TABLE_SCHEMA".to_string(),
+        ],
+        "table" | "tables" | "tablename" => {
+            vec!["table_name".to_string(), "TABLE_NAME".to_string()]
+        }
+        "column" | "columns" | "columnname" => {
+            vec!["column_name".to_string(), "COLUMN_NAME".to_string()]
+        }
+        "index" | "indexes" | "indexname" => {
+            vec!["index_name".to_string(), "INDEX_NAME".to_string()]
+        }
+        "constraint" | "constraints" | "constraintname" => {
+            vec!["constraint_name".to_string(), "CONSTRAINT_NAME".to_string()]
+        }
+        "procedure" | "procedures" | "procedurename" => vec![
+            "procedure_name".to_string(),
+            "routine_name".to_string(),
+            "PROCEDURE_NAME".to_string(),
+            "ROUTINE_NAME".to_string(),
+        ],
+        "function" | "functions" | "functionname" => vec![
+            "function_name".to_string(),
+            "routine_name".to_string(),
+            "FUNCTION_NAME".to_string(),
+            "ROUTINE_NAME".to_string(),
+        ],
+        "routine" | "routines" | "routinename" => vec![
+            "routine_name".to_string(),
+            "procedure_name".to_string(),
+            "function_name".to_string(),
+            "ROUTINE_NAME".to_string(),
+            "PROCEDURE_NAME".to_string(),
+            "FUNCTION_NAME".to_string(),
+        ],
+        "type" | "types" | "typename" | "typedataname" => vec![
+            "data_type_name".to_string(),
+            "type_name".to_string(),
+            "DATA_TYPE_NAME".to_string(),
+            "TYPE_NAME".to_string(),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn normalize_metadata_identifier(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+fn normalize_metadata_match_text(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn metadata_value_text(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::Bool(v) => Some(v.to_string()),
+        Value::Int16(v) => Some(v.to_string()),
+        Value::Int32(v) => Some(v.to_string()),
+        Value::Int64(v) => Some(v.to_string()),
+        Value::Float32(v) => Some(v.to_string()),
+        Value::Float64(v) => Some(v.to_string()),
+        Value::Decimal(v) => Some(v.to_string()),
+        Value::String(v) => Some(v.clone()),
+        Value::Bytes(v) => Some(String::from_utf8_lossy(v).to_string()),
+        Value::Date(v) => Some(v.to_string()),
+        Value::Time(v) => Some(v.to_string()),
+        Value::Timestamp(v) => Some(v.to_rfc3339()),
+        Value::Interval(v) => Some(format!("{}:{}:{}", v.months, v.days, v.micros)),
+        Value::Uuid(v) => Some(v.clone()),
+        Value::Json(v) => Some(v.to_string()),
+        Value::Jsonb(v) => Some(String::from_utf8_lossy(&v.raw).to_string()),
+        Value::Vector(v) => Some(
+            v.iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        Value::Array(_) | Value::Range(_) | Value::Geometry(_) | Value::Composite(_) => None,
+    }
+}
+
+fn saturating_u64_to_i64(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
 fn parse_uuid_bytes(value: &str) -> Option<[u8; 16]> {
     let hex: String = value.chars().filter(|c| *c != '-').collect();
     if hex.len() != 32 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -1706,7 +2421,10 @@ mod tests {
         let mut client = Client::new(cfg);
         let err = client.preflight_connect().unwrap_err();
         assert_eq!(err.kind, ErrorKind::Connection);
-        assert_eq!(err.message, "manager_proxy mode requires manager_auth_token");
+        assert_eq!(
+            err.message,
+            "manager_proxy mode requires manager_auth_token"
+        );
     }
 
     #[test]
@@ -1736,7 +2454,9 @@ mod tests {
         assert_eq!(params.get("database").map(String::as_str), Some("db"));
         assert_eq!(params.get("user").map(String::as_str), Some("tester"));
         assert_eq!(
-            params.get(protocol::AUTH_PARAM_METHOD_ID).map(String::as_str),
+            params
+                .get(protocol::AUTH_PARAM_METHOD_ID)
+                .map(String::as_str),
             Some("scratchbird.auth.password")
         );
         assert_eq!(
@@ -1746,7 +2466,9 @@ mod tests {
             Some("{\"tenant\":\"alpha\"}")
         );
         assert_eq!(
-            params.get(protocol::AUTH_PARAM_PAYLOAD_B64).map(String::as_str),
+            params
+                .get(protocol::AUTH_PARAM_PAYLOAD_B64)
+                .map(String::as_str),
             Some("dGVzdA==")
         );
         assert_eq!(
@@ -1784,6 +2506,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(sql, "SELECT $1, $2");
+    }
+
+    #[test]
+    fn native_callable_sql_rewrites_escape_call_syntax() {
+        let client = Client::new(Config::default());
+        let sql = client
+            .native_callable_sql(
+                "{ ? = call abs(?) }",
+                Params::Positional(vec![Param::from(-4_i32)]),
+            )
+            .unwrap();
+        assert_eq!(sql, "select abs($1) as return_value");
+    }
+
+    #[tokio::test]
+    async fn execute_batch_rejects_empty_batch_args() {
+        let mut client = Client::new(Config::default());
+        let err = client
+            .execute_batch("SELECT 1", Vec::new())
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Syntax);
+        assert_eq!(err.sqlstate.as_deref(), Some("07001"));
+        assert_eq!(err.message, "batch arguments are required");
     }
 
     #[test]
@@ -1834,5 +2580,265 @@ mod tests {
         let err = client.query_metadata("schemas").await.unwrap_err();
         assert_eq!(err.kind, ErrorKind::Connection);
         assert_eq!(err.message, "client is not connected");
+    }
+
+    #[tokio::test]
+    async fn query_metadata_with_restrictions_rejects_unknown_collection_before_connect() {
+        let mut client = Client::new(Config::default());
+        let restrictions = HashMap::from([("schema".to_string(), "sys".to_string())]);
+        let err = client
+            .query_metadata_with_restrictions("bad_collection", &restrictions)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
+    }
+
+    #[test]
+    fn apply_metadata_restrictions_filters_rows_by_aliases() {
+        let result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "TABLE_SCHEM".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+                Column {
+                    name: "TABLE_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+            ],
+            rows: vec![
+                vec![
+                    Value::String("users.alice".to_string()),
+                    Value::String("accounts".to_string()),
+                ],
+                vec![
+                    Value::String("users.bob".to_string()),
+                    Value::String("accounts".to_string()),
+                ],
+                vec![
+                    Value::String("users.alice".to_string()),
+                    Value::String("sessions".to_string()),
+                ],
+            ],
+            row_count: 3,
+            command_tag: "SELECT".to_string(),
+        };
+
+        let restrictions = HashMap::from([
+            ("schema".to_string(), "USERS.ALICE".to_string()),
+            ("table".to_string(), "accounts".to_string()),
+        ]);
+
+        let filtered = apply_metadata_restrictions(result, &restrictions, None);
+        assert_eq!(filtered.row_count, 1);
+        assert_eq!(filtered.rows.len(), 1);
+        match &filtered.rows[0][0] {
+            Value::String(value) => assert_eq!(value, "users.alice"),
+            other => panic!("unexpected schema value: {other:?}"),
+        }
+        match &filtered.rows[0][1] {
+            Value::String(value) => assert_eq!(value, "accounts"),
+            other => panic!("unexpected table value: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_metadata_restrictions_supports_null_and_ignores_unknown_restrictions() {
+        let result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "REMARKS".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: true,
+                },
+                Column {
+                    name: "TABLE_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+            ],
+            rows: vec![
+                vec![Value::Null, Value::String("t1".to_string())],
+                vec![
+                    Value::String("documented".to_string()),
+                    Value::String("t2".to_string()),
+                ],
+            ],
+            row_count: 2,
+            command_tag: "SELECT".to_string(),
+        };
+
+        let restrictions = HashMap::from([
+            ("remarks".to_string(), "NULL".to_string()),
+            ("unknown_key".to_string(), "ignored".to_string()),
+        ]);
+        let filtered = apply_metadata_restrictions(result, &restrictions, None);
+        assert_eq!(filtered.row_count, 1);
+        assert_eq!(filtered.rows.len(), 1);
+        match &filtered.rows[0][0] {
+            Value::Null => {}
+            other => panic!("expected null remarks, saw {other:?}"),
+        }
+        match &filtered.rows[0][1] {
+            Value::String(value) => assert_eq!(value, "t1"),
+            other => panic!("unexpected table value: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_metadata_restrictions_uses_collection_specific_allowed_keys() {
+        let result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "TABLE_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+                Column {
+                    name: "COLUMN_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+            ],
+            rows: vec![
+                vec![
+                    Value::String("accounts".to_string()),
+                    Value::String("account_id".to_string()),
+                ],
+                vec![
+                    Value::String("sessions".to_string()),
+                    Value::String("session_id".to_string()),
+                ],
+            ],
+            row_count: 2,
+            command_tag: "SELECT".to_string(),
+        };
+
+        let restrictions = HashMap::from([
+            ("column".to_string(), "account_id".to_string()),
+            ("table".to_string(), "accounts".to_string()),
+        ]);
+
+        let filtered = apply_metadata_restrictions(result, &restrictions, Some("tables"));
+        assert_eq!(filtered.row_count, 1);
+        assert_eq!(filtered.rows.len(), 1);
+        match &filtered.rows[0][0] {
+            Value::String(value) => assert_eq!(value, "accounts"),
+            other => panic!("unexpected table value: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_metadata_restrictions_matches_any_alias_column_for_same_restriction() {
+        let result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "TABLE_SCHEMA".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+                Column {
+                    name: "TABLE_SCHEM".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+            ],
+            rows: vec![
+                vec![
+                    Value::String("users.alice".to_string()),
+                    Value::String("legacy".to_string()),
+                ],
+                vec![
+                    Value::String("legacy".to_string()),
+                    Value::String("users.alice".to_string()),
+                ],
+                vec![
+                    Value::String("users.bob".to_string()),
+                    Value::String("users.bob".to_string()),
+                ],
+            ],
+            row_count: 3,
+            command_tag: "SELECT".to_string(),
+        };
+
+        let restrictions = HashMap::from([("schema".to_string(), "users.alice".to_string())]);
+        let filtered = apply_metadata_restrictions(result, &restrictions, Some("schemas"));
+        assert_eq!(filtered.row_count, 2);
+        assert_eq!(filtered.rows.len(), 2);
+    }
+
+    #[test]
+    fn apply_metadata_restrictions_supports_routines_collection_aliases() {
+        let result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "SCHEMA_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: false,
+                },
+                Column {
+                    name: "PROCEDURE_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: true,
+                },
+                Column {
+                    name: "FUNCTION_NAME".to_string(),
+                    type_oid: 0,
+                    type_modifier: 0,
+                    format: 0,
+                    nullable: true,
+                },
+            ],
+            rows: vec![
+                vec![
+                    Value::String("users.alice".to_string()),
+                    Value::String("sync_accounts".to_string()),
+                    Value::Null,
+                ],
+                vec![
+                    Value::String("users.alice".to_string()),
+                    Value::Null,
+                    Value::String("sync_profiles".to_string()),
+                ],
+            ],
+            row_count: 2,
+            command_tag: "SELECT".to_string(),
+        };
+
+        let restrictions = HashMap::from([
+            ("schema".to_string(), "users.alice".to_string()),
+            ("routine".to_string(), "sync_profiles".to_string()),
+        ]);
+
+        let filtered = apply_metadata_restrictions(result, &restrictions, Some("routines"));
+        assert_eq!(filtered.row_count, 1);
+        assert_eq!(filtered.rows.len(), 1);
+        match &filtered.rows[0][2] {
+            Value::String(value) => assert_eq!(value, "sync_profiles"),
+            other => panic!("unexpected routine value: {other:?}"),
+        }
     }
 }

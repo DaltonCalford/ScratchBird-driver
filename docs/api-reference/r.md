@@ -12,6 +12,23 @@
 - `dbGetQuery(conn, sql, ...)`
 - `dbSendQuery(conn, sql, ...)` + `dbFetch()`
 - `dbExecute(conn, sql, ...)`
+- `dbListTables(conn)`
+- `dbExistsTable(conn, name)`
+- `dbListFields(conn, name)`
+
+## Metadata Helpers
+
+- `sb_metadata_schemas_query()`
+- `sb_metadata_tables_query()`
+- `sb_metadata_columns_query()`
+- `sb_metadata_indexes_query()`
+- `sb_metadata_index_columns_query()`
+- `sb_metadata_constraints_query()`
+- `sb_metadata_procedures_query()`
+- `sb_metadata_functions_query()`
+- `sb_metadata_schema_paths_for_navigation(...)`
+- `sb_metadata_build_schema_tree(...)`
+- `sb_metadata_build_schema_tree_rows(...)`
 
 ## Wrapper Types
 

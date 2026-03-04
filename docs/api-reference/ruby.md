@@ -11,13 +11,31 @@
 - `stream(sql, params = nil)`
 - `prepare(sql)` -> `Statement`
 - `begin_transaction`, `commit`, `rollback`
+- `savepoint(name)`, `rollback_to_savepoint(name)`, `release_savepoint(name)`
+- `native_sql(sql, params = nil)`, `native_callable_sql(sql, params = nil)`
+- `call(sql, params = nil)`
+- `query_multi(sql, params = nil)` / `execute_multi(sql, params = nil)`
+- `execute_batch(sql, batch_params)` / `query_batch(sql, batch_params)`
+- `execute_with_generated_keys(sql, params = nil)`
+- `query_metadata(collection = "tables")`
+- `query_metadata_with_restrictions(collection = "tables", restrictions = nil)`
+- `get_schema(collection = "tables", expand_schema_parents: nil)`
+- `get_schema_with_restrictions(collection = "tables", restrictions = nil, expand_schema_parents: nil)`
+- `get_schema_tree(expand_schema_parents: nil, database: nil, default_branch: "default", restrictions: nil)`
 - `autocommit` (boolean)
 - `close`, `closed?`
 
 ## Statement
 
 - `execute(params = nil)`
+- `stream(params = nil)`
 - `close`
+
+## Results
+
+- `Result`: `columns`, `rows`, `rowcount`, `command_tag`, `last_insert_id`, `each`, `each_hash`
+- `ResultStream`: `columns`, `rowcount`, `command_tag`, `last_insert_id`, `each`, `each_hash`, `to_a`
+- Batch/multi summaries: `FieldSummary`, `ResultSetSummary`, `BatchItemSummary`, `BatchSummary`
 
 ## SBWP v1.1 Extensions
 

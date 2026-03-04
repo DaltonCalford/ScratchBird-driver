@@ -9,6 +9,13 @@ Priority: P0
 - `close()`
 - `query(sql, params)`
 - `execute(sql, params)`
+- `query_multi(sql, params)`
+- `execute_multi(sql, params)`
+- `execute_batch(sql, batch_params)`
+- `query_batch(sql, batch_params)`
+- `execute_with_generated_keys(sql, params)`
+- `query_metadata(collection_name='tables', restrictions=None)`
+- `get_schema(collection_name='tables', restrictions=None)`
 - `prepare(sql)`
 - `begin()`
 - `commit()`
@@ -29,6 +36,7 @@ Priority: P0
 
 - Column metadata (name, type_oid, format).
 - Row decoding per DRIVER_RESULT_DECODING.md.
+- Generated keys via cursor result-set API (`get_generated_keys()`).
 
 ## Errors
 

@@ -38,6 +38,61 @@ final class ScratchBirdPDO
         }
     }
 
+    public function nativeSql(string $sql, array $params = []): string
+    {
+        return $this->connection->nativeSql($sql, $params);
+    }
+
+    public function nativeCallableSql(string $sql, array $params = []): string
+    {
+        return $this->connection->nativeCallableSql($sql, $params);
+    }
+
+    public function call(string $sql, array $params = []): Statement
+    {
+        return $this->connection->call($sql, $params);
+    }
+
+    /**
+     * @return array<int, array{rows: array, rowCount: int, fields: array, command: string, lastId: int|false}>
+     */
+    public function queryMulti(string $sql, array $params = []): array
+    {
+        return $this->connection->queryMulti($sql, $params);
+    }
+
+    /**
+     * @return array<int, array{rows: array, rowCount: int, fields: array, command: string, lastId: int|false}>
+     */
+    public function executeMulti(string $sql, array $params = []): array
+    {
+        return $this->connection->executeMulti($sql, $params);
+    }
+
+    /**
+     * @return array{items: array<int, array{index: int, rowCount: int, fields: array, command: string, lastId: int|false}>, totalRowCount: int}
+     */
+    public function executeBatch(string $sql, iterable $batchParams): array
+    {
+        return $this->connection->executeBatch($sql, $batchParams);
+    }
+
+    /**
+     * @return array{items: array<int, array{index: int, rowCount: int, fields: array, command: string, lastId: int|false}>, totalRowCount: int}
+     */
+    public function queryBatch(string $sql, iterable $batchParams): array
+    {
+        return $this->connection->queryBatch($sql, $batchParams);
+    }
+
+    /**
+     * @return array<int, array{0: int}>
+     */
+    public function executeWithGeneratedKeys(string $sql, array $params = []): array
+    {
+        return $this->connection->executeWithGeneratedKeys($sql, $params);
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */

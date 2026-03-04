@@ -91,7 +91,7 @@ impl LeakDetector {
     /// Register a connection checkout
     pub async fn checkout(&self, connection_id: &str) {
         let info = CheckoutInfo::new(self.config.capture_stack_trace);
-        
+
         let mut checkouts = self.active_checkouts.write().await;
         checkouts.insert(connection_id.to_string(), info);
     }
@@ -99,10 +99,10 @@ impl LeakDetector {
     /// Register a connection return
     pub async fn checkin(&self, connection_id: &str) {
         let mut checkouts = self.active_checkouts.write().await;
-        
+
         if let Some(info) = checkouts.remove(connection_id) {
             let held_duration = info.held_duration();
-            
+
             if held_duration > self.config.threshold {
                 // Connection was held longer than threshold but returned
                 let _ = held_duration;
@@ -154,12 +154,9 @@ pub struct LeakDetectionGuard {
 }
 
 impl LeakDetectionGuard {
-    pub async fn new(
-        connection_id: String,
-        detector: Arc<LeakDetector>,
-    ) -> Self {
+    pub async fn new(connection_id: String, detector: Arc<LeakDetector>) -> Self {
         detector.checkout(&connection_id).await;
-        
+
         Self {
             connection_id,
             detector,

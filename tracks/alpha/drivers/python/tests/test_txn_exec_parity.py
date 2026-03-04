@@ -23,6 +23,7 @@ def _new_connection(txn_id: int = 0) -> Connection:
     conn = Connection.__new__(Connection)
     conn._closed = False
     conn._txn_id = txn_id
+    conn._cursors = []
     return conn
 
 
@@ -52,16 +53,51 @@ class _ResultConnection:
         self.sent_messages.append((msg_type, payload))
 
 
+def _row_description_payload(name: str, type_oid: int = 25) -> bytes:
+    name_bytes = name.encode("utf-8")
+    payload = bytearray()
+    payload += struct.pack("<H", 1)
+    payload += b"\x00\x00"
+    payload += struct.pack("<I", len(name_bytes))
+    payload += name_bytes
+    payload += struct.pack("<I", 0)  # table oid
+    payload += struct.pack("<H", 1)  # column index
+    payload += struct.pack("<I", type_oid)
+    payload += struct.pack("<h", 0)  # type size
+    payload += struct.pack("<i", 0)  # type modifier
+    payload += struct.pack("<B", 0)  # format text
+    payload += struct.pack("<B", 1)  # nullable
+    payload += b"\x00\x00"
+    return bytes(payload)
+
+
+def _data_row_payload(value: str) -> bytes:
+    value_bytes = value.encode("utf-8")
+    payload = bytearray()
+    payload += struct.pack("<H", 1)  # one column
+    payload += struct.pack("<H", 1)  # null bitmap bytes
+    payload += b"\x00"  # not null
+    payload += struct.pack("<i", len(value_bytes))
+    payload += value_bytes
+    return bytes(payload)
+
+
 class _FakeStream:
-    def __init__(self, rows, rowcount: int, lastrowid):
+    def __init__(self, rows, rowcount: int, lastrowid, command: str | None = None):
         self._rows = list(rows)
         self.rowcount = rowcount
         self.lastrowid = lastrowid
+        self.command = command
+        self.completion_count = 0
+        self._completed = False
         self.columns = []
 
     def read_row(self):
         if self._rows:
             return self._rows.pop(0)
+        if not self._completed:
+            self._completed = True
+            self.completion_count += 1
         return None
 
 
@@ -158,6 +194,35 @@ def test_native_sql_maps_normalization_errors():
         conn.native_sql("SELECT ?::INTEGER", [])
 
 
+def test_native_callable_sql_rewrites_escape_calls():
+    conn = _new_connection()
+    assert conn.native_callable_sql("{call demo.proc(?, ?)}", [1, 2]) == "call demo.proc($1, $2)"
+    assert conn.native_callable_sql("{? = call demo.fn(:id)}", {"id": 7}) == "select demo.fn($1) as return_value"
+
+
+def test_native_callable_sql_maps_callable_syntax_errors():
+    conn = _new_connection()
+    with pytest.raises(errors.ProgrammingError, match="invalid JDBC escape call syntax"):
+        conn.native_callable_sql("{call ()}")
+
+
+def test_connection_call_executes_normalized_callable_sql(monkeypatch):
+    conn = _new_connection()
+    calls = []
+    stream = _FakeStream(rows=[], rowcount=0, lastrowid=None)
+
+    def _fake_execute_query(sql, params, max_rows=0):
+        calls.append((sql, list(params), max_rows))
+        return stream
+
+    monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
+
+    cur = conn.call("{call demo.proc(?, ?)}", [11, 22])
+
+    assert isinstance(cur, Cursor)
+    assert calls == [("call demo.proc($1, $2)", [11, 22], 0)]
+
+
 def test_execute_query_selects_simple_or_extended_path(monkeypatch):
     conn = _new_connection()
     calls = []
@@ -205,12 +270,84 @@ def test_result_stream_propagates_command_complete_last_id():
     assert stream.read_row() is None
     assert stream.rowcount == 3
     assert stream.lastrowid == 91
+    assert stream.command == "INSERT 0 3"
     assert conn._txn_id == 77
+
+
+def test_result_stream_exposes_next_result_set_boundaries():
+    ready_payload = struct.pack("<B3xQQ", 0, 81, 0)
+    conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 7) + b"SELECT 1\x00"),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("second_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 8) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(conn, page_size=0)
+
+    assert stream.read_row() == ("1",)
+    assert stream.read_row() is None
+    assert stream.rowcount == 1
+    assert stream.lastrowid == 7
+    assert stream.command == "SELECT 1"
+    assert stream.has_next_result_set() is True
+    assert stream.next_result_set() is True
+
+    assert stream.read_row() == ("2",)
+    assert stream.read_row() is None
+    assert stream.rowcount == 1
+    assert stream.lastrowid == 8
+    assert stream.command == "SELECT 1"
+    assert stream.has_next_result_set() is False
+    assert stream.next_result_set() is False
+    assert conn._txn_id == 81
+
+
+def test_cursor_nextset_advances_between_result_sets(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 0, 90, 0)
+    stream_conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 7) + b"SELECT 1\x00"),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("second_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 8) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(stream_conn, page_size=0)
+
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    cursor = Cursor(conn)
+    cursor.execute("SELECT 1; SELECT 2")
+
+    assert cursor.fetchone() == ("1",)
+    assert cursor.fetchone() is None
+    assert cursor.rowcount == 1
+    assert cursor.lastrowid == 7
+    assert cursor.statusmessage == "SELECT 1"
+
+    assert cursor.nextset() is True
+    assert cursor.rowcount == -1
+    assert cursor.lastrowid is None
+    assert cursor.fetchone() == ("2",)
+    assert cursor.fetchone() is None
+    assert cursor.rowcount == 1
+    assert cursor.lastrowid == 8
+    assert cursor.statusmessage == "SELECT 1"
+    assert cursor.nextset() is None
 
 
 def test_cursor_execute_propagates_lastrowid_on_stream_completion(monkeypatch):
     conn = _new_connection()
-    stream = _FakeStream(rows=[(1,)], rowcount=1, lastrowid=42)
+    stream = _FakeStream(rows=[(1,)], rowcount=1, lastrowid=42, command="INSERT 0 1")
     monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
 
     cursor = Cursor(conn)
@@ -221,13 +358,43 @@ def test_cursor_execute_propagates_lastrowid_on_stream_completion(monkeypatch):
     assert cursor.fetchone() is None
     assert cursor.rowcount == 1
     assert cursor.lastrowid == 42
+    assert cursor.statusmessage == "INSERT 0 1"
+    keys = cursor.get_generated_keys()
+    assert keys.rowcount == 1
+    assert keys.description[0][0] == "GENERATED_KEY"
+    assert keys.fetchone() == (42,)
+    assert keys.fetchone() is None
+
+
+def test_cursor_callproc_executes_callable_sql(monkeypatch):
+    conn = _new_connection()
+    calls = []
+    stream = _FakeStream(rows=[], rowcount=0, lastrowid=None)
+
+    def _fake_execute_query(sql, params, max_rows=0):
+        calls.append((sql, list(params) if params is not None else None, max_rows))
+        return stream
+
+    monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
+    cursor = Cursor(conn)
+
+    returned = cursor.callproc("demo.proc", [5, 6])
+
+    assert returned == [5, 6]
+    assert calls == [("call demo.proc($1, $2)", [5, 6], 0)]
+
+
+def test_cursor_callproc_rejects_empty_procedure_name():
+    cursor = Cursor(_new_connection())
+    with pytest.raises(errors.ProgrammingError, match="procname is required"):
+        cursor.callproc("   ", [1])
 
 
 def test_cursor_executemany_sets_final_lastrowid_and_total_rowcount(monkeypatch):
     conn = _new_connection()
     streams = [
-        _FakeStream(rows=[], rowcount=1, lastrowid=10),
-        _FakeStream(rows=[], rowcount=2, lastrowid=11),
+        _FakeStream(rows=[], rowcount=1, lastrowid=10, command="INSERT 0 1"),
+        _FakeStream(rows=[], rowcount=2, lastrowid=11, command="INSERT 0 2"),
     ]
     calls = []
 
@@ -246,3 +413,136 @@ def test_cursor_executemany_sets_final_lastrowid_and_total_rowcount(monkeypatch)
     ]
     assert cursor.rowcount == 3
     assert cursor.lastrowid == 11
+    assert cursor.statusmessage == "INSERT 0 2"
+    assert cursor.get_generated_keys().fetchall() == [(10,), (11,)]
+
+
+def test_connection_execute_batch_returns_summary(monkeypatch):
+    conn = _new_connection()
+    calls = []
+
+    class _FakeCursor:
+        def __init__(self, rowcount, lastrowid, command):
+            self.rowcount = rowcount
+            self.lastrowid = lastrowid
+            self.statusmessage = command
+            self.description = [("id", 23, None, None, None, None, True)]
+
+        def fetchall(self):
+            return []
+
+    cursors = [
+        _FakeCursor(1, 10, "INSERT 0 1"),
+        _FakeCursor(2, 11, "INSERT 0 2"),
+    ]
+
+    def _fake_execute(sql, params=None):
+        calls.append((sql, tuple(params) if params is not None else None))
+        return cursors[len(calls) - 1]
+
+    monkeypatch.setattr(conn, "execute", _fake_execute)
+
+    result = conn.execute_batch("INSERT INTO t VALUES (?)", [(1,), (2,)])
+
+    assert calls == [
+        ("INSERT INTO t VALUES (?)", (1,)),
+        ("INSERT INTO t VALUES (?)", (2,)),
+    ]
+    assert result["totalRowCount"] == 3
+    assert result["items"][0]["index"] == 0
+    assert result["items"][0]["rowCount"] == 1
+    assert result["items"][0]["lastId"] == 10
+    assert result["items"][0]["command"] == "INSERT 0 1"
+    assert result["items"][1]["index"] == 1
+    assert result["items"][1]["rowCount"] == 2
+    assert result["items"][1]["lastId"] == 11
+    assert result["items"][1]["command"] == "INSERT 0 2"
+
+
+def test_connection_execute_batch_validates_inputs():
+    conn = _new_connection()
+    with pytest.raises(errors.ProgrammingError, match="sql is required"):
+        conn.execute_batch(None, [])
+    with pytest.raises(errors.ProgrammingError, match="batch_params is required"):
+        conn.execute_batch("INSERT INTO t VALUES (?)", None)
+
+
+def test_connection_query_batch_aliases_execute_batch(monkeypatch):
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "execute_batch", lambda sql, params: {"sql": sql, "params": params})
+    result = conn.query_batch("SELECT 1", [()])
+    assert result == {"sql": "SELECT 1", "params": [()]}
+
+
+def test_connection_query_multi_returns_result_set_summaries(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 0, 91, 0)
+    stream_conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 7) + b"SELECT 1\x00"),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("second_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 8) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(stream_conn, page_size=0)
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    result_sets = conn.query_multi("SELECT 1; SELECT 2")
+
+    assert len(result_sets) == 2
+    assert result_sets[0]["rows"] == [("1",)]
+    assert result_sets[0]["rowCount"] == 1
+    assert result_sets[0]["command"] == "SELECT 1"
+    assert result_sets[0]["lastId"] == 7
+    assert result_sets[1]["rows"] == [("2",)]
+    assert result_sets[1]["rowCount"] == 1
+    assert result_sets[1]["command"] == "SELECT 1"
+    assert result_sets[1]["lastId"] == 8
+
+
+def test_connection_execute_multi_aliases_query_multi(monkeypatch):
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "query_multi", lambda sql, params=None: {"sql": sql, "params": params})
+    result = conn.execute_multi("SELECT 1", [1])
+    assert result == {"sql": "SELECT 1", "params": [1]}
+
+
+def test_generated_keys_accumulate_across_result_sets(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 0, 90, 0)
+    stream_conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 7) + b"SELECT 1\x00"),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("second_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 8) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(stream_conn, page_size=0)
+
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    cursor = Cursor(conn)
+    cursor.execute("SELECT 1; SELECT 2")
+    assert cursor.fetchone() == ("1",)
+    assert cursor.fetchone() is None
+    assert cursor.nextset() is True
+    assert cursor.fetchone() == ("2",)
+    assert cursor.fetchone() is None
+    assert cursor.get_generated_keys().fetchall() == [(7,), (8,)]
+
+
+def test_connection_execute_with_generated_keys(monkeypatch):
+    conn = _new_connection()
+    stream = _FakeStream(rows=[], rowcount=1, lastrowid=55, command="INSERT 0 1")
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    keys = conn.execute_with_generated_keys("INSERT INTO t VALUES (?)", [1])
+    assert keys.fetchall() == [(55,)]

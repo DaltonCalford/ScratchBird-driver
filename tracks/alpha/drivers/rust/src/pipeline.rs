@@ -63,7 +63,7 @@ impl<T: Clone> QueryPipeline<T> {
     /// Queue a request for pipelined execution
     pub async fn queue(&self, data: T) -> oneshot::Receiver<T> {
         let (tx, rx) = oneshot::channel();
-        
+
         let pipelined_req = PipelinedRequest {
             data,
             response_tx: tx,
@@ -85,11 +85,11 @@ impl<T: Clone> QueryPipeline<T> {
     pub async fn drain_pending(&self) -> Vec<PipelinedRequest<T>> {
         let mut queue = self.queue.lock().await;
         let mut pending = Vec::with_capacity(queue.len());
-        
+
         while let Some(req) = queue.pop_front() {
             pending.push(req);
         }
-        
+
         pending
     }
 

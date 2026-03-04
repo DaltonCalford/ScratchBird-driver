@@ -48,6 +48,9 @@ pub const PROCEDURES_QUERY: &str =
 pub const FUNCTIONS_QUERY: &str =
     "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
 
+pub const ROUTINES_QUERY: &str =
+    "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name";
+
 pub const TYPE_INFO_QUERY: &str =
     "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 
@@ -84,7 +87,11 @@ pub struct MetadataSchemaTreeOptions {
 
 pub fn normalize_metadata_collection_name(collection: &str) -> Option<&'static str> {
     let normalized = collection.trim().to_ascii_lowercase();
-    let key = if normalized.is_empty() { "tables" } else { normalized.as_str() };
+    let key = if normalized.is_empty() {
+        "tables"
+    } else {
+        normalized.as_str()
+    };
     match key {
         "catalog" | "catalogs" => Some("catalogs"),
         "schema" | "schemas" => Some("schemas"),
@@ -99,6 +106,7 @@ pub fn normalize_metadata_collection_name(collection: &str) -> Option<&'static s
         "columnprivileges" | "column_privileges" => Some("column_privileges"),
         "procedure" | "procedures" => Some("procedures"),
         "function" | "functions" => Some("functions"),
+        "routine" | "routines" => Some("routines"),
         "typeinfo" | "type_info" | "types" => Some("type_info"),
         _ => None,
     }
@@ -120,6 +128,7 @@ pub fn resolve_metadata_collection_query(collection: &str) -> Option<&'static st
         "column_privileges" => Some(COLUMN_PRIVILEGES_QUERY),
         "procedures" => Some(PROCEDURES_QUERY),
         "functions" => Some(FUNCTIONS_QUERY),
+        "routines" => Some(ROUTINES_QUERY),
         "type_info" => Some(TYPE_INFO_QUERY),
         _ => None,
     }
@@ -224,7 +233,10 @@ pub fn build_metadata_schema_tree(
         Some(trimmed.to_string())
     });
 
-    MetadataSchemaTree { database, schemas: roots }
+    MetadataSchemaTree {
+        database,
+        schemas: roots,
+    }
 }
 
 pub fn expand_schema_metadata_rows(rows: &[MetadataRow]) -> Vec<MetadataRow> {
@@ -331,7 +343,10 @@ fn create_synthetic_schema_row(sample: &MetadataRow, schema_path: &str) -> Metad
     }
 
     if !assigned {
-        synthetic.insert("schema_name".to_string(), Value::String(schema_path.to_string()));
+        synthetic.insert(
+            "schema_name".to_string(),
+            Value::String(schema_path.to_string()),
+        );
     }
     synthetic
 }

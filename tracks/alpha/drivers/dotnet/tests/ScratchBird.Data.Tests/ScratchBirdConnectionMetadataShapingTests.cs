@@ -8,6 +8,7 @@
 using System.Data;
 using System.Linq;
 using System.Reflection;
+using System;
 using ScratchBird.Data;
 using Xunit;
 
@@ -129,11 +130,126 @@ public class ScratchBirdConnectionMetadataShapingTests
         Assert.Equal("main", filtered.Rows[0]["TABLE_CATALOG"]?.ToString());
     }
 
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersProceduresBySchemaAndName()
+    {
+        var table = new DataTable("Procedures");
+        table.Columns.Add("schema_name", typeof(string));
+        table.Columns.Add("procedure_name", typeof(string));
+        table.Rows.Add("users.alice", "sync_accounts");
+        table.Rows.Add("users.bob", "sync_accounts");
+        table.Rows.Add("users.alice", "cleanup_accounts");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "procedures",
+            new[] { null, "users.alice", "sync_%" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("users.alice", filtered.Rows[0]["schema_name"]?.ToString());
+        Assert.Equal("sync_accounts", filtered.Rows[0]["procedure_name"]?.ToString());
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersRoutinesBySchemaAndName()
+    {
+        var table = new DataTable("Routines");
+        table.Columns.Add("schema_name", typeof(string));
+        table.Columns.Add("routine_name", typeof(string));
+        table.Columns.Add("routine_type", typeof(string));
+        table.Rows.Add("users.alice", "sync_accounts", "PROCEDURE");
+        table.Rows.Add("users.alice", "sync_profiles", "FUNCTION");
+        table.Rows.Add("users.bob", "sync_accounts", "PROCEDURE");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "routines",
+            new[] { null, "users.alice", "sync_acc%" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("users.alice", filtered.Rows[0]["schema_name"]?.ToString());
+        Assert.Equal("sync_accounts", filtered.Rows[0]["routine_name"]?.ToString());
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersRoutinesUsingFunctionNameAlias()
+    {
+        var table = new DataTable("Routines");
+        table.Columns.Add("schema_name", typeof(string));
+        table.Columns.Add("function_name", typeof(string));
+        table.Rows.Add("users.alice", "project_total");
+        table.Rows.Add("users.alice", "project_count");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "routines",
+            new[] { null, "users.alice", "project_tot%" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("project_total", filtered.Rows[0]["function_name"]?.ToString());
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersTypeInfoRows()
+    {
+        var table = new DataTable("TypeInfo");
+        table.Columns.Add("data_type_name", typeof(string));
+        table.Rows.Add("int4");
+        table.Rows.Add("jsonb");
+        table.Rows.Add("timestamp");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "typeinfo",
+            new[] { "json%" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("jsonb", filtered.Rows[0]["data_type_name"]?.ToString());
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataSupportsNullRestrictionLiteral()
+    {
+        var table = new DataTable("Tables");
+        table.Columns.Add("table_schema", typeof(string));
+        table.Columns.Add("table_name", typeof(string));
+        table.Columns.Add("table_type", typeof(string));
+        table.Rows.Add("users.alice", DBNull.Value, "BASE TABLE");
+        table.Rows.Add("users.alice", "orders", "BASE TABLE");
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "tables",
+            new[] { null, "users.alice", "NULL", "BASE TABLE" });
+
+        Assert.Single(filtered.Rows);
+        Assert.True(filtered.Rows[0]["table_name"] == DBNull.Value);
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadataFiltersPrimaryKeysByConstraintName()
+    {
+        var table = new DataTable("PrimaryKeys");
+        table.Columns.Add("constraint_name", typeof(string));
+        table.Columns.Add("table_id", typeof(int));
+        table.Rows.Add("pk_orders", 1);
+        table.Rows.Add("pk_sessions", 2);
+
+        var filtered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "primarykeys",
+            new[] { null, null, null, "pk_ord%" });
+
+        Assert.Single(filtered.Rows);
+        Assert.Equal("pk_orders", filtered.Rows[0]["constraint_name"]?.ToString());
+    }
+
     [Theory]
     [InlineData("catalog", "catalogs")]
     [InlineData("primary_keys", "primarykeys")]
     [InlineData("fk", "foreignkeys")]
     [InlineData("table_privileges", "tableprivileges")]
+    [InlineData("routine", "routines")]
     [InlineData("types", "typeinfo")]
     public void NormalizeCollectionNameSupportsNewAliases(string input, string expected)
     {

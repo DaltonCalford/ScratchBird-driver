@@ -4,27 +4,35 @@ Scope: `tracks/alpha/drivers/dotnet` lane only.
 
 ## Changes
 
-- Added active transaction tracking on `ScratchBirdConnection` and enforced one active local transaction per connection.
-- Cleared tracked transaction state on connection close/reconnect paths to avoid stale transaction reuse.
-- Updated `ScratchBirdTransaction` to:
-  - expose internal state (`IsCompleted`, `IsDisposed`) for parity checks;
-  - validate active ownership before transaction operations;
-  - clear connection transaction tracking on commit/rollback completion.
-- Updated `ScratchBirdCommand` execution/prepare guardrails to enforce:
-  - non-empty `CommandText`;
-  - explicit command transaction when connection has an active transaction;
-  - transaction belongs to command connection;
-  - transaction is active/not disposed/not completed;
-  - non-negative `CommandTimeout`;
-  - `CommandType.StoredProcedure` parity with generated callable SQL (`CALL "schema"."routine"($1,...)`).
-- Expanded transaction isolation mapping in `ProtocolClient`:
-  - `Snapshot` and `Chaos` now map deterministically to wire `SERIALIZABLE` instead of falling through to default.
-- Added focused unit tests in `TransactionExecutionParityTests` for TXN/EXEC guardrails.
-- Updated TXN/EXEC rows in `BASELINE_REQUIREMENT_MAPPING.md` with new evidence anchors.
+- Added callable SQL normalization to `SqlHelpers`:
+  - `NormalizeCallable(...)`
+  - `NormalizeCallableSql(...)`
+  - JDBC escape-call support (`{ call ... }`, `{ ? = call ... }`)
+- Added EXEC parity result models:
+  - `FieldSummary`
+  - `ResultSetSummary`
+  - `BatchItemSummary`
+  - `BatchSummary`
+- Added protocol-level multi-result collector in `ProtocolClient`:
+  - `ExecuteQueryMulti(...)`
+  - captures per-command rows, fields, command tag, and `LastInsertId`.
+- Added high-level EXEC parity APIs on `ScratchBirdConnection`:
+  - `NativeSql(...)`
+  - `NativeCallableSql(...)`
+  - `Call(...)`
+  - `QueryMulti(...)` / `ExecuteMulti(...)`
+  - `ExecuteBatch(...)` / `QueryBatch(...)`
+  - `ExecuteWithGeneratedKeys(...)`
+- Added safe parameterless multi-statement splitter fallback in `QueryMulti(...)` so independent result-set traversal remains available even when runtime multi-statement framing behavior varies.
+- Preserved and retained previously added TXN guardrails:
+  - single active transaction ownership
+  - savepoint lifecycle validation
+  - isolation mapping updates (`Snapshot`/`Chaos` -> serializable wire level).
 
 ## Tests Run
 
-- `dotnet test --filter "FullyQualifiedName!~IntegrationTests"`: **PASS** (48 passed, 0 failed, 0 skipped)
+- `dotnet test tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~SqlHelpersTests|FullyQualifiedName~TransactionExecutionParityTests"`: **PASS** (17 passed, 0 failed)
+- `dotnet test tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~IntegrationTests.QueryMultiReturnsIndependentResultSets|FullyQualifiedName~IntegrationTests.ExecuteBatchReturnsSummary|FullyQualifiedName~IntegrationTests.CallableEscapeSyntaxExecutes|FullyQualifiedName~IntegrationTests.ExecuteWithGeneratedKeysReturnsKeyCollection"`: **PASS** (4 passed, 0 failed)
 
 ## TXN Status
 
@@ -33,10 +41,10 @@ Scope: `tracks/alpha/drivers/dotnet` lane only.
 
 ## EXEC Status
 
-- Recommendation: **PARTIAL**
-- Reason: execution guardrails and callable `StoredProcedure` command shaping are now explicit/tested, but output-parameter and broader command-surface parity still remain.
+- Recommendation: **IMPLEMENTED**
+- Reason: callable normalization/execution, multi-result traversal, batch execution summaries, and generated-key extraction are now exposed and validated with unit + targeted integration coverage.
 
 ## Remaining Gaps
 
 - Isolation-level semantics are still bounded to the wire isolation enum (`read-uncommitted`, `read-committed`, `repeatable-read`, `serializable`) and not yet integration-verified across full server behavior matrix.
-- Execution surface still lacks output-parameter and provider-specific command behaviors beyond text/callable input-parameter flows.
+- Provider-specific output-parameter semantics remain outside the current native baseline scope.

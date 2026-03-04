@@ -62,51 +62,70 @@
 
 ## EXEC (JDBCBL: `EXEC`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
-  - `lib/scratchbird/sql.rb:12` (`Sql.normalize`, positional/named rewrite)
-  - `lib/scratchbird/connection.rb:57` (`#execute`, `#query`, `#stream` with options forwarding and shared transaction gate)
-  - `lib/scratchbird/connection.rb:73` (`#prepare`) and `lib/scratchbird/connection.rb:78` (`#execute_prepared`, `#stream_prepared`)
+  - `lib/scratchbird/sql.rb:12` (`Sql.normalize`, positional/named rewrite) and `lib/scratchbird/sql.rb:26` / `:31` (`normalize_callable`, JDBC escape callable translation)
+  - `lib/scratchbird/connection.rb:73` (`#execute`, `#query`, `#stream` with shared transaction gate)
+  - `lib/scratchbird/connection.rb:89` (`#native_sql`, `#native_callable_sql`, `#call`, `#query_multi`, `#execute_batch`, `#execute_with_generated_keys`)
+  - `lib/scratchbird/connection.rb:155` (`#prepare`) and `lib/scratchbird/connection.rb:160` (`#execute_prepared`, `#stream_prepared`)
   - `lib/scratchbird/statement.rb:21` (`Statement#execute`, `#stream` delegates through connection gate)
-  - `lib/scratchbird/client.rb:254` (`Client#query`, `#stream`)
-  - `lib/scratchbird/client.rb:266` (`Client#prepare`, `#execute`, `#execute_stream`)
-  - `lib/scratchbird/client.rb:291` (`Client#deallocate`, explicit prepared-statement close protocol flow)
-  - `lib/scratchbird/client.rb:298` (`Client#cancel`)
-  - `lib/scratchbird/client.rb:705` (`execute_query_loop`) and `lib/scratchbird/client.rb:856` (`ResultStream`)
-  - `lib/scratchbird/protocol.rb:379` (`parse_row_description`), `lib/scratchbird/protocol.rb:411` (`parse_data_row`), `lib/scratchbird/protocol.rb:442` (`parse_command_complete`)
+  - `lib/scratchbird/client.rb:260` (`Client#query`, `#stream`, core execute paths)
+  - `lib/scratchbird/client.rb:272` (`#native_sql`, `#native_callable_sql`, `#call`, `#query_multi`, `#execute_batch`, `#execute_with_generated_keys`)
+  - `lib/scratchbird/client.rb:374` (`#prepare`, `#execute`, `#execute_stream`)
+  - `lib/scratchbird/client.rb:406` (`#deallocate`, explicit prepared-statement close protocol flow) and `lib/scratchbird/client.rb:418` (`#cancel`)
+  - `lib/scratchbird/client.rb:842` (`execute_query_loop`, command tag/rowcount/generated key parsing), `lib/scratchbird/client.rb:994` (`summarize_result`), `lib/scratchbird/client.rb:1012` (`split_sql_statements`), and `lib/scratchbird/client.rb:1061` (`ResultStream`)
+  - `lib/scratchbird/protocol.rb:388` (`parse_row_description`), `lib/scratchbird/protocol.rb:420` (`parse_data_row`), `lib/scratchbird/protocol.rb:451` (`parse_command_complete`)
 - Lane-local test anchors:
   - `test/test_sql.rb:11` (`test_normalize_positional`)
   - `test/test_sql.rb:18` (`test_normalize_named`)
   - `test/test_sql.rb:25` (`test_normalize_binary`)
-  - `test/test_txn_exec_parity.rb:94` (`test_query_and_stream_forward_options`)
-  - `test/test_txn_exec_parity.rb:106` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
-  - `test/test_txn_exec_parity.rb:121` (`test_statement_execute_raises_when_closed`)
-  - `test/test_txn_exec_parity.rb:140` (`test_statement_close_deallocates_prepared_handle`)
+  - `test/test_sql.rb:32` (`test_normalize_callable_escape_syntax`) and `test/test_sql.rb:38` (`test_normalize_callable_sql_passthrough`)
+  - `test/test_txn_exec_parity.rb:144` (`test_query_and_stream_forward_options`)
+  - `test/test_txn_exec_parity.rb:156` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
+  - `test/test_txn_exec_parity.rb:206` (`test_native_sql_and_native_callable_sql_forward_to_client`)
+  - `test/test_txn_exec_parity.rb:219` (`test_exec_parity_surfaces_use_transaction_gate_and_forward`)
+  - `test/test_result_stream.rb:60` (`test_stream_each_hash_tracks_command_summary`) and `test/test_result_stream.rb:88` (`test_stream_rejects_second_consumption`)
   - `test/test_integration.rb:24` (`test_prepare_bind`, env-gated parameter execution)
   - `test/test_integration.rb:50` (`test_cancel`, env-gated)
+  - `test/test_integration.rb:72` (`test_query_multi`, env-gated)
+  - `test/test_integration.rb:90` (`test_execute_batch`, env-gated)
+  - `test/test_integration.rb:108` (`test_call_callable_escape_syntax`, env-gated)
+  - `test/test_integration.rb:125` (`test_execute_with_generated_keys`, env-gated)
 - Gaps / next actions:
   - Add deterministic coverage for `max_rows` portal suspend/resume and multi-frame stream continuation.
-  - Add unit tests for `ResultStream#each_hash` and single-consumption lifecycle against mixed async/query frames.
+  - Add deterministic tests for true server multi-result framing (single server request returning multiple result sets) rather than client-side statement splitting only.
   - Add live-wire sequencing assertions around `MSG_CLOSE_COMPLETE` behavior in integration coverage.
 
 ## META (JDBCBL: `META`)
 
 - Current status: `Partial`
 - Lane-local source anchors:
-  - `lib/scratchbird/metadata.rb:11` (`Metadata` query constants and accessors for schemas/tables/columns/indexes/constraints/procedures/functions)
-  - `lib/scratchbird/metadata.rb:74` (`schema_paths_for_navigation`, metadata-only schema path normalization/de-duplication with optional parent expansion mode)
-  - `lib/scratchbird/metadata.rb:99` (`build_schema_tree`, recursive schema tree shaping with per-parent uniqueness and terminal-node tracking)
-  - `lib/scratchbird/metadata.rb:131` (`expand_schema_metadata_rows`, metadata-row parent expansion with synthetic ancestor rows)
-  - `lib/scratchbird/metadata.rb:160` (`build_database_default_metadata_rows`, database->default branch-style metadata row shaping)
+  - `lib/scratchbird/connection.rb:131` (`Connection#query_metadata_with_restrictions`, `#get_schema_with_restrictions`, `#get_schema_tree` entry points)
+  - `lib/scratchbird/client.rb:358` (`Client#query_metadata_with_restrictions`, `#get_schema_with_restrictions`, `#get_schema_tree` metadata execution/routing)
+  - `lib/scratchbird/metadata.rb:11` (`Metadata` query constants and collection catalogs for schemas/tables/columns/indexes/constraints/procedures/functions)
+  - `lib/scratchbird/metadata.rb:121` (`normalize_collection_name` / `resolve_collection_query`, collection alias normalization and query resolution)
+  - `lib/scratchbird/metadata.rb:139` (`normalize_restrictions` / `filter_rows_by_restrictions`, first-class metadata restriction filtering)
+  - `lib/scratchbird/metadata.rb:116` (`schema_paths_for_navigation`, schema path normalization/de-duplication with optional parent expansion mode)
+  - `lib/scratchbird/metadata.rb:141` (`build_schema_tree`, recursive schema tree shaping with per-parent uniqueness and terminal-node tracking)
+  - `lib/scratchbird/metadata.rb:173` (`expand_schema_metadata_rows`, metadata-row parent expansion with synthetic ancestor rows)
+  - `lib/scratchbird/metadata.rb:202` (`build_database_default_metadata_rows`, database->default branch-style metadata row shaping)
   - `lib/scratchbird.rb:18` (exports metadata module via top-level require)
 - Lane-local test anchors:
+  - `test/test_metadata_execution.rb:52` (`test_query_metadata_resolves_collection_alias`)
+  - `test/test_metadata_execution.rb:64` (`test_query_metadata_with_restrictions_filters_rows`)
+  - `test/test_metadata_execution.rb:78` (`test_query_metadata_with_restrictions_supports_null_and_ignores_unknown_keys`)
+  - `test/test_metadata_execution.rb:65` (`test_get_schema_expands_parent_rows_from_config`)
+  - `test/test_metadata_execution.rb:104` (`test_get_schema_with_restrictions_filters_then_expands_parents`)
+  - `test/test_metadata_execution.rb:76` (`test_get_schema_tree_returns_recursive_nodes`)
+  - `test/test_metadata_execution.rb:121` (`test_connection_get_schema_tree_shapes_database_default_rows`)
+  - `test/test_metadata_execution.rb:146` (`test_connection_get_schema_with_restrictions_forwards_to_client`)
   - `test/test_metadata_recursive_schema.rb:11` (`test_database_default_branch_style_metadata_rows`)
   - `test/test_metadata_recursive_schema.rb:40` (`test_dotted_schema_parent_expansion`)
   - `test/test_metadata_recursive_schema.rb:64` (`test_tree_uniqueness_within_parent`)
   - `test/test_metadata_recursive_schema.rb:80` (`test_same_object_name_under_different_parents_is_preserved`)
 - Gaps / next actions:
-  - Add driver-level metadata execution APIs through `Connection`/`Client` (collection routing/restriction support is still helper-only in this lane).
   - Expand metadata family coverage toward full JDBCBL-META scope (catalog/key/privilege/type-oriented surfaces and richer DDL editor fields).
+  - Tighten collection-specific restriction semantics (for example privilege/key/type-oriented families) beyond current generic alias-based filtering.
   - Add live integration assertions that validate metadata query payloads against fixture catalogs (current coverage is lane unit-level shaping).
 
 ## TYPE (JDBCBL: `TYPE`)
@@ -129,33 +148,44 @@
 
 ## ERR (JDBCBL: `ERR`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `lib/scratchbird/errors.rb:9` (driver error classes)
   - `lib/scratchbird/errors.rb:35` (`ErrorMapper.from_sqlstate`)
-  - `lib/scratchbird/client.rb:325` (`Client#handle_query_error`, maps wire errors to typed errors)
-  - `lib/scratchbird/protocol.rb:501` (`parse_error_message`)
+  - `lib/scratchbird/client.rb:449` (`Client#handle_query_error`, wire error parse + typed SQLSTATE mapping with preserved class propagation)
+  - `lib/scratchbird/protocol.rb:510` (`parse_error_message`)
 - Lane-local test anchors:
-  - `test/test_integration.rb:50` (`test_cancel`) asserts an error occurs after cancel, but not SQLSTATE/class.
+  - `test/test_errors.rb:11` (`test_sqlstate_mappings_cover_core_error_families`)
+  - `test/test_errors.rb:38` (`test_unknown_sqlstate_falls_back_to_base_error`)
+  - `test/test_errors.rb:45` (`test_client_handle_query_error_preserves_typed_sqlstate_mapping`)
+  - `test/test_integration.rb:50` (`test_cancel`) asserts runtime error-path behavior under live cancel.
 - Gaps / next actions:
-  - Add unit tests for SQLSTATE-to-class mapping coverage in `ErrorMapper`.
-  - Add parsing/mapping tests for wire error payload fields (`message`, `detail`, `hint`, `sqlstate`).
+  - Add integration assertions for SQLSTATE/class behavior in live error-path scenarios (cancel/constraint/auth failures), not just unit payload simulation.
 
 ## RES (JDBCBL: `RES`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
-  - `lib/scratchbird/connection.rb:27` (`Connection#close`, `#closed?`)
+  - `lib/scratchbird/connection.rb:28` (`Connection#close`, `#closed?`, close-state finalize even when disconnect raises)
   - `lib/scratchbird/connection.rb:85` (`Connection#close_prepared`)
   - `lib/scratchbird/statement.rb:31` (`Statement#close`, `#closed?`, best-effort prepared deallocation)
   - `lib/scratchbird/result.rb:11` (`Result` container/enumeration helpers)
-  - `lib/scratchbird/client.rb:94` (`Client#close` cleanup path: socket, keepalive, leak guard)
-  - `lib/scratchbird/client.rb:644` (`with_resilience` wrapper for circuit breaker + telemetry + keepalive)
-  - `lib/scratchbird/client.rb:856` (`ResultStream` single-consumption iterator and rowcount finalization)
+  - `lib/scratchbird/client.rb:112` (`Client#close` idempotent cleanup path: socket, keepalive, leak guard, detector teardown)
+  - `lib/scratchbird/client.rb:870` (`with_resilience` wrapper for circuit breaker + telemetry + keepalive validation)
+  - `lib/scratchbird/client.rb:1150` (`ResultStream` single-consumption iterator and rowcount finalization)
   - `lib/scratchbird/circuit_breaker.rb:4`, `lib/scratchbird/keepalive.rb:7`, `lib/scratchbird/telemetry.rb:6`, `lib/scratchbird/leak_detector.rb:4` (resilience helper implementations)
 - Lane-local test anchors:
   - `test/test_integration.rb:11` / `:24` / `:37` (explicit `conn.close` in `ensure`; env-gated)
-  - No dedicated unit tests for `Result`, `ResultStream`, or resource guard behavior.
+  - `test/test_result_stream.rb:44` (`test_result_supports_each_hash_and_generated_key`)
+  - `test/test_result_stream.rb:60` (`test_stream_each_hash_tracks_command_summary`)
+  - `test/test_result_stream.rb:88` (`test_stream_rejects_second_consumption`)
+  - `test/test_resource_resilience.rb:176` (`test_connection_close_marks_closed_when_disconnect_raises_once`)
+  - `test/test_resource_resilience.rb:192` (`test_statement_close_is_idempotent_when_close_prepared_raises`)
+  - `test/test_resource_resilience.rb:214` (`test_client_close_cleans_resilience_helpers_when_socket_absent`)
+  - `test/test_resource_resilience.rb:239` (`test_client_close_is_idempotent_when_socket_close_raises`)
+  - `test/test_resource_resilience.rb:264` (`test_with_resilience_success_records_telemetry_and_circuit_success`)
+  - `test/test_resource_resilience.rb:287` (`test_with_resilience_failure_records_telemetry_and_circuit_failure`)
+  - `test/test_resource_resilience.rb:311` (`test_with_resilience_runs_ping_when_keepalive_validation_required`)
+  - `test/test_resource_resilience.rb:333` (`test_with_resilience_raises_when_circuit_is_open`)
 - Gaps / next actions:
-  - Add unit tests for idempotent close paths, stream single-consumption guard, and result iteration helpers.
-  - Add direct unit tests for resilience helper wiring in `Client#initialize`/`#close` (circuit breaker, keepalive manager, leak detector, telemetry).
+  - Add live integration assertions for keepalive validation and leak-detection behavior under runtime network disruption (current coverage is deterministic unit-level wiring and cleanup).

@@ -5,18 +5,29 @@ Priority: P0
 
 ## Core API Surface
 
-- `connect(options)`
+- `new ScratchBirdPDO(dsn, username, password, options)`
 - `close()`
-- `query(sql, params)`
-- `execute(sql, params)`
-- `prepare(sql)`
-- `begin()`
+- `prepare(sql, options = [])`
+- `query(sql)`
+- `exec(sql)`
+- `beginTransaction()`
 - `commit()`
-- `rollback()`
-- `schemas()`
-- `tables(schema)`
-- `columns(schema, table)`
-- `indexes(schema, table)`
+- `rollBack()`
+- `inTransaction()`
+- `setAttribute(attr, value)` / `getAttribute(attr)`
+- `errorInfo()` / `errorCode()`
+- `lastInsertId(name = null)`
+- `nativeSql(sql, params = [])`
+- `nativeCallableSql(sql, params = [])`
+- `call(sql, params = [])`
+- `queryMulti(sql, params = [])`
+- `executeMulti(sql, params = [])`
+- `executeBatch(sql, batchParams)`
+- `queryBatch(sql, batchParams)`
+- `executeWithGeneratedKeys(sql, params = [])`
+- `queryMetadata(collectionName = "tables")`
+- `getSchema(collectionName = "tables", restrictions = [])`
+- `getSchemaTree(expandParents = null, database = null, restrictions = [])`
 
 ## Connection Options
 
@@ -29,6 +40,8 @@ Priority: P0
 
 - Column metadata (name, type_oid, format).
 - Row decoding per DRIVER_RESULT_DECODING.md.
+- Multi-result traversal via `Statement::nextRowset()` / `nextset()`.
+- Generated-key retrieval via `Statement::getGeneratedKeys()` and `executeWithGeneratedKeys(...)`.
 
 ## Errors
 

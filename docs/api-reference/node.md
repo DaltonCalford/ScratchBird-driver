@@ -10,10 +10,21 @@
 - `new Client(config | dsn)`
 - `connect()`
 - `query(sql, params?, options?)`
+- `queryMulti(sql, params?, options?)`
+- `queryBatch(sql, batchParams, options?)`
 - `queryStream(sql, params?, options?)` -> async generator
 - `prepare(name, sql)`
 - `execute(name, params?, options?)`
+- `executeMulti(name, params?, options?)`
+- `executeBatch(name, batchParams, options?)`
+- `executeWithGeneratedKeys(sql, params?, options?)`
+- `nativeSQL(sql, params?)`, `nativeCallableSQL(sql, params?)`
+- `call(sql, params?, options?)`
 - `begin()`, `commit()`, `rollback()`
+- `getAutoCommit()`, `setAutoCommit(enabled)`
+- `getSessionSchema()`, `setSessionSchema(schema)`
+- `queryMetadata(collectionName?, restrictions?)`
+- `getSchema(collectionName?, restrictions?)`, `getSchemaTree(options?)`
 - `end()`
 - `terminate()`
 - `savepoint(name)`, `releaseSavepoint(name)`, `rollbackToSavepoint(name)`
@@ -24,13 +35,17 @@
 - `streamControl(controlType, windowSize?, timeoutMs?)`
 - `attachCreate(emulationMode, dbName)`, `attachDetach()`, `attachList()`
 - `onNotification(handler)`
-- `lastQueryPlan()`, `lastSblrCompiled()`
+- `getLastPlan()`, `getLastSblr()`
 
 ### Query Options
 
 - `signal` (AbortSignal)
 - `maxRows`
 - `timeoutMs`
+- `includePlan`
+- `returnSblr`
+- `describeOnly`
+- `noCache`
 
 ## Pool
 

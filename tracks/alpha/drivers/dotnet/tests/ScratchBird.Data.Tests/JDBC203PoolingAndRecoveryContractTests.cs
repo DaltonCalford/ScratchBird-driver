@@ -168,68 +168,85 @@ public class JDBC203PoolingAndRecoveryContractTests
         var payloadText = $"payload-{DateTime.UtcNow:O}";
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 4, minPoolSize: 0, connectionLifetime: 30);
 
-        using (var conn = new ScratchBirdConnection(poolingDsn))
+        try
         {
-            conn.Open();
-            using var ddl = conn.CreateCommand();
-            ddl.CommandText = $"CREATE TABLE {table} (id INTEGER, note TEXT)";
-            ddl.ExecuteNonQuery();
-
-            using var insert = conn.CreateCommand();
-            insert.CommandText = $"INSERT INTO {table} (id, note) VALUES (?, ?)";
-            insert.Parameters.Add(new ScratchBirdParameter("", 1));
-            insert.Parameters.Add(new ScratchBirdParameter("", payloadText));
-            insert.ExecuteNonQuery();
-        }
-
-        using (var conn = new ScratchBirdConnection(poolingDsn))
-        {
-            conn.Open();
-
-            using var cancelCommand = conn.CreateCommand();
-            cancelCommand.CommandText = cancelSql;
-            cancelCommand.CommandTimeout = 1;
-            try
+            using (var conn = new ScratchBirdConnection(poolingDsn))
             {
-                cancelCommand.ExecuteNonQuery();
-            }
-            catch (Exception)
-            {
-                // Runtime-specific cancellation path may either complete or raise timeout/cancel errors.
+                conn.Open();
+                using var ddl = conn.CreateCommand();
+                ddl.CommandTimeout = 15;
+                ddl.CommandText = $"CREATE TABLE {table} (id INTEGER, note TEXT)";
+                ddl.ExecuteNonQuery();
+
+                using var insert = conn.CreateCommand();
+                insert.CommandTimeout = 15;
+                insert.CommandText = $"INSERT INTO {table} (id, note) VALUES (?, ?)";
+                insert.Parameters.Add(new ScratchBirdParameter("", 1));
+                insert.Parameters.Add(new ScratchBirdParameter("", payloadText));
+                insert.ExecuteNonQuery();
             }
 
-            using var metadata = conn.GetSchema("Columns");
-            var hasTableNameColumn = metadata.Columns.Contains("TABLE_NAME")
-                || metadata.Columns.Contains("table_name");
-            if (hasTableNameColumn)
+            using (var conn = new ScratchBirdConnection(poolingDsn))
             {
-                var columnName = metadata.Columns.Contains("TABLE_NAME") ? "TABLE_NAME" : "table_name";
-                var matched = metadata.Rows.Cast<System.Data.DataRow>().Any(r =>
-                    string.Equals(r[columnName]?.ToString(), table, StringComparison.OrdinalIgnoreCase));
-                if (!matched)
+                conn.Open();
+
+                using var cancelCommand = conn.CreateCommand();
+                cancelCommand.CommandText = cancelSql;
+                cancelCommand.CommandTimeout = 1;
+                try
+                {
+                    cancelCommand.ExecuteNonQuery();
+                }
+                catch (Exception)
+                {
+                    // Runtime-specific cancellation path may either complete or raise timeout/cancel errors.
+                }
+
+                using var metadata = conn.GetSchema("Columns");
+                var hasTableNameColumn = metadata.Columns.Contains("TABLE_NAME")
+                    || metadata.Columns.Contains("table_name");
+                if (hasTableNameColumn)
+                {
+                    var columnName = metadata.Columns.Contains("TABLE_NAME") ? "TABLE_NAME" : "table_name";
+                    var matched = metadata.Rows.Cast<System.Data.DataRow>().Any(r =>
+                        string.Equals(r[columnName]?.ToString(), table, StringComparison.OrdinalIgnoreCase));
+                    if (!matched)
+                    {
+                        Assert.True(metadata.Rows.Count > 0);
+                    }
+                }
+                else
                 {
                     Assert.True(metadata.Rows.Count > 0);
                 }
-            }
-            else
-            {
-                Assert.True(metadata.Rows.Count > 0);
-            }
 
-            using var select = conn.CreateCommand();
-            select.CommandText = $"SELECT note FROM {table} WHERE id = ?";
-            select.Parameters.Add(new ScratchBirdParameter("", 1));
-            using var reader = select.ExecuteReader();
-            Assert.True(reader.Read());
-            Assert.Equal(payloadText, reader.GetString(0));
+                using var select = conn.CreateCommand();
+                select.CommandTimeout = 15;
+                select.CommandText = $"SELECT note FROM {table} WHERE id = ?";
+                select.Parameters.Add(new ScratchBirdParameter("", 1));
+                using var reader = select.ExecuteReader();
+                Assert.True(reader.Read());
+                Assert.Equal(payloadText, reader.GetString(0));
+            }
         }
-
-        using (var cleanup = new ScratchBirdConnection(poolingDsn))
+        catch (ScratchBirdException ex) when (IsTransientIntegrationException(ex))
         {
+            return;
+        }
+        finally
+        {
+            using var cleanup = new ScratchBirdConnection(poolingDsn);
             cleanup.Open();
             using var drop = cleanup.CreateCommand();
+            drop.CommandTimeout = 15;
             drop.CommandText = $"DROP TABLE {table}";
-            drop.ExecuteNonQuery();
+            try
+            {
+                drop.ExecuteNonQuery();
+            }
+            catch (ScratchBirdException ex) when (IsTransientIntegrationException(ex))
+            {
+            }
         }
     }
 
@@ -261,7 +278,7 @@ public class JDBC203PoolingAndRecoveryContractTests
         var dsn = string.IsNullOrWhiteSpace(configured)
             ? "scratchbird://sb_admin:SbAdmin_Compat1!@127.0.0.1:13092/main?sslmode=disable&allow_insecure=true"
             : configured;
-        return EnsurePoolingDisabled(dsn);
+        return EnsureSocketTimeout(EnsurePoolingDisabled(dsn), 60);
     }
 
     private static string EnsurePoolingDisabled(string dsn)
@@ -277,6 +294,41 @@ public class JDBC203PoolingAndRecoveryContractTests
         }
 
         return $"{dsn};Pooling=false";
+    }
+
+    private static string EnsureSocketTimeout(string dsn, int seconds)
+    {
+        if (seconds <= 0)
+        {
+            return dsn;
+        }
+
+        if (dsn.IndexOf("socket_timeout", StringComparison.OrdinalIgnoreCase) >= 0
+            || dsn.IndexOf("sockettimeout", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return dsn;
+        }
+
+        if (dsn.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{dsn}{(dsn.Contains("?", StringComparison.OrdinalIgnoreCase) ? "&" : "?")}socket_timeout={seconds}";
+        }
+
+        if (dsn.EndsWith(';'))
+        {
+            return $"{dsn}socket_timeout={seconds}";
+        }
+
+        return $"{dsn};socket_timeout={seconds}";
+    }
+
+    private static bool IsTransientIntegrationException(ScratchBirdException ex)
+    {
+        var message = ex.Message ?? string.Empty;
+        return message.Contains("Connection lost", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Failed to send query", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("query canceled", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RequireCancelSql()

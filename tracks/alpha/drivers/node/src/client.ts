@@ -83,17 +83,19 @@ import {
   encodeParam,
   decodeValue,
 } from "./types";
-import { mapSqlState, ScratchbirdError, ScratchbirdNotSupportedError } from "./errors";
+import { mapSqlState, ScratchbirdError, ScratchbirdNotSupportedError, ScratchbirdSyntaxError } from "./errors";
 import { CircuitBreaker } from "./circuit_breaker";
 import { KeepaliveManager, KeepaliveTracker } from "./keepalive";
 import { LeakDetector, LeakDetectionGuard } from "./leak_detector";
 import { TelemetryCollector, SpanContext } from "./telemetry";
 import {
   MetadataCollectionName,
+  MetadataRestrictions,
   MetadataSchemaTree,
   MetadataSchemaTreeOptions,
   buildMetadataSchemaTree,
   expandSchemaMetadataRows,
+  filterMetadataRowsByRestrictions,
   normalizeMetadataCollectionName,
   resolveMetadataCollectionQuery,
 } from "./metadata";
@@ -383,7 +385,7 @@ export class Client {
 
   async query<T = any>(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
     this.ensureConnected();
-    const normalized = normalizeQuery(text, params);
+    const normalized = this.normalizeQueryOrThrow(text, params);
     return (await this.executeQuery(normalized.sql, normalized.params, options)) as QueryResult<T>;
   }
 
@@ -393,7 +395,7 @@ export class Client {
     options?: QueryOptions,
   ): Promise<Array<QueryResult<T>>> {
     this.ensureConnected();
-    const normalized = normalizeQuery(text, params);
+    const normalized = this.normalizeQueryOrThrow(text, params);
     const results = await this.executeQueryMulti(normalized.sql, normalized.params, options);
     return results as Array<QueryResult<T>>;
   }
@@ -404,6 +406,9 @@ export class Client {
     options?: QueryOptions,
   ): Promise<BatchResult> {
     this.ensureConnected();
+    if (!batchParams.length) {
+      throw new ScratchbirdSyntaxError("batch parameters are required", "07001");
+    }
     const summaries: BatchItemResult[] = [];
     for (let i = 0; i < batchParams.length; i++) {
       const result = await this.query(text, batchParams[i], options);
@@ -417,25 +422,42 @@ export class Client {
 
   async queryStream(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<AsyncGenerator<any, void, void>> {
     this.ensureConnected();
-    const normalized = normalizeQuery(text, params);
+    const normalized = this.normalizeQueryOrThrow(text, params);
     return this.executeQueryStream(normalized.sql, normalized.params, options);
   }
 
   nativeSQL(text: string, params?: any[] | Record<string, any>): string {
-    return normalizeQuery(text, params).sql;
+    return this.normalizeQueryOrThrow(text, params).sql;
   }
 
   nativeCallableSQL(text: string, params?: any[] | Record<string, any>): string {
-    return normalizeCallableQuery(text, params).sql;
+    return this.normalizeCallableQueryOrThrow(text, params).sql;
   }
 
   async call<T = any>(text: string, params?: any[] | Record<string, any>, options?: QueryOptions): Promise<QueryResult<T>> {
     this.ensureConnected();
-    const normalized = normalizeCallableQuery(text, params);
+    const normalized = this.normalizeCallableQueryOrThrow(text, params);
     return (await this.executeQuery(normalized.sql, normalized.params, options)) as QueryResult<T>;
   }
 
-  async getSchema(collectionName: string = "tables"): Promise<QueryResult> {
+  async executeWithGeneratedKeys(
+    text: string,
+    params?: any[] | Record<string, any>,
+    options?: QueryOptions,
+  ): Promise<bigint[]> {
+    this.ensureConnected();
+    const normalized = this.normalizeQueryOrThrow(text, params);
+    const results = await this.executeQueryMulti(normalized.sql, normalized.params, options);
+    const keys: bigint[] = [];
+    for (const result of results) {
+      if (result.lastId !== null && result.lastId !== 0n) {
+        keys.push(result.lastId);
+      }
+    }
+    return keys;
+  }
+
+  async queryMetadata(collectionName: string = "tables", restrictions?: MetadataRestrictions): Promise<QueryResult> {
     this.ensureConnected();
     let normalizedCollection: MetadataCollectionName;
     try {
@@ -446,7 +468,8 @@ export class Client {
 
     if (normalizedCollection === "catalogs") {
       const catalogName = this.config.database?.trim() ?? "";
-      const rows = catalogName ? [{ catalog_name: catalogName }] : [];
+      const baseRows = catalogName ? [{ catalog_name: catalogName }] : [];
+      const rows = filterMetadataRowsByRestrictions(baseRows, restrictions, normalizedCollection);
       return {
         rows,
         rowCount: rows.length,
@@ -458,20 +481,34 @@ export class Client {
 
     const sql = resolveMetadataCollectionQuery(normalizedCollection);
     const result = await this.query(sql);
-    if (normalizedCollection !== "schemas" || !this.config.metadataExpandSchemaParents) {
-      return result;
-    }
-    const expandedRows = expandSchemaMetadataRows(result.rows as Array<Record<string, unknown>>);
-    return {
+    const restrictedRows = filterMetadataRowsByRestrictions(
+      result.rows as Array<Record<string, unknown>>,
+      restrictions,
+      normalizedCollection,
+    );
+    const restrictedResult = {
       ...result,
+      rows: restrictedRows,
+      rowCount: restrictedRows.length,
+    };
+    if (normalizedCollection !== "schemas" || !this.config.metadataExpandSchemaParents) {
+      return restrictedResult;
+    }
+    const expandedRows = expandSchemaMetadataRows(restrictedRows);
+    return {
+      ...restrictedResult,
       rows: expandedRows,
       rowCount: expandedRows.length,
     };
   }
 
+  async getSchema(collectionName: string = "tables", restrictions?: MetadataRestrictions): Promise<QueryResult> {
+    return this.queryMetadata(collectionName, restrictions);
+  }
+
   async getSchemaTree(options?: MetadataSchemaTreeOptions): Promise<MetadataSchemaTree> {
     this.ensureConnected();
-    const schemas = await this.getSchema("schemas");
+    const schemas = await this.getSchema("schemas", options?.restrictions);
     return buildMetadataSchemaTree(schemas.rows as Array<Record<string, unknown>>, {
       expandParents: options?.expandParents ?? this.config.metadataExpandSchemaParents === true,
       database: options?.database ?? this.config.database,
@@ -529,7 +566,7 @@ export class Client {
     this.ensureConnected();
     const prepared = this.prepared.get(name);
     if (!prepared) throw new Error(`Unknown prepared statement: ${name}`);
-    const normalized = normalizeQuery(prepared.sql, params);
+    const normalized = this.normalizeQueryOrThrow(prepared.sql, params);
     if (prepared.paramCount >= 0 && prepared.paramCount !== normalized.params.length) {
       throw new ScratchbirdError("parameter count mismatch", "07001");
     }
@@ -544,7 +581,7 @@ export class Client {
     this.ensureConnected();
     const prepared = this.prepared.get(name);
     if (!prepared) throw new Error(`Unknown prepared statement: ${name}`);
-    const normalized = normalizeQuery(prepared.sql, params);
+    const normalized = this.normalizeQueryOrThrow(prepared.sql, params);
     if (prepared.paramCount >= 0 && prepared.paramCount !== normalized.params.length) {
       throw new ScratchbirdError("parameter count mismatch", "07001");
     }
@@ -558,6 +595,9 @@ export class Client {
     options?: QueryOptions,
   ): Promise<BatchResult> {
     this.ensureConnected();
+    if (!batchParams.length) {
+      throw new ScratchbirdSyntaxError("batch parameters are required", "07001");
+    }
     const summaries: BatchItemResult[] = [];
     for (let i = 0; i < batchParams.length; i++) {
       const result = await this.execute(name, batchParams[i], options);
@@ -1470,6 +1510,27 @@ export class Client {
   private applyTxnState(txnId: bigint): void {
     this.protocol.setTxnId(txnId);
     this.transactionActive = txnId !== 0n;
+  }
+
+  private normalizeQueryOrThrow(text: string, params?: any[] | Record<string, any>): ReturnType<typeof normalizeQuery> {
+    try {
+      return normalizeQuery(text, params);
+    } catch (err) {
+      throw this.wrapNormalizationError(err);
+    }
+  }
+
+  private normalizeCallableQueryOrThrow(text: string, params?: any[] | Record<string, any>): ReturnType<typeof normalizeCallableQuery> {
+    try {
+      return normalizeCallableQuery(text, params);
+    } catch (err) {
+      throw this.wrapNormalizationError(err);
+    }
+  }
+
+  private wrapNormalizationError(err: unknown): ScratchbirdSyntaxError {
+    const message = err instanceof Error ? err.message : String(err);
+    return new ScratchbirdSyntaxError(message, "07001");
   }
 
   private raiseProtocolError(payload: Buffer): ScratchbirdError {

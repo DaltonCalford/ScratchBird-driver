@@ -53,6 +53,8 @@ final class Connection
     private array $notificationHandlers = [];
     private ?array $lastPlan = null;
     private ?array $lastSblr = null;
+    private bool $hasLastInsertId = false;
+    private int $lastInsertIdValue = 0;
     private string $connectionId;
     private CircuitBreaker $circuitBreaker;
     private TelemetryCollector $telemetry;
@@ -103,14 +105,150 @@ final class Connection
         return $stmt;
     }
 
+    public function nativeSql(string $sql, array $params = []): string
+    {
+        try {
+            $normalized = Sql::normalize($sql, $params);
+        } catch (\InvalidArgumentException $ex) {
+            throw new ScratchBirdException($ex->getMessage(), '07001');
+        }
+        return $normalized['sql'];
+    }
+
+    public function nativeCallableSql(string $sql, array $params = []): string
+    {
+        try {
+            $normalized = Sql::normalizeCallable($sql, $params);
+        } catch (\InvalidArgumentException $ex) {
+            throw new ScratchBirdException($ex->getMessage(), '07001');
+        }
+        return $normalized['sql'];
+    }
+
+    public function call(string $sql, array $params = []): Statement
+    {
+        try {
+            $normalized = Sql::normalizeCallable($sql, $params);
+        } catch (\InvalidArgumentException $ex) {
+            throw new ScratchBirdException($ex->getMessage(), '07001');
+        }
+        $stmt = $this->prepare($normalized['sql']);
+        $stmt->execute($normalized['params']);
+        return $stmt;
+    }
+
+    /**
+     * @return array{items: array<int, array{index: int, rowCount: int, fields: array, command: string, lastId: int|false}>, totalRowCount: int}
+     */
+    public function executeBatch(string $sql, iterable $batchParams): array
+    {
+        $items = [];
+        $totalRowCount = 0;
+        $index = 0;
+        foreach ($batchParams as $params) {
+            if ($params instanceof \Traversable) {
+                $params = iterator_to_array($params);
+            }
+            if (!is_array($params)) {
+                throw new ScratchBirdException('batch parameter entry must be an array', '07001');
+            }
+            $stmt = $this->prepare($sql);
+            $stmt->execute($params);
+            $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $rowCount = $stmt->rowCount();
+            if ($rowCount > 0) {
+                $totalRowCount += $rowCount;
+            }
+            $items[] = [
+                'index' => $index,
+                'rowCount' => $rowCount,
+                'fields' => $stmt->fields(),
+                'command' => $stmt->statusMessage(),
+                'lastId' => $stmt->lastInsertId(),
+            ];
+            $index++;
+        }
+        return [
+            'items' => $items,
+            'totalRowCount' => $totalRowCount,
+        ];
+    }
+
+    /**
+     * @return array{items: array<int, array{index: int, rowCount: int, fields: array, command: string, lastId: int|false}>, totalRowCount: int}
+     */
+    public function queryBatch(string $sql, iterable $batchParams): array
+    {
+        return $this->executeBatch($sql, $batchParams);
+    }
+
+    /**
+     * @return array<int, array{rows: array, rowCount: int, fields: array, command: string, lastId: int|false}>
+     */
+    public function queryMulti(string $sql, array $params = []): array
+    {
+        $stmt = $this->prepare($sql);
+        $stmt->execute($params);
+        $results = [];
+        while (true) {
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $results[] = [
+                'rows' => $rows,
+                'rowCount' => $stmt->rowCount(),
+                'fields' => $stmt->fields(),
+                'command' => $stmt->statusMessage(),
+                'lastId' => $stmt->lastInsertId(),
+            ];
+            if (!$stmt->nextRowset()) {
+                break;
+            }
+        }
+        return $results;
+    }
+
+    /**
+     * @return array<int, array{rows: array, rowCount: int, fields: array, command: string, lastId: int|false}>
+     */
+    public function executeMulti(string $sql, array $params = []): array
+    {
+        return $this->queryMulti($sql, $params);
+    }
+
+    /**
+     * @return array<int, array{0: int}>
+     */
+    public function executeWithGeneratedKeys(string $sql, array $params = []): array
+    {
+        $stmt = $this->prepare($sql);
+        $stmt->execute($params);
+        do {
+            $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        } while ($stmt->nextRowset());
+        return $stmt->getGeneratedKeys();
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function getSchema(string $collectionName = 'tables'): array
+    public function queryMetadata(string $collectionName = 'tables'): Statement
     {
         $normalizedCollection = $this->normalizeMetadataCollection($collectionName);
-        $statement = $this->query(Metadata::resolveCollectionQuery($normalizedCollection));
+        return $this->query(Metadata::resolveCollectionQuery($normalizedCollection));
+    }
+
+    /**
+     * @param array<string, mixed> $restrictions
+     * @return array<int, array<string, mixed>>
+     */
+    public function getSchema(string $collectionName = 'tables', array $restrictions = []): array
+    {
+        $normalizedCollection = $this->normalizeMetadataCollection($collectionName);
+        $statement = $this->queryMetadata($normalizedCollection);
         $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        if ($restrictions !== []) {
+            /** @var array<int, array<string, mixed>> $rows */
+            $rows = Metadata::filterRowsByRestrictions($rows, $restrictions, $normalizedCollection);
+        }
         if ($normalizedCollection === 'schemas' && $this->config->metadataExpandSchemaParents) {
             /** @var array<int, array<string, mixed>> $rows */
             $rows = Metadata::expandSchemaMetadataRows($rows);
@@ -119,11 +257,12 @@ final class Connection
     }
 
     /**
+     * @param array<string, mixed> $restrictions
      * @return array{database: ?string, schemas: array<int, array{name: string, path: string, terminal: bool, children: array}>}
      */
-    public function getSchemaTree(?bool $expandParents = null, ?string $database = null): array
+    public function getSchemaTree(?bool $expandParents = null, ?string $database = null, array $restrictions = []): array
     {
-        $rows = $this->getSchema('schemas');
+        $rows = $this->getSchema('schemas', $restrictions);
         return Metadata::buildMetadataSchemaTree(
             $rows,
             $expandParents ?? ($this->config->metadataExpandSchemaParents === true),
@@ -139,6 +278,7 @@ final class Connection
             while ($stream->readRow() !== null) {
                 // Drain all rows so command-complete rowsAffected is finalized.
             }
+            $this->noteLastInsertId($stream->lastInsertId());
             return max(0, $stream->rowsAffected());
         } catch (\Throwable $ex) {
             $this->recordError($ex);
@@ -307,7 +447,16 @@ final class Connection
 
     public function lastInsertId(?string $name = null): string|false
     {
-        return false;
+        if (!$this->hasLastInsertId) {
+            return false;
+        }
+        return (string)$this->lastInsertIdValue;
+    }
+
+    public function noteLastInsertId(int $lastInsertId): void
+    {
+        $this->hasLastInsertId = true;
+        $this->lastInsertIdValue = $lastInsertId;
     }
 
     public function setAttribute(int $attribute, mixed $value): bool
@@ -340,6 +489,8 @@ final class Connection
         $this->socket = null;
         $this->connected = false;
         $this->applyTxnState(0);
+        $this->hasLastInsertId = false;
+        $this->lastInsertIdValue = 0;
         if ($this->keepaliveTracker !== null) {
             $this->keepaliveManager->unregister($this->connectionId);
             $this->keepaliveTracker = null;
@@ -354,16 +505,16 @@ final class Connection
 
     private function withResilience(string $operation, ?string $sql, callable $fn): mixed
     {
-        if (!$this->circuitBreaker->allowRequest()) {
+        if (isset($this->circuitBreaker) && !$this->circuitBreaker->allowRequest()) {
             throw new ScratchBirdConnectionException('Circuit breaker is OPEN', '08006');
         }
-        if ($this->keepaliveTracker !== null && $this->keepaliveTracker->needsValidation()) {
+        if (isset($this->keepaliveTracker) && $this->keepaliveTracker !== null && $this->keepaliveTracker->needsValidation()) {
             $this->ping();
             $this->keepaliveTracker->markActive();
         }
 
-        $span = $this->telemetry->startSpan($operation);
-        if ($span && $sql) {
+        $span = isset($this->telemetry) ? $this->telemetry->startSpan($operation) : null;
+        if ($span && $sql && isset($this->telemetry)) {
             $span->withAttribute('db.statement', TelemetryCollector::sanitizeQuery($sql));
         }
 
@@ -371,16 +522,22 @@ final class Connection
         try {
             $result = $fn();
             $success = true;
-            $this->circuitBreaker->recordSuccess();
-            if ($this->keepaliveTracker !== null) {
+            if (isset($this->circuitBreaker)) {
+                $this->circuitBreaker->recordSuccess();
+            }
+            if (isset($this->keepaliveTracker) && $this->keepaliveTracker !== null) {
                 $this->keepaliveTracker->markActive();
             }
             return $result;
         } catch (\Throwable $ex) {
-            $this->circuitBreaker->recordFailure();
+            if (isset($this->circuitBreaker)) {
+                $this->circuitBreaker->recordFailure();
+            }
             throw $ex;
         } finally {
-            $this->telemetry->endSpan($span, $success);
+            if (isset($this->telemetry)) {
+                $this->telemetry->endSpan($span, $success);
+            }
         }
     }
 

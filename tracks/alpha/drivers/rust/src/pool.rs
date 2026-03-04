@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use tokio::time;
 
+use crate::leak_detection::{LeakDetectionConfig, LeakDetectionGuard, LeakDetector};
 use crate::{Client, Config, Error, ErrorKind, Result};
-use crate::leak_detection::{LeakDetector, LeakDetectionConfig, LeakDetectionGuard};
 
 /// Configuration for connection pool
 #[derive(Debug, Clone)]
@@ -80,7 +80,7 @@ impl Drop for PooledConnection {
             let pool = Arc::clone(&self.pool);
             let created_at = self.created_at;
             let connection_id = self.connection_id.clone();
-            
+
             tokio::spawn(async move {
                 // Return the connection to available pool
                 let mut connections = pool.connections.lock().unwrap();
@@ -129,16 +129,14 @@ impl ConnectionPool {
         let mut connections = VecDeque::new();
         let leak_detector = Arc::new(LeakDetector::new(LeakDetectionConfig::default()));
         let next_id = AtomicUsize::new(0);
-        
+
         // Create minimum connections
         for _ in 0..pool_config.min_connections {
             let mut client = Client::new(config.clone());
             match client.connect().await {
                 Ok(()) => {
-                    let connection_id = format!(
-                        "conn-{}",
-                        next_id.fetch_add(1, Ordering::SeqCst) + 1
-                    );
+                    let connection_id =
+                        format!("conn-{}", next_id.fetch_add(1, Ordering::SeqCst) + 1);
                     connections.push_back(PooledConnectionState {
                         client,
                         created_at: Instant::now(),
@@ -170,7 +168,7 @@ impl ConnectionPool {
     /// Get a connection from the pool
     pub async fn acquire(&self) -> Result<PooledConnection> {
         let timeout = self.inner.pool_config.acquire_timeout;
-        
+
         match time::timeout(timeout, self.try_acquire()).await {
             Ok(result) => result,
             Err(_) => Err(Error::new(
@@ -210,7 +208,8 @@ impl ConnectionPool {
                         let leak_guard = LeakDetectionGuard::new(
                             conn.connection_id.clone(),
                             Arc::clone(&self.inner.leak_detector),
-                        ).await;
+                        )
+                        .await;
                         return Ok(PooledConnection {
                             inner: Some(conn.client),
                             pool: Arc::clone(&self.inner),
@@ -237,7 +236,8 @@ impl ConnectionPool {
                         let leak_guard = LeakDetectionGuard::new(
                             connection_id.clone(),
                             Arc::clone(&self.inner.leak_detector),
-                        ).await;
+                        )
+                        .await;
                         return Ok(PooledConnection {
                             inner: Some(client),
                             pool: Arc::clone(&self.inner),
@@ -286,7 +286,7 @@ impl ConnectionPool {
         let available = self.inner.available.load(Ordering::SeqCst);
         let in_pool = connections.len();
         let total_capacity = self.inner.pool_config.max_connections;
-        
+
         PoolStats {
             available_connections: available + in_pool,
             total_capacity,
@@ -328,19 +328,13 @@ impl Default for RetryConfig {
             max_retries: 3,
             base_delay_ms: 100,
             max_delay_ms: 5000,
-            retryable_errors: vec![
-                ErrorKind::Connection,
-                ErrorKind::Transaction,
-            ],
+            retryable_errors: vec![ErrorKind::Connection, ErrorKind::Transaction],
         }
     }
 }
 
 /// Execute an operation with retry logic
-pub async fn with_retry<T, F, Fut>(
-    config: &RetryConfig,
-    operation: F,
-) -> Result<T>
+pub async fn with_retry<T, F, Fut>(config: &RetryConfig, operation: F) -> Result<T>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
@@ -352,8 +346,8 @@ where
         match operation().await {
             Ok(result) => return Ok(result),
             Err(e) => {
-                let should_retry = retries < config.max_retries
-                    && config.retryable_errors.contains(&e.kind);
+                let should_retry =
+                    retries < config.max_retries && config.retryable_errors.contains(&e.kind);
 
                 if !should_retry {
                     return Err(e);

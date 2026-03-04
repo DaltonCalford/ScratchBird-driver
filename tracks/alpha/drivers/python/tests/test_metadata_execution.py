@@ -18,6 +18,7 @@ from scratchbird.metadata import (
     PRIMARY_KEYS_QUERY,
     TABLE_PRIVILEGES_QUERY,
     TYPE_INFO_QUERY,
+    filter_rows_by_restrictions,
     normalize_collection_name,
     resolve_collection_query,
 )
@@ -110,3 +111,112 @@ def test_connection_query_metadata_maps_unsupported_collection_to_not_supported(
 
     with pytest.raises(errors.NotSupportedError, match="not supported"):
         Connection.query_metadata(conn, "nope")
+
+
+def test_connection_get_schema_forwards_restrictions():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    class DummyCursor:
+        def fetchall(self):
+            return [("users",)]
+
+    def fake_query_metadata(collection_name="tables", restrictions=None):
+        captured["collection_name"] = collection_name
+        captured["restrictions"] = restrictions
+        return DummyCursor()
+
+    conn.query_metadata = fake_query_metadata
+
+    rows = Connection.get_schema(conn, "schemas", restrictions={"schema": "users"})
+    assert rows == [("users",)]
+    assert captured == {"collection_name": "schemas", "restrictions": {"schema": "users"}}
+
+
+def test_filter_rows_by_restrictions_filters_mapping_rows_with_aliases():
+    rows = [
+        {"schema_name": "sys", "table_name": "events"},
+        {"schema_name": "users", "table_name": "events"},
+        {"schema_name": "users", "table_name": "profiles"},
+    ]
+
+    filtered = filter_rows_by_restrictions(
+        rows,
+        {"schema": "users", "table": "events"},
+        collection_name="tables",
+    )
+    assert filtered == [{"schema_name": "users", "table_name": "events"}]
+
+
+def test_connection_query_metadata_with_restrictions_filters_tuple_rows_from_description():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+
+    rows = [("sys", "events"), ("users", "events"), ("users", "profiles")]
+    description = [
+        ("schema_name", None, None, None, None, None, True),
+        ("table_name", None, None, None, None, None, True),
+    ]
+
+    class DummyCursor:
+        def __init__(self):
+            self.description = description
+            self.statusmessage = "SELECT"
+            self.lastrowid = None
+
+        def fetchall(self):
+            return list(rows)
+
+    def fake_execute(sql: str, params=None):
+        assert sql == PRIMARY_KEYS_QUERY
+        assert params is None
+        return DummyCursor()
+
+    conn.execute = fake_execute
+
+    actual = Connection.query_metadata(conn, "primary_keys", restrictions={"schema": "users"})
+    assert actual.description == description
+    assert actual.fetchall() == [("users", "events"), ("users", "profiles")]
+
+
+def test_connection_query_metadata_with_restrictions_supports_null_and_ignores_unknown_keys():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+
+    rows = [{"table_name": "events", "owner_id": None}, {"table_name": "events", "owner_id": 7}]
+
+    class DummyCursor:
+        description = [("table_name", None, None, None, None, None, True), ("owner_id", None, None, None, None, None, True)]
+        statusmessage = "SELECT"
+        lastrowid = None
+
+        def fetchall(self):
+            return list(rows)
+
+    conn.execute = lambda *_args, **_kwargs: DummyCursor()
+
+    actual = Connection.query_metadata(
+        conn,
+        "tables",
+        restrictions={"owner_id": "null", "missing_filter": "ignored"},
+    )
+    assert actual.fetchall() == [{"table_name": "events", "owner_id": None}]
+
+
+def test_connection_query_metadata_with_restrictions_rejects_non_mapping():
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+
+    class DummyCursor:
+        description = []
+        statusmessage = "SELECT"
+        lastrowid = None
+
+        def fetchall(self):
+            return []
+
+    conn.execute = lambda *_args, **_kwargs: DummyCursor()
+
+    with pytest.raises(errors.ProgrammingError, match="mapping"):
+        Connection.query_metadata(conn, "tables", restrictions=["not", "a", "mapping"])

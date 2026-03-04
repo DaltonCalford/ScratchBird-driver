@@ -61,7 +61,8 @@ fn parse_uri_precedence_latest_override_wins() {
 
 #[test]
 fn parse_key_value_precedence_latest_override_wins() {
-    let cfg = Config::from_dsn("Host=first;Host=second;Port=3100;Port=4100;Database=a;Database=b").unwrap();
+    let cfg = Config::from_dsn("Host=first;Host=second;Port=3100;Port=4100;Database=a;Database=b")
+        .unwrap();
     assert_eq!(cfg.host, "second");
     assert_eq!(cfg.port, 4100);
     assert_eq!(cfg.database, "b");
@@ -81,7 +82,10 @@ fn parse_auth_plugin_selection_params_into_extra() {
         cfg.extra.get("auth_payload_json").map(String::as_str),
         Some("{\"tenant\":\"alpha\"}")
     );
-    assert_eq!(cfg.extra.get("auth_payload_b64").map(String::as_str), Some("dGVzdA=="));
+    assert_eq!(
+        cfg.extra.get("auth_payload_b64").map(String::as_str),
+        Some("dGVzdA==")
+    );
     assert_eq!(
         cfg.extra.get("auth_provider_profile").map(String::as_str),
         Some("default")

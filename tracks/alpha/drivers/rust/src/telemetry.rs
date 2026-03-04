@@ -113,10 +113,10 @@ impl TelemetryCollector {
         }
 
         let span = SpanContext::new(name);
-        
+
         let mut spans = self.spans.write().await;
         spans.push(span.clone());
-        
+
         // Keep only last 1000 spans
         if spans.len() > 1000 {
             spans.remove(0);
@@ -134,7 +134,8 @@ impl TelemetryCollector {
         let duration = span.elapsed();
 
         // Record metrics
-        self.record_query_metrics(&span.span_name, duration, success).await;
+        self.record_query_metrics(&span.span_name, duration, success)
+            .await;
 
         // Log slow queries
         if self.config.enable_slow_query_log && duration > self.config.slow_query_threshold {
@@ -149,9 +150,9 @@ impl TelemetryCollector {
         }
 
         let mut metrics = self.metrics.write().await;
-        
+
         metrics.total_queries += 1;
-        
+
         if success {
             metrics.successful_queries += 1;
         } else {
@@ -176,11 +177,11 @@ impl TelemetryCollector {
             .operation_metrics
             .entry(operation.to_string())
             .or_insert_with(OperationMetrics::default);
-        
+
         op_metrics.count += 1;
         op_metrics.total_time_ms += duration_ms;
         op_metrics.avg_time_ms = op_metrics.total_time_ms / op_metrics.count;
-        
+
         if !success {
             op_metrics.error_count += 1;
         }
@@ -295,25 +296,43 @@ pub fn export_prometheus_metrics(metrics: &Metrics) -> String {
     // Total queries
     output.push_str("# HELP scratchbird_queries_total Total number of queries\n");
     output.push_str("# TYPE scratchbird_queries_total counter\n");
-    output.push_str(&format!("scratchbird_queries_total {}\n", metrics.total_queries));
+    output.push_str(&format!(
+        "scratchbird_queries_total {}\n",
+        metrics.total_queries
+    ));
 
     // Query duration histogram
     output.push_str("# HELP scratchbird_query_duration_ms Query duration histogram\n");
     output.push_str("# TYPE scratchbird_query_duration_ms histogram\n");
-    output.push_str(&format!("scratchbird_query_duration_ms_bucket{{le=\"10\"}} {}\n", metrics.latency_histogram.ms_0_10));
-    output.push_str(&format!("scratchbird_query_duration_ms_bucket{{le=\"100\"}} {}\n", 
-        metrics.latency_histogram.ms_0_10 + metrics.latency_histogram.ms_10_100));
-    output.push_str(&format!("scratchbird_query_duration_ms_bucket{{le=\"1000\"}} {}\n",
-        metrics.latency_histogram.ms_0_10 + metrics.latency_histogram.ms_10_100 + metrics.latency_histogram.ms_100_1000));
+    output.push_str(&format!(
+        "scratchbird_query_duration_ms_bucket{{le=\"10\"}} {}\n",
+        metrics.latency_histogram.ms_0_10
+    ));
+    output.push_str(&format!(
+        "scratchbird_query_duration_ms_bucket{{le=\"100\"}} {}\n",
+        metrics.latency_histogram.ms_0_10 + metrics.latency_histogram.ms_10_100
+    ));
+    output.push_str(&format!(
+        "scratchbird_query_duration_ms_bucket{{le=\"1000\"}} {}\n",
+        metrics.latency_histogram.ms_0_10
+            + metrics.latency_histogram.ms_10_100
+            + metrics.latency_histogram.ms_100_1000
+    ));
 
     // Connection pool metrics
     output.push_str("# HELP scratchbird_pool_connections_total Total connections in pool\n");
     output.push_str("# TYPE scratchbird_pool_connections_total gauge\n");
-    output.push_str(&format!("scratchbird_pool_connections_total {}\n", metrics.connection_pool_metrics.total_connections));
+    output.push_str(&format!(
+        "scratchbird_pool_connections_total {}\n",
+        metrics.connection_pool_metrics.total_connections
+    ));
 
     output.push_str("# HELP scratchbird_pool_connections_active Active connections\n");
     output.push_str("# TYPE scratchbird_pool_connections_active gauge\n");
-    output.push_str(&format!("scratchbird_pool_connections_active {}\n", metrics.connection_pool_metrics.active_connections));
+    output.push_str(&format!(
+        "scratchbird_pool_connections_active {}\n",
+        metrics.connection_pool_metrics.active_connections
+    ));
 
     output
 }

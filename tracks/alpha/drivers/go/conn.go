@@ -980,6 +980,10 @@ func (c *Conn) SetOption(ctx context.Context, name, value string) error {
 }
 
 func (c *Conn) QueryMetadata(ctx context.Context, collection string) (driver.Rows, error) {
+	return c.QueryMetadataWithRestrictions(ctx, collection, nil)
+}
+
+func (c *Conn) QueryMetadataWithRestrictions(ctx context.Context, collection string, restrictions map[string]any) (driver.Rows, error) {
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
 	}
@@ -991,7 +995,64 @@ func (c *Conn) QueryMetadata(ctx context.Context, collection string) (driver.Row
 			SQLState: "0A000",
 		}
 	}
-	return c.QueryContext(ctx, query, nil)
+	if len(restrictions) == 0 {
+		return c.QueryContext(ctx, query, nil)
+	}
+	rowsIface, err := c.QueryContext(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+	rows, ok := rowsIface.(*Rows)
+	if !ok {
+		_ = rowsIface.Close()
+		return nil, &Error{
+			Kind:     ErrInternal,
+			Message:  "unexpected metadata rows implementation",
+			SQLState: "XX000",
+		}
+	}
+	defer func() { _ = rows.Close() }()
+
+	allRows := make([][]driver.Value, 0, 16)
+	columnNames := []string(nil)
+	colInfo := []columnInfo(nil)
+	captureColumns := func() {
+		if len(columnNames) > 0 || len(rows.columns) == 0 {
+			return
+		}
+		columnNames = make([]string, len(rows.columns))
+		for idx, col := range rows.columns {
+			columnName := col.name
+			if columnName == "" {
+				columnName = fmt.Sprintf("column_%d", idx+1)
+			}
+			columnNames[idx] = columnName
+		}
+		colInfo = append([]columnInfo(nil), rows.columns...)
+	}
+
+	for {
+		row, err := rows.nextRow()
+		if err == nil {
+			captureColumns()
+			allRows = append(allRows, append([]driver.Value(nil), row...))
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			captureColumns()
+			if rows.hasNextSet {
+				if nextErr := rows.NextResultSet(); nextErr != nil && !errors.Is(nextErr, io.EOF) {
+					return nil, nextErr
+				}
+				continue
+			}
+			break
+		}
+		return nil, err
+	}
+
+	filteredRows := filterMetadataRowsByRestrictions(allRows, columnNames, restrictions, collection)
+	return newMetadataRows(columnNames, colInfo, filteredRows), nil
 }
 
 func (c *Conn) Subscribe(ctx context.Context, subType byte, channel, filter string) error {

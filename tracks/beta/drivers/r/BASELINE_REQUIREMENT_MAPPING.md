@@ -86,15 +86,23 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/metadata.R:45` (`sb_metadata_schema_paths_for_navigation`, dotted parent expansion path shaping)
   - `R/metadata.R:69` (`sb_metadata_build_schema_tree`, recursive tree shaping with per-parent uniqueness)
   - `R/metadata.R:117` (`sb_metadata_build_schema_tree_rows`, database/default branch-style row shaping)
+  - `R/dbi.R:90` (`dbListTables`, metadata-only table discovery with schema qualification)
+  - `R/dbi.R:120` / `R/dbi.R:131` / `R/dbi.R:142` (`dbExistsTable` for `character`/`Id`/`SQL` names)
+  - `R/dbi.R:153` / `R/dbi.R:198` / `R/dbi.R:243` (`dbListFields` for `character`/`Id`/`SQL` names)
+  - `R/dbi.R:393` (`sb_metadata_tables_with_schema`, table->schema enrichment from metadata)
+  - `R/dbi.R:426` (`sb_filter_tables_for_ref`, schema/table reference matching)
   - `NAMESPACE:18` through `NAMESPACE:28` (metadata helper + recursive schema shaping exports)
 - Lane-local test anchors:
   - `tests/testthat/test_metadata_recursive_schema.R:17` (database/default branch-style rows with top-level branches)
   - `tests/testthat/test_metadata_recursive_schema.R:32` (dotted parent expansion for schema navigation paths)
   - `tests/testthat/test_metadata_recursive_schema.R:44` (per-parent uniqueness for duplicate leaf paths)
   - `tests/testthat/test_metadata_recursive_schema.R:58` (same leaf name preserved under different parents)
+  - `tests/testthat/test_metadata_execution.R:14` (`dbListTables` metadata-only listing behavior)
+  - `tests/testthat/test_metadata_execution.R:41` (`dbExistsTable` metadata-only lookup behavior)
+  - `tests/testthat/test_metadata_execution.R:69` (`dbListFields` metadata-only column listing behavior)
 - Gaps / next actions:
-  - Add DBI metadata surface methods (for example, `dbListTables`, `dbListFields`, `dbExistsTable`) mapped to helper queries.
-  - Add live metadata integration coverage to validate engine-backed metadata payload completeness beyond recursive schema tree shaping.
+  - Add live metadata integration coverage to validate engine-backed metadata payload completeness beyond recursive schema tree shaping and mocked DBI metadata method tests.
+  - Expand metadata-family coverage toward richer privilege/key/type and DDL-editor payload parity expectations.
 
 ## TYPE -> JDBCBL-TYPE
 

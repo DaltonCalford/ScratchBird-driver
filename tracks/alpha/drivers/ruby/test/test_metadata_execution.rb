@@ -47,6 +47,11 @@ class TestMetadataExecution < Minitest::Test
       @calls << [collection_name, expand_schema_parents]
       @schema_rows.map(&:dup)
     end
+
+    def get_schema_with_restrictions(collection_name, restrictions = nil, _options = nil, expand_schema_parents: nil)
+      @calls << [collection_name, expand_schema_parents, restrictions]
+      @schema_rows.map(&:dup)
+    end
   end
 
   def test_query_metadata_resolves_collection_alias
@@ -62,6 +67,32 @@ class TestMetadataExecution < Minitest::Test
     assert_includes err.message, "not supported"
   end
 
+  def test_query_metadata_with_restrictions_filters_rows
+    client = build_client(
+      rows: [
+        { "schema_name" => "sys", "table_name" => "events" },
+        { "schema_name" => "users", "table_name" => "events" },
+        { "schema_name" => "users", "table_name" => "profiles" }
+      ]
+    )
+
+    filtered = client.query_metadata_with_restrictions("tables", { schema: "users", table: "events" })
+    assert_equal [{ "schema_name" => "users", "table_name" => "events" }], filtered.each_hash.to_a
+    assert_equal Scratchbird::Metadata::TABLES_QUERY, client.queries.first[0]
+  end
+
+  def test_query_metadata_with_restrictions_supports_null_and_ignores_unknown_keys
+    client = build_client(
+      rows: [
+        { "table_name" => "events", "owner_id" => nil },
+        { "table_name" => "events", "owner_id" => 17 }
+      ]
+    )
+
+    filtered = client.query_metadata_with_restrictions("tables", { owner_id: "null", missing_filter: "ignored" })
+    assert_equal [{ "table_name" => "events", "owner_id" => nil }], filtered.each_hash.to_a
+  end
+
   def test_get_schema_expands_parent_rows_from_config
     cfg = Scratchbird::Config.new
     cfg.metadata_expand_schema_parents = true
@@ -71,6 +102,21 @@ class TestMetadataExecution < Minitest::Test
     assert_equal ["users", "users.alice", "users.alice.dev"], rows.map { |row| row["schema_name"] }
     assert_nil rows[0]["schema_id"]
     assert_equal 7, rows[2]["schema_id"]
+  end
+
+  def test_get_schema_with_restrictions_filters_then_expands_parents
+    cfg = Scratchbird::Config.new
+    cfg.metadata_expand_schema_parents = true
+    client = build_client(
+      config: cfg,
+      rows: [
+        { "schema_name" => "users.alice.dev" },
+        { "schema_name" => "sys.admin" }
+      ]
+    )
+
+    rows = client.get_schema_with_restrictions("schemas", { schema_name: "users.alice.dev" })
+    assert_equal ["users", "users.alice", "users.alice.dev"], rows.map { |row| row["schema_name"] }
   end
 
   def test_get_schema_tree_returns_recursive_nodes
@@ -112,6 +158,20 @@ class TestMetadataExecution < Minitest::Test
       ["main", "main.default", "main.default.users", "main.default.users.alice", "main.default.users.alice.dev", "main.default.users.bob", "main.default.users.bob.dev"],
       rows.map { |row| row["node_path"] }
     )
+    assert_equal [["schemas", true, nil]], conn.client.calls
+  end
+
+  def test_connection_get_schema_with_restrictions_forwards_to_client
+    cfg = Scratchbird::Config.new
+    conn = Scratchbird::Connection.allocate
+    conn.instance_variable_set(:@config, cfg)
+    conn.instance_variable_set(:@client, ConnectionMetadataClient.new([{ "schema_name" => "users.alice.dev" }]))
+    conn.instance_variable_set(:@autocommit, true)
+    conn.instance_variable_set(:@closed, false)
+
+    rows = conn.get_schema_with_restrictions("schemas", { schema: "users.alice.dev" }, nil, expand_schema_parents: true)
+    assert_equal ["users.alice.dev"], rows.map { |row| row["schema_name"] }
+    assert_equal [["schemas", true, { schema: "users.alice.dev" }]], conn.client.calls
   end
 
   private

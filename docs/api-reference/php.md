@@ -36,6 +36,9 @@ Advanced protocol operations are available on `ScratchBird\Connection`:
 - `onNotification(callable)`
 - `lastPlan()`, `lastSblr()`
 - `cancel()`
+- `queryMetadata(collectionName = "tables")`
+- `getSchema(collectionName = "tables", restrictions = [])`
+- `getSchemaTree(expandParents = null, database = null, restrictions = [])`
 
 ## Wrapper Types
 

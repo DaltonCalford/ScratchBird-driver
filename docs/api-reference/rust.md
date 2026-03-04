@@ -32,6 +32,15 @@ Advanced protocol operations on `Client`:
 - `on_notification(handler)`
 - `last_query_plan()`, `last_sblr_compiled()`
 
+## Metadata
+
+- `client.query_metadata(collection).await` -> `QueryResult`
+- `client.query_metadata_with_restrictions(collection, restrictions).await` -> `QueryResult`
+- `Client::metadata_collection_name(collection)` -> normalized metadata collection name
+
+Restriction matching is alias-aware and collection-scoped; unknown restrictions are ignored when no matching metadata columns are present.
+Metadata collection aliases include extended families such as `primary_keys`, `foreign_keys`, `type_info`, and unified `routines`.
+
 ## Parameters
 
 Use `types::Param` for explicit type binding or pass supported native values.

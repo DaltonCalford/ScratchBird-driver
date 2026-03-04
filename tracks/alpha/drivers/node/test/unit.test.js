@@ -24,12 +24,17 @@ const {
   METADATA_FOREIGN_KEYS_QUERY,
   METADATA_TABLE_PRIVILEGES_QUERY,
   METADATA_TYPE_INFO_QUERY,
+  filterMetadataRowsByRestrictions,
   resolveMetadataCollectionQuery,
   buildMetadataSchemaTree,
   mapSqlState,
   ScratchbirdSyntaxError,
   ScratchbirdConnectionError,
   ScratchbirdError,
+  CircuitBreaker,
+  KeepaliveManager,
+  LeakDetector,
+  TelemetryCollector,
 } = require("../dist/index.js");
 const { MessageType } = require("../dist/protocol.js");
 
@@ -288,6 +293,20 @@ test("prepared execute path sends bind/execute/sync and nativeSQL normalizes ali
   );
 });
 
+test("nativeSQL and nativeCallableSQL wrap normalization failures as syntax errors", () => {
+  const client = new Client({ user: "me", database: "db" });
+
+  assert.throws(
+    () => client.nativeSQL("select ?", []),
+    (err) => err instanceof ScratchbirdSyntaxError && err.code === "07001",
+  );
+
+  assert.throws(
+    () => client.nativeCallableSQL("{ ? = call abs( }", []),
+    (err) => err instanceof ScratchbirdSyntaxError && err.code === "07001",
+  );
+});
+
 test("queryMulti returns independent result sets and preserves generated keys", async () => {
   const client = new Client({ user: "me", database: "db" });
   const protocol = createQueuedProtocol([
@@ -329,6 +348,35 @@ test("queryBatch aggregates per-item command summaries", async () => {
     batch.items.map((item) => item.lastId),
     [11n, 22n, 33n],
   );
+});
+
+test("queryBatch and executeBatch reject empty batch parameters", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  client.prepared.set("stmt", { sql: "select ?::integer", paramCount: 1 });
+
+  await assert.rejects(
+    () => client.queryBatch("select ?::integer", []),
+    (err) => err instanceof ScratchbirdSyntaxError && err.code === "07001",
+  );
+  await assert.rejects(
+    () => client.executeBatch("stmt", []),
+    (err) => err instanceof ScratchbirdSyntaxError && err.code === "07001",
+  );
+});
+
+test("executeWithGeneratedKeys returns non-zero generated keys", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  client.executeQueryMulti = async () => [
+    { rows: [], rowCount: 1, fields: [], command: "INSERT", lastId: 0n },
+    { rows: [], rowCount: 1, fields: [], command: "INSERT", lastId: 101n },
+    { rows: [], rowCount: 1, fields: [], command: "INSERT", lastId: null },
+    { rows: [], rowCount: 1, fields: [], command: "INSERT", lastId: 202n },
+  ];
+
+  const keys = await client.executeWithGeneratedKeys("insert into t values (1); insert into t values (2)");
+  assert.deepEqual(keys, [101n, 202n]);
 });
 
 test("call rewrites escape syntax and delegates through executeQuery", async () => {
@@ -385,6 +433,22 @@ test("getSchema routes metadata collections and rejects unsupported collections"
   assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY, METADATA_FOREIGN_KEYS_QUERY, METADATA_TABLE_PRIVILEGES_QUERY]);
 });
 
+test("filterMetadataRowsByRestrictions supports aliases, null matching, and unknown-key ignore", () => {
+  const rows = [
+    { schema_name: "sys", table_name: "events", owner_id: null },
+    { schema_name: "users", table_name: "events", owner_id: null },
+    { schema_name: "users", table_name: "profiles", owner_id: 7 },
+  ];
+
+  let filtered = filterMetadataRowsByRestrictions(rows, { schema: "users", table: "events" }, "tables");
+  assert.deepEqual(filtered, [{ schema_name: "users", table_name: "events", owner_id: null }]);
+
+  filtered = filterMetadataRowsByRestrictions(rows, { owner_id: "null", missing_filter: "ignored" }, "tables");
+  assert.equal(filtered.length, 2);
+  assert.equal(filtered[0].schema_name, "sys");
+  assert.equal(filtered[1].schema_name, "users");
+});
+
 test("getSchema returns synthetic catalogs without issuing SQL", async () => {
   const client = new Client({ user: "me", database: "main" });
   client.connected = true;
@@ -398,6 +462,27 @@ test("getSchema returns synthetic catalogs without issuing SQL", async () => {
   assert.equal(queryInvoked, false);
   assert.equal(catalogs.rowCount, 1);
   assert.deepEqual(catalogs.rows, [{ catalog_name: "main" }]);
+});
+
+test("getSchema applies restrictions before schema parent expansion", async () => {
+  const client = new Client({ user: "me", database: "db", metadataExpandSchemaParents: true });
+  client.connected = true;
+  client.query = async () => ({
+    rows: [
+      { schema_name: "users.alice.dev" },
+      { schema_name: "sys.admin" },
+    ],
+    rowCount: 2,
+    fields: [],
+    command: "SELECT",
+    lastId: null,
+  });
+
+  const schemas = await client.getSchema("schemas", { schema_name: "users.alice.dev" });
+  assert.deepEqual(
+    schemas.rows.map((row) => row.schema_name),
+    ["users", "users.alice", "users.alice.dev"],
+  );
 });
 
 test("getSchema expands schema parents when metadataExpandSchemaParents is enabled", async () => {
@@ -538,5 +623,139 @@ test("pool query returns leased clients and releases them to idle queue", async 
     Client.prototype.connect = originalConnect;
     Client.prototype.query = originalQuery;
     Client.prototype.end = originalEnd;
+  }
+});
+
+test("circuit breaker transitions through open and half-open gates", () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const breaker = new CircuitBreaker({
+      failureThreshold: 2,
+      recoveryTimeoutMs: 50,
+      successThreshold: 2,
+      halfOpenMaxRequests: 2,
+    }, "node-unit");
+
+    assert.equal(breaker.getState(), "CLOSED");
+    breaker.recordFailure();
+    assert.equal(breaker.getState(), "CLOSED");
+    breaker.recordFailure();
+    assert.equal(breaker.getState(), "OPEN");
+    assert.equal(breaker.allowRequest(), false);
+
+    now += 75;
+    assert.equal(breaker.allowRequest(), true);
+    assert.equal(breaker.getState(), "HALF_OPEN");
+    assert.equal(breaker.allowRequest(), true);
+    assert.equal(breaker.allowRequest(), false, "half-open request cap should be enforced");
+
+    breaker.recordSuccess();
+    assert.equal(breaker.getState(), "HALF_OPEN");
+    breaker.recordSuccess();
+    assert.equal(breaker.getState(), "CLOSED");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("keepalive manager validates idle trackers and keeps unhealthy trackers stale", async () => {
+  const originalNow = Date.now;
+  let now = 0;
+  Date.now = () => now;
+  try {
+    const manager = new KeepaliveManager({
+      intervalMs: 1_000,
+      maxIdleBeforeCheckMs: 10,
+      validationTimeoutMs: 10,
+    });
+    let healthyPings = 0;
+    let unhealthyPings = 0;
+
+    const healthy = manager.register("healthy", async () => {
+      healthyPings += 1;
+      return true;
+    });
+    const unhealthy = manager.register("unhealthy", async () => {
+      unhealthyPings += 1;
+      return false;
+    });
+
+    now = 11;
+    await manager.checkConnections();
+    assert.equal(healthyPings, 1);
+    assert.equal(unhealthyPings, 1);
+    assert.equal(healthy.needsValidation(), false, "healthy tracker should be refreshed");
+    assert.equal(unhealthy.needsValidation(), true, "unhealthy tracker should remain stale");
+
+    manager.unregister("healthy");
+    now = 25;
+    await manager.checkConnections();
+    assert.equal(healthyPings, 1, "unregistered tracker should not be pinged");
+    assert.equal(unhealthyPings, 2);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("leak detector reports potential leaks and guard release is idempotent", () => {
+  const originalNow = Date.now;
+  let now = 5_000;
+  Date.now = () => now;
+  try {
+    const detector = new LeakDetector({ thresholdMs: 20, captureStackTrace: true, checkIntervalMs: 100 });
+    const guard = detector.checkout("conn-1", { lane: "node" });
+
+    assert.equal(detector.activeCount(), 1);
+    assert.equal(detector.stats().potentialLeaks, 0);
+
+    const checkoutInfo = detector.checkouts.get("conn-1");
+    assert.ok(checkoutInfo?.stackTrace, "stack trace should be captured when enabled");
+
+    now += 25;
+    assert.equal(detector.stats().potentialLeaks, 1);
+
+    guard.release();
+    guard.release();
+    assert.equal(detector.activeCount(), 0);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("telemetry collector tracks metrics and slow query attributes", () => {
+  const originalNow = Date.now;
+  let now = 10_000;
+  Date.now = () => now;
+  try {
+    const collector = new TelemetryCollector({ slowQueryThresholdMs: 50 });
+    const span = collector.startSpan("query");
+    assert.ok(span);
+
+    span.withAttribute(
+      "db.statement",
+      TelemetryCollector.sanitizeQuery("select * from t where api_key = 'secret'"),
+    );
+
+    now += 60;
+    collector.endSpan(span, false);
+
+    const metrics = collector.metrics();
+    assert.equal(metrics.totalQueries, 1);
+    assert.equal(metrics.failedQueries, 1);
+    assert.equal(metrics.successfulQueries, 0);
+    assert.equal(metrics.operationMetrics.query.count, 1);
+    assert.equal(metrics.operationMetrics.query.errorCount, 1);
+
+    const slowQueries = collector.slowQueryLog();
+    assert.equal(slowQueries.length, 1);
+    assert.equal(slowQueries[0].spanName, "query");
+    assert.equal(slowQueries[0].attributes["db.statement"], "select * from t where api_key = '?'");
+
+    const prometheus = collector.exportPrometheusMetrics();
+    assert.match(prometheus, /scratchbird_queries_total 1/);
+  } finally {
+    Date.now = originalNow;
   }
 });

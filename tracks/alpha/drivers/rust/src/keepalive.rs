@@ -19,7 +19,7 @@ pub struct KeepaliveConfig {
 impl Default for KeepaliveConfig {
     fn default() -> Self {
         Self {
-            interval: Duration::from_secs(120),      // 2 minutes
+            interval: Duration::from_secs(120),              // 2 minutes
             max_idle_before_check: Duration::from_secs(600), // 10 minutes
             validation_timeout: Duration::from_secs(5),
         }
@@ -79,11 +79,8 @@ impl KeepaliveTask {
     }
 
     /// Start the keepalive background task
-    pub fn spawn<F, Fut>(
-        &self,
-        mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
-        check_fn: F,
-    ) where
+    pub fn spawn<F, Fut>(&self, mut shutdown_rx: tokio::sync::watch::Receiver<bool>, check_fn: F)
+    where
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {

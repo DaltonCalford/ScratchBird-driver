@@ -84,3 +84,59 @@ def test_cancel_integration():
     thread.join(timeout=5)
     conn.close()
     assert error, "expected cancel error"
+
+
+def test_query_multi_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        result_sets = conn.query_multi("SELECT 1; SELECT 2")
+        assert len(result_sets) == 2
+        assert result_sets[0]["rows"] == [(1,)]
+        assert result_sets[1]["rows"] == [(2,)]
+    finally:
+        conn.close()
+
+
+def test_execute_multi_alias_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        result_sets = conn.execute_multi("SELECT 3; SELECT 4")
+        assert len(result_sets) == 2
+        assert result_sets[0]["rows"] == [(3,)]
+        assert result_sets[1]["rows"] == [(4,)]
+    finally:
+        conn.close()
+
+
+def test_execute_batch_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        batch = conn.execute_batch("SELECT ?::INTEGER", [(11,), (22,)])
+        assert batch["totalRowCount"] >= 0
+        assert [item["index"] for item in batch["items"]] == [0, 1]
+        assert len(batch["items"]) == 2
+    finally:
+        conn.close()
+
+
+def test_execute_with_generated_keys_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        keys = conn.execute_with_generated_keys("SELECT 1")
+        rows = keys.fetchall()
+        assert len(rows) == 1
+        assert isinstance(rows[0][0], int)
+    finally:
+        conn.close()

@@ -323,7 +323,10 @@ pub fn decode_header(data: &[u8]) -> Result<MessageHeader> {
         return Err(Error::new(ErrorKind::Connection, "invalid protocol magic"));
     }
     if data[4] != VERSION_MAJOR || data[5] != VERSION_MINOR {
-        return Err(Error::new(ErrorKind::Connection, "unsupported protocol version"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "unsupported protocol version",
+        ));
     }
     let length = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
     if length > MAX_MESSAGE_SIZE {
@@ -412,7 +415,9 @@ pub fn build_query_payload(sql: &str, flags: u32, max_rows: u32, timeout_ms: u32
 pub fn build_parse_payload(statement_name: &str, sql: &str, param_types: &[u32]) -> Vec<u8> {
     let name_bytes = statement_name.as_bytes();
     let sql_bytes = sql.as_bytes();
-    let mut out = Vec::with_capacity(4 + name_bytes.len() + 4 + sql_bytes.len() + 2 + 2 + param_types.len() * 4);
+    let mut out = Vec::with_capacity(
+        4 + name_bytes.len() + 4 + sql_bytes.len() + 2 + 2 + param_types.len() * 4,
+    );
     out.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(name_bytes);
     out.extend_from_slice(&(sql_bytes.len() as u32).to_le_bytes());
@@ -425,7 +430,12 @@ pub fn build_parse_payload(statement_name: &str, sql: &str, param_types: &[u32])
     out
 }
 
-pub fn build_bind_payload(portal_name: &str, statement_name: &str, params: &[ParamValue], result_formats: &[u16]) -> Vec<u8> {
+pub fn build_bind_payload(
+    portal_name: &str,
+    statement_name: &str,
+    params: &[ParamValue],
+    result_formats: &[u16],
+) -> Vec<u8> {
     let portal_bytes = portal_name.as_bytes();
     let stmt_bytes = statement_name.as_bytes();
     let param_formats: Vec<u16> = params.iter().map(|p| p.format).collect();
@@ -504,7 +514,11 @@ pub fn build_close_payload(close_type: u8, name: &str) -> Vec<u8> {
     out
 }
 
-pub fn build_sblr_execute_payload(sblr_hash: u64, sblr_bytecode: &[u8], params: &[ParamValue]) -> Vec<u8> {
+pub fn build_sblr_execute_payload(
+    sblr_hash: u64,
+    sblr_bytecode: &[u8],
+    params: &[ParamValue],
+) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&sblr_hash.to_le_bytes());
     out.extend_from_slice(&(sblr_bytecode.len() as u32).to_le_bytes());
@@ -601,7 +615,11 @@ pub fn build_set_option_payload(name: &str, value: &str) -> Vec<u8> {
     out
 }
 
-pub fn build_stream_control_payload(control_type: u8, window_size: u32, timeout_ms: u32) -> Vec<u8> {
+pub fn build_stream_control_payload(
+    control_type: u8,
+    window_size: u32,
+    timeout_ms: u32,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(12);
     out.push(control_type);
     out.extend_from_slice(&[0, 0, 0]);
@@ -675,17 +693,26 @@ pub fn build_copy_both_response_payload(format: u8, window_bytes: u32) -> Vec<u8
 /// Parse a CopyInResponse message from the server
 pub fn parse_copy_in_response(payload: &[u8]) -> Result<CopyInResponse> {
     if payload.len() < 5 {
-        return Err(Error::new(ErrorKind::Connection, "copy in response truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "copy in response truncated",
+        ));
     }
     let format = payload[0];
     let window_bytes = u32::from_le_bytes(payload[1..5].try_into().unwrap_or([0u8; 4]));
-    Ok(CopyInResponse { format, window_bytes })
+    Ok(CopyInResponse {
+        format,
+        window_bytes,
+    })
 }
 
 /// Parse a CopyOutResponse message from the server
 pub fn parse_copy_out_response(payload: &[u8]) -> Result<CopyOutResponse> {
     if payload.len() < 3 {
-        return Err(Error::new(ErrorKind::Connection, "copy out response truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "copy out response truncated",
+        ));
     }
     let format = payload[0];
     let column_count = u16::from_le_bytes([payload[1], payload[2]]);
@@ -693,7 +720,10 @@ pub fn parse_copy_out_response(payload: &[u8]) -> Result<CopyOutResponse> {
     let mut column_formats = Vec::with_capacity(column_count as usize);
     for _ in 0..column_count {
         if offset + 4 > payload.len() {
-            return Err(Error::new(ErrorKind::Connection, "copy out response truncated"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "copy out response truncated",
+            ));
         }
         column_formats.push(u32::from_le_bytes([
             payload[offset],
@@ -703,7 +733,11 @@ pub fn parse_copy_out_response(payload: &[u8]) -> Result<CopyOutResponse> {
         ]));
         offset += 4;
     }
-    Ok(CopyOutResponse { format, column_count, column_formats })
+    Ok(CopyOutResponse {
+        format,
+        column_count,
+        column_formats,
+    })
 }
 
 /// Parse a CopyBothResponse message from the server
@@ -717,7 +751,9 @@ pub fn parse_copy_both_response(payload: &[u8]) -> Result<CopyBothResponse> {
 
 /// Parse a CopyData message from the server
 pub fn parse_copy_data(payload: &[u8]) -> Result<CopyData> {
-    Ok(CopyData { data: payload.to_vec() })
+    Ok(CopyData {
+        data: payload.to_vec(),
+    })
 }
 
 /// Parse a CopyFail message from the server
@@ -745,13 +781,19 @@ pub fn parse_ready(payload: &[u8]) -> Result<(u8, u64, u64)> {
 
 pub fn parse_parameter_status(payload: &[u8]) -> Result<(String, String)> {
     if payload.len() < 8 {
-        return Err(Error::new(ErrorKind::Connection, "parameter status truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "parameter status truncated",
+        ));
     }
     let name_len = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
     let name_start = 4;
     let name_end = name_start + name_len;
     if name_end + 4 > payload.len() {
-        return Err(Error::new(ErrorKind::Connection, "parameter status truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "parameter status truncated",
+        ));
     }
     let name = String::from_utf8_lossy(&payload[name_start..name_end]).to_string();
     let value_len = u32::from_le_bytes([
@@ -763,7 +805,10 @@ pub fn parse_parameter_status(payload: &[u8]) -> Result<(String, String)> {
     let value_start = name_end + 4;
     let value_end = value_start + value_len;
     if value_end > payload.len() {
-        return Err(Error::new(ErrorKind::Connection, "parameter status truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "parameter status truncated",
+        ));
     }
     let value = String::from_utf8_lossy(&payload[value_start..value_end]).to_string();
     Ok((name, value))
@@ -771,14 +816,20 @@ pub fn parse_parameter_status(payload: &[u8]) -> Result<(String, String)> {
 
 pub fn parse_parameter_description(payload: &[u8]) -> Result<Vec<u32>> {
     if payload.len() < 4 {
-        return Err(Error::new(ErrorKind::Connection, "parameter description truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "parameter description truncated",
+        ));
     }
     let count = u16::from_le_bytes([payload[0], payload[1]]) as usize;
     let mut offset = 4;
     let mut types = Vec::with_capacity(count);
     for _ in 0..count {
         if offset + 4 > payload.len() {
-            return Err(Error::new(ErrorKind::Connection, "parameter description truncated"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "parameter description truncated",
+            ));
         }
         types.push(u32::from_le_bytes([
             payload[offset],
@@ -793,14 +844,20 @@ pub fn parse_parameter_description(payload: &[u8]) -> Result<Vec<u32>> {
 
 pub fn parse_row_description(payload: &[u8]) -> Result<Vec<ColumnInfo>> {
     if payload.len() < 4 {
-        return Err(Error::new(ErrorKind::Connection, "row description truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "row description truncated",
+        ));
     }
     let count = u16::from_le_bytes([payload[0], payload[1]]) as usize;
     let mut offset = 4;
     let mut columns = Vec::with_capacity(count);
     for _ in 0..count {
         if offset + 4 > payload.len() {
-            return Err(Error::new(ErrorKind::Connection, "row description truncated"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "row description truncated",
+            ));
         }
         let name_len = u32::from_le_bytes([
             payload[offset],
@@ -810,12 +867,18 @@ pub fn parse_row_description(payload: &[u8]) -> Result<Vec<ColumnInfo>> {
         ]) as usize;
         offset += 4;
         if offset + name_len > payload.len() {
-            return Err(Error::new(ErrorKind::Connection, "row description truncated"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "row description truncated",
+            ));
         }
         let name = String::from_utf8_lossy(&payload[offset..offset + name_len]).to_string();
         offset += name_len;
         if offset + 18 > payload.len() {
-            return Err(Error::new(ErrorKind::Connection, "row description truncated"));
+            return Err(Error::new(
+                ErrorKind::Connection,
+                "row description truncated",
+            ));
         }
         let table_oid = u32::from_le_bytes([
             payload[offset],
@@ -868,7 +931,10 @@ pub fn parse_data_row(payload: &[u8], column_count: usize) -> Result<Vec<ColumnV
     let count = u16::from_le_bytes([payload[0], payload[1]]) as usize;
     let null_bytes = u16::from_le_bytes([payload[2], payload[3]]) as usize;
     if count != column_count {
-        return Err(Error::new(ErrorKind::Connection, "row data column count mismatch"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "row data column count mismatch",
+        ));
     }
     let mut offset = 4;
     if offset + null_bytes > payload.len() {
@@ -880,7 +946,8 @@ pub fn parse_data_row(payload: &[u8], column_count: usize) -> Result<Vec<ColumnV
     for idx in 0..count {
         let byte_index = idx / 8;
         let bit_index = idx % 8;
-        let is_null = byte_index < null_bitmap.len() && (null_bitmap[byte_index] & (1 << bit_index)) != 0;
+        let is_null =
+            byte_index < null_bitmap.len() && (null_bitmap[byte_index] & (1 << bit_index)) != 0;
         if is_null {
             values.push(ColumnValue { data: None });
             continue;
@@ -913,13 +980,19 @@ pub fn parse_data_row(payload: &[u8], column_count: usize) -> Result<Vec<ColumnV
 
 pub fn parse_command_complete(payload: &[u8]) -> Result<(u8, u64, u64, String)> {
     if payload.len() < 20 {
-        return Err(Error::new(ErrorKind::Connection, "command complete truncated"));
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "command complete truncated",
+        ));
     }
     let command_type = payload[0];
     let rows = u64::from_le_bytes(payload[4..12].try_into().unwrap_or([0u8; 8]));
     let last_id = u64::from_le_bytes(payload[12..20].try_into().unwrap_or([0u8; 8]));
     let tag_bytes = &payload[20..];
-    let null_pos = tag_bytes.iter().position(|b| *b == 0).unwrap_or(tag_bytes.len());
+    let null_pos = tag_bytes
+        .iter()
+        .position(|b| *b == 0)
+        .unwrap_or(tag_bytes.len());
     let tag = String::from_utf8_lossy(&tag_bytes[..null_pos]).to_string();
     Ok((command_type, rows, last_id, tag))
 }
@@ -931,14 +1004,16 @@ pub fn parse_notification(payload: &[u8]) -> Result<Notification> {
     let mut offset = 0;
     let process_id = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4]));
     offset += 4;
-    let channel_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
+    let channel_len =
+        u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
     offset += 4;
     if offset + channel_len + 4 > payload.len() {
         return Err(Error::new(ErrorKind::Connection, "notification truncated"));
     }
     let channel = String::from_utf8_lossy(&payload[offset..offset + channel_len]).to_string();
     offset += channel_len;
-    let data_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
+    let data_len =
+        u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap_or([0u8; 4])) as usize;
     offset += 4;
     if offset + data_len > payload.len() {
         return Err(Error::new(ErrorKind::Connection, "notification truncated"));

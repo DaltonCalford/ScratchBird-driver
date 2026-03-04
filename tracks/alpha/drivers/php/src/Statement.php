@@ -22,6 +22,11 @@ final class Statement
     private array $currentRow = [];
     private int $fetchMode = \PDO::FETCH_ASSOC;
     private int $rowCount = 0;
+    private ?int $lastInsertId = null;
+    private string $statusMessage = '';
+    /** @var array<int, array{0: int}> */
+    private array $generatedKeys = [];
+    private int $lastCompletionCount = 0;
 
     public function __construct(Connection $connection, string $sql, array $options = [])
     {
@@ -47,8 +52,7 @@ final class Statement
         $finalParams = $this->gatherParams($params);
         $normalized = Sql::normalize($this->sql, $finalParams);
         $this->stream = $this->connection->executeQuery($normalized['sql'], $normalized['params']);
-        $this->rowCount = 0;
-        $this->currentRow = [];
+        $this->resetExecutionState();
         return true;
     }
 
@@ -60,6 +64,13 @@ final class Statement
         $row = $this->stream->readRow();
         if ($row === null) {
             $this->rowCount = $this->stream->rowsAffected();
+            $this->statusMessage = $this->stream->commandTag();
+            $this->lastInsertId = $this->stream->lastInsertId();
+            $completionCount = $this->stream->completionCount();
+            if ($completionCount > $this->lastCompletionCount) {
+                $this->lastCompletionCount = $completionCount;
+                $this->captureGeneratedKey($this->lastInsertId);
+            }
             return false;
         }
         $this->currentRow = $row;
@@ -115,6 +126,7 @@ final class Statement
     public function closeCursor(): bool
     {
         $this->stream = null;
+        $this->resetExecutionState();
         return true;
     }
 
@@ -122,6 +134,55 @@ final class Statement
     {
         $this->fetchMode = $mode;
         return true;
+    }
+
+    public function nextRowset(): bool
+    {
+        if ($this->stream === null) {
+            return false;
+        }
+        while ($this->stream->readRow() !== null) {
+            // Drain active result set before advancing.
+        }
+        if (!$this->stream->hasNextResultSet()) {
+            return false;
+        }
+        if (!$this->stream->nextResultSet()) {
+            return false;
+        }
+        $this->rowCount = 0;
+        $this->currentRow = [];
+        $this->lastInsertId = null;
+        $this->statusMessage = '';
+        return true;
+    }
+
+    public function nextset(): bool
+    {
+        return $this->nextRowset();
+    }
+
+    public function statusMessage(): string
+    {
+        return $this->statusMessage;
+    }
+
+    public function lastInsertId(): int|false
+    {
+        return $this->lastInsertId ?? false;
+    }
+
+    /**
+     * @return array<int, array{0: int}>
+     */
+    public function getGeneratedKeys(): array
+    {
+        return $this->generatedKeys;
+    }
+
+    public function fields(): array
+    {
+        return $this->stream?->columns() ?? [];
     }
 
     private function gatherParams(?array $params): array
@@ -163,5 +224,23 @@ final class Statement
             return $assoc;
         }
         return $row;
+    }
+
+    private function resetExecutionState(): void
+    {
+        $this->rowCount = 0;
+        $this->currentRow = [];
+        $this->lastInsertId = null;
+        $this->statusMessage = '';
+        $this->generatedKeys = [];
+        $this->lastCompletionCount = 0;
+    }
+
+    private function captureGeneratedKey(?int $lastInsertId): void
+    {
+        if ($lastInsertId === null) {
+            return;
+        }
+        $this->generatedKeys[] = [$lastInsertId];
     }
 }

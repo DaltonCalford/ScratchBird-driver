@@ -40,6 +40,7 @@ use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\Metadata;
 use ScratchBird\PDO\Protocol;
 use ScratchBird\PDO\ScratchBirdNotSupportedException;
+use ScratchBird\PDO\TypeDecoder;
 
 final class MetadataExecutionTest extends TestCase
 {
@@ -78,6 +79,51 @@ final class MetadataExecutionTest extends TestCase
             [$type, $payload] = $this->readSentMessage($server);
             $this->assertSame(Protocol::MSG_QUERY, $type);
             $this->assertSame(Metadata::PRIMARY_KEYS_QUERY, $this->extractQuerySql($payload));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testFilterRowsByRestrictionsSupportsAliasesAndNull(): void
+    {
+        $rows = [
+            ['schema_name' => 'sys', 'table_name' => 'events', 'owner_id' => null],
+            ['schema_name' => 'users', 'table_name' => 'events', 'owner_id' => null],
+            ['schema_name' => 'users', 'table_name' => 'profiles', 'owner_id' => 7],
+        ];
+
+        $filtered = Metadata::filterRowsByRestrictions($rows, ['schema' => 'users', 'table' => 'events'], 'tables');
+        $this->assertSame([['schema_name' => 'users', 'table_name' => 'events', 'owner_id' => null]], $filtered);
+
+        $filtered = Metadata::filterRowsByRestrictions(
+            $rows,
+            ['owner_id' => 'null', 'missing_filter' => 'ignored'],
+            'tables'
+        );
+        $this->assertCount(2, $filtered);
+        $this->assertSame('sys', $filtered[0]['schema_name']);
+        $this->assertSame('users', $filtered[1]['schema_name']);
+    }
+
+    public function testGetSchemaSupportsRestrictions(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueRowDescription($server, ['schema_name', 'table_name', 'owner_id']);
+            $this->queueDataRow($server, ['sys', 'events', null]);
+            $this->queueDataRow($server, ['users', 'events', null]);
+            $this->queueDataRow($server, ['users', 'profiles', '7']);
+            $this->queueCommandComplete($server, 3, 'SELECT 3');
+            $this->queueReady($server, 0);
+
+            $rows = $conn->getSchema('tables', ['schema' => 'users', 'table' => 'events']);
+            $this->assertCount(1, $rows);
+            $this->assertSame('users', $rows[0]['schema_name']);
+            $this->assertSame('events', $rows[0]['table_name']);
+            $this->assertNull($rows[0]['owner_id']);
         } finally {
             fclose($client);
             fclose($server);
@@ -178,6 +224,52 @@ final class MetadataExecutionTest extends TestCase
     {
         $payload = chr(0) . "\0\0\0" . $this->uint64Le($rows) . $this->uint64Le(0) . $tag . "\0";
         $this->sendServerMessage($server, Protocol::MSG_COMMAND_COMPLETE, $payload);
+    }
+
+    /**
+     * @param array<int, string> $columnNames
+     */
+    private function queueRowDescription($server, array $columnNames): void
+    {
+        $payload = pack('v', count($columnNames)) . "\0\0";
+        foreach ($columnNames as $index => $columnName) {
+            $name = (string) $columnName;
+            $payload .= pack('V', strlen($name));
+            $payload .= $name;
+            $payload .= pack('V', 0); // tableOid
+            $payload .= pack('v', $index + 1); // columnIndex
+            $payload .= pack('V', TypeDecoder::OID_TEXT);
+            $payload .= pack('v', 0); // typeSize
+            $payload .= pack('V', 0); // typeModifier
+            $payload .= chr(TypeDecoder::FORMAT_TEXT);
+            $payload .= chr(1); // nullable
+            $payload .= "\0\0"; // reserved
+        }
+        $this->sendServerMessage($server, Protocol::MSG_ROW_DESCRIPTION, $payload);
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     */
+    private function queueDataRow($server, array $values): void
+    {
+        $count = count($values);
+        $nullBytes = intdiv($count + 7, 8);
+        $nullBitmap = str_repeat("\0", $nullBytes);
+        $encoded = '';
+        foreach ($values as $index => $value) {
+            if ($value === null) {
+                $byteIndex = intdiv($index, 8);
+                $bitIndex = $index % 8;
+                $byte = ord($nullBitmap[$byteIndex]);
+                $nullBitmap[$byteIndex] = chr($byte | (1 << $bitIndex));
+                continue;
+            }
+            $raw = (string) $value;
+            $encoded .= pack('V', strlen($raw)) . $raw;
+        }
+        $payload = pack('v', $count) . pack('v', $nullBytes) . $nullBitmap . $encoded;
+        $this->sendServerMessage($server, Protocol::MSG_DATA_ROW, $payload);
     }
 
     private function sendServerMessage($server, int $type, string $payload): void

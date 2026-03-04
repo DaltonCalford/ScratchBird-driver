@@ -40,6 +40,18 @@ module Scratchbird
     MCP_MSG_DB_CONNECT = 0x69
     MCP_AUTH_METHOD_TOKEN = 4
 
+    MetadataQueryResult = Struct.new(:rows, :rowcount, :fields, :command, :last_insert_id, keyword_init: true) do
+      def each
+        return enum_for(:each) unless block_given?
+        rows.each { |row| yield row }
+      end
+
+      def each_hash
+        return enum_for(:each_hash) unless block_given?
+        rows.each { |row| yield row }
+      end
+    end
+
     attr_reader :parameters, :txn_id
 
     def initialize(config)
@@ -98,25 +110,44 @@ module Scratchbird
     end
 
     def close
-      return unless @socket
+      socket = @socket
       begin
-        @socket.close
-      rescue IOError
+        socket.close if socket
+      rescue IOError, SystemCallError
         nil
       ensure
         @socket = nil
         @connected = false
         if @keepalive_tracker
-          @keepalive_manager.unregister(@connection_id)
-          @keepalive_tracker = nil
+          begin
+            @keepalive_manager.unregister(@connection_id)
+          rescue StandardError
+            nil
+          ensure
+            @keepalive_tracker = nil
+          end
         end
-        @keepalive_manager.stop
+        begin
+          @keepalive_manager.stop
+        rescue StandardError
+          nil
+        end
         if @leak_guard
-          @leak_guard.release
-          @leak_guard = nil
+          begin
+            @leak_guard.release
+          rescue StandardError
+            nil
+          ensure
+            @leak_guard = nil
+          end
         end
-        @leak_detector.stop
+        begin
+          @leak_detector.stop
+        rescue StandardError
+          nil
+        end
       end
+      true
     end
 
     def disconnect
@@ -269,15 +300,98 @@ module Scratchbird
       execute_query_stream(normalized.sql, normalized.params, options)
     end
 
+    def native_sql(sql, params = nil)
+      Sql.normalize(sql, params).sql
+    rescue ArgumentError => e
+      raise SyntaxError.new(e.message, "07001")
+    end
+
+    def native_callable_sql(sql, params = nil)
+      Sql.normalize_callable(sql, params).sql
+    rescue ArgumentError => e
+      raise SyntaxError.new(e.message, "07001")
+    end
+
+    def call(sql, params = nil, options = nil)
+      ensure_connected
+      normalized = Sql.normalize_callable(sql, params)
+      execute_query(normalized.sql, normalized.params, options)
+    end
+
+    def query_multi(sql, params = nil, options = nil)
+      ensure_connected
+      normalized = Sql.normalize(sql, params)
+      if normalized.params.empty?
+        statements = split_sql_statements(normalized.sql)
+        if statements.length > 1
+          return statements.filter_map do |statement|
+            stripped = statement.to_s.strip
+            next if stripped.empty?
+            summarize_result(execute_query(stripped, [], options))
+          end
+        end
+      end
+      [summarize_result(execute_query(normalized.sql, normalized.params, options))]
+    end
+
+    def execute_multi(sql, params = nil, options = nil)
+      query_multi(sql, params, options)
+    end
+
+    def execute_batch(sql, batch_params, options = nil)
+      params_set = Array(batch_params)
+      raise ArgumentError, "batch parameters are required" if params_set.empty?
+
+      items = []
+      total_rowcount = 0
+      params_set.each_with_index do |entry, idx|
+        result_sets = query_multi(sql, entry, options)
+        rowcount = result_sets.sum { |set| [set.rowcount.to_i, 0].max }
+        fields = result_sets.reverse.find { |set| !Array(set.fields).empty? }&.fields || []
+        command = result_sets.reverse.find { |set| !set.command.to_s.empty? }&.command.to_s
+        last_insert_id = result_sets.reverse.find { |set| set.last_insert_id.to_i != 0 }&.last_insert_id.to_i
+        total_rowcount += rowcount
+        items << BatchItemSummary.new(
+          index: idx,
+          rowcount: rowcount,
+          fields: fields,
+          command: command,
+          last_insert_id: last_insert_id
+        )
+      end
+
+      BatchSummary.new(items: items, total_rowcount: total_rowcount)
+    end
+
+    def query_batch(sql, batch_params, options = nil)
+      execute_batch(sql, batch_params, options)
+    end
+
+    def execute_with_generated_keys(sql, params = nil, options = nil)
+      query_multi(sql, params, options)
+        .map(&:last_insert_id)
+        .map(&:to_i)
+        .reject(&:zero?)
+    end
+
     def query_metadata(collection_name = "tables", options = nil)
+      query_metadata_with_restrictions(collection_name, nil, options)
+    end
+
+    def query_metadata_with_restrictions(collection_name = "tables", restrictions = nil, options = nil)
       ensure_connected
       normalized_collection = normalize_metadata_collection_name(collection_name)
-      query(Metadata.resolve_collection_query(normalized_collection), nil, options)
+      result = query(Metadata.resolve_collection_query(normalized_collection), nil, options)
+      metadata_result_with_restrictions(result, normalized_collection, restrictions)
     end
 
     def get_schema(collection_name = "tables", options = nil, expand_schema_parents: nil)
+      get_schema_with_restrictions(collection_name, nil, options, expand_schema_parents: expand_schema_parents)
+    end
+
+    def get_schema_with_restrictions(collection_name = "tables", restrictions = nil, options = nil, expand_schema_parents: nil)
       normalized_collection = normalize_metadata_collection_name(collection_name)
-      result = query_metadata(normalized_collection, options)
+      result = query_metadata_with_restrictions(normalized_collection, restrictions, options)
       rows = result.respond_to?(:each_hash) ? result.each_hash.to_a : []
       return rows unless normalized_collection == "schemas"
 
@@ -287,8 +401,13 @@ module Scratchbird
       Metadata.expand_schema_metadata_rows(rows)
     end
 
-    def get_schema_tree(expand_schema_parents: nil, database: nil)
-      rows = get_schema("schemas", nil, expand_schema_parents: expand_schema_parents)
+    def get_schema_tree(expand_schema_parents: nil, database: nil, restrictions: nil)
+      rows = get_schema_with_restrictions(
+        "schemas",
+        restrictions,
+        nil,
+        expand_schema_parents: expand_schema_parents
+      )
       Metadata.build_schema_tree(
         Metadata.schema_paths_for_navigation(
           rows,
@@ -381,6 +500,8 @@ module Scratchbird
       text = parts.empty? ? "query failed" : parts.join("\n")
       text = "[#{sqlstate}] #{text}" if sqlstate && !sqlstate.empty?
       raise ErrorMapper.from_sqlstate(sqlstate, text, detail, hint)
+    rescue Error
+      raise
     rescue StandardError
       raise Error, "query failed"
     end
@@ -453,6 +574,48 @@ module Scratchbird
       return false unless @config.respond_to?(:metadata_expand_schema_parents)
 
       @config.metadata_expand_schema_parents == true
+    end
+
+    def metadata_result_with_restrictions(result, normalized_collection, restrictions)
+      normalized_restrictions = Metadata.normalize_restrictions(restrictions)
+      return result if normalized_restrictions.empty?
+
+      rows = result.respond_to?(:each_hash) ? result.each_hash.to_a : []
+      filtered_rows = Metadata.filter_rows_by_restrictions(
+        rows,
+        normalized_restrictions,
+        collection_name: normalized_collection
+      )
+
+      MetadataQueryResult.new(
+        rows: filtered_rows,
+        rowcount: filtered_rows.length,
+        fields: metadata_result_fields(result, filtered_rows),
+        command: metadata_result_command(result),
+        last_insert_id: metadata_result_last_insert_id(result)
+      )
+    rescue ArgumentError => e
+      raise NotSupportedError, e.message
+    end
+
+    def metadata_result_fields(result, rows)
+      return Array(result.fields) if result.respond_to?(:fields)
+      return rows.first.keys.map(&:to_s) if rows.first.is_a?(Hash)
+
+      []
+    end
+
+    def metadata_result_command(result)
+      return result.command_tag.to_s if result.respond_to?(:command_tag)
+      return result.command.to_s if result.respond_to?(:command)
+
+      "SELECT"
+    end
+
+    def metadata_result_last_insert_id(result)
+      return result.last_insert_id.to_i if result.respond_to?(:last_insert_id)
+
+      0
     end
 
     def connect_tcp
@@ -770,6 +933,7 @@ module Scratchbird
       rows = []
       rowcount = -1
       command_tag = ""
+      last_insert_id = 0
 
       loop do
         type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
@@ -785,9 +949,10 @@ module Scratchbird
           values = Protocol.parse_data_row(payload)
           rows << decode_row(columns, values)
         when Protocol::MSG_COMMAND_COMPLETE
-          _command_type, rows_count, _last_id, tag = Protocol.parse_command_complete(payload)
+          _command_type, rows_count, parsed_last_id, tag = Protocol.parse_command_complete(payload)
           command_tag = tag
           rowcount = rows_count
+          last_insert_id = parsed_last_id.to_i
         when Protocol::MSG_PORTAL_SUSPENDED
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
@@ -800,7 +965,7 @@ module Scratchbird
       end
 
       rowcount = rows.length if rowcount < 0
-      Result.new(columns, rows, rowcount, command_tag)
+      Result.new(columns, rows, rowcount, command_tag, last_insert_id)
     end
 
     def send_simple_query(sql, options)
@@ -914,10 +1079,76 @@ module Scratchbird
     def quote_identifier(name)
       "\"#{name.to_s.gsub('"', '""')}\""
     end
+
+    def summarize_result(result)
+      fields = Array(result.columns).map do |col|
+        FieldSummary.new(
+          name: col.respond_to?(:name) ? col.name : col[:name],
+          type_oid: col.respond_to?(:type_oid) ? col.type_oid : col[:type_oid],
+          format: col.respond_to?(:format) ? col.format : col[:format],
+          nullable: col.respond_to?(:nullable) ? col.nullable : col[:nullable]
+        )
+      end
+      ResultSetSummary.new(
+        rows: Array(result.rows),
+        rowcount: result.rowcount.to_i,
+        fields: fields,
+        command: result.command_tag.to_s,
+        last_insert_id: result.respond_to?(:last_insert_id) ? result.last_insert_id.to_i : 0
+      )
+    end
+
+    def split_sql_statements(sql)
+      return [] if sql.to_s.strip.empty?
+
+      statements = []
+      buffer = +""
+      in_single = false
+      in_double = false
+      i = 0
+      while i < sql.length
+        ch = sql[i]
+        if ch == "'" && !in_double
+          buffer << ch
+          if in_single && i + 1 < sql.length && sql[i + 1] == "'"
+            buffer << "'"
+            i += 2
+            next
+          end
+          in_single = !in_single
+          i += 1
+          next
+        end
+        if ch == '"' && !in_single
+          buffer << ch
+          if in_double && i + 1 < sql.length && sql[i + 1] == '"'
+            buffer << '"'
+            i += 2
+            next
+          end
+          in_double = !in_double
+          i += 1
+          next
+        end
+        if !in_single && !in_double && ch == ";"
+          statement = buffer.strip
+          statements << statement unless statement.empty?
+          buffer.clear
+          i += 1
+          next
+        end
+        buffer << ch
+        i += 1
+      end
+
+      trailing = buffer.strip
+      statements << trailing unless trailing.empty?
+      statements
+    end
   end
 
   class ResultStream
-    attr_reader :columns, :rowcount, :command_tag
+    attr_reader :columns, :rowcount, :command_tag, :last_insert_id
 
     def initialize(client)
       @client = client
@@ -925,6 +1156,7 @@ module Scratchbird
       @rowcount = -1
       @seen_rows = 0
       @command_tag = ""
+      @last_insert_id = 0
       @consumed = false
     end
 
@@ -946,9 +1178,10 @@ module Scratchbird
           yield @client.decode_row(@columns, values)
           @seen_rows += 1
         when Protocol::MSG_COMMAND_COMPLETE
-          _command_type, rows_count, _last_id, tag = Protocol.parse_command_complete(payload)
+          _command_type, rows_count, parsed_last_id, tag = Protocol.parse_command_complete(payload)
           @command_tag = tag
           @rowcount = rows_count
+          @last_insert_id = parsed_last_id.to_i
         when Protocol::MSG_PORTAL_SUSPENDED
           @client.resume_portal if @client.instance_variable_get(:@last_max_rows).to_i > 0
         when Protocol::MSG_READY
