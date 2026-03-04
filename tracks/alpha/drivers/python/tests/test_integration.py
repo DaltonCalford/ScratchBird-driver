@@ -299,6 +299,55 @@ def test_session_schema_runtime_integration():
         conn.close()
 
 
+def test_connection_ping_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        conn.ping()
+    finally:
+        conn.close()
+
+
+def test_transaction_begin_commit_rollback_cycle_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        conn.begin()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        assert cur.fetchone() == (1,)
+        conn.commit()
+
+        conn.begin()
+        cur = conn.cursor()
+        cur.execute("SELECT 2")
+        assert cur.fetchone() == (2,)
+        conn.rollback()
+
+        conn.commit()
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_transaction_nested_begin_rejected_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        conn.begin()
+        with pytest.raises(scratchbird.ProgrammingError, match="transaction already active"):
+            conn.begin()
+        conn.rollback()
+    finally:
+        conn.close()
+
+
 def test_autocommit_mode_transition_integration():
     dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
     if not dsn:

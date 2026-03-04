@@ -14,6 +14,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `autocommit=False` now eagerly starts a transaction when no transaction is active.
   - No-op transitions (`autocommit` already set to requested value) now short-circuit.
 - Added env-gated live integration coverage in `tests/test_integration.py`:
+  - `test_transaction_begin_commit_rollback_cycle_integration` validates explicit begin/commit/rollback behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_transaction_nested_begin_rejected_integration` validates nested-begin rejection after explicit begin against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_autocommit_mode_transition_integration` validates runtime autocommit toggles against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_transaction_savepoint_lifecycle_integration` validates savepoint lifecycle behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 - Added env-gated live EXEC integration coverage in `tests/test_integration.py`:
@@ -68,10 +70,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`19 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+- Result: PASS (`25 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`140 passed, 19 skipped`)
+- Result: PASS (`143 passed, 25 skipped`)
 
 ## TXN Status
 
@@ -81,8 +83,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
   - Wire-level autocommit mode transitions are now emitted via `SET_OPTION autocommit=on/off`.
   - `autocommit=False` now starts a transaction when no transaction is active.
-  - Env-gated live integration assertions now exist for autocommit transitions and savepoint lifecycle.
-  - Remaining gap: broader live integration transaction coverage depth is still limited.
+  - Env-gated live integration assertions now include explicit begin/commit/rollback cycles, nested-begin rejection, autocommit transitions, and savepoint lifecycle.
+  - Remaining gap: live transaction coverage remains environment-gated and therefore not guaranteed in default/CI runs.
 
 ## EXEC Status
 
@@ -95,6 +97,6 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Remaining Gaps
 
 - TXN:
-  - Live integration transaction coverage is env-gated and still limited in breadth.
+  - Live integration transaction coverage remains env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.
 - EXEC:
   - Live integration coverage remains env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.

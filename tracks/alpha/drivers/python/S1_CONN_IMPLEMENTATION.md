@@ -36,6 +36,7 @@ Scope: `tracks/alpha/drivers/python` only.
   - non-string session-schema input validation
 - Added env-gated live integration coverage in `tests/test_integration.py`:
   - `test_session_schema_runtime_integration` validates runtime session-schema transitions against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_connection_ping_integration` validates wire-level connection liveness checks against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 
 ## Test Commands Run
 
@@ -50,6 +51,12 @@ Scope: `tracks/alpha/drivers/python` only.
 
 4. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
 - Result: PASS (`68 passed, 14 skipped`)
+
+5. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
+- Result: PASS (`25 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+
+6. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`143 passed, 25 skipped`)
 
 ## CONN Status Recommendation
 
