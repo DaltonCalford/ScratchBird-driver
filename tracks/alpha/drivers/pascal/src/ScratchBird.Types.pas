@@ -240,6 +240,13 @@ begin
   Move(Value, Result[0], 4);
 end;
 
+function HasBytes(const Data: TBytes; Offset, Count: Integer): Boolean;
+begin
+  Result := (Offset >= 0) and (Count >= 0) and
+    (Offset <= System.Length(Data)) and
+    (Count <= (System.Length(Data) - Offset));
+end;
+
 function ReadUInt32LE(const Data: TBytes; Offset: Integer): Cardinal;
 begin
   Result := Cardinal(Data[Offset]) or (Cardinal(Data[Offset + 1]) shl 8) or
@@ -966,6 +973,8 @@ var
   Days: Integer;
   Micros: Int64;
 begin
+  if not HasBytes(Data, 0, 16) then
+    Exit(Null);
   Micros := Int64(ReadUInt64LE(Data, 0));
   Days := ReadInt32LE(Data, 8);
   Months := ReadInt32LE(Data, 12);
@@ -1016,13 +1025,36 @@ begin
 end;
 
 function DecodeRangeBound(RangeOid: Cardinal; const Data: TBytes): Variant;
+var
+  Payload: TBytes;
 begin
   case RangeOid of
-    OID_INT4RANGE: Result := ReadInt32LE(Data, 0);
-    OID_INT8RANGE: Result := Int64(ReadUInt64LE(Data, 0));
-    OID_NUMRANGE: Result := TEncoding.UTF8.GetString(StripLengthPrefixed(Data));
-    OID_TSRANGE, OID_TSTZRANGE: Result := DecodeTimestampValue(StripLengthPrefixed(Data));
-    OID_DATERANGE: Result := DecodeDateValue(StripLengthPrefixed(Data));
+    OID_INT4RANGE:
+      if HasBytes(Data, 0, 4) then
+        Result := ReadInt32LE(Data, 0)
+      else
+        Result := Null;
+    OID_INT8RANGE:
+      if HasBytes(Data, 0, 8) then
+        Result := Int64(ReadUInt64LE(Data, 0))
+      else
+        Result := Null;
+    OID_NUMRANGE:
+      Result := TEncoding.UTF8.GetString(StripLengthPrefixed(Data));
+    OID_TSRANGE, OID_TSTZRANGE:
+      begin
+        Payload := StripLengthPrefixed(Data);
+        if not HasBytes(Payload, 0, 8) then
+          Exit(Null);
+        Result := DecodeTimestampValue(Payload);
+      end;
+    OID_DATERANGE:
+      begin
+        Payload := StripLengthPrefixed(Data);
+        if not HasBytes(Payload, 0, 4) then
+          Exit(Null);
+        Result := DecodeDateValue(Payload);
+      end;
   else
     Result := TEncoding.UTF8.GetString(StripLengthPrefixed(Data));
   end;
@@ -1035,7 +1067,10 @@ var
   Len: Integer;
   Range: TScratchBirdRange;
   Bound: TBytes;
+  BoundValue: Variant;
 begin
+  if not HasBytes(Data, 0, 4) then
+    Exit(Null);
   Flags := Data[0];
   Offset := 4;
   Range := TScratchBirdRange.Create;
@@ -1048,22 +1083,38 @@ begin
 
   if not Range.Empty and not Range.LowerInfinite then
   begin
+    if not HasBytes(Data, Offset, 4) then
+      Exit(Null);
     Len := ReadInt32LE(Data, Offset);
+    if (Len < 0) or (not HasBytes(Data, Offset + 4, Len)) then
+      Exit(Null);
     Offset := Offset + 4;
     SetLength(Bound, Len);
-    Move(Data[Offset], Bound[0], Len);
+    if Len > 0 then
+      Move(Data[Offset], Bound[0], Len);
     Offset := Offset + Len;
-    Range.Lower := DecodeRangeBound(RangeOid, Bound);
+    BoundValue := DecodeRangeBound(RangeOid, Bound);
+    if VarIsNull(BoundValue) or VarIsEmpty(BoundValue) then
+      Exit(Null);
+    Range.Lower := BoundValue;
   end;
 
   if not Range.Empty and not Range.UpperInfinite then
   begin
+    if not HasBytes(Data, Offset, 4) then
+      Exit(Null);
     Len := ReadInt32LE(Data, Offset);
+    if (Len < 0) or (not HasBytes(Data, Offset + 4, Len)) then
+      Exit(Null);
     Offset := Offset + 4;
     SetLength(Bound, Len);
-    Move(Data[Offset], Bound[0], Len);
+    if Len > 0 then
+      Move(Data[Offset], Bound[0], Len);
     Offset := Offset + Len;
-    Range.Upper := DecodeRangeBound(RangeOid, Bound);
+    BoundValue := DecodeRangeBound(RangeOid, Bound);
+    if VarIsNull(BoundValue) or VarIsEmpty(BoundValue) then
+      Exit(Null);
+    Range.Upper := BoundValue;
   end;
 
   Result := IInterface(Range);
@@ -1112,13 +1163,37 @@ begin
 
   case TypeOid of
     OID_BOOL: Result := Data[0] = 1;
-    OID_INT2: Result := ReadInt16LE(Data, 0);
-    OID_INT4: Result := Integer(ReadUInt32LE(Data, 0));
-    OID_INT8: Result := Int64(ReadUInt64LE(Data, 0));
-    OID_FLOAT4: Result := ReadSingleLE(Data, 0);
-    OID_FLOAT8: Result := ReadDoubleLE(Data, 0);
+    OID_INT2:
+      if HasBytes(Data, 0, 2) then
+        Result := ReadInt16LE(Data, 0)
+      else
+        Result := Null;
+    OID_INT4:
+      if HasBytes(Data, 0, 4) then
+        Result := Integer(ReadUInt32LE(Data, 0))
+      else
+        Result := Null;
+    OID_INT8:
+      if HasBytes(Data, 0, 8) then
+        Result := Int64(ReadUInt64LE(Data, 0))
+      else
+        Result := Null;
+    OID_FLOAT4:
+      if HasBytes(Data, 0, 4) then
+        Result := ReadSingleLE(Data, 0)
+      else
+        Result := Null;
+    OID_FLOAT8:
+      if HasBytes(Data, 0, 8) then
+        Result := ReadDoubleLE(Data, 0)
+      else
+        Result := Null;
     OID_NUMERIC: Result := TEncoding.UTF8.GetString(StripLengthPrefixed(Data));
-    OID_MONEY: Result := ReadInt64LE(Data, 0) / 100;
+    OID_MONEY:
+      if HasBytes(Data, 0, 8) then
+        Result := ReadInt64LE(Data, 0) / 100
+      else
+        Result := Null;
     OID_TEXT, OID_VARCHAR, OID_CHAR, OID_BPCHAR, OID_JSON, OID_XML, OID_TSVECTOR, OID_TSQUERY,
     OID_INET, OID_CIDR, OID_MACADDR, OID_MACADDR8:
       Result := TEncoding.UTF8.GetString(StripLengthPrefixed(Data));
@@ -1130,13 +1205,22 @@ begin
     OID_BYTEA:
       Result := StripLengthPrefixed(Data);
     OID_DATE:
-      Result := DecodeDateValue(Data);
+      if HasBytes(Data, 0, 4) then
+        Result := DecodeDateValue(Data)
+      else
+        Result := Null;
     OID_TIME:
-      Result := DecodeTimeValue(Data);
+      if HasBytes(Data, 0, 8) then
+        Result := DecodeTimeValue(Data)
+      else
+        Result := Null;
     OID_TIMETZ:
       Result := DecodeTimeTzValue(Data);
     OID_TIMESTAMP, OID_TIMESTAMPTZ:
-      Result := DecodeTimestampValue(Data);
+      if HasBytes(Data, 0, 8) then
+        Result := DecodeTimestampValue(Data)
+      else
+        Result := Null;
     OID_INTERVAL:
       Result := DecodeInterval(Data);
     OID_UUID:

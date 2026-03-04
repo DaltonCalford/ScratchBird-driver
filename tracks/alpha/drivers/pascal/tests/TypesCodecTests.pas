@@ -332,6 +332,35 @@ begin
   AssertTrue(RangeIntf.GetUpperInfinite, 'infinite upper bound should be preserved');
 end;
 
+procedure TestDecodeMalformedPayloadsReturnNull;
+var
+  Decoded: Variant;
+begin
+  Decoded := DecodeValue(OID_INT4, TBytes.Create($01, $02), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short int4 payload should decode as null');
+
+  Decoded := DecodeValue(OID_FLOAT8, TBytes.Create($01, $02, $03, $04), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short float8 payload should decode as null');
+
+  Decoded := DecodeValue(OID_DATE, TBytes.Create($01, $02, $03), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short date payload should decode as null');
+
+  Decoded := DecodeValue(OID_TIME, TBytes.Create($01, $02, $03, $04), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short time payload should decode as null');
+
+  Decoded := DecodeValue(OID_TIMESTAMP, TBytes.Create($01, $02, $03, $04, $05), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short timestamp payload should decode as null');
+
+  Decoded := DecodeValue(OID_INTERVAL, ConcatBytes(WriteInt64LE(1), WriteInt32LE(2)), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'short interval payload should decode as null');
+
+  Decoded := DecodeValue(OID_INT4RANGE, TBytes.Create(RANGE_LB_INC, 0, 0, 0), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'truncated range payload without lower bound length should decode as null');
+
+  Decoded := DecodeValue(OID_INT4RANGE, TBytes.Create(RANGE_LB_INC, 0, 0, 0, 4, 0, 0, 0, 1, 0), FORMAT_BINARY);
+  AssertVariantIsNullOrEmpty(Decoded, 'truncated range payload with short lower bound should decode as null');
+end;
+
 procedure TestDecodeScalarAndTextOidMatrix;
 const
   TEXT_OIDS: array[0..11] of Cardinal = (
@@ -641,6 +670,7 @@ begin
     TestDecodeByteaPayloadReturnsVariantByteArray;
     TestDecodeUnknownBinaryFixedWidthFallbacks;
     TestDecodeNullAndLimitPayloadShapes;
+    TestDecodeMalformedPayloadsReturnNull;
     TestDecodeScalarAndTextOidMatrix;
     TestDecodeTemporalAndIntervalOidMatrix;
     TestEncodePrimitiveOidMatrix;
