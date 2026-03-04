@@ -183,3 +183,21 @@ def test_autocommit_mode_transition_integration():
         assert conn.autocommit is True
     finally:
         conn.close()
+
+
+def test_transaction_savepoint_lifecycle_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        assert cur.fetchone() == (1,)
+        conn.savepoint("sp1")
+        conn.rollback_to_savepoint("sp1")
+        conn.release_savepoint("sp1")
+        conn.commit()
+    finally:
+        conn.close()

@@ -15,6 +15,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - No-op transitions (`autocommit` already set to requested value) now short-circuit.
 - Added env-gated live integration coverage in `tests/test_integration.py`:
   - `test_autocommit_mode_transition_integration` validates runtime autocommit toggles against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+  - `test_transaction_savepoint_lifecycle_integration` validates savepoint lifecycle behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
 - Hardened parameter error behavior for execution paths in `src/scratchbird/connection.py`:
@@ -66,7 +67,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Result: PASS (`41 passed`)
 
 3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`68 passed, 10 skipped`)
+- Result: PASS (`68 passed, 11 skipped`)
 
 ## TXN Status
 
@@ -76,7 +77,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
   - Wire-level autocommit mode transitions are now emitted via `SET_OPTION autocommit=on/off`.
   - `autocommit=False` now starts a transaction when no transaction is active.
-  - Env-gated live integration assertions now exist for autocommit transitions.
+  - Env-gated live integration assertions now exist for autocommit transitions and savepoint lifecycle.
   - Remaining gap: broader live integration transaction coverage depth is still limited.
 
 ## EXEC Status

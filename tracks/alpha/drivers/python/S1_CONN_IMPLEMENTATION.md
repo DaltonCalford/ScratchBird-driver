@@ -49,7 +49,7 @@ Scope: `tracks/alpha/drivers/python` only.
 - Result: PASS (`41 passed`)
 
 4. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`68 passed, 10 skipped`)
+- Result: PASS (`68 passed, 11 skipped`)
 
 ## CONN Status Recommendation
 
