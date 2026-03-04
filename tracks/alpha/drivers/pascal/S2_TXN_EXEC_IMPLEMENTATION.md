@@ -36,6 +36,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `tests/TxnStateTransitionsTests.pas`
   - validates wire-`READY` lifecycle transitions for begin/savepoint/release/rollback-to/commit and begin/rollback flows.
   - validates post-commit/post-rollback active-transaction guard behavior via savepoint/release calls.
+- Expanded env-gated live integration coverage in:
+  - `tests/IntegrationTest.pas`
+  - validates live begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle execution.
+  - validates live batch (`ExecuteBatch`) and multi-result (`QueryMulti`) execution paths.
 - Updated TXN/EXEC evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
 ## Targeted Tests Run
@@ -64,6 +68,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 8. `/tmp/sb_pascal_txn_state_bin/TxnStateTransitionsTests`
 - Result: PASS (`TxnStateTransitionsTests: OK`).
 
+9. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_next -FE/tmp/sb_pascal_next ./tracks/alpha/drivers/pascal/tests/IntegrationTest.pas`
+- Result: PASS (compile succeeded).
+
+10. `/tmp/sb_pascal_next/IntegrationTest`
+- Result: PASS (`IntegrationTest: SKIPPED (SCRATCHBIRD_PASCAL_URL not set)` in non-env-gated local run).
+
 ## TXN Status
 
 - Recommendation: `PARTIAL`
@@ -72,7 +82,8 @@ Rationale:
 - Deterministic lane-local TXN guardrails now exist and are covered by dedicated tests (disconnected begin, no-active-txn commit/rollback behavior, savepoint active-txn and name validation, txn payload encoding checks).
 - Deterministic transaction state transitions are now asserted end-to-end against wire `READY` transaction ids for begin/savepoint/release/rollback-to/commit and begin/rollback paths.
 - Adapter surfaces now expose advanced transaction options via `StartTransactionEx` forwarding, with deterministic lane-local guard tests.
-- Remaining gap preventing `MET`: no live server transaction lifecycle integration coverage for begin/commit/rollback/savepoint.
+- Env-gated live integration now exercises begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths.
+- Remaining gaps preventing `MET`: live coverage is env-gated/skippable and does not yet include broader isolation/timeout conflict-path assertions.
 
 ## EXEC Status
 
@@ -80,11 +91,14 @@ Rationale:
 
 Rationale:
 - Deterministic lane-local execution parity improved with blank SQL validation, cast-safe named-parameter normalization, adapter `Prepare` normalization/cache behavior, stream-control/backpressure assertions, and generated-key metadata exposure.
-- Remaining gaps prevent `MET`: no live execution integration depth yet for advanced execution paths against a running server.
+- Env-gated live integration now exercises prepared query execution plus live batch/multi-result paths.
+- Remaining gaps prevent `MET`: stream-control/generated-key depth remains deterministic-only and live coverage is env-gated/skippable.
 
 ## Remaining Concrete Gaps
 
 - TXN:
-  - Add live integration tests for full transaction lifecycle against a running ScratchBird endpoint.
+  - Add non-skippable gate execution for live transaction lifecycle assertions.
+  - Expand live assertions for `BeginTransactionEx` option matrices (isolation/access/timeout/deferrable/wait/conflict).
 - EXEC:
-  - Add live integration assertions for advanced execution APIs (batch/multi-result/stream-control) against a running ScratchBird endpoint.
+  - Add non-skippable gate execution for live advanced execution assertions.
+  - Expand live assertions for stream-control/backpressure and generated-key semantics.

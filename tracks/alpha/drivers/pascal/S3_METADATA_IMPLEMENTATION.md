@@ -57,6 +57,10 @@ Scope: `tracks/alpha/drivers/pascal` only.
   - `tests/MetadataExecutionFlowTests.pas`
   - validates connected metadata wrapper query execution for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines` query paths.
   - validates restriction-aware `QueryMetadataRows('tables', restrictions)` materialization from wire row payloads.
+- Expanded env-gated live metadata coverage in:
+  - `tests/IntegrationTest.pas`
+  - validates executable metadata stream paths for `schemas`, `tables`, `columns`, `indexes`, `constraints`, and `routines`.
+  - validates typed wrapper metadata stream paths for the same family set.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META evidence/notes for the new S3 metadata shaping coverage.
 
 ## Targeted Tests Run
@@ -79,6 +83,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 6. `/tmp/sb_pascal_meta_exec_bin/MetadataExecutionFlowTests`
 - Result: PASS (`MetadataExecutionFlowTests: OK`).
 
+7. `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FU/tmp/sb_pascal_next -FE/tmp/sb_pascal_next ./tracks/alpha/drivers/pascal/tests/IntegrationTest.pas`
+- Result: PASS (compile succeeded).
+
+8. `/tmp/sb_pascal_next/IntegrationTest`
+- Result: PASS (`IntegrationTest: SKIPPED (SCRATCHBIRD_PASCAL_URL not set)` in non-env-gated local run).
+
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
@@ -90,9 +100,11 @@ Rationale:
 - Restriction-aware filtering parity now exists for materialized metadata rows (`FilterMetadataRowsByRestrictions` + `QueryMetadataRows`/`GetSchemaRows`).
 - Deterministic metadata execution-flow coverage now validates wrapper query routing for schema/table/column/index/constraint/routine families and restriction-aware row materialization from wire payloads.
 - Adapter-level metadata forwarding surfaces now exist with deterministic lane-local guard coverage.
-- Status remains partial because live integration depth and JDBC result-shape parity are still incomplete.
+- Env-gated live integration now validates executable metadata stream and typed wrapper paths for schema/table/column/index/constraint/routine families.
+- Status remains partial because live coverage is env-gated/skippable, restriction-aware materialization is still deterministic-only, and JDBC result-shape parity is still incomplete.
 
 ## Remaining Concrete Gaps
 
-- No metadata-focused live integration assertions against a running ScratchBird endpoint.
+- Add non-skippable gate execution for metadata live integration assertions.
+- Add live restriction-aware metadata row materialization assertions (`QueryMetadataRows`/`GetSchemaRows`) against a running endpoint.
 - JDBC metadata result-shape parity remains incomplete for richer per-family columns/flags.
