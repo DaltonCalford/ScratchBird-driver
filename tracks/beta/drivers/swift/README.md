@@ -78,3 +78,16 @@ Connection-level metadata wrappers are available for `sys.*` catalog families:
 Integration tests use:
 
 - `SCRATCHBIRD_TEST_DSN`
+- `SCRATCHBIRD_TEST_MANAGER_DSN`
+
+Run all tests:
+
+```bash
+swift test
+```
+
+Run only env-gated integration coverage:
+
+```bash
+swift test --filter IntegrationTests
+```

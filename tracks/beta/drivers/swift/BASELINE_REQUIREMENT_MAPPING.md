@@ -20,8 +20,9 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/ConfigTests.swift:13-48`
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:13-31` env-gated live handshake/connect/close coverage for direct and manager-proxy DSNs.
 - Gaps/next actions:
-  - Add live connection tests that assert successful handshake and close paths (current tests focus on parsing and connect-time guardrails).
+  - Add failure-path live connection coverage (manager auth challenge failure, version/protocol mismatch, and socket-read teardown behavior).
 
 ## TXN (`JDBCBL-TXN`)
 
@@ -35,9 +36,10 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:13-47`
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:62-93`
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:48-60` env-gated live begin/commit/rollback/savepoint lifecycle.
 - Gaps/next actions:
-  - Add live wire/integration transaction tests for begin/commit/rollback/savepoint success and failure semantics.
   - Add transaction-state behavior checks tied to server `READY`/txn-id transitions (unit coverage is payload/validation focused today).
+  - Add explicit live failure semantics for nested/broken transaction flows with SQLSTATE assertions.
 
 ## EXEC (`JDBCBL-EXEC`)
 
@@ -52,8 +54,9 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:50-60`
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:95-104`
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:13-46` env-gated live simple and parameterized execution paths.
 - Gaps/next actions:
-  - Add live execution tests for simple queries, parameterized queries, cancellation timing, and portal suspend/resume behavior.
+  - Add live execution tests for cancellation timing and portal suspend/resume behavior.
   - Add explicit parity coverage for advanced execution surface area (batch/multi-result/generated-key semantics).
 
 ## META (`JDBCBL-META`)
@@ -69,8 +72,9 @@
   - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:64-74` dotted parent expansion behavior for schema navigation paths.
   - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:76-88` uniqueness within the same parent branch.
   - `Tests/ScratchBirdTests/MetadataRecursiveSchemaTests.swift:90-104` same leaf name preserved under different parents.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:62-76` env-gated live metadata wrapper invocation + schema tree row shaping.
 - Gaps/next actions:
-  - Add live metadata integration coverage validating engine-backed metadata payload completeness beyond schema-tree shaping.
+  - Expand live metadata integration coverage to validate full catalog payload completeness (keys/privileges/types/DDL-editor families), not only schemas/tables/tree entry points.
 
 ## TYPE (`JDBCBL-TYPE`)
 
@@ -108,8 +112,9 @@
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:13-53` protocol header decode guardrails (`invalidHeader`, `unsupportedVersion`, `payloadTooLarge`).
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-154` wire-error payload parsing, typed SQLSTATE mapping, structured SQLSTATE/detail/hint propagation, and malformed-payload fallback assertions.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:78-99` env-gated live SQLSTATE propagation for programming/data execution failures.
 - Gaps/next actions:
-  - Add integration tests that validate `.error` propagation across live socket reads in end-to-end query/auth flows.
+  - Add live auth/connect `.error` propagation assertions (invalid credentials, manager auth errors, and read-loop teardown paths).
 
 ## RES (`JDBCBL-RES`)
 
