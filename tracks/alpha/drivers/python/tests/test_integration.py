@@ -151,3 +151,35 @@ def test_execute_with_generated_keys_integration():
         assert isinstance(rows[0][0], int)
     finally:
         conn.close()
+
+
+def test_session_schema_runtime_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        conn.set_session_schema("public")
+        assert conn.get_session_schema() == "public"
+        conn.set_session_schema(None)
+        assert conn.get_session_schema() is None
+    finally:
+        conn.close()
+
+
+def test_autocommit_mode_transition_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        assert conn.autocommit is True
+        conn.autocommit = False
+        assert conn.autocommit is False
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        assert cur.fetchone() == (1,)
+        conn.autocommit = True
+        assert conn.autocommit is True
+    finally:
+        conn.close()

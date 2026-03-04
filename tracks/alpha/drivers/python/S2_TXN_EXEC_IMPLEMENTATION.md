@@ -13,6 +13,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `autocommit` mode transitions now emit wire-level session updates via `SET_OPTION autocommit=on/off`.
   - `autocommit=False` now eagerly starts a transaction when no transaction is active.
   - No-op transitions (`autocommit` already set to requested value) now short-circuit.
+- Added env-gated live integration coverage in `tests/test_integration.py`:
+  - `test_autocommit_mode_transition_integration` validates runtime autocommit toggles against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
 - Added execution parity helper in `src/scratchbird/connection.py`:
   - `native_sql(sql, params=None)` returns normalized/native SQL rewrite without executing.
 - Hardened parameter error behavior for execution paths in `src/scratchbird/connection.py`:
@@ -63,6 +65,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
 - Result: PASS (`41 passed`)
 
+3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
+- Result: PASS (`68 passed, 10 skipped`)
+
 ## TXN Status
 
 - Recommendation: `PARTIAL`
@@ -71,7 +76,8 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
   - Wire-level autocommit mode transitions are now emitted via `SET_OPTION autocommit=on/off`.
   - `autocommit=False` now starts a transaction when no transaction is active.
-  - Remaining gap: TXN behavior is not yet covered by live integration transaction tests.
+  - Env-gated live integration assertions now exist for autocommit transitions.
+  - Remaining gap: broader live integration transaction coverage depth is still limited.
 
 ## EXEC Status
 
@@ -83,6 +89,6 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Remaining Gaps
 
 - TXN:
-  - No integration test that validates transaction lifecycle against a live server in this lane.
+  - Live integration transaction coverage is env-gated and still limited in breadth.
 - EXEC:
   - Live integration coverage depth remains limited for extended execution surfaces.
