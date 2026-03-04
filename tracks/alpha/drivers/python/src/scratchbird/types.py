@@ -903,25 +903,37 @@ def _convert_array_scalar(value: Any, scalar_oid: int) -> Any:
         return _dt.date.fromisoformat(str(value).strip())
     if scalar_oid == OID_TIME:
         if isinstance(value, _dt.time):
-            return value
-        return _dt.time.fromisoformat(str(value).strip())
-    if scalar_oid == OID_TIMETZ:
-        if isinstance(value, _dt.time) and value.tzinfo is not None:
+            if value.tzinfo is not None:
+                raise ValueError("time array element includes unexpected timezone offset")
             return value
         parsed = _dt.time.fromisoformat(str(value).strip())
+        if parsed.tzinfo is not None:
+            raise ValueError("time array element includes unexpected timezone offset")
+        return parsed
+    if scalar_oid == OID_TIMETZ:
+        if isinstance(value, _dt.time):
+            if value.tzinfo is None:
+                raise ValueError("timetz array element is missing timezone offset")
+            return value
+        parsed = _dt.time.fromisoformat(_normalize_temporal_text(str(value).strip()))
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=_dt.timezone.utc)
+            raise ValueError("timetz array element is missing timezone offset")
         return parsed
     if scalar_oid == OID_TIMESTAMP:
         if isinstance(value, _dt.datetime):
-            return value.replace(tzinfo=None)
-        return _dt.datetime.fromisoformat(str(value).strip().replace(" ", "T")).replace(tzinfo=None)
+            if value.tzinfo is not None:
+                raise ValueError("timestamp array element includes unexpected timezone offset")
+            return value
+        parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(str(value).strip()))
+        if parsed.tzinfo is not None:
+            raise ValueError("timestamp array element includes unexpected timezone offset")
+        return parsed
     if scalar_oid == OID_TIMESTAMPTZ:
         if isinstance(value, _dt.datetime):
             if value.tzinfo is None:
                 return value.replace(tzinfo=_dt.timezone.utc)
             return value
-        parsed = _dt.datetime.fromisoformat(str(value).strip().replace(" ", "T"))
+        parsed = _dt.datetime.fromisoformat(_normalize_temporal_text(str(value).strip()))
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=_dt.timezone.utc)
         return parsed

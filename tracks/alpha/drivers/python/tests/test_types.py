@@ -42,8 +42,10 @@ from scratchbird.types import (
     OID_TEXT,
     OID_TEXT_ARRAY,
     OID_TIME,
+    OID_TIME_ARRAY,
     OID_TIMETZ,
     OID_TIMETZ_ARRAY,
+    OID_TIMESTAMP_ARRAY,
     OID_TSRANGE,
     OID_TIMESTAMP,
     OID_TSTZRANGE,
@@ -336,6 +338,27 @@ def test_decode_date_array_to_date_values():
         dt.date(2026, 1, 10),
         dt.date(2026, 2, 11),
     ]
+
+
+def test_decode_time_array_with_offset_payload_raises():
+    literal = b'{"12:34:56+02"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    with pytest.raises(ValueError):
+        decode_value(OID_TIME_ARRAY, raw, FORMAT_BINARY)
+
+
+def test_decode_timetz_array_without_offset_payload_raises():
+    literal = b'{"08:09:10"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    with pytest.raises(ValueError):
+        decode_value(OID_TIMETZ_ARRAY, raw, FORMAT_BINARY)
+
+
+def test_decode_timestamp_array_with_offset_payload_raises():
+    literal = b'{"2026-03-01 12:34:56+02"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    with pytest.raises(ValueError):
+        decode_value(OID_TIMESTAMP_ARRAY, raw, FORMAT_BINARY)
 
 
 def test_decode_numeric_array_to_decimal_values():

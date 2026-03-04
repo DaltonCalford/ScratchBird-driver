@@ -29,6 +29,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Array literal parsing now handles quoted and escaped string elements while preserving nested-array behavior.
   - Unquoted array tokens now remain text tokens (except `NULL`) so `text[]` decode preserves source lexical forms instead of coercing to Python bool/number values.
   - Boolean array element conversion now treats both short (`t`/`f`) and long (`true`/`false`) textual tokens with JDBC-consistent truthiness.
+  - Temporal array element conversion now enforces JDBC timezone-family rules (`time` rejects offsets, `timestamp` rejects offsets, `timetz` requires offsets).
   - Typed array decode now materializes element families deterministically (`date`, `timetz`, `timestamptz`, `numeric`, `uuid`, etc.) instead of returning string-only payloads.
   - `type_name(...)` now includes array OID names (`text[]`, `boolean[]`, `timetz[]`, etc.).
 - Added JDBC-style unknown-binary scalar parity in `src/scratchbird/types.py`:
@@ -83,6 +84,9 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_type_name_includes_array_names`
   - `test_encode_timetz_array_infers_timetz_array_oid`
   - `test_decode_date_array_to_date_values`
+  - `test_decode_time_array_with_offset_payload_raises`
+  - `test_decode_timetz_array_without_offset_payload_raises`
+  - `test_decode_timestamp_array_with_offset_payload_raises`
   - `test_decode_numeric_array_to_decimal_values`
   - `test_decode_uuid_array_to_uuid_values`
   - `test_decode_timestamptz_array_to_aware_datetimes`
@@ -95,10 +99,10 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`53 passed`)
+- Result: PASS (`56 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`198 passed, 27 skipped, 1 warning`)
+- Result: PASS (`201 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -111,6 +115,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Mixed numeric collection encode now aligns with JDBC array inference (`float8[]`) while float-only vectors retain explicit `vector` encode behavior.
   - Typed text decode now also aligns with JDBC fail-fast parse semantics for invalid non-boolean typed payloads.
   - Temporal typed-text decode now enforces JDBC timezone rules for `time`/`timestamp`/`timetz` families.
+  - Temporal typed-array conversion now enforces the same JDBC timezone rules for `time[]`/`timestamp[]`/`timetz[]` families.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.
