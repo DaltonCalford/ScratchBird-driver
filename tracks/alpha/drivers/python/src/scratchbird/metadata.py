@@ -186,6 +186,7 @@ class _RestrictionBinding:
     aliases: List[str]
     expect_null: bool
     expected_text: Optional[str]
+    pattern: Optional[re.Pattern[str]]
 
 
 def schemas_query() -> str:
@@ -454,6 +455,22 @@ def _pattern_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(out), re.IGNORECASE)
 
 
+def _has_unescaped_wildcard(pattern: str) -> bool:
+    escaped = False
+    for ch in pattern:
+        if escaped:
+            if ch in {"%", "_"}:
+                return True
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch in {"%", "_"}:
+            return True
+    return False
+
+
 def _build_restriction_bindings(
     rows: Sequence[Any],
     normalized_restrictions: Mapping[str, Any],
@@ -484,12 +501,17 @@ def _build_restriction_bindings(
         if not aliases:
             continue
 
+        raw_text = str(restriction_value).strip()
         expected_text = _normalize_match_text(restriction_value)
         expect_null = expected_text == "null"
+        pattern = None
+        if not expect_null and _has_unescaped_wildcard(raw_text):
+            pattern = _pattern_to_regex(raw_text)
         binding = _RestrictionBinding(
             aliases=sorted(aliases),
             expect_null=expect_null,
             expected_text=None if expect_null else expected_text,
+            pattern=pattern,
         )
         if _rows_have_binding_aliases(rows, binding, column_names=column_names):
             bindings.append(binding)
@@ -521,6 +543,10 @@ def _row_matches_restrictions(
             return False
         if binding.expect_null:
             if not any(value is None for value in values):
+                return False
+            continue
+        if binding.pattern is not None:
+            if not any(value is not None and binding.pattern.match(str(value).strip()) for value in values):
                 return False
             continue
         if not any(value is not None and _normalize_match_text(value) == binding.expected_text for value in values):

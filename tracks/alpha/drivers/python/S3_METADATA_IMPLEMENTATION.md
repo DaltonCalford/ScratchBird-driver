@@ -27,32 +27,32 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `metadata.normalize_restrictions(...)` validates and normalizes restriction keys.
   - `metadata.filter_rows_by_restrictions(...)` applies alias-aware restrictions per metadata family.
   - Supports mapping-row and tuple-row inputs (tuple rows use cursor description column names).
-  - Supports null matching with `"null"` and ignores unmappable restriction keys.
+  - Supports null matching with `"null"`, JDBC-style `%`/`_` wildcard restriction matching (including escaped wildcard literals), and ignores unmappable restriction keys.
   - `Connection.query_metadata(...)` now returns an in-memory filtered cursor when restrictions are provided.
 - Added targeted lane tests:
   - New `tests/test_metadata_recursive_schema.py` validates wildcard matching, parent expansion, pattern-filter preservation, per-parent uniqueness, and cross-schema same-name identity behavior.
   - New `tests/test_metadata_execution.py` validates alias normalization/query resolution for extended families and `Connection.query_metadata(...)`/`get_schema(...)` behavior (including unsupported collection mapping).
-  - Added metadata restriction tests for alias-based filtering, tuple-row filtering with descriptions, null matching, unknown key handling, and invalid restriction input mapping.
+  - Added metadata restriction tests for alias-based filtering, tuple-row filtering with descriptions, null matching, wildcard matching, escaped wildcard literals, unknown key handling, and invalid restriction input mapping.
   - Added wrapper forwarding tests to validate collection + restriction mapping for the expanded convenience wrapper surface.
   - Extended `tests/test_connection_auth_protocol.py` with alias mapping coverage for `metadata_expand_schema_parents`.
-  - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior.
+  - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior, including wildcard table restrictions.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META row evidence/notes to reflect recursive metadata behavior and tests.
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`40 passed, 16 skipped`)
+- Result: PASS (`43 passed, 20 skipped`)
 
-2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`108 passed, 16 skipped`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`143 passed, 20 skipped`)
 
 ## META Status Recommendation
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering.
+  - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering with JDBC-style wildcard support.
   - Recursive schema shaping coverage remains in place for nested metadata navigation behavior.
-  - Env-gated live integration assertions now cover wrapper execution and restriction filtering behavior.
+  - Env-gated live integration assertions now cover wrapper execution and restriction filtering behavior, including wildcard table filters.
   - Status remains partial because live metadata validation is still environment-gated and not guaranteed in always-on CI.
 
 ## Remaining Gaps

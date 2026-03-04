@@ -308,6 +308,56 @@ def test_filter_rows_by_restrictions_filters_mapping_rows_with_aliases():
     assert filtered == [{"schema_name": "users", "table_name": "events"}]
 
 
+def test_filter_rows_by_restrictions_supports_jdbc_wildcard_patterns():
+    rows = [
+        {"schema_name": "users", "table_name": "events"},
+        {"schema_name": "users.dev", "table_name": "events"},
+        {"schema_name": "sys", "table_name": "events"},
+        {"schema_name": "users", "table_name": "logs"},
+    ]
+
+    filtered = filter_rows_by_restrictions(
+        rows,
+        {"schema": "us%", "table": "eve_ts"},
+        collection_name="tables",
+    )
+    assert filtered == [
+        {"schema_name": "users", "table_name": "events"},
+        {"schema_name": "users.dev", "table_name": "events"},
+    ]
+
+
+def test_filter_rows_by_restrictions_supports_escaped_wildcards():
+    rows = [
+        {"table_name": "ev%nts"},
+        {"table_name": "events"},
+    ]
+
+    filtered = filter_rows_by_restrictions(
+        rows,
+        {"table": r"ev\%nts"},
+        collection_name="tables",
+    )
+    assert filtered == [{"table_name": "ev%nts"}]
+
+
+def test_filter_rows_by_restrictions_applies_wildcards_to_tuple_rows():
+    rows = [
+        ("users", "events"),
+        ("sys", "events"),
+        ("users", "logs"),
+    ]
+    column_names = ["schema_name", "table_name"]
+
+    filtered = filter_rows_by_restrictions(
+        rows,
+        {"schema": "us%", "table": "eve%"},
+        collection_name="tables",
+        column_names=column_names,
+    )
+    assert filtered == [("users", "events")]
+
+
 def test_connection_query_metadata_with_restrictions_filters_tuple_rows_from_description():
     conn = Connection.__new__(Connection)
     conn._closed = False

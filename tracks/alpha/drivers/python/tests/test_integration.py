@@ -340,3 +340,16 @@ def test_metadata_restriction_wrappers_integration():
         assert conn.column_privileges(table=missing_name) == []
     finally:
         conn.close()
+
+
+def test_metadata_restriction_wildcard_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        all_tables = conn.tables()
+        wildcard_tables = conn.tables(table="%")
+        assert len(wildcard_tables) == len(all_tables)
+    finally:
+        conn.close()
