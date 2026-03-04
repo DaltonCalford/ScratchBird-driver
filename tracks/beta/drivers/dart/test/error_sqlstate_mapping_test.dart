@@ -46,4 +46,24 @@ void main() {
     expect(ex, isNot(isA<ScratchBirdDataException>()));
     expect(ex.sqlState, isNull);
   });
+
+  test('auth mapping keeps auth class for class 28 sqlstate', () {
+    final ex = mapSqlStateAuthException(
+      'invalid authorization specification',
+      sqlState: '28000',
+    );
+    expect(ex, isA<ScratchBirdAuthException>());
+    expect(ex.sqlState, equals('28000'));
+  });
+
+  test('auth mapping promotes class 08 sqlstate to connection exception', () {
+    final ex = mapSqlStateAuthException(
+      'connection exception',
+      sqlState: '08006',
+      code: 88,
+    );
+    expect(ex, isA<ScratchBirdConnectionException>());
+    expect(ex.sqlState, equals('08006'));
+    expect(ex.code, equals(88));
+  });
 }

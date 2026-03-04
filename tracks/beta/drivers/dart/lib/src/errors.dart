@@ -177,3 +177,28 @@ ScratchBirdExecutionException mapSqlStateExecutionException(
     code: code,
   );
 }
+
+ScratchBirdException mapSqlStateAuthException(
+  String message, {
+  String? sqlState,
+  int? code,
+}) {
+  final normalized = (sqlState ?? '').trim().toUpperCase();
+  if (normalized.isEmpty) {
+    return ScratchBirdAuthException(message, code: code);
+  }
+
+  if (normalized.length >= 2 && normalized.substring(0, 2) == '08') {
+    return ScratchBirdConnectionException(
+      message,
+      sqlState: normalized,
+      code: code,
+    );
+  }
+
+  return ScratchBirdAuthException(
+    message,
+    sqlState: normalized,
+    code: code,
+  );
+}

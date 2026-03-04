@@ -95,7 +95,7 @@
 
 - Current status: Partial
 - Lane-local source anchors:
-  - `lib/src/errors.dart:9-171` typed driver exception hierarchy plus SQLSTATE-to-exception mapping (`mapSqlStateExecutionException`).
+  - `lib/src/errors.dart:9-204` typed driver exception hierarchy plus SQLSTATE-to-exception mapping (`mapSqlStateExecutionException`, `mapSqlStateAuthException`).
   - `lib/src/protocol.dart:145-237` structured protocol error parsing/formatting (`parseErrorMessage`, `formatProtocolErrorMessage`) with optional numeric code extraction.
   - `lib/src/client.dart:123-317` connect-time option rejection and manager-proxy auth/protocol failure mapping.
   - `lib/src/client.dart:549-671` execution/auth failure mapping (`cancel`, handshake auth, query failure).
@@ -105,12 +105,12 @@
 - Lane-local test anchors:
   - `test/error_resilience_test.dart:38-78` protocol framing tests assert `ScratchBirdProtocolException`.
   - `test/error_resilience_test.dart:81-122` structured server-error parsing/formatting tests.
-  - `test/error_sqlstate_mapping_test.dart:5-46` SQLSTATE class mapping tests for execution exception subclasses.
+  - `test/error_sqlstate_mapping_test.dart:5-68` SQLSTATE class mapping tests for execution/auth exception subclasses.
   - `test/connect_validation_test.dart:29-69` connect-policy rejection tests assert `ScratchBirdConnectionException`.
   - `test/txn_exec_parity_test.dart:20-60,119-131` TXN and cancel guardrails assert typed transaction/execution exceptions.
   - `test/scram_error_test.dart:6-35` SCRAM nonce/signature failures assert `ScratchBirdAuthException`.
 - Gaps/next actions:
-  - Extend SQLSTATE class/full-code mapping beyond execution call-sites to auth/connection exception paths where server payloads provide cross-category SQLSTATE values.
+  - Extend SQLSTATE/code mapping to manager-proxy MCP error payloads (non-`MessageType.error` path) so those failures include normalized `sqlState`/`code` metadata.
   - Add integration coverage that validates parsed SQLSTATE/code propagation from real server `MessageType.error` payloads.
 
 ## RES (JDBCBL)

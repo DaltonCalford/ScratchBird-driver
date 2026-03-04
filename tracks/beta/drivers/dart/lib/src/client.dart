@@ -873,13 +873,13 @@ class ScratchBirdClient {
     }
   }
 
-  ScratchBirdAuthException _authExceptionFromPayload(
+  ScratchBirdException _authExceptionFromPayload(
     Uint8List payload, {
     required String fallbackMessage,
   }) {
     final parsed = parseErrorMessage(payload);
     final sqlState = parsed.sqlState.trim();
-    return ScratchBirdAuthException(
+    return mapSqlStateAuthException(
       formatProtocolErrorMessage(parsed, fallbackMessage: fallbackMessage),
       sqlState: sqlState.isEmpty ? null : sqlState,
       code: parsed.code,
