@@ -85,9 +85,10 @@ class Cursor:
         self._reset_state()
         page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
         self._stream = self._connection._execute_query(sql, params, page_size)
+        self._prime_stream_metadata(self._stream)
         self._results = []
         self._pos = 0
-        self.description = None
+        self._update_description(self._stream)
         self.rowcount = -1
         self.statusmessage = None
 
@@ -103,6 +104,7 @@ class Cursor:
         page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
         for params in seq_of_params:
             stream = self._connection._execute_query(sql, params, page_size)
+            self._prime_stream_metadata(stream)
             self._stream = stream
             self._results = []
             self._pos = 0
@@ -144,9 +146,10 @@ class Cursor:
         self._reset_state()
         page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
         self._stream = self._connection._execute_query(normalized_sql, ordered_params, page_size)
+        self._prime_stream_metadata(self._stream)
         self._results = []
         self._pos = 0
-        self.description = None
+        self._update_description(self._stream)
         self.rowcount = -1
         self.lastrowid = None
         self.statusmessage = None
@@ -270,6 +273,13 @@ class Cursor:
             )
             for col in stream.columns
         ]
+
+    def _prime_stream_metadata(self, stream) -> None:
+        if stream is None:
+            return
+        prime = getattr(stream, "prime_metadata", None)
+        if callable(prime):
+            prime()
 
     def _drain_stream(self, stream):
         count = stream.rowcount

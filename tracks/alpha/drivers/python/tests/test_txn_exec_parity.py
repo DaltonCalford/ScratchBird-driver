@@ -388,6 +388,49 @@ def test_cursor_execute_propagates_lastrowid_on_stream_completion(monkeypatch):
     assert keys.fetchone() is None
 
 
+def test_cursor_execute_sets_description_before_first_fetch(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 0, 77, 0)
+    stream_conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("value_col")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(stream_conn, page_size=0)
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    cursor = Cursor(conn)
+    cursor.execute("SELECT 1")
+
+    assert cursor.description is not None
+    assert cursor.description[0][0] == "value_col"
+    assert cursor.fetchone() == ("1",)
+
+
+def test_cursor_execute_synthesizes_description_without_row_description(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 0, 88, 0)
+    stream_conn = _ResultConnection(
+        [
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(stream_conn, page_size=0)
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: stream)
+
+    cursor = Cursor(conn)
+    cursor.execute("SELECT 1")
+
+    assert cursor.description is not None
+    assert cursor.description[0][0] == "column1"
+    assert cursor.fetchone() is not None
+
+
 def test_cursor_callproc_executes_callable_sql(monkeypatch):
     conn = _new_connection()
     calls = []

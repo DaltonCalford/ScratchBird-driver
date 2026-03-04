@@ -11,6 +11,15 @@ RUNTIME_URL="${SCRATCHBIRD_JDBC_RUNTIME_URL:-jdbc:scratchbird://127.0.0.1:13092/
 RUNTIME_USER="${SCRATCHBIRD_JDBC_RUNTIME_USER:-sb_admin}"
 RUNTIME_PASSWORD="${SCRATCHBIRD_JDBC_RUNTIME_PASSWORD:-SbAdmin_Compat1!}"
 EXTRA_CP="${SCRATCHBIRD_JDBC_PROBE_CLASSPATH:-}"
+AUTO_JDBC_JAR=""
+
+if [[ -z "${EXTRA_CP}" ]]; then
+  CANDIDATE_JARS=("${ROOT_DIR}/tracks/alpha/drivers/jdbc/build/libs"/scratchbird-jdbc-*.jar)
+  if [[ -f "${CANDIDATE_JARS[0]}" ]]; then
+    AUTO_JDBC_JAR="${CANDIDATE_JARS[0]}"
+    EXTRA_CP="${AUTO_JDBC_JAR}"
+  fi
+fi
 
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -22,6 +31,9 @@ exec > >(tee "${LOG_FILE}") 2>&1
 echo "ECOSYS-403 Hibernate/JDBC runtime probe"
 echo "root: ${ROOT_DIR}"
 echo "runtime_url: ${RUNTIME_URL}"
+if [[ -n "${AUTO_JDBC_JAR}" ]]; then
+  echo "auto_classpath_jar: ${AUTO_JDBC_JAR}"
+fi
 echo
 
 if ! command -v javac >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then

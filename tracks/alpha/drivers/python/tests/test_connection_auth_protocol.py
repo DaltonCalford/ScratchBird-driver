@@ -156,6 +156,31 @@ def test_read_exact_maps_socket_timeout_to_operational_error():
         conn._read_exact(8)
 
 
+def test_read_exact_maps_timeout_to_query_canceled_when_cancel_pending():
+    conn = Connection.__new__(Connection)
+
+    class _TimeoutSocket:
+        def __init__(self):
+            self._timeout = None
+
+        def recv(self, _size):
+            raise socket.timeout("timed out")
+
+        def gettimeout(self):
+            return self._timeout
+
+        def settimeout(self, value):
+            self._timeout = value
+
+    conn._socket = _TimeoutSocket()
+    conn._cancel_requested = True
+    conn._cancel_socket_timeout = None
+
+    with pytest.raises(errors.OperationalError, match="57014"):
+        conn._read_exact(8)
+    assert conn._cancel_requested is False
+
+
 def test_read_exact_maps_oserror_to_operational_error():
     conn = Connection.__new__(Connection)
 

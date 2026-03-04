@@ -44,14 +44,14 @@ Legend:
 | **Java / JDBC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Most complete lane |
 | **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
 | **.NET** | ✅ | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | CONN/EXEC/ERR/RES implemented; TXN/META/TYPE breadth and live-depth remain partial |
-| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | CONN/ERR/RES implemented; TXN/EXEC/META/TYPE parity breadth remains partial |
+| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | CONN/ERR/RES implemented; TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Rust** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | Strong core; EXEC parity implemented, remaining depth in CONN/TXN/META |
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane, parity hardening in progress |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane, parity scaffolding in place; TXN/EXEC/META/TYPE/ERR/RES remain partial |
 
 ---
 
@@ -71,6 +71,17 @@ Legend:
 | Driver | Notes |
 |--------|------|
 | **Elixir (Ecto Adapter)** | Functional adapter, SCRAM + type layer present, but no full baseline mapping artifact yet. Considered in-development and not baseline-certified. |
+
+---
+
+## Ecosystem Adapter Status (Alpha Track)
+
+| Adapter | Current State |
+|--------|---------------|
+| **Prisma adapter** | Deterministic adapter and contract suite implemented; runtime remains blocked by Prisma provider registration (`provider="scratchbird"` unsupported by stock Prisma CLI). |
+| **SQLAlchemy dialect** | Deterministic dialect and ORM/reflection contract suite implemented; live runtime matrix is blocked in this shell by endpoint TLS posture mismatch. |
+| **Hibernate dialect** | Deterministic dialect and contract suite implemented; runtime JDBC probe now passes with local JDBC jar auto-detected, while full JPA lifecycle/migration matrix remains pending. |
+| **TypeORM adapter** | Deterministic adapter and contract suite implemented; runtime remains blocked because stock TypeORM does not recognize `type="scratchbird"` (driver registry gap). |
 
 ---
 
@@ -112,12 +123,12 @@ This README provides a high-level executive summary. The planning documents rema
 
 | Tool | Purpose | Status |
 |------|---------|--------|
-| **sb_isql** | Native ScratchBird interactive shell | CONN ✅ / EXEC ✅ / TXN 🟡 |
+| **sb_isql** | Native ScratchBird interactive shell | CONN ✅ / TXN 🟡 / EXEC ✅ / META 🟡 / TYPE 🟡 / ERR ✅ / RES 🟡 |
 | **sb_admin** | Server administration CLI | Baseline implemented |
 | **sb_backup** | Backup/restore CLI | Baseline implemented |
 | **sb_security** | User/role management CLI | Baseline implemented |
 | **sb_verify** | Database verification CLI | Baseline implemented |
-| **sbdriver-conformance** | SBWP conformance adapter | Baseline implemented with `txn_exec`/`res_loop_exec` parity and manifest-level typed assertions |
+| **sbdriver-conformance** | SBWP conformance adapter | CONN ✅ / TXN 🟡 / EXEC ✅ / META 🟡 / TYPE 🟡 / ERR ✅ / RES 🟡 (`txn_exec`/`res_loop_exec` parity and typed manifest assertions implemented; live DSN-backed matrix remains partial) |
 
 FDW-based emulation CLI tools remain gated by engine-side adapters.
 

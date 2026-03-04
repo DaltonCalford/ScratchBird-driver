@@ -17,6 +17,8 @@ def normalize_query(sql: str, params) -> Tuple[str, List[Any]]:
     if params is None:
         return sql, []
     if isinstance(params, dict):
+        if not params:
+            return sql, []
         if not _has_named_params(sql):
             raise ValueError("named parameters provided but query has no placeholders")
         return _rewrite_named(sql, params)

@@ -52,9 +52,9 @@
 |---|---|---|---|---|---|---|---|
 | ECOSYS-401 | P1 | Code complete (deterministic adapter suite) | Prisma CLI rejects `provider=\"scratchbird\"` (P1012), blocking live CLI/runtime matrix | Prisma CRUD/transaction/reflection matrix | Ecosystem Team | Medium | 4–8w | ECOSYS-402 |
 | ECOSYS-402 | P1 | Code complete (deterministic dialect suite) | Live ORM/session runtime matrix blocked in current shell by non-TLS endpoint vs TLS-required Python driver policy | SQLAlchemy ORM/session/transaction matrix | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202 |
-| ECOSYS-403 | P1 | Code complete (deterministic dialect suite) | Runtime bootstrap currently fails without ScratchBird JDBC driver on classpath (`No suitable driver`) | JPA bootstrap/lifecycle/migration tests | Ecosystem Team | Medium | 6–8w | JDBC-202 |
+| ECOSYS-403 | P1 | Code complete (deterministic dialect suite + runtime DriverManager probe pass) | Full live JPA bootstrap/lifecycle/migration matrix is still pending (beyond DriverManager probe) | JPA bootstrap/lifecycle/migration tests | Ecosystem Team | Medium | 6–8w | JDBC-202 |
 | ECOSYS-404 | P1 | Code complete (deterministic adapter suite) | TypeORM runtime rejects `type=\"scratchbird\"` (MissingDriverError), blocking live runtime matrix | Node TypeORM schema/CRUD/transaction suite | Ecosystem Team | Medium | 4–8w | JDBC-201, JDBC-202, PLATFORM-304 |
-| ECOSYS-405 | P1 | Code complete (deterministic suite) | Live runtime async cancel/timeout matrix remains environment-gated | Async cancel/timeouts in both ecosystems | Platform + Python/Go Drivers | High | 4–6w | None |
+| ECOSYS-405 | P1 | Code complete (deterministic suite + Go live runtime pass) | Python live async cancel runtime remains blocked in current shell by non-TLS endpoint vs TLS-required Python driver policy | Async cancel/timeouts in both ecosystems | Platform + Python/Go Drivers | High | 4–6w | None |
 
 ## Artifacts and Evidence Standards
 

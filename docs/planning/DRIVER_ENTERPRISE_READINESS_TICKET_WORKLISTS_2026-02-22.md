@@ -436,7 +436,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Native async consistency across languages  
 **Owner:** Platform + Python/Go Drivers  
 **Risk:** High  
-**Status:** Code complete (deterministic verification complete; live runtime matrix env-gated)  
+**Status:** Code complete (deterministic verification complete; Go live runtime cancel pass captured; Python live runtime cancel blocked by TLS endpoint mismatch)  
 **ETA:** 4–6 weeks  
 **Acceptance:** Async integration tests with cancellation/timeouts across ecosystems.
 
@@ -448,7 +448,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Standardize context/timeouts in Go.
   - [x] Add interoperability examples for shared behavior.
 - **Artifacts path:** `artifacts/enterprise-readiness/ECOSYS-405`
-- **Blocking conditions:** Incompatible timeout semantics between languages.
+- **Blocking conditions:** Python live runtime path cannot complete in current shell without a TLS-capable endpoint.
 
 ### ECOSYS-402 (P1)
 **Title:** Production-ready SQLAlchemy dialect  
@@ -491,7 +491,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Hibernate dialect package  
 **Owner:** Ecosystem Team  
 **Risk:** Medium  
-**Status:** Code complete (deterministic Hibernate dialect + contract suite complete; live JPA runtime matrix blocked by JDBC runtime classpath)  
+**Status:** Code complete (deterministic Hibernate dialect + contract suite complete; runtime DriverManager probe passes with local JDBC jar auto-detected; full JPA runtime matrix remains pending)  
 **ETA:** 6–8 weeks  
 **Acceptance:** JPA bootstrap + lifecycle + migration mapping tests pass.
 
@@ -503,7 +503,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Add lifecycle tests for entity management and transaction boundaries.
   - [x] Add deterministic migration mapping examples and JPA lifecycle sample assets.
 - **Artifacts path:** `artifacts/enterprise-readiness/ECOSYS-403`
-- **Blocking conditions:** ScratchBird JDBC runtime classpath/bootstrap availability for Hibernate runtime and SQL generation parity against supported server DDL.
+- **Blocking conditions:** Full JPA bootstrap/lifecycle/migration runtime matrix not yet captured against live endpoint fixtures.
 
 ### ECOSYS-404 (P1)
 **Title:** TypeORM adapter  

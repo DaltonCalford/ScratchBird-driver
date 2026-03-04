@@ -53,6 +53,6 @@ else
 fi
 
 echo
-echo "[note] Live JPA bootstrap/entity lifecycle/migration runtime matrix is not executed here. Current blocker: JDBC runtime classpath/bootstrap (see verification_hibernate_runtime_probe.sh)."
+echo "[note] Live JPA bootstrap/entity lifecycle/migration runtime matrix is not executed here. Runtime DriverManager probe is available via verification_hibernate_runtime_probe.sh."
 
 cp "$LOG_FILE" "$LATEST_LOG"

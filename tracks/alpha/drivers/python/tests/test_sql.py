@@ -26,6 +26,13 @@ def test_normalize_named():
     assert params == [1, "Ada"]
 
 
+def test_normalize_empty_named_mapping_is_noop():
+    sql = "SELECT 1"
+    rewritten, params = normalize_query(sql, {})
+    assert rewritten == "SELECT 1"
+    assert params == []
+
+
 def test_normalize_named_preserves_cast_syntax():
     sql = "SELECT :id::INTEGER"
     rewritten, params = normalize_query(sql, {"id": 1})

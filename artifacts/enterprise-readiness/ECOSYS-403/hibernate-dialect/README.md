@@ -30,7 +30,8 @@ Verification log output:
 ## Runtime-gated remainder
 
 Live JPA bootstrap, entity lifecycle, and migration/runtime matrix testing remains
-pending runtime DSN endpoints. Current runtime probe/blocker artifacts:
+pending runtime DSN endpoints and matrix harness execution. Runtime probe artifacts:
 
 - `artifacts/enterprise-readiness/ECOSYS-403/verification_hibernate_runtime_probe.sh`
 - `artifacts/enterprise-readiness/ECOSYS-403/runtime_jdbc_probe_blocker_2026-03-04.md`
+- `artifacts/enterprise-readiness/ECOSYS-403/runtime_jdbc_probe_success_2026-03-04.md`

@@ -45,7 +45,10 @@ from .protocol import (
     COPY_FORMAT_TEXT,
     COPY_FORMAT_BINARY,
     HEADER_SIZE,
+    ColumnInfo,
     MessageHeader,
+    encode_message,
+    decode_header,
     build_bind_payload,
     build_cancel_payload,
     build_describe_payload,
@@ -346,6 +349,9 @@ class Connection:
         self._last_plan = None
         self._last_sblr = None
         self._conn_id = f"conn-{id(self)}"
+        self._cancel_requested = False
+        self._cancel_socket_timeout = None
+        self._cancel_timeout_seconds = 0.2
         self._circuit_breaker = CircuitBreaker(CircuitBreakerConfig(), name=self._conn_id)
         self._telemetry = TelemetryCollector(TelemetryConfig())
         self._keepalive = KeepaliveManager(KeepaliveConfig())
@@ -428,6 +434,7 @@ class Connection:
         if not self._closed:
             self._closed = True
             self._connected = False
+            self._clear_cancel_timeout()
             try:
                 if self._keepalive:
                     self._keepalive.unregister(self._conn_id)
@@ -442,6 +449,10 @@ class Connection:
             except Exception:
                 pass
             if self._socket:
+                try:
+                    self._socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
                 try:
                     self._socket.close()
                 except OSError:
@@ -858,8 +869,14 @@ class Connection:
 
     def cancel(self) -> None:
         self._ensure_open()
+        self._cancel_requested = True
+        self._arm_cancel_timeout()
         payload = build_cancel_payload(0, 0)
-        self._send_message(MessageType.CANCEL, payload, MSG_FLAG_URGENT)
+        try:
+            self._send_message(MessageType.CANCEL, payload, MSG_FLAG_URGENT)
+        except Exception:
+            self._clear_cancel_timeout()
+            raise
 
     def _send_manager_frame(self, msg_type: int, payload: bytes) -> None:
         if not self._socket:
@@ -1068,6 +1085,8 @@ class Connection:
         header_bytes = self._read_exact(HEADER_SIZE)
         header = decode_header(header_bytes)
         payload = self._read_exact(header.length) if header.length else b""
+        if getattr(self, "_cancel_requested", False):
+            self._clear_cancel_timeout()
         return header, payload
 
     def _read_exact(self, n: int) -> bytes:
@@ -1078,13 +1097,47 @@ class Connection:
             try:
                 chunk = self._socket.recv(n - len(buf))
             except TimeoutError as exc:
+                if getattr(self, "_cancel_requested", False):
+                    self._clear_cancel_timeout()
+                    raise errors.OperationalError("[57014] query canceled") from exc
                 raise errors.OperationalError("[08006] socket timeout while reading from server") from exc
             except OSError as exc:
+                if getattr(self, "_cancel_requested", False):
+                    self._clear_cancel_timeout()
+                    raise errors.OperationalError("[57014] query canceled") from exc
                 raise errors.OperationalError(f"[08006] socket read failed: {exc}") from exc
             if not chunk:
                 raise errors.OperationalError("connection closed")
             buf.extend(chunk)
         return bytes(buf)
+
+    def _arm_cancel_timeout(self) -> None:
+        sock = getattr(self, "_socket", None)
+        if not sock:
+            return
+        timeout_window = float(getattr(self, "_cancel_timeout_seconds", 0.2))
+        try:
+            current_timeout = sock.gettimeout()
+        except OSError:
+            return
+        if getattr(self, "_cancel_socket_timeout", None) is None:
+            self._cancel_socket_timeout = current_timeout
+        if current_timeout is None or current_timeout > timeout_window:
+            try:
+                sock.settimeout(timeout_window)
+            except OSError:
+                pass
+
+    def _clear_cancel_timeout(self) -> None:
+        self._cancel_requested = False
+        prior_timeout = getattr(self, "_cancel_socket_timeout", None)
+        sock = getattr(self, "_socket", None)
+        if sock and prior_timeout is not None:
+            try:
+                sock.settimeout(prior_timeout)
+            except OSError:
+                pass
+        self._cancel_socket_timeout = None
 
     def _execute_command(self, sql: str) -> None:
         span = self._begin_operation("execute_command", sql)
@@ -1457,12 +1510,48 @@ class ResultStream:
         self._has_next_result_set = False
         self._result_set_boundary = False
         self._prefetched_message = None
+        self._prefetched_rows = []
+
+    def prime_metadata(self) -> None:
+        if self._done or self._result_set_boundary or self.columns:
+            return
+        while True:
+            header, payload = self._recv_message()
+            if self._connection._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._connection._raise_protocol_error(payload)
+            if header.msg_type == MessageType.ROW_DESCRIPTION:
+                self.columns = parse_row_description(payload)
+                return
+            if header.msg_type == MessageType.DATA_ROW:
+                self._prefetched_rows.append(self._decode_data_row(payload))
+                return
+            if header.msg_type == MessageType.COMMAND_COMPLETE:
+                _, rows_affected, last_id, tag = parse_command_complete(payload)
+                self.rowcount = int(rows_affected)
+                self.lastrowid = int(last_id)
+                self.command = tag
+                self.completion_count += 1
+                self._mark_result_set_boundary()
+                return
+            if header.msg_type == MessageType.PORTAL_SUSPENDED:
+                exec_payload = build_execute_payload("", self._page_size)
+                self._connection._send_message(MessageType.EXECUTE, exec_payload)
+                continue
+            if header.msg_type == MessageType.READY:
+                _, txn_id, _ = parse_ready(payload)
+                self._connection._txn_id = txn_id
+                self._done = True
+                return
 
     def read_row(self):
         if self._done:
             return None
         if self._result_set_boundary:
             return None
+        if self._prefetched_rows:
+            return self._prefetched_rows.pop(0)
         while True:
             header, payload = self._recv_message()
             if self._connection._handle_async(header, payload):
@@ -1472,15 +1561,7 @@ class ResultStream:
             if header.msg_type == MessageType.ROW_DESCRIPTION:
                 self.columns = parse_row_description(payload)
             elif header.msg_type == MessageType.DATA_ROW:
-                values = parse_data_row(payload, len(self.columns))
-                decoded = []
-                for idx, value in enumerate(values):
-                    if idx < len(self.columns):
-                        col = self.columns[idx]
-                        decoded.append(decode_value(col.type_oid, value.data, col.format))
-                    else:
-                        decoded.append(decode_value(0, value.data, FORMAT_BINARY))
-                return tuple(decoded)
+                return self._decode_data_row(payload)
             elif header.msg_type == MessageType.COMMAND_COMPLETE:
                 _, rows_affected, last_id, tag = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
@@ -1535,6 +1616,34 @@ class ResultStream:
             self._has_next_result_set = True
             self._result_set_boundary = True
             return
+
+    def _decode_data_row(self, payload: bytes):
+        column_count = len(self.columns)
+        if column_count == 0 and len(payload) >= 2:
+            column_count = struct.unpack_from("<H", payload, 0)[0]
+        values = parse_data_row(payload, column_count)
+        if not self.columns:
+            self.columns = [
+                ColumnInfo(
+                    name=f"column{idx + 1}",
+                    table_oid=0,
+                    column_index=idx + 1,
+                    type_oid=0,
+                    type_size=0,
+                    type_modifier=0,
+                    format=FORMAT_BINARY,
+                    nullable=True,
+                )
+                for idx in range(len(values))
+            ]
+        decoded = []
+        for idx, value in enumerate(values):
+            if idx < len(self.columns):
+                col = self.columns[idx]
+                decoded.append(decode_value(col.type_oid, value.data, col.format))
+            else:
+                decoded.append(decode_value(0, value.data, FORMAT_BINARY))
+        return tuple(decoded)
 
 
 def _parse_uuid_bytes(value: str) -> Optional[bytes]:

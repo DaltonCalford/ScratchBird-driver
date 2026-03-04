@@ -245,8 +245,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-402`
 ### ECOSYS-403
 Title: Hibernate dialect package  
 Priority: P1  
-Status: Code complete (deterministic Hibernate dialect package + contract suite implemented; live JPA runtime matrix bootstrap-gated)  
-Gap: Runtime bootstrap currently fails without ScratchBird JDBC driver on runtime classpath (`No suitable driver`)  
+Status: Code complete (deterministic Hibernate dialect package + contract suite implemented; runtime DriverManager probe now passes with local JDBC jar auto-detected)  
+Gap: Full live JPA bootstrap/entity lifecycle/migration matrix remains pending beyond DriverManager connectivity probe  
 Acceptance Test: JPA bootstrapping plus entity lifecycle and migration-mapping tests in a sample service  
 Owner: Ecosystem Team  
 Risk: Medium  
@@ -267,8 +267,8 @@ Artifacts path: `artifacts/enterprise-readiness/ECOSYS-404`
 ### ECOSYS-405
 Title: Native async consistency across languages  
 Priority: P1  
-Status: Code complete (deterministic gate implemented; live runtime matrix env-gated)  
-Gap: Live runtime cancellation parity remains environment-gated until both ecosystem DSNs/cancel SQL endpoints are available  
+Status: Code complete (deterministic gate implemented; Go live runtime cancel path passes; Python live runtime cancel path blocked by TLS endpoint mismatch in current shell)  
+Gap: Python live runtime cancellation parity remains blocked by non-TLS endpoint vs TLS-required Python driver policy  
 Acceptance Test: Async integration tests with cancellation/timeouts in both ecosystems and comparable API patterns across drivers  
 Owner: Platform + Python/Go Drivers  
 Risk: High  
