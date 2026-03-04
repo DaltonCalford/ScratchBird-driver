@@ -485,7 +485,10 @@ class ScratchBirdClient {
         return;
       }
       if (msg.header.type == MessageType.error) {
-        throw const ScratchBirdExecutionException('Ping failed');
+        throw _executionExceptionFromPayload(
+          msg.payload,
+          fallbackMessage: 'Ping failed',
+        );
       }
     }
   }
@@ -620,7 +623,10 @@ class ScratchBirdClient {
               _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
           return;
         case MessageType.error:
-          throw const ScratchBirdAuthException('Authentication failed');
+          throw _authExceptionFromPayload(
+            msg.payload,
+            fallbackMessage: 'Authentication failed',
+          );
       }
     }
   }
@@ -665,7 +671,10 @@ class ScratchBirdClient {
           return ScratchBirdResult(rows, columns);
         case MessageType.error:
           _lastQuerySequence = null;
-          throw const ScratchBirdExecutionException('Query failed');
+          throw _executionExceptionFromPayload(
+            msg.payload,
+            fallbackMessage: 'Query failed',
+          );
       }
     }
   }
@@ -856,9 +865,36 @@ class ScratchBirdClient {
         return;
       }
       if (msg.header.type == MessageType.error) {
-        throw const ScratchBirdExecutionException('Describe failed');
+        throw _executionExceptionFromPayload(
+          msg.payload,
+          fallbackMessage: 'Describe failed',
+        );
       }
     }
+  }
+
+  ScratchBirdAuthException _authExceptionFromPayload(
+    Uint8List payload, {
+    required String fallbackMessage,
+  }) {
+    final parsed = parseErrorMessage(payload);
+    final sqlState = parsed.sqlState.trim();
+    return ScratchBirdAuthException(
+      formatProtocolErrorMessage(parsed, fallbackMessage: fallbackMessage),
+      sqlState: sqlState.isEmpty ? null : sqlState,
+    );
+  }
+
+  ScratchBirdExecutionException _executionExceptionFromPayload(
+    Uint8List payload, {
+    required String fallbackMessage,
+  }) {
+    final parsed = parseErrorMessage(payload);
+    final sqlState = parsed.sqlState.trim();
+    return ScratchBirdExecutionException(
+      formatProtocolErrorMessage(parsed, fallbackMessage: fallbackMessage),
+      sqlState: sqlState.isEmpty ? null : sqlState,
+    );
   }
 
   int _readTxnId(Uint8List payload,

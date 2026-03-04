@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:scratchbird/scratchbird.dart';
@@ -20,6 +21,17 @@ MessageHeader _header({
     attachmentId: Uint8List(16),
     txnId: txnId,
   );
+}
+
+Uint8List _errorPayload(Map<String, String> fields) {
+  final out = BytesBuilder();
+  for (final entry in fields.entries) {
+    out.add([entry.key.codeUnitAt(0)]);
+    out.add(utf8.encode(entry.value));
+    out.add([0]);
+  }
+  out.add([0]);
+  return out.toBytes();
 }
 
 void main() {
@@ -63,6 +75,49 @@ void main() {
         () => decodeHeader(bytes),
         throwsA(isA<ScratchBirdProtocolException>()),
       );
+    });
+  });
+
+  group('err payload', () {
+    test('parseErrorMessage extracts severity/sqlstate/message/detail/hint',
+        () {
+      final payload = _errorPayload({
+        'S': 'ERROR',
+        'C': '23505',
+        'M': 'duplicate key value violates unique constraint',
+        'D': 'Key (id)=(1) already exists.',
+        'H': 'Use a different primary key value.',
+      });
+      final parsed = parseErrorMessage(payload);
+      expect(parsed.severity, equals('ERROR'));
+      expect(parsed.sqlState, equals('23505'));
+      expect(
+        parsed.message,
+        equals('duplicate key value violates unique constraint'),
+      );
+      expect(parsed.detail, equals('Key (id)=(1) already exists.'));
+      expect(parsed.hint, equals('Use a different primary key value.'));
+
+      final formatted = formatProtocolErrorMessage(
+        parsed,
+        fallbackMessage: 'query failed',
+      );
+      expect(formatted,
+          contains('[23505] duplicate key value violates unique constraint'));
+      expect(formatted, contains('Detail: Key (id)=(1) already exists.'));
+      expect(formatted, contains('Hint: Use a different primary key value.'));
+    });
+
+    test('formatProtocolErrorMessage uses fallback when message is absent', () {
+      final parsed = parseErrorMessage(_errorPayload({
+        'S': 'ERROR',
+        'C': '42000',
+      }));
+      final formatted = formatProtocolErrorMessage(
+        parsed,
+        fallbackMessage: 'query failed',
+      );
+      expect(formatted, equals('[42000] query failed'));
     });
   });
 

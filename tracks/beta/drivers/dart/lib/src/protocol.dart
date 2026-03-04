@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'errors.dart';
@@ -139,6 +140,91 @@ class ScratchBirdMessage {
   final Uint8List payload;
 
   ScratchBirdMessage(this.header, this.payload);
+}
+
+class ProtocolError {
+  final String severity;
+  final String sqlState;
+  final String message;
+  final String detail;
+  final String hint;
+
+  const ProtocolError({
+    required this.severity,
+    required this.sqlState,
+    required this.message,
+    required this.detail,
+    required this.hint,
+  });
+}
+
+ProtocolError parseErrorMessage(Uint8List payload) {
+  var offset = 0;
+  var severity = '';
+  var sqlState = '';
+  var message = '';
+  var detail = '';
+  var hint = '';
+
+  while (offset < payload.length) {
+    final field = payload[offset];
+    offset += 1;
+    if (field == 0) {
+      break;
+    }
+    final start = offset;
+    while (offset < payload.length && payload[offset] != 0) {
+      offset += 1;
+    }
+    if (offset >= payload.length) {
+      break;
+    }
+    final value =
+        utf8.decode(payload.sublist(start, offset), allowMalformed: true);
+    offset += 1;
+    switch (String.fromCharCode(field)) {
+      case 'S':
+        severity = value;
+        break;
+      case 'C':
+        sqlState = value;
+        break;
+      case 'M':
+        message = value;
+        break;
+      case 'D':
+        detail = value;
+        break;
+      case 'H':
+        hint = value;
+        break;
+    }
+  }
+
+  return ProtocolError(
+    severity: severity,
+    sqlState: sqlState,
+    message: message,
+    detail: detail,
+    hint: hint,
+  );
+}
+
+String formatProtocolErrorMessage(
+  ProtocolError error, {
+  required String fallbackMessage,
+}) {
+  var text = error.message.isNotEmpty ? error.message : fallbackMessage;
+  if (error.sqlState.isNotEmpty) {
+    text = '[${error.sqlState}] $text';
+  }
+  if (error.detail.isNotEmpty) {
+    text = '$text Detail: ${error.detail}';
+  }
+  if (error.hint.isNotEmpty) {
+    text = '$text Hint: ${error.hint}';
+  }
+  return text;
 }
 
 Uint8List encodeMessage(MessageHeader header, Uint8List payload) {
