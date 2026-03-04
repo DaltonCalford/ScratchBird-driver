@@ -19,6 +19,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `bytea[]` typed-array conversion now materializes `bytes` elements via the same decoding rules.
 - Added JDBC-style typed array parity in `src/scratchbird/types.py`:
   - Non-vector Python list/tuple payloads now infer stable array OIDs (for bool/bytea/int/float/text/date/time/timetz/timestamp/timestamptz/numeric/uuid families) instead of always using OID `0`.
+  - Vector auto-detection is now restricted to float-only sequences so mixed numeric collections (`int` + `float`) follow JDBC-style typed-array OID inference instead of being forced to `vector`.
   - `_decode_binary_value(...)` now recognizes typed array OIDs and decodes them through array-literal parsing plus scalar-type conversion.
   - Array literal parsing now handles quoted and escaped string elements while preserving nested-array behavior.
   - Unquoted array tokens now remain text tokens (except `NULL`) so `text[]` decode preserves source lexical forms instead of coercing to Python bool/number values.
@@ -64,6 +65,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_type_name_includes_timetz`
   - `test_encode_string_array_infers_text_array_oid`
   - `test_encode_bool_array_infers_boolean_array_oid`
+  - `test_encode_mixed_numeric_array_widens_to_float8_array_oid`
   - `test_decode_int4_array_literal_payload`
   - `test_decode_bool_array_literal_accepts_t_f_tokens`
   - `test_decode_text_array_literal_with_quotes_and_nested_arrays`
@@ -78,14 +80,15 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_unknown_binary_single_byte_is_signed`
   - `test_encode_daterange_with_string_bounds_roundtrip`
   - `test_encode_tstzrange_with_string_bounds_roundtrip`
+  - `test_encode_tsrange_with_string_bounds_roundtrip`
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`46 passed`)
+- Result: PASS (`48 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`191 passed, 27 skipped, 1 warning`)
+- Result: PASS (`193 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -95,6 +98,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
   - Deterministic decode parity now preserves untyped `text[]` token lexemes, interprets boolean array `t`/`f` tokens with JDBC-consistent semantics, and decodes signed 1-byte unknown-binary values in line with JDBC behavior.
   - Temporal text decode and temporal range-bound encode now include `Z`-suffix and string-bound coercion behavior for UTC-stable parity.
+  - Mixed numeric collection encode now aligns with JDBC array inference (`float8[]`) while float-only vectors retain explicit `vector` encode behavior.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.

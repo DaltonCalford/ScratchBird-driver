@@ -695,7 +695,7 @@ def _is_vector_candidate(values: Any) -> bool:
             return False
         if isinstance(item, bool):
             return False
-        if not isinstance(item, (int, float)):
+        if not isinstance(item, float):
             return False
     return True
 

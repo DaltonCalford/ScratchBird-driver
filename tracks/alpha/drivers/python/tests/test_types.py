@@ -26,6 +26,7 @@ from scratchbird.types import (
     OID_DATE_ARRAY,
     OID_DATE,
     OID_DATERANGE,
+    OID_FLOAT8_ARRAY,
     OID_FLOAT8,
     OID_INT4_ARRAY,
     OID_INT4,
@@ -41,6 +42,7 @@ from scratchbird.types import (
     OID_TIME,
     OID_TIMETZ,
     OID_TIMETZ_ARRAY,
+    OID_TSRANGE,
     OID_TIMESTAMP,
     OID_TSTZRANGE,
     OID_TIMESTAMPTZ_ARRAY,
@@ -250,6 +252,11 @@ def test_encode_bool_array_infers_boolean_array_oid():
     assert decode_value(oid, param.data, FORMAT_BINARY) == [True, False, True]
 
 
+def test_encode_mixed_numeric_array_widens_to_float8_array_oid():
+    param, oid = encode_param([1, 2, 3.5])
+    assert oid == OID_FLOAT8_ARRAY
+
+
 def test_decode_int4_array_literal_payload():
     literal = b"{1,2,3}"
     raw = len(literal).to_bytes(4, byteorder="little") + literal
@@ -388,6 +395,24 @@ def test_encode_tstzrange_with_string_bounds_roundtrip():
     assert value.upper == dt.datetime(2026, 3, 2, 10, 30, tzinfo=dt.timezone.utc)
 
 
+def test_encode_tsrange_with_string_bounds_roundtrip():
+    param, oid = encode_param(
+        Range(
+            lower="2026-03-01 10:00:00+02",
+            upper="2026-03-01 12:00:00+02",
+            lower_inclusive=True,
+            upper_inclusive=False,
+            range_oid=OID_TSRANGE,
+        )
+    )
+
+    assert oid == OID_TSRANGE
+    value = decode_value(oid, param.data, FORMAT_BINARY)
+    assert isinstance(value, Range)
+    assert value.lower == dt.datetime(2026, 3, 1, 8, 0, 0)
+    assert value.upper == dt.datetime(2026, 3, 1, 10, 0, 0)
+
+
 def test_encode_decode_composite_roundtrip():
     param, oid = encode_param(
         Composite(
@@ -411,7 +436,7 @@ def test_encode_decode_composite_roundtrip():
 
 
 def test_encode_vector_candidate_roundtrip():
-    param, oid = encode_param([1, 2.5, 3])
+    param, oid = encode_param([1.0, 2.5, 3.0])
 
     assert oid == OID_SB_VECTOR
     assert decode_value(oid, param.data, FORMAT_BINARY) == [1.0, 2.5, 3.0]
