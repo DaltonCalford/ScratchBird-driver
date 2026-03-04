@@ -279,7 +279,7 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
     if type_oid == OID_RECORD:
         return _decode_composite(data)
     if _is_array_oid(type_oid):
-        return _parse_array_literal(_strip_length_prefix(data).decode("utf-8", errors="replace"))
+        return _decode_array(type_oid, data)
     return data
 
 
@@ -688,6 +688,102 @@ def _parse_array_item(raw: str):
         return int(token)
     except ValueError:
         return token
+
+
+def _decode_array(type_oid: int, data: bytes):
+    literal = _strip_length_prefix(data).decode("utf-8", errors="replace")
+    parsed = _parse_array_literal(literal)
+    scalar_oid = _array_scalar_oid(type_oid)
+    return _convert_array_elements(parsed, scalar_oid)
+
+
+def _array_scalar_oid(type_oid: int) -> int:
+    return {
+        OID_BOOL_ARRAY: OID_BOOL,
+        OID_BYTEA_ARRAY: OID_BYTEA,
+        OID_INT2_ARRAY: OID_INT2,
+        OID_INT4_ARRAY: OID_INT4,
+        OID_INT8_ARRAY: OID_INT8,
+        OID_FLOAT4_ARRAY: OID_FLOAT4,
+        OID_FLOAT8_ARRAY: OID_FLOAT8,
+        OID_TEXT_ARRAY: OID_TEXT,
+        OID_VARCHAR_ARRAY: OID_VARCHAR,
+        OID_DATE_ARRAY: OID_DATE,
+        OID_TIME_ARRAY: OID_TIME,
+        OID_TIMETZ_ARRAY: OID_TIMETZ,
+        OID_TIMESTAMP_ARRAY: OID_TIMESTAMP,
+        OID_TIMESTAMPTZ_ARRAY: OID_TIMESTAMPTZ,
+        OID_NUMERIC_ARRAY: OID_NUMERIC,
+        OID_UUID_ARRAY: OID_UUID,
+    }.get(type_oid, OID_TEXT)
+
+
+def _convert_array_elements(values, scalar_oid: int):
+    converted = []
+    for value in values:
+        if isinstance(value, list):
+            converted.append(_convert_array_elements(value, scalar_oid))
+            continue
+        converted.append(_convert_array_scalar(value, scalar_oid))
+    return converted
+
+
+def _convert_array_scalar(value: Any, scalar_oid: int) -> Any:
+    if value is None:
+        return None
+    if scalar_oid == OID_BOOL:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered == "true":
+                return True
+            if lowered == "false":
+                return False
+        return bool(value)
+    if scalar_oid in (OID_INT2, OID_INT4, OID_INT8):
+        return int(value)
+    if scalar_oid in (OID_FLOAT4, OID_FLOAT8):
+        return float(value)
+    if scalar_oid == OID_NUMERIC:
+        if isinstance(value, _decimal.Decimal):
+            return value
+        return _decimal.Decimal(str(value))
+    if scalar_oid == OID_DATE:
+        if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
+            return value
+        return _dt.date.fromisoformat(str(value).strip())
+    if scalar_oid == OID_TIME:
+        if isinstance(value, _dt.time):
+            return value
+        return _dt.time.fromisoformat(str(value).strip())
+    if scalar_oid == OID_TIMETZ:
+        if isinstance(value, _dt.time) and value.tzinfo is not None:
+            return value
+        parsed = _dt.time.fromisoformat(str(value).strip())
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=_dt.timezone.utc)
+        return parsed
+    if scalar_oid == OID_TIMESTAMP:
+        if isinstance(value, _dt.datetime):
+            return value.replace(tzinfo=None)
+        return _dt.datetime.fromisoformat(str(value).strip().replace(" ", "T")).replace(tzinfo=None)
+    if scalar_oid == OID_TIMESTAMPTZ:
+        if isinstance(value, _dt.datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=_dt.timezone.utc)
+            return value
+        parsed = _dt.datetime.fromisoformat(str(value).strip().replace(" ", "T"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=_dt.timezone.utc)
+        return parsed
+    if scalar_oid == OID_UUID:
+        if isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(str(value).strip())
+    if scalar_oid == OID_BYTEA and isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    return str(value)
 
 
 def _format_vector_literal(values) -> str:

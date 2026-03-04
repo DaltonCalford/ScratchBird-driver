@@ -8,22 +8,29 @@
 from __future__ import annotations
 
 import datetime as dt
+import decimal
 import struct
+import uuid
 
 from scratchbird.types import (
     Composite,
     CompositeField,
     FORMAT_TEXT,
     OID_BOOL_ARRAY,
+    OID_DATE_ARRAY,
     OID_INT4_ARRAY,
     OID_INT4,
     OID_INT4RANGE,
     OID_INTERVAL,
     OID_JSONB,
+    OID_NUMERIC_ARRAY,
     OID_RECORD,
     OID_SB_VECTOR,
     OID_TEXT_ARRAY,
     OID_TIMETZ,
+    OID_TIMETZ_ARRAY,
+    OID_TIMESTAMPTZ_ARRAY,
+    OID_UUID_ARRAY,
     FORMAT_BINARY,
     decode_value,
     encode_param,
@@ -128,6 +135,54 @@ def test_decode_text_array_literal_with_quotes_and_nested_arrays():
 
 def test_type_name_includes_array_names():
     assert type_name(OID_TEXT_ARRAY) == "text[]"
+
+
+def test_encode_timetz_array_infers_timetz_array_oid():
+    values = [
+        dt.time(1, 2, 3, tzinfo=dt.timezone(dt.timedelta(hours=2))),
+        dt.time(4, 5, 6, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+    ]
+    param, oid = encode_param(values)
+    assert oid == OID_TIMETZ_ARRAY
+    decoded = decode_value(oid, param.data, FORMAT_BINARY)
+    assert decoded == values
+
+
+def test_decode_date_array_to_date_values():
+    literal = b'{"2026-01-10","2026-02-11"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_DATE_ARRAY, raw, FORMAT_BINARY) == [
+        dt.date(2026, 1, 10),
+        dt.date(2026, 2, 11),
+    ]
+
+
+def test_decode_numeric_array_to_decimal_values():
+    literal = b"{1,2.5,3.75}"
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_NUMERIC_ARRAY, raw, FORMAT_BINARY) == [
+        decimal.Decimal("1"),
+        decimal.Decimal("2.5"),
+        decimal.Decimal("3.75"),
+    ]
+
+
+def test_decode_uuid_array_to_uuid_values():
+    literal = b'{"12345678-1234-1234-1234-123456789abc","aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_UUID_ARRAY, raw, FORMAT_BINARY) == [
+        uuid.UUID("12345678-1234-1234-1234-123456789abc"),
+        uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    ]
+
+
+def test_decode_timestamptz_array_to_aware_datetimes():
+    literal = b'{"2026-03-01 12:34:56+02","2026-03-02 01:02:03-05"}'
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_TIMESTAMPTZ_ARRAY, raw, FORMAT_BINARY) == [
+        dt.datetime(2026, 3, 1, 12, 34, 56, tzinfo=dt.timezone(dt.timedelta(hours=2))),
+        dt.datetime(2026, 3, 2, 1, 2, 3, tzinfo=dt.timezone(dt.timedelta(hours=-5))),
+    ]
 
 
 def test_encode_decode_range_roundtrip():
