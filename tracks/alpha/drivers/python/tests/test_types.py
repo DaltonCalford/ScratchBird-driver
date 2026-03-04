@@ -18,16 +18,19 @@ from scratchbird.types import (
     Composite,
     CompositeField,
     FORMAT_TEXT,
+    OID_BOOL,
     OID_BOOL_ARRAY,
     OID_BYTEA,
     OID_BYTEA_ARRAY,
     OID_DATE_ARRAY,
     OID_DATE,
+    OID_FLOAT8,
     OID_INT4_ARRAY,
     OID_INT4,
     OID_INT4RANGE,
     OID_INTERVAL,
     OID_JSONB,
+    OID_NUMERIC,
     OID_NUMERIC_ARRAY,
     OID_RECORD,
     OID_SB_VECTOR,
@@ -170,6 +173,13 @@ def test_decode_timetz_text_payload_to_offset_time():
 def test_decode_date_text_payload_to_date():
     decoded = decode_value(OID_DATE, b"2026-03-01", FORMAT_TEXT)
     assert decoded == dt.date(2026, 3, 1)
+
+
+def test_decode_numeric_scalar_text_payloads():
+    assert decode_value(OID_BOOL, b"t", FORMAT_TEXT) is True
+    assert decode_value(OID_INT4, b"42", FORMAT_TEXT) == 42
+    assert decode_value(OID_FLOAT8, b"3.5", FORMAT_TEXT) == 3.5
+    assert decode_value(OID_NUMERIC, b"12.34", FORMAT_TEXT) == decimal.Decimal("12.34")
 
 
 def test_decode_time_text_payload_to_time():

@@ -10,7 +10,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `_decode_timetz(...)` handles:
     - 12-byte payloads with zone displacement.
     - Backward-compatible 8-byte payloads (UTC fallback when zone bytes are absent).
-  - Text decode now routes through `_decode_text_typed_value(...)`, with typed parsing for `date`/`time`/`timetz`/`timestamp`/`timestamptz`/`uuid` OIDs.
+  - Text decode now routes through `_decode_text_typed_value(...)`, with typed parsing for scalar and temporal families (`bool`/`int`/`float`/`numeric`/`date`/`time`/`timetz`/`timestamp`/`timestamptz`/`uuid`).
   - `type_name(...)` now maps `OID_TIMETZ` to `"timetz"`.
 - Added JDBC-style `BYTEA` decode parity in `src/scratchbird/types.py`:
   - Binary `OID_BYTEA` decode now detects and decodes escaped/hex textual payloads (`\\x`/`0x`/plain hex/octal escapes), while preserving raw binary payloads when text markers are absent.
@@ -43,6 +43,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_timetz_binary_payload_supports_legacy_8byte_form`
   - `test_decode_timetz_text_payload_to_offset_time`
   - `test_decode_date_text_payload_to_date`
+  - `test_decode_numeric_scalar_text_payloads`
   - `test_decode_time_text_payload_to_time`
   - `test_decode_timestamp_text_payload_to_naive_datetime`
   - `test_decode_timestamptz_text_payload_to_aware_datetime`
@@ -63,16 +64,16 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`37 passed`)
+- Result: PASS (`38 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`182 passed, 27 skipped, 1 warning`)
+- Result: PASS (`183 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
 - Recommendation: `PARTIAL`
 - Reason:
-  - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for date/time/timestamp/timestamptz/uuid families.
+  - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for scalar and temporal families (`bool`/`int`/`float`/`numeric`/`date`/`time`/`timestamp`/`timestamptz`/`uuid`).
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.

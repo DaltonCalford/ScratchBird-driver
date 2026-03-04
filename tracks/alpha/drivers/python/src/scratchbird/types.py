@@ -344,6 +344,43 @@ def _decode_text_value(data: bytes) -> str:
 def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
     text = _decode_text_value(data)
     stripped = text.strip()
+    if type_oid == OID_BOOL:
+        lowered = stripped.lower()
+        if lowered in ("t", "true"):
+            return True
+        if lowered in ("f", "false"):
+            return False
+        return text
+    if type_oid == OID_INT2:
+        try:
+            return int(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_INT4:
+        try:
+            return int(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_INT8:
+        try:
+            return int(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_FLOAT4:
+        try:
+            return float(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_FLOAT8:
+        try:
+            return float(stripped)
+        except ValueError:
+            return text
+    if type_oid == OID_NUMERIC:
+        try:
+            return _decimal.Decimal(stripped)
+        except _decimal.InvalidOperation:
+            return text
     if type_oid == OID_DATE:
         try:
             return _dt.date.fromisoformat(stripped)
