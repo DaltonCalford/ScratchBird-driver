@@ -95,16 +95,21 @@
 
 - Current status: Partial
 - Lane-local source anchors:
-  - `lib/src/protocol.dart:159-176` header validation exceptions.
-  - `lib/src/client.dart:117-126` connect-time option rejection exceptions.
-  - `lib/src/client.dart:219-291` manager protocol validation/auth/connect exceptions.
-  - `lib/src/client.dart:521-523`, `559-560`, `719-720` generic auth/query/describe error handling.
+  - `lib/src/errors.dart:9-71` typed driver exception hierarchy (`ScratchBird*Exception`).
+  - `lib/src/protocol.dart:161-178` protocol header validation mapped to `ScratchBirdProtocolException`.
+  - `lib/src/client.dart:123-317` connect-time option rejection and manager-proxy auth/protocol failure mapping.
+  - `lib/src/client.dart:549-668` execution/auth failure mapping (`cancel`, handshake auth, query failure).
+  - `lib/src/client.dart:752-815`, `877-887`, `939-962`, `1084` protocol/transaction/socket/circuit error mapping.
+  - `lib/src/scram.dart:34-63` SCRAM nonce/signature failures mapped to `ScratchBirdAuthException`.
   - `lib/src/protocol.dart:59` `MessageType.error` constant.
 - Lane-local test anchors:
-  - `test/error_resilience_test.dart:24-58` protocol framing error-path tests (`decodeHeader` invalid length/magic/version/max payload).
+  - `test/error_resilience_test.dart:27-66` protocol framing tests assert `ScratchBirdProtocolException`.
+  - `test/connect_validation_test.dart:29-69` connect-policy rejection tests assert `ScratchBirdConnectionException`.
+  - `test/txn_exec_parity_test.dart:20-60,119-131` TXN and cancel guardrails assert typed transaction/execution exceptions.
+  - `test/scram_error_test.dart:6-35` SCRAM nonce/signature failures assert `ScratchBirdAuthException`.
 - Gaps/next actions:
-  - Parse and expose structured server error payload fields instead of only generic `Exception` messages.
-  - Introduce typed driver exception classes and map server SQLSTATE/class data into driver errors.
+  - Parse and expose structured server error payload fields instead of generic message fallbacks for server-returned `MessageType.error`.
+  - Map server SQLSTATE/class metadata onto `ScratchBirdException` (`sqlState`, `code`) during decode.
 
 ## RES (JDBCBL)
 

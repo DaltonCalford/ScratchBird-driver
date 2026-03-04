@@ -22,8 +22,8 @@ void main() {
       await expectLater(
         client.commit(),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message.toString(),
+          isA<ScratchBirdTransactionException>().having(
+            (e) => e.message,
             'message',
             contains('active transaction'),
           ),
@@ -36,8 +36,8 @@ void main() {
       await expectLater(
         client.rollback(),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message.toString(),
+          isA<ScratchBirdTransactionException>().having(
+            (e) => e.message,
             'message',
             contains('active transaction'),
           ),
@@ -50,8 +50,8 @@ void main() {
       await expectLater(
         client.savepoint('sp1'),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message.toString(),
+          isA<ScratchBirdTransactionException>().having(
+            (e) => e.message,
             'message',
             contains('active transaction'),
           ),
@@ -121,8 +121,8 @@ void main() {
       await expectLater(
         client.cancel(),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message.toString(),
+          isA<ScratchBirdExecutionException>().having(
+            (e) => e.message,
             'message',
             contains('No active query to cancel'),
           ),

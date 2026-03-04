@@ -31,7 +31,7 @@ void main() {
     await expectLater(
       ScratchBirdClient.connect(cfg),
       throwsA(
-        isA<Exception>().having(
+        isA<ScratchBirdConnectionException>().having(
           (e) => e.toString(),
           'message',
           contains('TLS is required'),
@@ -45,7 +45,7 @@ void main() {
     await expectLater(
       ScratchBirdClient.connect(cfg),
       throwsA(
-        isA<Exception>().having(
+        isA<ScratchBirdConnectionException>().having(
           (e) => e.toString(),
           'message',
           contains('binary_transfer=false is not supported'),
@@ -59,7 +59,7 @@ void main() {
     await expectLater(
       ScratchBirdClient.connect(cfg),
       throwsA(
-        isA<Exception>().having(
+        isA<ScratchBirdConnectionException>().having(
           (e) => e.toString(),
           'message',
           contains('compression=zstd is not supported'),

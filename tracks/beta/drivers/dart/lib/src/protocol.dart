@@ -8,6 +8,8 @@
 
 import 'dart:typed_data';
 
+import 'errors.dart';
+
 const int protocolMagic = 0x50574253;
 const int protocolMajor = 1;
 const int protocolMinor = 1;
@@ -158,21 +160,21 @@ Uint8List encodeMessage(MessageHeader header, Uint8List payload) {
 
 MessageHeader decodeHeader(Uint8List data) {
   if (data.length != headerSize) {
-    throw Exception('Invalid header length');
+    throw const ScratchBirdProtocolException('Invalid header length');
   }
   final header = ByteData.sublistView(data);
   final magic = header.getUint32(0, Endian.little);
   if (magic != protocolMagic) {
-    throw Exception('Invalid protocol magic');
+    throw const ScratchBirdProtocolException('Invalid protocol magic');
   }
   final major = header.getUint8(4);
   final minor = header.getUint8(5);
   if (major != protocolMajor || minor != protocolMinor) {
-    throw Exception('Unsupported protocol version');
+    throw const ScratchBirdProtocolException('Unsupported protocol version');
   }
   final length = header.getUint32(8, Endian.little);
   if (length > maxMessageSize) {
-    throw Exception('Payload too large');
+    throw const ScratchBirdProtocolException('Payload too large');
   }
   return MessageHeader(
     type: header.getUint8(6),
@@ -207,7 +209,8 @@ Uint8List buildQueryPayload(String sql, int flags, int maxRows, int timeoutMs) {
   return bytes;
 }
 
-Uint8List buildParsePayload(String statementName, String sql, List<int> paramTypes) {
+Uint8List buildParsePayload(
+    String statementName, String sql, List<int> paramTypes) {
   final nameBytes = Uint8List.fromList(statementName.codeUnits);
   final sqlBytes = Uint8List.fromList(sql.codeUnits);
   final payload = BytesBuilder();
@@ -223,7 +226,8 @@ Uint8List buildParsePayload(String statementName, String sql, List<int> paramTyp
   return payload.toBytes();
 }
 
-Uint8List buildBindPayload(String portalName, String statementName, List<ParamValue> params, List<int> resultFormats) {
+Uint8List buildBindPayload(String portalName, String statementName,
+    List<ParamValue> params, List<int> resultFormats) {
   final portalBytes = Uint8List.fromList(portalName.codeUnits);
   final stmtBytes = Uint8List.fromList(statementName.codeUnits);
   final payload = BytesBuilder();
@@ -278,7 +282,8 @@ Uint8List buildCancelPayload(int cancelType, int targetSequence) {
   return payload.buffer.asUint8List();
 }
 
-Uint8List buildSblrExecutePayload(int sblrHash, Uint8List? sblrBytecode, List<ParamValue> params) {
+Uint8List buildSblrExecutePayload(
+    int sblrHash, Uint8List? sblrBytecode, List<ParamValue> params) {
   final bytecode = sblrBytecode ?? Uint8List(0);
   final payload = BytesBuilder();
   final header = ByteData(16);
@@ -301,7 +306,8 @@ Uint8List buildSblrExecutePayload(int sblrHash, Uint8List? sblrBytecode, List<Pa
   return payload.toBytes();
 }
 
-Uint8List buildSubscribePayload(int subscribeType, String channel, String filterExpr) {
+Uint8List buildSubscribePayload(
+    int subscribeType, String channel, String filterExpr) {
   final channelBytes = Uint8List.fromList(channel.codeUnits);
   final filterBytes = Uint8List.fromList(filterExpr.codeUnits);
   final payload = BytesBuilder();
@@ -361,7 +367,8 @@ Uint8List buildTxnSavepointPayload(String name) {
 
 Uint8List buildTxnReleasePayload(String name) => buildTxnSavepointPayload(name);
 
-Uint8List buildTxnRollbackToPayload(String name) => buildTxnSavepointPayload(name);
+Uint8List buildTxnRollbackToPayload(String name) =>
+    buildTxnSavepointPayload(name);
 
 Uint8List buildSetOptionPayload(String name, String value) {
   final nameBytes = Uint8List.fromList(name.codeUnits);
@@ -374,7 +381,8 @@ Uint8List buildSetOptionPayload(String name, String value) {
   return payload.toBytes();
 }
 
-Uint8List buildStreamControlPayload(int controlType, int windowSize, int timeoutMs) {
+Uint8List buildStreamControlPayload(
+    int controlType, int windowSize, int timeoutMs) {
   final payload = ByteData(12);
   payload.setUint8(0, controlType);
   payload.setUint32(4, windowSize, Endian.little);

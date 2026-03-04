@@ -17,6 +17,7 @@ import 'protocol.dart';
 import 'scram.dart';
 import 'types.dart';
 import 'metadata.dart';
+import 'errors.dart';
 import 'circuit_breaker.dart';
 import 'keepalive.dart';
 import 'leak_detector.dart';
@@ -120,13 +121,19 @@ class ScratchBirdClient {
     final port = config.port;
     final sslmode = _normalizeSslMode(config.sslmode);
     if (sslmode == 'disable') {
-      throw Exception('TLS is required for ScratchBird connections');
+      throw const ScratchBirdConnectionException(
+        'TLS is required for ScratchBird connections',
+      );
     }
     if (!config.binaryTransfer) {
-      throw Exception('binary_transfer=false is not supported');
+      throw const ScratchBirdConnectionException(
+        'binary_transfer=false is not supported',
+      );
     }
     if (config.compression.toLowerCase() == 'zstd') {
-      throw Exception('compression=zstd is not supported');
+      throw const ScratchBirdConnectionException(
+        'compression=zstd is not supported',
+      );
     }
 
     final strictVerify = sslmode == 'verify-ca' ||
@@ -177,7 +184,9 @@ class ScratchBirdClient {
       case 'verify_full':
         return 'verify-full';
       default:
-        throw Exception('Unsupported sslmode value: $value');
+        throw ScratchBirdConnectionException(
+          'Unsupported sslmode value: $value',
+        );
     }
   }
 
@@ -197,7 +206,9 @@ class ScratchBirdClient {
   Future<void> _performManagerConnect() async {
     final token = config.managerAuthToken ?? '';
     if (token.isEmpty) {
-      throw Exception('manager_proxy mode requires manager_auth_token');
+      throw const ScratchBirdConnectionException(
+        'manager_proxy mode requires manager_auth_token',
+      );
     }
     final managerUser =
         (config.managerUsername != null && config.managerUsername!.isNotEmpty)
@@ -224,7 +235,9 @@ class ScratchBirdClient {
     await _sendManagerFrame(MCP_MSG_HELLO, hello.buffer.asUint8List());
     var frame = await _recvManagerFrame();
     if (frame.type != MCP_MSG_STATUS_RESPONSE) {
-      throw Exception('Expected MCP hello status response');
+      throw const ScratchBirdProtocolException(
+        'Expected MCP hello status response',
+      );
     }
 
     final authStart = BytesBuilder();
@@ -252,16 +265,18 @@ class ScratchBirdClient {
       frame = await _recvManagerFrame();
     }
     if (frame.type != MCP_MSG_AUTH_RESPONSE) {
-      throw Exception('Expected MCP auth response');
+      throw const ScratchBirdProtocolException('Expected MCP auth response');
     }
     if (frame.payload.length < 1 + 4 + 256) {
-      throw Exception('Truncated MCP auth response');
+      throw const ScratchBirdProtocolException('Truncated MCP auth response');
     }
     if (frame.payload[0] != 0) {
       final err = utf8
           .decode(frame.payload.sublist(5, 261), allowMalformed: true)
           .replaceAll(RegExp(r'\x00+$'), '');
-      throw Exception(err.isEmpty ? 'MCP authentication failed' : err);
+      throw ScratchBirdAuthException(
+        err.isEmpty ? 'MCP authentication failed' : err,
+      );
     }
 
     final dbConnect = BytesBuilder();
@@ -277,10 +292,12 @@ class ScratchBirdClient {
     await _sendManagerFrame(MCP_MSG_DB_CONNECT, dbConnect.toBytes());
     frame = await _recvManagerFrame();
     if (frame.type != MCP_MSG_CONNECT_RESPONSE) {
-      throw Exception('Expected MCP connect response');
+      throw const ScratchBirdProtocolException('Expected MCP connect response');
     }
     if (frame.payload.length < 1 + 2 + 2 + 16 + 64 + 32) {
-      throw Exception('Truncated MCP connect response');
+      throw const ScratchBirdProtocolException(
+        'Truncated MCP connect response',
+      );
     }
     if (frame.payload[0] != 0) {
       var message = 'MCP database connect failed';
@@ -296,7 +313,7 @@ class ScratchBirdClient {
           );
         }
       }
-      throw Exception(message);
+      throw ScratchBirdConnectionException(message);
     }
   }
 
@@ -330,11 +347,13 @@ class ScratchBirdClient {
     String collectionName = 'tables',
     bool? expandParents,
   }) async {
-    final normalizedCollection = normalizeMetadataCollectionName(collectionName);
+    final normalizedCollection =
+        normalizeMetadataCollectionName(collectionName);
     final result = await queryMetadata(collectionName);
     final rows = _resultRowsToMaps(result);
     final shouldExpand = expandParents ?? config.metadataExpandSchemaParents;
-    if (normalizedCollection != MetadataCollectionName.schemas || !shouldExpand) {
+    if (normalizedCollection != MetadataCollectionName.schemas ||
+        !shouldExpand) {
       return rows;
     }
     return expandSchemaMetadataRows(rows, expandParents: true);
@@ -466,7 +485,7 @@ class ScratchBirdClient {
         return;
       }
       if (msg.header.type == MessageType.error) {
-        throw Exception('Ping failed');
+        throw const ScratchBirdExecutionException('Ping failed');
       }
     }
   }
@@ -530,7 +549,7 @@ class ScratchBirdClient {
   Future<void> cancel() async {
     final sequence = _lastQuerySequence;
     if (sequence == null) {
-      throw StateError('No active query to cancel');
+      throw const ScratchBirdExecutionException('No active query to cancel');
     }
     final payload = buildCancelPayload(0, sequence);
     await _sendMessage(MessageType.cancel, payload, flags: 0x08);
@@ -601,7 +620,7 @@ class ScratchBirdClient {
               _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
           return;
         case MessageType.error:
-          throw Exception('Authentication failed');
+          throw const ScratchBirdAuthException('Authentication failed');
       }
     }
   }
@@ -646,7 +665,7 @@ class ScratchBirdClient {
           return ScratchBirdResult(rows, columns);
         case MessageType.error:
           _lastQuerySequence = null;
-          throw Exception('Query failed');
+          throw const ScratchBirdExecutionException('Query failed');
       }
     }
   }
@@ -732,7 +751,7 @@ class ScratchBirdClient {
 
   NotificationMessage _parseNotification(Uint8List payload) {
     if (payload.length < 12) {
-      throw Exception('Notification truncated');
+      throw const ScratchBirdProtocolException('Notification truncated');
     }
     var offset = 0;
     final data = ByteData.sublistView(payload);
@@ -741,14 +760,14 @@ class ScratchBirdClient {
     final channelLen = data.getUint32(offset, Endian.little);
     offset += 4;
     if (offset + channelLen + 4 > payload.length) {
-      throw Exception('Notification truncated');
+      throw const ScratchBirdProtocolException('Notification truncated');
     }
     final channel = utf8.decode(payload.sublist(offset, offset + channelLen));
     offset += channelLen;
     final payloadLen = data.getUint32(offset, Endian.little);
     offset += 4;
     if (offset + payloadLen > payload.length) {
-      throw Exception('Notification truncated');
+      throw const ScratchBirdProtocolException('Notification truncated');
     }
     final noticePayload = payload.sublist(offset, offset + payloadLen);
     offset += payloadLen;
@@ -767,7 +786,7 @@ class ScratchBirdClient {
 
   QueryPlanMessage _parseQueryPlan(Uint8List payload) {
     if (payload.length < 32) {
-      throw Exception('Query plan truncated');
+      throw const ScratchBirdProtocolException('Query plan truncated');
     }
     final data = ByteData.sublistView(payload);
     final format = data.getUint32(0, Endian.little);
@@ -776,7 +795,7 @@ class ScratchBirdClient {
     final estimatedRows = data.getUint64(16, Endian.little);
     final estimatedCost = data.getUint64(24, Endian.little);
     if (32 + planLen > payload.length) {
-      throw Exception('Query plan truncated');
+      throw const ScratchBirdProtocolException('Query plan truncated');
     }
     final plan = payload.sublist(32, 32 + planLen);
     return QueryPlanMessage(
@@ -785,14 +804,14 @@ class ScratchBirdClient {
 
   SblrCompiledMessage _parseSblrCompiled(Uint8List payload) {
     if (payload.length < 16) {
-      throw Exception('SBLR compiled truncated');
+      throw const ScratchBirdProtocolException('SBLR compiled truncated');
     }
     final data = ByteData.sublistView(payload);
     final hash = data.getUint64(0, Endian.little);
     final version = data.getUint32(8, Endian.little);
     final length = data.getUint32(12, Endian.little);
     if (16 + length > payload.length) {
-      throw Exception('SBLR compiled truncated');
+      throw const ScratchBirdProtocolException('SBLR compiled truncated');
     }
     final bytecode = payload.sublist(16, 16 + length);
     return SblrCompiledMessage(hash, version, bytecode);
@@ -837,7 +856,7 @@ class ScratchBirdClient {
         return;
       }
       if (msg.header.type == MessageType.error) {
-        throw Exception('Describe failed');
+        throw const ScratchBirdExecutionException('Describe failed');
       }
     }
   }
@@ -857,13 +876,15 @@ class ScratchBirdClient {
 
   void _ensureNoActiveTransaction() {
     if (_hasActiveTransaction()) {
-      throw StateError('Transaction already active');
+      throw const ScratchBirdTransactionException('Transaction already active');
     }
   }
 
   void _ensureActiveTransaction(String operation) {
     if (!_hasActiveTransaction()) {
-      throw StateError('$operation requires an active transaction');
+      throw ScratchBirdTransactionException(
+        '$operation requires an active transaction',
+      );
     }
   }
 
@@ -920,16 +941,17 @@ class ScratchBirdClient {
     final data = ByteData.sublistView(header);
     final magic = data.getUint32(0, Endian.little);
     if (magic != MANAGER_PROTOCOL_MAGIC) {
-      throw Exception('Manager frame magic mismatch');
+      throw const ScratchBirdProtocolException('Manager frame magic mismatch');
     }
     final version = data.getUint16(4, Endian.little);
     if (version != MANAGER_PROTOCOL_VERSION) {
-      throw Exception('Manager frame version mismatch');
+      throw const ScratchBirdProtocolException(
+          'Manager frame version mismatch');
     }
     final type = data.getUint8(6);
     final length = data.getUint32(8, Endian.little);
     if (length > MANAGER_MAX_PAYLOAD_SIZE) {
-      throw Exception('Manager payload too large');
+      throw const ScratchBirdProtocolException('Manager payload too large');
     }
     final payload =
         length == 0 ? Uint8List(0) : await _reader.readExact(length);
@@ -1026,7 +1048,7 @@ class ScratchBirdClient {
   Future<T> _withResilience<T>(
       String operation, String? sql, Future<T> Function() body) async {
     if (!_circuitBreaker.allowRequest()) {
-      throw Exception('Circuit breaker is OPEN');
+      throw const ScratchBirdExecutionException('Circuit breaker is OPEN');
     }
     await _validateIfIdle();
     final span = _telemetry.startSpan(operation);
@@ -1069,7 +1091,7 @@ class _SocketReader {
   Future<Uint8List> readExact(int length) async {
     while (_buffer.length < length) {
       if (!await iterator.moveNext()) {
-        throw Exception('Socket closed');
+        throw const ScratchBirdConnectionException('Socket closed');
       }
       _buffer.add(iterator.current);
     }

@@ -27,38 +27,41 @@ void main() {
     test('decodeHeader rejects invalid header length', () {
       expect(
         () => decodeHeader(Uint8List(8)),
-        throwsA(isA<Exception>()),
+        throwsA(isA<ScratchBirdProtocolException>()),
       );
     });
 
     test('decodeHeader rejects invalid protocol magic', () {
-      final bytes = encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
+      final bytes =
+          encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
       final data = ByteData.sublistView(bytes);
       data.setUint32(0, 0x00000000, Endian.little);
       expect(
         () => decodeHeader(bytes),
-        throwsA(isA<Exception>()),
+        throwsA(isA<ScratchBirdProtocolException>()),
       );
     });
 
     test('decodeHeader rejects unsupported protocol version', () {
-      final bytes = encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
+      final bytes =
+          encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
       final data = ByteData.sublistView(bytes);
       data.setUint8(4, 99);
       data.setUint8(5, 99);
       expect(
         () => decodeHeader(bytes),
-        throwsA(isA<Exception>()),
+        throwsA(isA<ScratchBirdProtocolException>()),
       );
     });
 
     test('decodeHeader rejects payloads above max message size', () {
-      final bytes = encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
+      final bytes =
+          encodeMessage(_header(), Uint8List(0)).sublist(0, headerSize);
       final data = ByteData.sublistView(bytes);
       data.setUint32(8, maxMessageSize + 1, Endian.little);
       expect(
         () => decodeHeader(bytes),
-        throwsA(isA<Exception>()),
+        throwsA(isA<ScratchBirdProtocolException>()),
       );
     });
   });
@@ -216,7 +219,8 @@ void main() {
       final sanitized = TelemetryCollector.sanitizeQuery(
         "SELECT * FROM users WHERE name='alice' AND city='NYC'",
       );
-      expect(sanitized, equals("SELECT * FROM users WHERE name='?' AND city='?'"));
+      expect(
+          sanitized, equals("SELECT * FROM users WHERE name='?' AND city='?'"));
     });
   });
 }

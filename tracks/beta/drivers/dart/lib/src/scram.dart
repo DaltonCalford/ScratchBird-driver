@@ -12,6 +12,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import 'errors.dart';
+
 class ScramClient {
   final String username;
   late String clientNonce;
@@ -35,7 +37,7 @@ class ScramClient {
     final saltB64 = attrs['s'] ?? '';
     final iterStr = attrs['i'] ?? '0';
     if (!nonce.startsWith(clientNonce)) {
-      throw Exception('SCRAM server nonce mismatch');
+      throw const ScratchBirdAuthException('SCRAM server nonce mismatch');
     }
     final iterations = int.parse(iterStr);
     final salt = base64.decode(saltB64);
@@ -57,7 +59,7 @@ class ScramClient {
     final verifier = attrs['v'] ?? '';
     final expected = base64.encode(serverSignature ?? Uint8List(0));
     if (verifier != expected) {
-      throw Exception('SCRAM server signature mismatch');
+      throw const ScratchBirdAuthException('SCRAM server signature mismatch');
     }
   }
 

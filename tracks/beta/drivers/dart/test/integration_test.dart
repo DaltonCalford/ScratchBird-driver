@@ -114,7 +114,10 @@ void main() {
       final client = await _connectClient();
       try {
         await client.begin();
-        await expectLater(client.begin(), throwsStateError);
+        await expectLater(
+          client.begin(),
+          throwsA(isA<ScratchBirdTransactionException>()),
+        );
         await client.rollback();
       } finally {
         await client.close();
