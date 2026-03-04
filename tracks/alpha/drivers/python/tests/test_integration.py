@@ -7,6 +7,7 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -55,6 +56,43 @@ def test_types_fixture_integration():
         row = cur.fetchone()
         assert row is not None
         assert len(row) > 0
+    finally:
+        conn.close()
+
+
+def test_basic_type_roundtrip_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ?::INTEGER, ?::DOUBLE, ?::VARCHAR, ?::BOOLEAN",
+            (42, 3.5, "scratchbird", True),
+        )
+        row = cur.fetchone()
+        assert row == (42, 3.5, "scratchbird", True)
+    finally:
+        conn.close()
+
+
+def test_json_type_roundtrip_integration():
+    dsn = os.environ.get("SCRATCHBIRD_TEST_DSN")
+    if not dsn:
+        pytest.skip("SCRATCHBIRD_TEST_DSN not set")
+    conn = scratchbird.connect(dsn)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ?::JSON, ?::JSONB",
+            ({"a": 1}, scratchbird.Jsonb(raw=b'{"b":2}')),
+        )
+        row = cur.fetchone()
+        assert row is not None
+        assert json.loads(row[0]) == {"a": 1}
+        assert isinstance(row[1], scratchbird.Jsonb)
+        assert json.loads(row[1].raw.decode("utf-8")) == {"b": 2}
     finally:
         conn.close()
 
