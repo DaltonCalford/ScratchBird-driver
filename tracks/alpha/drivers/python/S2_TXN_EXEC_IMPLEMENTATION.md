@@ -59,7 +59,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Result: PASS (`68 passed, 4 skipped`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
-- Result: PASS (`35 passed`)
+- Result: PASS (`39 passed`)
 
 ## TXN Status
 
@@ -79,7 +79,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 ## Remaining Gaps
 
 - TXN:
-  - Wire-level autocommit/session parity is not implemented as a dedicated transaction-state operation.
+  - Wire-level autocommit parity is not implemented as a dedicated transaction-state operation.
   - No integration test that validates transaction lifecycle against a live server in this lane.
 - EXEC:
   - Live integration coverage depth remains limited for extended execution surfaces.

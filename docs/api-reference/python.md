@@ -29,6 +29,7 @@ Connection helpers available on `Connection`:
 
 - `begin(...)` with transaction options
 - `savepoint(name)`, `release_savepoint(name)`, `rollback_to_savepoint(name)`
+- `get_session_schema()`, `set_session_schema(schema)`
 - `set_option(name, value)`
 - `ping()`
 - `subscribe(channel, sub_type=0, filter_expr="")`, `unsubscribe(channel)`

@@ -19,6 +19,9 @@ Scope: `tracks/alpha/drivers/python` only.
   - `auth_provider_profile`
 - Added `_build_startup_params()` and wired `_startup_and_auth()` to apply protocol auth plugin selection (`apply_auth_plugin_selection`) before sending `STARTUP`.
 - Added fail-fast validation in `_connect()` so `front_door_mode=manager_proxy` without `manager_auth_token` errors before any socket connect attempt.
+- Added runtime session-schema parity helpers in `src/scratchbird/connection.py`:
+  - `get_session_schema()` returns the normalized active session-schema setting.
+  - `set_session_schema(schema)` updates local session-schema state and executes `SET SCHEMA`/`SET SEARCH_PATH` (resetting `None` to `public`).
 - Added targeted unit tests in `tests/test_connection_auth_protocol.py` covering:
   - semicolon DSN parsing
   - alias-based connection config normalization
@@ -26,6 +29,11 @@ Scope: `tracks/alpha/drivers/python` only.
   - startup auth plugin parameter assembly
   - invalid auth method namespace handling
   - manager proxy token fail-fast behavior
+- Added targeted unit tests in `tests/test_txn_exec_parity.py` covering:
+  - runtime session-schema set/get behavior
+  - session-schema reset-to-public behavior
+  - unchanged session-schema no-op behavior
+  - non-string session-schema input validation
 
 ## Test Commands Run
 
@@ -34,6 +42,9 @@ Scope: `tracks/alpha/drivers/python` only.
 
 2. `pytest -q tests/test_sql.py tests/test_types.py`
 - Result: PASS (`5 passed`)
+
+3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
+- Result: PASS (`39 passed`)
 
 ## CONN Status Recommendation
 

@@ -20,6 +20,8 @@ Priority: P0
 - `begin()`
 - `commit()`
 - `rollback()`
+- `get_session_schema()`
+- `set_session_schema(schema)`
 - `schemas()`
 - `tables(schema)`
 - `columns(schema, table)`

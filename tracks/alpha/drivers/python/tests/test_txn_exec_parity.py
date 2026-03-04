@@ -26,6 +26,16 @@ def _new_connection(txn_id: int = 0) -> Connection:
     conn._closed = False
     conn._txn_id = txn_id
     conn._autocommit = True
+    conn._connected = True
+    conn._session_schema = None
+    conn._config = type(
+        "Cfg",
+        (),
+        {
+            "schema": None,
+            "binary_transfer": True,
+        },
+    )()
     conn._cursors = []
     return conn
 
@@ -183,6 +193,49 @@ def test_autocommit_setter_noops_when_value_unchanged(monkeypatch):
     conn.autocommit = True
 
     assert conn.autocommit is True
+
+
+def test_set_session_schema_executes_schema_statement(monkeypatch):
+    conn = _new_connection()
+    sent = {}
+    monkeypatch.setattr(conn, "_execute_command", lambda sql: sent.setdefault("sql", sql))
+
+    conn.set_session_schema(" analytics ")
+
+    assert conn.get_session_schema() == "analytics"
+    assert conn._config.schema == "analytics"
+    assert sent["sql"] == 'SET SCHEMA "analytics"'
+
+
+def test_set_session_schema_none_resets_to_public(monkeypatch):
+    conn = _new_connection()
+    conn._session_schema = "analytics"
+    conn._config.schema = "analytics"
+    sent = {}
+    monkeypatch.setattr(conn, "_execute_command", lambda sql: sent.setdefault("sql", sql))
+
+    conn.set_session_schema(None)
+
+    assert conn.get_session_schema() is None
+    assert conn._config.schema is None
+    assert sent["sql"] == 'SET SCHEMA "public"'
+
+
+def test_set_session_schema_noops_when_unchanged(monkeypatch):
+    conn = _new_connection()
+    conn._session_schema = "analytics"
+    conn._config.schema = "analytics"
+    monkeypatch.setattr(conn, "_execute_command", lambda _sql: pytest.fail("execute should not be called"))
+
+    conn.set_session_schema(" analytics ")
+
+    assert conn.get_session_schema() == "analytics"
+
+
+def test_set_session_schema_rejects_non_string_values():
+    conn = _new_connection()
+    with pytest.raises(errors.ProgrammingError, match="schema must be a string or None"):
+        conn.set_session_schema(42)
 
 
 def test_savepoint_requires_active_transaction():

@@ -334,6 +334,8 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
 class Connection:
     def __init__(self, config: ConnectionConfig):
         self._config = config
+        self._session_schema = _normalize_session_schema(self._config.schema)
+        self._config.schema = self._session_schema
         self._closed = False
         self._cursors = []
         self._autocommit = True
@@ -771,6 +773,22 @@ class Connection:
         cur = self.query_metadata(collection_name, restrictions=restrictions)
         return cur.fetchall()
 
+    def get_session_schema(self) -> Optional[str]:
+        return self._session_schema
+
+    def set_session_schema(self, schema: Optional[str]) -> None:
+        self._ensure_open()
+        if schema is not None and not isinstance(schema, str):
+            raise errors.ProgrammingError("schema must be a string or None")
+        normalized = _normalize_session_schema(schema)
+        if normalized == self._session_schema:
+            return
+        self._session_schema = normalized
+        self._config.schema = normalized
+        statement = _build_schema_statement(normalized or "public")
+        if statement:
+            self._execute_command(statement)
+
     def setinputsizes(self, sizes) -> None:
         self._ensure_open()
 
@@ -1155,7 +1173,7 @@ class Connection:
             raise
 
     def _apply_schema(self) -> None:
-        schema = (self._config.schema or "").strip()
+        schema = self._session_schema or ""
         if not schema or schema.lower() == "public":
             return
         statement = _build_schema_statement(schema)
@@ -1422,6 +1440,15 @@ def _build_schema_statement(schema: str) -> str:
         quoted = ", ".join(_quote_identifier(part) for part in parts)
         return f"SET SEARCH_PATH TO {quoted}"
     return f"SET SCHEMA {_quote_identifier(trimmed)}"
+
+
+def _normalize_session_schema(schema: Optional[Any]) -> Optional[str]:
+    if schema is None:
+        return None
+    trimmed = str(schema).strip()
+    if not trimmed:
+        return None
+    return trimmed
 
 
 def _quote_identifier(name: str) -> str:
