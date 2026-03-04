@@ -70,6 +70,11 @@ def test_decode_jsonb():
     assert value.raw == payload
 
 
+def test_decode_unknown_binary_single_byte_is_signed():
+    assert decode_value(0, b"\xff", FORMAT_BINARY) == -1
+    assert decode_value(0, b"\x7f", FORMAT_BINARY) == 127
+
+
 def test_encode_blob_wrapper_uses_bytea_oid():
     payload = b"\x01\x02\x03"
     param, oid = encode_param(Blob(raw=payload))
@@ -228,6 +233,12 @@ def test_decode_text_array_literal_with_quotes_and_nested_arrays():
     literal = b'{{"a,b","c\\\"d"},{"x","y"}}'
     raw = len(literal).to_bytes(4, byteorder="little") + literal
     assert decode_value(OID_TEXT_ARRAY, raw, FORMAT_BINARY) == [["a,b", 'c"d'], ["x", "y"]]
+
+
+def test_decode_text_array_literal_preserves_unquoted_scalar_tokens():
+    literal = b"{true,False,001,3.50}"
+    raw = len(literal).to_bytes(4, byteorder="little") + literal
+    assert decode_value(OID_TEXT_ARRAY, raw, FORMAT_BINARY) == ["true", "False", "001", "3.50"]
 
 
 def test_type_name_includes_array_names():

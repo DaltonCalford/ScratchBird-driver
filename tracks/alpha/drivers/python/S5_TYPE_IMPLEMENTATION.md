@@ -20,8 +20,11 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Non-vector Python list/tuple payloads now infer stable array OIDs (for bool/bytea/int/float/text/date/time/timetz/timestamp/timestamptz/numeric/uuid families) instead of always using OID `0`.
   - `_decode_binary_value(...)` now recognizes typed array OIDs and decodes them through array-literal parsing plus scalar-type conversion.
   - Array literal parsing now handles quoted and escaped string elements while preserving nested-array behavior.
+  - Unquoted array tokens now remain text tokens (except `NULL`) so `text[]` decode preserves source lexical forms instead of coercing to Python bool/number values.
   - Typed array decode now materializes element families deterministically (`date`, `timetz`, `timestamptz`, `numeric`, `uuid`, etc.) instead of returning string-only payloads.
   - `type_name(...)` now includes array OID names (`text[]`, `boolean[]`, `timetz[]`, etc.).
+- Added JDBC-style unknown-binary scalar parity in `src/scratchbird/types.py`:
+  - `_decode_unknown_binary(...)` now decodes 1-byte payloads as signed int8 values (matching JDBC `byte` semantics) instead of unsigned byte values.
 - Added explicit wrapper-family parity in `src/scratchbird/types.py` and `src/scratchbird/__init__.py`:
   - Added lightweight wrapper types: `Blob`, `Clob`, `RowId`, `Ref`, `SqlXml`.
   - `encode_param(...)` now routes wrappers deterministically:
@@ -53,6 +56,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_encode_bool_array_infers_boolean_array_oid`
   - `test_decode_int4_array_literal_payload`
   - `test_decode_text_array_literal_with_quotes_and_nested_arrays`
+  - `test_decode_text_array_literal_preserves_unquoted_scalar_tokens`
   - `test_type_name_includes_array_names`
   - `test_encode_timetz_array_infers_timetz_array_oid`
   - `test_decode_date_array_to_date_values`
@@ -60,14 +64,15 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_decode_uuid_array_to_uuid_values`
   - `test_decode_timestamptz_array_to_aware_datetimes`
   - `test_decode_bytea_array_to_bytes_values`
+  - `test_decode_unknown_binary_single_byte_is_signed`
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`38 passed`)
+- Result: PASS (`40 passed`)
 
 2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`183 passed, 27 skipped, 1 warning`)
+- Result: PASS (`185 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
@@ -75,6 +80,7 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Reason:
   - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for scalar and temporal families (`bool`/`int`/`float`/`numeric`/`date`/`time`/`timestamp`/`timestamptz`/`uuid`).
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
+  - Deterministic decode parity now preserves untyped `text[]` token lexemes and signed 1-byte unknown-binary values in line with JDBC decode semantics.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.

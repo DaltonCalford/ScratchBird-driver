@@ -491,7 +491,7 @@ def _decode_unknown_binary(data: bytes) -> Any:
     if trimmed and _looks_like_text(trimmed):
         return _parse_unknown_text(trimmed.decode("utf-8", errors="replace"))
     if len(data) == 1:
-        return data[0]
+        return struct.unpack_from("<b", data)[0]
     if len(data) == 2:
         return struct.unpack_from("<h", data)[0]
     if len(data) == 4:
@@ -865,14 +865,7 @@ def _parse_array_item(raw: str):
         return _parse_vector_literal(token)
     if token.startswith('"') and token.endswith('"') and len(token) >= 2:
         return token[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-    if token.lower() in ("true", "false"):
-        return token.lower() == "true"
-    try:
-        if "." in token:
-            return float(token)
-        return int(token)
-    except ValueError:
-        return token
+    return token
 
 
 def _decode_array(type_oid: int, data: bytes):
