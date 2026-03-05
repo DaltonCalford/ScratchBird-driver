@@ -112,6 +112,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
     _require(cfg_default_port.port == 3092, "default port parse mismatch")
+    var cfg_ipv6 = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@[::1]:3092/testdb?sslmode=require"
+    )
+    _require(cfg_ipv6.host == "::1", "ipv6 host parse mismatch")
+    _require(cfg_ipv6.port == 3092, "ipv6 port parse mismatch")
     var cfg_endpoint_override = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&host=proxy.local&port=4100"
     )
@@ -614,6 +619,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=0",
         "22023",
         "port must be positive",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=70000",
+        "22023",
+        "port must be between 1 and 65535",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=-1",

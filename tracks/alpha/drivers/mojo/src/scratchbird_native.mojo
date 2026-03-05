@@ -618,6 +618,10 @@ fn _extract_host(dsn: String) -> String:
     var host_port = _extract_host_port(dsn)
     if host_port == "":
         return ""
+    if host_port.startswith("[") and "]" in host_port:
+        var sections = host_port.split("]", 1)
+        if len(sections) == 2:
+            return String(sections[0]).replace("[", "")
     if ":" in host_port:
         var sections = host_port.split(":", 1)
         if len(sections) == 2:
@@ -629,6 +633,26 @@ fn _extract_port(dsn: String) -> Int:
     var host_port = _extract_host_port(dsn)
     if host_port == "":
         return 3092
+    if host_port.startswith("[") and "]" in host_port:
+        var sections = host_port.split("]", 1)
+        if len(sections) != 2:
+            return 3092
+        var suffix = String(sections[1])
+        if suffix == "":
+            return 3092
+        if ":" not in suffix:
+            return 3092
+        var port_parts = suffix.split(":", 1)
+        if len(port_parts) != 2:
+            return 3092
+        var raw_ipv6 = String(port_parts[1]).strip()
+        if raw_ipv6 == "":
+            return 3092
+        try:
+            return Int(raw_ipv6)
+        except e:
+            _ = e
+            return 3092
     if ":" not in host_port:
         return 3092
     var sections = host_port.split(":", 1)
@@ -1059,6 +1083,8 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.port <= 0:
         raise Error("22023 port must be positive")
+    if config.port > 65535:
+        raise Error("22023 port must be between 1 and 65535")
 
     if config.connect_timeout_s < 0:
         raise Error("22023 connect_timeout must be >= 0")
