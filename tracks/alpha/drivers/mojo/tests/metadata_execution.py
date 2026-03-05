@@ -135,6 +135,29 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         _require(exc.sqlstate == "0A000", "unsupported collection restriction should map to 0A000")
 
 
+def test_resolve_metadata_collection_query_restricted_multi() -> None:
+    sql = scratchbird.resolve_metadata_collection_query_restricted_multi(
+        "tables",
+        {"schema": "public", "table": "ord%"},
+    )
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')" in sql,
+        "multi restriction SQL should include schema predicate",
+    )
+    _require(
+        "table_name LIKE 'ord%'" in sql,
+        "multi restriction SQL should include wildcard table predicate",
+    )
+    try:
+        scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "tables",
+            ["not", "a", "mapping"],
+        )
+        raise RuntimeError("expected metadata restriction mapping failure")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "22023", "non-mapping restrictions should map to 22023")
+
+
 def test_query_metadata_routes_through_query_path() -> None:
     conn = QueryHarness()
     result = scratchbird.ScratchBirdConnection.query_metadata(conn, "primarykeys")
@@ -174,6 +197,31 @@ def test_query_metadata_restricted_routes_through_query_path() -> None:
     )
 
 
+def test_query_metadata_restricted_multi_routes_through_query_path() -> None:
+    conn = QueryHarness()
+    result = scratchbird.ScratchBirdConnection.query_metadata_restricted_multi(
+        conn,
+        "tables",
+        {"schema": "public", "table": "orders"},
+    )
+    _require(result is conn.result, "query_metadata_restricted_multi should return harness result")
+    sent_payload = None
+    for call in conn.calls:
+        if call[0] == "send" and call[1] == scratchbird.MessageType.QUERY:
+            sent_payload = call[2]
+            break
+    _require(sent_payload is not None, "query_metadata_restricted_multi should send QUERY payload")
+    sent_sql = sent_payload.decode("utf-8")
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')" in sent_sql,
+        "query_metadata_restricted_multi should include schema predicate",
+    )
+    _require(
+        "table_name = 'orders'" in sent_sql,
+        "query_metadata_restricted_multi should include table predicate",
+    )
+
+
 def test_get_schema_returns_result_rows() -> None:
     conn = QueryHarness()
     conn.result = scratchbird.ScratchBirdResult([[7], [9]], [], 2)
@@ -200,6 +248,48 @@ def test_query_metadata_rows_restricted_returns_rowcount() -> None:
     _require(rowcount == 4, "query_metadata_rows_restricted should return result rowcount")
 
 
+def test_query_metadata_rows_restricted_multi_returns_rowcount() -> None:
+    conn = QueryHarness()
+    conn.result = scratchbird.ScratchBirdResult([[1], [2], [3], [4], [5]], [], 5)
+    rowcount = scratchbird.ScratchBirdConnection.query_metadata_rows_restricted_multi(
+        conn,
+        "tables",
+        {"schema": "public", "table": "orders"},
+    )
+    _require(rowcount == 5, "query_metadata_rows_restricted_multi should return result rowcount")
+
+
+def test_connection_ddl_editor_schema_payload_applies_schema_pattern() -> None:
+    conn = QueryHarness()
+    conn.result = scratchbird.ScratchBirdResult(
+        [
+            {"schema_name": "users.alice.dev"},
+            {"schema_name": "users.bob.dev"},
+        ],
+        [],
+        2,
+    )
+    payload = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        conn,
+        schema_pattern="users.%",
+        expand_schema_parents=True,
+    )
+    _require(payload["schemaPattern"] == "users.%", "ddl payload schemaPattern mismatch")
+    _require(payload["expandSchemaParents"] is True, "ddl payload expandSchemaParents mismatch")
+    _require(payload["schemaPaths"] == ["users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev"], "ddl payload schemaPaths mismatch")
+    sent_payload = None
+    for call in conn.calls:
+        if call[0] == "send" and call[1] == scratchbird.MessageType.QUERY:
+            sent_payload = call[2]
+            break
+    _require(sent_payload is not None, "ddl payload path should route through metadata query")
+    sent_sql = sent_payload.decode("utf-8")
+    _require(
+        "schema_name LIKE 'users.%'" in sent_sql,
+        "ddl payload path should apply schema wildcard restriction",
+    )
+
+
 def test_query_metadata_rejects_unsupported_collection() -> None:
     conn = QueryHarness()
     try:
@@ -214,11 +304,15 @@ def main() -> None:
     test_resolve_metadata_collection_query_extended_families()
     test_normalize_metadata_restriction_aliases()
     test_resolve_metadata_collection_query_restricted()
+    test_resolve_metadata_collection_query_restricted_multi()
     test_query_metadata_routes_through_query_path()
     test_query_metadata_restricted_routes_through_query_path()
+    test_query_metadata_restricted_multi_routes_through_query_path()
     test_get_schema_returns_result_rows()
     test_query_metadata_rows_returns_rowcount()
     test_query_metadata_rows_restricted_returns_rowcount()
+    test_query_metadata_rows_restricted_multi_returns_rowcount()
+    test_connection_ddl_editor_schema_payload_applies_schema_pattern()
     test_query_metadata_rejects_unsupported_collection()
     print("Mojo metadata execution tests OK")
 

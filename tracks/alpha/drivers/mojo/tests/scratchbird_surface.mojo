@@ -53,6 +53,25 @@ fn _assert_metadata_restriction_guard(
         )
 
 
+fn _assert_metadata_restriction_count_guard(collection_name: String) raises:
+    var keys = List[String]()
+    keys.append("schema")
+    var values = List[String]()
+    try:
+        _ = scratchbird.metadata_query_restricted_multi(
+            collection_name,
+            keys,
+            values,
+        )
+        raise Error("expected metadata restriction count guard to reject mismatch")
+    except e:
+        var message = String(e)
+        _require(
+            scratchbird.extract_sqlstate(message) == "07001",
+            "expected metadata restriction count guard sqlstate '07001', got '" + scratchbird.extract_sqlstate(message) + "'",
+        )
+
+
 fn main() raises:
     var cfg = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
@@ -99,6 +118,25 @@ fn main() raises:
     _require(
         conn.query_metadata_rows_restricted("table", "name", "orders") == 1,
         "restricted metadata rowcount mismatch",
+    )
+    var multi_keys = List[String]()
+    multi_keys.append("schema")
+    multi_keys.append("table")
+    var multi_values = List[String]()
+    multi_values.append("public")
+    multi_values.append("orders")
+    var multi_tables = conn.query_metadata_restricted_multi("tables", multi_keys, multi_values)
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')" in multi_tables,
+        "multi restriction query should include schema predicate",
+    )
+    _require(
+        "table_name = 'orders'" in multi_tables,
+        "multi restriction query should include table predicate",
+    )
+    _require(
+        conn.query_metadata_rows_restricted_multi("tables", multi_keys, multi_values) == 1,
+        "multi restriction rowcount mismatch",
     )
     var wildcard_tables = conn.query_metadata_restricted("tables", "table", "ord%")
     _require(
@@ -149,6 +187,7 @@ fn main() raises:
     )
     _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
     _assert_metadata_restriction_guard("tables", "column", "0A000", "not supported for 'tables'")
+    _assert_metadata_restriction_count_guard("tables")
 
     var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(stream.next(conn) == 1, "stream first row mismatch")

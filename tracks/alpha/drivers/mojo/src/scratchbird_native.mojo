@@ -312,6 +312,32 @@ struct ScratchBirdConnection:
         )
         return self.query(sql)
 
+    fn query_metadata_restricted_multi(
+        self,
+        collection_name: String,
+        restriction_keys: List[String],
+        restriction_values: List[String],
+    ) raises -> String:
+        _ = self
+        return resolve_metadata_collection_query_restricted_multi(
+            collection_name,
+            restriction_keys,
+            restriction_values,
+        )
+
+    fn query_metadata_rows_restricted_multi(
+        mut self,
+        collection_name: String,
+        restriction_keys: List[String],
+        restriction_values: List[String],
+    ) raises -> Int:
+        var sql = resolve_metadata_collection_query_restricted_multi(
+            collection_name,
+            restriction_keys,
+            restriction_values,
+        )
+        return self.query(sql)
+
 
 struct ScratchBirdStream:
     var total_rows: Int
@@ -800,14 +826,34 @@ fn resolve_metadata_collection_query_restricted(
     restriction_key: String = "",
     restriction_value: String = "",
 ) raises -> String:
+    var keys = List[String]()
+    keys.append(restriction_key)
+    var values = List[String]()
+    values.append(restriction_value)
+    return resolve_metadata_collection_query_restricted_multi(
+        collection_name,
+        keys,
+        values,
+    )
+
+
+fn resolve_metadata_collection_query_restricted_multi(
+    collection_name: String,
+    restriction_keys: List[String],
+    restriction_values: List[String],
+) raises -> String:
+    if len(restriction_keys) != len(restriction_values):
+        raise Error("07001 metadata restriction count mismatch")
     var resolved_collection = normalize_metadata_collection_name(collection_name)
     var sql = resolve_metadata_collection_query(resolved_collection)
-    var resolved_key = normalize_metadata_restriction_key(restriction_key)
-    var value = String(restriction_value.strip())
-    if resolved_key == "" or value == "":
-        return sql
-    var predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
-    return _append_metadata_filter(sql, predicate)
+    for i in range(len(restriction_keys)):
+        var resolved_key = normalize_metadata_restriction_key(restriction_keys[i])
+        var value = String(restriction_values[i].strip())
+        if resolved_key == "" or value == "":
+            continue
+        var predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
+        sql = _append_metadata_filter(sql, predicate)
+    return sql
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:

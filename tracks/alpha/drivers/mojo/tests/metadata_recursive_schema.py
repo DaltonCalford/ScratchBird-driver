@@ -114,11 +114,53 @@ def test_same_leaf_name_under_different_parents() -> None:
     _require(bob_dev.full_path == "users.bob.dev", "bob leaf full_path mismatch")
 
 
+def test_build_ddl_editor_schema_payload_shape() -> None:
+    payload = scratchbird.build_ddl_editor_schema_payload(
+        [
+            {"schema_name": "users.alice.dev"},
+            {"schema_name": "users.bob.dev"},
+            {"schema_name": "sys"},
+        ],
+        schema_pattern="users.%",
+        expand_schema_parents=True,
+    )
+    _require(
+        set(payload.keys()) == {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"},
+        "ddl payload keys mismatch",
+    )
+    _require(payload["schemaPattern"] == "users.%", "ddl payload schemaPattern mismatch")
+    _require(payload["expandSchemaParents"] is True, "ddl payload expandSchemaParents mismatch")
+    _require(
+        payload["schemaPaths"] == ["users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev", "sys"],
+        "ddl payload schemaPaths mismatch",
+    )
+    _require(isinstance(payload["schemaTree"], list), "ddl payload schemaTree should be list")
+    users_node = None
+    for node in payload["schemaTree"]:
+        if node.get("name") == "users":
+            users_node = node
+            break
+    _require(users_node is not None, "ddl payload schemaTree should include users root")
+    _require(isinstance(users_node.get("children"), list), "ddl payload users children should be list")
+
+
+def test_shim_connection_ddl_editor_schema_payload_defaults() -> None:
+    cfg = scratchbird.ScratchBirdConfig("scratchbird://user:pass@localhost:3092/testdb?sslmode=require")
+    conn = scratchbird.connect(cfg)
+    payload = conn.ddl_editor_schema_payload()
+    _require(payload["schemaPattern"] == "%", "shim ddl payload should default schemaPattern to %")
+    _require(payload["expandSchemaParents"] is False, "shim ddl payload should default to no parent expansion")
+    _require(isinstance(payload["schemaPaths"], list), "shim ddl payload schemaPaths should be list")
+    conn.close()
+
+
 def main() -> None:
     test_database_default_branch_style_rows()
     test_dotted_parent_expansion()
     test_tree_uniqueness_within_parent()
     test_same_leaf_name_under_different_parents()
+    test_build_ddl_editor_schema_payload_shape()
+    test_shim_connection_ddl_editor_schema_payload_defaults()
     print("Mojo metadata recursive schema tests OK")
 
 

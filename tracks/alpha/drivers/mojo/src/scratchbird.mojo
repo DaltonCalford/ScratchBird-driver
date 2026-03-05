@@ -9,6 +9,7 @@
 # Current-syntax facade that keeps the lane-local `scratchbird` module on the
 # active native bootstrap runtime surface while transport cutover proceeds.
 
+from collections import List
 from scratchbird_native import ScratchBirdConfig
 from scratchbird_native import ScratchBirdConnection
 from scratchbird_native import ScratchBirdStatement
@@ -19,6 +20,7 @@ from scratchbird_native import normalize_metadata_collection_name
 from scratchbird_native import normalize_metadata_restriction_key
 from scratchbird_native import resolve_metadata_collection_query
 from scratchbird_native import resolve_metadata_collection_query_restricted
+from scratchbird_native import resolve_metadata_collection_query_restricted_multi
 from scratchbird_native import validate_connect_guards
 from scratchbird_native import METADATA_SCHEMAS_QUERY
 from scratchbird_native import METADATA_TABLES_QUERY
@@ -112,4 +114,16 @@ fn metadata_query_restricted(
         collection_name,
         restriction_key,
         restriction_value,
+    )
+
+
+fn metadata_query_restricted_multi(
+    collection_name: String,
+    restriction_keys: List[String],
+    restriction_values: List[String],
+) raises -> String:
+    return resolve_metadata_collection_query_restricted_multi(
+        collection_name,
+        restriction_keys,
+        restriction_values,
     )

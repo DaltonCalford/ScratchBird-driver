@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import datetime
 import json
 import struct
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
 import urllib.parse
 
 
@@ -774,8 +774,72 @@ class _ShimConnection:
     def query_metadata_rows(self, collection_name: Optional[str] = None) -> int:
         return self.query_metadata(collection_name).rowcount
 
+    def query_metadata_restricted(
+        self,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> ScratchBirdResult:
+        metadata_sql = resolve_metadata_collection_query_restricted(
+            collection_name,
+            restriction_key,
+            restriction_value,
+        )
+        return self.query(metadata_sql)
+
+    def query_metadata_rows_restricted(
+        self,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> int:
+        return self.query_metadata_restricted(
+            collection_name,
+            restriction_key,
+            restriction_value,
+        ).rowcount
+
+    def query_metadata_restricted_multi(
+        self,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> ScratchBirdResult:
+        metadata_sql = resolve_metadata_collection_query_restricted_multi(
+            collection_name,
+            restrictions,
+        )
+        return self.query(metadata_sql)
+
+    def query_metadata_rows_restricted_multi(
+        self,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        return self.query_metadata_restricted_multi(collection_name, restrictions).rowcount
+
     def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
         return self.query_metadata(collection_name).rows
+
+    def ddl_editor_schema_payload(
+        self,
+        schema_pattern: Optional[str] = "%",
+        expand_schema_parents: bool = False,
+    ) -> Dict[str, Any]:
+        pattern = "%" if schema_pattern is None else str(schema_pattern).strip()
+        if pattern == "":
+            pattern = "%"
+        restrictions: Optional[Dict[str, Any]] = None
+        if pattern != "%":
+            restrictions = {"schema": pattern}
+        if restrictions is None:
+            rows = self.get_schema("schemas")
+        else:
+            rows = self.query_metadata_restricted_multi("schemas", restrictions).rows
+        return build_ddl_editor_schema_payload(
+            rows,
+            schema_pattern=pattern,
+            expand_schema_parents=expand_schema_parents,
+        )
 
     def close(self) -> None:
         self._cancel_requested = False
@@ -1077,10 +1141,69 @@ class ScratchBirdConnection:
         return len(rows)
 
     @staticmethod
+    def query_metadata_restricted_multi(
+        conn: Any,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> Any:
+        metadata_sql = resolve_metadata_collection_query_restricted_multi(
+            collection_name,
+            restrictions,
+        )
+        return ScratchBirdConnection.query(conn, metadata_sql, None)
+
+    @staticmethod
+    def query_metadata_rows_restricted_multi(
+        conn: Any,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        result = ScratchBirdConnection.query_metadata_restricted_multi(
+            conn,
+            collection_name,
+            restrictions,
+        )
+        rowcount = getattr(result, "rowcount", None)
+        if isinstance(rowcount, int):
+            return rowcount
+        rows = getattr(result, "rows", None)
+        if rows is None:
+            return 0
+        return len(rows)
+
+    @staticmethod
     def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:
         result = ScratchBirdConnection.query_metadata(conn, collection_name)
         rows = getattr(result, "rows", None)
         return rows if rows is not None else []
+
+    @staticmethod
+    def ddl_editor_schema_payload(
+        conn: Any,
+        schema_pattern: Optional[str] = "%",
+        expand_schema_parents: bool = False,
+    ) -> Dict[str, Any]:
+        pattern = "%" if schema_pattern is None else str(schema_pattern).strip()
+        if pattern == "":
+            pattern = "%"
+        restrictions: Optional[Dict[str, Any]] = None
+        if pattern != "%":
+            restrictions = {"schema": pattern}
+        if restrictions is None:
+            rows = ScratchBirdConnection.get_schema(conn, "schemas")
+        else:
+            result = ScratchBirdConnection.query_metadata_restricted_multi(
+                conn,
+                "schemas",
+                restrictions,
+            )
+            result_rows = getattr(result, "rows", None)
+            rows = result_rows if result_rows is not None else []
+        return build_ddl_editor_schema_payload(
+            rows,
+            schema_pattern=pattern,
+            expand_schema_parents=expand_schema_parents,
+        )
 
 
 def connect(config: ScratchBirdConfig) -> _ShimConnection:
@@ -1300,19 +1423,51 @@ def _append_metadata_filter(sql: str, predicate: str) -> str:
     return f"{sql} WHERE {predicate}"
 
 
+def _coerce_metadata_restrictions(
+    restrictions: Optional[Mapping[str, Any]],
+) -> List[Tuple[str, str]]:
+    if restrictions is None:
+        return []
+    if not isinstance(restrictions, Mapping):
+        raise ScratchBirdError("metadata restrictions must be provided as a mapping", "22023")
+    out: List[Tuple[str, str]] = []
+    for key, value in restrictions.items():
+        resolved_key = "" if key is None else str(key)
+        resolved_value = "" if value is None else str(value)
+        out.append((resolved_key, resolved_value))
+    return out
+
+
 def resolve_metadata_collection_query_restricted(
     collection_name: Optional[str] = None,
     restriction_key: Optional[str] = None,
     restriction_value: Optional[str] = None,
 ) -> str:
+    restrictions = {
+        "" if restriction_key is None else str(restriction_key): (
+            "" if restriction_value is None else str(restriction_value)
+        )
+    }
+    return resolve_metadata_collection_query_restricted_multi(
+        collection_name,
+        restrictions,
+    )
+
+
+def resolve_metadata_collection_query_restricted_multi(
+    collection_name: Optional[str] = None,
+    restrictions: Optional[Mapping[str, Any]] = None,
+) -> str:
     resolved_collection = normalize_metadata_collection_name(collection_name)
     sql = resolve_metadata_collection_query(resolved_collection)
-    resolved_key = normalize_metadata_restriction_key(restriction_key)
-    value = "" if restriction_value is None else str(restriction_value).strip()
-    if resolved_key == "" or value == "":
-        return sql
-    predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
-    return _append_metadata_filter(sql, predicate)
+    for raw_key, raw_value in _coerce_metadata_restrictions(restrictions):
+        resolved_key = normalize_metadata_restriction_key(raw_key)
+        value = raw_value.strip()
+        if resolved_key == "" or value == "":
+            continue
+        predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
+        sql = _append_metadata_filter(sql, predicate)
+    return sql
 
 
 @dataclass
@@ -1436,6 +1591,25 @@ def build_database_default_metadata_rows(
     return out
 
 
+def build_ddl_editor_schema_payload(
+    rows_or_names: Iterable[Any],
+    schema_pattern: str = "%",
+    expand_schema_parents: bool = False,
+) -> Dict[str, Any]:
+    pattern = (schema_pattern or "").strip() or "%"
+    schema_paths = schema_paths_for_navigation(
+        rows_or_names,
+        expand_schema_parents=expand_schema_parents,
+    )
+    schema_tree = build_schema_tree(schema_paths)
+    return {
+        "schemaPattern": pattern,
+        "expandSchemaParents": bool(expand_schema_parents),
+        "schemaPaths": schema_paths,
+        "schemaTree": _schema_tree_nodes_to_payload(schema_tree),
+    }
+
+
 def _append_tree_rows(out_rows: List[Dict[str, Any]], nodes: List[ScratchBirdSchemaTreeNode], parent_path: str) -> None:
     for node in nodes:
         node_path = f"{parent_path}.{node.full_path.split('.')[-1]}" if parent_path else node.full_path
@@ -1451,6 +1625,20 @@ def _append_tree_rows(out_rows: List[Dict[str, Any]], nodes: List[ScratchBirdSch
             }
         )
         _append_tree_rows(out_rows, node.children, node_path)
+
+
+def _schema_tree_nodes_to_payload(nodes: List[ScratchBirdSchemaTreeNode]) -> List[Dict[str, Any]]:
+    payload_nodes: List[Dict[str, Any]] = []
+    for node in nodes:
+        payload_nodes.append(
+            {
+                "name": node.name,
+                "fullPath": node.full_path,
+                "isTerminal": bool(node.terminal),
+                "children": _schema_tree_nodes_to_payload(node.children),
+            }
+        )
+    return payload_nodes
 
 
 def _iter_schema_paths(rows_or_names: Iterable[Any]) -> Iterator[str]:
