@@ -27,6 +27,7 @@
 - `tests/connection_guards.py:54` (`front_door_mode` validation guard)
 - `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
 - `tests/integration.py:52` (integration launcher now runs native bootstrap smoke first with fallback controls)
+- `tests/sbdriver_conformance.py:70` (conformance launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
 - `tests/native_bootstrap.mojo:30` (native bootstrap guard/query smoke path via `mojo run -I src`)
@@ -79,8 +80,8 @@
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
 - `tests/txn_exec_parity.py:141` (stream fetch-boundary and close lifecycle assertions)
 - `tests/txn_exec_parity.py:157` (cancelled stream returns SQLSTATE `57014`)
-- `tests/sbdriver_conformance.py:176` (prepare-bind and cancel manifest paths enabled by default)
-- `tests/sbdriver_conformance.py:169` (manifest `expect_sqlstate` matching)
+- `tests/sbdriver_conformance.py:245` (prepare-bind and cancel manifest paths enabled by default)
+- `tests/sbdriver_conformance.py:236` (manifest `expect_sqlstate` matching)
 - `tests/integration.mojo:22`
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`

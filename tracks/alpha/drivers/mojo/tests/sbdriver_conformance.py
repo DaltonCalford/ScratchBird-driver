@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
@@ -27,6 +29,71 @@ class TestSpec:
         self.cancel_after_rows = 0
         self.requires = []
         self.params = []
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
+    mojo_bin = os.environ.get("MOJO_BIN", "").strip()
+    if mojo_bin:
+        return [mojo_bin, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+
+    mojo_path = shutil.which("mojo")
+    if mojo_path:
+        return [mojo_path, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+
+    pixi_path = shutil.which("pixi")
+    manifest = pathlib.Path(
+        os.environ.get(
+            "MOJO_PIXI_MANIFEST",
+            str(pathlib.Path.home() / "mojo-work" / "sb-mojo"),
+        )
+    )
+    if pixi_path and manifest.is_dir():
+        return [
+            pixi_path,
+            "run",
+            "-m",
+            str(manifest),
+            "--executable",
+            "mojo",
+            "run",
+            "-I",
+            "src",
+            "tests/native_bootstrap.mojo",
+        ]
+    return None
+
+
+def _run_native_bootstrap_smoke(lane_root: pathlib.Path) -> None:
+    if _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP", "")):
+        return
+
+    required = _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_NATIVE_REQUIRED", ""))
+    command = _native_bootstrap_command(lane_root)
+    if command is None:
+        if required:
+            raise RuntimeError("Mojo native bootstrap launcher unavailable (no mojo/pixi found).")
+        return
+
+    completed = subprocess.run(
+        command,
+        cwd=lane_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return
+
+    error_text = (completed.stderr or completed.stdout or "").strip()
+    first_line = error_text.splitlines()[0] if error_text else "no details"
+    if required:
+        raise RuntimeError(
+            f"Mojo native bootstrap smoke failed with exit {completed.returncode}: {first_line}"
+        )
 
 
 def _normalize_kind(kind: str) -> str:
@@ -290,6 +357,17 @@ def main() -> None:
 
     if not manifest:
         sys.stdout.write("{\"results\":[],\"status\":\"skipped\",\"errors\":[\"manifest not provided\"]}\n")
+        return
+
+    lane_root = pathlib.Path(__file__).resolve().parents[1]
+    try:
+        _run_native_bootstrap_smoke(lane_root)
+    except Exception as exc:
+        sys.stdout.write(
+            "{\"results\":[],\"status\":\"error\",\"errors\":[\"native bootstrap failed: "
+            + _json_escape(str(exc))
+            + "\"]}\n"
+        )
         return
 
     try:

@@ -20,6 +20,7 @@ Current implementation is a Mojo-Python interop lane:
 - Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native bootstrap currently covers deterministic connect guards, metadata alias resolution, prepare-bind mismatch handling, and stream/cancel (`57014`) semantics.
+- Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
 - Native Mojo transport/auth remains future work.
 
 ## Platform Support
@@ -50,12 +51,12 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```
 
-Optional integration env vars:
+Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_URL` for direct smoke
 - `SCRATCHBIRD_MOJO_MANAGER_URL` for manager-proxy smoke
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
-- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native bootstrap smoke inside `tests/integration.mojo`
-- `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail if native bootstrap launcher is unavailable/failing
+- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native bootstrap smoke in `tests/integration.mojo` and `tests/sbdriver_conformance.py`
+- `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail when native bootstrap launcher is unavailable/failing
 
 ## Next Steps
 

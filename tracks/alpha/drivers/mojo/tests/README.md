@@ -36,6 +36,10 @@ Expected behavior:
 The `sbdriver-conformance` launcher resolves Mojo automatically (prefers pixi
 manifest mode) and runs `tests/sbdriver_conformance.mojo`.
 
+By default, both `sbdriver-conformance` and `integration.py` run the native
+bootstrap smoke (`tests/native_bootstrap.mojo`) first, then continue through
+the bridge-shim harness path.
+
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```
@@ -45,8 +49,8 @@ Environment variables:
 - `SCRATCHBIRD_MOJO_URL`: DSN for running query tests
 - `SCRATCHBIRD_MOJO_MANAGER_URL`: optional manager-proxy integration DSN
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL`: optional bad-auth integration DSN (for shim tests, append `sb_test_auth_fail=true`)
-- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP`: optional override to skip native bootstrap smoke in `integration.mojo` / `integration.py`
-- `SCRATCHBIRD_MOJO_NATIVE_REQUIRED`: optional override to fail integration smoke when native bootstrap launcher cannot run
+- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP`: optional override to skip native bootstrap smoke in `integration.mojo` / `integration.py` / `sbdriver_conformance.py`
+- `SCRATCHBIRD_MOJO_NATIVE_REQUIRED`: optional override to fail launcher smoke when native bootstrap cannot run
 - `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
 

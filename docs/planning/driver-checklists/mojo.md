@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [ ] Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Progress: native bootstrap lane added in `tracks/alpha/drivers/mojo/src/scratchbird_native.mojo` with deterministic smoke coverage in `tracks/alpha/drivers/mojo/tests/native_bootstrap.mojo`; full transport cutover remains open.
+- [ ] Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Progress: native bootstrap lane added in `tracks/alpha/drivers/mojo/src/scratchbird_native.mojo` with deterministic smoke coverage in `tracks/alpha/drivers/mojo/tests/native_bootstrap.mojo`, and both integration/conformance launchers (`tracks/alpha/drivers/mojo/tests/integration.py`, `tracks/alpha/drivers/mojo/tests/sbdriver_conformance.py`) now run native-first smoke; full transport cutover remains open.
 - [x] Enforce TLS required and binary-only guard rails in current bridge shim (`tracks/alpha/drivers/mojo/src/scratchbird.py`) with deterministic tests in `tracks/alpha/drivers/mojo/tests/connection_guards.py`. Issue: DONE (2026-03-05)
 - [x] Reject `compression=zstd` until server support exists (`tracks/alpha/drivers/mojo/src/scratchbird.py`) with deterministic tests in `tracks/alpha/drivers/mojo/tests/connection_guards.py`. Issue: DONE (2026-03-05)
 
