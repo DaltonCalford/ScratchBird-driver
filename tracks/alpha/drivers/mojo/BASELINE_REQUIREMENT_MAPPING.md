@@ -123,10 +123,11 @@
 - Lane-local test anchors:
 - `tests/integration.mojo:26`
 - `tests/sbdriver_conformance.mojo:182`
-- `tests/type_codecs.py:15` (array/range/vector parsing, decode/encode assertions, unknown-OID fallback)
-- `tests/type_codecs.py:49` (`OID_INT4` truncation behavior)
+- `tests/type_codecs.py:15` (array/range/vector/composite parsing and decode/encode assertions)
+- `tests/type_codecs.py:38` (geometry + inet/cidr/macaddr decode assertions)
+- `tests/type_codecs.py:67` (unknown-OID fallback + `OID_INT4` truncation behavior)
 - Gaps/next actions:
-- Expand bridge-shim type coverage toward the full native OID matrix (geometry/composite/network/range families) once native Mojo transport is active.
+- Expand bridge-shim type coverage toward the remaining native OID matrix (json/jsonb/date/time/timestamp/interval/uuid/array-of-composite) once native Mojo transport is active.
 
 ## ERR (JDBCBL)
 

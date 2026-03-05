@@ -24,7 +24,13 @@ ISOLATION_SERIALIZABLE = 3
 
 OID_INT4 = 23
 OID_TEXT = 25
+OID_POINT = 600
+OID_CIDR = 650
+OID_MACADDR = 829
+OID_INET = 869
 OID_VARCHAR = 1043
+OID_RECORD = 2249
+OID_MACADDR8 = 774
 OID_SB_VECTOR = 16386
 
 TXN_FLAG_HAS_ISOLATION = 0x0001
@@ -152,6 +158,23 @@ class ScratchBirdRange:
     empty: bool = False
 
 
+@dataclass
+class ScratchBirdComposite:
+    fields: List[Optional[str]]
+
+
+@dataclass
+class ScratchBirdGeometry:
+    raw: str
+    wkt: str
+
+
+@dataclass
+class ScratchBirdNetwork:
+    kind: str
+    address: str
+
+
 class ScratchBirdError(Exception):
     def __init__(self, message: str, sqlstate: str = "", detail: str = "", hint: str = ""):
         super().__init__(message)
@@ -186,6 +209,33 @@ def _split_array_items(text: str) -> List[str]:
         token += ch
     if token:
         items.append(token)
+    return items
+
+
+def _split_composite_items(text: str) -> List[str]:
+    items: List[str] = []
+    token = ""
+    in_quotes = False
+    escaped = False
+    for ch in text:
+        if escaped:
+            token += ch
+            escaped = False
+            continue
+        if ch == "\\":
+            token += ch
+            escaped = True
+            continue
+        if ch == '"':
+            token += ch
+            in_quotes = not in_quotes
+            continue
+        if ch == "," and not in_quotes:
+            items.append(token)
+            token = ""
+            continue
+        token += ch
+    items.append(token)
     return items
 
 
@@ -256,6 +306,52 @@ def parse_range_literal(text: str) -> ScratchBirdRange:
     )
 
 
+def parse_composite_literal(text: str) -> List[Optional[str]]:
+    raw = (text or "").strip()
+    if raw == "":
+        return []
+    if raw.startswith("(") and raw.endswith(")"):
+        raw = raw[1:-1]
+    if raw == "":
+        return []
+    out: List[Optional[str]] = []
+    for part in _split_composite_items(raw):
+        item = part.strip()
+        if item == "" or item.upper() == "NULL":
+            out.append(None)
+            continue
+        if len(item) >= 2 and item[0] == '"' and item[-1] == '"':
+            out.append(item[1:-1].replace('\\"', '"'))
+            continue
+        out.append(item)
+    return out
+
+
+def parse_point_literal(text: str) -> ScratchBirdGeometry:
+    raw = (text or "").strip()
+    if not (raw.startswith("(") and raw.endswith(")")):
+        raise RuntimeError("invalid point literal")
+    inner = raw[1:-1]
+    parts = [part.strip() for part in inner.split(",", 1)]
+    if len(parts) != 2:
+        raise RuntimeError("invalid point literal")
+    x = float(parts[0])
+    y = float(parts[1])
+    return ScratchBirdGeometry(raw=raw, wkt=f"POINT({x} {y})")
+
+
+def _network_kind_for_oid(oid: int) -> Optional[str]:
+    if oid == OID_INET:
+        return "inet"
+    if oid == OID_CIDR:
+        return "cidr"
+    if oid == OID_MACADDR:
+        return "macaddr"
+    if oid == OID_MACADDR8:
+        return "macaddr8"
+    return None
+
+
 def encode_value(value: Any) -> bytes:
     if value is None:
         return b""
@@ -271,6 +367,23 @@ def encode_value(value: Any) -> bytes:
         lower = "" if value.lower is None else str(value.lower)
         upper = "" if value.upper is None else str(value.upper)
         return f"{left}{lower},{upper}{right}".encode("utf-8")
+    if isinstance(value, ScratchBirdComposite):
+        encoded_fields: List[str] = []
+        for field in value.fields:
+            if field is None:
+                encoded_fields.append("NULL")
+                continue
+            raw = str(field)
+            if any(ch in raw for ch in (",", "\"", "(", ")")):
+                escaped = raw.replace('"', '\\"')
+                encoded_fields.append(f'"{escaped}"')
+            else:
+                encoded_fields.append(raw)
+        return f"({','.join(encoded_fields)})".encode("utf-8")
+    if isinstance(value, ScratchBirdGeometry):
+        return value.raw.encode("utf-8")
+    if isinstance(value, ScratchBirdNetwork):
+        return value.address.encode("utf-8")
     if isinstance(value, (list, tuple)):
         vector = ",".join(str(float(item)) for item in value)
         return f"[{vector}]".encode("utf-8")
@@ -288,6 +401,13 @@ def decode_value(oid: int, data: Optional[bytes]) -> Any:
         return data.decode("utf-8")
     if oid == OID_SB_VECTOR:
         return parse_vector_literal(data.decode("utf-8"))
+    if oid == OID_RECORD:
+        return ScratchBirdComposite(parse_composite_literal(data.decode("utf-8")))
+    if oid == OID_POINT:
+        return parse_point_literal(data.decode("utf-8"))
+    network_kind = _network_kind_for_oid(oid)
+    if network_kind is not None:
+        return ScratchBirdNetwork(kind=network_kind, address=data.decode("utf-8"))
     return ScratchBirdRaw(oid, data)
 
 
