@@ -1366,6 +1366,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_BEGIN, payload)
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 1)
+        setattr(conn, "_txn_begin_options", dict(normalized))
         _static_savepoint_list(conn).clear()
 
     @staticmethod
@@ -1376,6 +1377,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 0)
+        setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 
     @staticmethod
@@ -1386,6 +1388,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 0)
+        setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 
     @staticmethod

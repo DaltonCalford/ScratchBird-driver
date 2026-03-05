@@ -106,6 +106,13 @@ def test_begin_maps_kwargs_to_payload_flags() -> None:
     _require(conn.drained == 1, "begin should drain once")
     _require(conn._txn_id == 1, "begin should mark transaction active")
     _require(conn._savepoints == [], "begin should reset savepoints")
+    begin_options = getattr(conn, "_txn_begin_options", {})
+    _require(begin_options.get("isolation_level") == 2, "begin should persist normalized isolation_level")
+    _require(begin_options.get("access_mode") == 1, "begin should persist normalized access_mode")
+    _require(begin_options.get("deferrable") == 1, "begin should persist normalized deferrable")
+    _require(begin_options.get("wait_mode") == 0, "begin should persist normalized wait_mode")
+    _require(begin_options.get("timeout_ms") == 75, "begin should persist normalized timeout_ms")
+    _require(begin_options.get("autocommit_mode") == 1, "begin should persist normalized autocommit_mode")
 
 
 def test_begin_rejects_nested_transaction() -> None:
@@ -150,15 +157,18 @@ def test_commit_and_rollback_noop_when_no_active_txn() -> None:
 def test_commit_and_rollback_send_when_active_txn() -> None:
     commit_conn = TxnHarness(42)
     commit_conn._savepoints = ["sp1"]
+    commit_conn._txn_begin_options = {"isolation_level": 2}
     scratchbird.ScratchBirdConnection.commit(commit_conn)
     _require(len(commit_conn.sent) == 1, "active txn should send commit")
     _require(commit_conn.sent[0][0] == scratchbird.MessageType.TXN_COMMIT, "commit should send TXN_COMMIT")
     _require(commit_conn.drained == 1, "active commit should drain once")
     _require(commit_conn._txn_id == 0, "commit should mark transaction inactive")
     _require(commit_conn._savepoints == [], "commit should clear savepoints")
+    _require(getattr(commit_conn, "_txn_begin_options", None) == {}, "commit should clear begin options")
 
     rollback_conn = TxnHarness(42)
     rollback_conn._savepoints = ["sp1"]
+    rollback_conn._txn_begin_options = {"isolation_level": 2}
     scratchbird.ScratchBirdConnection.rollback(rollback_conn)
     _require(len(rollback_conn.sent) == 1, "active txn should send rollback")
     _require(
@@ -168,6 +178,7 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
     _require(rollback_conn.drained == 1, "active rollback should drain once")
     _require(rollback_conn._txn_id == 0, "rollback should mark transaction inactive")
     _require(rollback_conn._savepoints == [], "rollback should clear savepoints")
+    _require(getattr(rollback_conn, "_txn_begin_options", None) == {}, "rollback should clear begin options")
 
 
 def _decode_savepoint_payload(payload: bytes) -> str:
