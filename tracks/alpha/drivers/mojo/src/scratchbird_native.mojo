@@ -58,6 +58,10 @@ struct ScratchBirdConfig:
     var protocol: String
     var front_door_mode: String
     var sslmode: String
+    var ssl_root_cert: String
+    var ssl_cert: String
+    var ssl_key: String
+    var ssl_password: String
     var binary_transfer: Bool
     var compression: String
     var sb_test_auth_fail: Bool
@@ -211,6 +215,10 @@ struct ScratchBirdConfig:
         self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
         self.sslmode = _query_value_alias(dsn, "sslmode", "ssl", "require")
+        self.ssl_root_cert = _query_value_alias(dsn, "ssl_root_cert", "sslrootcert", "")
+        self.ssl_cert = _query_value_alias(dsn, "ssl_cert", "sslcert", "")
+        self.ssl_key = _query_value_alias(dsn, "ssl_key", "sslkey", "")
+        self.ssl_password = _query_value_alias(dsn, "ssl_password", "sslpassword", "")
         self.binary_transfer = _as_bool(_query_value_alias(dsn, "binary_transfer", "binarytransfer", "true"))
         self.compression = _normalize_compression_value(_query_value(dsn, "compression", "off"))
         self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)

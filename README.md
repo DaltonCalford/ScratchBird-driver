@@ -51,7 +51,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
 
 ---
 
@@ -91,6 +91,7 @@ Legend:
 - **Mojo lane:** Added metadata/session alias parity (`metadata_expand_schema_parents|metadataexpandschemaparents|expand_schema_parents|expandschemaparents|dbeaver_expand_schema_parents|dbeaverexpandschemaparents`) and pooling/manager config parsing (`tcpkeepalive`, `pooling`, `min_pool_size|minpoolsize`, `max_pool_size|maxpoolsize`, `connection_lifetime|connectionlifetime|poolingconnectionlifetime`, `manager_*|mcp_*`), including manager defaults (`manager_connection_profile=native_v3`, `manager_client_intent=native_v3`, `manager_auth_fast_path=true`) with new guard coverage (`08001` manager token required for `manager_proxy`; `22023` guards for `min_pool_size`, `max_pool_size`, `connection_lifetime`, `manager_client_flags`).
 - **Mojo lane:** Added protocol canonicalization parity (`protocol|parser|dialect` values `scratchbird`, `scratchbird-native`, `scratchbird_native` now normalize to `native`), `ssl` alias support for `sslmode`, compression normalization/validation parity (`compression=none` → `off`; reject unknown values such as `gzip`), and URL-style query decoding for DSN values (`%xx`, `+`) with malformed percent-escape guard coverage (`22023`).
 - **Mojo lane:** Added JDBC config-property parity for `prepareThreshold`, `reWriteBatchedInserts`, `loggerLevel|logLevel`, and `loggerFile|logFile` in native bootstrap parsing (`prepare_threshold|preparethreshold`, `rewrite_batched_inserts|rewritebatchedinserts`, `logger_level|loggerlevel|log_level|loglevel`, `logger_file|loggerfile|log_file|logfile`) with deterministic native/facade default and alias assertions.
+- **Mojo lane:** Added JDBC TLS material property parsing parity (`sslrootcert`, `sslcert`, `sslkey`, `sslpassword`; plus underscore aliases) with deterministic native/facade default and alias assertions.
 
 ---
 

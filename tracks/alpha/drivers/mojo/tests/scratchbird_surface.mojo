@@ -139,6 +139,13 @@ fn _assert_config_session_pooling_manager_extensions() raises:
         "scratchbird://user:pass@localhost:3092/testdb?ssl=disable"
     )
     _require(cfg_ssl_alias.sslmode == "disable", "ssl alias mismatch")
+    var cfg_ssl_materials = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&sslrootcert=/tmp/ca.pem&sslcert=/tmp/client.crt&sslkey=/tmp/client.key&sslpassword=secret"
+    )
+    _require(cfg_ssl_materials.ssl_root_cert == "/tmp/ca.pem", "sslrootcert alias mismatch")
+    _require(cfg_ssl_materials.ssl_cert == "/tmp/client.crt", "sslcert alias mismatch")
+    _require(cfg_ssl_materials.ssl_key == "/tmp/client.key", "sslkey alias mismatch")
+    _require(cfg_ssl_materials.ssl_password == "secret", "sslpassword alias mismatch")
     var cfg_compression_none = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=none"
     )
@@ -301,6 +308,10 @@ fn main() raises:
     _require(not cfg.rewrite_batched_inserts, "rewrite_batched_inserts default mismatch")
     _require(cfg.logger_level == "OFF", "logger_level default mismatch")
     _require(cfg.logger_file == "", "logger_file default mismatch")
+    _require(cfg.ssl_root_cert == "", "ssl_root_cert default mismatch")
+    _require(cfg.ssl_cert == "", "ssl_cert default mismatch")
+    _require(cfg.ssl_key == "", "ssl_key default mismatch")
+    _require(cfg.ssl_password == "", "ssl_password default mismatch")
     _require(not cfg.metadata_expand_schema_parents, "metadata_expand_schema_parents default mismatch")
     _require(cfg.tcp_keepalive, "tcpkeepalive default mismatch")
     _require(cfg.pooling_enabled, "pooling default mismatch")
