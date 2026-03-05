@@ -61,6 +61,7 @@ Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
 - `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native bootstrap smoke in `tests/integration.mojo` and `tests/sbdriver_conformance.py`
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail when native bootstrap launcher is unavailable/failing
+- `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN` to require explicit `SCRATCHBIRD_MOJO_URL` for conformance (default lane behavior uses deterministic fallback DSN)
 
 ## Next Steps
 

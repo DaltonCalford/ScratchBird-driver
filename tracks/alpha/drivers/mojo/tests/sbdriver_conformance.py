@@ -38,6 +38,11 @@ def _is_truthy(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _deterministic_fallback_dsn() -> str:
+    # Deterministic shim fallback keeps conformance non-skipping in default lane runs.
+    return "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
+
+
 def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
@@ -408,7 +413,9 @@ def main() -> None:
         return
 
     tests = _parse_tests(text)
-    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "")
+    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
+    if not dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
+        dsn = _deterministic_fallback_dsn()
     results = _run_query_tests(tests, dsn)
     summary = "[" + ",".join(results) + "]"
     sys.stdout.write("{\"suite\":\"mojo-harness\",\"results\":" + summary + ",\"status\":\"ok\"}\n")

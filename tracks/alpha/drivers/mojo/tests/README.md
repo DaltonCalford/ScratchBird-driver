@@ -47,6 +47,8 @@ Conformance `prepare_bind` checks prefer `connection.prepare(...).execute(...)`
 when available and fall back to `connection.query(sql, params)` for older lanes.
 Conformance manifest `requires` entries are enforced in-harness; unsupported
 requirements are reported as `skipped`.
+Conformance defaults to a deterministic lane DSN when `SCRATCHBIRD_MOJO_URL`
+is unset, so core tests run as `ok` in local lane runs without external env.
 
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
@@ -61,5 +63,7 @@ Environment variables:
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED`: optional override to fail launcher smoke when native bootstrap cannot run
 - `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
+- `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN`: optional override to require explicit `SCRATCHBIRD_MOJO_URL` (restores skip behavior when URL is unset)
 
-Without `SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped.
+With `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN=1` and no
+`SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped.
