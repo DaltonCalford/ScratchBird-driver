@@ -23,9 +23,9 @@
 - `tests/scratchbird_surface.mojo:87` (facade guard SQLSTATE assertions)
 - `tests/native_bootstrap.mojo:53` (native-bootstrap connect/ping/query smoke)
 - `tests/integration.py:79` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
-- `tests/integration.py:314` (deterministic fallback DSN keeps direct integration non-skipping by default)
-- `tests/integration.py:322` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
-- `tests/integration.py:334` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
+- `tests/integration.py:425` (deterministic fallback DSN keeps direct integration non-skipping by default)
+- `tests/integration.py:433` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
+- `tests/integration.py:445` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
 - `tests/sbdriver_conformance.py:80` (conformance launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
 - `tests/sbdriver_conformance.py:425` (deterministic fallback DSN keeps conformance non-skipping by default)
 - Gaps/next actions:
@@ -55,8 +55,9 @@
 - `tests/txn_exec_parity.py:130` (savepoint message/payload parity assertions)
 - `tests/txn_exec_parity.py:150` (savepoint guard SQLSTATE assertions)
 - `tests/txn_exec_parity.py:230` (shim savepoint lifecycle + rollback-trim assertions)
+- `tests/integration.py:207` (integration smoke begin/savepoint/rollback/commit lifecycle assertions)
 - Gaps/next actions:
-- Add live transaction/savepoint integration coverage against a running ScratchBird endpoint.
+- Expand transaction/savepoint integration assertions to managed/listener runtime matrices once live environments are available.
 
 ## EXEC (JDBCBL)
 
@@ -91,8 +92,9 @@
 - `tests/txn_exec_parity.py:263` (shim stream fetch-boundary assertions)
 - `tests/txn_exec_parity.py:279` (shim cancel stream SQLSTATE `57014` assertion)
 - `tests/sbdriver_conformance.py:204` (manifest `requires` gating for prepare/cancel capabilities)
+- `tests/integration.py:225` (integration smoke prepare/mismatch and stream/cancel-recovery assertions)
 - Gaps/next actions:
-- Add live streamed fetch-boundary and cancellation assertions against long-running server statements.
+- Expand streamed fetch-boundary and cancellation assertions to long-running managed/listener runtime matrices once live environments are available.
 
 ## META (JDBCBL)
 
@@ -147,9 +149,9 @@
 - `tests/metadata_execution.py:378` (bridge-shim SQL LIKE escape-aware/case-insensitive matcher coverage)
 - `tests/metadata_recursive_schema.py:117` (deterministic editor payload shape contract coverage)
 - `tests/metadata_recursive_schema.py:147` (shim connection default editor payload contract coverage)
-- `tests/integration.py:167` (integration smoke DDL-editor payload contract + tree-parent assertions)
-- `tests/integration.py:192` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
-- `tests/integration.py:234` (integration smoke deterministic fallback metadata content assertions)
+- `tests/integration.py:276` (integration smoke DDL-editor payload contract + tree-parent assertions)
+- `tests/integration.py:301` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
+- `tests/integration.py:343` (integration smoke deterministic fallback metadata content assertions)
 - Gaps/next actions:
 - Expand metadata stability/payload assertions to runtime managed/listener endpoint matrices once live environments are available.
 

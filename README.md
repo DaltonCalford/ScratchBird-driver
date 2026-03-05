@@ -77,6 +77,7 @@ Legend:
 - **Mojo lane:** Added wildcard/escape and null-aware metadata restriction semantics (`LIKE ... ESCAPE '\\'`, `IS NULL`) with deterministic smoke coverage in native bootstrap and facade tests.
 - **Mojo lane:** Added broader metadata restriction alias-family support (`catalog`, `index`, `constraint`, `routine`, `type`) with expanded predicate coverage for schema/table/index/constraint/routine/type query families.
 - **Mojo lane:** Extended integration smoke metadata checks with deterministic metadata stability and DDL payload contract assertions; synchronized Mojo lane README/checklist/baseline mapping artifacts.
+- **Mojo lane:** Expanded integration smoke to cover transaction/savepoint lifecycle and prepare/stream-cancel recovery checks for direct and manager-proxy execution paths.
 
 ---
 

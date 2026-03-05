@@ -164,6 +164,115 @@ def _schema_name_from_row(row: Any) -> str | None:
     return None
 
 
+def _row_scalar_values(row: Any) -> list[Any]:
+    if isinstance(row, Mapping):
+        return list(row.values())
+    if isinstance(row, (tuple, list)):
+        return list(row)
+    return [row]
+
+
+def _first_scalar_from_row(row: Any) -> Any:
+    values = _row_scalar_values(row)
+    if len(values) == 0:
+        return None
+    return values[0]
+
+
+def _open_stream(conn: Any, sql: str, fetch_size: int) -> Any:
+    try:
+        return conn.stream(sql, fetch_size=fetch_size)
+    except TypeError:
+        return conn.stream(sql, None, fetch_size)
+
+
+def _stream_next(stream: Any, conn: Any) -> Any:
+    if hasattr(stream, "__next__"):
+        return next(stream)
+    next_method = getattr(stream, "next", None)
+    if callable(next_method):
+        try:
+            return next_method(conn)
+        except TypeError:
+            return next_method()
+    raise RuntimeError("stream object does not support next()")
+
+
+def _close_stream(stream: Any) -> None:
+    close_method = getattr(stream, "close", None)
+    if callable(close_method):
+        close_method()
+
+
+def _validate_transaction_smoke(conn: Any) -> None:
+    # Inactive lifecycle calls should remain no-op in lane scaffolding.
+    conn.commit()
+    conn.rollback()
+
+    conn.begin()
+    savepoint = conn.set_savepoint("smoke_sp")
+    if str(savepoint) != "smoke_sp":
+        raise RuntimeError("savepoint name roundtrip mismatch")
+    _ = conn.set_savepoint("smoke_tail")
+    conn.rollback_to_savepoint("smoke_sp")
+    conn.release_savepoint("smoke_sp")
+    conn.commit()
+
+    conn.begin()
+    conn.rollback()
+
+
+def _validate_prepare_and_stream_smoke(conn: Any, deterministic_lane: bool) -> None:
+    statement = conn.prepare("SELECT $1::INTEGER, $2::INTEGER")
+    prepared = statement.execute(["5", "7"])
+    prepared_rows = _rows_from_result(prepared)
+    if len(prepared_rows) == 0:
+        raise RuntimeError("prepared execute should return at least one row")
+    first_values = _row_scalar_values(prepared_rows[0])
+    if len(first_values) < 2 or int(first_values[0]) != 5 or int(first_values[1]) != 7:
+        raise RuntimeError("prepared execute row payload mismatch")
+    try:
+        statement.execute(["5"])
+        raise RuntimeError("prepared execute should reject parameter mismatch")
+    except Exception as exc:
+        sqlstate = str(getattr(exc, "sqlstate", "") or "")
+        if sqlstate not in ("", "07001"):
+            raise RuntimeError(f"unexpected prepared mismatch sqlstate '{sqlstate}'") from exc
+        if sqlstate == "":
+            text = str(exc).lower()
+            if "parameter" not in text and "mismatch" not in text:
+                raise RuntimeError(f"unexpected prepared mismatch error '{exc}'") from exc
+
+    stream = _open_stream(conn, "SELECT id FROM basic_table ORDER BY id", 1)
+    try:
+        first_stream_row = _stream_next(stream, conn)
+        if int(_first_scalar_from_row(first_stream_row)) != 1:
+            raise RuntimeError("stream first-row payload mismatch")
+        conn.cancel()
+        cancelled = False
+        try:
+            _ = _stream_next(stream, conn)
+        except StopIteration:
+            cancelled = True
+        except Exception as exc:
+            cancelled = True
+            sqlstate = str(getattr(exc, "sqlstate", "") or "")
+            if sqlstate not in ("", "57014"):
+                raise RuntimeError(f"unexpected stream cancel sqlstate '{sqlstate}'") from exc
+        if deterministic_lane and not cancelled:
+            raise RuntimeError("deterministic stream cancel should interrupt iteration")
+    finally:
+        _close_stream(stream)
+
+    recovery_stream = _open_stream(conn, "SELECT id FROM basic_table ORDER BY id", 1)
+    try:
+        recovery_row = _stream_next(recovery_stream, conn)
+        if int(_first_scalar_from_row(recovery_row)) != 1:
+            raise RuntimeError("post-cancel stream recovery payload mismatch")
+    finally:
+        _close_stream(recovery_stream)
+
+
 def _validate_payload_contract(payload: Mapping[str, Any]) -> None:
     if set(payload.keys()) != {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"}:
         raise RuntimeError("ddl_editor_schema_payload keys mismatch")
@@ -278,6 +387,8 @@ def _run_smoke_for_dsn(dsn: str, label: str, deterministic_lane: bool = False) -
         if len(res.rows) == 0:
             raise RuntimeError("type_coverage returned no rows")
 
+        _validate_transaction_smoke(conn)
+        _validate_prepare_and_stream_smoke(conn, deterministic_lane)
         _validate_metadata_stability(conn)
         payload = conn.ddl_editor_schema_payload(schema_pattern="users.%", expand_schema_parents=True)
         _validate_payload_contract(payload)
