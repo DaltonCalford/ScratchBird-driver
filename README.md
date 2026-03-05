@@ -51,7 +51,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded metadata parity scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
 
 ---
 
