@@ -151,6 +151,8 @@ def test_shim_connection_ddl_editor_schema_payload_defaults() -> None:
     _require(payload["schemaPattern"] == "%", "shim ddl payload should default schemaPattern to %")
     _require(payload["expandSchemaParents"] is False, "shim ddl payload should default to no parent expansion")
     _require(isinstance(payload["schemaPaths"], list), "shim ddl payload schemaPaths should be list")
+    _require(len(payload["schemaPaths"]) > 0, "shim ddl payload schemaPaths should not be empty")
+    _require("users.alice.dev" in payload["schemaPaths"], "shim ddl payload should include deterministic schema rows")
     conn.close()
 
 

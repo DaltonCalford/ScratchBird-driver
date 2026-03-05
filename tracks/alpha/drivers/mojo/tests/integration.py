@@ -125,6 +125,24 @@ def _run_smoke_for_dsn(dsn: str, label: str) -> None:
         res = conn.query("SELECT * FROM type_coverage")
         if len(res.rows) == 0:
             raise RuntimeError("type_coverage returned no rows")
+
+        if conn.query_metadata_rows("schemas") <= 0:
+            raise RuntimeError("metadata schemas rowcount should be positive")
+        if conn.query_metadata_rows_restricted("tables", "schema", "public") <= 0:
+            raise RuntimeError("restricted metadata table rowcount should be positive")
+        if conn.query_metadata_rows_restricted_multi("tables", {"schema": "public", "table": "ord%"}) <= 0:
+            raise RuntimeError("multi-restricted metadata table rowcount should be positive")
+        payload = conn.ddl_editor_schema_payload(schema_pattern="users.%", expand_schema_parents=True)
+        if set(payload.keys()) != {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"}:
+            raise RuntimeError("ddl_editor_schema_payload keys mismatch")
+        if payload.get("schemaPattern") != "users.%":
+            raise RuntimeError("ddl_editor_schema_payload schemaPattern mismatch")
+        if payload.get("expandSchemaParents") is not True:
+            raise RuntimeError("ddl_editor_schema_payload expandSchemaParents mismatch")
+        if not isinstance(payload.get("schemaPaths"), list) or len(payload.get("schemaPaths")) == 0:
+            raise RuntimeError("ddl_editor_schema_payload schemaPaths should be a non-empty list")
+        if not isinstance(payload.get("schemaTree"), list):
+            raise RuntimeError("ddl_editor_schema_payload schemaTree should be a list")
         print(f"Mojo {label} smoke OK")
     finally:
         conn.close()

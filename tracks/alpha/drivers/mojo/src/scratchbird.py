@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import datetime
 import json
+import re
 import struct
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
 import urllib.parse
@@ -764,6 +765,11 @@ class _ShimConnection:
             return ScratchBirdResult([[int(bound[0]), int(bound[1])]], [], 1)
         if "type_coverage" in statement:
             return ScratchBirdResult([["ok"]], [], 1)
+        if _is_supported_metadata_query(statement):
+            if _matches_metadata_query(statement, METADATA_SCHEMAS_QUERY.lower()):
+                rows = _schema_rows_for_metadata_query(statement)
+                return ScratchBirdResult(rows, [], len(rows))
+            return ScratchBirdResult([[1]], [], 1)
         return ScratchBirdResult([], [], 0)
 
     def query_metadata(self, collection_name: Optional[str] = None) -> ScratchBirdResult:
@@ -1286,6 +1292,45 @@ def normalize_metadata_collection_name(collection_name: Optional[str] = None) ->
 def resolve_metadata_collection_query(collection_name: Optional[str] = None) -> str:
     resolved = normalize_metadata_collection_name(collection_name)
     return _METADATA_COLLECTION_QUERY_MAP[resolved]
+
+
+def _matches_metadata_query(actual_sql: str, base_sql: str) -> bool:
+    actual = actual_sql.strip().lower()
+    base = base_sql.strip().lower()
+    if actual == base:
+        return True
+    if " order by " in base:
+        prefix, suffix = base.split(" order by ", 1)
+        order_suffix = f" order by {suffix}"
+        if actual.startswith(prefix) and actual.endswith(order_suffix):
+            return True
+    return False
+
+
+def _is_supported_metadata_query(statement: str) -> bool:
+    normalized = statement.strip().lower()
+    return any(_matches_metadata_query(normalized, query.lower()) for query in _METADATA_COLLECTION_QUERY_MAP.values())
+
+
+def _sql_like_match(value: str, pattern: str) -> bool:
+    regex = "^" + re.escape(pattern).replace("%", ".*").replace("_", ".") + "$"
+    return re.match(regex, value) is not None
+
+
+def _schema_rows_for_metadata_query(statement: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = [
+        {"schema_name": "users.alice.dev"},
+        {"schema_name": "users.bob.dev"},
+        {"schema_name": "sys"},
+    ]
+    match = re.search(r"schema_name\s+(=|like)\s+'((?:''|[^'])*)'", statement, re.IGNORECASE)
+    if match is None:
+        return rows
+    operator = match.group(1).lower()
+    raw_value = match.group(2).replace("''", "'")
+    if operator == "=":
+        return [row for row in rows if str(row.get("schema_name", "")) == raw_value]
+    return [row for row in rows if _sql_like_match(str(row.get("schema_name", "")), raw_value)]
 
 
 def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) -> str:

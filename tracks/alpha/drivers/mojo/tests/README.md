@@ -37,7 +37,7 @@ Expected behavior:
 - metadata recursive-schema smoke includes deterministic DDL-editor payload contract checks (`schemaPattern` / `expandSchemaParents` / `schemaPaths` / `schemaTree`) for both pure builder and shim-connection helper paths
 - lifecycle scaffold test reports `OK` and validates circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic behavior under current Mojo syntax
 - type-codec suite covers vector/range/composite/geometry/network plus temporal/json/jsonb/uuid and array-of-composite wrappers in the bridge shim
-- integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
+- integration smoke includes metadata wrapper stability checks plus `ddl_editor_schema_payload(...)` contract-key assertions, and prints skip messages when direct/manager/bad-auth env DSNs are not set
 
 ## Conformance Adapter
 

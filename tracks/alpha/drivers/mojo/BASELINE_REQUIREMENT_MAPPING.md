@@ -141,6 +141,8 @@
 - `tests/metadata_execution.py:262` (bridge-shim editor payload helper path with schema-pattern restriction shaping)
 - `tests/metadata_recursive_schema.py:117` (deterministic editor payload shape contract coverage)
 - `tests/metadata_recursive_schema.py:147` (shim connection default editor payload contract coverage)
+- `tests/integration.py:129` (integration smoke metadata wrapper rowcount stability assertions)
+- `tests/integration.py:135` (integration smoke DDL-editor payload contract-key assertions)
 - Gaps/next actions:
 - Add live metadata stability assertions (schemas/tables/columns) against running endpoints.
 - Add live metadata payload-shaping assertions against running endpoints.
