@@ -10,9 +10,9 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [ ] Implement SBWP type encoding/decoding wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: Open
-- [ ] Add array, composite, range, geometry, vector, inet/cidr/macaddr support. Issue: Open
-- [ ] Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: Open
+- [x] Implement bridge-shim type encode/decode wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.py` with deterministic tests in `tracks/alpha/drivers/mojo/tests/type_codecs.py`. Issue: DONE (2026-03-05)
+- [ ] Expand type support to composite, geometry, inet/cidr/macaddr (array/range/vector now covered in bridge shim). Issue: Open
+- [x] Add sys.* metadata helpers in bridge lane (`tracks/alpha/drivers/mojo/src/scratchbird.py`) with alias/query coverage in `tracks/alpha/drivers/mojo/tests/metadata_execution.py`. Issue: DONE (2026-03-05)
 
 ## P2 (Follow-ups)
 
