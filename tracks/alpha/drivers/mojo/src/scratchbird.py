@@ -441,14 +441,50 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         raise ScratchBirdError("authentication failed", "28P01")
 
 
+def _expected_param_count(sql: str) -> int:
+    max_index = 0
+    i = 0
+    while i < len(sql):
+        if sql[i] == "$":
+            j = i + 1
+            index = 0
+            has_digit = False
+            while j < len(sql) and sql[j].isdigit():
+                index = (index * 10) + int(sql[j])
+                has_digit = True
+                j += 1
+            if has_digit:
+                if index > max_index:
+                    max_index = index
+                i = j
+                continue
+        i += 1
+    return max_index
+
+
+class _ShimStatement:
+    def __init__(self, conn: "_ShimConnection", sql: str):
+        self._conn = conn
+        self._sql = sql
+
+    def execute(self, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        bound = [] if params is None else list(params)
+        return self._conn.query(self._sql, bound)
+
+
 class _ShimConnection:
     def __init__(self, config: ScratchBirdConfig):
         self.config = config
         self._cancel_requested = False
+        self._txn_id = 0
+        self._closed = False
 
     def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        self._cancel_requested = False
         statement = sql.strip().lower()
         bound = list(params) if params is not None else []
+        if params is not None and _expected_param_count(statement) != len(bound):
+            raise ScratchBirdError("parameter count mismatch", "07001")
         if statement == "select 1":
             return ScratchBirdResult([[1]], [], 1)
         if statement.startswith("select id from basic_table"):
@@ -458,12 +494,8 @@ class _ShimConnection:
             rows = [[idx] for idx in range(1, 33)]
             return ScratchBirdResult(rows, [], len(rows))
         if statement == "select $1::integer":
-            if len(bound) != 1:
-                raise ScratchBirdError("parameter count mismatch", "07001")
             return ScratchBirdResult([[int(bound[0])]], [], 1)
         if statement == "select $1::integer, $2::integer":
-            if len(bound) != 2:
-                raise ScratchBirdError("parameter count mismatch", "07001")
             return ScratchBirdResult([[int(bound[0]), int(bound[1])]], [], 1)
         if "type_coverage" in statement:
             return ScratchBirdResult([["ok"]], [], 1)
@@ -478,7 +510,32 @@ class _ShimConnection:
         return self.query_metadata(collection_name).rows
 
     def close(self) -> None:
+        self._cancel_requested = False
+        self._txn_id = 0
+        self._closed = True
         return None
+
+    def ping(self) -> bool:
+        return not self._closed
+
+    def prepare(self, sql: str) -> _ShimStatement:
+        return _ShimStatement(self, sql)
+
+    def begin(self, **kwargs: Any) -> None:
+        _ = kwargs
+        if self._txn_id != 0:
+            raise ScratchBirdError("transaction already active", "25001")
+        self._txn_id = 1
+
+    def commit(self) -> None:
+        if self._txn_id == 0:
+            return
+        self._txn_id = 0
+
+    def rollback(self) -> None:
+        if self._txn_id == 0:
+            return
+        self._txn_id = 0
 
     def stream(
         self,

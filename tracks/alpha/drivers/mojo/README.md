@@ -21,6 +21,7 @@ Current implementation is a Mojo-Python interop lane:
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
 - Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
+- Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping` and transaction lifecycle helpers used by lane tests.
 - Native Mojo transport/auth remains future work.
 
 ## Platform Support

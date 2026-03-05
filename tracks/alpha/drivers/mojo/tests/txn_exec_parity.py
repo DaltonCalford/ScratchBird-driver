@@ -138,6 +138,40 @@ def test_query_empty_params_uses_extended_path() -> None:
     _require(("read",) not in conn.calls, "extended path should not call simple _read_resultset directly")
 
 
+def test_shim_prepare_execute_and_mismatch() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        stmt = conn.prepare("SELECT $1::INTEGER, $2::INTEGER")
+        result = stmt.execute([5, 7])
+        _require(result.rows == [[5, 7]], "prepared execute should decode ordered params")
+        try:
+            stmt.execute([5])
+            raise RuntimeError("expected prepared mismatch to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "07001", "prepared mismatch should raise 07001")
+    finally:
+        conn.close()
+
+
+def test_shim_ping_and_txn_lifecycle() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        _require(conn.ping(), "ping should succeed on open shim connection")
+        conn.commit()
+        conn.rollback()
+        conn.begin()
+        try:
+            conn.begin()
+            raise RuntimeError("expected nested begin to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "25001", "nested begin should raise 25001")
+        conn.rollback()
+        conn.begin()
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_stream_fetch_boundaries() -> None:
     conn = scratchbird.connect(_shim_cfg())
     try:
@@ -173,6 +207,28 @@ def test_cancel_stream_returns_57014() -> None:
         conn.close()
 
 
+def test_post_cancel_stream_recovery() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        stream = conn.stream(
+            "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
+            None,
+            1,
+        )
+        _ = stream.__next__()
+        conn.cancel()
+        try:
+            stream.__next__()
+            raise RuntimeError("expected cancelled stream to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "57014", "cancelled stream should raise sqlstate 57014")
+
+        post_cancel = conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1)
+        _require(post_cancel.__next__() == [1], "post-cancel stream should recover")
+    finally:
+        conn.close()
+
+
 def test_close_is_idempotent_for_connection_and_stream() -> None:
     conn = scratchbird.connect(_shim_cfg())
     stream = conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1)
@@ -195,8 +251,11 @@ def main() -> None:
     test_commit_and_rollback_send_when_active_txn()
     test_query_none_params_uses_simple_path()
     test_query_empty_params_uses_extended_path()
+    test_shim_prepare_execute_and_mismatch()
+    test_shim_ping_and_txn_lifecycle()
     test_stream_fetch_boundaries()
     test_cancel_stream_returns_57014()
+    test_post_cancel_stream_recovery()
     test_close_is_idempotent_for_connection_and_stream()
     print("Mojo TXN/EXEC parity tests OK")
 

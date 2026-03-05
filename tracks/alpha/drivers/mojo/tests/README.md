@@ -40,6 +40,9 @@ By default, both `sbdriver-conformance` and `integration.py` run the native
 bootstrap smoke (`tests/native_bootstrap.mojo`) first, then continue through
 the bridge-shim harness path.
 
+Conformance `prepare_bind` checks prefer `connection.prepare(...).execute(...)`
+when available and fall back to `connection.query(sql, params)` for older lanes.
+
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```

@@ -12,7 +12,7 @@
 - `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
-- `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
+- `src/scratchbird.py:421` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
 - `src/scratchbird_native.mojo:23` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
 - `src/scratchbird_native.mojo:413` (native-bootstrap `connect` entrypoint)
 - `src/scratchbird_native.mojo:111` (native-bootstrap `ping` surface)
@@ -48,15 +48,16 @@
 - `src/scratchbird.mojo:1671` (`commit` no-op when no active txn)
 - `src/scratchbird.mojo:1678` (`rollback` no-op when no active txn)
 - `src/scratchbird.mojo:1703` (`_drain_until_ready` propagates protocol error details)
-- `src/scratchbird.py:205` (bridge-shim nested-transaction guard rails)
+- `src/scratchbird.py:524` (bridge-shim nested-transaction guard rails)
 - `src/scratchbird_native.mojo:77` (native-bootstrap `begin` nested-transaction guard `25001`)
 - `src/scratchbird_native.mojo:82` (native-bootstrap `commit` no-op when no active txn)
 - `src/scratchbird_native.mojo:87` (native-bootstrap `rollback` no-op when no active txn)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:55` (`begin` flag/payload mapping assertions)
-- `tests/txn_exec_parity.py:89` (nested `begin()` rejection with SQLSTATE `25001`)
+- `tests/txn_exec_parity.py:93` (nested `begin()` rejection with SQLSTATE `25001`)
 - `tests/txn_exec_parity.mojo:90` (inactive transaction commit/rollback no-op assertions)
 - `tests/txn_exec_parity.mojo:98` (active transaction commit/rollback message assertions)
+- `tests/txn_exec_parity.py:156` (shim `ping` + transaction lifecycle helper assertions)
 - `tests/native_bootstrap.mojo:55` (native-bootstrap nested `begin()` rejection with `25001`)
 - `tests/native_bootstrap.mojo:53` (native-bootstrap inactive `commit`/`rollback` no-op assertions)
 - Gaps/next actions:
@@ -75,9 +76,11 @@
 - `src/scratchbird.mojo:1632` (`prepare`)
 - `src/scratchbird.mojo:810` (`ScratchBirdStatement.execute`)
 - `src/scratchbird.mojo:1699` (`cancel`)
-- `src/scratchbird.py:206` (bridge-shim `stream` entrypoint)
-- `src/scratchbird.py:217` (bridge-shim `cancel` signal path)
-- `src/scratchbird.py:221` (bridge-shim stream iterator with `57014` cancellation behavior)
+- `src/scratchbird.py:521` (bridge-shim `prepare` statement entrypoint)
+- `src/scratchbird.py:465` (bridge-shim statement `execute` path through query bindings)
+- `src/scratchbird.py:540` (bridge-shim `stream` entrypoint)
+- `src/scratchbird.py:551` (bridge-shim `cancel` signal path)
+- `src/scratchbird.py:565` (bridge-shim stream iterator with `57014` cancellation behavior)
 - `src/scratchbird_native.mojo:69` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
 - `src/scratchbird_native.mojo:73` (native-bootstrap `prepare` statement scaffold)
 - `src/scratchbird_native.mojo:146` (native-bootstrap prepared `execute` path)
@@ -89,9 +92,11 @@
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
-- `tests/txn_exec_parity.py:141` (stream fetch-boundary and close lifecycle assertions)
-- `tests/txn_exec_parity.py:157` (cancelled stream returns SQLSTATE `57014`)
-- `tests/sbdriver_conformance.py:245` (prepare-bind and cancel manifest paths enabled by default)
+- `tests/txn_exec_parity.py:141` (shim prepared execute + `07001` mismatch assertions)
+- `tests/txn_exec_parity.py:175` (stream fetch-boundary assertions)
+- `tests/txn_exec_parity.py:191` (cancelled stream returns SQLSTATE `57014`)
+- `tests/txn_exec_parity.py:210` (post-cancel stream recovery assertions)
+- `tests/sbdriver_conformance.py:279` (prepare-bind and cancel manifest paths enabled by default)
 - `tests/sbdriver_conformance.py:236` (manifest `expect_sqlstate` matching)
 - `tests/integration.mojo:22`
 - `tests/sbdriver_conformance.mojo:161`
@@ -147,9 +152,9 @@
 - `src/scratchbird.mojo:244` (`_parse_array_literal`)
 - `src/scratchbird.mojo:262` (`_parse_vector_literal`)
 - `src/scratchbird.mojo:279` (`_parse_range_literal`)
-- `src/scratchbird.py:107` (bridge-shim OID constants and fallback raw-wrapper path)
-- `src/scratchbird.py:151` (bridge-shim array/vector/range parser utilities)
-- `src/scratchbird.py:217` (bridge-shim encode/decode helpers with truncation guard and unknown-OID fallback)
+- `src/scratchbird.py:343` (bridge-shim OID-to-network mapping and fallback raw-wrapper path)
+- `src/scratchbird.py:242` (bridge-shim array/vector/range parser utilities)
+- `src/scratchbird.py:355` (bridge-shim encode/decode helpers with truncation guard and unknown-OID fallback)
 - Lane-local test anchors:
 - `tests/integration.mojo:26`
 - `tests/sbdriver_conformance.mojo:182`
@@ -164,7 +169,7 @@
 - Current status: Partial
 - Lane-local source anchors:
 - `src/scratchbird.mojo:139` (`ScratchBirdError` with `sqlstate`, `detail`, `hint`)
-- `src/scratchbird.py:133` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
+- `src/scratchbird.py:178` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
 - `src/scratchbird.mojo:1127` (`parse_error_message`)
 - `src/scratchbird.mojo:1612` (`_raise_error`)
 - `src/scratchbird.mojo:1511` (`query` wraps operation and propagates failures)
@@ -195,6 +200,6 @@
 - Lane-local test anchors:
 - `tests/integration.mojo:31`
 - `tests/sbdriver_conformance.mojo:212`
-- `tests/txn_exec_parity.py:176` (idempotent close behavior for connection and stream)
+- `tests/txn_exec_parity.py:232` (idempotent close behavior for connection and stream)
 - Gaps/next actions:
 - Complete or remove placeholder lifecycle paths (`pass` markers in keepalive/telemetry/pipeline scaffolds) to reduce ambiguity.

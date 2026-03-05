@@ -284,7 +284,15 @@ def _run_query_tests(tests, dsn: str):
                     results.append(_render_result(spec.test_id, "skipped", ["missing sql"]))
                     continue
                 try:
-                    res = conn.query(spec.sql, spec.params)
+                    if hasattr(conn, "prepare"):
+                        stmt = conn.prepare(spec.sql)
+                        execute = getattr(stmt, "execute", None)
+                        if callable(execute):
+                            res = execute(spec.params)
+                        else:
+                            res = conn.query(spec.sql, spec.params)
+                    else:
+                        res = conn.query(spec.sql, spec.params)
                     if spec.expect_sqlstate:
                         results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
                     elif spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
