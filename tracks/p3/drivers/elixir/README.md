@@ -55,5 +55,6 @@ config :my_app, MyApp.Repo,
 Integration tests use:
 
 - `SCRATCHBIRD_TEST_DSN`
+- `SCRATCHBIRD_TEST_MANAGER_DSN`
 
 See `docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md` for requirements.

@@ -3,7 +3,7 @@
 ## ScratchBird.Connection
 
 - `connect(opts)` -> `{:ok, conn} | {:error, reason}`
-- `query(conn, sql, params)` -> `{:ok, result} | {:error, reason}`
+- `query(conn, sql, params)` -> `{:ok, result, conn} | {:error, reason, conn}`
 - `close(conn)`
 - `begin(conn, opts)`, `commit(conn, flags)`, `rollback(conn, flags)`
 - `savepoint(conn, name)`, `release_savepoint(conn, name)`, `rollback_to_savepoint(conn, name)`

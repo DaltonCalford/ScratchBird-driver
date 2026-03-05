@@ -2,7 +2,7 @@
 
 ## Status
 
-Partial SBWP v1.1 implementation. TLS required, binary-only enforced, zstd rejected; metadata helpers and conformance coverage remain incomplete.
+SBWP v1.1 core implementation with TLS-required/binary-only guards, SQLSTATE class mapping, metadata helper queries, and env-gated integration coverage.
 
 ## Install
 
@@ -21,8 +21,9 @@ Requires Elixir ~> 1.15 (per `mix.exs`).
 {:ok, conn} = ScratchBird.Connection.connect(
   url: "scratchbird://user:pass@localhost:3092/mydb"
 )
-{:ok, result} = ScratchBird.Connection.query(conn, "SELECT 1", [])
+{:ok, result, conn} = ScratchBird.Connection.query(conn, "SELECT 1", [])
 IO.inspect(result.rows)
+ScratchBird.Connection.close(conn)
 ```
 
 ## Ecto Repo
@@ -38,3 +39,4 @@ config :my_app, MyApp.Repo,
 Integration tests use:
 
 - `SCRATCHBIRD_TEST_DSN`
+- `SCRATCHBIRD_TEST_MANAGER_DSN`

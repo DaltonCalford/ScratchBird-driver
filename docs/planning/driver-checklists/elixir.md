@@ -4,21 +4,21 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [ ] Enforce TLS required (reject `sslmode=disable`) in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: Open
-- [ ] Enforce binary-only (reject `binary_transfer=false`) in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: Open
-- [ ] Reject `compression=zstd` until server support exists in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: Open
+- [x] Enforce TLS required (reject `sslmode=disable`) in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: DONE (2026-03-05)
+- [x] Enforce binary-only (reject `binary_transfer=false`) in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: DONE (2026-03-05)
+- [x] Reject `compression=zstd` until server support exists in `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`. Issue: DONE (2026-03-05)
 
 ## P1 (Core)
 
-- [ ] Add array encoding/decoding in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: Open
-- [ ] Add composite encoding/decoding in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: Open
-- [ ] Add vector literal encode/decode in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: Open
-- [ ] Add inet/cidr/macaddr encode/decode in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: Open
-- [ ] Add sys.* metadata helpers in `tracks/p3/drivers/elixir/lib/scratchbird/metadata.ex` and export from `tracks/p3/drivers/elixir/lib/scratchbird.ex`. Issue: Open
-- [ ] Add SQLSTATE class-prefix mapping in `tracks/p3/drivers/elixir/lib/scratchbird/errors.ex`. Issue: Open
+- [x] Add array encoding/decoding in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: DONE (2026-03-05)
+- [x] Add composite encoding/decoding in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: DONE (2026-03-05)
+- [x] Add vector literal encode/decode in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: DONE (2026-03-05)
+- [x] Add inet/cidr/macaddr encode/decode in `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`. Issue: DONE (2026-03-05)
+- [x] Add sys.* metadata helpers in `tracks/p3/drivers/elixir/lib/scratchbird/metadata.ex` and export from `tracks/p3/drivers/elixir/lib/scratchbird.ex`. Issue: DONE (2026-03-05)
+- [x] Add SQLSTATE class-prefix mapping in `tracks/p3/drivers/elixir/lib/scratchbird/errors.ex`. Issue: DONE (2026-03-05)
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests in `tracks/p3/drivers/elixir/test/`. Issue: Open
+- [x] Add conformance/integration tests in `tracks/p3/drivers/elixir/test/`. Issue: DONE (2026-03-05)
 
 ## P3 (Future)
