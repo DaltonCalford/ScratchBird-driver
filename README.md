@@ -93,6 +93,7 @@ Legend:
 - **Mojo lane:** Added JDBC config-property parity for `prepareThreshold`, `reWriteBatchedInserts`, `loggerLevel|logLevel`, and `loggerFile|logFile` in native bootstrap parsing (`prepare_threshold|preparethreshold`, `rewrite_batched_inserts|rewritebatchedinserts`, `logger_level|loggerlevel|log_level|loglevel`, `logger_file|loggerfile|log_file|logfile`) with deterministic native/facade default and alias assertions.
 - **Mojo lane:** Added JDBC TLS material property parsing parity (`sslrootcert`, `sslcert`, `sslkey`, `sslpassword`; plus underscore aliases) with deterministic native/facade default and alias assertions.
 - **Mojo lane:** Added JDBC camelCase alias parity for `currentSchema` and `defaultRowFetchSize`, and aligned native/facade connect behavior to allow `binary_transfer=false` and `compression=zstd` while continuing to reject unsupported compression values (for example `gzip`).
+- **Mojo lane:** Added strict malformed-integer DSN guards (`22023`) across numeric property aliases, added malformed bracketed-IPv6 authority guard coverage (`22023`), and aligned invalid `front_door_mode` guard SQLSTATE to `0A000` in native/facade smoke lanes.
 
 ---
 

@@ -664,6 +664,31 @@ fn main() raises:
         "DSN query contains malformed percent-escape",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@[::1/testdb?sslmode=require",
+        "22023",
+        "DSN contains malformed bracketed IPv6 host",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=abc",
+        "22023",
+        "port must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=abc",
+        "22023",
+        "connect_timeout must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&defaultRowFetchSize=abc",
+        "22023",
+        "default_row_fetch_size must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&manager_client_flags=abc",
+        "22023",
+        "manager_client_flags must be a valid integer",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?protocol=sql",
         "0A000",
         "protocol must be native",
@@ -674,8 +699,13 @@ fn main() raises:
         "authentication failed",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=invalid",
+        "0A000",
+        "front_door_mode must be direct or manager_proxy.",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?frontdoormode=invalid",
-        "22023",
+        "0A000",
         "front_door_mode must be direct or manager_proxy.",
     )
     _assert_connect_guard(

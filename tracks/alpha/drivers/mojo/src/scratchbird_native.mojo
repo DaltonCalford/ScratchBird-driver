@@ -820,6 +820,35 @@ fn _extract_port(dsn: String) -> Int:
         return 3092
 
 
+fn _dsn_has_malformed_bracketed_ipv6_host(dsn: String) -> Bool:
+    var host_port = _extract_host_port(dsn).strip()
+    if host_port == "":
+        return False
+    if host_port.startswith("["):
+        if "]" not in host_port:
+            return True
+        var sections = host_port.split("]", 1)
+        if len(sections) != 2:
+            return True
+        var suffix = String(sections[1]).strip()
+        if suffix == "":
+            return False
+        if not suffix.startswith(":"):
+            return True
+        var raw_port = String(suffix[1:]).strip()
+        if raw_port == "":
+            return True
+        try:
+            _ = Int(raw_port)
+            return False
+        except e:
+            _ = e
+            return True
+    if "[" in host_port or "]" in host_port:
+        return True
+    return False
+
+
 fn _is_hex_digit(ch: String) -> Bool:
     var value = ch.lower()
     return (value >= "0" and value <= "9") or (value >= "a" and value <= "f")
@@ -980,6 +1009,35 @@ fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
     except e:
         _ = e
         return default_value
+
+
+fn _is_valid_int_text(raw: String) -> Bool:
+    if raw.strip() == "":
+        return False
+    try:
+        _ = Int(raw)
+        return True
+    except e:
+        _ = e
+        return False
+
+
+fn _query_int_is_malformed(dsn: String, key: String) -> Bool:
+    if not _query_has_key(dsn, key):
+        return False
+    return not _is_valid_int_text(_query_value(dsn, key, ""))
+
+
+fn _query_int_alias_is_malformed(
+    dsn: String,
+    primary_key: String,
+    alias_key: String,
+) -> Bool:
+    if _query_has_key(dsn, primary_key):
+        return _query_int_is_malformed(dsn, primary_key)
+    if _query_has_key(dsn, alias_key):
+        return _query_int_is_malformed(dsn, alias_key)
+    return False
 
 
 fn _query_value_alias(
@@ -1376,13 +1434,54 @@ fn resolve_metadata_collection_query_restricted_multi(
 fn validate_connect_guards(config: ScratchBirdConfig) raises:
     if _dsn_has_malformed_query_escape(config.dsn):
         raise Error("22023 DSN query contains malformed percent-escape")
+    if _dsn_has_malformed_bracketed_ipv6_host(config.dsn):
+        raise Error("22023 DSN contains malformed bracketed IPv6 host")
+
+    if _query_int_alias_is_malformed(config.dsn, "port", "portnumber") or _query_int_is_malformed(config.dsn, "pgport"):
+        raise Error("22023 port must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "connect_timeout", "connecttimeout"):
+        raise Error("22023 connect_timeout must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "socket_timeout", "sockettimeout"):
+        raise Error("22023 socket_timeout must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "login_timeout", "logintimeout"):
+        raise Error("22023 login_timeout must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "acquire_timeout", "acquiretimeout") or _query_int_alias_is_malformed(config.dsn, "pooling_acquire_timeout", "poolingacquiretimeout"):
+        raise Error("22023 acquire_timeout must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "default_row_fetch_size", "fetch_size") or _query_int_alias_is_malformed(config.dsn, "fetchsize", "defaultrowfetchsize"):
+        raise Error("22023 default_row_fetch_size must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "prepare_threshold", "preparethreshold"):
+        raise Error("22023 prepare_threshold must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "min_pool_size", "minpoolsize"):
+        raise Error("22023 min_pool_size must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "max_pool_size", "maxpoolsize"):
+        raise Error("22023 max_pool_size must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "connection_lifetime", "connectionlifetime") or _query_int_is_malformed(config.dsn, "poolingconnectionlifetime"):
+        raise Error("22023 connection_lifetime must be a valid integer")
+    if _query_int_alias_is_malformed(config.dsn, "manager_client_flags", "mcp_client_flags"):
+        raise Error("22023 manager_client_flags must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "cb_failure_threshold"):
+        raise Error("22023 cb_failure_threshold must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "cb_recovery_timeout_ms"):
+        raise Error("22023 cb_recovery_timeout_ms must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "cb_success_threshold"):
+        raise Error("22023 cb_success_threshold must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "cb_half_open_max_requests"):
+        raise Error("22023 cb_half_open_max_requests must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "keepalive_max_idle_before_check_ms"):
+        raise Error("22023 keepalive_max_idle_before_check_ms must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "leak_threshold_ms"):
+        raise Error("22023 leak_threshold_ms must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "pipeline_max_in_flight"):
+        raise Error("22023 pipeline_max_in_flight must be a valid integer")
+    if _query_int_is_malformed(config.dsn, "pipeline_auto_flush_threshold"):
+        raise Error("22023 pipeline_auto_flush_threshold must be a valid integer")
 
     if config.protocol != "native":
         raise Error("0A000 protocol must be native")
 
     var mode = _normalize_front_door_mode_value(config.front_door_mode)
     if mode != "direct" and mode != "manager_proxy":
-        raise Error("22023 front_door_mode must be direct or manager_proxy.")
+        raise Error("0A000 front_door_mode must be direct or manager_proxy.")
     if mode == "manager_proxy" and config.manager_auth_token.strip() == "":
         raise Error("08001 manager_proxy mode requires manager_auth_token")
 
