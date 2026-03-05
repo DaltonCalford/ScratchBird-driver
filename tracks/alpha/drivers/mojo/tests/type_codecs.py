@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import datetime
 import struct
 import sys
 
@@ -71,6 +72,69 @@ def test_decode_unknown_oid_returns_raw() -> None:
     _require(raw.oid == 99999 and raw.data == b"abc", "raw fallback content mismatch")
 
 
+def test_decode_json_jsonb_and_uuid() -> None:
+    json_value = scratchbird.decode_value(scratchbird.OID_JSON, b'{"k":1,"v":"x"}')
+    _require(isinstance(json_value, scratchbird.ScratchBirdJson), "json decode wrapper mismatch")
+    _require(json_value.value == {"k": 1, "v": "x"}, "json decode value mismatch")
+
+    jsonb_value = scratchbird.decode_value(scratchbird.OID_JSONB, b'\x01{"ok":true}')
+    _require(isinstance(jsonb_value, scratchbird.ScratchBirdJsonb), "jsonb decode wrapper mismatch")
+    _require(jsonb_value.value == {"ok": True}, "jsonb decode value mismatch")
+
+    uuid_text = scratchbird.decode_value(scratchbird.OID_UUID, b"550e8400-e29b-41d4-a716-446655440000")
+    _require(uuid_text == "550e8400-e29b-41d4-a716-446655440000", "uuid text decode mismatch")
+
+    uuid_binary = scratchbird.decode_value(
+        scratchbird.OID_UUID,
+        bytes.fromhex("550e8400e29b41d4a716446655440000"),
+    )
+    _require(uuid_binary == "550e8400-e29b-41d4-a716-446655440000", "uuid binary decode mismatch")
+
+
+def test_decode_temporal_and_interval_types() -> None:
+    date_value = scratchbird.decode_value(scratchbird.OID_DATE, b"2026-03-05")
+    _require(isinstance(date_value, scratchbird.ScratchBirdDate), "date decode wrapper mismatch")
+    _require(date_value.value == datetime.date(2026, 3, 5), "date decode value mismatch")
+
+    time_value = scratchbird.decode_value(scratchbird.OID_TIME, b"12:34:56.123456")
+    _require(isinstance(time_value, scratchbird.ScratchBirdTime), "time decode wrapper mismatch")
+    _require(time_value.value == datetime.time(12, 34, 56, 123456), "time decode value mismatch")
+
+    ts_value = scratchbird.decode_value(scratchbird.OID_TIMESTAMP, b"2026-03-05 12:34:56.123456")
+    _require(isinstance(ts_value, scratchbird.ScratchBirdTimestamp), "timestamp decode wrapper mismatch")
+    _require(ts_value.value == datetime.datetime(2026, 3, 5, 12, 34, 56, 123456), "timestamp decode value mismatch")
+
+    tstz_value = scratchbird.decode_value(scratchbird.OID_TIMESTAMPTZ, b"2026-03-05 12:34:56+00:00")
+    _require(isinstance(tstz_value, scratchbird.ScratchBirdTimestampTZ), "timestamptz decode wrapper mismatch")
+    _require(
+        tstz_value.value == datetime.datetime(2026, 3, 5, 12, 34, 56, tzinfo=datetime.timezone.utc),
+        "timestamptz decode value mismatch",
+    )
+
+    interval_value = scratchbird.decode_value(
+        scratchbird.OID_INTERVAL,
+        struct.pack("<qii", 1_500_000, 2, 3),
+    )
+    _require(isinstance(interval_value, scratchbird.ScratchBirdInterval), "interval decode wrapper mismatch")
+    _require(
+        interval_value.micros == 1_500_000 and interval_value.days == 2 and interval_value.months == 3,
+        "interval decode value mismatch",
+    )
+
+
+def test_decode_array_variants() -> None:
+    int_array = scratchbird.decode_value(scratchbird.OID_INT4_ARRAY, b"{1,2,3}")
+    _require(int_array == [1, 2, 3], "int4 array decode mismatch")
+
+    text_array = scratchbird.decode_value(scratchbird.OID_TEXT_ARRAY, b'{"a","b",NULL}')
+    _require(text_array == ["a", "b", None], "text array decode mismatch")
+
+    record_array = scratchbird.decode_value(scratchbird.OID_RECORD_ARRAY, b'{"(1,\\"two\\")","(3,\\"four\\")"}')
+    _require(len(record_array) == 2, "record array decode length mismatch")
+    _require(isinstance(record_array[0], scratchbird.ScratchBirdComposite), "record array item wrapper mismatch")
+    _require(record_array[0].fields == ["1", "two"], "record array first item mismatch")
+
+
 def test_decode_int4_truncation_error() -> None:
     try:
         scratchbird.decode_value(scratchbird.OID_INT4, b"\x01")
@@ -107,6 +171,21 @@ def test_encode_value_shapes() -> None:
     encoded_inet = scratchbird.encode_value(scratchbird.ScratchBirdNetwork(kind="inet", address="127.0.0.1/32"))
     _require(encoded_inet == b"127.0.0.1/32", "network encode mismatch")
 
+    encoded_json = scratchbird.encode_value(scratchbird.ScratchBirdJson(raw=b"", value={"ok": True}))
+    _require(encoded_json == b'{"ok": true}', "json encode mismatch")
+
+    encoded_jsonb = scratchbird.encode_value(scratchbird.ScratchBirdJsonb(raw=b"", value={"ok": True}))
+    _require(encoded_jsonb == b'\x01{"ok": true}', "jsonb encode mismatch")
+
+    encoded_date = scratchbird.encode_value(scratchbird.ScratchBirdDate(datetime.date(2026, 3, 5)))
+    _require(encoded_date == b"2026-03-05", "date encode mismatch")
+
+    encoded_interval = scratchbird.encode_value(scratchbird.ScratchBirdInterval(micros=2_000_000, days=1, months=0))
+    _require(encoded_interval == struct.pack("<qii", 2_000_000, 1, 0), "interval encode mismatch")
+
+    encoded_array = scratchbird.encode_value([scratchbird.ScratchBirdComposite(["1", "two"]), None, "x"])
+    _require(encoded_array == b'{"(1,two)",NULL,x}', "array-of-composite encode mismatch")
+
 
 def main() -> None:
     test_parse_array_literal_nested_and_null()
@@ -115,6 +194,9 @@ def main() -> None:
     test_parse_composite_literal_and_decode_record_oid()
     test_decode_geometry_and_network_types()
     test_decode_unknown_oid_returns_raw()
+    test_decode_json_jsonb_and_uuid()
+    test_decode_temporal_and_interval_types()
+    test_decode_array_variants()
     test_decode_int4_truncation_error()
     test_encode_value_shapes()
     print("Mojo type codec tests OK")

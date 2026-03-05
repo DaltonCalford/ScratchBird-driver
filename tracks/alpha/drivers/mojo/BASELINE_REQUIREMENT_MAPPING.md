@@ -12,7 +12,7 @@
 - `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
-- `src/scratchbird.py:421` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
+- `src/scratchbird.py:656` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
 - `src/scratchbird_native.mojo:23` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
 - `src/scratchbird_native.mojo:413` (native-bootstrap `connect` entrypoint)
 - `src/scratchbird_native.mojo:111` (native-bootstrap `ping` surface)
@@ -48,7 +48,7 @@
 - `src/scratchbird.mojo:1671` (`commit` no-op when no active txn)
 - `src/scratchbird.mojo:1678` (`rollback` no-op when no active txn)
 - `src/scratchbird.mojo:1703` (`_drain_until_ready` propagates protocol error details)
-- `src/scratchbird.py:524` (bridge-shim nested-transaction guard rails)
+- `src/scratchbird.py:759` (bridge-shim nested-transaction guard rails)
 - `src/scratchbird_native.mojo:77` (native-bootstrap `begin` nested-transaction guard `25001`)
 - `src/scratchbird_native.mojo:82` (native-bootstrap `commit` no-op when no active txn)
 - `src/scratchbird_native.mojo:87` (native-bootstrap `rollback` no-op when no active txn)
@@ -76,11 +76,11 @@
 - `src/scratchbird.mojo:1632` (`prepare`)
 - `src/scratchbird.mojo:810` (`ScratchBirdStatement.execute`)
 - `src/scratchbird.mojo:1699` (`cancel`)
-- `src/scratchbird.py:521` (bridge-shim `prepare` statement entrypoint)
-- `src/scratchbird.py:465` (bridge-shim statement `execute` path through query bindings)
-- `src/scratchbird.py:540` (bridge-shim `stream` entrypoint)
-- `src/scratchbird.py:551` (bridge-shim `cancel` signal path)
-- `src/scratchbird.py:565` (bridge-shim stream iterator with `57014` cancellation behavior)
+- `src/scratchbird.py:756` (bridge-shim `prepare` statement entrypoint)
+- `src/scratchbird.py:705` (bridge-shim statement `execute` path through query bindings)
+- `src/scratchbird.py:775` (bridge-shim `stream` entrypoint)
+- `src/scratchbird.py:786` (bridge-shim `cancel` signal path)
+- `src/scratchbird.py:800` (bridge-shim stream iterator with `57014` cancellation behavior)
 - `src/scratchbird_native.mojo:69` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
 - `src/scratchbird_native.mojo:73` (native-bootstrap `prepare` statement scaffold)
 - `src/scratchbird_native.mojo:146` (native-bootstrap prepared `execute` path)
@@ -152,24 +152,27 @@
 - `src/scratchbird.mojo:244` (`_parse_array_literal`)
 - `src/scratchbird.mojo:262` (`_parse_vector_literal`)
 - `src/scratchbird.mojo:279` (`_parse_range_literal`)
-- `src/scratchbird.py:343` (bridge-shim OID-to-network mapping and fallback raw-wrapper path)
-- `src/scratchbird.py:242` (bridge-shim array/vector/range parser utilities)
-- `src/scratchbird.py:355` (bridge-shim encode/decode helpers with truncation guard and unknown-OID fallback)
+- `src/scratchbird.py:415` (bridge-shim OID-to-network mapping and fallback raw-wrapper path)
+- `src/scratchbird.py:314` (bridge-shim array/vector/range parser utilities with quote-aware splitting)
+- `src/scratchbird.py:534` (bridge-shim encode/decode helpers with truncation guard, temporal/json/uuid wrappers, and array-of-composite handling)
 - Lane-local test anchors:
 - `tests/integration.mojo:26`
 - `tests/sbdriver_conformance.mojo:182`
-- `tests/type_codecs.py:15` (array/range/vector/composite parsing and decode/encode assertions)
-- `tests/type_codecs.py:38` (geometry + inet/cidr/macaddr decode assertions)
-- `tests/type_codecs.py:67` (unknown-OID fallback + `OID_INT4` truncation behavior)
+- `tests/type_codecs.py:18` (array/range/vector/composite parsing and decode/encode assertions)
+- `tests/type_codecs.py:53` (geometry + inet/cidr/macaddr decode assertions)
+- `tests/type_codecs.py:75` (json/jsonb/uuid decode assertions)
+- `tests/type_codecs.py:94` (date/time/timestamp/timestamptz/interval decode assertions)
+- `tests/type_codecs.py:125` (int/text/record array decode assertions including array-of-composite)
+- `tests/type_codecs.py:138` (unknown-OID fallback + `OID_INT4` truncation behavior)
 - Gaps/next actions:
-- Expand bridge-shim type coverage toward the remaining native OID matrix (json/jsonb/date/time/timestamp/interval/uuid/array-of-composite) once native Mojo transport is active.
+- Align bridge-shim temporal/json/uuid and array-of-composite codec semantics with native binary wire-format behavior once native Mojo transport is active.
 
 ## ERR (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
 - `src/scratchbird.mojo:139` (`ScratchBirdError` with `sqlstate`, `detail`, `hint`)
-- `src/scratchbird.py:178` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
+- `src/scratchbird.py:233` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
 - `src/scratchbird.mojo:1127` (`parse_error_message`)
 - `src/scratchbird.mojo:1612` (`_raise_error`)
 - `src/scratchbird.mojo:1511` (`query` wraps operation and propagates failures)

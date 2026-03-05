@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import datetime
+import json
 import struct
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 import urllib.parse
@@ -24,14 +26,25 @@ ISOLATION_SERIALIZABLE = 3
 
 OID_INT4 = 23
 OID_TEXT = 25
+OID_JSON = 114
 OID_POINT = 600
 OID_CIDR = 650
 OID_MACADDR = 829
 OID_INET = 869
 OID_VARCHAR = 1043
+OID_DATE = 1082
+OID_TIME = 1083
+OID_TIMESTAMP = 1114
+OID_TIMESTAMPTZ = 1184
+OID_INTERVAL = 1186
 OID_RECORD = 2249
+OID_UUID = 2950
 OID_MACADDR8 = 774
+OID_JSONB = 3802
 OID_SB_VECTOR = 16386
+OID_INT4_ARRAY = 1007
+OID_TEXT_ARRAY = 1009
+OID_RECORD_ARRAY = 2287
 
 TXN_FLAG_HAS_ISOLATION = 0x0001
 TXN_FLAG_HAS_ACCESS = 0x0002
@@ -129,6 +142,9 @@ _SCHEMA_KEYS = (
 )
 
 
+_BASE_DATE = datetime.datetime(2000, 1, 1, 0, 0, 0)
+
+
 @dataclass
 class ScratchBirdResult:
     rows: List[List[Any]]
@@ -164,6 +180,18 @@ class ScratchBirdComposite:
 
 
 @dataclass
+class ScratchBirdJson:
+    raw: bytes
+    value: Any = None
+
+
+@dataclass
+class ScratchBirdJsonb:
+    raw: bytes
+    value: Any = None
+
+
+@dataclass
 class ScratchBirdGeometry:
     raw: str
     wkt: str
@@ -173,6 +201,33 @@ class ScratchBirdGeometry:
 class ScratchBirdNetwork:
     kind: str
     address: str
+
+
+@dataclass
+class ScratchBirdDate:
+    value: Optional[datetime.date]
+
+
+@dataclass
+class ScratchBirdTime:
+    value: Optional[datetime.time]
+
+
+@dataclass
+class ScratchBirdTimestamp:
+    value: Optional[datetime.datetime]
+
+
+@dataclass
+class ScratchBirdTimestampTZ:
+    value: Optional[datetime.datetime]
+
+
+@dataclass
+class ScratchBirdInterval:
+    micros: int
+    days: int = 0
+    months: int = 0
 
 
 class ScratchBirdError(Exception):
@@ -193,7 +248,24 @@ def _split_array_items(text: str) -> List[str]:
     items: List[str] = []
     depth = 0
     token = ""
+    in_quotes = False
+    escaped = False
     for ch in text:
+        if escaped:
+            token += ch
+            escaped = False
+            continue
+        if ch == "\\":
+            token += ch
+            escaped = True
+            continue
+        if ch == '"':
+            token += ch
+            in_quotes = not in_quotes
+            continue
+        if in_quotes:
+            token += ch
+            continue
         if ch == "{":
             depth += 1
             token += ch
@@ -352,6 +424,113 @@ def _network_kind_for_oid(oid: int) -> Optional[str]:
     return None
 
 
+def _format_uuid_bytes(data: bytes) -> str:
+    if len(data) != 16:
+        return data.hex()
+    hex_str = data.hex()
+    return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+
+
+def _decode_date_value(data: bytes) -> ScratchBirdDate:
+    if len(data) == 4:
+        days = struct.unpack_from("<i", data, 0)[0]
+        return ScratchBirdDate((_BASE_DATE + datetime.timedelta(days=days)).date())
+    text = data.decode("utf-8").strip()
+    return ScratchBirdDate(datetime.date.fromisoformat(text) if text else None)
+
+
+def _decode_time_value(data: bytes) -> ScratchBirdTime:
+    if len(data) == 8:
+        micros_total = struct.unpack_from("<q", data, 0)[0]
+        seconds_total, micros = divmod(micros_total, 1_000_000)
+        hours, rem = divmod(seconds_total, 3600)
+        minutes, seconds = divmod(rem, 60)
+        return ScratchBirdTime(datetime.time(int(hours % 24), int(minutes), int(seconds), int(micros)))
+    text = data.decode("utf-8").strip()
+    return ScratchBirdTime(datetime.time.fromisoformat(text) if text else None)
+
+
+def _decode_timestamp_value(data: bytes) -> ScratchBirdTimestamp:
+    if len(data) == 8:
+        micros = struct.unpack_from("<q", data, 0)[0]
+        return ScratchBirdTimestamp(_BASE_DATE + datetime.timedelta(microseconds=micros))
+    text = data.decode("utf-8").strip()
+    if not text:
+        return ScratchBirdTimestamp(None)
+    return ScratchBirdTimestamp(datetime.datetime.fromisoformat(text.replace(" ", "T")))
+
+
+def _decode_timestamptz_value(data: bytes) -> ScratchBirdTimestampTZ:
+    if len(data) == 8:
+        micros = struct.unpack_from("<q", data, 0)[0]
+        return ScratchBirdTimestampTZ(_BASE_DATE + datetime.timedelta(microseconds=micros))
+    text = data.decode("utf-8").strip()
+    if not text:
+        return ScratchBirdTimestampTZ(None)
+    normalized = text.replace(" ", "T")
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    return ScratchBirdTimestampTZ(datetime.datetime.fromisoformat(normalized))
+
+
+def _decode_interval_value(data: bytes) -> ScratchBirdInterval:
+    if len(data) >= 16:
+        micros = struct.unpack_from("<q", data, 0)[0]
+        days = struct.unpack_from("<i", data, 8)[0]
+        months = struct.unpack_from("<i", data, 12)[0]
+        return ScratchBirdInterval(micros=micros, days=days, months=months)
+    text = data.decode("utf-8").strip()
+    if not text:
+        return ScratchBirdInterval(micros=0, days=0, months=0)
+    if ":" in text and " " not in text:
+        parts = text.split(":")
+        if len(parts) == 3:
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            seconds = float(parts[2])
+            micros = int(((hours * 3600) + (minutes * 60) + seconds) * 1_000_000)
+            return ScratchBirdInterval(micros=micros, days=0, months=0)
+    return ScratchBirdInterval(micros=0, days=0, months=0)
+
+
+def _decode_json_wrapper(data: bytes, jsonb: bool) -> Any:
+    if jsonb and len(data) > 0 and data[0] == 1:
+        raw = data
+        payload = data[1:]
+    else:
+        raw = data
+        payload = data
+    text = payload.decode("utf-8").strip()
+    value = json.loads(text) if text else None
+    if jsonb:
+        return ScratchBirdJsonb(raw=raw, value=value)
+    return ScratchBirdJson(raw=raw, value=value)
+
+
+def _encode_array_value(value: Iterable[Any]) -> bytes:
+    parts: List[str] = []
+    for item in value:
+        if item is None:
+            parts.append("NULL")
+            continue
+        if isinstance(item, (list, tuple)):
+            nested = _encode_array_value(item).decode("utf-8")
+            parts.append(nested)
+            continue
+        if isinstance(item, ScratchBirdComposite):
+            composite_text = encode_value(item).decode("utf-8")
+            escaped = composite_text.replace('"', '\\"')
+            parts.append(f'"{escaped}"')
+            continue
+        raw = str(item)
+        if any(ch in raw for ch in (",", "{", "}", "\"", " ")):
+            escaped = raw.replace('"', '\\"')
+            parts.append(f'"{escaped}"')
+        else:
+            parts.append(raw)
+    return ("{" + ",".join(parts) + "}").encode("utf-8")
+
+
 def encode_value(value: Any) -> bytes:
     if value is None:
         return b""
@@ -384,9 +563,33 @@ def encode_value(value: Any) -> bytes:
         return value.raw.encode("utf-8")
     if isinstance(value, ScratchBirdNetwork):
         return value.address.encode("utf-8")
+    if isinstance(value, ScratchBirdJson):
+        if value.raw:
+            return value.raw
+        return json.dumps(value.value).encode("utf-8")
+    if isinstance(value, ScratchBirdJsonb):
+        if value.raw:
+            return value.raw
+        return b"\x01" + json.dumps(value.value).encode("utf-8")
+    if isinstance(value, ScratchBirdDate):
+        return b"" if value.value is None else value.value.isoformat().encode("utf-8")
+    if isinstance(value, ScratchBirdTime):
+        return b"" if value.value is None else value.value.isoformat().encode("utf-8")
+    if isinstance(value, ScratchBirdTimestamp):
+        if value.value is None:
+            return b""
+        return value.value.isoformat(sep=" ").encode("utf-8")
+    if isinstance(value, ScratchBirdTimestampTZ):
+        if value.value is None:
+            return b""
+        return value.value.isoformat(sep=" ").encode("utf-8")
+    if isinstance(value, ScratchBirdInterval):
+        return struct.pack("<qii", int(value.micros), int(value.days), int(value.months))
     if isinstance(value, (list, tuple)):
-        vector = ",".join(str(float(item)) for item in value)
-        return f"[{vector}]".encode("utf-8")
+        if all(isinstance(item, (int, float)) for item in value):
+            vector = ",".join(str(float(item)) for item in value)
+            return f"[{vector}]".encode("utf-8")
+        return _encode_array_value(value)
     return str(value).encode("utf-8")
 
 
@@ -399,10 +602,42 @@ def decode_value(oid: int, data: Optional[bytes]) -> Any:
         return struct.unpack_from("<i", data, 0)[0]
     if oid in (OID_TEXT, OID_VARCHAR):
         return data.decode("utf-8")
+    if oid == OID_UUID:
+        if len(data) == 16:
+            return _format_uuid_bytes(data)
+        return data.decode("utf-8")
+    if oid == OID_JSON:
+        return _decode_json_wrapper(data, jsonb=False)
+    if oid == OID_JSONB:
+        return _decode_json_wrapper(data, jsonb=True)
+    if oid == OID_DATE:
+        return _decode_date_value(data)
+    if oid == OID_TIME:
+        return _decode_time_value(data)
+    if oid == OID_TIMESTAMP:
+        return _decode_timestamp_value(data)
+    if oid == OID_TIMESTAMPTZ:
+        return _decode_timestamptz_value(data)
+    if oid == OID_INTERVAL:
+        return _decode_interval_value(data)
     if oid == OID_SB_VECTOR:
         return parse_vector_literal(data.decode("utf-8"))
     if oid == OID_RECORD:
         return ScratchBirdComposite(parse_composite_literal(data.decode("utf-8")))
+    if oid == OID_INT4_ARRAY:
+        parsed = parse_array_literal(data.decode("utf-8"))
+        return [None if item is None else int(item) for item in parsed]
+    if oid == OID_TEXT_ARRAY:
+        return parse_array_literal(data.decode("utf-8"))
+    if oid == OID_RECORD_ARRAY:
+        parsed = parse_array_literal(data.decode("utf-8"))
+        out = []
+        for item in parsed:
+            if item is None:
+                out.append(None)
+            else:
+                out.append(ScratchBirdComposite(parse_composite_literal(str(item))))
+        return out
     if oid == OID_POINT:
         return parse_point_literal(data.decode("utf-8"))
     network_kind = _network_kind_for_oid(oid)
