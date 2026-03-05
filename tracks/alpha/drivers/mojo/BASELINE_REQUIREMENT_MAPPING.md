@@ -57,17 +57,23 @@
 - `src/scratchbird.mojo:1632` (`prepare`)
 - `src/scratchbird.mojo:810` (`ScratchBirdStatement.execute`)
 - `src/scratchbird.mojo:1699` (`cancel`)
+- `src/scratchbird.py:206` (bridge-shim `stream` entrypoint)
+- `src/scratchbird.py:217` (bridge-shim `cancel` signal path)
+- `src/scratchbird.py:221` (bridge-shim stream iterator with `57014` cancellation behavior)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
+- `tests/txn_exec_parity.py:141` (stream fetch-boundary and close lifecycle assertions)
+- `tests/txn_exec_parity.py:157` (cancelled stream returns SQLSTATE `57014`)
+- `tests/sbdriver_conformance.py:176` (prepare-bind and cancel manifest paths enabled by default)
+- `tests/sbdriver_conformance.py:169` (manifest `expect_sqlstate` matching)
 - `tests/integration.mojo:22`
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`
 - `tests/sbdriver_conformance.mojo:190`
 - `tests/README.md:10`
 - Gaps/next actions:
-- Conformance scaffold still defaults `prepare_bind` and `cancel` to skipped unless opt-in env flags are set.
-- Add lane assertions for streamed fetch boundaries and cancel behavior against long-running statements.
+- Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
 
 ## META (JDBCBL)
 

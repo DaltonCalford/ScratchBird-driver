@@ -23,6 +23,8 @@ class TestSpec:
         self.kind = ""
         self.sql = ""
         self.expect_rows = -1
+        self.expect_sqlstate = ""
+        self.cancel_after_rows = 0
         self.requires = []
         self.params = []
 
@@ -69,6 +71,10 @@ def _parse_tests(manifest_text: str):
             current.sql = _extract_string(line)
         elif '"expect_rows"' in line:
             current.expect_rows = _extract_int(line)
+        elif '"expect_sqlstate"' in line:
+            current.expect_sqlstate = _extract_string(line)
+        elif '"cancel_after_rows"' in line:
+            current.cancel_after_rows = _extract_int(line)
         elif '"requires"' in line:
             current.requires = _extract_list(line)
         elif '"params"' in line:
@@ -160,10 +166,17 @@ def _render_result(test_id: str, status: str, errors):
     return "{\"test_id\":\"" + escaped + "\",\"status\":\"" + status + "\",\"errors\":" + err_json + "}"
 
 
+def _matches_expected_sqlstate(exc: Exception, expected_sqlstate: str) -> bool:
+    if not expected_sqlstate:
+        return False
+    actual = str(getattr(exc, "sqlstate", "") or "").strip()
+    return actual == expected_sqlstate
+
+
 def _run_query_tests(tests, dsn: str):
     results = []
-    enable_prepare = os.environ.get("SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND", "").lower() in ("1", "true", "yes")
-    enable_cancel = os.environ.get("SCRATCHBIRD_MOJO_ENABLE_CANCEL", "").lower() in ("1", "true", "yes")
+    enable_prepare = os.environ.get("SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND", "1").lower() in ("1", "true", "yes")
+    enable_cancel = os.environ.get("SCRATCHBIRD_MOJO_ENABLE_CANCEL", "1").lower() in ("1", "true", "yes")
     if not dsn:
         for spec in tests:
             results.append(_render_result(spec.test_id, "skipped", ["SCRATCHBIRD_MOJO_URL not set"]))
@@ -184,12 +197,17 @@ def _run_query_tests(tests, dsn: str):
                     continue
                 try:
                     res = conn.query(spec.sql)
-                    if spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
+                    if spec.expect_sqlstate:
+                        results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
+                    elif spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
                         results.append(_render_result(spec.test_id, "failed", ["row count mismatch"]))
                     else:
                         results.append(_render_result(spec.test_id, "ok", []))
                 except Exception as exc:
-                    results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                    if _matches_expected_sqlstate(exc, spec.expect_sqlstate):
+                        results.append(_render_result(spec.test_id, "ok", []))
+                    else:
+                        results.append(_render_result(spec.test_id, "failed", [str(exc)]))
                 continue
             if kind == "prepare_bind":
                 if not enable_prepare:
@@ -200,12 +218,17 @@ def _run_query_tests(tests, dsn: str):
                     continue
                 try:
                     res = conn.query(spec.sql, spec.params)
-                    if spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
+                    if spec.expect_sqlstate:
+                        results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
+                    elif spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
                         results.append(_render_result(spec.test_id, "failed", ["row count mismatch"]))
                     else:
                         results.append(_render_result(spec.test_id, "ok", []))
                 except Exception as exc:
-                    results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                    if _matches_expected_sqlstate(exc, spec.expect_sqlstate):
+                        results.append(_render_result(spec.test_id, "ok", []))
+                    else:
+                        results.append(_render_result(spec.test_id, "failed", [str(exc)]))
                 continue
             if kind == "cancel":
                 if not enable_cancel:
@@ -219,14 +242,31 @@ def _run_query_tests(tests, dsn: str):
                     continue
                 try:
                     stream = conn.stream(spec.sql, None, 1)
-                    try:
-                        stream.__next__()
-                    except Exception:
-                        pass
+                    row_budget = spec.cancel_after_rows if spec.cancel_after_rows > 0 else 1
+                    for _ in range(row_budget):
+                        try:
+                            stream.__next__()
+                        except StopIteration:
+                            break
                     conn.cancel()
-                    results.append(_render_result(spec.test_id, "ok", []))
+                    if spec.expect_sqlstate:
+                        try:
+                            stream.__next__()
+                            results.append(
+                                _render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"])
+                            )
+                        except Exception as exc:
+                            if _matches_expected_sqlstate(exc, spec.expect_sqlstate):
+                                results.append(_render_result(spec.test_id, "ok", []))
+                            else:
+                                results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                    else:
+                        results.append(_render_result(spec.test_id, "ok", []))
                 except Exception as exc:
-                    results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                    if _matches_expected_sqlstate(exc, spec.expect_sqlstate):
+                        results.append(_render_result(spec.test_id, "ok", []))
+                    else:
+                        results.append(_render_result(spec.test_id, "failed", [str(exc)]))
                 continue
             results.append(_render_result(spec.test_id, "skipped", ["unsupported kind"]))
     finally:

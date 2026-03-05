@@ -51,6 +51,10 @@ class QueryHarness:
         return self.result
 
 
+def _shim_cfg() -> scratchbird.ScratchBirdConfig:
+    return scratchbird.ScratchBirdConfig("scratchbird://user:pass@localhost:3092/testdb?sslmode=require")
+
+
 def test_begin_maps_kwargs_to_payload_flags() -> None:
     conn = TxnHarness(0)
     scratchbird.ScratchBirdConnection.begin(
@@ -134,6 +138,41 @@ def test_query_empty_params_uses_extended_path() -> None:
     _require(("read",) not in conn.calls, "extended path should not call simple _read_resultset directly")
 
 
+def test_stream_fetch_boundaries() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        stream = conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1)
+        _require(stream.__next__() == [1], "stream first row mismatch")
+        _require(stream.__next__() == [2], "stream second row mismatch")
+        stream.close()
+        try:
+            stream.__next__()
+            raise RuntimeError("closed stream should stop iteration")
+        except StopIteration:
+            pass
+    finally:
+        conn.close()
+
+
+def test_cancel_stream_returns_57014() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        stream = conn.stream(
+            "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
+            None,
+            1,
+        )
+        _ = stream.__next__()
+        conn.cancel()
+        try:
+            stream.__next__()
+            raise RuntimeError("expected cancelled stream to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "57014", "cancelled stream should raise sqlstate 57014")
+    finally:
+        conn.close()
+
+
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
@@ -141,6 +180,8 @@ def main() -> None:
     test_commit_and_rollback_send_when_active_txn()
     test_query_none_params_uses_simple_path()
     test_query_empty_params_uses_extended_path()
+    test_stream_fetch_boundaries()
+    test_cancel_stream_returns_57014()
     print("Mojo TXN/EXEC parity tests OK")
 
 

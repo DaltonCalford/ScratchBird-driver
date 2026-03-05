@@ -40,7 +40,7 @@ tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance
 Environment variables:
 - `SCRATCHBIRD_CONFORMANCE_MANIFEST`: optional manifest path
 - `SCRATCHBIRD_MOJO_URL`: DSN for running query tests
-- `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: enable `prepare_bind` tests (requires driver support)
-- `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: enable `cancel` tests (requires driver support)
+- `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
+- `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
 
 Without `SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped.

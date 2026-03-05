@@ -167,6 +167,7 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
 class _ShimConnection:
     def __init__(self, config: ScratchBirdConfig):
         self.config = config
+        self._cancel_requested = False
 
     def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
         statement = sql.strip().lower()
@@ -175,6 +176,9 @@ class _ShimConnection:
             return ScratchBirdResult([[1]], [], 1)
         if statement.startswith("select id from basic_table"):
             rows = [[1], [2], [3], [4], [5], [6]]
+            return ScratchBirdResult(rows, [], len(rows))
+        if "from basic_table a, basic_table b, basic_table c, basic_table d, basic_table e" in statement:
+            rows = [[idx] for idx in range(1, 33)]
             return ScratchBirdResult(rows, [], len(rows))
         if statement == "select $1::integer":
             if len(bound) != 1:
@@ -198,6 +202,47 @@ class _ShimConnection:
 
     def close(self) -> None:
         return None
+
+    def stream(
+        self,
+        sql: str,
+        params: Optional[Iterable[Any]] = None,
+        fetch_size: int = 0,
+    ) -> "_ShimStream":
+        _ = fetch_size
+        self._cancel_requested = False
+        result = self.query(sql, params)
+        return _ShimStream(self, result.rows)
+
+    def cancel(self) -> None:
+        self._cancel_requested = True
+
+
+class _ShimStream:
+    def __init__(self, conn: _ShimConnection, rows: List[List[Any]]):
+        self._conn = conn
+        self._rows = rows
+        self._index = 0
+        self._closed = False
+
+    def __iter__(self) -> "_ShimStream":
+        return self
+
+    def __next__(self) -> List[Any]:
+        if self._closed:
+            raise StopIteration
+        if self._conn._cancel_requested:
+            self._closed = True
+            raise ScratchBirdError("query canceled", "57014")
+        if self._index >= len(self._rows):
+            self._closed = True
+            raise StopIteration
+        row = self._rows[self._index]
+        self._index += 1
+        return row
+
+    def close(self) -> None:
+        self._closed = True
 
 
 class ScratchBirdConnection:
