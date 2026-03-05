@@ -122,6 +122,18 @@ fn main() raises:
     _require(cfg_timeout_override.connect_timeout_s == 11, "connect timeout override mismatch")
     _require(cfg_timeout_override.socket_timeout_s == 22, "socket timeout override mismatch")
     _require(cfg_timeout_override.login_timeout_s == 33, "login timeout override mismatch")
+    var cfg_mode_precedence = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=direct&connection_mode=manager_proxy&ingress_mode=managed"
+    )
+    _require(cfg_mode_precedence.front_door_mode == "direct", "front_door_mode precedence mismatch")
+    var cfg_connection_mode_alias = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_mode=manager-proxy"
+    )
+    _require(cfg_connection_mode_alias.front_door_mode == "manager_proxy", "connection_mode alias normalization mismatch")
+    var cfg_ingress_mode_alias = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managerproxy"
+    )
+    _require(cfg_ingress_mode_alias.front_door_mode == "manager_proxy", "ingress_mode alias normalization mismatch")
 
     var conn = scratchbird_native.connect(cfg)
     _require(conn.ping(), "ping should return true")
@@ -542,6 +554,8 @@ fn main() raises:
     )
     _require(manager_dash_cfg.front_door_mode == "manager_proxy", "front_door_mode manager-proxy normalization mismatch")
     _ = scratchbird_native.connect(manager_dash_cfg)
+    _ = scratchbird_native.connect(cfg_connection_mode_alias)
+    _ = scratchbird_native.connect(cfg_ingress_mode_alias)
 
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",

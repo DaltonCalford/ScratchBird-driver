@@ -56,11 +56,14 @@ struct ScratchBirdConfig:
         self.port = _query_int(dsn, "port", _extract_port(dsn))
         self.database = _extract_database(dsn)
 
-        self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "front_door_mode", ""))
-        if self.front_door_mode == "direct":
-            self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "connection_mode", ""))
-        if self.front_door_mode == "direct":
-            self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "ingress_mode", ""))
+        var front_door_raw = ""
+        if _query_has_key(dsn, "front_door_mode"):
+            front_door_raw = _query_value(dsn, "front_door_mode", "")
+        elif _query_has_key(dsn, "connection_mode"):
+            front_door_raw = _query_value(dsn, "connection_mode", "")
+        elif _query_has_key(dsn, "ingress_mode"):
+            front_door_raw = _query_value(dsn, "ingress_mode", "")
+        self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
         self.sslmode = _query_value(dsn, "sslmode", "require")
         self.binary_transfer = _as_bool(_query_value(dsn, "binary_transfer", "true"))
@@ -640,6 +643,32 @@ fn _query_value(dsn: String, key: String, default_value: String) -> String:
     return default_value
 
 
+fn _query_has_key(dsn: String, key: String) -> Bool:
+    if "?" not in dsn:
+        return False
+    var parts = dsn.split("?", 1)
+    if len(parts) != 2:
+        return False
+    var query = String(parts[1])
+    if query == "":
+        return False
+    var target = key.lower()
+    for raw_pair in query.split("&"):
+        var pair = String(raw_pair)
+        if pair == "":
+            continue
+        if "=" in pair:
+            var kv = pair.split("=", 1)
+            if len(kv) == 2:
+                var candidate = String(kv[0]).lower()
+                if candidate == target:
+                    return True
+        else:
+            if pair.lower() == target:
+                return True
+    return False
+
+
 fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
     var raw = _query_value(dsn, key, "")
     if raw.strip() == "":
@@ -690,6 +719,8 @@ fn _clamp_positive(value: Int, fallback: Int) -> Int:
 
 fn _normalize_front_door_mode_value(value: String) -> String:
     var normalized = value.strip().lower().replace("-", "_")
+    if normalized == "managerproxy":
+        return "manager_proxy"
     if normalized == "":
         return "direct"
     return normalized

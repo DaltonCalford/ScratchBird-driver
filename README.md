@@ -81,6 +81,7 @@ Legend:
 - **Mojo lane:** Added native-bootstrap DSN host/port parsing fields and deterministic native/facade auth-fail guard parity (`sb_test_auth_fail=true` → `28P01`) with smoke assertions.
 - **Mojo lane:** Updated gated CI Mojo lane to run explicit native surface/bootstrap + metadata + integration + conformance sequence.
 - **Mojo lane:** Added native timeout alias parsing/guard parity (`connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`) plus `manager-proxy` normalization coverage in native/facade smoke lanes.
+- **Mojo lane:** Fixed front-door mode source precedence (`front_door_mode` over `connection_mode`/`ingress_mode`) and expanded alias normalization coverage (`managerproxy`) in native/facade smoke tests.
 
 ---
 
