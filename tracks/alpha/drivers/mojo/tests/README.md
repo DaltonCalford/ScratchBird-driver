@@ -17,6 +17,7 @@ Optional environment overrides:
 Run from lane root (`tracks/alpha/drivers/mojo`):
 
 ```bash
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/scratchbird_surface.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
@@ -41,9 +42,10 @@ Expected behavior:
 The `sbdriver-conformance` launcher resolves Mojo automatically (prefers pixi
 manifest mode) and runs `tests/sbdriver_conformance.mojo`.
 
-By default, both `sbdriver-conformance` and `integration.py` run the native
-bootstrap smoke (`tests/native_bootstrap.mojo`) first, then continue through
-the bridge-shim harness path.
+By default, both `sbdriver-conformance` and `integration.py` run current-syntax
+native smoke (`tests/scratchbird_surface.mojo`, then
+`tests/native_bootstrap.mojo`) first, then continue through the bridge-shim
+harness path.
 
 Conformance `prepare_bind` checks prefer `connection.prepare(...).execute(...)`
 when available and fall back to `connection.query(sql, params)` for older lanes.
@@ -63,11 +65,12 @@ Environment variables:
 - `SCRATCHBIRD_MOJO_URL`: DSN for running query tests
 - `SCRATCHBIRD_MOJO_MANAGER_URL`: optional manager-proxy integration DSN
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL`: optional bad-auth integration DSN (for shim tests, append `sb_test_auth_fail=true`)
-- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP`: optional override to skip native bootstrap smoke in `integration.mojo` / `integration.py` / `sbdriver_conformance.py`
+- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP`: optional override to skip native smoke in `integration.mojo` / `integration.py` / `sbdriver_conformance.py`
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED`: optional override to fail launcher smoke when native bootstrap cannot run
 - `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
-- `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN`: optional override to require explicit `SCRATCHBIRD_MOJO_URL` (restores skip behavior when URL is unset)
+- `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN`: optional override to require explicit `SCRATCHBIRD_MOJO_URL` / `SCRATCHBIRD_MOJO_MANAGER_URL` / `SCRATCHBIRD_MOJO_BAD_AUTH_URL` (restores skip behavior when corresponding env vars are unset)
 
 With `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN=1` and no
-`SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped.
+`SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped; integration
+direct/manager/bad-auth branches also skip when their env DSNs are unset.

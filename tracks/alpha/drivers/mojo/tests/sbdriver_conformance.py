@@ -43,14 +43,14 @@ def _deterministic_fallback_dsn() -> str:
     return "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
 
 
-def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
+def _native_bootstrap_command(script_path: str) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
-        return [mojo_bin, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+        return [mojo_bin, "run", "-I", "src", script_path]
 
     mojo_path = shutil.which("mojo")
     if mojo_path:
-        return [mojo_path, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+        return [mojo_path, "run", "-I", "src", script_path]
 
     pixi_path = shutil.which("pixi")
     manifest = pathlib.Path(
@@ -70,7 +70,7 @@ def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
             "run",
             "-I",
             "src",
-            "tests/native_bootstrap.mojo",
+            script_path,
         ]
     return None
 
@@ -80,28 +80,34 @@ def _run_native_bootstrap_smoke(lane_root: pathlib.Path) -> None:
         return
 
     required = _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_NATIVE_REQUIRED", ""))
-    command = _native_bootstrap_command(lane_root)
-    if command is None:
-        if required:
-            raise RuntimeError("Mojo native bootstrap launcher unavailable (no mojo/pixi found).")
-        return
-
-    completed = subprocess.run(
-        command,
-        cwd=lane_root,
-        capture_output=True,
-        text=True,
-        check=False,
+    smoke_steps = (
+        ("scratchbird module surface smoke", "tests/scratchbird_surface.mojo"),
+        ("native bootstrap smoke", "tests/native_bootstrap.mojo"),
     )
-    if completed.returncode == 0:
-        return
+    for label, script_path in smoke_steps:
+        command = _native_bootstrap_command(script_path)
+        if command is None:
+            if required:
+                raise RuntimeError(f"Mojo launcher unavailable for {label} (no mojo/pixi found).")
+            return
 
-    error_text = (completed.stderr or completed.stdout or "").strip()
-    first_line = error_text.splitlines()[0] if error_text else "no details"
-    if required:
-        raise RuntimeError(
-            f"Mojo native bootstrap smoke failed with exit {completed.returncode}: {first_line}"
+        completed = subprocess.run(
+            command,
+            cwd=lane_root,
+            capture_output=True,
+            text=True,
+            check=False,
         )
+        if completed.returncode == 0:
+            continue
+
+        error_text = (completed.stderr or completed.stdout or "").strip()
+        first_line = error_text.splitlines()[0] if error_text else "no details"
+        if required:
+            raise RuntimeError(
+                f"Mojo {label} failed with exit {completed.returncode}: {first_line}"
+            )
+        return
 
 
 def _normalize_kind(kind: str) -> str:

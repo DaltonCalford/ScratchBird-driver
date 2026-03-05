@@ -18,11 +18,12 @@ Current implementation is a Mojo-Python interop lane:
 
 - Full SBWP v1.1 API surface is represented in-lane through the Python-backed shim.
 - Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
+- `src/scratchbird.mojo` now compiles in current Mojo syntax as a facade over `src/scratchbird_native.mojo`, with deterministic facade smoke in `tests/scratchbird_surface.mojo`.
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), savepoint lifecycle guards (`25000`/`3B001`), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
 - Native bootstrap guard and unsupported-operation failures now use deterministic SQLSTATE-prefixed error strings with extractor coverage (`extract_sqlstate`) in lane tests.
 - Metadata execution parity now includes deterministic `query_metadata_rows(...)` rowcount helpers in shim/native bootstrap scaffolds.
-- Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
+- Integration and conformance launchers are native-smoke-first (`tests/scratchbird_surface.mojo` then `tests/native_bootstrap.mojo`) with bridge-shim fallback controls.
 - Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping`, transaction lifecycle, and savepoint helpers used by lane tests.
 - Bridge-shim type codecs now include temporal/json/jsonb/uuid wrappers and array-of-composite encode/decode coverage for deterministic lane testing.
 - Lifecycle scaffolds (`circuit_breaker`/`leak_detector`/`keepalive`/`telemetry`/`pipeline`) now compile in current Mojo syntax and have dedicated deterministic smoke coverage in `tests/lifecycle_scaffolds.mojo`.
@@ -47,6 +48,7 @@ From `tracks/alpha/drivers/mojo`:
 
 ```bash
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/scratchbird_surface.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
@@ -61,7 +63,7 @@ Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_URL` for direct smoke
 - `SCRATCHBIRD_MOJO_MANAGER_URL` for manager-proxy smoke
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
-- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native bootstrap smoke in `tests/integration.mojo` and `tests/sbdriver_conformance.py`
+- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native smoke (`tests/scratchbird_surface.mojo` and `tests/native_bootstrap.mojo`) in `tests/integration.mojo` and `tests/sbdriver_conformance.py`
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail when native bootstrap launcher is unavailable/failing
 - `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN` to require explicit `SCRATCHBIRD_MOJO_URL` / `SCRATCHBIRD_MOJO_MANAGER_URL` / `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for integration/conformance (default lane behavior uses deterministic fallback DSNs)
 

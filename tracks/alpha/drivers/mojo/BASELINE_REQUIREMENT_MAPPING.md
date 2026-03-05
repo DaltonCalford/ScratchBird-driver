@@ -7,233 +7,162 @@
 
 ## CONN (JDBCBL)
 
-- Current status: Implemented (bridge lane) + Native bootstrap scaffolding
+- Current status: Partial (bridge lane implemented + current-syntax native facade/bootstrap)
 - Lane-local source anchors:
-- `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
-- `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
-- `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
-- `src/scratchbird.py:659` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
-- `src/scratchbird_native.mojo:23` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
+- `src/scratchbird.mojo:12` (`scratchbird` current-syntax facade exports `ScratchBirdConfig`/`ScratchBirdConnection`/`connect` from native bootstrap)
+- `src/scratchbird.mojo:20` (facade exports native `validate_connect_guards`)
+- `src/scratchbird_native.mojo:23` (native-bootstrap `ScratchBirdConfig` DSN parsing)
+- `src/scratchbird_native.mojo:485` (native-bootstrap connect guards: TLS/binary/compression/mode/user+db)
 - `src/scratchbird_native.mojo:503` (native-bootstrap `connect` entrypoint)
 - `src/scratchbird_native.mojo:158` (native-bootstrap `ping` surface)
-- `src/scratchbird_native.mojo:73` (native-bootstrap `query_with_params` with placeholder counting and `07001` mismatch semantics)
-- `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
-- `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
-- `src/scratchbird.mojo:1641` (`ping`)
-- `src/scratchbird.mojo:1481` (`close`)
+- `src/scratchbird.py:659` (bridge-shim connect guard enforcement, including deterministic auth-fail simulation)
+- `src/scratchbird.py:1037` (bridge-shim `connect` entrypoint)
 - Lane-local test anchors:
-- `tests/integration.mojo:19`
-- `tests/sbdriver_conformance.mojo:157`
-- `tests/connection_guards.py:26`
-- `tests/connection_guards.py:54` (`front_door_mode` validation guard)
-- `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
-- `tests/integration.py:56` (integration launcher now runs native bootstrap smoke first with fallback controls)
-- `tests/integration.py:18` (deterministic fallback DSN keeps direct integration smoke non-skipping by default)
-- `tests/integration.py:23` (deterministic fallback DSN keeps manager-proxy integration smoke non-skipping by default)
-- `tests/integration.py:30` (deterministic fallback DSN keeps bad-auth integration smoke non-skipping by default)
-- `tests/sbdriver_conformance.py:73` (conformance launcher now runs native bootstrap smoke first with fallback controls)
-- `tests/sbdriver_conformance.py:37` (deterministic fallback DSN keeps conformance non-skipping by default)
-- `tests/integration.py:53` (manager-proxy integration smoke branch)
-- `tests/integration.py:59` (bad-auth integration smoke branch)
-- `tests/native_bootstrap.mojo:60` (native bootstrap connect/ping/query smoke path via `mojo run -I src`)
-- `tests/native_bootstrap.mojo:95` (native bootstrap prepare-bind + mismatch guard path)
+- `tests/scratchbird_surface.mojo:35` (current-syntax `scratchbird` facade connect/ping/query smoke)
+- `tests/scratchbird_surface.mojo:87` (facade guard SQLSTATE assertions)
+- `tests/native_bootstrap.mojo:53` (native-bootstrap connect/ping/query smoke)
+- `tests/integration.py:69` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
+- `tests/integration.py:154` (deterministic fallback DSN keeps direct integration non-skipping by default)
+- `tests/integration.py:162` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
+- `tests/integration.py:170` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
+- `tests/sbdriver_conformance.py:78` (conformance launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
+- `tests/sbdriver_conformance.py:423` (deterministic fallback DSN keeps conformance non-skipping by default)
 - Gaps/next actions:
-- Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
-- Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
+- Implement wire-level native transport/auth path in current-syntax `src/scratchbird.mojo` (facade currently delegates to deterministic native bootstrap scaffolding).
+- Add live manager-proxy and bad-auth CI coverage against a running endpoint.
 
 ## TXN (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:1019` (`build_txn_begin_payload`)
-- `src/scratchbird.mojo:1025` (`build_txn_commit_payload`)
-- `src/scratchbird.mojo:1029` (`build_txn_rollback_payload`)
-- `src/scratchbird.mojo:1635` (`begin` kwargs->flags/payload mapping)
-- `src/scratchbird.mojo:1671` (`commit` no-op when no active txn)
-- `src/scratchbird.mojo:1678` (`rollback` no-op when no active txn)
-- `src/scratchbird.mojo:1703` (`_drain_until_ready` propagates protocol error details)
-- `src/scratchbird.py:776` (bridge-shim nested-transaction guard rails)
-- `src/scratchbird.py:795` (bridge-shim savepoint create guard/name generation)
-- `src/scratchbird.py:805` (bridge-shim savepoint release guard + `3B001`)
-- `src/scratchbird.py:817` (bridge-shim rollback-to-savepoint guard + stack trim)
-- `src/scratchbird_native.mojo:81` (native-bootstrap `begin` nested-transaction guard `25001`)
-- `src/scratchbird_native.mojo:87` (native-bootstrap `commit` no-op when no active txn)
-- `src/scratchbird_native.mojo:93` (native-bootstrap `rollback` no-op when no active txn)
-- `src/scratchbird_native.mojo:99` (native-bootstrap savepoint create guard/name generation)
-- `src/scratchbird_native.mojo:109` (native-bootstrap savepoint release guard + `3B001`)
-- `src/scratchbird_native.mojo:124` (native-bootstrap rollback-to-savepoint guard + stack trim)
+- `src/scratchbird_native.mojo:81` (native-bootstrap nested `begin()` guard `25001`)
+- `src/scratchbird_native.mojo:87` (native-bootstrap inactive `commit` no-op)
+- `src/scratchbird_native.mojo:93` (native-bootstrap inactive `rollback` no-op)
+- `src/scratchbird_native.mojo:99` (native-bootstrap savepoint create + generated naming)
+- `src/scratchbird_native.mojo:109` (native-bootstrap savepoint release guard `3B001`)
+- `src/scratchbird_native.mojo:124` (native-bootstrap rollback-to-savepoint trim behavior)
+- `src/scratchbird.py:779` (bridge-shim begin option mapping)
+- `src/scratchbird.py:786` (bridge-shim inactive `commit` no-op)
+- `src/scratchbird.py:792` (bridge-shim inactive `rollback` no-op)
+- `src/scratchbird.py:798` (bridge-shim savepoint create guard/name generation)
+- `src/scratchbird.py:808` (bridge-shim savepoint release guard `3B001`)
+- `src/scratchbird.py:820` (bridge-shim rollback-to-savepoint behavior)
 - Lane-local test anchors:
-- `tests/txn_exec_parity.mojo:55` (`begin` flag/payload mapping assertions)
-- `tests/txn_exec_parity.py:95` (nested `begin()` rejection with SQLSTATE `25001`)
-- `tests/txn_exec_parity.mojo:90` (inactive transaction commit/rollback no-op assertions)
-- `tests/txn_exec_parity.mojo:98` (active transaction commit/rollback message assertions)
-- `tests/txn_exec_parity.py:130` (savepoint message/payload parity assertions)
-- `tests/txn_exec_parity.py:150` (savepoint guard SQLSTATE assertions `25000`/`HY000`/`3B001`)
-- `tests/txn_exec_parity.py:211` (shim `ping` + transaction lifecycle helper assertions)
-- `tests/txn_exec_parity.py:230` (shim savepoint lifecycle + rollback-trim assertions)
-- `tests/native_bootstrap.mojo:69` (native-bootstrap nested `begin()` rejection with `25001`)
-- `tests/native_bootstrap.mojo:65` (native-bootstrap inactive `commit`/`rollback` no-op assertions)
+- `tests/native_bootstrap.mojo:67` (native-bootstrap nested `begin()` rejection with `25001`)
 - `tests/native_bootstrap.mojo:75` (native-bootstrap savepoint lifecycle + `25000`/`3B001` guards)
+- `tests/txn_exec_parity.py:62` (begin option mapping assertions)
+- `tests/txn_exec_parity.py:130` (savepoint message/payload parity assertions)
+- `tests/txn_exec_parity.py:150` (savepoint guard SQLSTATE assertions)
+- `tests/txn_exec_parity.py:230` (shim savepoint lifecycle + rollback-trim assertions)
 - Gaps/next actions:
-- Add live transaction integration coverage against a running ScratchBird endpoint.
+- Add live transaction/savepoint integration coverage against a running ScratchBird endpoint.
 
 ## EXEC (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:1526` (`query` path selection for `params is None` vs parameterized execution)
-- `src/scratchbird.mojo:1545` (`_extended_query` parse/bind/execute flow)
-- `src/scratchbird.mojo:1584` (`_fetch_more`)
-- `src/scratchbird.mojo:1590` (`_read_resultset`)
-- `src/scratchbird.mojo:1542` (`stream`)
-- `src/scratchbird.mojo:751` (`ScratchBirdStream`)
-- `src/scratchbird.mojo:1632` (`prepare`)
-- `src/scratchbird.mojo:810` (`ScratchBirdStatement.execute`)
-- `src/scratchbird.mojo:1699` (`cancel`)
-- `src/scratchbird.py:773` (bridge-shim `prepare` statement entrypoint)
-- `src/scratchbird.py:719` (bridge-shim statement `execute` path through query bindings)
-- `src/scratchbird.py:829` (bridge-shim `stream` entrypoint)
-- `src/scratchbird.py:840` (bridge-shim `cancel` signal path)
-- `src/scratchbird.py:854` (bridge-shim stream iterator with `57014` cancellation behavior)
-- `src/scratchbird_native.mojo:73` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
-- `src/scratchbird_native.mojo:77` (native-bootstrap `prepare` statement scaffold)
-- `src/scratchbird_native.mojo:199` (native-bootstrap prepared `execute` path)
-- `src/scratchbird_native.mojo:138` (native-bootstrap `stream` lifecycle entrypoint)
-- `src/scratchbird_native.mojo:150` (native-bootstrap `cancel` signal path)
-- `src/scratchbird_native.mojo:177` (native-bootstrap stream iterator with `57014` cancellation behavior)
-- `src/scratchbird_native.mojo:273` (native-bootstrap query rowcount semantics for paging/metadata queries)
-- `src/scratchbird_native.mojo:73` (native-bootstrap operation-level cancel reset before query/stream paths)
+- `src/scratchbird.mojo:13` (facade exports native `ScratchBirdConnection` execution surface)
+- `src/scratchbird_native.mojo:69` (native-bootstrap `query` rowcount semantics)
+- `src/scratchbird_native.mojo:73` (native-bootstrap `query_with_params` + `07001` mismatch)
+- `src/scratchbird_native.mojo:77` (native-bootstrap `prepare` statement surface)
+- `src/scratchbird_native.mojo:138` (native-bootstrap `stream` surface)
+- `src/scratchbird_native.mojo:150` (native-bootstrap `cancel` surface)
+- `src/scratchbird.py:776` (bridge-shim `prepare`)
+- `src/scratchbird.py:832` (bridge-shim `stream`)
+- `src/scratchbird.py:843` (bridge-shim `cancel`)
 - Lane-local test anchors:
-- `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
-- `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
-- `tests/txn_exec_parity.py:196` (shim prepared execute + `07001` mismatch assertions)
-- `tests/txn_exec_parity.py:263` (stream fetch-boundary assertions)
-- `tests/txn_exec_parity.py:279` (cancelled stream returns SQLSTATE `57014`)
-- `tests/txn_exec_parity.py:298` (post-cancel stream recovery assertions)
-- `tests/sbdriver_conformance.py:198` (manifest `requires` gating for prepare/cancel capabilities)
-- `tests/sbdriver_conformance.py:417` (fallback DSN defaulting + explicit skip mode when fallback disabled)
-- `tests/sbdriver_conformance.py:305` (prepare-bind and cancel manifest paths enabled by default)
-- `tests/sbdriver_conformance.py:233` (manifest `expect_sqlstate` matching)
-- `tests/integration.mojo:22`
-- `tests/sbdriver_conformance.mojo:161`
-- `tests/sbdriver_conformance.mojo:174`
-- `tests/sbdriver_conformance.mojo:190`
+- `tests/scratchbird_surface.mojo:46` (facade parameterized/prepare execution assertions)
+- `tests/scratchbird_surface.mojo:73` (facade stream/cancel + post-cancel recovery assertions)
 - `tests/native_bootstrap.mojo:95` (native-bootstrap prepare-bind + mismatch assertions)
-- `tests/native_bootstrap.mojo:100` (native-bootstrap prepared execute parity assertions)
-- `tests/native_bootstrap.mojo:64` (native-bootstrap paging query rowcount assertion)
-- `tests/native_bootstrap.mojo:164` (native-bootstrap stream/cancel `57014` assertions)
-- `tests/native_bootstrap.mojo:168` (native-bootstrap post-cancel stream recovery assertion)
-- `tests/README.md:10`
+- `tests/native_bootstrap.mojo:154` (native-bootstrap stream/cancel `57014` assertions)
+- `tests/native_bootstrap.mojo:175` (native-bootstrap post-cancel recovery assertion)
+- `tests/txn_exec_parity.py:196` (shim prepare execute + mismatch assertions)
+- `tests/txn_exec_parity.py:263` (shim stream fetch-boundary assertions)
+- `tests/txn_exec_parity.py:279` (shim cancel stream SQLSTATE `57014` assertion)
+- `tests/sbdriver_conformance.py:204` (manifest `requires` gating for prepare/cancel capabilities)
 - Gaps/next actions:
-- Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
+- Add live streamed fetch-boundary and cancellation assertions against long-running server statements.
 
 ## META (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:1725` (metadata SQL constants now include extended families: catalogs, primary/foreign keys, table/column privileges, type info, routines)
-- `src/scratchbird.mojo:1760` (`METADATA_COLLECTION_QUERY_MAP` / `METADATA_COLLECTION_ALIASES`)
-- `src/scratchbird.mojo:1542` (`query_metadata` executable metadata routing through normal query path)
-- `src/scratchbird.mojo:1547` (`get_schema` metadata row materialization surface)
-- `src/scratchbird.mojo:1868` (`normalize_metadata_collection_name` / `resolve_metadata_collection_query`)
-- `src/scratchbird.mojo:1778` (`schema_paths_for_navigation` with optional dotted parent expansion)
-- `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
-- `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
-- `src/scratchbird.mojo:1848` (`build_database_default_metadata_rows` database/default branch-style metadata rows)
-- `src/scratchbird.py:760` (bridge-shim `query_metadata_rows` executable rowcount helper)
-- `src/scratchbird_native.mojo:166` (native-bootstrap `query_metadata_rows` executable rowcount helper)
-- `src/scratchbird_native.mojo:437` (native-bootstrap metadata collection alias normalization)
+- `src/scratchbird.mojo:21` (facade metadata constants exported from native bootstrap)
+- `src/scratchbird.mojo:40` (facade metadata query helper family)
+- `src/scratchbird.mojo:100` (facade `metadata_query(...)` routed through alias resolver)
+- `src/scratchbird_native.mojo:162` (native-bootstrap `query_metadata`)
+- `src/scratchbird_native.mojo:166` (native-bootstrap `query_metadata_rows`)
+- `src/scratchbird_native.mojo:437` (native-bootstrap metadata alias normalization)
 - `src/scratchbird_native.mojo:450` (native-bootstrap metadata query resolution)
+- `src/scratchbird.py:1014` (bridge-shim `query_metadata` route)
+- `src/scratchbird.py:1020` (bridge-shim `query_metadata_rows` executable helper)
 - Lane-local test anchors:
-- `tests/metadata_recursive_schema.mojo:24` (database/default branch style row shaping)
-- `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
-- `tests/metadata_recursive_schema.mojo:77` (per-parent uniqueness)
-- `tests/metadata_recursive_schema.mojo:94` (same leaf name under different parents)
-- `tests/metadata_execution.mojo:16` (metadata execution wrapper entrypoint)
-- `tests/metadata_execution.py:38` (collection alias normalization coverage)
-- `tests/metadata_execution.py:53` (extended collection query resolution coverage)
-- `tests/metadata_execution.py:80` (metadata execution routing path coverage)
-- `tests/metadata_execution.py:113` (metadata execution rowcount helper coverage)
-- `tests/metadata_execution.py:111` (unsupported metadata collection `0A000` behavior)
-- `tests/native_bootstrap.mojo:133` (native-bootstrap metadata executable rowcount smoke assertions)
-- `tests/README.md:41` (metadata recursive schema scaffold invocation)
+- `tests/scratchbird_surface.mojo:56` (facade metadata alias/query/rowcount assertions)
+- `tests/native_bootstrap.mojo:113` (native-bootstrap metadata alias/query assertions)
+- `tests/native_bootstrap.mojo:133` (native-bootstrap metadata executable rowcount assertions)
+- `tests/metadata_execution.py:40` (bridge-shim metadata alias normalization coverage)
+- `tests/metadata_execution.py:55` (bridge-shim extended metadata query resolution coverage)
+- `tests/metadata_execution.py:84` (bridge-shim metadata execution routing coverage)
+- `tests/metadata_execution.py:113` (bridge-shim metadata rowcount helper coverage)
 - Gaps/next actions:
-- Add live metadata integration assertions for schema/table/column result stability against a running ScratchBird endpoint.
-- Expand restriction-aware metadata filtering and payload-shaping assertions for DDL-editor-specific field contracts.
+- Add live metadata stability assertions (schemas/tables/columns) against running endpoints.
+- Expand restriction-aware metadata filtering/payload-shaping checks for editor contracts.
 
 ## TYPE (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:24` (OID constants used by type codec paths)
-- `src/scratchbird.mojo:300` (`decode_value`)
-- `src/scratchbird.mojo:368` (`encode_value`)
-- `src/scratchbird.mojo:244` (`_parse_array_literal`)
-- `src/scratchbird.mojo:262` (`_parse_vector_literal`)
-- `src/scratchbird.mojo:279` (`_parse_range_literal`)
-- `src/scratchbird.py:415` (bridge-shim OID-to-network mapping and fallback raw-wrapper path)
-- `src/scratchbird.py:314` (bridge-shim array/vector/range parser utilities with quote-aware splitting)
-- `src/scratchbird.py:534` (bridge-shim encode/decode helpers with truncation guard, temporal/json/uuid wrappers, and array-of-composite handling)
+- `src/scratchbird.py:317` (bridge-shim array/vector/range parser utilities)
+- `src/scratchbird.py:537` (bridge-shim type encode wrappers)
+- `src/scratchbird.py:599` (bridge-shim type decode wrappers)
 - Lane-local test anchors:
-- `tests/integration.mojo:26`
-- `tests/sbdriver_conformance.mojo:182`
-- `tests/type_codecs.py:18` (array/range/vector/composite parsing and decode/encode assertions)
-- `tests/type_codecs.py:53` (geometry + inet/cidr/macaddr decode assertions)
+- `tests/type_codecs.py:18` (array/range/vector/composite parser and decode assertions)
+- `tests/type_codecs.py:53` (geometry/inet/cidr/macaddr decode assertions)
 - `tests/type_codecs.py:75` (json/jsonb/uuid decode assertions)
 - `tests/type_codecs.py:94` (date/time/timestamp/timestamptz/interval decode assertions)
-- `tests/type_codecs.py:125` (int/text/record array decode assertions including array-of-composite)
-- `tests/type_codecs.py:138` (unknown-OID fallback + `OID_INT4` truncation behavior)
+- `tests/type_codecs.py:125` (array variants including array-of-composite decode assertions)
+- `tests/type_codecs.py:138` (OID truncation negative-path assertion)
 - Gaps/next actions:
-- Align bridge-shim temporal/json/uuid and array-of-composite codec semantics with native binary wire-format behavior once native Mojo transport is active.
+- Implement and validate native Mojo wire-codec parity once full native transport is active.
 
 ## ERR (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:139` (`ScratchBirdError` with `sqlstate`, `detail`, `hint`)
-- `src/scratchbird.py:233` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
-- `src/scratchbird.mojo:1127` (`parse_error_message`)
-- `src/scratchbird.mojo:1612` (`_raise_error`)
-- `src/scratchbird.mojo:1511` (`query` wraps operation and propagates failures)
-- `src/scratchbird.mojo:1559` (explicit `ScratchBirdError("parameter count mismatch", "07001")`)
-- `src/scratchbird_native.mojo:148` (native-bootstrap unsupported-stream SQLSTATE `0A000` prefix)
-- `src/scratchbird_native.mojo:277` (native-bootstrap unsupported-query SQLSTATE `0A000` prefix)
-- `src/scratchbird_native.mojo:291` (native-bootstrap unsupported-parameterized-query SQLSTATE `0A000` prefix)
-- `src/scratchbird_native.mojo:412` (metadata unsupported SQLSTATE `0A000` prefix)
-- `src/scratchbird_native.mojo:454` (connect guard SQLSTATE-prefixed error mapping)
-- `src/scratchbird_native.mojo:479` (`extract_sqlstate` helper for deterministic SQLSTATE parsing)
+- `src/scratchbird.mojo:17` (facade export of native SQLSTATE extractor)
+- `src/scratchbird_native.mojo:277` (native-bootstrap unsupported query `0A000`)
+- `src/scratchbird_native.mojo:291` (native-bootstrap unsupported parameterized query `0A000`)
+- `src/scratchbird_native.mojo:412` (native-bootstrap unsupported metadata `0A000`)
+- `src/scratchbird_native.mojo:485` (native-bootstrap guard SQLSTATE error mapping)
+- `src/scratchbird_native.mojo:513` (`extract_sqlstate` helper)
+- `src/scratchbird.py:236` (bridge-shim `ScratchBirdError` with sqlstate/detail/hint)
 - Lane-local test anchors:
-- `tests/sbdriver_conformance.mojo:171`
-- `tests/sbdriver_conformance.mojo:188`
-- `tests/sbdriver_conformance.mojo:209`
-- `tests/errors.py:56` (simple-query error propagation of `sqlstate/detail/hint`)
-- `tests/errors.py:74` (extended-query error propagation of `sqlstate/detail/hint`)
-- `tests/errors.py:89` (auth guard SQLSTATE propagation)
-- `tests/errors.py:104` (truncation-style query failure propagation)
-- `tests/native_bootstrap.mojo:25` (connect guard SQLSTATE extraction assertions)
-- `tests/native_bootstrap.mojo:42` (metadata guard SQLSTATE extraction assertions)
-- `tests/native_bootstrap.mojo:172` (unsupported query SQLSTATE `0A000` extraction assertion)
-- `tests/native_bootstrap.mojo:182` (unsupported stream SQLSTATE `0A000` extraction assertion)
+- `tests/scratchbird_surface.mojo:18` (facade guard SQLSTATE extraction assertions)
+- `tests/native_bootstrap.mojo:18` (native-bootstrap connect guard SQLSTATE extraction assertions)
+- `tests/native_bootstrap.mojo:36` (native-bootstrap metadata guard SQLSTATE extraction assertions)
+- `tests/native_bootstrap.mojo:180` (unsupported query `0A000` extraction assertion)
+- `tests/errors.py:74` (bridge-shim simple-path SQLSTATE propagation)
+- `tests/errors.py:86` (bridge-shim extended-path SQLSTATE propagation)
+- `tests/errors.py:92` (bridge-shim auth guard SQLSTATE propagation)
 - Gaps/next actions:
-- Expand truncation-path negative coverage to native binary decode once Mojo transport replaces the bridge shim.
+- Add native transport truncation/decode negative-path coverage once wire transport is active.
 
 ## RES (JDBCBL)
 
 - Current status: Partial
 - Lane-local source anchors:
-- `src/scratchbird.mojo:1481` (`ScratchBirdConnection.close`)
-- `src/scratchbird.mojo:781` (`ScratchBirdStream.close`)
-- `src/scratchbird.mojo:1492` (`_begin_operation` circuit-breaker/keepalive/telemetry hooks)
-- `src/scratchbird/circuit_breaker.mojo:29` (`CircuitBreaker` deterministic CLOSED/OPEN/HALF_OPEN state transitions)
-- `src/scratchbird/leak_detector.mojo:31` (`LeakDetector` deterministic checkout/checkin/leak-scan bookkeeping)
-- `src/scratchbird/keepalive.mojo:29` (`KeepaliveTracker` current-syntax idle/validation state helpers)
-- `src/scratchbird/keepalive.mojo:66` (`KeepaliveManager` deterministic registration/due-validation bookkeeping)
-- `src/scratchbird/telemetry.mojo:76` (`TelemetryCollector` metrics/slow-log/prometheus scaffold in current syntax)
-- `src/scratchbird/pipeline.mojo:20` (`QueryPipeline` deterministic queue/flush accounting scaffold)
+- `src/scratchbird_native.mojo:153` (native-bootstrap connection close reset semantics)
+- `src/scratchbird_native.mojo:193` (native-bootstrap stream close semantics)
+- `src/scratchbird.py:766` (bridge-shim connection close)
+- `src/scratchbird.py:870` (bridge-shim stream close)
+- `src/scratchbird/circuit_breaker.mojo:29` (deterministic circuit-breaker state transitions)
+- `src/scratchbird/leak_detector.mojo:31` (deterministic leak detector bookkeeping)
+- `src/scratchbird/keepalive.mojo:29` (deterministic keepalive tracker)
+- `src/scratchbird/keepalive.mojo:66` (deterministic keepalive manager)
+- `src/scratchbird/telemetry.mojo:76` (deterministic telemetry scaffolding)
+- `src/scratchbird/pipeline.mojo:20` (deterministic pipeline queue/flush scaffolding)
 - Lane-local test anchors:
-- `tests/integration.mojo:31`
-- `tests/sbdriver_conformance.mojo:212`
 - `tests/txn_exec_parity.py:320` (idempotent close behavior for connection and stream)
-- `tests/lifecycle_scaffolds.mojo:20` (circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic scaffold smoke coverage)
+- `tests/lifecycle_scaffolds.mojo:20` (lifecycle scaffolds smoke coverage)
 - Gaps/next actions:
-- Wire current-syntax resilience scaffolds into the active runtime path once native transport cutover work starts using current Mojo syntax.
+- Wire lifecycle scaffolds into the active native runtime path once transport cutover lands.
