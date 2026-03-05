@@ -1176,55 +1176,60 @@ def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) ->
     return resolved
 
 
-def _table_filter_by_schema_name(literal: str) -> str:
+def _comparison_predicate(column: str, restriction_value: str) -> str:
+    literal = f"'{_escape_sql_literal(restriction_value)}'"
+    if "%" in restriction_value or "_" in restriction_value:
+        return f"{column} LIKE {literal}"
+    return f"{column} = {literal}"
+
+
+def _table_filter_by_schema_name(restriction_value: str) -> str:
     return (
         "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id "
-        f"WHERE s.schema_name = {literal})"
+        f"WHERE {_comparison_predicate('s.schema_name', restriction_value)})"
     )
 
 
-def _index_filter_by_schema_name(literal: str) -> str:
+def _index_filter_by_schema_name(restriction_value: str) -> str:
     return (
         "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id "
-        f"JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = {literal})"
+        f"JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE {_comparison_predicate('s.schema_name', restriction_value)})"
     )
 
 
-def _table_filter_by_table_name(literal: str) -> str:
-    return f"table_id IN (SELECT table_id FROM sys.tables WHERE table_name = {literal})"
+def _table_filter_by_table_name(restriction_value: str) -> str:
+    return f"table_id IN (SELECT table_id FROM sys.tables WHERE {_comparison_predicate('table_name', restriction_value)})"
 
 
-def _index_filter_by_table_name(literal: str) -> str:
+def _index_filter_by_table_name(restriction_value: str) -> str:
     return (
         "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id "
-        f"WHERE t.table_name = {literal})"
+        f"WHERE {_comparison_predicate('t.table_name', restriction_value)})"
     )
 
 
 def _metadata_restriction_predicate(collection_name: str, restriction_key: str, restriction_value: str) -> str:
-    literal = f"'{_escape_sql_literal(restriction_value)}'"
-
     if restriction_key == "name":
         if collection_name == "schemas":
-            return f"schema_name = {literal}"
+            return _comparison_predicate("schema_name", restriction_value)
         if collection_name == "catalogs":
-            return f"catalog_name = {literal}"
+            return _comparison_predicate("catalog_name", restriction_value)
         if collection_name in ("tables", "table_privileges"):
-            return f"table_name = {literal}"
+            return _comparison_predicate("table_name", restriction_value)
         if collection_name in ("columns", "column_privileges", "index_columns"):
-            return f"column_name = {literal}"
+            return _comparison_predicate("column_name", restriction_value)
         if collection_name == "indexes":
-            return f"index_name = {literal}"
+            return _comparison_predicate("index_name", restriction_value)
         if collection_name in ("constraints", "primary_keys", "foreign_keys"):
-            return f"constraint_name = {literal}"
+            return _comparison_predicate("constraint_name", restriction_value)
         if collection_name == "procedures":
-            return f"procedure_name = {literal}"
+            return _comparison_predicate("procedure_name", restriction_value)
         if collection_name == "functions":
-            return f"function_name = {literal}"
+            return _comparison_predicate("function_name", restriction_value)
         if collection_name == "routines":
-            return f"routine_name = {literal}"
+            return _comparison_predicate("routine_name", restriction_value)
         if collection_name == "type_info":
-            return f"data_type_name = {literal}"
+            return _comparison_predicate("data_type_name", restriction_value)
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",
@@ -1232,19 +1237,25 @@ def _metadata_restriction_predicate(collection_name: str, restriction_key: str, 
 
     if restriction_key == "schema_name":
         if collection_name == "schemas":
-            return f"schema_name = {literal}"
+            return _comparison_predicate("schema_name", restriction_value)
         if collection_name == "catalogs":
-            return f"catalog_name = {literal}"
+            return _comparison_predicate("catalog_name", restriction_value)
         if collection_name == "tables":
-            return f"schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = {literal})"
+            return (
+                "schema_id IN (SELECT schema_id FROM sys.schemas WHERE "
+                f"{_comparison_predicate('schema_name', restriction_value)})"
+            )
         if collection_name in ("columns", "indexes", "constraints"):
-            return _table_filter_by_schema_name(literal)
+            return _table_filter_by_schema_name(restriction_value)
         if collection_name == "index_columns":
-            return _index_filter_by_schema_name(literal)
+            return _index_filter_by_schema_name(restriction_value)
         if collection_name in ("primary_keys", "foreign_keys", "table_privileges", "column_privileges"):
-            return _table_filter_by_schema_name(literal)
+            return _table_filter_by_schema_name(restriction_value)
         if collection_name in ("procedures", "functions", "routines"):
-            return f"schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = {literal})"
+            return (
+                "schema_id IN (SELECT schema_id FROM sys.schemas WHERE "
+                f"{_comparison_predicate('schema_name', restriction_value)})"
+            )
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",
@@ -1252,13 +1263,13 @@ def _metadata_restriction_predicate(collection_name: str, restriction_key: str, 
 
     if restriction_key == "table_name":
         if collection_name in ("tables", "table_privileges"):
-            return f"table_name = {literal}"
+            return _comparison_predicate("table_name", restriction_value)
         if collection_name in ("columns", "indexes", "constraints"):
-            return _table_filter_by_table_name(literal)
+            return _table_filter_by_table_name(restriction_value)
         if collection_name == "index_columns":
-            return _index_filter_by_table_name(literal)
+            return _index_filter_by_table_name(restriction_value)
         if collection_name in ("primary_keys", "foreign_keys", "column_privileges"):
-            return _table_filter_by_table_name(literal)
+            return _table_filter_by_table_name(restriction_value)
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",
@@ -1266,7 +1277,7 @@ def _metadata_restriction_predicate(collection_name: str, restriction_key: str, 
 
     if restriction_key == "column_name":
         if collection_name in ("columns", "column_privileges", "index_columns"):
-            return f"column_name = {literal}"
+            return _comparison_predicate("column_name", restriction_value)
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",

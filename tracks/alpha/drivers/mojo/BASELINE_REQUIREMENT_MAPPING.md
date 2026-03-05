@@ -108,15 +108,17 @@
 - `src/scratchbird_native.mojo:628` (native-bootstrap metadata alias normalization)
 - `src/scratchbird_native.mojo:641` (native-bootstrap metadata query resolution)
 - `src/scratchbird_native.mojo:676` (native-bootstrap metadata restriction alias normalization)
-- `src/scratchbird_native.mojo:708` (native-bootstrap cross-collection restriction predicate planner)
-- `src/scratchbird_native.mojo:793` (native-bootstrap restriction-aware metadata query resolution)
+- `src/scratchbird_native.mojo:692` (native-bootstrap metadata restriction comparator supports exact + wildcard (`LIKE`) predicates)
+- `src/scratchbird_native.mojo:715` (native-bootstrap cross-collection restriction predicate planner)
+- `src/scratchbird_native.mojo:798` (native-bootstrap restriction-aware metadata query resolution)
 - `src/scratchbird.py:1028` (bridge-shim `query_metadata` route)
 - `src/scratchbird.py:1034` (bridge-shim `query_metadata_rows` executable helper)
 - `src/scratchbird.py:1045` (bridge-shim `query_metadata_restricted` route)
 - `src/scratchbird.py:1059` (bridge-shim `query_metadata_rows_restricted` executable helper)
 - `src/scratchbird.py:1168` (bridge-shim metadata restriction alias normalization)
-- `src/scratchbird.py:1204` (bridge-shim cross-collection restriction predicate planner)
-- `src/scratchbird.py:1292` (bridge-shim restriction-aware metadata query resolution)
+- `src/scratchbird.py:1179` (bridge-shim metadata restriction comparator supports exact + wildcard (`LIKE`) predicates)
+- `src/scratchbird.py:1211` (bridge-shim cross-collection restriction predicate planner)
+- `src/scratchbird.py:1303` (bridge-shim restriction-aware metadata query resolution)
 - Lane-local test anchors:
 - `tests/scratchbird_surface.mojo:56` (facade metadata alias/query/rowcount assertions)
 - `tests/scratchbird_surface.mojo:93` (facade restricted metadata query and rowcount assertions)
@@ -127,11 +129,12 @@
 - `tests/metadata_execution.py:84` (bridge-shim metadata execution routing coverage)
 - `tests/metadata_execution.py:85` (bridge-shim metadata restriction alias normalization coverage)
 - `tests/metadata_execution.py:95` (bridge-shim restriction-aware metadata query resolution coverage)
-- `tests/metadata_execution.py:150` (bridge-shim restricted metadata execution routing coverage)
-- `tests/metadata_execution.py:181` (bridge-shim restricted metadata rowcount helper coverage)
+- `tests/metadata_execution.py:103` (bridge-shim wildcard restriction query-shaping coverage)
+- `tests/metadata_execution.py:160` (bridge-shim restricted metadata execution routing coverage)
+- `tests/metadata_execution.py:191` (bridge-shim restricted metadata rowcount helper coverage)
 - Gaps/next actions:
 - Add live metadata stability assertions (schemas/tables/columns) against running endpoints.
-- Expand metadata payload-shaping checks for editor contracts plus multi-restriction and wildcard semantics.
+- Expand metadata payload-shaping checks for editor contracts plus multi-restriction semantics.
 
 ## TYPE (JDBCBL)
 

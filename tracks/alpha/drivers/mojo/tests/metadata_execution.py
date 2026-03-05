@@ -99,6 +99,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "restricted table query mismatch",
     )
     _require(
+        "table_name LIKE 'ord%'"
+        in scratchbird.resolve_metadata_collection_query_restricted("table", "table", "ord%"),
+        "table wildcard restriction should use LIKE predicate",
+    )
+    _require(
         "schema_name = 'acme''schema'"
         in scratchbird.resolve_metadata_collection_query_restricted("schema", "schema", "acme'schema"),
         "restricted schema query should escape SQL literals",
@@ -107,6 +112,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
         in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "public"),
         "columns schema restriction should map through table-schema subquery",
+    )
+    _require(
+        "s.schema_name LIKE 'pub%'"
+        in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "pub%"),
+        "columns schema wildcard restriction should use LIKE predicate",
     )
     _require(
         "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE t.table_name = 'orders')"

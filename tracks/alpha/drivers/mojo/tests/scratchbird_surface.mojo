@@ -100,11 +100,25 @@ fn main() raises:
         conn.query_metadata_rows_restricted("table", "name", "orders") == 1,
         "restricted metadata rowcount mismatch",
     )
+    var wildcard_tables = conn.query_metadata_restricted("tables", "table", "ord%")
+    _require(
+        "table_name LIKE 'ord%'" in wildcard_tables,
+        "table wildcard restriction should use LIKE predicate",
+    )
+    _require(
+        conn.query_metadata_rows_restricted("tables", "table", "ord%") == 1,
+        "table wildcard restriction rowcount mismatch",
+    )
     var restricted_columns_schema = conn.query_metadata_restricted("columns", "schema", "public")
     _require(
         "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
         in restricted_columns_schema,
         "columns schema restriction should map through table-schema subquery",
+    )
+    var wildcard_columns_schema = conn.query_metadata_restricted("columns", "schema", "pub%")
+    _require(
+        "s.schema_name LIKE 'pub%'" in wildcard_columns_schema,
+        "columns schema wildcard restriction should use LIKE predicate",
     )
     _require(
         conn.query_metadata_rows_restricted("columns", "schema", "public") == 1,
