@@ -106,6 +106,19 @@ fn _assert_config_session_pooling_manager_extensions() raises:
     _require(cfg_session_overrides.read_only, "readonly parse mismatch")
     _require(cfg_session_overrides.current_schema == "analytics", "current_schema parse mismatch")
     _require(cfg_session_overrides.default_row_fetch_size == 128, "default_row_fetch_size parse mismatch")
+    var cfg_prepare_threshold_alias = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&preparethreshold=7"
+    )
+    _require(cfg_prepare_threshold_alias.prepare_threshold == 7, "preparethreshold alias mismatch")
+    var cfg_rewrite_batched_alias = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&rewritebatchedinserts=true"
+    )
+    _require(cfg_rewrite_batched_alias.rewrite_batched_inserts, "rewritebatchedinserts alias mismatch")
+    var cfg_logger_aliases = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&logLevel=debug&log_file=/tmp/sb_mojo_native.log"
+    )
+    _require(cfg_logger_aliases.logger_level == "DEBUG", "logLevel alias normalization mismatch")
+    _require(cfg_logger_aliases.logger_file == "/tmp/sb_mojo_native.log", "log_file alias mismatch")
     var cfg_session_aliases = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&applicationname=alias_client&auto_commit=false&read_only=true&searchPath=ops&fetchSize=64"
     )
@@ -303,6 +316,10 @@ fn main() raises:
     _require(not cfg.read_only, "readonly default mismatch")
     _require(cfg.current_schema == "", "current_schema default mismatch")
     _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
+    _require(cfg.prepare_threshold == 5, "prepare_threshold default mismatch")
+    _require(not cfg.rewrite_batched_inserts, "rewrite_batched_inserts default mismatch")
+    _require(cfg.logger_level == "OFF", "logger_level default mismatch")
+    _require(cfg.logger_file == "", "logger_file default mismatch")
     _require(not cfg.metadata_expand_schema_parents, "metadata_expand_schema_parents default mismatch")
     _require(cfg.tcp_keepalive, "tcpkeepalive default mismatch")
     _require(cfg.pooling_enabled, "pooling default mismatch")

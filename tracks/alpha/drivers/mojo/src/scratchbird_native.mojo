@@ -39,6 +39,10 @@ struct ScratchBirdConfig:
     var current_schema: String
     var metadata_expand_schema_parents: Bool
     var default_row_fetch_size: Int
+    var prepare_threshold: Int
+    var rewrite_batched_inserts: Bool
+    var logger_level: String
+    var logger_file: String
     var tcp_keepalive: Bool
     var pooling_enabled: Bool
     var min_pool_size: Int
@@ -136,6 +140,27 @@ struct ScratchBirdConfig:
             "default_row_fetch_size",
             "fetch_size",
             _query_int(dsn, "fetchsize", 0),
+        )
+        self.prepare_threshold = _query_int_alias(dsn, "prepare_threshold", "preparethreshold", 5)
+        self.rewrite_batched_inserts = _query_bool_alias(
+            dsn,
+            "rewrite_batched_inserts",
+            "rewritebatchedinserts",
+            False,
+        )
+        self.logger_level = _normalize_logger_level(
+            _query_value_alias(
+                dsn,
+                "logger_level",
+                "loggerlevel",
+                _query_value_alias(dsn, "log_level", "loglevel", "OFF"),
+            )
+        )
+        self.logger_file = _query_value_alias(
+            dsn,
+            "logger_file",
+            "loggerfile",
+            _query_value_alias(dsn, "log_file", "logfile", ""),
         )
         self.tcp_keepalive = _query_bool(dsn, "tcpkeepalive", True)
         self.pooling_enabled = _query_bool(dsn, "pooling", True)
@@ -989,6 +1014,20 @@ fn _query_bool(dsn: String, key: String, default_value: Bool) -> Bool:
     return _as_bool(raw)
 
 
+fn _query_bool_alias(
+    dsn: String,
+    primary_key: String,
+    alias_key: String,
+    default_value: Bool,
+) -> Bool:
+    var raw = _query_value(dsn, primary_key, "")
+    if raw.strip() == "":
+        raw = _query_value(dsn, alias_key, "")
+    if raw.strip() == "":
+        return default_value
+    return _as_bool(raw)
+
+
 fn _clamp_non_negative(value: Int) -> Int:
     if value < 0:
         return 0
@@ -1032,6 +1071,13 @@ fn _normalize_compression_value(value: String) -> String:
     var normalized = value.strip().lower()
     if normalized == "" or normalized == "none":
         return "off"
+    return normalized
+
+
+fn _normalize_logger_level(value: String) -> String:
+    var normalized = value.strip().upper()
+    if normalized == "":
+        return "OFF"
     return normalized
 
 
