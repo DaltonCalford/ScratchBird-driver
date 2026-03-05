@@ -54,6 +54,8 @@ Optional integration env vars:
 - `SCRATCHBIRD_MOJO_URL` for direct smoke
 - `SCRATCHBIRD_MOJO_MANAGER_URL` for manager-proxy smoke
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
+- `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native bootstrap smoke inside `tests/integration.mojo`
+- `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail if native bootstrap launcher is unavailable/failing
 
 ## Next Steps
 

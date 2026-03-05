@@ -2,11 +2,92 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 import scratchbird
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
+    mojo_bin = os.environ.get("MOJO_BIN", "").strip()
+    if mojo_bin:
+        return [mojo_bin, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+
+    mojo_path = shutil.which("mojo")
+    if mojo_path:
+        return [mojo_path, "run", "-I", "src", "tests/native_bootstrap.mojo"]
+
+    pixi_path = shutil.which("pixi")
+    manifest = pathlib.Path(
+        os.environ.get(
+            "MOJO_PIXI_MANIFEST",
+            str(pathlib.Path.home() / "mojo-work" / "sb-mojo"),
+        )
+    )
+    if pixi_path and manifest.is_dir():
+        return [
+            pixi_path,
+            "run",
+            "-m",
+            str(manifest),
+            "--executable",
+            "mojo",
+            "run",
+            "-I",
+            "src",
+            "tests/native_bootstrap.mojo",
+        ]
+
+    _ = lane_root
+    return None
+
+
+def _run_native_bootstrap_smoke(lane_root: pathlib.Path) -> None:
+    if _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP", "")):
+        print("SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP set; skipping Mojo native bootstrap smoke.")
+        return
+
+    required = _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_NATIVE_REQUIRED", ""))
+    command = _native_bootstrap_command(lane_root)
+    if command is None:
+        message = "Mojo native bootstrap launcher unavailable (no mojo/pixi found)."
+        if required:
+            raise RuntimeError(message)
+        print(message + " Continuing with Python integration smoke.")
+        return
+
+    completed = subprocess.run(
+        command,
+        cwd=lane_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        output = (completed.stdout or "").strip()
+        if output:
+            print(output)
+        else:
+            print("Mojo native bootstrap smoke OK")
+        return
+
+    error_text = (completed.stderr or completed.stdout or "").strip()
+    first_line = error_text.splitlines()[0] if error_text else "no details"
+    if required:
+        raise RuntimeError(
+            f"Mojo native bootstrap smoke failed with exit {completed.returncode}: {first_line}"
+        )
+    print(
+        "Mojo native bootstrap smoke failed (continuing with Python integration smoke): "
+        f"{first_line}"
+    )
 
 
 def _run_smoke_for_dsn(dsn: str, label: str) -> None:
@@ -44,6 +125,9 @@ def _expect_auth_failure(dsn: str) -> None:
 
 
 def main() -> None:
+    lane_root = pathlib.Path(__file__).resolve().parents[1]
+    _run_native_bootstrap_smoke(lane_root)
+
     dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "")
     if dsn:
         _run_smoke_for_dsn(dsn, "direct integration")

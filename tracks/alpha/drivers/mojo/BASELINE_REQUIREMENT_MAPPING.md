@@ -26,6 +26,7 @@
 - `tests/connection_guards.py:26`
 - `tests/connection_guards.py:54` (`front_door_mode` validation guard)
 - `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
+- `tests/integration.py:52` (integration launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
 - `tests/native_bootstrap.mojo:30` (native bootstrap guard/query smoke path via `mojo run -I src`)
