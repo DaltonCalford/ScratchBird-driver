@@ -151,6 +151,7 @@ fn main() raises:
     _require(cfg_credential_override_hostonly.password == "host_pass", "host-only password override mismatch")
 
     var conn = scratchbird_native.connect(cfg)
+    _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")
     _require(conn.ping(), "ping should return true")
     _require(conn.query("SELECT 1") == 1, "SELECT 1 should return 1")
     _require(conn.query("SELECT * FROM type_coverage") == 1, "type_coverage stub should return success")

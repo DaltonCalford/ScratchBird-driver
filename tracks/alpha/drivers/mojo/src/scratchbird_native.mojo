@@ -87,6 +87,8 @@ struct ScratchBirdConfig:
 
 struct ScratchBirdConnection:
     var user: String
+    var host: String
+    var port: Int
     var database: String
     var front_door_mode: String
     var cancel_requested: Bool
@@ -106,6 +108,8 @@ struct ScratchBirdConnection:
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
         self.user = config.user
+        self.host = config.host
+        self.port = config.port
         self.database = config.database
         self.front_door_mode = config.front_door_mode
         self.cancel_requested = False
@@ -124,7 +128,12 @@ struct ScratchBirdConnection:
         self.keepalive_tracker = keepalive.KeepaliveTracker(keepalive_cfg)
         self.telemetry = telemetry.TelemetryCollector()
         self.operation_clock_ms = 0
-        self.connection_id = self.user + "@" + self.database
+        self.connection_id = _connection_identity(
+            self.user,
+            self.host,
+            self.port,
+            self.database,
+        )
         var leak_cfg = leak_detector.LeakDetectionConfig()
         leak_cfg.threshold_ms = _clamp_non_negative(config.leak_threshold_ms)
         self.leak_detector = leak_detector.LeakDetector(leak_cfg)
@@ -733,6 +742,15 @@ fn _clamp_positive(value: Int, fallback: Int) -> Int:
     if value <= 0:
         return fallback
     return value
+
+
+fn _connection_identity(
+    user: String,
+    host: String,
+    port: Int,
+    database: String,
+) -> String:
+    return user + "@" + host + ":" + String(port) + "/" + database
 
 
 fn _normalize_front_door_mode_value(value: String) -> String:

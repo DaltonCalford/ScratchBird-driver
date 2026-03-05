@@ -141,6 +141,7 @@ fn main() raises:
     credential_override_hostonly_conn.close()
 
     var conn = scratchbird.connect(cfg)
+    _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")
     _require(conn.ping(), "ping should return true")
     _require(conn.query("SELECT 1") == 1, "SELECT 1 should return 1")
 
