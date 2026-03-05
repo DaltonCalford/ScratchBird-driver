@@ -22,10 +22,10 @@
 - `tests/scratchbird_surface.mojo:35` (current-syntax `scratchbird` facade connect/ping/query smoke)
 - `tests/scratchbird_surface.mojo:87` (facade guard SQLSTATE assertions)
 - `tests/native_bootstrap.mojo:53` (native-bootstrap connect/ping/query smoke)
-- `tests/integration.py:71` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
-- `tests/integration.py:156` (deterministic fallback DSN keeps direct integration non-skipping by default)
-- `tests/integration.py:164` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
-- `tests/integration.py:172` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
+- `tests/integration.py:79` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
+- `tests/integration.py:314` (deterministic fallback DSN keeps direct integration non-skipping by default)
+- `tests/integration.py:322` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
+- `tests/integration.py:334` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
 - `tests/sbdriver_conformance.py:80` (conformance launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
 - `tests/sbdriver_conformance.py:425` (deterministic fallback DSN keeps conformance non-skipping by default)
 - Gaps/next actions:
@@ -147,8 +147,8 @@
 - `tests/metadata_execution.py:378` (bridge-shim SQL LIKE escape-aware/case-insensitive matcher coverage)
 - `tests/metadata_recursive_schema.py:117` (deterministic editor payload shape contract coverage)
 - `tests/metadata_recursive_schema.py:147` (shim connection default editor payload contract coverage)
-- `tests/integration.py:192` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
 - `tests/integration.py:167` (integration smoke DDL-editor payload contract + tree-parent assertions)
+- `tests/integration.py:192` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
 - `tests/integration.py:234` (integration smoke deterministic fallback metadata content assertions)
 - Gaps/next actions:
 - Expand metadata stability/payload assertions to runtime managed/listener endpoint matrices once live environments are available.
