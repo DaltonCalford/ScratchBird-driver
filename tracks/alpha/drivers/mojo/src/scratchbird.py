@@ -864,7 +864,7 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         or "require"
     ).strip().lower()
     if sslmode == "disable":
-        raise RuntimeError("TLS is required for ScratchBird connections")
+        raise ScratchBirdError("TLS is required for ScratchBird connections", "0A000")
 
     _ = _dsn_last_query_value(config.dsn, ("binary_transfer", "binarytransfer"), None)
     compression = str(_dsn_last_query_value(config.dsn, ("compression",), "off") or "off").strip().lower()

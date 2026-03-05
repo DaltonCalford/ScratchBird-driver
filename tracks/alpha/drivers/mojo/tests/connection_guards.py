@@ -45,9 +45,13 @@ def _assert_connect_ok(dsn: str) -> None:
 
 
 def main() -> None:
-    _assert_connect_guard(
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",
-        "TLS is required for ScratchBird connections",
+        "0A000",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?ssl=disable",
+        "0A000",
     )
     _assert_connect_ok(
         "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false",

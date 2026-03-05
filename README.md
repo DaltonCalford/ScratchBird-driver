@@ -110,6 +110,7 @@ Legend:
 - **Mojo lane:** Aligned bridge-shim connect guard SQLSTATE parity for invalid `front_door_mode` and unsupported `compression` (`0A000`), and added alias-precedence/token coverage for `frontdoormode|ingress_mode` with `mcp_auth_token`.
 - **Mojo lane:** Added bridge-shim begin-option integer validation parity (`22023`) across transaction knobs (`conflict_action`, `autocommit_mode`, `isolation_level`, `access_mode`, `deferrable`, `wait_mode|wait`, `timeout_ms`) for both wire payload mapping and local shim begin flow, plus closed-connection `prepare` guard parity (`08003`).
 - **Mojo lane:** Aligned bridge-shim wire transaction lifecycle state transitions by updating `_txn_id`/savepoint state after begin/commit/rollback, with deterministic parity assertions in `txn_exec_parity`.
+- **Mojo lane:** Aligned bridge-shim TLS-required guard SQLSTATE parity for `sslmode=disable` / `ssl=disable` (`0A000`) in connection-guard coverage.
 
 ---
 
