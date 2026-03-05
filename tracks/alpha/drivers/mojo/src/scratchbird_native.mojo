@@ -37,7 +37,20 @@ struct ScratchBirdConfig:
     var auto_commit: Bool
     var read_only: Bool
     var current_schema: String
+    var metadata_expand_schema_parents: Bool
     var default_row_fetch_size: Int
+    var tcp_keepalive: Bool
+    var pooling_enabled: Bool
+    var min_pool_size: Int
+    var max_pool_size: Int
+    var connection_lifetime_s: Int
+    var manager_auth_token: String
+    var manager_username: String
+    var manager_database: String
+    var manager_connection_profile: String
+    var manager_client_intent: String
+    var manager_client_flags: Int
+    var manager_auth_fast_path: Bool
     var protocol: String
     var front_door_mode: String
     var sslmode: String
@@ -100,11 +113,58 @@ struct ScratchBirdConfig:
             "search_path",
             _query_value(dsn, "searchpath", ""),
         )
+        self.metadata_expand_schema_parents = _as_bool(
+            _query_value_alias(
+                dsn,
+                "metadata_expand_schema_parents",
+                "metadataexpandschemaparents",
+                _query_value_alias(
+                    dsn,
+                    "expand_schema_parents",
+                    "expandschemaparents",
+                    _query_value_alias(
+                        dsn,
+                        "dbeaver_expand_schema_parents",
+                        "dbeaverexpandschemaparents",
+                        "false",
+                    ),
+                ),
+            )
+        )
         self.default_row_fetch_size = _query_int_alias(
             dsn,
             "default_row_fetch_size",
             "fetch_size",
             _query_int(dsn, "fetchsize", 0),
+        )
+        self.tcp_keepalive = _query_bool(dsn, "tcpkeepalive", True)
+        self.pooling_enabled = _query_bool(dsn, "pooling", True)
+        self.min_pool_size = _query_int_alias(dsn, "min_pool_size", "minpoolsize", 0)
+        self.max_pool_size = _query_int_alias(dsn, "max_pool_size", "maxpoolsize", 10)
+        self.connection_lifetime_s = _query_int_alias(
+            dsn,
+            "connection_lifetime",
+            "connectionlifetime",
+            _query_int(dsn, "poolingconnectionlifetime", 30),
+        )
+        self.manager_auth_token = _query_value_alias(dsn, "manager_auth_token", "mcp_auth_token", "")
+        self.manager_username = _query_value_alias(dsn, "manager_username", "mcp_username", "")
+        self.manager_database = _query_value_alias(dsn, "manager_database", "mcp_database", "")
+        self.manager_connection_profile = _query_value_alias(
+            dsn,
+            "manager_connection_profile",
+            "mcp_connection_profile",
+            "native_v3",
+        )
+        self.manager_client_intent = _query_value_alias(
+            dsn,
+            "manager_client_intent",
+            "mcp_client_intent",
+            "native_v3",
+        )
+        self.manager_client_flags = _query_int_alias(dsn, "manager_client_flags", "mcp_client_flags", 0)
+        self.manager_auth_fast_path = _as_bool(
+            _query_value_alias(dsn, "manager_auth_fast_path", "mcp_auth_fast_path", "true")
         )
 
         var protocol_raw = ""
@@ -1158,6 +1218,8 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
     var mode = _normalize_front_door_mode_value(config.front_door_mode)
     if mode != "direct" and mode != "manager_proxy":
         raise Error("22023 front_door_mode must be direct or manager_proxy.")
+    if mode == "manager_proxy" and config.manager_auth_token.strip() == "":
+        raise Error("08001 manager_proxy mode requires manager_auth_token")
 
     if config.user.strip() == "" or config.database.strip() == "":
         raise Error("28000 user and database are required")
@@ -1184,6 +1246,14 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.default_row_fetch_size < 0:
         raise Error("22023 default_row_fetch_size must be >= 0")
+    if config.min_pool_size < 0:
+        raise Error("22023 min_pool_size must be >= 0")
+    if config.max_pool_size < 1:
+        raise Error("22023 max_pool_size must be >= 1")
+    if config.connection_lifetime_s < 0:
+        raise Error("22023 connection_lifetime must be >= 0")
+    if config.manager_client_flags < 0:
+        raise Error("22023 manager_client_flags must be >= 0")
 
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")

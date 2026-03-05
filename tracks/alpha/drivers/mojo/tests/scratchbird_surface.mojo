@@ -72,24 +72,7 @@ fn _assert_metadata_restriction_count_guard(collection_name: String) raises:
         )
 
 
-fn main() raises:
-    var cfg = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
-    )
-    _require(cfg.user == "user", "user parse mismatch")
-    _require(cfg.password == "pass", "password parse mismatch")
-    _require(cfg.host == "localhost", "host parse mismatch")
-    _require(cfg.port == 3092, "port parse mismatch")
-    _require(cfg.database == "testdb", "database parse mismatch")
-    _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
-    _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
-    _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
-    _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
-    _require(cfg.auto_commit, "autocommit default mismatch")
-    _require(not cfg.read_only, "readonly default mismatch")
-    _require(cfg.current_schema == "", "current_schema default mismatch")
-    _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
-    _require(cfg.protocol == "native", "protocol default mismatch")
+fn _assert_config_parsing_extensions() raises:
     var cfg_default_port = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
@@ -131,15 +114,15 @@ fn main() raises:
     )
     _require(cfg_mode_precedence.front_door_mode == "direct", "front_door_mode precedence mismatch")
     var cfg_frontdoormode_alias = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&frontdoormode=managed"
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&frontdoormode=managed&manager_auth_token=mode_token"
     )
     _require(cfg_frontdoormode_alias.front_door_mode == "manager_proxy", "frontdoormode alias normalization mismatch")
     var cfg_connection_mode_alias = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_mode=manager-proxy"
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_mode=manager-proxy&manager_auth_token=mode_token"
     )
     _require(cfg_connection_mode_alias.front_door_mode == "manager_proxy", "connection_mode alias normalization mismatch")
     var cfg_ingress_mode_alias = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managerproxy"
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managerproxy&manager_auth_token=mode_token"
     )
     _require(cfg_ingress_mode_alias.front_door_mode == "manager_proxy", "ingress_mode alias normalization mismatch")
     var cfg_password_colon = scratchbird.ScratchBirdConfig(
@@ -195,12 +178,44 @@ fn main() raises:
     _require(cfg_session_aliases.read_only, "read_only alias mismatch")
     _require(cfg_session_aliases.current_schema == "ops", "searchPath alias mismatch")
     _require(cfg_session_aliases.default_row_fetch_size == 64, "fetchSize alias mismatch")
+    var cfg_metadata_expand_alias = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&metadata_expand_schema_parents=true"
+    )
+    _require(cfg_metadata_expand_alias.metadata_expand_schema_parents, "metadata_expand_schema_parents alias mismatch")
+    var cfg_pooling_overrides = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&tcpkeepalive=false&pooling=false&min_pool_size=2&maxpoolsize=12&connection_lifetime=45"
+    )
+    _require(not cfg_pooling_overrides.tcp_keepalive, "tcpkeepalive parse mismatch")
+    _require(not cfg_pooling_overrides.pooling_enabled, "pooling parse mismatch")
+    _require(cfg_pooling_overrides.min_pool_size == 2, "min_pool_size parse mismatch")
+    _require(cfg_pooling_overrides.max_pool_size == 12, "maxpoolsize parse mismatch")
+    _require(cfg_pooling_overrides.connection_lifetime_s == 45, "connection_lifetime parse mismatch")
+    var cfg_manager_overrides = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager_proxy&manager_auth_token=token_123&manager_username=mgr_user&manager_database=mgr_db&manager_connection_profile=mgr_profile&mcp_client_intent=mgr_intent&mcp_client_flags=7&mcp_auth_fast_path=false"
+    )
+    _require(cfg_manager_overrides.manager_auth_token == "token_123", "manager_auth_token parse mismatch")
+    _require(cfg_manager_overrides.manager_username == "mgr_user", "manager_username parse mismatch")
+    _require(cfg_manager_overrides.manager_database == "mgr_db", "manager_database parse mismatch")
+    _require(cfg_manager_overrides.manager_connection_profile == "mgr_profile", "manager_connection_profile parse mismatch")
+    _require(cfg_manager_overrides.manager_client_intent == "mgr_intent", "manager_client_intent alias mismatch")
+    _require(cfg_manager_overrides.manager_client_flags == 7, "manager_client_flags alias mismatch")
+    _require(not cfg_manager_overrides.manager_auth_fast_path, "manager_auth_fast_path alias mismatch")
+    var cfg_manager_defaults = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
+    )
+    _require(cfg_manager_defaults.manager_connection_profile == "native_v3", "manager_connection_profile default mismatch")
+    _require(cfg_manager_defaults.manager_client_intent == "native_v3", "manager_client_intent default mismatch")
+    _require(cfg_manager_defaults.manager_auth_fast_path, "manager_auth_fast_path default mismatch")
+    var cfg_mcp_database_alias = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&mcp_database=alias_mgr_db"
+    )
+    _require(cfg_mcp_database_alias.manager_database == "alias_mgr_db", "mcp_database alias mismatch")
     var cfg_binarytransfer_alias = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binarytransfer=false"
     )
     _require(not cfg_binarytransfer_alias.binary_transfer, "binarytransfer alias mismatch")
     var cfg_manager_dash = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager-proxy"
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager-proxy&manager_auth_token=mode_token"
     )
     _require(cfg_manager_dash.front_door_mode == "manager_proxy", "manager-proxy mode normalization mismatch")
     var manager_dash_conn = scratchbird.connect(cfg_manager_dash)
@@ -221,6 +236,36 @@ fn main() raises:
     pg_alias_override_conn.close()
     var jdbc_alias_override_conn = scratchbird.connect(cfg_jdbc_alias_override)
     jdbc_alias_override_conn.close()
+    var manager_overrides_conn = scratchbird.connect(cfg_manager_overrides)
+    manager_overrides_conn.close()
+
+
+fn main() raises:
+    var cfg = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
+    )
+    _require(cfg.user == "user", "user parse mismatch")
+    _require(cfg.password == "pass", "password parse mismatch")
+    _require(cfg.host == "localhost", "host parse mismatch")
+    _require(cfg.port == 3092, "port parse mismatch")
+    _require(cfg.database == "testdb", "database parse mismatch")
+    _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
+    _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
+    _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
+    _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
+    _require(cfg.auto_commit, "autocommit default mismatch")
+    _require(not cfg.read_only, "readonly default mismatch")
+    _require(cfg.current_schema == "", "current_schema default mismatch")
+    _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
+    _require(not cfg.metadata_expand_schema_parents, "metadata_expand_schema_parents default mismatch")
+    _require(cfg.tcp_keepalive, "tcpkeepalive default mismatch")
+    _require(cfg.pooling_enabled, "pooling default mismatch")
+    _require(cfg.min_pool_size == 0, "min_pool_size default mismatch")
+    _require(cfg.max_pool_size == 10, "max_pool_size default mismatch")
+    _require(cfg.connection_lifetime_s == 30, "connection_lifetime default mismatch")
+    _require(cfg.manager_client_flags == 0, "manager_client_flags default mismatch")
+    _require(cfg.protocol == "native", "protocol default mismatch")
+    _assert_config_parsing_extensions()
 
     var conn = scratchbird.connect(cfg)
     _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")
@@ -561,6 +606,11 @@ fn main() raises:
         "front_door_mode must be direct or manager_proxy.",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager_proxy",
+        "08001",
+        "manager_proxy mode requires manager_auth_token",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@:3092/testdb?sslmode=require",
         "28000",
         "host and database are required",
@@ -599,6 +649,26 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&default_row_fetch_size=-1",
         "22023",
         "default_row_fetch_size must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&min_pool_size=-1",
+        "22023",
+        "min_pool_size must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&max_pool_size=0",
+        "22023",
+        "max_pool_size must be >= 1",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_lifetime=-1",
+        "22023",
+        "connection_lifetime must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&manager_client_flags=-1",
+        "22023",
+        "manager_client_flags must be >= 0",
     )
 
     print("Mojo scratchbird facade tests OK")

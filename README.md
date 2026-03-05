@@ -88,6 +88,7 @@ Legend:
 - **Mojo lane:** Added DSN alias parsing parity for native bootstrap (`username`, `passwd`, `hostname`, `dbname`) with matching native/facade smoke coverage.
 - **Mojo lane:** Added JDBC/PG DSN alias parity (`pguser`, `pgpassword`, `pghost`, `pgport`, `pgdatabase`, `servername`, `portNumber`, `databaseName`), added `frontdoormode`/`binarytransfer` alias support, and enforced native-only `protocol|parser|dialect` guards with expanded native/facade smoke coverage.
 - **Mojo lane:** Added JDBC-style session property parsing in native bootstrap (`role`, `application_name|applicationname`, `autocommit|auto_commit`, `readonly|read_only`, `current_schema|search_path|searchPath`, `default_row_fetch_size|fetch_size|fetchSize`) with native/facade guard coverage for non-negative fetch-size defaults.
+- **Mojo lane:** Added metadata/session alias parity (`metadata_expand_schema_parents|metadataexpandschemaparents|expand_schema_parents|expandschemaparents|dbeaver_expand_schema_parents|dbeaverexpandschemaparents`) and pooling/manager config parsing (`tcpkeepalive`, `pooling`, `min_pool_size|minpoolsize`, `max_pool_size|maxpoolsize`, `connection_lifetime|connectionlifetime|poolingconnectionlifetime`, `manager_*|mcp_*`), including manager defaults (`manager_connection_profile=native_v3`, `manager_client_intent=native_v3`, `manager_auth_fast_path=true`) with new guard coverage (`08001` manager token required for `manager_proxy`; `22023` guards for `min_pool_size`, `max_pool_size`, `connection_lifetime`, `manager_client_flags`).
 
 ---
 
