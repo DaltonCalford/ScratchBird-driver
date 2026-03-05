@@ -5,8 +5,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 ## P0 (Blocking)
 
 - [ ] Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`. Issue: Open
-- [ ] Enforce TLS required and binary-only once native transport exists. Issue: Open
-- [ ] Reject `compression=zstd` until server support exists. Issue: Open
+- [x] Enforce TLS required and binary-only guard rails in current bridge shim (`tracks/alpha/drivers/mojo/src/scratchbird.py`) with deterministic tests in `tracks/alpha/drivers/mojo/tests/connection_guards.py`. Issue: DONE (2026-03-05)
+- [x] Reject `compression=zstd` until server support exists (`tracks/alpha/drivers/mojo/src/scratchbird.py`) with deterministic tests in `tracks/alpha/drivers/mojo/tests/connection_guards.py`. Issue: DONE (2026-03-05)
 
 ## P1 (Core)
 

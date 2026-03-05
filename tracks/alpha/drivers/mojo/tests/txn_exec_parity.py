@@ -86,6 +86,18 @@ def test_begin_maps_kwargs_to_payload_flags() -> None:
     _require(conn.drained == 1, "begin should drain once")
 
 
+def test_begin_rejects_nested_transaction() -> None:
+    conn = TxnHarness(42)
+    try:
+        scratchbird.ScratchBirdConnection.begin(conn)
+        raise RuntimeError("expected nested transaction begin rejection")
+    except scratchbird.ScratchBirdError as exc:
+        _require("transaction already active" in str(exc), "nested begin should raise clear message")
+        _require(exc.sqlstate == "25001", "nested begin should map to 25001")
+    _require(len(conn.sent) == 0, "nested begin should not send wire messages")
+    _require(conn.drained == 0, "nested begin should not drain")
+
+
 def test_commit_and_rollback_noop_when_no_active_txn() -> None:
     conn = TxnHarness(0)
     scratchbird.ScratchBirdConnection.commit(conn)
@@ -124,6 +136,7 @@ def test_query_empty_params_uses_extended_path() -> None:
 
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
+    test_begin_rejects_nested_transaction()
     test_commit_and_rollback_noop_when_no_active_txn()
     test_commit_and_rollback_send_when_active_txn()
     test_query_none_params_uses_simple_path()

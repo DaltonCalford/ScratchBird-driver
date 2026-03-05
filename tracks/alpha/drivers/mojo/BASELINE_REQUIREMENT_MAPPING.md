@@ -12,6 +12,7 @@
 - `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
+- `src/scratchbird.py:152` (bridge-shim connect guard enforcement for `sslmode`, `binary_transfer`, `compression`)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
 - `src/scratchbird.mojo:1641` (`ping`)
@@ -19,9 +20,9 @@
 - Lane-local test anchors:
 - `tests/integration.mojo:19`
 - `tests/sbdriver_conformance.mojo:157`
+- `tests/connection_guards.py:26`
 - Gaps/next actions:
 - Add lane tests that exercise `front_door_mode=manager_proxy` and auth failure paths.
-- Add lane tests for rejected connect modes (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
 
 ## TXN (JDBCBL)
 
@@ -34,12 +35,13 @@
 - `src/scratchbird.mojo:1671` (`commit` no-op when no active txn)
 - `src/scratchbird.mojo:1678` (`rollback` no-op when no active txn)
 - `src/scratchbird.mojo:1703` (`_drain_until_ready` propagates protocol error details)
+- `src/scratchbird.py:205` (bridge-shim nested-transaction guard rails)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:55` (`begin` flag/payload mapping assertions)
+- `tests/txn_exec_parity.py:89` (nested `begin()` rejection with SQLSTATE `25001`)
 - `tests/txn_exec_parity.mojo:90` (inactive transaction commit/rollback no-op assertions)
 - `tests/txn_exec_parity.mojo:98` (active transaction commit/rollback message assertions)
 - Gaps/next actions:
-- Add guardrails for nested `begin()` calls when `_txn_id` is already active.
 - Add live transaction integration coverage against a running ScratchBird endpoint.
 
 ## EXEC (JDBCBL)

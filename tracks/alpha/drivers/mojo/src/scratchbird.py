@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, Iterable, Iterator, List, Optional
+import urllib.parse
 
 
 class MessageType:
@@ -135,6 +136,34 @@ class ScratchBirdError(Exception):
         self.sqlstate = sqlstate
 
 
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dsn_query_params(dsn: str) -> Dict[str, str]:
+    if not dsn:
+        return {}
+    parsed = urllib.parse.urlparse(dsn)
+    return {str(key).strip().lower(): value for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)}
+
+
+def _validate_connect_guards(config: ScratchBirdConfig) -> None:
+    params = _dsn_query_params(config.dsn)
+
+    sslmode = str(params.get("sslmode", "require")).strip().lower()
+    if sslmode == "disable":
+        raise RuntimeError("TLS is required for ScratchBird connections")
+
+    if "binary_transfer" in params and not _as_bool(params["binary_transfer"]):
+        raise RuntimeError("binary_transfer=false is not supported")
+
+    compression = str(params.get("compression", "off")).strip().lower()
+    if compression == "zstd":
+        raise RuntimeError("compression=zstd is not supported")
+
+
 class _ShimConnection:
     def __init__(self, config: ScratchBirdConfig):
         self.config = config
@@ -174,6 +203,8 @@ class _ShimConnection:
 class ScratchBirdConnection:
     @staticmethod
     def begin(conn: Any, **kwargs: Any) -> None:
+        if getattr(conn, "_txn_id", 0) != 0:
+            raise ScratchBirdError("transaction already active", "25001")
         flags = 0
         if "isolation_level" in kwargs:
             flags |= TXN_FLAG_HAS_ISOLATION
@@ -257,6 +288,7 @@ class ScratchBirdConnection:
 
 
 def connect(config: ScratchBirdConfig) -> _ShimConnection:
+    _validate_connect_guards(config)
     return _ShimConnection(config)
 
 

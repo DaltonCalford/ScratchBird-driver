@@ -20,6 +20,7 @@ Run from lane root (`tracks/alpha/drivers/mojo`):
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 ```
 
