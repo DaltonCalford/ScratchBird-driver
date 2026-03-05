@@ -131,9 +131,11 @@ class ScratchBirdConfig:
 
 
 class ScratchBirdError(Exception):
-    def __init__(self, message: str, sqlstate: str = ""):
+    def __init__(self, message: str, sqlstate: str = "", detail: str = "", hint: str = ""):
         super().__init__(message)
         self.sqlstate = sqlstate
+        self.detail = detail
+        self.hint = hint
 
 
 def _as_bool(value: Any) -> bool:

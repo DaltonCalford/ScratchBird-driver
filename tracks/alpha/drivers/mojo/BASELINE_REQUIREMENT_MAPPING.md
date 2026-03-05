@@ -129,6 +129,7 @@
 - Current status: Partial
 - Lane-local source anchors:
 - `src/scratchbird.mojo:139` (`ScratchBirdError` with `sqlstate`, `detail`, `hint`)
+- `src/scratchbird.py:133` (bridge-shim `ScratchBirdError` now carries `sqlstate/detail/hint`)
 - `src/scratchbird.mojo:1127` (`parse_error_message`)
 - `src/scratchbird.mojo:1612` (`_raise_error`)
 - `src/scratchbird.mojo:1511` (`query` wraps operation and propagates failures)
@@ -137,8 +138,10 @@
 - `tests/sbdriver_conformance.mojo:171`
 - `tests/sbdriver_conformance.mojo:188`
 - `tests/sbdriver_conformance.mojo:209`
+- `tests/errors.py:56` (simple-query error propagation of `sqlstate/detail/hint`)
+- `tests/errors.py:74` (extended-query error propagation of `sqlstate/detail/hint`)
+- `tests/errors.py:89` (auth guard SQLSTATE propagation)
 - Gaps/next actions:
-- Add lane tests asserting propagated `sqlstate/detail/hint` content, not just exception string presence.
 - Add negative tests for protocol/message truncation error paths.
 
 ## RES (JDBCBL)
