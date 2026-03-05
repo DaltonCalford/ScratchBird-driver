@@ -5,53 +5,166 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at:
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
-test_that("integration query", {
-  dsn <- Sys.getenv("SCRATCHBIRD_R_URL")
+integration_dsn <- function() {
+  dsn <- trimws(Sys.getenv("SCRATCHBIRD_R_URL"))
   if (dsn == "") {
     skip("SCRATCHBIRD_R_URL not set")
   }
-  client <- sb_connect(dsn)
+  dsn
+}
+
+integration_manager_dsn <- function() {
+  dsn <- trimws(Sys.getenv("SCRATCHBIRD_R_MANAGER_URL"))
+  if (dsn == "") {
+    skip("SCRATCHBIRD_R_MANAGER_URL not set")
+  }
+  cfg <- sb_config(dsn)
+  if (!identical(cfg$front_door_mode, "manager_proxy")) {
+    skip("SCRATCHBIRD_R_MANAGER_URL must include front_door_mode=manager_proxy")
+  }
+  dsn
+}
+
+with_integration_client <- function(callback) {
+  client <- sb_connect(integration_dsn())
   on.exit(sb_disconnect(client), add = TRUE)
-  result <- sb_query(client, "SELECT 1")
-  expect_true(length(result$rows) > 0)
+  callback(client)
+}
+
+with_manager_integration_client <- function(callback) {
+  client <- sb_connect(integration_manager_dsn())
+  on.exit(sb_disconnect(client), add = TRUE)
+  callback(client)
+}
+
+with_integration_connection <- function(callback) {
+  conn <- DBI::dbConnect(Scratchbird(), integration_dsn())
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  callback(conn)
+}
+
+expected_integration_database_name <- function(client) {
+  database <- trimws(client$cfg$database)
+  if (database == "") {
+    return("default")
+  }
+  database
+}
+
+test_that("integration query", {
+  with_integration_client(function(client) {
+    result <- sb_query(client, "SELECT 1")
+    expect_true(length(result$rows) > 0)
+    expect_true(length(result$rows[[1]]) > 0)
+    expect_equal(as.integer(result$rows[[1]][[1]]), 1L)
+  })
+})
+
+test_that("integration manager-proxy connect and basic query", {
+  with_manager_integration_client(function(client) {
+    expect_identical(client$cfg$front_door_mode, "manager_proxy")
+    result <- sb_query(client, "SELECT 1")
+    expect_true(length(result$rows) > 0)
+    expect_true(length(result$rows[[1]]) > 0)
+    expect_equal(as.integer(result$rows[[1]][[1]]), 1L)
+  })
 })
 
 test_that("integration prepare bind", {
-  dsn <- Sys.getenv("SCRATCHBIRD_R_URL")
-  if (dsn == "") {
-    skip("SCRATCHBIRD_R_URL not set")
-  }
-  client <- sb_connect(dsn)
-  on.exit(sb_disconnect(client), add = TRUE)
-  result <- sb_query(client, "SELECT ?::INTEGER", list(42))
-  expect_true(length(result$rows) > 0)
-  expect_equal(result$rows[[1]][[1]], 42)
+  with_integration_client(function(client) {
+    result <- sb_query(client, "SELECT ?::INTEGER", list(42))
+    expect_true(length(result$rows) > 0)
+    expect_equal(as.integer(result$rows[[1]][[1]]), 42L)
+  })
+})
+
+test_that("integration DBI transaction lifecycle tracks autocommit across failure path", {
+  with_integration_connection(function(conn) {
+    client <- conn@ptr$client
+    expect_true(client$autocommit)
+
+    expect_true(DBI::dbBegin(conn))
+    expect_false(client$autocommit)
+
+    expect_error(DBI::dbGetQuery(conn, "SELECT FROM"), "\\[42")
+    expect_true(DBI::dbRollback(conn))
+    expect_true(client$autocommit)
+
+    result <- DBI::dbGetQuery(conn, "SELECT 9")
+    expect_equal(as.integer(result[[1]][[1]]), 9L)
+  })
+})
+
+test_that("integration savepoint lifecycle", {
+  with_integration_client(function(client) {
+    scratchbird:::sb_begin(client)
+    scratchbird:::sb_savepoint(client, "sp_r_live")
+    scratchbird:::sb_rollback_to_savepoint(client, "sp_r_live")
+    scratchbird:::sb_release_savepoint(client, "sp_r_live")
+    scratchbird:::sb_commit(client)
+
+    scratchbird:::sb_begin(client)
+    scratchbird:::sb_rollback(client)
+  })
+})
+
+test_that("integration metadata wrappers and schema tree rows", {
+  with_integration_client(function(client) {
+    schemas <- sb_get_query(client, sb_metadata_schemas_query())
+    expect_true(is.data.frame(schemas))
+    expect_true(ncol(schemas) > 0)
+
+    tables <- sb_get_query(client, sb_metadata_tables_query())
+    expect_true(is.data.frame(tables))
+    expect_true(ncol(tables) > 0)
+
+    tree_rows <- sb_metadata_build_schema_tree_rows(
+      schemas,
+      expected_integration_database_name(client),
+      expand_schema_parents = TRUE
+    )
+    expect_true(is.data.frame(tree_rows))
+    expect_true(nrow(tree_rows) > 0)
+    expect_equal(as.character(tree_rows$kind[[1]]), "database")
+    expect_equal(as.character(tree_rows$path[[1]]), expected_integration_database_name(client))
+  })
+})
+
+test_that("integration ping roundtrip", {
+  with_integration_client(function(client) {
+    scratchbird:::sb_ping(client)
+    result <- sb_query(client, "SELECT 2")
+    expect_true(length(result$rows) > 0)
+    expect_equal(as.integer(result$rows[[1]][[1]]), 2L)
+  })
+})
+
+test_that("integration connection remains usable after server error", {
+  with_integration_client(function(client) {
+    expect_error(sb_query(client, "SELECT FROM"), "\\[42")
+    result <- sb_query(client, "SELECT 7")
+    expect_true(length(result$rows) > 0)
+    expect_equal(as.integer(result$rows[[1]][[1]]), 7L)
+  })
 })
 
 test_that("integration types fixture", {
-  dsn <- Sys.getenv("SCRATCHBIRD_R_URL")
-  if (dsn == "") {
-    skip("SCRATCHBIRD_R_URL not set")
-  }
-  client <- sb_connect(dsn)
-  on.exit(sb_disconnect(client), add = TRUE)
-  result <- sb_query(client, "SELECT * FROM type_coverage")
-  expect_true(length(result$rows) > 0)
+  with_integration_client(function(client) {
+    result <- sb_query(client, "SELECT * FROM type_coverage")
+    expect_true(length(result$rows) > 0)
+  })
 })
 
 test_that("cancel query", {
-  dsn <- Sys.getenv("SCRATCHBIRD_R_URL")
-  if (dsn == "") {
-    skip("SCRATCHBIRD_R_URL not set")
-  }
+  dsn <- integration_dsn()
   cancel_sql <- Sys.getenv("SCRATCHBIRD_R_CANCEL_SQL")
   if (cancel_sql == "") {
     skip("SCRATCHBIRD_R_CANCEL_SQL not set")
   }
   client <- sb_connect(dsn)
   on.exit(sb_disconnect(client), add = TRUE)
-  scratchbird:::sb_send_simple_query(client, cancel_sql)
+  result <- scratchbird:::sb_execute_query(client, cancel_sql)
   Sys.sleep(0.2)
   sb_cancel(client)
-  expect_error(scratchbird:::sb_collect_result(client))
+  expect_error(scratchbird:::sb_fetch_rows(result, -1))
 })

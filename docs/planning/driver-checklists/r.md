@@ -4,6 +4,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 - [x] Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`. Issue: DONE (2026-03-04)
+- [x] Expand env-gated live integration coverage for manager-proxy connect/query, transaction/savepoint lifecycle, metadata wrappers/tree rows, ping roundtrip, and post-error usability in `tracks/beta/drivers/r/tests/testthat/test_integration.R`. Issue: DONE (2026-03-05)
+- [x] Fix integration cancel-path assertion to drain a real result and validate error cleanup (`sb_execute_query` + `sb_fetch_rows`) in `tracks/beta/drivers/r/tests/testthat/test_integration.R`. Issue: DONE (2026-03-05)
 
 
 ## P2 (Follow-ups)

@@ -46,3 +46,17 @@ Key-value:
 ```
 host=localhost port=3092 dbname=mydb user=myuser password=mypass
 ```
+
+Manager-proxy URI (live integration path):
+
+```
+scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token
+```
+
+## Integration Tests
+
+Live integration tests are environment-gated:
+
+- `SCRATCHBIRD_R_URL` for direct-connect integration coverage.
+- `SCRATCHBIRD_R_MANAGER_URL` for manager-proxy connect/query coverage.
+- `SCRATCHBIRD_R_CANCEL_SQL` for cancel/drain lifecycle coverage.

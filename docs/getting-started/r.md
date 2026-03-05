@@ -43,6 +43,12 @@ Key-value:
 host=localhost port=3092 dbname=mydb user=myuser password=mypass
 ```
 
+Manager-proxy URI:
+
+```
+scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token
+```
+
 See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
 
 ## TLS
@@ -54,3 +60,5 @@ TLS 1.3 is required. `sslmode=disable` is rejected.
 Integration tests are gated by:
 
 - `SCRATCHBIRD_R_URL`
+- `SCRATCHBIRD_R_MANAGER_URL`
+- `SCRATCHBIRD_R_CANCEL_SQL`

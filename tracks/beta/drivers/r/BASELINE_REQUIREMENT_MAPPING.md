@@ -29,15 +29,15 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_conn_protocol.R:118`
   - `tests/testthat/test_conn_protocol.R:124`
   - `tests/testthat/test_transport_tls.R:9`
-  - `tests/testthat/test_integration.R:8`
+  - `tests/testthat/test_integration.R:54` (direct connect/query)
+  - `tests/testthat/test_integration.R:63` (manager-proxy connect/query)
 - Gaps / next actions:
   - Connection constraints are explicit (`binary_transfer=false` and `compression=zstd` are rejected in `R/client.R:19` and `R/client.R:20`).
-  - Integration connection/auth coverage remains environment-gated (`tests/testthat/test_integration.R` still depends on `SCRATCHBIRD_R_URL`).
-  - Add live-manager-proxy handshake coverage (currently unit-tested at parser/config boundaries only).
+  - Integration connection/auth coverage remains environment-gated (`tests/testthat/test_integration.R` depends on `SCRATCHBIRD_R_URL` and `SCRATCHBIRD_R_MANAGER_URL`).
 
 ## TXN -> JDBCBL-TXN
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `R/client.R:86` (`sb_begin`)
   - `R/client.R:113` (`sb_commit`)
@@ -48,9 +48,9 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
 - Lane-local test anchors:
   - `tests/testthat/test_txn_exec_parity.R:18` (DBI transaction lifecycle + autocommit alignment)
   - `tests/testthat/test_txn_exec_parity.R:75` (wire message coverage for begin/commit/rollback/savepoint/release/rollback-to)
+  - `tests/testthat/test_integration.R:81` (live DBI begin/rollback + autocommit recovery after error)
+  - `tests/testthat/test_integration.R:98` (live savepoint/release/rollback-to lifecycle)
 - Gaps / next actions:
-  - Add live integration coverage for begin/commit/rollback/savepoint semantics (current evidence is unit/mock based).
-  - Validate local autocommit toggles against server-side transaction status across failure paths.
   - Consider DBI-level savepoint helpers if S2 parity scope requires savepoint operations through DBI generic methods.
 
 ## EXEC -> JDBCBL-EXEC
@@ -69,8 +69,8 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_sql.R:22`
   - `tests/testthat/test_txn_exec_parity.R:141` (`dbSendQuery` + `dbFetch` + `dbClearResult` lifecycle)
   - `tests/testthat/test_txn_exec_parity.R:182` (`dbExecute` rowcount + full drain behavior)
-  - `tests/testthat/test_integration.R:8`
-  - `tests/testthat/test_integration.R:19`
+  - `tests/testthat/test_integration.R:54` (live simple query)
+  - `tests/testthat/test_integration.R:73` (live parameterized query)
 - Gaps / next actions:
   - Expand live integration coverage for incremental fetch/result lifecycle (current new lifecycle checks are mock based).
   - Add negative-path execution coverage (server error + resource cleanup) in deterministic unit tests.
@@ -100,8 +100,8 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_metadata_execution.R:14` (`dbListTables` metadata-only listing behavior)
   - `tests/testthat/test_metadata_execution.R:41` (`dbExistsTable` metadata-only lookup behavior)
   - `tests/testthat/test_metadata_execution.R:69` (`dbListFields` metadata-only column listing behavior)
+  - `tests/testthat/test_integration.R:111` (live metadata query wrappers + schema tree row shaping)
 - Gaps / next actions:
-  - Add live metadata integration coverage to validate engine-backed metadata payload completeness beyond recursive schema tree shaping and mocked DBI metadata method tests.
   - Expand metadata-family coverage toward richer privilege/key/type and DDL-editor payload parity expectations.
 
 ## TYPE -> JDBCBL-TYPE
@@ -121,7 +121,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_types.R:47` (vector/range/composite decode matrix)
   - `tests/testthat/test_types.R:69` (`encode_param` primitive + wrapper dispatch)
   - `tests/testthat/test_types.R:98` (vector/array literal family coverage)
-  - `tests/testthat/test_integration.R:31`
+  - `tests/testthat/test_integration.R:151` (`type_coverage` fixture integration)
 
 ## ERR -> JDBCBL-ERR
 
@@ -137,12 +137,13 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_error_parity.R:34` (typed condition class + SQLSTATE/detail/hint propagation)
   - `tests/testthat/test_error_parity.R:59` (unknown SQLSTATE class fallback)
   - `tests/testthat/test_error_parity.R:74` (empty-SQLSTATE generic fallback)
-  - `tests/testthat/test_integration.R:42` (cancel path expects error)
+  - `tests/testthat/test_integration.R:142` (live syntax-error path)
+  - `tests/testthat/test_integration.R:158` (live cancel path expects error)
   - `tests/testthat/test_config.R:40` (config validation error path)
 
 ## RES -> JDBCBL-RES
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `R/dbi.R:23` (`dbDisconnect`)
   - `R/dbi.R:41` (`dbClearResult`)
@@ -153,14 +154,10 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/client.R:258` (`sb_socket_close`)
   - `src/tls_transport.c:78` / `src/tls_transport.c:490` (native transport finalizer and explicit close)
 - Lane-local test anchors:
-  - `tests/testthat/test_integration.R:14`
-  - `tests/testthat/test_integration.R:25`
-  - `tests/testthat/test_integration.R:37`
-  - `tests/testthat/test_integration.R:52`
-  - `tests/testthat/test_integration.R:42`
+  - `tests/testthat/test_integration.R:133` (live ping roundtrip with follow-up query)
+  - `tests/testthat/test_integration.R:142` (live post-error usability)
+  - `tests/testthat/test_integration.R:158` (live cancel during long-running fetch path)
   - `tests/testthat/test_resilience_lifecycle.R:36` (`sb_disconnect` repeated-call behavior with non-NULL close followed by NULL-safe close handling).
   - `tests/testthat/test_resilience_lifecycle.R:62` (`dbDisconnect` repeated-call idempotence with stable TRUE return and one real close).
   - `tests/testthat/test_resilience_lifecycle.R:88` (`dbClearResult` idempotent completion path).
   - `tests/testthat/test_resilience_lifecycle.R:98` deterministic server-error fetch path followed by explicit result cleanup.
-- Gaps / next actions:
-  - Add resource lifecycle checks for long-running fetch/cancel scenarios.
