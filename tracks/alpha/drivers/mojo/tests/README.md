@@ -43,6 +43,8 @@ the bridge-shim harness path.
 
 Conformance `prepare_bind` checks prefer `connection.prepare(...).execute(...)`
 when available and fall back to `connection.query(sql, params)` for older lanes.
+Conformance manifest `requires` entries are enforced in-harness; unsupported
+requirements are reported as `skipped`.
 
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json

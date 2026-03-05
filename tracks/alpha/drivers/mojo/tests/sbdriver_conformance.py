@@ -186,77 +186,32 @@ def _dsn_with_append(base_dsn: str, query_append: str) -> str:
     )
 
 
-def _extract_string(line: str) -> str:
-    colon = line.find(":")
-    if colon < 0:
-        return ""
-    q1 = line.find('"', colon + 1)
-    if q1 < 0:
-        return ""
-    q2 = line.find('"', q1 + 1)
-    if q2 < 0:
-        return ""
-    return line[q1 + 1 : q2]
+def _normalize_requirement(requirement: str) -> str:
+    return requirement.strip().lower().replace("-", "_").replace(" ", "_")
 
 
-def _extract_int(line: str) -> int:
-    colon = line.find(":")
-    if colon < 0:
-        return -1
-    num = ""
-    for ch in line[colon + 1 :]:
-        if ch.isdigit() or ch == '-':
-            num += ch
-        elif num:
-            break
-    if not num:
-        return -1
-    try:
-        return int(num)
-    except Exception:
-        return -1
-
-
-def _extract_list(line: str):
-    if '[' not in line or ']' not in line:
-        return []
-    start = line.find('[')
-    end = line.find(']')
-    body = line[start + 1 : end]
-    out = []
-    for part in body.split(','):
-        item = part.strip().strip('"')
-        if item:
-            out.append(item)
-    return out
-
-
-def _extract_params(line: str):
-    if '[' not in line or ']' not in line:
-        return []
-    start = line.find('[')
-    end = line.find(']')
-    body = line[start + 1 : end]
-    out = []
-    for part in body.split(','):
-        item = part.strip()
-        if item == "":
+def _unsupported_requirements(spec: TestSpec, conn, enable_prepare: bool, enable_cancel: bool):
+    unsupported = []
+    for raw in spec.requires:
+        requirement = _normalize_requirement(raw)
+        if requirement == "":
             continue
-        if item.lower() == "null":
-            out.append(None)
+        if requirement in ("tls", "auth", "native_parser", "types"):
             continue
-        if item.startswith('"') and item.endswith('"'):
-            out.append(item.strip('"'))
+        if requirement in ("prepare_bind", "native_prepare_bind", "prepare"):
+            has_prepare = hasattr(conn, "prepare") or hasattr(conn, "query")
+            if not (enable_prepare and has_prepare):
+                unsupported.append(raw)
             continue
-        try:
-            if "." in item:
-                out.append(float(item))
-            else:
-                out.append(int(item))
+        if requirement in ("cancel", "cancellation"):
+            has_cancel = hasattr(conn, "cancel")
+            has_stream = hasattr(conn, "stream")
+            if not (enable_cancel and has_cancel and has_stream):
+                unsupported.append(raw)
             continue
-        except Exception:
-            out.append(item.strip('"'))
-    return out
+        # Default: keep future manifest requirements safe/explicit.
+        unsupported.append(raw)
+    return unsupported
 
 
 def _render_result(test_id: str, status: str, errors):
@@ -311,6 +266,11 @@ def _run_query_tests(tests, dsn: str):
                     results.append(_render_result(spec.test_id, "ok", []))
                 else:
                     results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                continue
+            unsupported = _unsupported_requirements(spec, current_conn, enable_prepare, enable_cancel)
+            if unsupported:
+                reasons = "unsupported requires: " + ", ".join(unsupported)
+                results.append(_render_result(spec.test_id, "skipped", [reasons]))
                 continue
             if kind == "auth":
                 # A successful connect already exercises auth negotiation in this harness.
