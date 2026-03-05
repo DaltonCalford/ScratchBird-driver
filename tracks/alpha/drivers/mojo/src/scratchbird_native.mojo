@@ -1,6 +1,10 @@
 # ScratchBird Mojo Native Bootstrap Module
 # Copyright (c) 2025-2026 Dalton Calford
 
+comptime METADATA_SCHEMAS_QUERY = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
+comptime METADATA_TABLES_QUERY = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
+comptime METADATA_COLUMNS_QUERY = "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+
 
 struct ScratchBirdConfig:
     var dsn: String
@@ -50,6 +54,10 @@ struct ScratchBirdConnection:
 
     fn close(self):
         _ = self
+
+    fn query_metadata(self, collection_name: String) raises -> String:
+        _ = self
+        return resolve_metadata_collection_query(collection_name)
 
 
 fn _as_bool(value: String) -> Bool:
@@ -130,6 +138,40 @@ fn _query_value(dsn: String, key: String, default_value: String) -> String:
             if pair.lower() == target:
                 return ""
     return default_value
+
+
+fn _metadata_alias(value: String) -> String:
+    if value == "schema" or value == "schemas":
+        return "schemas"
+    if value == "table" or value == "tables":
+        return "tables"
+    if value == "column" or value == "columns":
+        return "columns"
+    return ""
+
+
+fn normalize_metadata_collection_name(collection_name: String) raises -> String:
+    var raw = collection_name
+    var normalized = collection_name.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized == "":
+        normalized = "tables"
+    var resolved = _metadata_alias(normalized)
+    if resolved == "":
+        resolved = _metadata_alias(normalized.replace("_", ""))
+    if resolved == "":
+        raise Error("metadata collection '" + raw + "' is not supported")
+    return resolved
+
+
+fn resolve_metadata_collection_query(collection_name: String) raises -> String:
+    var resolved = normalize_metadata_collection_name(collection_name)
+    if resolved == "schemas":
+        return METADATA_SCHEMAS_QUERY
+    if resolved == "tables":
+        return METADATA_TABLES_QUERY
+    if resolved == "columns":
+        return METADATA_COLUMNS_QUERY
+    raise Error("metadata collection '" + collection_name + "' is not supported")
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:

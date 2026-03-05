@@ -96,6 +96,8 @@
 - `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
 - `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
 - `src/scratchbird.mojo:1848` (`build_database_default_metadata_rows` database/default branch-style metadata rows)
+- `src/scratchbird_native.mojo:133` (native-bootstrap metadata collection alias normalization)
+- `src/scratchbird_native.mojo:145` (native-bootstrap metadata query resolution)
 - Lane-local test anchors:
 - `tests/metadata_recursive_schema.mojo:24` (database/default branch style row shaping)
 - `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
@@ -106,6 +108,7 @@
 - `tests/metadata_execution.py:53` (extended collection query resolution coverage)
 - `tests/metadata_execution.py:80` (metadata execution routing path coverage)
 - `tests/metadata_execution.py:111` (unsupported metadata collection `0A000` behavior)
+- `tests/native_bootstrap.mojo:44` (native-bootstrap metadata alias/query smoke assertions)
 - `tests/README.md:41` (metadata recursive schema scaffold invocation)
 - Gaps/next actions:
 - Add live metadata integration assertions for schema/table/column result stability against a running ScratchBird endpoint.
