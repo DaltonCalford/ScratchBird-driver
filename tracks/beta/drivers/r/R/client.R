@@ -74,6 +74,7 @@ sb_fetch <- function(result, n = -1) {
 }
 
 sb_clear_result <- function(result) {
+  result$pending_rows <- list()
   result$done <- TRUE
   result
 }
@@ -193,6 +194,7 @@ sb_execute_sblr <- function(client, sblr_hash, sblr_bytecode, params = list()) {
   result$command_tag <- ""
   result$done <- FALSE
   result$page_size <- 0L
+  result$pending_rows <- list()
   result
 }
 
@@ -222,6 +224,7 @@ sb_attach_list <- function(client) {
   result$command_tag <- ""
   result$done <- FALSE
   result$page_size <- 0L
+  result$pending_rows <- list()
   result
 }
 
@@ -504,11 +507,61 @@ sb_execute_query <- function(client, sql, params = list()) {
   result$command_tag <- ""
   result$done <- FALSE
   result$page_size <- page_size
+  result$pending_rows <- list()
   result
+}
+
+sb_prime_result_metadata <- function(result) {
+  if (isTRUE(result$done) || length(result$columns) > 0) return(invisible(result))
+  if (is.null(result$pending_rows)) result$pending_rows <- list()
+  client <- result$client
+  repeat {
+    response <- sb_recv_message(client)
+    type <- response$type
+    payload <- response$payload
+    if (sb_handle_async(client, type, payload)) next
+    if (type == SB_MSG_ERROR) {
+      sb_raise_query_error(payload)
+    } else if (type == SB_MSG_ROW_DESCRIPTION) {
+      result$columns <- parse_row_description(payload)
+      return(invisible(result))
+    } else if (type == SB_MSG_DATA_ROW) {
+      values <- parse_data_row(payload)
+      result$pending_rows[[length(result$pending_rows) + 1L]] <- sb_decode_row(result$columns, values)
+      if (length(result$columns) > 0) {
+        return(invisible(result))
+      }
+    } else if (type == SB_MSG_COMMAND_COMPLETE) {
+      parsed <- parse_command_complete(payload)
+      result$command_tag <- parsed$tag
+      result$rowcount <- parsed$rows
+    } else if (type == SB_MSG_PARAMETER_STATUS) {
+      parsed <- parse_parameter_status(payload)
+      client$parameters[[parsed$name]] <- parsed$value
+    } else if (type == SB_MSG_PORTAL_SUSPENDED) {
+      exec_payload <- build_execute_payload("", result$page_size)
+      client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
+    } else if (type == SB_MSG_READY) {
+      parsed <- parse_ready(payload)
+      client$txn_id <- parsed$txn_id
+      result$done <- TRUE
+      return(invisible(result))
+    }
+  }
 }
 
 sb_result_next_row <- function(result) {
   if (isTRUE(result$done)) return(NULL)
+  if (is.null(result$pending_rows)) result$pending_rows <- list()
+  if (length(result$pending_rows) > 0) {
+    row <- result$pending_rows[[1]]
+    if (length(result$pending_rows) == 1) {
+      result$pending_rows <- list()
+    } else {
+      result$pending_rows <- result$pending_rows[-1]
+    }
+    return(row)
+  }
   client <- result$client
   repeat {
     response <- sb_recv_message(client)
@@ -771,12 +824,32 @@ sb_recv_message <- function(client) {
   )
 }
 
+sb_rows_to_column <- function(rows, index) {
+  values <- lapply(rows, function(row) row[[index]])
+  non_null <- values[!vapply(values, is.null, logical(1))]
+  if (length(non_null) == 0) {
+    return(rep(NA, length(values)))
+  }
+
+  can_simplify <- all(vapply(
+    non_null,
+    function(value) is.atomic(value) && !is.list(value) && !is.raw(value) && length(value) == 1,
+    logical(1)
+  ))
+  if (!can_simplify) {
+    return(I(values))
+  }
+
+  simplified <- lapply(values, function(value) if (is.null(value)) NA else value)
+  do.call(c, simplified)
+}
+
 sb_rows_to_df <- function(rows, columns) {
   if (length(rows) == 0) return(data.frame())
   names <- vapply(columns, function(col) col$name, character(1))
   cols <- vector("list", length(columns))
   for (i in seq_along(columns)) {
-    cols[[i]] <- vapply(rows, function(row) row[[i]], FUN.VALUE = NA)
+    cols[[i]] <- sb_rows_to_column(rows, i)
   }
   names(cols) <- names
   as.data.frame(cols, stringsAsFactors = FALSE)

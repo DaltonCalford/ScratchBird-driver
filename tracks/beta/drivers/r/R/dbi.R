@@ -68,6 +68,36 @@ setMethod("dbFetch", "ScratchbirdResult", function(res, n = -1, ...) {
   sb_fetch(res@result, n)
 })
 
+setMethod("dbColumnInfo", "ScratchbirdResult", function(res, ...) {
+  sb_prime_result_metadata(res@result)
+  columns <- res@result$columns
+  if (length(columns) == 0) {
+    return(data.frame(
+      name = character(),
+      type_oid = integer(),
+      type_size = integer(),
+      type_modifier = integer(),
+      table_oid = integer(),
+      column_index = integer(),
+      format = integer(),
+      nullable = logical(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  data.frame(
+    name = vapply(columns, function(col) if (!is.null(col$name)) as.character(col$name) else "", character(1)),
+    type_oid = vapply(columns, function(col) as.integer(if (is.null(col$type_oid)) NA_integer_ else col$type_oid), integer(1)),
+    type_size = vapply(columns, function(col) as.integer(if (is.null(col$type_size)) NA_integer_ else col$type_size), integer(1)),
+    type_modifier = vapply(columns, function(col) as.integer(if (is.null(col$type_modifier)) NA_integer_ else col$type_modifier), integer(1)),
+    table_oid = vapply(columns, function(col) as.integer(if (is.null(col$table_oid)) NA_integer_ else col$table_oid), integer(1)),
+    column_index = vapply(columns, function(col) as.integer(if (is.null(col$column_index)) NA_integer_ else col$column_index), integer(1)),
+    format = vapply(columns, function(col) as.integer(if (is.null(col$format)) NA_integer_ else col$format), integer(1)),
+    nullable = vapply(columns, function(col) isTRUE(col$nullable), logical(1)),
+    stringsAsFactors = FALSE
+  )
+})
+
 setMethod("dbClearResult", "ScratchbirdResult", function(res, ...) {
   sb_clear_result(res@result)
   TRUE

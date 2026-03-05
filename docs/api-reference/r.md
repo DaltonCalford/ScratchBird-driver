@@ -15,6 +15,7 @@
 - `dbListTables(conn)`
 - `dbExistsTable(conn, name)`
 - `dbListFields(conn, name)`
+- `dbColumnInfo(res)`
 
 ## Metadata Helpers
 

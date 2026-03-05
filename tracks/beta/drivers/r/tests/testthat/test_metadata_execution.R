@@ -11,6 +11,24 @@ new_metadata_mock_connection <- function() {
   methods::new("ScratchbirdConnection", ptr = ptr)
 }
 
+new_metadata_mock_result <- function(client = NULL) {
+  if (is.null(client)) {
+    client <- new.env(parent = emptyenv())
+    client$notification_handlers <- list()
+    client$parameters <- list()
+    client$txn_id <- 0
+  }
+  result_env <- new.env(parent = emptyenv())
+  result_env$client <- client
+  result_env$columns <- list()
+  result_env$rowcount <- -1
+  result_env$command_tag <- ""
+  result_env$done <- FALSE
+  result_env$page_size <- 0L
+  result_env$pending_rows <- list()
+  methods::new("ScratchbirdResult", result = result_env)
+}
+
 test_that("dbListTables lists schema-qualified names from metadata only", {
   conn <- new_metadata_mock_connection()
   tables <- data.frame(
@@ -98,4 +116,63 @@ test_that("dbListFields filters metadata columns by schema and table", {
 
   fields <- DBI::dbListFields(conn, DBI::Id(schema = "users", table = "events"))
   expect_equal(fields, c("id", "email"))
+})
+
+test_that("dbColumnInfo primes row metadata and preserves subsequent fetch rows", {
+  res <- new_metadata_mock_result()
+  recv_index <- 0L
+
+  local_mocked_bindings(
+    sb_recv_message = function(client_arg) {
+      recv_index <<- recv_index + 1L
+      if (recv_index == 1L) {
+        return(list(type = SB_MSG_ROW_DESCRIPTION, payload = raw()))
+      }
+      list(type = SB_MSG_DATA_ROW, payload = raw())
+    },
+    parse_row_description = function(payload) {
+      list(list(
+        name = "id",
+        table_oid = 10L,
+        column_index = 1L,
+        type_oid = 23L,
+        type_size = 4L,
+        type_modifier = -1L,
+        format = SB_FORMAT_BINARY,
+        nullable = FALSE
+      ))
+    },
+    parse_data_row = function(payload) {
+      list(list(data = as.raw(0x2A)))
+    },
+    sb_decode_row = function(columns, values) {
+      list(42L)
+    },
+    .package = "scratchbird"
+  )
+
+  info <- DBI::dbColumnInfo(res)
+  expect_equal(info$name, "id")
+  expect_equal(info$type_oid, 23L)
+  expect_equal(info$table_oid, 10L)
+  expect_equal(info$column_index, 1L)
+  expect_equal(info$format, SB_FORMAT_BINARY)
+  expect_false(info$nullable)
+
+  fetched <- DBI::dbFetch(res, n = 1)
+  expect_equal(nrow(fetched), 1L)
+  expect_equal(as.integer(fetched$id[[1]]), 42L)
+})
+
+test_that("dbColumnInfo returns empty data frame when result has no columns", {
+  res <- new_metadata_mock_result()
+  res@result$done <- TRUE
+
+  info <- DBI::dbColumnInfo(res)
+  expect_true(is.data.frame(info))
+  expect_equal(nrow(info), 0L)
+  expect_equal(
+    names(info),
+    c("name", "type_oid", "type_size", "type_modifier", "table_oid", "column_index", "format", "nullable")
+  )
 })

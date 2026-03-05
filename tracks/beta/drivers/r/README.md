@@ -30,6 +30,9 @@ library(scratchbird)
 
 con <- dbConnect(Scratchbird(), "scratchbird://user:pass@localhost:3092/mydb")
 df <- dbGetQuery(con, "SELECT 1")
+res <- dbSendQuery(con, "SELECT 1 AS value")
+info <- dbColumnInfo(res)
+dbClearResult(res)
 dbDisconnect(con)
 ```
 

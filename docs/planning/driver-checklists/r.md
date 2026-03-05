@@ -11,13 +11,15 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 ## P2 (Follow-ups)
 - [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: DONE (2026-03-04)
 - [x] Add deterministic execution lifecycle tests for extended-query message order, parameter-mismatch failure handling, and portal-suspension resume flow in `tracks/beta/drivers/r/tests/testthat/test_exec_lifecycle.R`. Issue: DONE (2026-03-05)
+- [x] Add DBI `dbColumnInfo` support (with metadata priming before fetch) in `tracks/beta/drivers/r/R/dbi.R` and `tracks/beta/drivers/r/R/client.R`. Issue: DONE (2026-03-05)
+- [x] Stabilize `sb_rows_to_df` typed column conversion across decoded scalar families in `tracks/beta/drivers/r/R/client.R`. Issue: DONE (2026-03-05)
 
 ## P3 (Future)
 
 ### Integration Appendix Tasks
 
-- [x] Constraint: Conform to R DBI generics and return data frames with stable column classes. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Constraint: Support `dbListTables` and `dbColumnInfo` for metadata introspection. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
+- [x] Constraint: Conform to R DBI generics and return data frames with stable column classes. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DONE (2026-03-05)
+- [x] Constraint: Support `dbListTables` and `dbColumnInfo` for metadata introspection. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DONE (2026-03-05)
 - [x] Constraint: Treat `NA` and `NULL` per DBI expectations. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate `dbGetQuery` returns consistent `data.frame` column types. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Ensure `dbBind` supports positional and named parameters. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)

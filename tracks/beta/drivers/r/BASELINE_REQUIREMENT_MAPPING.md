@@ -63,6 +63,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/client.R:493` (`sb_execute_query`)
   - `R/client.R:544` (`sb_fetch_rows`)
   - `R/client.R:642` (extended query parse/bind/execute path)
+  - `R/client.R:827` / `R/client.R:847` (`sb_rows_to_column` / `sb_rows_to_df`, typed row materialization)
 - Lane-local test anchors:
   - `tests/testthat/test_sql.R:8`
   - `tests/testthat/test_sql.R:15`
@@ -89,11 +90,13 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/metadata.R:45` (`sb_metadata_schema_paths_for_navigation`, dotted parent expansion path shaping)
   - `R/metadata.R:69` (`sb_metadata_build_schema_tree`, recursive tree shaping with per-parent uniqueness)
   - `R/metadata.R:117` (`sb_metadata_build_schema_tree_rows`, database/default branch-style row shaping)
-  - `R/dbi.R:90` (`dbListTables`, metadata-only table discovery with schema qualification)
-  - `R/dbi.R:120` / `R/dbi.R:131` / `R/dbi.R:142` (`dbExistsTable` for `character`/`Id`/`SQL` names)
-  - `R/dbi.R:153` / `R/dbi.R:198` / `R/dbi.R:243` (`dbListFields` for `character`/`Id`/`SQL` names)
-  - `R/dbi.R:393` (`sb_metadata_tables_with_schema`, table->schema enrichment from metadata)
-  - `R/dbi.R:426` (`sb_filter_tables_for_ref`, schema/table reference matching)
+  - `R/dbi.R:71` (`dbColumnInfo`, result metadata projection with pre-fetch priming)
+  - `R/dbi.R:120` (`dbListTables`, metadata-only table discovery with schema qualification)
+  - `R/dbi.R:150` / `R/dbi.R:161` / `R/dbi.R:172` (`dbExistsTable` for `character`/`Id`/`SQL` names)
+  - `R/dbi.R:183` / `R/dbi.R:228` / `R/dbi.R:273` (`dbListFields` for `character`/`Id`/`SQL` names)
+  - `R/dbi.R:423` (`sb_metadata_tables_with_schema`, table->schema enrichment from metadata)
+  - `R/dbi.R:456` (`sb_filter_tables_for_ref`, schema/table reference matching)
+  - `R/client.R:510` (`sb_prime_result_metadata`, row-description priming before fetch)
   - `NAMESPACE:18` through `NAMESPACE:28` (metadata helper + recursive schema shaping exports)
 - Lane-local test anchors:
   - `tests/testthat/test_metadata_recursive_schema.R:17` (database/default branch-style rows with top-level branches)
@@ -103,6 +106,8 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_metadata_execution.R:14` (`dbListTables` metadata-only listing behavior)
   - `tests/testthat/test_metadata_execution.R:41` (`dbExistsTable` metadata-only lookup behavior)
   - `tests/testthat/test_metadata_execution.R:69` (`dbListFields` metadata-only column listing behavior)
+  - `tests/testthat/test_metadata_execution.R:121` (dbColumnInfo metadata priming + post-call fetch continuity)
+  - `tests/testthat/test_metadata_execution.R:167` (dbColumnInfo empty-result projection shape)
   - `tests/testthat/test_integration.R:111` (live metadata query wrappers + schema tree row shaping)
 - Gaps / next actions:
   - Expand metadata-family coverage toward richer privilege/key/type and DDL-editor payload parity expectations.
