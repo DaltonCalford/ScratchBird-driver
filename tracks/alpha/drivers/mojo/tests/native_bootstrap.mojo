@@ -48,8 +48,10 @@ fn main() raises:
     _require(cfg.database == "testdb", "database parse mismatch")
 
     var conn = scratchbird_native.connect(cfg)
+    _require(conn.ping(), "ping should return true")
     _require(conn.query("SELECT 1") == 1, "SELECT 1 should return 1")
     _require(conn.query("SELECT * FROM type_coverage") == 1, "type_coverage stub should return success")
+    _require(conn.query("SELECT id FROM basic_table ORDER BY id") == 6, "basic_table query rowcount mismatch")
     conn.commit()
     conn.rollback()
     conn.begin()
@@ -136,6 +138,9 @@ fn main() raises:
         raise Error("expected cancelled stream to fail")
     except e:
         _require("57014" in String(e), "cancelled stream should report 57014")
+    var post_cancel = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
+    _require(post_cancel.next(conn) == 1, "post-cancel stream should recover on next operation")
+    post_cancel.close()
     conn.close()
 
     var manager_cfg = scratchbird_native.ScratchBirdConfig(

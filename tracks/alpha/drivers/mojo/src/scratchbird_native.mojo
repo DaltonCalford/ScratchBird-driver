@@ -62,12 +62,12 @@ struct ScratchBirdConnection:
         self.cancel_requested = False
         self.txn_active = False
 
-    fn query(self, sql: String) raises -> Int:
-        _ = self
+    fn query(mut self, sql: String) raises -> Int:
+        self.cancel_requested = False
         return _query_result_from_sql(sql)
 
-    fn query_with_params(self, sql: String, params: List[String]) raises -> Int:
-        _ = self
+    fn query_with_params(mut self, sql: String, params: List[String]) raises -> Int:
+        self.cancel_requested = False
         return _query_result_from_sql_with_params(sql, params)
 
     fn prepare(self, sql: String) -> ScratchBirdStatement:
@@ -89,7 +89,8 @@ struct ScratchBirdConnection:
             return
         self.txn_active = False
 
-    fn stream(self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
+    fn stream(mut self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
+        self.cancel_requested = False
         _ = fetch_size
         var normalized = sql.strip().lower()
         if normalized.startswith("select id from basic_table"):
@@ -103,8 +104,13 @@ struct ScratchBirdConnection:
     fn cancel(mut self):
         self.cancel_requested = True
 
-    fn close(self):
+    fn close(mut self):
+        self.cancel_requested = False
+        self.txn_active = False
+
+    fn ping(self) -> Bool:
         _ = self
+        return True
 
     fn query_metadata(self, collection_name: String) raises -> String:
         _ = self
@@ -210,6 +216,8 @@ fn _query_result_from_sql(sql: String) raises -> Int:
         return 1
     if normalized == "select * from type_coverage":
         return 1
+    if normalized.startswith("select id from basic_table"):
+        return 6
     raise Error("unsupported query in native bootstrap")
 
 

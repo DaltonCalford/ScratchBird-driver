@@ -14,7 +14,8 @@
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
 - `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
 - `src/scratchbird_native.mojo:23` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
-- `src/scratchbird_native.mojo:405` (native-bootstrap `connect` entrypoint)
+- `src/scratchbird_native.mojo:413` (native-bootstrap `connect` entrypoint)
+- `src/scratchbird_native.mojo:111` (native-bootstrap `ping` surface)
 - `src/scratchbird_native.mojo:69` (native-bootstrap `query_with_params` with placeholder counting and `07001` mismatch semantics)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
@@ -30,8 +31,8 @@
 - `tests/sbdriver_conformance.py:70` (conformance launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
-- `tests/native_bootstrap.mojo:50` (native bootstrap guard/query smoke path via `mojo run -I src`)
-- `tests/native_bootstrap.mojo:65` (native bootstrap prepare-bind + mismatch guard path)
+- `tests/native_bootstrap.mojo:50` (native bootstrap connect/ping/query smoke path via `mojo run -I src`)
+- `tests/native_bootstrap.mojo:67` (native bootstrap prepare-bind + mismatch guard path)
 - Gaps/next actions:
 - Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
 - Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
@@ -81,8 +82,10 @@
 - `src/scratchbird_native.mojo:73` (native-bootstrap `prepare` statement scaffold)
 - `src/scratchbird_native.mojo:146` (native-bootstrap prepared `execute` path)
 - `src/scratchbird_native.mojo:92` (native-bootstrap `stream` lifecycle entrypoint)
-- `src/scratchbird_native.mojo:103` (native-bootstrap `cancel` signal path)
-- `src/scratchbird_native.mojo:124` (native-bootstrap stream iterator with `57014` cancellation behavior)
+- `src/scratchbird_native.mojo:104` (native-bootstrap `cancel` signal path)
+- `src/scratchbird_native.mojo:130` (native-bootstrap stream iterator with `57014` cancellation behavior)
+- `src/scratchbird_native.mojo:213` (native-bootstrap query rowcount semantics for paging queries)
+- `src/scratchbird_native.mojo:65` (native-bootstrap operation-level cancel reset before query/stream paths)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
@@ -96,7 +99,9 @@
 - `tests/sbdriver_conformance.mojo:190`
 - `tests/native_bootstrap.mojo:71` (native-bootstrap prepare-bind + mismatch assertions)
 - `tests/native_bootstrap.mojo:73` (native-bootstrap prepared execute parity assertions)
-- `tests/native_bootstrap.mojo:133` (native-bootstrap stream/cancel `57014` assertions)
+- `tests/native_bootstrap.mojo:54` (native-bootstrap paging query rowcount assertion)
+- `tests/native_bootstrap.mojo:135` (native-bootstrap stream/cancel `57014` assertions)
+- `tests/native_bootstrap.mojo:141` (native-bootstrap post-cancel stream recovery assertion)
 - `tests/README.md:10`
 - Gaps/next actions:
 - Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
@@ -114,8 +119,8 @@
 - `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
 - `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
 - `src/scratchbird.mojo:1848` (`build_database_default_metadata_rows` database/default branch-style metadata rows)
-- `src/scratchbird_native.mojo:339` (native-bootstrap metadata collection alias normalization)
-- `src/scratchbird_native.mojo:352` (native-bootstrap metadata query resolution)
+- `src/scratchbird_native.mojo:313` (native-bootstrap metadata collection alias normalization)
+- `src/scratchbird_native.mojo:360` (native-bootstrap metadata query resolution)
 - Lane-local test anchors:
 - `tests/metadata_recursive_schema.mojo:24` (database/default branch style row shaping)
 - `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
