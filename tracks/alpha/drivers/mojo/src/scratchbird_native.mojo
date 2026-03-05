@@ -40,6 +40,7 @@ struct ScratchBirdConfig:
     var connect_timeout_s: Int
     var socket_timeout_s: Int
     var login_timeout_s: Int
+    var acquire_timeout_s: Int
     var cb_failure_threshold: Int
     var cb_recovery_timeout_ms: Int
     var cb_success_threshold: Int
@@ -74,6 +75,7 @@ struct ScratchBirdConfig:
         self.connect_timeout_s = _query_int_alias(dsn, "connect_timeout", "connecttimeout", 30)
         self.socket_timeout_s = _query_int_alias(dsn, "socket_timeout", "sockettimeout", 0)
         self.login_timeout_s = _query_int_alias(dsn, "login_timeout", "logintimeout", 30)
+        self.acquire_timeout_s = _query_int_alias(dsn, "acquire_timeout", "acquiretimeout", _query_int_alias(dsn, "pooling_acquire_timeout", "poolingacquiretimeout", 30))
         self.cb_failure_threshold = _query_int(dsn, "cb_failure_threshold", 5)
         self.cb_recovery_timeout_ms = _query_int(dsn, "cb_recovery_timeout_ms", 30000)
         self.cb_success_threshold = _query_int(dsn, "cb_success_threshold", 3)
@@ -1109,6 +1111,9 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.login_timeout_s < 0:
         raise Error("22023 login_timeout must be >= 0")
+
+    if config.acquire_timeout_s < 0:
+        raise Error("22023 acquire_timeout must be >= 0")
 
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")

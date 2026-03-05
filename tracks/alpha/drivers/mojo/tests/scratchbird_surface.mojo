@@ -84,6 +84,7 @@ fn main() raises:
     _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
     _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
     _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
+    _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
     var cfg_default_port = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
@@ -99,11 +100,19 @@ fn main() raises:
     _require(cfg_endpoint_override.host == "proxy.local", "query host override parse mismatch")
     _require(cfg_endpoint_override.port == 4100, "query port override parse mismatch")
     var cfg_timeout_override = scratchbird.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=11&socket_timeout=22&logintimeout=33"
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=11&socket_timeout=22&logintimeout=33&acquiretimeout=44"
     )
     _require(cfg_timeout_override.connect_timeout_s == 11, "connect timeout override mismatch")
     _require(cfg_timeout_override.socket_timeout_s == 22, "socket timeout override mismatch")
     _require(cfg_timeout_override.login_timeout_s == 33, "login timeout override mismatch")
+    _require(cfg_timeout_override.acquire_timeout_s == 44, "acquire timeout override mismatch")
+    var cfg_pooling_acquire_timeout = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&pooling_acquire_timeout=52"
+    )
+    _require(
+        cfg_pooling_acquire_timeout.acquire_timeout_s == 52,
+        "pooling acquire timeout alias mismatch",
+    )
     var cfg_mode_precedence = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=direct&connection_mode=manager_proxy&ingress_mode=managed"
     )
@@ -507,6 +516,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&login_timeout=-1",
         "22023",
         "login_timeout must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&acquire_timeout=-1",
+        "22023",
+        "acquire_timeout must be >= 0",
     )
 
     print("Mojo scratchbird facade tests OK")
