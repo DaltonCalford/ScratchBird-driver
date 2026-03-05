@@ -82,8 +82,16 @@ def test_resolve_metadata_collection_query_extended_families() -> None:
 
 
 def test_normalize_metadata_restriction_aliases() -> None:
+    _require(scratchbird.normalize_metadata_restriction_key("TABLE_CAT") == "catalog_name", "catalog alias mismatch")
     _require(scratchbird.normalize_metadata_restriction_key("TABLE_SCHEM") == "schema_name", "schema alias mismatch")
     _require(scratchbird.normalize_metadata_restriction_key("column") == "column_name", "column alias mismatch")
+    _require(scratchbird.normalize_metadata_restriction_key("index") == "index_name", "index alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("constraint") == "constraint_name",
+        "constraint alias mismatch",
+    )
+    _require(scratchbird.normalize_metadata_restriction_key("routine") == "routine_name", "routine alias mismatch")
+    _require(scratchbird.normalize_metadata_restriction_key("udt_name") == "type_name", "type alias mismatch")
     _require(scratchbird.normalize_metadata_restriction_key("none") == "", "none restriction should normalize empty")
     try:
         scratchbird.normalize_metadata_restriction_key("unsupported_restriction")
@@ -124,6 +132,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "columns schema restriction should map through table-schema subquery",
     )
     _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')"
+        in scratchbird.resolve_metadata_collection_query_restricted("tables", "catalog", "public"),
+        "catalog restriction should normalize through schema predicate",
+    )
+    _require(
         "s.schema_name LIKE 'pub%'"
         in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "pub%"),
         "columns schema wildcard restriction should use LIKE predicate",
@@ -139,6 +152,26 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "index_columns table restriction should map through index-table subquery",
     )
     _require(
+        "index_id IN (SELECT index_id FROM sys.indexes WHERE index_name LIKE 'idx_orders' ESCAPE '\\')"
+        in scratchbird.resolve_metadata_collection_query_restricted("index_columns", "index", "idx_orders"),
+        "index_columns index restriction should map through index-name subquery",
+    )
+    _require(
+        "constraint_name LIKE 'orders_pk' ESCAPE '\\'"
+        in scratchbird.resolve_metadata_collection_query_restricted("constraints", "constraint", "orders_pk"),
+        "constraint restriction should target constraint_name",
+    )
+    _require(
+        "routine_name LIKE 'orders_upsert' ESCAPE '\\'"
+        in scratchbird.resolve_metadata_collection_query_restricted("routines", "routine", "orders_upsert"),
+        "routine restriction should target routine_name",
+    )
+    _require(
+        "data_type_name = 'INTEGER'"
+        in scratchbird.resolve_metadata_collection_query_restricted("columns", "type", "INTEGER"),
+        "type restriction should target data_type_name",
+    )
+    _require(
         scratchbird.resolve_metadata_collection_query_restricted("tables", "table_name", "")
         == scratchbird.METADATA_TABLES_QUERY,
         "empty restriction value should not mutate query",
@@ -148,6 +181,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         raise RuntimeError("expected unsupported collection restriction failure")
     except scratchbird.ScratchBirdError as exc:
         _require(exc.sqlstate == "0A000", "unsupported collection restriction should map to 0A000")
+    try:
+        scratchbird.resolve_metadata_collection_query_restricted("tables", "index", "idx_orders")
+        raise RuntimeError("expected unsupported index restriction for tables")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "0A000", "unsupported index restriction should map to 0A000")
 
 
 def test_resolve_metadata_collection_query_restricted_multi() -> None:
@@ -178,6 +216,14 @@ def test_resolve_metadata_collection_query_restricted_multi() -> None:
             {"schema": "null"},
         ),
         "multi restriction SQL should support IS NULL schema predicates",
+    )
+    _require(
+        "data_type_name = 'INTEGER'"
+        in scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "columns",
+            {"catalog": "public", "table": "orders", "type_name": "INTEGER"},
+        ),
+        "multi restriction SQL should support type-name predicates",
     )
     try:
         scratchbird.resolve_metadata_collection_query_restricted_multi(

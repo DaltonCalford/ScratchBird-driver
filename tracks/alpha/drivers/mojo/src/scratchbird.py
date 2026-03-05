@@ -140,6 +140,10 @@ _METADATA_RESTRICTION_ALIASES = {
     "name": "name",
     "object_name": "name",
     "entity_name": "name",
+    "catalog": "catalog_name",
+    "catalog_name": "catalog_name",
+    "table_catalog": "catalog_name",
+    "table_cat": "catalog_name",
     "schema": "schema_name",
     "schema_name": "schema_name",
     "table_schema": "schema_name",
@@ -148,6 +152,21 @@ _METADATA_RESTRICTION_ALIASES = {
     "table_name": "table_name",
     "column": "column_name",
     "column_name": "column_name",
+    "index": "index_name",
+    "index_name": "index_name",
+    "constraint": "constraint_name",
+    "constraint_name": "constraint_name",
+    "routine": "routine_name",
+    "routine_name": "routine_name",
+    "procedure": "routine_name",
+    "procedure_name": "routine_name",
+    "function": "routine_name",
+    "function_name": "routine_name",
+    "type": "type_name",
+    "type_name": "type_name",
+    "data_type": "type_name",
+    "data_type_name": "type_name",
+    "udt_name": "type_name",
 }
 
 _SCHEMA_KEYS = (
@@ -1411,6 +1430,10 @@ def _index_filter_by_table_name(restriction_value: str) -> str:
     )
 
 
+def _index_filter_by_index_name(restriction_value: str) -> str:
+    return f"index_id IN (SELECT index_id FROM sys.indexes WHERE {_comparison_predicate('index_name', restriction_value)})"
+
+
 def _metadata_restriction_predicate(collection_name: str, restriction_key: str, restriction_value: str) -> str:
     if restriction_key == "name":
         if collection_name == "schemas":
@@ -1437,6 +1460,9 @@ def _metadata_restriction_predicate(collection_name: str, restriction_key: str, 
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",
         )
+
+    if restriction_key == "catalog_name":
+        return _metadata_restriction_predicate(collection_name, "schema_name", restriction_value)
 
     if restriction_key == "schema_name":
         if collection_name == "schemas":
@@ -1481,6 +1507,44 @@ def _metadata_restriction_predicate(collection_name: str, restriction_key: str, 
     if restriction_key == "column_name":
         if collection_name in ("columns", "column_privileges", "index_columns"):
             return _comparison_predicate("column_name", restriction_value)
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "index_name":
+        if collection_name == "indexes":
+            return _comparison_predicate("index_name", restriction_value)
+        if collection_name == "index_columns":
+            return _index_filter_by_index_name(restriction_value)
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "constraint_name":
+        if collection_name in ("constraints", "primary_keys", "foreign_keys"):
+            return _comparison_predicate("constraint_name", restriction_value)
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "routine_name":
+        if collection_name == "procedures":
+            return _comparison_predicate("procedure_name", restriction_value)
+        if collection_name == "functions":
+            return _comparison_predicate("function_name", restriction_value)
+        if collection_name == "routines":
+            return _comparison_predicate("routine_name", restriction_value)
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "type_name":
+        if collection_name in ("columns", "type_info"):
+            return _comparison_predicate("data_type_name", restriction_value)
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",

@@ -706,12 +706,22 @@ fn normalize_metadata_restriction_key(restriction_key: String) raises -> String:
         return ""
     if normalized == "name" or normalized == "object_name" or normalized == "entity_name":
         return "name"
+    if normalized == "catalog" or normalized == "catalog_name" or normalized == "table_catalog" or normalized == "table_cat":
+        return "catalog_name"
     if normalized == "schema" or normalized == "schema_name" or normalized == "table_schema" or normalized == "table_schem":
         return "schema_name"
     if normalized == "table" or normalized == "table_name":
         return "table_name"
     if normalized == "column" or normalized == "column_name":
         return "column_name"
+    if normalized == "index" or normalized == "index_name":
+        return "index_name"
+    if normalized == "constraint" or normalized == "constraint_name":
+        return "constraint_name"
+    if normalized == "routine" or normalized == "routine_name" or normalized == "procedure" or normalized == "procedure_name" or normalized == "function" or normalized == "function_name":
+        return "routine_name"
+    if normalized == "type" or normalized == "type_name" or normalized == "data_type" or normalized == "data_type_name" or normalized == "udt_name":
+        return "type_name"
     raise Error("0A000 metadata restriction '" + raw + "' is not supported")
 
 
@@ -738,6 +748,10 @@ fn _table_filter_by_table_name(restriction_value: String) -> String:
 
 fn _index_filter_by_table_name(restriction_value: String) -> String:
     return "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE " + _comparison_predicate("t.table_name", restriction_value) + ")"
+
+
+fn _index_filter_by_index_name(restriction_value: String) -> String:
+    return "index_id IN (SELECT index_id FROM sys.indexes WHERE " + _comparison_predicate("index_name", restriction_value) + ")"
 
 
 fn _metadata_restriction_predicate(
@@ -785,6 +799,9 @@ fn _metadata_restriction_predicate(
             return "schema_id IN (SELECT schema_id FROM sys.schemas WHERE " + _comparison_predicate("schema_name", restriction_value) + ")"
         raise Error("0A000 metadata restriction 'schema_name' is not supported for '" + collection_name + "'")
 
+    if restriction_key == "catalog_name":
+        return _metadata_restriction_predicate(collection_name, "schema_name", restriction_value)
+
     if restriction_key == "table_name":
         if collection_name == "tables" or collection_name == "table_privileges":
             return _comparison_predicate("table_name", restriction_value)
@@ -800,6 +817,32 @@ fn _metadata_restriction_predicate(
         if collection_name == "columns" or collection_name == "column_privileges" or collection_name == "index_columns":
             return _comparison_predicate("column_name", restriction_value)
         raise Error("0A000 metadata restriction 'column_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "index_name":
+        if collection_name == "indexes":
+            return _comparison_predicate("index_name", restriction_value)
+        if collection_name == "index_columns":
+            return _index_filter_by_index_name(restriction_value)
+        raise Error("0A000 metadata restriction 'index_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "constraint_name":
+        if collection_name == "constraints" or collection_name == "primary_keys" or collection_name == "foreign_keys":
+            return _comparison_predicate("constraint_name", restriction_value)
+        raise Error("0A000 metadata restriction 'constraint_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "routine_name":
+        if collection_name == "procedures":
+            return _comparison_predicate("procedure_name", restriction_value)
+        if collection_name == "functions":
+            return _comparison_predicate("function_name", restriction_value)
+        if collection_name == "routines":
+            return _comparison_predicate("routine_name", restriction_value)
+        raise Error("0A000 metadata restriction 'routine_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "type_name":
+        if collection_name == "columns" or collection_name == "type_info":
+            return _comparison_predicate("data_type_name", restriction_value)
+        raise Error("0A000 metadata restriction 'type_name' is not supported for '" + collection_name + "'")
 
     raise Error("0A000 metadata restriction '" + restriction_key + "' is not supported")
 

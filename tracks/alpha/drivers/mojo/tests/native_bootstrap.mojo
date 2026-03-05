@@ -267,6 +267,31 @@ fn main() raises:
         in restricted_index_columns_table,
         "index_columns table restriction should map through index-table subquery",
     )
+    var restricted_tables_catalog = conn.query_metadata_restricted("tables", "catalog", "public")
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')" in restricted_tables_catalog,
+        "catalog restriction should normalize through schema predicate",
+    )
+    var restricted_index_columns_index = conn.query_metadata_restricted("index_columns", "index", "idx_orders")
+    _require(
+        "index_id IN (SELECT index_id FROM sys.indexes WHERE index_name LIKE 'idx_orders' ESCAPE '\\')" in restricted_index_columns_index,
+        "index_columns index restriction should map through index-name subquery",
+    )
+    var restricted_constraints = conn.query_metadata_restricted("constraints", "constraint", "orders_pk")
+    _require(
+        "constraint_name LIKE 'orders_pk' ESCAPE '\\'" in restricted_constraints,
+        "constraint restriction should target constraint_name",
+    )
+    var restricted_routines = conn.query_metadata_restricted("routines", "routine", "orders_upsert")
+    _require(
+        "routine_name LIKE 'orders_upsert' ESCAPE '\\'" in restricted_routines,
+        "routine restriction should target routine_name",
+    )
+    var restricted_columns_type = conn.query_metadata_restricted("columns", "type", "INTEGER")
+    _require(
+        "data_type_name = 'INTEGER'" in restricted_columns_type,
+        "type restriction should target data_type_name",
+    )
     _require(
         conn.query_metadata_rows_restricted("routines", "schema", "public") == 1,
         "routines schema restriction rowcount mismatch",
