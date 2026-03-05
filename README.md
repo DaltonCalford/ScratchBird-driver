@@ -80,6 +80,7 @@ Legend:
 - **Mojo lane:** Expanded integration smoke to cover transaction/savepoint lifecycle and prepare/stream-cancel recovery checks for direct and manager-proxy execution paths.
 - **Mojo lane:** Added native-bootstrap DSN host/port parsing fields and deterministic native/facade auth-fail guard parity (`sb_test_auth_fail=true` → `28P01`) with smoke assertions.
 - **Mojo lane:** Updated gated CI Mojo lane to run explicit native surface/bootstrap + metadata + integration + conformance sequence.
+- **Mojo lane:** Added native timeout alias parsing/guard parity (`connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`) plus `manager-proxy` normalization coverage in native/facade smoke lanes.
 
 ---
 

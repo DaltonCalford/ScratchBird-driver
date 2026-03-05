@@ -104,6 +104,9 @@ fn main() raises:
     _require(cfg.host == "localhost", "host parse mismatch")
     _require(cfg.port == 3092, "port parse mismatch")
     _require(cfg.database == "testdb", "database parse mismatch")
+    _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
+    _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
+    _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
     var cfg_default_port = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
@@ -113,6 +116,12 @@ fn main() raises:
     )
     _require(cfg_endpoint_override.host == "proxy.local", "query host override parse mismatch")
     _require(cfg_endpoint_override.port == 4100, "query port override parse mismatch")
+    var cfg_timeout_override = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=11&socket_timeout=22&logintimeout=33"
+    )
+    _require(cfg_timeout_override.connect_timeout_s == 11, "connect timeout override mismatch")
+    _require(cfg_timeout_override.socket_timeout_s == 22, "socket timeout override mismatch")
+    _require(cfg_timeout_override.login_timeout_s == 33, "login timeout override mismatch")
 
     var conn = scratchbird_native.connect(cfg)
     _require(conn.ping(), "ping should return true")
@@ -526,7 +535,13 @@ fn main() raises:
     var manager_cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager_proxy"
     )
+    _require(manager_cfg.front_door_mode == "manager_proxy", "front_door_mode manager_proxy mismatch")
     _ = scratchbird_native.connect(manager_cfg)
+    var manager_dash_cfg = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager-proxy"
+    )
+    _require(manager_dash_cfg.front_door_mode == "manager_proxy", "front_door_mode manager-proxy normalization mismatch")
+    _ = scratchbird_native.connect(manager_dash_cfg)
 
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",
@@ -567,6 +582,21 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=0",
         "22023",
         "port must be positive",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=-1",
+        "22023",
+        "connect_timeout must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&sockettimeout=-1",
+        "22023",
+        "socket_timeout must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&login_timeout=-1",
+        "22023",
+        "login_timeout must be >= 0",
     )
 
     print("Mojo native bootstrap tests OK")

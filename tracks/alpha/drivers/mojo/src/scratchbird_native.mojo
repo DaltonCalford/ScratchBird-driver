@@ -36,6 +36,9 @@ struct ScratchBirdConfig:
     var binary_transfer: Bool
     var compression: String
     var sb_test_auth_fail: Bool
+    var connect_timeout_s: Int
+    var socket_timeout_s: Int
+    var login_timeout_s: Int
     var cb_failure_threshold: Int
     var cb_recovery_timeout_ms: Int
     var cb_success_threshold: Int
@@ -53,18 +56,19 @@ struct ScratchBirdConfig:
         self.port = _query_int(dsn, "port", _extract_port(dsn))
         self.database = _extract_database(dsn)
 
-        self.front_door_mode = _query_value(dsn, "front_door_mode", "")
-        if self.front_door_mode == "":
-            self.front_door_mode = _query_value(dsn, "connection_mode", "")
-        if self.front_door_mode == "":
-            self.front_door_mode = _query_value(dsn, "ingress_mode", "")
-        if self.front_door_mode == "":
-            self.front_door_mode = "direct"
+        self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "front_door_mode", ""))
+        if self.front_door_mode == "direct":
+            self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "connection_mode", ""))
+        if self.front_door_mode == "direct":
+            self.front_door_mode = _normalize_front_door_mode_value(_query_value(dsn, "ingress_mode", ""))
 
         self.sslmode = _query_value(dsn, "sslmode", "require")
         self.binary_transfer = _as_bool(_query_value(dsn, "binary_transfer", "true"))
         self.compression = _query_value(dsn, "compression", "off")
         self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)
+        self.connect_timeout_s = _query_int_alias(dsn, "connect_timeout", "connecttimeout", 30)
+        self.socket_timeout_s = _query_int_alias(dsn, "socket_timeout", "sockettimeout", 0)
+        self.login_timeout_s = _query_int_alias(dsn, "login_timeout", "logintimeout", 30)
         self.cb_failure_threshold = _query_int(dsn, "cb_failure_threshold", 5)
         self.cb_recovery_timeout_ms = _query_int(dsn, "cb_recovery_timeout_ms", 30000)
         self.cb_success_threshold = _query_int(dsn, "cb_success_threshold", 3)
@@ -647,6 +651,24 @@ fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
         return default_value
 
 
+fn _query_int_alias(
+    dsn: String,
+    primary_key: String,
+    alias_key: String,
+    default_value: Int,
+) -> Int:
+    var raw = _query_value(dsn, primary_key, "")
+    if raw.strip() == "":
+        raw = _query_value(dsn, alias_key, "")
+    if raw.strip() == "":
+        return default_value
+    try:
+        return Int(raw)
+    except e:
+        _ = e
+        return default_value
+
+
 fn _query_bool(dsn: String, key: String, default_value: Bool) -> Bool:
     var raw = _query_value(dsn, key, "")
     if raw.strip() == "":
@@ -664,6 +686,13 @@ fn _clamp_positive(value: Int, fallback: Int) -> Int:
     if value <= 0:
         return fallback
     return value
+
+
+fn _normalize_front_door_mode_value(value: String) -> String:
+    var normalized = value.strip().lower().replace("-", "_")
+    if normalized == "":
+        return "direct"
+    return normalized
 
 
 fn _metadata_alias(value: String) -> String:
@@ -951,8 +980,8 @@ fn resolve_metadata_collection_query_restricted_multi(
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:
-    var mode = config.front_door_mode.strip().lower()
-    if mode != "" and mode != "direct" and mode != "manager_proxy" and mode != "manager-proxy" and mode != "managed":
+    var mode = _normalize_front_door_mode_value(config.front_door_mode)
+    if mode != "direct" and mode != "manager_proxy" and mode != "managed":
         raise Error("22023 front_door_mode must be direct or manager_proxy.")
 
     if config.user.strip() == "" or config.database.strip() == "":
@@ -963,6 +992,15 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.port <= 0:
         raise Error("22023 port must be positive")
+
+    if config.connect_timeout_s < 0:
+        raise Error("22023 connect_timeout must be >= 0")
+
+    if config.socket_timeout_s < 0:
+        raise Error("22023 socket_timeout must be >= 0")
+
+    if config.login_timeout_s < 0:
+        raise Error("22023 login_timeout must be >= 0")
 
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")
