@@ -104,6 +104,25 @@ def test_begin_rejects_nested_transaction() -> None:
     _require(conn.drained == 0, "nested begin should not drain")
 
 
+def test_begin_rejects_invalid_integer_kwargs() -> None:
+    conn = TxnHarness(0)
+    try:
+        scratchbird.ScratchBirdConnection.begin(conn, isolation_level="bad")
+        raise RuntimeError("expected invalid begin option rejection")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "22023", "invalid begin option should raise 22023")
+    _require(len(conn.sent) == 0, "invalid begin should not send wire messages")
+    _require(conn.drained == 0, "invalid begin should not drain")
+
+    try:
+        scratchbird.ScratchBirdConnection.begin(conn, wait_mode="bad")
+        raise RuntimeError("expected invalid wait_mode rejection")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "22023", "invalid wait_mode should raise 22023")
+    _require(len(conn.sent) == 0, "invalid wait_mode should not send wire messages")
+    _require(conn.drained == 0, "invalid wait_mode should not drain")
+
+
 def test_commit_and_rollback_noop_when_no_active_txn() -> None:
     conn = TxnHarness(0)
     scratchbird.ScratchBirdConnection.commit(conn)
@@ -247,6 +266,30 @@ def test_shim_ping_and_txn_lifecycle() -> None:
         conn.close()
 
 
+def test_shim_begin_validates_kwargs_and_prepare_guard() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        try:
+            conn.begin(isolation_level="bad")
+            raise RuntimeError("expected invalid shim begin option rejection")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "22023", "invalid shim begin option should raise 22023")
+        _require(getattr(conn, "_txn_id", 0) == 0, "invalid begin should not activate txn")
+
+        conn.begin(isolation_level=2, access_mode=1, deferrable=True, wait=False, timeout_ms=12, autocommit_mode=1)
+        _require(getattr(conn, "_txn_id", 0) == 1, "valid begin should activate txn")
+        conn.commit()
+
+        conn.close()
+        try:
+            conn.prepare("SELECT 1")
+            raise RuntimeError("expected prepare on closed connection to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "08003", "prepare on closed connection should raise 08003")
+    finally:
+        conn.close()
+
+
 def test_shim_savepoint_lifecycle() -> None:
     conn = scratchbird.connect(_shim_cfg())
     try:
@@ -383,6 +426,7 @@ def test_shim_closed_connection_guards() -> None:
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
+    test_begin_rejects_invalid_integer_kwargs()
     test_commit_and_rollback_noop_when_no_active_txn()
     test_commit_and_rollback_send_when_active_txn()
     test_savepoint_messages_and_payloads()
@@ -391,6 +435,7 @@ def main() -> None:
     test_query_empty_params_uses_extended_path()
     test_shim_prepare_execute_and_mismatch()
     test_shim_ping_and_txn_lifecycle()
+    test_shim_begin_validates_kwargs_and_prepare_guard()
     test_shim_savepoint_lifecycle()
     test_stream_fetch_boundaries()
     test_cancel_stream_returns_57014()

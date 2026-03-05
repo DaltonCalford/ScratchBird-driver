@@ -1028,6 +1028,31 @@ def _build_savepoint_payload(name: str) -> bytes:
     return struct.pack("<I", len(encoded)) + encoded
 
 
+def _coerce_txn_option_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ScratchBirdError(f"{field_name} must be a valid integer", "22023")
+
+
+def _normalize_begin_options(kwargs: Mapping[str, Any]) -> Dict[str, int]:
+    wait_raw = kwargs.get("wait_mode", kwargs.get("wait", 0))
+    return {
+        "conflict_action": _coerce_txn_option_int(kwargs.get("conflict_action", 0), "conflict_action"),
+        "autocommit_mode": _coerce_txn_option_int(kwargs.get("autocommit_mode", 0), "autocommit_mode"),
+        "isolation_level": _coerce_txn_option_int(
+            kwargs.get("isolation_level", ISOLATION_READ_COMMITTED),
+            "isolation_level",
+        ),
+        "access_mode": _coerce_txn_option_int(kwargs.get("access_mode", 0), "access_mode"),
+        "deferrable": _coerce_txn_option_int(kwargs.get("deferrable", 0), "deferrable"),
+        "wait_mode": _coerce_txn_option_int(wait_raw, "wait_mode"),
+        "timeout_ms": _coerce_txn_option_int(kwargs.get("timeout_ms", 0), "timeout_ms"),
+    }
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -1051,6 +1076,7 @@ class _ShimConnection:
         self._txn_id = 0
         self._savepoint_counter = 0
         self._savepoints: List[str] = []
+        self._txn_begin_options: Dict[str, int] = {}
         self._closed = False
 
     def _ensure_open(self) -> None:
@@ -1172,6 +1198,7 @@ class _ShimConnection:
         self._cancel_requested = False
         self._txn_id = 0
         self._savepoints = []
+        self._txn_begin_options = {}
         self._closed = True
         return None
 
@@ -1179,13 +1206,14 @@ class _ShimConnection:
         return not self._closed
 
     def prepare(self, sql: str) -> _ShimStatement:
+        self._ensure_open()
         return _ShimStatement(self, sql)
 
     def begin(self, **kwargs: Any) -> None:
         self._ensure_open()
-        _ = kwargs
         if self._txn_id != 0:
             raise ScratchBirdError("transaction already active", "25001")
+        self._txn_begin_options = _normalize_begin_options(kwargs)
         self._txn_id = 1
         self._savepoints = []
 
@@ -1195,6 +1223,7 @@ class _ShimConnection:
             return
         self._txn_id = 0
         self._savepoints = []
+        self._txn_begin_options = {}
 
     def rollback(self) -> None:
         self._ensure_open()
@@ -1202,6 +1231,7 @@ class _ShimConnection:
             return
         self._txn_id = 0
         self._savepoints = []
+        self._txn_begin_options = {}
 
     def set_savepoint(self, name: Optional[str] = None) -> str:
         self._ensure_open()
@@ -1292,6 +1322,7 @@ class ScratchBirdConnection:
     def begin(conn: Any, **kwargs: Any) -> None:
         if getattr(conn, "_txn_id", 0) != 0:
             raise ScratchBirdError("transaction already active", "25001")
+        normalized = _normalize_begin_options(kwargs)
         flags = 0
         if "isolation_level" in kwargs:
             flags |= TXN_FLAG_HAS_ISOLATION
@@ -1306,24 +1337,16 @@ class ScratchBirdConnection:
         if "autocommit_mode" in kwargs:
             flags |= TXN_FLAG_HAS_AUTOCOMMIT
 
-        deferrable = kwargs.get("deferrable", 0)
-        if isinstance(deferrable, bool):
-            deferrable = 1 if deferrable else 0
-
-        wait_mode = kwargs.get("wait_mode", kwargs.get("wait", 0))
-        if isinstance(wait_mode, bool):
-            wait_mode = 1 if wait_mode else 0
-
         payload = struct.pack(
             "<HBBBBBBI",
             int(flags),
-            int(kwargs.get("conflict_action", 0)),
-            int(kwargs.get("autocommit_mode", 0)),
-            int(kwargs.get("isolation_level", ISOLATION_READ_COMMITTED)),
-            int(kwargs.get("access_mode", 0)),
-            int(deferrable),
-            int(wait_mode),
-            int(kwargs.get("timeout_ms", 0)),
+            normalized["conflict_action"],
+            normalized["autocommit_mode"],
+            normalized["isolation_level"],
+            normalized["access_mode"],
+            normalized["deferrable"],
+            normalized["wait_mode"],
+            normalized["timeout_ms"],
         )
         conn._send_message(MessageType.TXN_BEGIN, payload)
         conn._drain_until_ready()
