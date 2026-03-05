@@ -28,6 +28,7 @@ comptime METADATA_TYPE_INFO_QUERY = "SELECT DISTINCT data_type_id, data_type_nam
 struct ScratchBirdConfig:
     var dsn: String
     var user: String
+    var password: String
     var host: String
     var port: Int
     var database: String
@@ -51,7 +52,8 @@ struct ScratchBirdConfig:
 
     fn __init__(out self, dsn: String):
         self.dsn = dsn
-        self.user = _extract_user(dsn)
+        self.user = _query_value(dsn, "user", _extract_user(dsn))
+        self.password = _query_value(dsn, "password", _extract_password(dsn))
         self.host = _query_value(dsn, "host", _extract_host(dsn))
         self.port = _query_int(dsn, "port", _extract_port(dsn))
         self.database = _extract_database(dsn)
@@ -558,6 +560,22 @@ fn _extract_user(dsn: String) -> String:
         if len(uv) >= 1:
             return String(uv[0])
     return userinfo
+
+
+fn _extract_password(dsn: String) -> String:
+    var body = _strip_query(_strip_scheme(dsn))
+    if "@" not in body:
+        return ""
+    var pieces = body.split("@", 1)
+    if len(pieces) != 2:
+        return ""
+    var userinfo = String(pieces[0])
+    if ":" not in userinfo:
+        return ""
+    var uv = userinfo.split(":", 1)
+    if len(uv) != 2:
+        return ""
+    return String(uv[1])
 
 
 fn _extract_database(dsn: String) -> String:

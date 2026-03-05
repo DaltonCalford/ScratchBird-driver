@@ -11,7 +11,8 @@
 - Lane-local source anchors:
 - `src/scratchbird.mojo:12` (`scratchbird` current-syntax facade exports `ScratchBirdConfig`/`ScratchBirdConnection`/`connect` from native bootstrap)
 - `src/scratchbird.mojo:20` (facade exports native `validate_connect_guards`)
-- `src/scratchbird_native.mojo:28` (native-bootstrap `ScratchBirdConfig` DSN parsing surface)
+- `src/scratchbird_native.mojo:28` (native-bootstrap `ScratchBirdConfig` DSN parsing surface, including credential extraction/overrides)
+- `src/scratchbird_native.mojo:55` (native-bootstrap `user`/`password` query overrides layered over DSN userinfo parsing)
 - `src/scratchbird_native.mojo:52` (native-bootstrap DSN host/port extraction + query override support for transport-ready endpoint fields)
 - `src/scratchbird_native.mojo:59` (native-bootstrap front-door mode normalization + source-precedence across `front_door_mode` / `connection_mode` / `ingress_mode`)
 - `src/scratchbird_native.mojo:69` (native-bootstrap timeout alias parsing: `connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`)
@@ -22,10 +23,10 @@
 - `src/scratchbird.py:659` (bridge-shim connect guard enforcement, including deterministic auth-fail simulation)
 - `src/scratchbird.py:1037` (bridge-shim `connect` entrypoint)
 - Lane-local test anchors:
-- `tests/scratchbird_surface.mojo:75` (current-syntax `scratchbird` facade connect/ping/query smoke + DSN host/port/timeout parse assertions + mode normalization/precedence checks)
+- `tests/scratchbird_surface.mojo:75` (current-syntax `scratchbird` facade connect/ping/query smoke + DSN credential/host/port/timeout parse assertions + mode normalization/precedence checks)
 - `tests/scratchbird_surface.mojo:426` (facade deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
 - `tests/scratchbird_surface.mojo:441` (facade timeout guard SQLSTATE assertions via negative timeout DSNs)
-- `tests/native_bootstrap.mojo:99` (native-bootstrap connect/ping/query smoke + DSN host/port/timeout parse assertions + mode normalization/precedence checks)
+- `tests/native_bootstrap.mojo:99` (native-bootstrap connect/ping/query smoke + DSN credential/host/port/timeout parse assertions + mode normalization/precedence checks)
 - `tests/native_bootstrap.mojo:562` (native-bootstrap deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
 - `tests/native_bootstrap.mojo:587` (native-bootstrap timeout guard SQLSTATE assertions via negative timeout DSNs)
 - `tests/integration.py:79` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)

@@ -101,6 +101,7 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
     )
     _require(cfg.user == "user", "user parse mismatch")
+    _require(cfg.password == "pass", "password parse mismatch")
     _require(cfg.host == "localhost", "host parse mismatch")
     _require(cfg.port == 3092, "port parse mismatch")
     _require(cfg.database == "testdb", "database parse mismatch")
@@ -134,6 +135,20 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managerproxy"
     )
     _require(cfg_ingress_mode_alias.front_door_mode == "manager_proxy", "ingress_mode alias normalization mismatch")
+    var cfg_password_colon = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pa:ss@localhost:3092/testdb?sslmode=require"
+    )
+    _require(cfg_password_colon.password == "pa:ss", "password-with-colon parse mismatch")
+    var cfg_credential_override = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&user=api_user&password=api_pass"
+    )
+    _require(cfg_credential_override.user == "api_user", "query user override mismatch")
+    _require(cfg_credential_override.password == "api_pass", "query password override mismatch")
+    var cfg_credential_override_hostonly = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://localhost:3092/testdb?sslmode=require&user=host_user&password=host_pass"
+    )
+    _require(cfg_credential_override_hostonly.user == "host_user", "host-only user override mismatch")
+    _require(cfg_credential_override_hostonly.password == "host_pass", "host-only password override mismatch")
 
     var conn = scratchbird_native.connect(cfg)
     _require(conn.ping(), "ping should return true")
@@ -556,6 +571,8 @@ fn main() raises:
     _ = scratchbird_native.connect(manager_dash_cfg)
     _ = scratchbird_native.connect(cfg_connection_mode_alias)
     _ = scratchbird_native.connect(cfg_ingress_mode_alias)
+    _ = scratchbird_native.connect(cfg_credential_override)
+    _ = scratchbird_native.connect(cfg_credential_override_hostonly)
 
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",

@@ -82,6 +82,7 @@ Legend:
 - **Mojo lane:** Updated gated CI Mojo lane to run explicit native surface/bootstrap + metadata + integration + conformance sequence.
 - **Mojo lane:** Added native timeout alias parsing/guard parity (`connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`) plus `manager-proxy` normalization coverage in native/facade smoke lanes.
 - **Mojo lane:** Fixed front-door mode source precedence (`front_door_mode` over `connection_mode`/`ingress_mode`) and expanded alias normalization coverage (`managerproxy`) in native/facade smoke tests.
+- **Mojo lane:** Added native credential parsing/override coverage (`user`/`password`, including password-with-colon DSNs and host-only DSN query overrides) in native/facade smoke lanes.
 
 ---
 

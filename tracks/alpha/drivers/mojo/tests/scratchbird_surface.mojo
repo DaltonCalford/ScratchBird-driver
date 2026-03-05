@@ -77,6 +77,7 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
     )
     _require(cfg.user == "user", "user parse mismatch")
+    _require(cfg.password == "pass", "password parse mismatch")
     _require(cfg.host == "localhost", "host parse mismatch")
     _require(cfg.port == 3092, "port parse mismatch")
     _require(cfg.database == "testdb", "database parse mismatch")
@@ -110,6 +111,20 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managerproxy"
     )
     _require(cfg_ingress_mode_alias.front_door_mode == "manager_proxy", "ingress_mode alias normalization mismatch")
+    var cfg_password_colon = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pa:ss@localhost:3092/testdb?sslmode=require"
+    )
+    _require(cfg_password_colon.password == "pa:ss", "password-with-colon parse mismatch")
+    var cfg_credential_override = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&user=api_user&password=api_pass"
+    )
+    _require(cfg_credential_override.user == "api_user", "query user override mismatch")
+    _require(cfg_credential_override.password == "api_pass", "query password override mismatch")
+    var cfg_credential_override_hostonly = scratchbird.ScratchBirdConfig(
+        "scratchbird://localhost:3092/testdb?sslmode=require&user=host_user&password=host_pass"
+    )
+    _require(cfg_credential_override_hostonly.user == "host_user", "host-only user override mismatch")
+    _require(cfg_credential_override_hostonly.password == "host_pass", "host-only password override mismatch")
     var cfg_manager_dash = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager-proxy"
     )
@@ -120,6 +135,10 @@ fn main() raises:
     manager_conn_mode_conn.close()
     var manager_ingress_mode_conn = scratchbird.connect(cfg_ingress_mode_alias)
     manager_ingress_mode_conn.close()
+    var credential_override_conn = scratchbird.connect(cfg_credential_override)
+    credential_override_conn.close()
+    var credential_override_hostonly_conn = scratchbird.connect(cfg_credential_override_hostonly)
+    credential_override_hostonly_conn.close()
 
     var conn = scratchbird.connect(cfg)
     _require(conn.ping(), "ping should return true")
