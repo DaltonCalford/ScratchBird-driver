@@ -93,6 +93,69 @@ fn main() raises:
     _require(conn.leak_detector.get_active_count() == 0, "leak detector should release checkout on close")
     _require(not conn.query_pipeline.running, "pipeline should stop on close")
 
+    var keepalive_cfg = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&keepalive_max_idle_before_check_ms=0"
+    )
+    var keepalive_conn = scratchbird.connect(keepalive_cfg)
+    _ = keepalive_conn.query("SELECT 1")
+    keepalive_conn.operation_clock_ms += 2
+    _ = keepalive_conn.query("SELECT 1")
+    _require(keepalive_conn.ping_count >= 1, "keepalive validation should trigger ping")
+    keepalive_conn.close()
+
+    var pipeline_cfg = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&pipeline_max_in_flight=0"
+    )
+    var pipeline_conn = scratchbird.connect(pipeline_cfg)
+    try:
+        _ = pipeline_conn.query("SELECT 1")
+        raise Error("expected pipeline capacity guard")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "54000",
+            "pipeline capacity guard should expose 54000",
+        )
+    pipeline_conn.close()
+
+    var breaker_cfg = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&cb_failure_threshold=2"
+    )
+    var breaker_conn = scratchbird.connect(breaker_cfg)
+    try:
+        _ = breaker_conn.query("SELECT unsupported_query")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "0A000",
+            "first breaker failure should preserve unsupported query sqlstate",
+        )
+    try:
+        _ = breaker_conn.query("SELECT unsupported_query")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "0A000",
+            "second breaker failure should preserve unsupported query sqlstate",
+        )
+    try:
+        _ = breaker_conn.query("SELECT 1")
+        raise Error("expected circuit breaker guard")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "08006",
+            "circuit breaker guard should expose 08006",
+        )
+    breaker_conn.close()
+
+    var leak_cfg = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&leak_threshold_ms=0"
+    )
+    var leak_conn = scratchbird.connect(leak_cfg)
+    _ = leak_conn.query("SELECT 1")
+    leak_conn.close()
+    _require(
+        len(leak_conn.leak_detector.get_warnings()) > 0,
+        "leak detector should record warning when threshold is zero",
+    )
+
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",
         "08004",

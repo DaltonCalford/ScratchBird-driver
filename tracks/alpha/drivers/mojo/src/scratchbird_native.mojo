@@ -33,6 +33,15 @@ struct ScratchBirdConfig:
     var sslmode: String
     var binary_transfer: Bool
     var compression: String
+    var cb_failure_threshold: Int
+    var cb_recovery_timeout_ms: Int
+    var cb_success_threshold: Int
+    var cb_half_open_max_requests: Int
+    var keepalive_max_idle_before_check_ms: Int
+    var leak_threshold_ms: Int
+    var pipeline_max_in_flight: Int
+    var pipeline_auto_flush: Bool
+    var pipeline_auto_flush_threshold: Int
 
     fn __init__(out self, dsn: String):
         self.dsn = dsn
@@ -50,6 +59,15 @@ struct ScratchBirdConfig:
         self.sslmode = _query_value(dsn, "sslmode", "require")
         self.binary_transfer = _as_bool(_query_value(dsn, "binary_transfer", "true"))
         self.compression = _query_value(dsn, "compression", "off")
+        self.cb_failure_threshold = _query_int(dsn, "cb_failure_threshold", 5)
+        self.cb_recovery_timeout_ms = _query_int(dsn, "cb_recovery_timeout_ms", 30000)
+        self.cb_success_threshold = _query_int(dsn, "cb_success_threshold", 3)
+        self.cb_half_open_max_requests = _query_int(dsn, "cb_half_open_max_requests", 10)
+        self.keepalive_max_idle_before_check_ms = _query_int(dsn, "keepalive_max_idle_before_check_ms", 600000)
+        self.leak_threshold_ms = _query_int(dsn, "leak_threshold_ms", 30000)
+        self.pipeline_max_in_flight = _query_int(dsn, "pipeline_max_in_flight", 100)
+        self.pipeline_auto_flush = _query_bool(dsn, "pipeline_auto_flush", True)
+        self.pipeline_auto_flush_threshold = _query_int(dsn, "pipeline_auto_flush_threshold", 10)
 
 
 struct ScratchBirdConnection:
@@ -68,6 +86,7 @@ struct ScratchBirdConnection:
     var leak_detector: leak_detector.LeakDetector
     var leak_token: String
     var query_pipeline: pipeline.QueryPipeline
+    var ping_count: Int
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
@@ -78,23 +97,38 @@ struct ScratchBirdConnection:
         self.txn_active = False
         self.savepoint_counter = 0
         self.savepoints = List[String]()
-        self.circuit_breaker = circuit_breaker.CircuitBreaker()
-        self.keepalive_tracker = keepalive.KeepaliveTracker(keepalive.KeepaliveConfig())
+        var cb_cfg = circuit_breaker.CircuitBreakerConfig()
+        cb_cfg.failure_threshold = _clamp_positive(config.cb_failure_threshold, 1)
+        cb_cfg.recovery_timeout_ms = _clamp_positive(config.cb_recovery_timeout_ms, 1)
+        cb_cfg.success_threshold = _clamp_positive(config.cb_success_threshold, 1)
+        cb_cfg.half_open_max_requests = _clamp_positive(config.cb_half_open_max_requests, 1)
+        self.circuit_breaker = circuit_breaker.CircuitBreaker(cb_cfg, "native_bootstrap")
+
+        var keepalive_cfg = keepalive.KeepaliveConfig()
+        keepalive_cfg.max_idle_before_check_ms = _clamp_non_negative(config.keepalive_max_idle_before_check_ms)
+        self.keepalive_tracker = keepalive.KeepaliveTracker(keepalive_cfg)
         self.telemetry = telemetry.TelemetryCollector()
         self.operation_clock_ms = 0
         self.connection_id = self.user + "@" + self.database
-        self.leak_detector = leak_detector.LeakDetector()
+        var leak_cfg = leak_detector.LeakDetectionConfig()
+        leak_cfg.threshold_ms = _clamp_non_negative(config.leak_threshold_ms)
+        self.leak_detector = leak_detector.LeakDetector(leak_cfg)
         self.leak_detector.start()
         self.leak_token = self.leak_detector.checkout(self.connection_id, "native_bootstrap", self.operation_clock_ms)
-        self.query_pipeline = pipeline.QueryPipeline()
+        var pipeline_cfg = pipeline.PipelineConfig()
+        pipeline_cfg.max_in_flight = _clamp_non_negative(config.pipeline_max_in_flight)
+        pipeline_cfg.auto_flush = config.pipeline_auto_flush
+        pipeline_cfg.auto_flush_threshold = _clamp_positive(config.pipeline_auto_flush_threshold, 1)
+        self.query_pipeline = pipeline.QueryPipeline(pipeline_cfg)
         self.query_pipeline.start(self.connection_id)
         self.keepalive_tracker.mark_active(self.operation_clock_ms)
+        self.ping_count = 0
 
     fn query(mut self, sql: String) raises -> Int:
         self.cancel_requested = False
-        var queued_params = List[String]()
-        _ = self.query_pipeline.queue(sql, queued_params)
         self._prepare_operation()
+        var queued_params = List[String]()
+        self._queue_operation("query", sql, queued_params)
         try:
             var result = _query_result_from_sql(sql)
             self._finish_operation("query", True)
@@ -105,8 +139,8 @@ struct ScratchBirdConnection:
 
     fn query_with_params(mut self, sql: String, params: List[String]) raises -> Int:
         self.cancel_requested = False
-        _ = self.query_pipeline.queue(sql, params)
         self._prepare_operation()
+        self._queue_operation("query_with_params", sql, params.copy())
         try:
             var result = _query_result_from_sql_with_params(sql, params)
             self._finish_operation("query_with_params", True)
@@ -179,9 +213,9 @@ struct ScratchBirdConnection:
     fn stream(mut self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
         self.cancel_requested = False
         _ = fetch_size
-        var queued_params = List[String]()
-        _ = self.query_pipeline.queue(sql, queued_params)
         self._prepare_operation()
+        var queued_params = List[String]()
+        self._queue_operation("stream", sql, queued_params)
         try:
             var normalized = sql.strip().lower()
             if normalized.startswith("select id from basic_table"):
@@ -219,6 +253,12 @@ struct ScratchBirdConnection:
             if not self.ping():
                 raise Error("08006 keepalive validation failed")
 
+    fn _queue_operation(mut self, operation_name: String, sql: String, params: List[String]) raises:
+        if self.query_pipeline.queue(sql, params):
+            return
+        self._finish_operation(operation_name, False)
+        raise Error("54000 pipeline capacity exceeded")
+
     fn _finish_operation(mut self, operation_name: String, success: Bool):
         var start_ms = self.operation_clock_ms
         self.operation_clock_ms += 1
@@ -232,8 +272,8 @@ struct ScratchBirdConnection:
         var span = self.telemetry.start_span(operation_name, start_ms)
         self.telemetry.end_span(span, self.operation_clock_ms, success)
 
-    fn ping(self) -> Bool:
-        _ = self
+    fn ping(mut self) -> Bool:
+        self.ping_count += 1
         return True
 
     fn query_metadata(self, collection_name: String) raises -> String:
@@ -475,6 +515,36 @@ fn _query_value(dsn: String, key: String, default_value: String) -> String:
             if pair.lower() == target:
                 return ""
     return default_value
+
+
+fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
+    var raw = _query_value(dsn, key, "")
+    if raw.strip() == "":
+        return default_value
+    try:
+        return Int(raw)
+    except e:
+        _ = e
+        return default_value
+
+
+fn _query_bool(dsn: String, key: String, default_value: Bool) -> Bool:
+    var raw = _query_value(dsn, key, "")
+    if raw.strip() == "":
+        return default_value
+    return _as_bool(raw)
+
+
+fn _clamp_non_negative(value: Int) -> Int:
+    if value < 0:
+        return 0
+    return value
+
+
+fn _clamp_positive(value: Int, fallback: Int) -> Int:
+    if value <= 0:
+        return fallback
+    return value
 
 
 fn _metadata_alias(value: String) -> String:

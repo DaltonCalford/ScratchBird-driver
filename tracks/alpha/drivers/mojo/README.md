@@ -23,7 +23,7 @@ Current implementation is a Mojo-Python interop lane:
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), savepoint lifecycle guards (`25000`/`3B001`), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
 - Native bootstrap guard and unsupported-operation failures now use deterministic SQLSTATE-prefixed error strings with extractor coverage (`extract_sqlstate`) in lane tests.
 - Metadata execution parity now includes deterministic `query_metadata_rows(...)` rowcount helpers in shim/native bootstrap scaffolds.
-- Native bootstrap query/stream paths now exercise circuit-breaker/keepalive/telemetry hooks plus leak-detector/pipeline lifecycle scaffolds (deterministic integration).
+- Native bootstrap query/stream paths now exercise circuit-breaker/keepalive/telemetry hooks plus leak-detector/pipeline lifecycle scaffolds (deterministic integration), including deterministic SQLSTATE guards for pipeline-capacity (`54000`) and circuit-breaker-open (`08006`) behavior.
 - Integration and conformance launchers are native-smoke-first (`tests/scratchbird_surface.mojo` then `tests/native_bootstrap.mojo`) with bridge-shim fallback controls.
 - Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping`, transaction lifecycle, and savepoint helpers used by lane tests.
 - Bridge-shim type codecs now include temporal/json/jsonb/uuid wrappers and array-of-composite encode/decode coverage for deterministic lane testing.
@@ -67,6 +67,17 @@ Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native smoke (`tests/scratchbird_surface.mojo` and `tests/native_bootstrap.mojo`) in `tests/integration.mojo` and `tests/sbdriver_conformance.py`
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail when native bootstrap launcher is unavailable/failing
 - `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN` to require explicit `SCRATCHBIRD_MOJO_URL` / `SCRATCHBIRD_MOJO_MANAGER_URL` / `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for integration/conformance (default lane behavior uses deterministic fallback DSNs)
+
+Deterministic native lifecycle DSN knobs (for lane smoke/testing):
+- `cb_failure_threshold`
+- `cb_recovery_timeout_ms`
+- `cb_success_threshold`
+- `cb_half_open_max_requests`
+- `keepalive_max_idle_before_check_ms`
+- `leak_threshold_ms`
+- `pipeline_max_in_flight`
+- `pipeline_auto_flush`
+- `pipeline_auto_flush_threshold`
 
 ## Next Steps
 

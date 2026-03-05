@@ -32,7 +32,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 Expected behavior:
 - native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK` (including native ping, begin/commit/rollback, savepoint lifecycle guards, prepared execute, paging-query rowcount, and post-cancel recovery smoke semantics)
 - native bootstrap smoke also validates deterministic SQLSTATE-prefixed guard/unsupported errors via `scratchbird_native.extract_sqlstate(...)`
-- native bootstrap/facade smokes validate active circuit-breaker/keepalive/telemetry plus leak-detector/pipeline hook wiring on query/stream paths
+- native bootstrap/facade smokes validate active circuit-breaker/keepalive/telemetry plus leak-detector/pipeline hook wiring on query/stream paths, including deterministic SQLSTATE guards for pipeline-capacity (`54000`) and circuit-breaker-open (`08006`)
 - metadata execution smoke includes deterministic `query_metadata_rows(...)` rowcount checks in both shim and native bootstrap paths
 - lifecycle scaffold test reports `OK` and validates circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic behavior under current Mojo syntax
 - type-codec suite covers vector/range/composite/geometry/network plus temporal/json/jsonb/uuid and array-of-composite wrappers in the bridge shim
@@ -71,6 +71,17 @@ Environment variables:
 - `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN`: optional override to require explicit `SCRATCHBIRD_MOJO_URL` / `SCRATCHBIRD_MOJO_MANAGER_URL` / `SCRATCHBIRD_MOJO_BAD_AUTH_URL` (restores skip behavior when corresponding env vars are unset)
+
+Deterministic native lifecycle DSN knobs for smoke coverage:
+- `cb_failure_threshold`
+- `cb_recovery_timeout_ms`
+- `cb_success_threshold`
+- `cb_half_open_max_requests`
+- `keepalive_max_idle_before_check_ms`
+- `leak_threshold_ms`
+- `pipeline_max_in_flight`
+- `pipeline_auto_flush`
+- `pipeline_auto_flush_threshold`
 
 With `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN=1` and no
 `SCRATCHBIRD_MOJO_URL`, conformance tests are reported as skipped; integration
