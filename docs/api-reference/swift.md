@@ -20,6 +20,13 @@
 - `onNotification(_ handler)`
 - `lastQueryPlan()`, `lastSblrCompiled()`
 
+## ScratchBirdConnectionPool
+
+- `init(config:maxSize:)`
+- `acquire()`, `release(_:)`
+- `withConnection(_:)`
+- `close()`
+
 ## ScratchBirdConfig
 
 - `init(dsn: String)`

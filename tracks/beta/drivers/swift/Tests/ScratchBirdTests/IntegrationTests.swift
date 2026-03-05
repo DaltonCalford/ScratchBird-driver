@@ -203,6 +203,56 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationPoolCheckoutChurnAndReuse() async throws {
+        var config = try integrationConfig()
+        config.keepaliveIntervalMs = 20
+        config.keepaliveMaxIdleBeforeCheckMs = 0
+        config.leakDetectionThresholdMs = 20
+        config.leakDetectionCheckIntervalMs = 10
+
+        let pool = ScratchBirdConnectionPool(config: config, maxSize: 2)
+
+        do {
+            for i in 0..<8 {
+                let value = i
+                let result = try await pool.withConnection { conn in
+                    try await conn.query("SELECT ?::INTEGER", [value])
+                }
+                XCTAssertFalse(result.rows.isEmpty)
+                XCTAssertEqual(asInt(result.rows[0][0]), value)
+            }
+
+            let stats = pool.debugStats()
+            XCTAssertEqual(stats.maxSize, 2)
+            XCTAssertLessThanOrEqual(stats.createdConnections, 2)
+            XCTAssertLessThanOrEqual(stats.idleConnections, 2)
+            await pool.close()
+        } catch {
+            await pool.close()
+            throw error
+        }
+    }
+
+    func testIntegrationPoolExhaustionRaisesOperationalException() async throws {
+        let config = try integrationConfig()
+        let pool = ScratchBirdConnectionPool(config: config, maxSize: 1)
+
+        do {
+            let first = try await pool.acquire()
+            do {
+                _ = try await pool.acquire()
+                XCTFail("Expected pool exhaustion error")
+            } catch let error as ScratchBirdOperationalException {
+                XCTAssertTrue(error.message.contains("exhausted"))
+            }
+            await pool.release(first)
+            await pool.close()
+        } catch {
+            await pool.close()
+            throw error
+        }
+    }
+
     private func integrationConfig() throws -> ScratchBirdConfig {
         let env = ProcessInfo.processInfo.environment
         let dsn = env["SCRATCHBIRD_TEST_DSN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

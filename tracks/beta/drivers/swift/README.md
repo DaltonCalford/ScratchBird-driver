@@ -73,6 +73,11 @@ Connection-level metadata wrappers are available for `sys.*` catalog families:
 - `metadataProcedures`, `metadataFunctions`
 - `metadataSchemaTree`, `metadataSchemaTreeRows`
 
+## Pooling
+
+`ScratchBirdConnectionPool` provides lightweight checkout/release and
+`withConnection` helpers for bounded connection reuse.
+
 ## Resilience Tuning
 
 Optional DSN parameters:
@@ -106,4 +111,5 @@ swift test --filter IntegrationTests
 
 Integration coverage includes direct + manager connect/query, TXN/savepoint,
 metadata wrappers, typed error mapping, and resilience timing checks
-(single-connection and concurrent multi-connection).
+(single-connection and concurrent multi-connection), plus pool
+checkout/release churn assertions.

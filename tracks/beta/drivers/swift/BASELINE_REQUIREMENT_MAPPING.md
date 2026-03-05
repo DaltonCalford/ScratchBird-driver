@@ -124,6 +124,7 @@
   - `Sources/ScratchBird/Keepalive.swift:11-153` keepalive tracker/manager plus validation stats (`KeepaliveManager.Stats`).
   - `Sources/ScratchBird/Telemetry.swift:11-108`
   - `Sources/ScratchBird/LeakDetector.swift:11-110` leak detector timer/guard plus leak stats (`LeakDetector.Stats`).
+  - `Sources/ScratchBird/Pool.swift:11-118` bounded connection-pool checkout/release and `withConnection` churn surface.
   - `Sources/ScratchBird/Config.swift:140-293` DSN-configurable keepalive/leak tuning options.
   - `Sources/ScratchBird/Connection.swift:71-103` resilience component initialization from config.
   - `Sources/ScratchBird/Connection.swift:211-224` internal resilience debug snapshot (`debugResilienceStats`).
@@ -134,6 +135,6 @@
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:142-170` leak detector guard idempotency and checkout metadata/stack capture.
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:172-203` telemetry tracing-disabled gate, success/failure metrics accounting, SQL sanitization.
   - `Tests/ScratchBirdTests/ConfigTests.swift:41-54` resilience DSN option parsing.
-  - `Tests/ScratchBirdTests/IntegrationTests.swift:131-196` env-gated live keepalive/leak assertions for single-connection and concurrent multi-connection workloads.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:131-250` env-gated live keepalive/leak assertions for single-connection and concurrent multi-connection workloads, plus pool checkout/release churn and exhaustion behavior.
 - Gaps/next actions:
-  - Add explicit pool-checkout/checkin churn integration once a first-class Swift pooling API exists (timeout/failure recovery and leak signaling under repeated borrow/return cycles).
+  - Expand pool behavior to include wait-queue/timeouts and explicit failure-recovery semantics under sustained saturation/fault injection.

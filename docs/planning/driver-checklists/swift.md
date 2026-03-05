@@ -25,6 +25,6 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Add live handshake/TXN/EXEC/error integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift` (env-gated via `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`). Issue: Complete (2026-03-04)
 - [x] Add live single-connection resilience integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift` for keepalive validation and leak detection timing (env-gated). Issue: Complete (2026-03-04)
 - [x] Add live multi-connection resilience integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift` for keepalive/leak behavior under concurrent connection pressure (env-gated). Issue: Complete (2026-03-04)
-- [ ] Add explicit pool-checkout/checkin churn integration tests once a first-class Swift pool surface exists. Issue: Open
+- [x] Add first-class Swift pool surface (`ScratchBirdConnectionPool`) with env-gated checkout/checkin churn integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift`. Issue: Complete (2026-03-04)
 
 ## P3 (Future)
