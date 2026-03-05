@@ -103,3 +103,7 @@ Run only env-gated integration coverage:
 ```bash
 swift test --filter IntegrationTests
 ```
+
+Integration coverage includes direct + manager connect/query, TXN/savepoint,
+metadata wrappers, typed error mapping, and resilience timing checks
+(single-connection and concurrent multi-connection).

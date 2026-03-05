@@ -156,6 +156,43 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationResilienceAcrossMultipleConnections() async throws {
+        var config = try integrationConfig()
+        config.keepaliveIntervalMs = 20
+        config.keepaliveMaxIdleBeforeCheckMs = 0
+        config.keepaliveValidationTimeoutMs = 250
+        config.leakDetectionThresholdMs = 20
+        config.leakDetectionCheckIntervalMs = 10
+
+        var connections: [ScratchBirdConnection] = []
+        do {
+            for _ in 0..<3 {
+                connections.append(try await ScratchBirdConnection.connect(config))
+            }
+
+            try await Task.sleep(nanoseconds: 180_000_000)
+
+            for conn in connections {
+                let stats = conn.debugResilienceStats()
+                XCTAssertGreaterThanOrEqual(stats.keepaliveValidationAttempts, 1)
+                XCTAssertGreaterThanOrEqual(stats.keepaliveValidationSuccesses, 1)
+                XCTAssertGreaterThanOrEqual(stats.detectedLeaks, 1)
+                let result = try await conn.query("SELECT 11")
+                XCTAssertFalse(result.rows.isEmpty)
+                XCTAssertEqual(asInt(result.rows[0][0]), 11)
+            }
+        } catch {
+            for conn in connections {
+                try? await conn.close()
+            }
+            throw error
+        }
+
+        for conn in connections {
+            try? await conn.close()
+        }
+    }
+
     func testIntegrationAuthFailureMapsTypedAuthorizationException() async throws {
         let config = try badAuthIntegrationConfig()
         do {

@@ -134,6 +134,6 @@
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:142-170` leak detector guard idempotency and checkout metadata/stack capture.
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:172-203` telemetry tracing-disabled gate, success/failure metrics accounting, SQL sanitization.
   - `Tests/ScratchBirdTests/ConfigTests.swift:41-54` resilience DSN option parsing.
-  - `Tests/ScratchBirdTests/IntegrationTests.swift:131-157` env-gated live keepalive validation attempts/success and leak detection on held live connection.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:131-196` env-gated live keepalive/leak assertions for single-connection and concurrent multi-connection workloads.
 - Gaps/next actions:
-  - Extend live resilience integration to pooled/multi-connection workloads (connection-pool checkout/return churn, timeout/failure recovery, and leak signaling under concurrent pressure).
+  - Add explicit pool-checkout/checkin churn integration once a first-class Swift pooling API exists (timeout/failure recovery and leak signaling under repeated borrow/return cycles).
