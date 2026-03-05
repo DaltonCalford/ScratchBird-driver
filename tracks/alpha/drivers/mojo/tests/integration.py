@@ -36,11 +36,11 @@ def _deterministic_fallback_bad_auth_dsn() -> str:
 def _native_bootstrap_command(script_path: str) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
-        return [mojo_bin, "run", "-I", "src", script_path]
+        return [mojo_bin, "run", "-I", "src", "-I", "src/scratchbird", script_path]
 
     mojo_path = shutil.which("mojo")
     if mojo_path:
-        return [mojo_path, "run", "-I", "src", script_path]
+        return [mojo_path, "run", "-I", "src", "-I", "src/scratchbird", script_path]
 
     pixi_path = shutil.which("pixi")
     manifest = pathlib.Path(
@@ -60,6 +60,8 @@ def _native_bootstrap_command(script_path: str) -> list[str] | None:
             "run",
             "-I",
             "src",
+            "-I",
+            "src/scratchbird",
             script_path,
         ]
 

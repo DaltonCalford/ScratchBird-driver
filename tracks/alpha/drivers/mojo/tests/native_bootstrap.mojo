@@ -175,6 +175,13 @@ fn main() raises:
     var post_cancel = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(post_cancel.next(conn) == 1, "post-cancel stream should recover on next operation")
     post_cancel.close()
+    var metrics = conn.telemetry.get_metrics()
+    _require(len(metrics) > 0 and "total_queries=" in metrics[0], "telemetry metrics should be recorded")
+    _require("count=" in conn.telemetry.operation_metrics("query"), "query operation metrics should be recorded")
+    _require(not conn.circuit_breaker.is_open(), "circuit breaker should remain closed")
+    _require(conn.keepalive_tracker.last_activity_ms > 0, "keepalive tracker should mark activity")
+    _require(conn.query_pipeline.completed_count() > 0, "pipeline should record completed requests")
+    _require(conn.leak_detector.get_active_count() == 1, "leak detector should track active checkout")
 
     try:
         _ = conn.query("SELECT unsupported_query")
@@ -194,6 +201,8 @@ fn main() raises:
             "unsupported stream query should expose 0A000",
         )
     conn.close()
+    _require(conn.leak_detector.get_active_count() == 0, "leak detector should release checkout on close")
+    _require(not conn.query_pipeline.running, "pipeline should stop on close")
 
     var manager_cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager_proxy"

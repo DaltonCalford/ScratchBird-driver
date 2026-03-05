@@ -17,8 +17,8 @@ Optional environment overrides:
 Run from lane root (`tracks/alpha/drivers/mojo`):
 
 ```bash
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/scratchbird_surface.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
@@ -32,6 +32,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 Expected behavior:
 - native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK` (including native ping, begin/commit/rollback, savepoint lifecycle guards, prepared execute, paging-query rowcount, and post-cancel recovery smoke semantics)
 - native bootstrap smoke also validates deterministic SQLSTATE-prefixed guard/unsupported errors via `scratchbird_native.extract_sqlstate(...)`
+- native bootstrap/facade smokes validate active circuit-breaker/keepalive/telemetry plus leak-detector/pipeline hook wiring on query/stream paths
 - metadata execution smoke includes deterministic `query_metadata_rows(...)` rowcount checks in both shim and native bootstrap paths
 - lifecycle scaffold test reports `OK` and validates circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic behavior under current Mojo syntax
 - type-codec suite covers vector/range/composite/geometry/network plus temporal/json/jsonb/uuid and array-of-composite wrappers in the bridge shim

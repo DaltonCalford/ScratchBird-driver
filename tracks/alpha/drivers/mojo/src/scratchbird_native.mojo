@@ -2,6 +2,11 @@
 # Copyright (c) 2025-2026 Dalton Calford
 
 from collections import List
+import circuit_breaker
+import keepalive
+import leak_detector
+import pipeline
+import telemetry
 
 comptime METADATA_SCHEMAS_QUERY = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 comptime METADATA_TABLES_QUERY = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
@@ -55,6 +60,14 @@ struct ScratchBirdConnection:
     var txn_active: Bool
     var savepoint_counter: Int
     var savepoints: List[String]
+    var circuit_breaker: circuit_breaker.CircuitBreaker
+    var keepalive_tracker: keepalive.KeepaliveTracker
+    var telemetry: telemetry.TelemetryCollector
+    var operation_clock_ms: Int
+    var connection_id: String
+    var leak_detector: leak_detector.LeakDetector
+    var leak_token: String
+    var query_pipeline: pipeline.QueryPipeline
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
@@ -65,14 +78,42 @@ struct ScratchBirdConnection:
         self.txn_active = False
         self.savepoint_counter = 0
         self.savepoints = List[String]()
+        self.circuit_breaker = circuit_breaker.CircuitBreaker()
+        self.keepalive_tracker = keepalive.KeepaliveTracker(keepalive.KeepaliveConfig())
+        self.telemetry = telemetry.TelemetryCollector()
+        self.operation_clock_ms = 0
+        self.connection_id = self.user + "@" + self.database
+        self.leak_detector = leak_detector.LeakDetector()
+        self.leak_detector.start()
+        self.leak_token = self.leak_detector.checkout(self.connection_id, "native_bootstrap", self.operation_clock_ms)
+        self.query_pipeline = pipeline.QueryPipeline()
+        self.query_pipeline.start(self.connection_id)
+        self.keepalive_tracker.mark_active(self.operation_clock_ms)
 
     fn query(mut self, sql: String) raises -> Int:
         self.cancel_requested = False
-        return _query_result_from_sql(sql)
+        var queued_params = List[String]()
+        _ = self.query_pipeline.queue(sql, queued_params)
+        self._prepare_operation()
+        try:
+            var result = _query_result_from_sql(sql)
+            self._finish_operation("query", True)
+            return result
+        except e:
+            self._finish_operation("query", False)
+            raise e^
 
     fn query_with_params(mut self, sql: String, params: List[String]) raises -> Int:
         self.cancel_requested = False
-        return _query_result_from_sql_with_params(sql, params)
+        _ = self.query_pipeline.queue(sql, params)
+        self._prepare_operation()
+        try:
+            var result = _query_result_from_sql_with_params(sql, params)
+            self._finish_operation("query_with_params", True)
+            return result
+        except e:
+            self._finish_operation("query_with_params", False)
+            raise e^
 
     fn prepare(self, sql: String) -> ScratchBirdStatement:
         _ = self
@@ -138,14 +179,24 @@ struct ScratchBirdConnection:
     fn stream(mut self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
         self.cancel_requested = False
         _ = fetch_size
-        var normalized = sql.strip().lower()
-        if normalized.startswith("select id from basic_table"):
-            return ScratchBirdStream(6)
-        if "from basic_table a, basic_table b, basic_table c, basic_table d, basic_table e" in normalized:
-            return ScratchBirdStream(32)
-        if normalized == "select 1":
-            return ScratchBirdStream(1)
-        raise Error("0A000 unsupported stream query in native bootstrap")
+        var queued_params = List[String]()
+        _ = self.query_pipeline.queue(sql, queued_params)
+        self._prepare_operation()
+        try:
+            var normalized = sql.strip().lower()
+            if normalized.startswith("select id from basic_table"):
+                self._finish_operation("stream", True)
+                return ScratchBirdStream(6)
+            if "from basic_table a, basic_table b, basic_table c, basic_table d, basic_table e" in normalized:
+                self._finish_operation("stream", True)
+                return ScratchBirdStream(32)
+            if normalized == "select 1":
+                self._finish_operation("stream", True)
+                return ScratchBirdStream(1)
+            raise Error("0A000 unsupported stream query in native bootstrap")
+        except e:
+            self._finish_operation("stream", False)
+            raise e^
 
     fn cancel(mut self):
         self.cancel_requested = True
@@ -154,6 +205,32 @@ struct ScratchBirdConnection:
         self.cancel_requested = False
         self.txn_active = False
         self.savepoints = List[String]()
+        self.keepalive_tracker.mark_active(0)
+        if self.leak_token != "":
+            _ = self.leak_detector.release_checkout(self.leak_token, self.operation_clock_ms)
+            self.leak_token = ""
+        self.leak_detector.stop()
+        self.query_pipeline.stop()
+
+    fn _prepare_operation(mut self) raises:
+        if not self.circuit_breaker.allow_request(self.operation_clock_ms):
+            raise Error("08006 Circuit breaker is OPEN")
+        if self.keepalive_tracker.needs_validation(self.operation_clock_ms):
+            if not self.ping():
+                raise Error("08006 keepalive validation failed")
+
+    fn _finish_operation(mut self, operation_name: String, success: Bool):
+        var start_ms = self.operation_clock_ms
+        self.operation_clock_ms += 1
+        if success:
+            self.circuit_breaker.record_success()
+        else:
+            self.circuit_breaker.record_failure(self.operation_clock_ms)
+        self.keepalive_tracker.mark_active(self.operation_clock_ms)
+        if self.query_pipeline.pending_count() > 0:
+            self.query_pipeline.flush()
+        var span = self.telemetry.start_span(operation_name, start_ms)
+        self.telemetry.end_span(span, self.operation_clock_ms, success)
 
     fn ping(self) -> Bool:
         _ = self

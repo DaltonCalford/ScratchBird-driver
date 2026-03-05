@@ -23,6 +23,7 @@ Current implementation is a Mojo-Python interop lane:
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), savepoint lifecycle guards (`25000`/`3B001`), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
 - Native bootstrap guard and unsupported-operation failures now use deterministic SQLSTATE-prefixed error strings with extractor coverage (`extract_sqlstate`) in lane tests.
 - Metadata execution parity now includes deterministic `query_metadata_rows(...)` rowcount helpers in shim/native bootstrap scaffolds.
+- Native bootstrap query/stream paths now exercise circuit-breaker/keepalive/telemetry hooks plus leak-detector/pipeline lifecycle scaffolds (deterministic integration).
 - Integration and conformance launchers are native-smoke-first (`tests/scratchbird_surface.mojo` then `tests/native_bootstrap.mojo`) with bridge-shim fallback controls.
 - Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping`, transaction lifecycle, and savepoint helpers used by lane tests.
 - Bridge-shim type codecs now include temporal/json/jsonb/uuid wrappers and array-of-composite encode/decode coverage for deterministic lane testing.
@@ -47,8 +48,8 @@ Current implementation is a Mojo-Python interop lane:
 From `tracks/alpha/drivers/mojo`:
 
 ```bash
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/scratchbird_surface.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
