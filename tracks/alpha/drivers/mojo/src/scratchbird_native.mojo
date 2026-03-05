@@ -119,7 +119,7 @@ struct ScratchBirdConfig:
             dsn,
             "current_schema",
             "search_path",
-            _query_value(dsn, "searchpath", ""),
+            _query_value_alias(dsn, "searchpath", "currentschema", ""),
         )
         self.metadata_expand_schema_parents = _as_bool(
             _query_value_alias(
@@ -143,7 +143,7 @@ struct ScratchBirdConfig:
             dsn,
             "default_row_fetch_size",
             "fetch_size",
-            _query_int(dsn, "fetchsize", 0),
+            _query_int_alias(dsn, "fetchsize", "defaultrowfetchsize", 0),
         )
         self.prepare_threshold = _query_int_alias(dsn, "prepare_threshold", "preparethreshold", 5)
         self.rewrite_batched_inserts = _query_bool_alias(
@@ -1423,12 +1423,7 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")
 
-    if not config.binary_transfer:
-        raise Error("0A000 binary_transfer=false is not supported")
-
-    if config.compression.strip().lower() == "zstd":
-        raise Error("0A000 compression=zstd is not supported")
-    if config.compression.strip().lower() != "off":
+    if config.compression.strip().lower() != "off" and config.compression.strip().lower() != "zstd":
         raise Error("0A000 compression=" + config.compression.strip().lower() + " is not supported")
 
     if config.sb_test_auth_fail:

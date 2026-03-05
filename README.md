@@ -87,11 +87,12 @@ Legend:
 - **Mojo lane:** Added bracketed-IPv6 DSN endpoint parsing coverage and strict native port-range guard parity (`1..65535`) with native/facade smoke assertions.
 - **Mojo lane:** Added DSN alias parsing parity for native bootstrap (`username`, `passwd`, `hostname`, `dbname`) with matching native/facade smoke coverage.
 - **Mojo lane:** Added JDBC/PG DSN alias parity (`pguser`, `pgpassword`, `pghost`, `pgport`, `pgdatabase`, `servername`, `portNumber`, `databaseName`), added `frontdoormode`/`binarytransfer` alias support, and enforced native-only `protocol|parser|dialect` guards with expanded native/facade smoke coverage.
-- **Mojo lane:** Added JDBC-style session property parsing in native bootstrap (`role`, `application_name|applicationname`, `autocommit|auto_commit`, `readonly|read_only`, `current_schema|search_path|searchPath`, `default_row_fetch_size|fetch_size|fetchSize`) with native/facade guard coverage for non-negative fetch-size defaults.
+- **Mojo lane:** Added JDBC-style session property parsing in native bootstrap (`role`, `application_name|applicationname`, `autocommit|auto_commit`, `readonly|read_only`, `current_schema|search_path|searchPath|currentschema`, `default_row_fetch_size|fetch_size|fetchSize|defaultrowfetchsize`) with native/facade guard coverage for non-negative fetch-size defaults.
 - **Mojo lane:** Added metadata/session alias parity (`metadata_expand_schema_parents|metadataexpandschemaparents|expand_schema_parents|expandschemaparents|dbeaver_expand_schema_parents|dbeaverexpandschemaparents`) and pooling/manager config parsing (`tcpkeepalive`, `pooling`, `min_pool_size|minpoolsize`, `max_pool_size|maxpoolsize`, `connection_lifetime|connectionlifetime|poolingconnectionlifetime`, `manager_*|mcp_*`), including manager defaults (`manager_connection_profile=native_v3`, `manager_client_intent=native_v3`, `manager_auth_fast_path=true`) with new guard coverage (`08001` manager token required for `manager_proxy`; `22023` guards for `min_pool_size`, `max_pool_size`, `connection_lifetime`, `manager_client_flags`).
-- **Mojo lane:** Added protocol canonicalization parity (`protocol|parser|dialect` values `scratchbird`, `scratchbird-native`, `scratchbird_native` now normalize to `native`), `ssl` alias support for `sslmode`, compression normalization/validation parity (`compression=none` → `off`; reject unknown values such as `gzip`), and URL-style query decoding for DSN values (`%xx`, `+`) with malformed percent-escape guard coverage (`22023`).
+- **Mojo lane:** Added protocol canonicalization parity (`protocol|parser|dialect` values `scratchbird`, `scratchbird-native`, `scratchbird_native` now normalize to `native`), `ssl` alias support for `sslmode`, transport compatibility for `binary_transfer|binarytransfer` (`false` accepted), compression normalization/validation parity (`compression=none` → `off`; `compression=zstd` accepted; reject unknown values such as `gzip`), and URL-style query decoding for DSN values (`%xx`, `+`) with malformed percent-escape guard coverage (`22023`).
 - **Mojo lane:** Added JDBC config-property parity for `prepareThreshold`, `reWriteBatchedInserts`, `loggerLevel|logLevel`, and `loggerFile|logFile` in native bootstrap parsing (`prepare_threshold|preparethreshold`, `rewrite_batched_inserts|rewritebatchedinserts`, `logger_level|loggerlevel|log_level|loglevel`, `logger_file|loggerfile|log_file|logfile`) with deterministic native/facade default and alias assertions.
 - **Mojo lane:** Added JDBC TLS material property parsing parity (`sslrootcert`, `sslcert`, `sslkey`, `sslpassword`; plus underscore aliases) with deterministic native/facade default and alias assertions.
+- **Mojo lane:** Added JDBC camelCase alias parity for `currentSchema` and `defaultRowFetchSize`, and aligned native/facade connect behavior to allow `binary_transfer=false` and `compression=zstd` while continuing to reject unsupported compression values (for example `gzip`).
 
 ---
 
@@ -131,8 +132,7 @@ All baseline drivers aim to implement:
 - **Server-side Prepare/Bind** – PARSE/BIND/EXECUTE for parameters
 - **Transactions** – Always-in-transaction semantics with autocommit mapping
 - **Type Mapping** – Full wire type coverage (including composite/geometry/range)
-- **Binary-only parameters enforced**
-- **`compression=zstd` rejected**
+- **Binary transfer and compression policy follow lane parity contracts (for example JDBC-compatible lanes accept `binary_transfer=false` and `compression=zstd`; unknown compression values are rejected)**
 
 ---
 

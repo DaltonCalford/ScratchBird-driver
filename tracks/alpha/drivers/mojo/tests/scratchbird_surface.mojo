@@ -103,6 +103,11 @@ fn _assert_config_session_pooling_manager_extensions() raises:
     _require(cfg_session_aliases.read_only, "read_only alias mismatch")
     _require(cfg_session_aliases.current_schema == "ops", "searchPath alias mismatch")
     _require(cfg_session_aliases.default_row_fetch_size == 64, "fetchSize alias mismatch")
+    var cfg_session_jdbc_aliases = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&currentSchema=finance&defaultRowFetchSize=96"
+    )
+    _require(cfg_session_jdbc_aliases.current_schema == "finance", "currentSchema alias mismatch")
+    _require(cfg_session_jdbc_aliases.default_row_fetch_size == 96, "defaultRowFetchSize alias mismatch")
     var cfg_metadata_expand_alias = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&metadata_expand_schema_parents=true"
     )
@@ -150,6 +155,10 @@ fn _assert_config_session_pooling_manager_extensions() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=none"
     )
     _require(cfg_compression_none.compression == "off", "compression=none normalization mismatch")
+    var cfg_compression_zstd = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=zstd"
+    )
+    _require(cfg_compression_zstd.compression == "zstd", "compression=zstd parse mismatch")
     var cfg_query_decode = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&application_name=app%20client&role=ops+admin&manager_auth_token=a%2Bb"
     )
@@ -160,6 +169,10 @@ fn _assert_config_session_pooling_manager_extensions() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binarytransfer=false"
     )
     _require(not cfg_binarytransfer_alias.binary_transfer, "binarytransfer alias mismatch")
+    var binarytransfer_alias_conn = scratchbird.connect(cfg_binarytransfer_alias)
+    binarytransfer_alias_conn.close()
+    var compression_zstd_conn = scratchbird.connect(cfg_compression_zstd)
+    compression_zstd_conn.close()
 
     var manager_overrides_conn = scratchbird.connect(cfg_manager_overrides)
     manager_overrides_conn.close()
@@ -639,21 +652,6 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?ssl=disable",
         "08004",
         "TLS is required for ScratchBird connections",
-    )
-    _assert_connect_guard(
-        "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false",
-        "0A000",
-        "binary_transfer=false is not supported",
-    )
-    _assert_connect_guard(
-        "scratchbird://user:pass@localhost:3092/testdb?binarytransfer=false",
-        "0A000",
-        "binary_transfer=false is not supported",
-    )
-    _assert_connect_guard(
-        "scratchbird://user:pass@localhost:3092/testdb?compression=zstd",
-        "0A000",
-        "compression=zstd is not supported",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?compression=gzip",
