@@ -130,6 +130,14 @@ fn main() raises:
     )
     _require(cfg_credential_override_hostonly.user == "host_user", "host-only user override mismatch")
     _require(cfg_credential_override_hostonly.password == "host_pass", "host-only password override mismatch")
+    var cfg_alias_override = scratchbird.ScratchBirdConfig(
+        "scratchbird://localhost:3092/?sslmode=require&username=alias_user&passwd=alias_pass&hostname=alias.host&port=4101&dbname=alias_db"
+    )
+    _require(cfg_alias_override.user == "alias_user", "username alias mismatch")
+    _require(cfg_alias_override.password == "alias_pass", "passwd alias mismatch")
+    _require(cfg_alias_override.host == "alias.host", "hostname alias mismatch")
+    _require(cfg_alias_override.port == 4101, "alias port mismatch")
+    _require(cfg_alias_override.database == "alias_db", "dbname alias mismatch")
     var cfg_manager_dash = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager-proxy"
     )
@@ -144,6 +152,8 @@ fn main() raises:
     credential_override_conn.close()
     var credential_override_hostonly_conn = scratchbird.connect(cfg_credential_override_hostonly)
     credential_override_hostonly_conn.close()
+    var alias_override_conn = scratchbird.connect(cfg_alias_override)
+    alias_override_conn.close()
 
     var conn = scratchbird.connect(cfg)
     _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")

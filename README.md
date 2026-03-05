@@ -85,6 +85,7 @@ Legend:
 - **Mojo lane:** Added native credential parsing/override coverage (`user`/`password`, including password-with-colon DSNs and host-only DSN query overrides) in native/facade smoke lanes.
 - **Mojo lane:** Updated native deterministic connection identity to include endpoint context (`user@host:port/database`) with smoke assertions in native/facade lanes.
 - **Mojo lane:** Added bracketed-IPv6 DSN endpoint parsing coverage and strict native port-range guard parity (`1..65535`) with native/facade smoke assertions.
+- **Mojo lane:** Added DSN alias parsing parity for native bootstrap (`username`, `passwd`, `hostname`, `dbname`) with matching native/facade smoke coverage.
 
 ---
 

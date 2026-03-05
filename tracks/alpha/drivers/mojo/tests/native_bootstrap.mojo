@@ -96,18 +96,7 @@ fn _assert_metadata_restriction_count_guard(collection_name: String) raises:
         )
 
 
-fn main() raises:
-    var cfg = scratchbird_native.ScratchBirdConfig(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
-    )
-    _require(cfg.user == "user", "user parse mismatch")
-    _require(cfg.password == "pass", "password parse mismatch")
-    _require(cfg.host == "localhost", "host parse mismatch")
-    _require(cfg.port == 3092, "port parse mismatch")
-    _require(cfg.database == "testdb", "database parse mismatch")
-    _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
-    _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
-    _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
+fn _assert_config_parsing_extensions() raises:
     var cfg_default_port = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
@@ -154,6 +143,40 @@ fn main() raises:
     )
     _require(cfg_credential_override_hostonly.user == "host_user", "host-only user override mismatch")
     _require(cfg_credential_override_hostonly.password == "host_pass", "host-only password override mismatch")
+    var cfg_alias_override = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://localhost:3092/?sslmode=require&username=alias_user&passwd=alias_pass&hostname=alias.host&port=4101&dbname=alias_db"
+    )
+    _require(cfg_alias_override.user == "alias_user", "username alias mismatch")
+    _require(cfg_alias_override.password == "alias_pass", "passwd alias mismatch")
+    _require(cfg_alias_override.host == "alias.host", "hostname alias mismatch")
+    _require(cfg_alias_override.port == 4101, "alias port mismatch")
+    _require(cfg_alias_override.database == "alias_db", "dbname alias mismatch")
+
+    var manager_conn_mode_conn = scratchbird_native.connect(cfg_connection_mode_alias)
+    manager_conn_mode_conn.close()
+    var manager_ingress_mode_conn = scratchbird_native.connect(cfg_ingress_mode_alias)
+    manager_ingress_mode_conn.close()
+    var credential_override_conn = scratchbird_native.connect(cfg_credential_override)
+    credential_override_conn.close()
+    var credential_override_hostonly_conn = scratchbird_native.connect(cfg_credential_override_hostonly)
+    credential_override_hostonly_conn.close()
+    var alias_override_conn = scratchbird_native.connect(cfg_alias_override)
+    alias_override_conn.close()
+
+
+fn main() raises:
+    var cfg = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
+    )
+    _require(cfg.user == "user", "user parse mismatch")
+    _require(cfg.password == "pass", "password parse mismatch")
+    _require(cfg.host == "localhost", "host parse mismatch")
+    _require(cfg.port == 3092, "port parse mismatch")
+    _require(cfg.database == "testdb", "database parse mismatch")
+    _require(cfg.connect_timeout_s == 30, "connect timeout default mismatch")
+    _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
+    _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
+    _assert_config_parsing_extensions()
 
     var conn = scratchbird_native.connect(cfg)
     _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")
@@ -569,16 +592,14 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager_proxy"
     )
     _require(manager_cfg.front_door_mode == "manager_proxy", "front_door_mode manager_proxy mismatch")
-    _ = scratchbird_native.connect(manager_cfg)
+    var manager_conn = scratchbird_native.connect(manager_cfg)
+    manager_conn.close()
     var manager_dash_cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager-proxy"
     )
     _require(manager_dash_cfg.front_door_mode == "manager_proxy", "front_door_mode manager-proxy normalization mismatch")
-    _ = scratchbird_native.connect(manager_dash_cfg)
-    _ = scratchbird_native.connect(cfg_connection_mode_alias)
-    _ = scratchbird_native.connect(cfg_ingress_mode_alias)
-    _ = scratchbird_native.connect(cfg_credential_override)
-    _ = scratchbird_native.connect(cfg_credential_override_hostonly)
+    var manager_dash_conn = scratchbird_native.connect(manager_dash_cfg)
+    manager_dash_conn.close()
 
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",

@@ -52,11 +52,11 @@ struct ScratchBirdConfig:
 
     fn __init__(out self, dsn: String):
         self.dsn = dsn
-        self.user = _query_value(dsn, "user", _extract_user(dsn))
-        self.password = _query_value(dsn, "password", _extract_password(dsn))
-        self.host = _query_value(dsn, "host", _extract_host(dsn))
+        self.user = _query_value_alias(dsn, "user", "username", _extract_user(dsn))
+        self.password = _query_value_alias(dsn, "password", "passwd", _extract_password(dsn))
+        self.host = _query_value_alias(dsn, "host", "hostname", _extract_host(dsn))
         self.port = _query_int(dsn, "port", _extract_port(dsn))
-        self.database = _extract_database(dsn)
+        self.database = _query_value_alias(dsn, "database", "dbname", _extract_database(dsn))
 
         var front_door_raw = ""
         if _query_has_key(dsn, "front_door_mode"):
@@ -729,6 +729,21 @@ fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
     except e:
         _ = e
         return default_value
+
+
+fn _query_value_alias(
+    dsn: String,
+    primary_key: String,
+    alias_key: String,
+    default_value: String,
+) -> String:
+    var primary = _query_value(dsn, primary_key, "")
+    if String(primary.strip()) != "":
+        return primary
+    var alias_value = _query_value(dsn, alias_key, "")
+    if String(alias_value.strip()) != "":
+        return alias_value
+    return default_value
 
 
 fn _query_int_alias(
