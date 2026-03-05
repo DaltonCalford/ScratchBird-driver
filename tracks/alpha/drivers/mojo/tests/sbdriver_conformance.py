@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
+import urllib.parse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -29,6 +31,7 @@ class TestSpec:
         self.cancel_after_rows = 0
         self.requires = []
         self.params = []
+        self.dsn_append = ""
 
 
 def _is_truthy(value: str) -> bool:
@@ -110,43 +113,77 @@ def _json_escape(text: str) -> str:
 
 
 def _parse_tests(manifest_text: str):
+    try:
+        payload = json.loads(manifest_text)
+    except Exception as exc:
+        raise RuntimeError(f"invalid manifest JSON: {exc}") from exc
+
+    tests_raw = payload.get("tests", [])
+    if not isinstance(tests_raw, list):
+        return []
+
     tests = []
-    current = None
-    in_tests = False
-    for raw in manifest_text.splitlines():
-        line = raw.strip()
-        if line.startswith('"tests"'):
-            in_tests = True
+    for item in tests_raw:
+        if not isinstance(item, dict):
             continue
-        if not in_tests:
-            continue
-        if line.startswith("{"):
-            current = TestSpec()
-            continue
-        if line.startswith("}"):
-            if current is not None and current.test_id:
-                tests.append(current)
-            current = None
-            continue
-        if current is None:
-            continue
-        if '"id"' in line:
-            current.test_id = _extract_string(line)
-        elif '"kind"' in line:
-            current.kind = _extract_string(line)
-        elif '"sql"' in line:
-            current.sql = _extract_string(line)
-        elif '"expect_rows"' in line:
-            current.expect_rows = _extract_int(line)
-        elif '"expect_sqlstate"' in line:
-            current.expect_sqlstate = _extract_string(line)
-        elif '"cancel_after_rows"' in line:
-            current.cancel_after_rows = _extract_int(line)
-        elif '"requires"' in line:
-            current.requires = _extract_list(line)
-        elif '"params"' in line:
-            current.params = _extract_params(line)
+        current = TestSpec()
+        current.test_id = str(item.get("id", "") or "").strip()
+        current.kind = str(item.get("kind", "") or "").strip()
+        current.sql = str(item.get("sql", "") or "").strip()
+        current.expect_rows = _coerce_int(item.get("expect_rows"), -1)
+        current.expect_sqlstate = str(item.get("expect_sqlstate", "") or "").strip()
+        current.cancel_after_rows = _coerce_int(item.get("cancel_after_rows"), 0)
+        current.requires = _coerce_string_list(item.get("requires"))
+        current.params = _coerce_params(item.get("params"))
+        current.dsn_append = str(item.get("dsn_append", "") or "").strip()
+        if current.test_id:
+            tests.append(current)
     return tests
+
+
+def _coerce_int(value, default: int) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _coerce_string_list(value):
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def _coerce_params(value):
+    if not isinstance(value, list):
+        return []
+    return value
+
+
+def _dsn_with_append(base_dsn: str, query_append: str) -> str:
+    fragment = (query_append or "").strip()
+    if not fragment:
+        return base_dsn
+    if fragment.startswith("?"):
+        fragment = fragment[1:]
+
+    appended_pairs = urllib.parse.parse_qsl(fragment, keep_blank_values=True)
+    if not appended_pairs:
+        return base_dsn
+
+    parsed = urllib.parse.urlparse(base_dsn)
+    existing_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    merged_query = urllib.parse.urlencode(existing_pairs + appended_pairs)
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, merged_query, parsed.fragment)
+    )
 
 
 def _extract_string(line: str) -> str:
@@ -249,21 +286,45 @@ def _run_query_tests(tests, dsn: str):
             results.append(_render_result(spec.test_id, "skipped", ["SCRATCHBIRD_MOJO_URL not set"]))
         return results
 
-    cfg = scratchbird.ScratchBirdConfig(dsn)
-    conn = scratchbird.connect(cfg)
+    conn = None
+    conn_dsn = ""
     try:
+        def ensure_connection(target_dsn: str):
+            nonlocal conn
+            nonlocal conn_dsn
+            if conn is not None and conn_dsn == target_dsn:
+                return conn
+            if conn is not None:
+                conn.close()
+            cfg = scratchbird.ScratchBirdConfig(target_dsn)
+            conn = scratchbird.connect(cfg)
+            conn_dsn = target_dsn
+            return conn
+
         for spec in tests:
             kind = _normalize_kind(spec.kind)
+            test_dsn = _dsn_with_append(dsn, spec.dsn_append)
+            try:
+                current_conn = ensure_connection(test_dsn)
+            except Exception as exc:
+                if _matches_expected_sqlstate(exc, spec.expect_sqlstate):
+                    results.append(_render_result(spec.test_id, "ok", []))
+                else:
+                    results.append(_render_result(spec.test_id, "failed", [str(exc)]))
+                continue
             if kind == "auth":
                 # A successful connect already exercises auth negotiation in this harness.
-                results.append(_render_result(spec.test_id, "ok", []))
+                if spec.expect_sqlstate:
+                    results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
+                else:
+                    results.append(_render_result(spec.test_id, "ok", []))
                 continue
             if kind == "query":
                 if not spec.sql:
                     results.append(_render_result(spec.test_id, "skipped", ["missing sql"]))
                     continue
                 try:
-                    res = conn.query(spec.sql)
+                    res = current_conn.query(spec.sql)
                     if spec.expect_sqlstate:
                         results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
                     elif spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
@@ -284,15 +345,15 @@ def _run_query_tests(tests, dsn: str):
                     results.append(_render_result(spec.test_id, "skipped", ["missing sql"]))
                     continue
                 try:
-                    if hasattr(conn, "prepare"):
-                        stmt = conn.prepare(spec.sql)
+                    if hasattr(current_conn, "prepare"):
+                        stmt = current_conn.prepare(spec.sql)
                         execute = getattr(stmt, "execute", None)
                         if callable(execute):
                             res = execute(spec.params)
                         else:
-                            res = conn.query(spec.sql, spec.params)
+                            res = current_conn.query(spec.sql, spec.params)
                     else:
-                        res = conn.query(spec.sql, spec.params)
+                        res = current_conn.query(spec.sql, spec.params)
                     if spec.expect_sqlstate:
                         results.append(_render_result(spec.test_id, "failed", [f"expected sqlstate {spec.expect_sqlstate}"]))
                     elif spec.expect_rows >= 0 and len(res.rows) != spec.expect_rows:
@@ -309,21 +370,21 @@ def _run_query_tests(tests, dsn: str):
                 if not enable_cancel:
                     results.append(_render_result(spec.test_id, "skipped", ["cancel disabled"]))
                     continue
-                if not hasattr(conn, "cancel"):
+                if not hasattr(current_conn, "cancel"):
                     results.append(_render_result(spec.test_id, "failed", ["cancel not implemented"]))
                     continue
                 if not spec.sql:
                     results.append(_render_result(spec.test_id, "skipped", ["missing sql"]))
                     continue
                 try:
-                    stream = conn.stream(spec.sql, None, 1)
+                    stream = current_conn.stream(spec.sql, None, 1)
                     row_budget = spec.cancel_after_rows if spec.cancel_after_rows > 0 else 1
                     for _ in range(row_budget):
                         try:
                             stream.__next__()
                         except StopIteration:
                             break
-                    conn.cancel()
+                    current_conn.cancel()
                     if spec.expect_sqlstate:
                         try:
                             stream.__next__()
@@ -345,7 +406,8 @@ def _run_query_tests(tests, dsn: str):
                 continue
             results.append(_render_result(spec.test_id, "skipped", ["unsupported kind"]))
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
     return results
 
 

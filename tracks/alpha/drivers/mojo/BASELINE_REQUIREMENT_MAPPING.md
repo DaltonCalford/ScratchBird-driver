@@ -96,8 +96,8 @@
 - `tests/txn_exec_parity.py:175` (stream fetch-boundary assertions)
 - `tests/txn_exec_parity.py:191` (cancelled stream returns SQLSTATE `57014`)
 - `tests/txn_exec_parity.py:210` (post-cancel stream recovery assertions)
-- `tests/sbdriver_conformance.py:279` (prepare-bind and cancel manifest paths enabled by default)
-- `tests/sbdriver_conformance.py:236` (manifest `expect_sqlstate` matching)
+- `tests/sbdriver_conformance.py:340` (prepare-bind and cancel manifest paths enabled by default)
+- `tests/sbdriver_conformance.py:273` (manifest `expect_sqlstate` matching)
 - `tests/integration.mojo:22`
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`
