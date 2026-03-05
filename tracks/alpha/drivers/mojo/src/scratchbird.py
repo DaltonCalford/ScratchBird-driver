@@ -1058,6 +1058,15 @@ def _guard_static_connection_open(conn: Any) -> None:
         raise ScratchBirdError("connection is closed", "08003")
 
 
+def _static_savepoint_list(conn: Any) -> List[str]:
+    savepoints = getattr(conn, "_savepoints", None)
+    if isinstance(savepoints, list):
+        return savepoints
+    savepoints = []
+    setattr(conn, "_savepoints", savepoints)
+    return savepoints
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -1357,9 +1366,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_BEGIN, payload)
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 1)
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            savepoints.clear()
+        _static_savepoint_list(conn).clear()
 
     @staticmethod
     def commit(conn: Any) -> None:
@@ -1369,9 +1376,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 0)
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            savepoints.clear()
+        _static_savepoint_list(conn).clear()
 
     @staticmethod
     def rollback(conn: Any) -> None:
@@ -1381,9 +1386,7 @@ class ScratchBirdConnection:
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
         conn._drain_until_ready()
         setattr(conn, "_txn_id", 0)
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            savepoints.clear()
+        _static_savepoint_list(conn).clear()
 
     @staticmethod
     def set_savepoint(conn: Any, name: Optional[str] = None) -> str:
@@ -1398,9 +1401,7 @@ class ScratchBirdConnection:
         payload = _build_savepoint_payload(resolved)
         conn._send_message(MessageType.TXN_SAVEPOINT, payload)
         conn._drain_until_ready()
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            savepoints.append(resolved)
+        _static_savepoint_list(conn).append(resolved)
         return resolved
 
     @staticmethod
@@ -1411,16 +1412,15 @@ class ScratchBirdConnection:
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
             raise ScratchBirdError("savepoint name cannot be empty", "HY000")
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            found = False
-            for idx in range(len(savepoints) - 1, -1, -1):
-                if savepoints[idx] == resolved:
-                    del savepoints[idx]
-                    found = True
-                    break
-            if not found:
-                raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+        savepoints = _static_savepoint_list(conn)
+        found = False
+        for idx in range(len(savepoints) - 1, -1, -1):
+            if savepoints[idx] == resolved:
+                del savepoints[idx]
+                found = True
+                break
+        if not found:
+            raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
         payload = _build_savepoint_payload(resolved)
         conn._send_message(MessageType.TXN_RELEASE, payload)
         conn._drain_until_ready()
@@ -1433,16 +1433,15 @@ class ScratchBirdConnection:
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
             raise ScratchBirdError("savepoint name cannot be empty", "HY000")
-        savepoints = getattr(conn, "_savepoints", None)
-        if isinstance(savepoints, list):
-            found = -1
-            for idx in range(len(savepoints) - 1, -1, -1):
-                if savepoints[idx] == resolved:
-                    found = idx
-                    break
-            if found < 0:
-                raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
-            del savepoints[found + 1 :]
+        savepoints = _static_savepoint_list(conn)
+        found = -1
+        for idx in range(len(savepoints) - 1, -1, -1):
+            if savepoints[idx] == resolved:
+                found = idx
+                break
+        if found < 0:
+            raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+        del savepoints[found + 1 :]
         payload = _build_savepoint_payload(resolved)
         conn._send_message(MessageType.TXN_ROLLBACK_TO, payload)
         conn._drain_until_ready()

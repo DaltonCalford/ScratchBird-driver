@@ -29,6 +29,19 @@ class TxnHarness:
         self.drained += 1
 
 
+class TxnHarnessNoSavepoints:
+    def __init__(self, txn_id: int):
+        self._txn_id = txn_id
+        self.sent = []
+        self.drained = 0
+
+    def _send_message(self, msg_type: int, payload: bytes, flags: int = 0, force_zero: bool = False):
+        self.sent.append((msg_type, payload, flags, force_zero))
+
+    def _drain_until_ready(self):
+        self.drained += 1
+
+
 class QueryHarness:
     def __init__(self):
         self.calls = []
@@ -180,6 +193,28 @@ def test_savepoint_messages_and_payloads() -> None:
     _require(_decode_savepoint_payload(conn.sent[1][1]) == "named_sp", "named payload mismatch")
     _require(_decode_savepoint_payload(conn.sent[2][1]) == "named_sp", "release payload mismatch")
     _require(_decode_savepoint_payload(conn.sent[3][1]) == "sp_1", "rollback_to payload mismatch")
+
+
+def test_savepoint_tracking_initializes_when_missing() -> None:
+    conn = TxnHarnessNoSavepoints(1)
+    generated = scratchbird.ScratchBirdConnection.set_savepoint(conn)
+    _require(generated == "sp_1", "generated savepoint should initialize from missing state")
+    _require(getattr(conn, "_savepoints", None) == ["sp_1"], "set_savepoint should initialize tracking list")
+
+    scratchbird.ScratchBirdConnection.release_savepoint(conn, "sp_1")
+    _require(getattr(conn, "_savepoints", None) == [], "release should remove tracked savepoint")
+
+    try:
+        scratchbird.ScratchBirdConnection.release_savepoint(conn, "sp_1")
+        raise RuntimeError("expected release of missing savepoint to raise")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "3B001", "missing release should raise 3B001")
+
+    try:
+        scratchbird.ScratchBirdConnection.rollback_to_savepoint(conn, "sp_1")
+        raise RuntimeError("expected rollback_to missing savepoint to raise")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "3B001", "missing rollback_to should raise 3B001")
 
 
 def test_savepoint_guards() -> None:
@@ -472,6 +507,7 @@ def main() -> None:
     test_commit_and_rollback_noop_when_no_active_txn()
     test_commit_and_rollback_send_when_active_txn()
     test_savepoint_messages_and_payloads()
+    test_savepoint_tracking_initializes_when_missing()
     test_savepoint_guards()
     test_query_none_params_uses_simple_path()
     test_query_empty_params_uses_extended_path()
