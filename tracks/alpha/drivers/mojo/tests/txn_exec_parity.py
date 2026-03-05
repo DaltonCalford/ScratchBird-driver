@@ -173,6 +173,21 @@ def test_cancel_stream_returns_57014() -> None:
         conn.close()
 
 
+def test_close_is_idempotent_for_connection_and_stream() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    stream = conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1)
+    _ = stream.__next__()
+    stream.close()
+    stream.close()
+    try:
+        stream.__next__()
+        raise RuntimeError("closed stream should stop iteration")
+    except StopIteration:
+        pass
+    conn.close()
+    conn.close()
+
+
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
@@ -182,6 +197,7 @@ def main() -> None:
     test_query_empty_params_uses_extended_path()
     test_stream_fetch_boundaries()
     test_cancel_stream_returns_57014()
+    test_close_is_idempotent_for_connection_and_stream()
     print("Mojo TXN/EXEC parity tests OK")
 
 

@@ -152,6 +152,6 @@
 - Lane-local test anchors:
 - `tests/integration.mojo:31`
 - `tests/sbdriver_conformance.mojo:212`
+- `tests/txn_exec_parity.py:176` (idempotent close behavior for connection and stream)
 - Gaps/next actions:
-- Add lane tests that verify idempotent close/release behavior for connection and stream objects.
 - Complete or remove placeholder lifecycle paths (`pass` markers in keepalive/telemetry/pipeline scaffolds) to reduce ambiguity.
