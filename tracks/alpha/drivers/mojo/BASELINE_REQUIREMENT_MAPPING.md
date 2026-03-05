@@ -117,12 +117,16 @@
 - `src/scratchbird.mojo:244` (`_parse_array_literal`)
 - `src/scratchbird.mojo:262` (`_parse_vector_literal`)
 - `src/scratchbird.mojo:279` (`_parse_range_literal`)
+- `src/scratchbird.py:107` (bridge-shim OID constants and fallback raw-wrapper path)
+- `src/scratchbird.py:151` (bridge-shim array/vector/range parser utilities)
+- `src/scratchbird.py:217` (bridge-shim encode/decode helpers with truncation guard and unknown-OID fallback)
 - Lane-local test anchors:
 - `tests/integration.mojo:26`
 - `tests/sbdriver_conformance.mojo:182`
+- `tests/type_codecs.py:15` (array/range/vector parsing, decode/encode assertions, unknown-OID fallback)
+- `tests/type_codecs.py:49` (`OID_INT4` truncation behavior)
 - Gaps/next actions:
-- Add lane tests with per-type value assertions for both decode and encode paths.
-- Add lane tests for null/array/range/vector edge cases and unsupported OID fallback behavior.
+- Expand bridge-shim type coverage toward the full native OID matrix (geometry/composite/network/range families) once native Mojo transport is active.
 
 ## ERR (JDBCBL)
 

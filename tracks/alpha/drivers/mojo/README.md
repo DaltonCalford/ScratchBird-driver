@@ -41,6 +41,7 @@ From `tracks/alpha/drivers/mojo`:
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/type_codecs.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json

@@ -21,12 +21,13 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_s
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/type_codecs.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 ```
 
 Expected behavior:
-- metadata, txn/exec, and error-propagation tests report `OK`
+- metadata, txn/exec, error-propagation, and type-codec tests report `OK`
 - integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
 
 ## Conformance Adapter

@@ -22,6 +22,11 @@ ISOLATION_READ_COMMITTED = 1
 ISOLATION_REPEATABLE_READ = 2
 ISOLATION_SERIALIZABLE = 3
 
+OID_INT4 = 23
+OID_TEXT = 25
+OID_VARCHAR = 1043
+OID_SB_VECTOR = 16386
+
 TXN_FLAG_HAS_ISOLATION = 0x0001
 TXN_FLAG_HAS_ACCESS = 0x0002
 TXN_FLAG_HAS_DEFERRABLE = 0x0004
@@ -130,6 +135,23 @@ class ScratchBirdConfig:
     dsn: str = ""
 
 
+@dataclass
+class ScratchBirdRaw:
+    oid: int
+    data: bytes
+
+
+@dataclass
+class ScratchBirdRange:
+    lower: Optional[str] = None
+    upper: Optional[str] = None
+    lower_inclusive: bool = False
+    upper_inclusive: bool = False
+    lower_infinite: bool = False
+    upper_infinite: bool = False
+    empty: bool = False
+
+
 class ScratchBirdError(Exception):
     def __init__(self, message: str, sqlstate: str = "", detail: str = "", hint: str = ""):
         super().__init__(message)
@@ -142,6 +164,131 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _split_array_items(text: str) -> List[str]:
+    items: List[str] = []
+    depth = 0
+    token = ""
+    for ch in text:
+        if ch == "{":
+            depth += 1
+            token += ch
+            continue
+        if ch == "}":
+            depth = max(0, depth - 1)
+            token += ch
+            continue
+        if ch == "," and depth == 0:
+            items.append(token)
+            token = ""
+            continue
+        token += ch
+    if token:
+        items.append(token)
+    return items
+
+
+def parse_array_literal(text: str) -> List[Any]:
+    raw = (text or "").strip()
+    if raw in ("", "{}"):
+        return []
+    if raw.startswith("{") and raw.endswith("}"):
+        raw = raw[1:-1]
+    if raw == "":
+        return []
+    out: List[Any] = []
+    for part in _split_array_items(raw):
+        item = part.strip()
+        if item == "NULL":
+            out.append(None)
+            continue
+        if item.startswith("{") and item.endswith("}"):
+            out.append(parse_array_literal(item))
+            continue
+        if len(item) >= 2 and item[0] == '"' and item[-1] == '"':
+            out.append(item[1:-1].replace('\\"', '"'))
+            continue
+        out.append(item)
+    return out
+
+
+def parse_vector_literal(text: str) -> List[float]:
+    raw = (text or "").strip()
+    if raw == "":
+        return []
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    if raw.strip() == "":
+        return []
+    values: List[float] = []
+    for token in raw.split(","):
+        item = token.strip()
+        if item:
+            values.append(float(item))
+    return values
+
+
+def parse_range_literal(text: str) -> ScratchBirdRange:
+    raw = (text or "").strip()
+    if raw == "" or raw.lower() == "empty":
+        return ScratchBirdRange(empty=True)
+    if len(raw) < 2 or raw[0] not in ("[", "(") or raw[-1] not in ("]", ")"):
+        raise RuntimeError("invalid range literal")
+    lower_inclusive = raw[0] == "["
+    upper_inclusive = raw[-1] == "]"
+    body = raw[1:-1]
+    comma_idx = body.find(",")
+    if comma_idx < 0:
+        raise RuntimeError("invalid range literal")
+    lower_raw = body[:comma_idx].strip()
+    upper_raw = body[comma_idx + 1 :].strip()
+    lower = lower_raw if lower_raw != "" else None
+    upper = upper_raw if upper_raw != "" else None
+    return ScratchBirdRange(
+        lower=lower,
+        upper=upper,
+        lower_inclusive=lower_inclusive,
+        upper_inclusive=upper_inclusive,
+        lower_infinite=lower is None,
+        upper_infinite=upper is None,
+        empty=False,
+    )
+
+
+def encode_value(value: Any) -> bytes:
+    if value is None:
+        return b""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, int):
+        return struct.pack("<i", int(value))
+    if isinstance(value, ScratchBirdRange):
+        if value.empty:
+            return b"empty"
+        left = "[" if value.lower_inclusive else "("
+        right = "]" if value.upper_inclusive else ")"
+        lower = "" if value.lower is None else str(value.lower)
+        upper = "" if value.upper is None else str(value.upper)
+        return f"{left}{lower},{upper}{right}".encode("utf-8")
+    if isinstance(value, (list, tuple)):
+        vector = ",".join(str(float(item)) for item in value)
+        return f"[{vector}]".encode("utf-8")
+    return str(value).encode("utf-8")
+
+
+def decode_value(oid: int, data: Optional[bytes]) -> Any:
+    if data is None:
+        return None
+    if oid == OID_INT4:
+        if len(data) < 4:
+            raise RuntimeError("row data truncated")
+        return struct.unpack_from("<i", data, 0)[0]
+    if oid in (OID_TEXT, OID_VARCHAR):
+        return data.decode("utf-8")
+    if oid == OID_SB_VECTOR:
+        return parse_vector_literal(data.decode("utf-8"))
+    return ScratchBirdRaw(oid, data)
 
 
 def _dsn_query_params(dsn: str) -> Dict[str, str]:
