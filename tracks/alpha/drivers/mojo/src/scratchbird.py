@@ -1312,9 +1312,31 @@ def _is_supported_metadata_query(statement: str) -> bool:
     return any(_matches_metadata_query(normalized, query.lower()) for query in _METADATA_COLLECTION_QUERY_MAP.values())
 
 
-def _sql_like_match(value: str, pattern: str) -> bool:
-    regex = "^" + re.escape(pattern).replace("%", ".*").replace("_", ".") + "$"
-    return re.match(regex, value) is not None
+def _sql_like_pattern_to_regex(pattern: str, escape_char: str = "\\") -> re.Pattern[str]:
+    out = ["^"]
+    escaped = False
+    for ch in pattern:
+        if escape_char and escaped:
+            out.append(re.escape(ch))
+            escaped = False
+            continue
+        if escape_char and ch == escape_char:
+            escaped = True
+            continue
+        if ch == "%":
+            out.append(".*")
+        elif ch == "_":
+            out.append(".")
+        else:
+            out.append(re.escape(ch))
+    if escape_char and escaped:
+        out.append(re.escape(escape_char))
+    out.append("$")
+    return re.compile("".join(out), re.IGNORECASE)
+
+
+def _sql_like_match(value: str, pattern: str, escape_char: str = "\\") -> bool:
+    return _sql_like_pattern_to_regex(pattern, escape_char).match(value) is not None
 
 
 def _schema_rows_for_metadata_query(statement: str) -> List[Dict[str, Any]]:
@@ -1323,14 +1345,22 @@ def _schema_rows_for_metadata_query(statement: str) -> List[Dict[str, Any]]:
         {"schema_name": "users.bob.dev"},
         {"schema_name": "sys"},
     ]
-    match = re.search(r"schema_name\s+(=|like)\s+'((?:''|[^'])*)'", statement, re.IGNORECASE)
+    match = re.search(
+        r"schema_name\s+(=|like)\s+'((?:''|[^'])*)'(?:\s+escape\s+'((?:''|[^'])*)')?",
+        statement,
+        re.IGNORECASE,
+    )
     if match is None:
         return rows
     operator = match.group(1).lower()
     raw_value = match.group(2).replace("''", "'")
+    raw_escape = match.group(3)
+    escape_char = "\\" if raw_escape is None else raw_escape.replace("''", "'")
+    if len(escape_char) != 1:
+        escape_char = "\\"
     if operator == "=":
         return [row for row in rows if str(row.get("schema_name", "")) == raw_value]
-    return [row for row in rows if _sql_like_match(str(row.get("schema_name", "")), raw_value)]
+    return [row for row in rows if _sql_like_match(str(row.get("schema_name", "")), raw_value, escape_char)]
 
 
 def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) -> str:
@@ -1347,7 +1377,7 @@ def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) ->
 def _comparison_predicate(column: str, restriction_value: str) -> str:
     literal = f"'{_escape_sql_literal(restriction_value)}'"
     if "%" in restriction_value or "_" in restriction_value:
-        return f"{column} LIKE {literal}"
+        return f"{column} LIKE {literal} ESCAPE '\\'"
     return f"{column} = {literal}"
 
 

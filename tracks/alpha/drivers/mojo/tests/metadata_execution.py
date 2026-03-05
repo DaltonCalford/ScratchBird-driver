@@ -104,6 +104,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "table wildcard restriction should use LIKE predicate",
     )
     _require(
+        "table_name LIKE 'ord\\%' ESCAPE '\\'"
+        in scratchbird.resolve_metadata_collection_query_restricted("table", "table", r"ord\%"),
+        "escaped wildcard restriction should preserve ESCAPE semantics",
+    )
+    _require(
         "schema_name = 'acme''schema'"
         in scratchbird.resolve_metadata_collection_query_restricted("schema", "schema", "acme'schema"),
         "restricted schema query should escape SQL literals",
@@ -117,6 +122,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "s.schema_name LIKE 'pub%'"
         in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "pub%"),
         "columns schema wildcard restriction should use LIKE predicate",
+    )
+    _require(
+        "s.schema_name LIKE 'pub\\_%' ESCAPE '\\'"
+        in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", r"pub\_%"),
+        "columns escaped wildcard restriction should preserve ESCAPE semantics",
     )
     _require(
         "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE t.table_name = 'orders')"
@@ -147,6 +157,14 @@ def test_resolve_metadata_collection_query_restricted_multi() -> None:
     _require(
         "table_name LIKE 'ord%'" in sql,
         "multi restriction SQL should include wildcard table predicate",
+    )
+    _require(
+        "table_name LIKE 'ord\\_%' ESCAPE '\\'"
+        in scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "tables",
+            {"table": r"ord\_%"},
+        ),
+        "multi restriction SQL should keep escaped wildcard semantics",
     )
     try:
         scratchbird.resolve_metadata_collection_query_restricted_multi(
@@ -285,8 +303,31 @@ def test_connection_ddl_editor_schema_payload_applies_schema_pattern() -> None:
     _require(sent_payload is not None, "ddl payload path should route through metadata query")
     sent_sql = sent_payload.decode("utf-8")
     _require(
-        "schema_name LIKE 'users.%'" in sent_sql,
+        "schema_name LIKE 'users.%' ESCAPE '\\'" in sent_sql,
         "ddl payload path should apply schema wildcard restriction",
+    )
+
+
+def test_sql_like_match_supports_escape_and_case_insensitive_semantics() -> None:
+    _require(
+        scratchbird._sql_like_match("users.alice.dev", "users.%"),
+        "sql like helper should match wildcard patterns",
+    )
+    _require(
+        scratchbird._sql_like_match("Users.Alice.Dev", "users.%"),
+        "sql like helper should match case-insensitively",
+    )
+    _require(
+        scratchbird._sql_like_match("ord%ers", r"ord\%ers"),
+        "sql like helper should respect escaped percent wildcards",
+    )
+    _require(
+        scratchbird._sql_like_match("ord_ers", r"ord\_ers"),
+        "sql like helper should respect escaped underscore wildcards",
+    )
+    _require(
+        not scratchbird._sql_like_match("orders", r"ord\%ers"),
+        "escaped wildcard should not match non-literal characters",
     )
 
 
@@ -313,6 +354,7 @@ def main() -> None:
     test_query_metadata_rows_restricted_returns_rowcount()
     test_query_metadata_rows_restricted_multi_returns_rowcount()
     test_connection_ddl_editor_schema_payload_applies_schema_pattern()
+    test_sql_like_match_supports_escape_and_case_insensitive_semantics()
     test_query_metadata_rejects_unsupported_collection()
     print("Mojo metadata execution tests OK")
 

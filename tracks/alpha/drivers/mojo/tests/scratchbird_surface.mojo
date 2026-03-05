@@ -143,6 +143,11 @@ fn main() raises:
         "table_name LIKE 'ord%'" in wildcard_tables,
         "table wildcard restriction should use LIKE predicate",
     )
+    var escaped_wildcard_tables = conn.query_metadata_restricted("tables", "table", "ord\\%")
+    _require(
+        "table_name LIKE 'ord\\%' ESCAPE '\\'" in escaped_wildcard_tables,
+        "escaped table wildcard restriction should preserve ESCAPE semantics",
+    )
     _require(
         conn.query_metadata_rows_restricted("tables", "table", "ord%") == 1,
         "table wildcard restriction rowcount mismatch",
@@ -157,6 +162,11 @@ fn main() raises:
     _require(
         "s.schema_name LIKE 'pub%'" in wildcard_columns_schema,
         "columns schema wildcard restriction should use LIKE predicate",
+    )
+    var escaped_wildcard_columns_schema = conn.query_metadata_restricted("columns", "schema", "pub\\_%")
+    _require(
+        "s.schema_name LIKE 'pub\\_%' ESCAPE '\\'" in escaped_wildcard_columns_schema,
+        "columns escaped wildcard restriction should preserve ESCAPE semantics",
     )
     _require(
         conn.query_metadata_rows_restricted("columns", "schema", "public") == 1,
