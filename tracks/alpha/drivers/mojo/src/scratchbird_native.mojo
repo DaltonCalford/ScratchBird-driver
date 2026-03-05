@@ -244,6 +244,8 @@ struct ScratchBirdConnection:
             _ = self.leak_detector.release_checkout(self.leak_token, self.operation_clock_ms)
             self.leak_token = ""
         self.leak_detector.stop()
+        if self.query_pipeline.pending_count() > 0:
+            self.query_pipeline.flush()
         self.query_pipeline.stop()
 
     fn _prepare_operation(mut self) raises:
@@ -267,7 +269,7 @@ struct ScratchBirdConnection:
         else:
             self.circuit_breaker.record_failure(self.operation_clock_ms)
         self.keepalive_tracker.mark_active(self.operation_clock_ms)
-        if self.query_pipeline.pending_count() > 0:
+        if self.query_pipeline.pending_count() > 0 and (self.query_pipeline.auto_flush or not success):
             self.query_pipeline.flush()
         var span = self.telemetry.start_span(operation_name, start_ms)
         self.telemetry.end_span(span, self.operation_clock_ms, success)

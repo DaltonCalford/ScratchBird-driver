@@ -246,6 +246,77 @@ fn main() raises:
         "leak detector should record warning when threshold is zero",
     )
 
+    var pipeline_auto_cfg = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&pipeline_auto_flush=true&pipeline_auto_flush_threshold=1"
+    )
+    var pipeline_auto_conn = scratchbird_native.connect(pipeline_auto_cfg)
+    _ = pipeline_auto_conn.query("SELECT 1")
+    _ = pipeline_auto_conn.query("SELECT 1")
+    _require(pipeline_auto_conn.query_pipeline.pending_count() == 0, "auto-flush pipeline should not retain pending work")
+    _require(
+        pipeline_auto_conn.query_pipeline.completed_count() >= 2,
+        "auto-flush pipeline should complete queued requests",
+    )
+    pipeline_auto_conn.close()
+
+    var pipeline_manual_cfg = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&pipeline_auto_flush=false&pipeline_max_in_flight=2"
+    )
+    var pipeline_manual_conn = scratchbird_native.connect(pipeline_manual_cfg)
+    _ = pipeline_manual_conn.query("SELECT 1")
+    _ = pipeline_manual_conn.query("SELECT 1")
+    _require(
+        pipeline_manual_conn.query_pipeline.pending_count() == 2,
+        "manual pipeline should retain pending requests until flush/close",
+    )
+    try:
+        _ = pipeline_manual_conn.query("SELECT 1")
+        raise Error("expected manual pipeline capacity guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "54000",
+            "manual pipeline capacity guard should expose 54000",
+        )
+    pipeline_manual_conn.close()
+    _require(
+        pipeline_manual_conn.query_pipeline.completed_count() >= 2,
+        "manual pipeline close should flush retained requests",
+    )
+
+    var breaker_recovery_cfg = scratchbird_native.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&cb_failure_threshold=1&cb_recovery_timeout_ms=2&cb_success_threshold=2&cb_half_open_max_requests=1"
+    )
+    var breaker_recovery_conn = scratchbird_native.connect(breaker_recovery_cfg)
+    try:
+        _ = breaker_recovery_conn.query("SELECT unsupported_query")
+        raise Error("expected initial breaker failure")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "0A000",
+            "initial breaker failure should preserve unsupported query sqlstate",
+        )
+    _require(breaker_recovery_conn.circuit_breaker.is_open(), "breaker should open after threshold failure")
+    try:
+        _ = breaker_recovery_conn.query("SELECT 1")
+        raise Error("expected breaker-open guard before recovery timeout")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08006",
+            "breaker-open guard should expose 08006",
+        )
+    breaker_recovery_conn.operation_clock_ms += 3
+    _ = breaker_recovery_conn.query("SELECT 1")
+    _require(
+        breaker_recovery_conn.circuit_breaker.is_half_open(),
+        "first recovery success should leave breaker half-open with success threshold > 1",
+    )
+    _ = breaker_recovery_conn.query("SELECT 1")
+    _require(
+        not breaker_recovery_conn.circuit_breaker.is_open(),
+        "recovery successes should close breaker",
+    )
+    breaker_recovery_conn.close()
+
     try:
         _ = conn.query("SELECT unsupported_query")
         raise Error("expected unsupported query to fail")
