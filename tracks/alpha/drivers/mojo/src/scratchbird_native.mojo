@@ -185,9 +185,9 @@ struct ScratchBirdConfig:
             front_door_raw = _query_value(dsn, "ingress_mode", "")
         self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
-        self.sslmode = _query_value(dsn, "sslmode", "require")
+        self.sslmode = _query_value_alias(dsn, "sslmode", "ssl", "require")
         self.binary_transfer = _as_bool(_query_value_alias(dsn, "binary_transfer", "binarytransfer", "true"))
-        self.compression = _query_value(dsn, "compression", "off")
+        self.compression = _normalize_compression_value(_query_value(dsn, "compression", "off"))
         self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)
         self.connect_timeout_s = _query_int_alias(dsn, "connect_timeout", "connecttimeout", 30)
         self.socket_timeout_s = _query_int_alias(dsn, "socket_timeout", "sockettimeout", 0)
@@ -787,6 +787,105 @@ fn _extract_port(dsn: String) -> Int:
         return 3092
 
 
+fn _is_hex_digit(ch: String) -> Bool:
+    var value = ch.lower()
+    return (value >= "0" and value <= "9") or (value >= "a" and value <= "f")
+
+
+fn _hex_digit_value(ch: String) -> Int:
+    var value = ch.lower()
+    if value == "0":
+        return 0
+    if value == "1":
+        return 1
+    if value == "2":
+        return 2
+    if value == "3":
+        return 3
+    if value == "4":
+        return 4
+    if value == "5":
+        return 5
+    if value == "6":
+        return 6
+    if value == "7":
+        return 7
+    if value == "8":
+        return 8
+    if value == "9":
+        return 9
+    if value == "a":
+        return 10
+    if value == "b":
+        return 11
+    if value == "c":
+        return 12
+    if value == "d":
+        return 13
+    if value == "e":
+        return 14
+    if value == "f":
+        return 15
+    return -1
+
+
+fn _decode_query_component(value: String) -> String:
+    var decoded = String()
+    var i = 0
+    while i < len(value):
+        var ch = String(value[byte=i])
+        if ch == "+":
+            decoded += " "
+            i += 1
+            continue
+        if ch != "%":
+            decoded += ch
+            i += 1
+            continue
+        if i + 2 >= len(value):
+            decoded += ch
+            i += 1
+            continue
+        var hi = String(value[byte=i + 1])
+        var lo = String(value[byte=i + 2])
+        if not _is_hex_digit(hi) or not _is_hex_digit(lo):
+            decoded += ch
+            i += 1
+            continue
+        var code = _hex_digit_value(hi) * 16 + _hex_digit_value(lo)
+        decoded += chr(code)
+        i += 3
+    return decoded
+
+
+fn _has_malformed_percent_escape(value: String) -> Bool:
+    var i = 0
+    while i < len(value):
+        if String(value[byte=i]) != "%":
+            i += 1
+            continue
+        if i + 2 >= len(value):
+            return True
+        var hi = String(value[byte=i + 1])
+        var lo = String(value[byte=i + 2])
+        if not _is_hex_digit(hi) or not _is_hex_digit(lo):
+            return True
+        i += 3
+    return False
+
+
+fn _dsn_has_malformed_query_escape(dsn: String) -> Bool:
+    if "?" not in dsn:
+        return False
+    var parts = dsn.split("?", 1)
+    if len(parts) != 2:
+        return False
+    var query = String(parts[1])
+    if query.strip() == "":
+        return False
+    return _has_malformed_percent_escape(query)
+
+
 fn _query_value(dsn: String, key: String, default_value: String) -> String:
     if "?" not in dsn:
         return default_value
@@ -806,7 +905,7 @@ fn _query_value(dsn: String, key: String, default_value: String) -> String:
             if len(kv) == 2:
                 var candidate = String(kv[0]).lower()
                 if candidate == target:
-                    return String(kv[1])
+                    return _decode_query_component(String(kv[1]))
         else:
             if pair.lower() == target:
                 return ""
@@ -924,6 +1023,15 @@ fn _normalize_protocol_value(value: String) -> String:
     var normalized = value.strip().lower().replace("-", "_")
     if normalized == "":
         return "native"
+    if normalized == "scratchbird" or normalized == "scratchbird_native" or normalized == "scratchbirdnative":
+        return "native"
+    return normalized
+
+
+fn _normalize_compression_value(value: String) -> String:
+    var normalized = value.strip().lower()
+    if normalized == "" or normalized == "none":
+        return "off"
     return normalized
 
 
@@ -1212,6 +1320,9 @@ fn resolve_metadata_collection_query_restricted_multi(
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:
+    if _dsn_has_malformed_query_escape(config.dsn):
+        raise Error("22023 DSN query contains malformed percent-escape")
+
     if config.protocol != "native":
         raise Error("0A000 protocol must be native")
 
@@ -1263,6 +1374,8 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.compression.strip().lower() == "zstd":
         raise Error("0A000 compression=zstd is not supported")
+    if config.compression.strip().lower() != "off":
+        raise Error("0A000 compression=" + config.compression.strip().lower() + " is not supported")
 
     if config.sb_test_auth_fail:
         raise Error("28P01 authentication failed")
