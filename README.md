@@ -114,6 +114,7 @@ Legend:
 - **Mojo lane:** Added static/wire API closed-connection guards (`08003`) across begin/commit/rollback/savepoint/query helpers to match bridge-shim runtime guard behavior.
 - **Mojo lane:** Hardened static/wire savepoint state tracking by normalizing missing/non-list `_savepoints` state and preserving deterministic `3B001` release/rollback-to guards.
 - **Mojo lane:** Added static/wire begin-option state parity by persisting normalized begin options on `begin` and clearing them on `commit`/`rollback`, with deterministic TXN parity assertions.
+- **Mojo lane:** Expanded static closed-connection metadata helper coverage (`08003`) for `query_metadata_rows`, `query_metadata_restricted`, and `query_metadata_restricted_multi` paths.
 
 ---
 

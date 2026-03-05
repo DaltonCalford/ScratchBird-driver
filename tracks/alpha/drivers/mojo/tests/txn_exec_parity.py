@@ -509,6 +509,29 @@ def test_static_closed_connection_guards() -> None:
     closed_query._closed = True
     _expect_08003(lambda: scratchbird.ScratchBirdConnection.query(closed_query, "SELECT 1", None))
     _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata(closed_query, "tables"))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata_rows(closed_query, "tables"))
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted(
+            closed_query,
+            "tables",
+            "schema",
+            "public",
+        )
+    )
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted_multi(
+            closed_query,
+            "tables",
+            {"schema": "public"},
+        )
+    )
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_rows_restricted_multi(
+            closed_query,
+            "tables",
+            {"schema": "public"},
+        )
+    )
 
 
 def main() -> None:
