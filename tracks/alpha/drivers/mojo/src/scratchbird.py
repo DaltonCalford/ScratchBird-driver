@@ -1350,6 +1350,10 @@ class ScratchBirdConnection:
         )
         conn._send_message(MessageType.TXN_BEGIN, payload)
         conn._drain_until_ready()
+        setattr(conn, "_txn_id", 1)
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            savepoints.clear()
 
     @staticmethod
     def commit(conn: Any) -> None:
@@ -1357,6 +1361,7 @@ class ScratchBirdConnection:
             return
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
+        setattr(conn, "_txn_id", 0)
         savepoints = getattr(conn, "_savepoints", None)
         if isinstance(savepoints, list):
             savepoints.clear()
@@ -1367,6 +1372,7 @@ class ScratchBirdConnection:
             return
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
         conn._drain_until_ready()
+        setattr(conn, "_txn_id", 0)
         savepoints = getattr(conn, "_savepoints", None)
         if isinstance(savepoints, list):
             savepoints.clear()

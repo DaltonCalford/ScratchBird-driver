@@ -59,6 +59,7 @@ def _shim_cfg() -> scratchbird.ScratchBirdConfig:
 
 def test_begin_maps_kwargs_to_payload_flags() -> None:
     conn = TxnHarness(0)
+    conn._savepoints = ["stale"]
     scratchbird.ScratchBirdConnection.begin(
         conn,
         isolation_level=2,
@@ -90,6 +91,8 @@ def test_begin_maps_kwargs_to_payload_flags() -> None:
     _require(wait_mode == 0, "unexpected wait_mode")
     _require(timeout_ms == 75, "unexpected timeout_ms")
     _require(conn.drained == 1, "begin should drain once")
+    _require(conn._txn_id == 1, "begin should mark transaction active")
+    _require(conn._savepoints == [], "begin should reset savepoints")
 
 
 def test_begin_rejects_nested_transaction() -> None:
@@ -132,13 +135,26 @@ def test_commit_and_rollback_noop_when_no_active_txn() -> None:
 
 
 def test_commit_and_rollback_send_when_active_txn() -> None:
-    conn = TxnHarness(42)
-    scratchbird.ScratchBirdConnection.commit(conn)
-    scratchbird.ScratchBirdConnection.rollback(conn)
-    _require(len(conn.sent) == 2, "active txn should send commit and rollback")
-    _require(conn.sent[0][0] == scratchbird.MessageType.TXN_COMMIT, "commit should send TXN_COMMIT")
-    _require(conn.sent[1][0] == scratchbird.MessageType.TXN_ROLLBACK, "rollback should send TXN_ROLLBACK")
-    _require(conn.drained == 2, "active txn should drain for commit/rollback")
+    commit_conn = TxnHarness(42)
+    commit_conn._savepoints = ["sp1"]
+    scratchbird.ScratchBirdConnection.commit(commit_conn)
+    _require(len(commit_conn.sent) == 1, "active txn should send commit")
+    _require(commit_conn.sent[0][0] == scratchbird.MessageType.TXN_COMMIT, "commit should send TXN_COMMIT")
+    _require(commit_conn.drained == 1, "active commit should drain once")
+    _require(commit_conn._txn_id == 0, "commit should mark transaction inactive")
+    _require(commit_conn._savepoints == [], "commit should clear savepoints")
+
+    rollback_conn = TxnHarness(42)
+    rollback_conn._savepoints = ["sp1"]
+    scratchbird.ScratchBirdConnection.rollback(rollback_conn)
+    _require(len(rollback_conn.sent) == 1, "active txn should send rollback")
+    _require(
+        rollback_conn.sent[0][0] == scratchbird.MessageType.TXN_ROLLBACK,
+        "rollback should send TXN_ROLLBACK",
+    )
+    _require(rollback_conn.drained == 1, "active rollback should drain once")
+    _require(rollback_conn._txn_id == 0, "rollback should mark transaction inactive")
+    _require(rollback_conn._savepoints == [], "rollback should clear savepoints")
 
 
 def _decode_savepoint_payload(payload: bytes) -> str:
