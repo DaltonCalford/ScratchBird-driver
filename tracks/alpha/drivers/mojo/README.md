@@ -23,6 +23,7 @@ Current implementation is a Mojo-Python interop lane:
 - Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
 - Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping`, transaction lifecycle, and savepoint helpers used by lane tests.
 - Bridge-shim type codecs now include temporal/json/jsonb/uuid wrappers and array-of-composite encode/decode coverage for deterministic lane testing.
+- Lifecycle scaffolds (`keepalive`/`telemetry`/`pipeline`) now compile in current Mojo syntax and have dedicated deterministic smoke coverage in `tests/lifecycle_scaffolds.mojo`.
 - Native Mojo transport/auth remains future work.
 
 ## Platform Support
@@ -49,6 +50,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/type_codecs.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src/scratchbird tests/lifecycle_scaffolds.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```

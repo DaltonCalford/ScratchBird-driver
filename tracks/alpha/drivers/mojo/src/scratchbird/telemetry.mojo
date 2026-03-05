@@ -1,14 +1,9 @@
-# ScratchBird Mojo Driver - OpenTelemetry Telemetry
+# ScratchBird Mojo Driver - Telemetry scaffolding in current Mojo syntax.
 # Copyright (c) 2025-2026 Dalton Calford
 
-from time import time
-from threading import Lock
-from collections import Dict, Optional
-import random
-import string
+from collections import List
 
 
-@value
 struct TelemetryConfig:
     var enable_tracing: Bool
     var enable_metrics: Bool
@@ -16,8 +11,8 @@ struct TelemetryConfig:
     var slow_query_threshold_ms: Int
     var sanitize_queries: Bool
     var sample_rate: Float64
-    
-    fn __init__(inout self):
+
+    fn __init__(out self):
         self.enable_tracing = True
         self.enable_metrics = True
         self.enable_slow_query_log = True
@@ -29,256 +24,254 @@ struct TelemetryConfig:
 struct SpanContext:
     var trace_id: String
     var span_id: String
-    var parent_span_id: Optional[String]
+    var parent_span_id: String
     var span_name: String
-    var start_time: Float64
-    var attributes: Dict[String, String]
-    
-    fn __init__(inout self, name: String):
-        self.trace_id = Self._generate_id(16)
-        self.span_id = Self._generate_id(8)
-        self.parent_span_id = None
+    var start_time_ms: Int
+    var sampled: Bool
+    var attributes: List[String]
+
+    fn __init__(out self, name: String):
+        self.trace_id = ""
+        self.span_id = ""
+        self.parent_span_id = ""
         self.span_name = name
-        self.start_time = time()
-        self.attributes = Dict[String, String]()
-    
-    fn __init__(inout self, name: String, parent: SpanContext):
-        self.trace_id = parent.trace_id
-        self.span_id = Self._generate_id(8)
-        self.parent_span_id = parent.span_id
-        self.span_name = name
-        self.start_time = time()
-        self.attributes = Dict[String, String]()
-    
-    fn with_attribute(inout self, key: String, value: String) -> Self:
-        self.attributes[key] = value
-        return self
-    
-    fn elapsed_ms(self) -> Int:
-        return int((time() - self.start_time) * 1000)
-    
-    @staticmethod
-    fn _generate_id(length: Int) -> String:
-        var chars = String("0123456789abcdef")
-        var result = String()
-        for _ in range(length * 2):
-            result += chars[int(random.random() * 16)]
-        return result
+        self.start_time_ms = 0
+        self.sampled = False
+        self.attributes = List[String]()
 
-
-struct LatencyHistogram:
-    var ms_0_10: Int
-    var ms_10_100: Int
-    var ms_100_1000: Int
-    var ms_1000_10000: Int
-    var ms_over_10000: Int
-    var _lock: Lock
-    
-    fn __init__(inout self):
-        self.ms_0_10 = 0
-        self.ms_10_100 = 0
-        self.ms_100_1000 = 0
-        self.ms_1000_10000 = 0
-        self.ms_over_10000 = 0
-        self._lock = Lock()
-    
-    fn record(inout self, duration_ms: Int):
-        with self._lock:
-            if duration_ms <= 10:
-                self.ms_0_10 += 1
-            elif duration_ms <= 100:
-                self.ms_10_100 += 1
-            elif duration_ms <= 1000:
-                self.ms_100_1000 += 1
-            elif duration_ms <= 10000:
-                self.ms_1000_10000 += 1
-            else:
-                self.ms_over_10000 += 1
-    
-    fn to_string(self) -> String:
-        return String("{" + 
-            "ms_0_10: " + str(self.ms_0_10) + 
-            ", ms_10_100: " + str(self.ms_10_100) +
-            ", ms_100_1000: " + str(self.ms_100_1000) +
-            ", ms_1000_10000: " + str(self.ms_1000_10000) +
-            ", ms_over_10000: " + str(self.ms_over_10000) + "}")
-
-
-struct OperationMetrics:
-    var count: Int
-    var total_time_ms: Int
-    var avg_time_ms: Int
-    var error_count: Int
-    var _lock: Lock
-    
-    fn __init__(inout self):
-        self.count = 0
-        self.total_time_ms = 0
-        self.avg_time_ms = 0
-        self.error_count = 0
-        self._lock = Lock()
-    
-    fn record(inout self, duration_ms: Int, success: Bool):
-        with self._lock:
-            self.count += 1
-            self.total_time_ms += duration_ms
-            self.avg_time_ms = self.total_time_ms // self.count
-            if not success:
-                self.error_count += 1
-
-
-struct SlowQueryLog:
-    var trace_id: String
-    var span_name: String
-    var duration_ms: Int
-    var timestamp: Float64
-    var attributes: Dict[String, String]
-    
-    fn __init__(inout self, trace_id: String, span_name: String, duration_ms: Int, attrs: Dict[String, String]):
+    fn __init__(
+        out self,
+        name: String,
+        trace_id: String,
+        span_id: String,
+        parent_span_id: String,
+        start_time_ms: Int,
+        sampled: Bool,
+    ):
         self.trace_id = trace_id
-        self.span_name = span_name
-        self.duration_ms = duration_ms
-        self.timestamp = time()
-        self.attributes = attrs
+        self.span_id = span_id
+        self.parent_span_id = parent_span_id
+        self.span_name = name
+        self.start_time_ms = start_time_ms
+        self.sampled = sampled
+        self.attributes = List[String]()
+
+    fn with_attribute(mut self, key: String, value: String) -> Self:
+        self.attributes.append(key + "=" + value)
+        return self
+
+    fn elapsed_ms(self, end_time_ms: Int) -> Int:
+        if end_time_ms <= self.start_time_ms:
+            return 0
+        return end_time_ms - self.start_time_ms
 
 
-class TelemetryCollector:
-    var config: TelemetryConfig
-    var _spans: DynamicVector[SpanContext]
-    var _spans_lock: Lock
-    var _total_queries: Int
-    var _successful_queries: Int
-    var _failed_queries: Int
-    var _total_query_time_ms: Int
-    var _metrics_lock: Lock
-    var _histogram: LatencyHistogram
-    var _operation_metrics: Dict[String, OperationMetrics]
-    var _op_metrics_lock: Lock
-    var _slow_queries: DynamicVector[SlowQueryLog]
-    var _slow_queries_lock: Lock
-    
-    fn __init__(inout self, config: TelemetryConfig = TelemetryConfig()):
-        self.config = config
-        self._spans = DynamicVector[SpanContext]()
-        self._spans_lock = Lock()
-        self._total_queries = 0
-        self._successful_queries = 0
-        self._failed_queries = 0
-        self._total_query_time_ms = 0
-        self._metrics_lock = Lock()
-        self._histogram = LatencyHistogram()
-        self._operation_metrics = Dict[String, OperationMetrics]()
-        self._op_metrics_lock = Lock()
-        self._slow_queries = DynamicVector[SlowQueryLog]()
-        self._slow_queries_lock = Lock()
-    
-    fn start_span(inout self, name: String) -> Optional[SpanContext]:
-        if not self.config.enable_tracing:
-            return None
-        
-        # Sample rate check
-        if random.random_float64() > self.config.sample_rate:
-            return None
-        
-        var span = SpanContext(name)
-        
-        with self._spans_lock:
-            self._spans.append(span)
-            if len(self._spans) > 1000:
-                # Remove oldest - shift elements
-                pass
-        
-        return span
-    
-    fn end_span(inout self, span: Optional[SpanContext], success: Bool = True):
-        if not span or not self.config.enable_tracing:
+fn _find_operation_index(operation_names: List[String], operation: String) -> Int:
+    for i in range(len(operation_names)):
+        if operation_names[i] == operation:
+            return i
+    return -1
+
+
+struct TelemetryCollector:
+    var enable_tracing: Bool
+    var enable_metrics: Bool
+    var enable_slow_query_log: Bool
+    var slow_query_threshold_ms: Int
+    var sanitize_queries_enabled: Bool
+    var sample_rate: Float64
+    var next_trace_id: Int
+    var next_span_id: Int
+    var total_queries: Int
+    var successful_queries: Int
+    var failed_queries: Int
+    var total_query_time_ms: Int
+    var bucket_0_10: Int
+    var bucket_10_100: Int
+    var bucket_100_1000: Int
+    var bucket_1000_10000: Int
+    var bucket_over_10000: Int
+    var operation_names: List[String]
+    var operation_counts: List[Int]
+    var operation_total_times: List[Int]
+    var operation_error_counts: List[Int]
+    var slow_query_logs: List[String]
+
+    fn __init__(out self, config: TelemetryConfig = TelemetryConfig()):
+        self.enable_tracing = config.enable_tracing
+        self.enable_metrics = config.enable_metrics
+        self.enable_slow_query_log = config.enable_slow_query_log
+        self.slow_query_threshold_ms = config.slow_query_threshold_ms
+        self.sanitize_queries_enabled = config.sanitize_queries
+        self.sample_rate = config.sample_rate
+        self.next_trace_id = 1
+        self.next_span_id = 1
+        self.total_queries = 0
+        self.successful_queries = 0
+        self.failed_queries = 0
+        self.total_query_time_ms = 0
+        self.bucket_0_10 = 0
+        self.bucket_10_100 = 0
+        self.bucket_100_1000 = 0
+        self.bucket_1000_10000 = 0
+        self.bucket_over_10000 = 0
+        self.operation_names = List[String]()
+        self.operation_counts = List[Int]()
+        self.operation_total_times = List[Int]()
+        self.operation_error_counts = List[Int]()
+        self.slow_query_logs = List[String]()
+
+    fn start_span(mut self, name: String, start_time_ms: Int = 0) -> SpanContext:
+        if not self.enable_tracing:
+            return SpanContext(name)
+
+        var trace_id = "trace_" + String(self.next_trace_id)
+        self.next_trace_id += 1
+        var span_id = "span_" + String(self.next_span_id)
+        self.next_span_id += 1
+
+        return SpanContext(name, trace_id, span_id, "", start_time_ms, True)
+
+    fn start_child_span(mut self, name: String, parent: SpanContext, start_time_ms: Int = 0) -> SpanContext:
+        if not self.enable_tracing:
+            return SpanContext(name)
+
+        var span_id = "span_" + String(self.next_span_id)
+        self.next_span_id += 1
+        return SpanContext(name, parent.trace_id, span_id, parent.span_id, start_time_ms, True)
+
+    fn end_span(mut self, span: SpanContext, end_time_ms: Int, success: Bool = True):
+        if not span.sampled:
             return
-        
-        var duration_ms = span.value().elapsed_ms()
-        self._record_query_metrics(span.value().span_name, duration_ms, success)
-        
-        if self.config.enable_slow_query_log and duration_ms > self.config.slow_query_threshold_ms:
-            self._record_slow_query(span.value(), duration_ms)
-    
-    fn _record_query_metrics(inout self, operation: String, duration_ms: Int, success: Bool):
-        if not self.config.enable_metrics:
+
+        var duration_ms = span.elapsed_ms(end_time_ms)
+        self._record_query_metrics(span.span_name, duration_ms, success)
+
+        if self.enable_slow_query_log and duration_ms > self.slow_query_threshold_ms:
+            self._record_slow_query(span, duration_ms, end_time_ms)
+
+    fn _record_query_metrics(mut self, operation: String, duration_ms: Int, success: Bool):
+        if not self.enable_metrics:
             return
-        
-        with self._metrics_lock:
-            self._total_queries += 1
-            if success:
-                self._successful_queries += 1
-            else:
-                self._failed_queries += 1
-            self._total_query_time_ms += duration_ms
-        
-        self._histogram.record(duration_ms)
-        
-        # Per-operation metrics
-        with self._op_metrics_lock:
-            if operation not in self._operation_metrics:
-                self._operation_metrics[operation] = OperationMetrics()
-            self._operation_metrics[operation].record(duration_ms, success)
-    
-    fn _record_slow_query(inout self, span: SpanContext, duration_ms: Int):
-        var log = SlowQueryLog(span.trace_id, span.span_name, duration_ms, span.attributes)
-        
-        with self._slow_queries_lock:
-            self._slow_queries.append(log)
-            if len(self._slow_queries) > 100:
-                # Remove oldest
-                pass
-    
-    fn get_metrics(inout self) -> Dict[String, String]:
-        var result = Dict[String, String]()
-        
-        with self._metrics_lock:
-            result["total_queries"] = str(self._total_queries)
-            result["successful_queries"] = str(self._successful_queries)
-            result["failed_queries"] = str(self._failed_queries)
-            result["total_query_time_ms"] = str(self._total_query_time_ms)
-        
-        result["latency_histogram"] = self._histogram.to_string()
-        return result
-    
-    fn get_slow_queries(inout self) -> DynamicVector[SlowQueryLog]:
-        with self._slow_queries_lock:
-            return self._slow_queries
-    
-    @staticmethod
-    fn sanitize_query(sql: String) -> String:
-        # Simple sanitization - replace quoted strings
-        # In a full implementation, use proper regex
-        return sql  # Placeholder
-    
-    fn export_prometheus_metrics(inout self) -> String:
-        var m = self.get_metrics()
+
+        self.total_queries += 1
+        self.total_query_time_ms += duration_ms
+        if success:
+            self.successful_queries += 1
+        else:
+            self.failed_queries += 1
+
+        if duration_ms <= 10:
+            self.bucket_0_10 += 1
+        elif duration_ms <= 100:
+            self.bucket_10_100 += 1
+        elif duration_ms <= 1000:
+            self.bucket_100_1000 += 1
+        elif duration_ms <= 10000:
+            self.bucket_1000_10000 += 1
+        else:
+            self.bucket_over_10000 += 1
+
+        var idx = _find_operation_index(self.operation_names, operation)
+        if idx < 0:
+            self.operation_names.append(operation)
+            self.operation_counts.append(0)
+            self.operation_total_times.append(0)
+            self.operation_error_counts.append(0)
+            idx = len(self.operation_names) - 1
+
+        self.operation_counts[idx] += 1
+        self.operation_total_times[idx] += duration_ms
+        if not success:
+            self.operation_error_counts[idx] += 1
+
+    fn _record_slow_query(mut self, span: SpanContext, duration_ms: Int, timestamp_ms: Int):
+        var summary = (
+            "trace_id="
+            + span.trace_id
+            + ",span_name="
+            + span.span_name
+            + ",duration_ms="
+            + String(duration_ms)
+            + ",timestamp_ms="
+            + String(timestamp_ms)
+        )
+        self.slow_query_logs.append(summary)
+        if len(self.slow_query_logs) > 100:
+            var retained = List[String]()
+            for i in range(1, len(self.slow_query_logs)):
+                retained.append(self.slow_query_logs[i])
+            self.slow_query_logs = retained^
+
+    fn get_metrics(self) -> List[String]:
+        var result = List[String]()
+        result.append("total_queries=" + String(self.total_queries))
+        result.append("successful_queries=" + String(self.successful_queries))
+        result.append("failed_queries=" + String(self.failed_queries))
+        result.append("total_query_time_ms=" + String(self.total_query_time_ms))
+        result.append(
+            "latency_histogram="
+            + "0_10:"
+            + String(self.bucket_0_10)
+            + ",10_100:"
+            + String(self.bucket_10_100)
+            + ",100_1000:"
+            + String(self.bucket_100_1000)
+            + ",1000_10000:"
+            + String(self.bucket_1000_10000)
+            + ",over_10000:"
+            + String(self.bucket_over_10000)
+        )
+        return result^
+
+    fn get_slow_queries(self) -> List[String]:
+        return self.slow_query_logs.copy()
+
+    fn operation_metrics(self, operation: String) -> String:
+        var idx = _find_operation_index(self.operation_names, operation)
+        if idx < 0:
+            return "count=0,total_time_ms=0,error_count=0"
+        return (
+            "count="
+            + String(self.operation_counts[idx])
+            + ",total_time_ms="
+            + String(self.operation_total_times[idx])
+            + ",error_count="
+            + String(self.operation_error_counts[idx])
+        )
+
+    fn sanitize_query(self, sql: String) -> String:
+        if not self.sanitize_queries_enabled:
+            return sql
+        return sql
+
+    fn export_prometheus_metrics(self) -> String:
         var result = String()
-        
         result += "# HELP scratchbird_queries_total Total number of queries\n"
         result += "# TYPE scratchbird_queries_total counter\n"
-        result += "scratchbird_queries_total " + m["total_queries"] + "\n"
+        result += "scratchbird_queries_total " + String(self.total_queries) + "\n"
         result += "# HELP scratchbird_query_duration_ms Query duration histogram\n"
         result += "# TYPE scratchbird_query_duration_ms histogram\n"
-        result += "scratchbird_query_duration_ms_bucket{le=\"10\"} " + str(self._histogram.ms_0_10) + "\n"
-        result += "scratchbird_query_duration_ms_bucket{le=\"100\"} " + str(self._histogram.ms_0_10 + self._histogram.ms_10_100) + "\n"
-        result += "scratchbird_query_duration_ms_bucket{le=\"1000\"} " + str(self._histogram.ms_0_10 + self._histogram.ms_10_100 + self._histogram.ms_100_1000) + "\n"
-        
+        result += "scratchbird_query_duration_ms_bucket{le=\"10\"} " + String(self.bucket_0_10) + "\n"
+        result += "scratchbird_query_duration_ms_bucket{le=\"100\"} " + String(self.bucket_0_10 + self.bucket_10_100) + "\n"
+        result += (
+            "scratchbird_query_duration_ms_bucket{le=\"1000\"} "
+            + String(self.bucket_0_10 + self.bucket_10_100 + self.bucket_100_1000)
+            + "\n"
+        )
         return result
 
 
 struct TelemetrySpanGuard:
-    var collector: Pointer[TelemetryCollector]
     var span: SpanContext
     var success: Bool
-    
-    fn __init__(inout self, collector: Pointer[TelemetryCollector], span: SpanContext):
-        self.collector = collector
+
+    fn __init__(out self, span: SpanContext):
         self.span = span
         self.success = True
-    
-    fn mark_failed(inout self):
+
+    fn mark_failed(mut self):
         self.success = False
-    
-    fn finish(inout self):
-        self.collector.load().end_span(self.span, self.success)
+
+    fn finish(self, mut collector: TelemetryCollector, end_time_ms: Int = 0):
+        collector.end_span(self.span, end_time_ms, self.success)

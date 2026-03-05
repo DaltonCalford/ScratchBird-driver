@@ -208,12 +208,14 @@
 - `src/scratchbird.mojo:1492` (`_begin_operation` circuit-breaker/keepalive/telemetry hooks)
 - `src/scratchbird/leak_detector.mojo:56` (`LeakDetector` and guard-based checkin)
 - `src/scratchbird/circuit_breaker.mojo:31` (`CircuitBreaker` state transitions)
-- `src/scratchbird/keepalive.mojo:24` (`KeepaliveTracker`)
-- `src/scratchbird/telemetry.mojo:145` (`TelemetryCollector`)
-- `src/scratchbird/pipeline.mojo:36` (`QueryPipeline` scaffold)
+- `src/scratchbird/keepalive.mojo:29` (`KeepaliveTracker` current-syntax idle/validation state helpers)
+- `src/scratchbird/keepalive.mojo:66` (`KeepaliveManager` deterministic registration/due-validation bookkeeping)
+- `src/scratchbird/telemetry.mojo:76` (`TelemetryCollector` metrics/slow-log/prometheus scaffold in current syntax)
+- `src/scratchbird/pipeline.mojo:20` (`QueryPipeline` deterministic queue/flush accounting scaffold)
 - Lane-local test anchors:
 - `tests/integration.mojo:31`
 - `tests/sbdriver_conformance.mojo:212`
 - `tests/txn_exec_parity.py:320` (idempotent close behavior for connection and stream)
+- `tests/lifecycle_scaffolds.mojo:20` (keepalive/telemetry/pipeline deterministic scaffold smoke coverage)
 - Gaps/next actions:
-- Complete or remove placeholder lifecycle paths (`pass` markers in keepalive/telemetry/pipeline scaffolds) to reduce ambiguity.
+- Wire lifecycle scaffold collectors into the active runtime path once native transport cutover work starts using current Mojo syntax.

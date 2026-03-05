@@ -1,111 +1,150 @@
 # ScratchBird Mojo Driver
-# Keepalive Manager - Prevents connection timeouts
+# Keepalive scaffolding in current Mojo syntax.
 # Copyright (c) 2025-2026 Dalton Calford
 
-from time import time, sleep
-from threading import Thread, Lock
+from collections import List
 
-@value
+
 struct KeepaliveConfig:
     var interval_ms: Int
     var max_idle_before_check_ms: Int
     var validation_timeout_ms: Int
-    
-    fn __init__(inout self):
+
+    fn __init__(out self):
         self.interval_ms = 120000
         self.max_idle_before_check_ms = 600000
         self.validation_timeout_ms = 5000
-    
-    fn __init__(inout self, interval: Int, max_idle: Int, timeout: Int):
-        self.interval_ms = interval
-        self.max_idle_before_check_ms = max_idle
-        self.validation_timeout_ms = timeout
+
+    fn __init__(
+        out self,
+        interval_ms: Int,
+        max_idle_before_check_ms: Int,
+        validation_timeout_ms: Int,
+    ):
+        self.interval_ms = interval_ms
+        self.max_idle_before_check_ms = max_idle_before_check_ms
+        self.validation_timeout_ms = validation_timeout_ms
+
 
 struct KeepaliveTracker:
-    var config: KeepaliveConfig
-    var last_activity: Float64
-    var lock: Lock
-    
-    fn __init__(inout self, config: KeepaliveConfig):
-        self.config = config
-        self.last_activity = time()
-        self.lock = Lock()
-    
-    fn mark_active(inout self):
-        with self.lock:
-            self.last_activity = time()
-    
-    fn needs_validation(self) -> Bool:
-        var idle_ms = (time() - self.last_activity) * 1000
-        return idle_ms > self.config.max_idle_before_check_ms
-    
-    fn idle_duration_ms(self) -> Int:
-        return int((time() - self.last_activity) * 1000)
+    var interval_ms: Int
+    var max_idle_before_check_ms: Int
+    var validation_timeout_ms: Int
+    var last_activity_ms: Int
 
-alias PingerFn = fn() -> Bool
+    fn __init__(out self, config: KeepaliveConfig):
+        self.interval_ms = config.interval_ms
+        self.max_idle_before_check_ms = config.max_idle_before_check_ms
+        self.validation_timeout_ms = config.validation_timeout_ms
+        self.last_activity_ms = 0
 
-struct ConnectionInfo:
-    var connection: String
-    var pinger: PingerFn
-    
-    fn __init__(inout self, conn: String, pinger: PingerFn):
-        self.connection = conn
-        self.pinger = pinger
-
-class KeepaliveManager:
-    var config: KeepaliveConfig
-    var trackers: Dict[String, KeepaliveTracker]
-    var connections: Dict[String, ConnectionInfo]
-    var running: Bool
-    var thread: Optional[Thread]
-    
-    fn __init__(inout self, config: KeepaliveConfig = KeepaliveConfig()):
-        self.config = config
-        self.trackers = Dict[String, KeepaliveTracker]()
-        self.connections = Dict[String, ConnectionInfo]()
-        self.running = False
-        self.thread = None
-    
-    fn start(inout self):
-        if self.running:
+    fn mark_active(mut self, now_ms: Int):
+        if now_ms < 0:
+            self.last_activity_ms = 0
             return
-        self.running = True
-        # Start monitoring thread
-        self.thread = Thread(target=self._monitor_loop)
-    
-    fn stop(inout self):
+        self.last_activity_ms = now_ms
+
+    fn needs_validation(self, now_ms: Int) -> Bool:
+        if now_ms <= self.last_activity_ms:
+            return False
+        var idle_ms = now_ms - self.last_activity_ms
+        return idle_ms > self.max_idle_before_check_ms
+
+    fn idle_duration_ms(self, now_ms: Int) -> Int:
+        if now_ms <= self.last_activity_ms:
+            return 0
+        return now_ms - self.last_activity_ms
+
+
+fn _find_connection_index(connection_ids: List[String], connection_id: String) -> Int:
+    for i in range(len(connection_ids)):
+        if connection_ids[i] == connection_id:
+            return i
+    return -1
+
+
+struct KeepaliveManager:
+    var interval_ms: Int
+    var max_idle_before_check_ms: Int
+    var validation_timeout_ms: Int
+    var connection_ids: List[String]
+    var last_activity_ms: List[Int]
+    var validation_counts: List[Int]
+    var running: Bool
+
+    fn __init__(out self, config: KeepaliveConfig = KeepaliveConfig()):
+        self.interval_ms = config.interval_ms
+        self.max_idle_before_check_ms = config.max_idle_before_check_ms
+        self.validation_timeout_ms = config.validation_timeout_ms
+        self.connection_ids = List[String]()
+        self.last_activity_ms = List[Int]()
+        self.validation_counts = List[Int]()
         self.running = False
-        if self.thread:
-            # Wait for thread
-            pass
-    
-    fn register(inout self, conn_id: String, conn: String, pinger: PingerFn) -> KeepaliveTracker:
-        var tracker = KeepaliveTracker(self.config)
-        self.trackers[conn_id] = tracker
-        self.connections[conn_id] = ConnectionInfo(conn, pinger)
-        return tracker
-    
-    fn unregister(inout self, conn_id: String):
-        if conn_id in self.trackers:
-            del self.trackers[conn_id]
-        if conn_id in self.connections:
-            del self.connections[conn_id]
-    
+
+    fn start(mut self):
+        self.running = True
+
+    fn stop(mut self):
+        self.running = False
+
+    fn register(mut self, connection_id: String, now_ms: Int = 0) -> Int:
+        var normalized_now = now_ms
+        if normalized_now < 0:
+            normalized_now = 0
+
+        var index = _find_connection_index(self.connection_ids, connection_id)
+        if index >= 0:
+            self.last_activity_ms[index] = normalized_now
+        else:
+            self.connection_ids.append(connection_id)
+            self.last_activity_ms.append(normalized_now)
+            self.validation_counts.append(0)
+
+        return len(self.connection_ids)
+
+    fn unregister(mut self, connection_id: String):
+        var index = _find_connection_index(self.connection_ids, connection_id)
+        if index < 0:
+            return
+
+        var kept_ids = List[String]()
+        var kept_last = List[Int]()
+        var kept_counts = List[Int]()
+
+        for i in range(len(self.connection_ids)):
+            if i == index:
+                continue
+            kept_ids.append(self.connection_ids[i])
+            kept_last.append(self.last_activity_ms[i])
+            kept_counts.append(self.validation_counts[i])
+
+        self.connection_ids = kept_ids^
+        self.last_activity_ms = kept_last^
+        self.validation_counts = kept_counts^
+
+    fn mark_active(mut self, connection_id: String, now_ms: Int):
+        var index = _find_connection_index(self.connection_ids, connection_id)
+        if index < 0:
+            return
+        if now_ms < 0:
+            self.last_activity_ms[index] = 0
+            return
+        self.last_activity_ms[index] = now_ms
+
+    fn due_for_validation(mut self, now_ms: Int) -> List[String]:
+        var due = List[String]()
+        for i in range(len(self.connection_ids)):
+            var last_seen = self.last_activity_ms[i]
+            if now_ms > last_seen and now_ms - last_seen > self.max_idle_before_check_ms:
+                due.append(self.connection_ids[i])
+                self.validation_counts[i] += 1
+        return due^
+
+    fn validation_count(self, connection_id: String) -> Int:
+        var index = _find_connection_index(self.connection_ids, connection_id)
+        if index < 0:
+            return 0
+        return self.validation_counts[index]
+
     fn get_monitored_count(self) -> Int:
-        return len(self.trackers)
-    
-    fn _monitor_loop(self):
-        while self.running:
-            sleep(self.config.interval_ms / 1000.0)
-            self._check_connections()
-    
-    fn _check_connections(inout self):
-        for conn_id in self.trackers:
-            var tracker = self.trackers[conn_id]
-            if tracker.needs_validation():
-                if conn_id in self.connections:
-                    var conn_info = self.connections[conn_id]
-                    # Validate connection
-                    var is_healthy = conn_info.pinger()
-                    if is_healthy:
-                        tracker.mark_active()
+        return len(self.connection_ids)
