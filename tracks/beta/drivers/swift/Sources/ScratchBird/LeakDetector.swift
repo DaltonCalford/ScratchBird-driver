@@ -15,6 +15,11 @@ final class LeakDetector {
         var checkIntervalMs: Int = 10_000
     }
 
+    struct Stats {
+        let activeCheckouts: Int
+        let detectedLeaks: Int
+    }
+
     final class CheckoutInfo {
         let checkoutTime = Date()
         let stackTrace: String?
@@ -51,6 +56,7 @@ final class LeakDetector {
     private let queue = DispatchQueue(label: "scratchbird.leakdetector")
     private var checkouts: [String: CheckoutInfo] = [:]
     private var timer: DispatchSourceTimer?
+    private var detectedLeaks = 0
 
     init(config: Config = Config()) {
         self.config = config
@@ -82,13 +88,20 @@ final class LeakDetector {
 
     func checkin(connectionId: String) {
         queue.sync {
-            checkouts.removeValue(forKey: connectionId)
+            _ = checkouts.removeValue(forKey: connectionId)
+        }
+    }
+
+    func stats() -> Stats {
+        return queue.sync {
+            Stats(activeCheckouts: checkouts.count, detectedLeaks: detectedLeaks)
         }
     }
 
     private func checkLeaks() {
         for (connId, info) in checkouts {
             if info.heldDurationMs() > config.thresholdMs {
+                detectedLeaks += 1
                 print("POSSIBLE CONNECTION LEAK: conn=\(connId) held=\(info.heldDurationMs())ms")
             }
         }

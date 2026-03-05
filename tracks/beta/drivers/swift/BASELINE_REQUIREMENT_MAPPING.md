@@ -121,15 +121,19 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `Sources/ScratchBird/CircuitBreaker.swift:11-116`
-  - `Sources/ScratchBird/Keepalive.swift:11-112`
+  - `Sources/ScratchBird/Keepalive.swift:11-153` keepalive tracker/manager plus validation stats (`KeepaliveManager.Stats`).
   - `Sources/ScratchBird/Telemetry.swift:11-108`
-  - `Sources/ScratchBird/LeakDetector.swift:11-96`
-  - `Sources/ScratchBird/Connection.swift:466-528`
-  - `Sources/ScratchBird/Connection.swift:122-125`
+  - `Sources/ScratchBird/LeakDetector.swift:11-110` leak detector timer/guard plus leak stats (`LeakDetector.Stats`).
+  - `Sources/ScratchBird/Config.swift:140-293` DSN-configurable keepalive/leak tuning options.
+  - `Sources/ScratchBird/Connection.swift:71-103` resilience component initialization from config.
+  - `Sources/ScratchBird/Connection.swift:211-224` internal resilience debug snapshot (`debugResilienceStats`).
+  - `Sources/ScratchBird/Connection.swift:554-616` operation-level idle validation and keepalive activity updates.
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-99` deterministic circuit-breaker closed/open/half-open transition and reopen-on-failure behavior.
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:102-140` keepalive idle-threshold checks plus manager-driven ping verification.
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:142-170` leak detector guard idempotency and checkout metadata/stack capture.
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:172-203` telemetry tracing-disabled gate, success/failure metrics accounting, SQL sanitization.
+  - `Tests/ScratchBirdTests/ConfigTests.swift:41-54` resilience DSN option parsing.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:131-157` env-gated live keepalive validation attempts/success and leak detection on held live connection.
 - Gaps/next actions:
-  - Add live integration coverage for keepalive timeout behavior and leak warnings under real pooled connection workloads.
+  - Extend live resilience integration to pooled/multi-connection workloads (connection-pool checkout/return churn, timeout/failure recovery, and leak signaling under concurrent pressure).

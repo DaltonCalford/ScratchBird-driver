@@ -23,6 +23,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 - [x] Add deterministic conformance/unit tests in `tracks/beta/drivers/swift/Tests/` for TXN/EXEC validation, recursive metadata shaping, codec parity, and typed wire-error mapping. Issue: Complete (2026-03-04)
 - [x] Add live handshake/TXN/EXEC/error integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift` (env-gated via `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`). Issue: Complete (2026-03-04)
-- [ ] Add live resilience integration tests in `tracks/beta/drivers/swift/Tests/` for keepalive timeout and leak behavior under pooled workloads. Issue: Open
+- [x] Add live single-connection resilience integration tests in `tracks/beta/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift` for keepalive validation and leak detection timing (env-gated). Issue: Complete (2026-03-04)
+- [ ] Add pooled-workload resilience integration tests in `tracks/beta/drivers/swift/Tests/` for keepalive timeout and leak behavior under multi-connection/pool pressure. Issue: Open
 
 ## P3 (Future)

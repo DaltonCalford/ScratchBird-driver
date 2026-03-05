@@ -32,6 +32,13 @@ final class KeepaliveManager: @unchecked Sendable {
         var validationTimeoutMs: Int = 5_000
     }
 
+    struct Stats {
+        let validationAttempts: Int
+        let validationSuccesses: Int
+        let validationFailures: Int
+        let registeredConnections: Int
+    }
+
     typealias Pinger = () async -> Bool
 
     private let config: Config
@@ -39,6 +46,9 @@ final class KeepaliveManager: @unchecked Sendable {
     private var trackers: [String: KeepaliveTracker] = [:]
     private var pingers: [String: Pinger] = [:]
     private var timer: DispatchSourceTimer?
+    private var validationAttempts = 0
+    private var validationSuccesses = 0
+    private var validationFailures = 0
 
     init(config: Config = Config()) {
         self.config = config
@@ -79,6 +89,17 @@ final class KeepaliveManager: @unchecked Sendable {
         }
     }
 
+    func stats() -> Stats {
+        return queue.sync {
+            Stats(
+                validationAttempts: validationAttempts,
+                validationSuccesses: validationSuccesses,
+                validationFailures: validationFailures,
+                registeredConnections: trackers.count
+            )
+        }
+    }
+
     private func checkConnections() async {
         let snapshot: [(String, KeepaliveTracker, Pinger)] = queue.sync {
             trackers.compactMap { key, tracker in
@@ -88,9 +109,19 @@ final class KeepaliveManager: @unchecked Sendable {
         }
         for (_, tracker, pinger) in snapshot {
             if tracker.needsValidation() {
+                queue.sync {
+                    validationAttempts += 1
+                }
                 let ok = await pingWithTimeout(pinger)
                 if ok {
+                    queue.sync {
+                        validationSuccesses += 1
+                    }
                     tracker.markActive()
+                } else {
+                    queue.sync {
+                        validationFailures += 1
+                    }
                 }
             }
         }

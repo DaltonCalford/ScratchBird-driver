@@ -73,6 +73,17 @@ Connection-level metadata wrappers are available for `sys.*` catalog families:
 - `metadataProcedures`, `metadataFunctions`
 - `metadataSchemaTree`, `metadataSchemaTreeRows`
 
+## Resilience Tuning
+
+Optional DSN parameters:
+
+- `keepalive_interval_ms`
+- `keepalive_max_idle_before_check_ms`
+- `keepalive_validation_timeout_ms`
+- `leak_detection_threshold_ms`
+- `leak_detection_check_interval_ms`
+- `leak_detection_capture_stack_trace`
+
 ## Tests
 
 Integration tests use:

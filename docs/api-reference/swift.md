@@ -24,6 +24,10 @@
 
 - `init(dsn: String)`
 - `init(host:port:database:user:password:sslmode:...)`
+- Resilience tuning fields:
+  `keepaliveIntervalMs`, `keepaliveMaxIdleBeforeCheckMs`,
+  `keepaliveValidationTimeoutMs`, `leakDetectionThresholdMs`,
+  `leakDetectionCheckIntervalMs`, `leakDetectionCaptureStackTrace`
 
 ## Type Wrappers
 

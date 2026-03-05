@@ -41,6 +41,18 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(cfg.sslpassword, "secret")
     }
 
+    func testParseResilienceOptions() throws {
+        let cfg = ScratchBirdConfig(
+            dsn: "scratchbird://user:pass@localhost:3092/db?keepalive_interval_ms=25&keepalive_max_idle_before_check_ms=5&keepalive_validation_timeout_ms=100&leak_detection_threshold_ms=20&leak_detection_check_interval_ms=10&leak_detection_capture_stack_trace=true"
+        )
+        XCTAssertEqual(cfg.keepaliveIntervalMs, 25)
+        XCTAssertEqual(cfg.keepaliveMaxIdleBeforeCheckMs, 5)
+        XCTAssertEqual(cfg.keepaliveValidationTimeoutMs, 100)
+        XCTAssertEqual(cfg.leakDetectionThresholdMs, 20)
+        XCTAssertEqual(cfg.leakDetectionCheckIntervalMs, 10)
+        XCTAssertEqual(cfg.leakDetectionCaptureStackTrace, true)
+    }
+
     func testNormalizeSslMode() throws {
         XCTAssertEqual(try normalizeSslMode("verify_ca"), "verify-ca")
         XCTAssertEqual(try normalizeSslMode("verify-full"), "verify-full")

@@ -137,6 +137,12 @@ public struct ScratchBirdConfig {
     public var managerClientIntent: String
     public var managerClientFlags: Int
     public var managerAuthFastPath: Bool
+    public var keepaliveIntervalMs: Int
+    public var keepaliveMaxIdleBeforeCheckMs: Int
+    public var keepaliveValidationTimeoutMs: Int
+    public var leakDetectionThresholdMs: Int
+    public var leakDetectionCheckIntervalMs: Int
+    public var leakDetectionCaptureStackTrace: Bool
 
     public init(
         host: String = "localhost",
@@ -163,7 +169,13 @@ public struct ScratchBirdConfig {
         managerConnectionProfile: String = "native_v3",
         managerClientIntent: String = "native_v3",
         managerClientFlags: Int = 0,
-        managerAuthFastPath: Bool = true
+        managerAuthFastPath: Bool = true,
+        keepaliveIntervalMs: Int = 120_000,
+        keepaliveMaxIdleBeforeCheckMs: Int = 600_000,
+        keepaliveValidationTimeoutMs: Int = 5_000,
+        leakDetectionThresholdMs: Int = 30_000,
+        leakDetectionCheckIntervalMs: Int = 10_000,
+        leakDetectionCaptureStackTrace: Bool = false
     ) {
         self.host = host
         self.port = port
@@ -190,6 +202,12 @@ public struct ScratchBirdConfig {
         self.managerClientIntent = managerClientIntent
         self.managerClientFlags = managerClientFlags
         self.managerAuthFastPath = managerAuthFastPath
+        self.keepaliveIntervalMs = keepaliveIntervalMs
+        self.keepaliveMaxIdleBeforeCheckMs = keepaliveMaxIdleBeforeCheckMs
+        self.keepaliveValidationTimeoutMs = keepaliveValidationTimeoutMs
+        self.leakDetectionThresholdMs = leakDetectionThresholdMs
+        self.leakDetectionCheckIntervalMs = leakDetectionCheckIntervalMs
+        self.leakDetectionCaptureStackTrace = leakDetectionCaptureStackTrace
     }
 
     public init(dsn: String) {
@@ -225,6 +243,12 @@ public struct ScratchBirdConfig {
             self.managerClientIntent = params["manager_client_intent"] ?? "native_v3"
             self.managerClientFlags = parseInt(params["manager_client_flags"], default: 0)
             self.managerAuthFastPath = parseBool(params["manager_auth_fast_path"], default: true)
+            self.keepaliveIntervalMs = parseInt(params["keepalive_interval_ms"], default: 120_000)
+            self.keepaliveMaxIdleBeforeCheckMs = parseInt(params["keepalive_max_idle_before_check_ms"], default: 600_000)
+            self.keepaliveValidationTimeoutMs = parseInt(params["keepalive_validation_timeout_ms"], default: 5_000)
+            self.leakDetectionThresholdMs = parseInt(params["leak_detection_threshold_ms"], default: 30_000)
+            self.leakDetectionCheckIntervalMs = parseInt(params["leak_detection_check_interval_ms"], default: 10_000)
+            self.leakDetectionCaptureStackTrace = parseBool(params["leak_detection_capture_stack_trace"], default: false)
         } else {
             var rawParams: [String: String] = [:]
             for part in dsn.split(separator: " ") {
@@ -259,6 +283,12 @@ public struct ScratchBirdConfig {
             self.managerClientIntent = params["manager_client_intent"] ?? "native_v3"
             self.managerClientFlags = parseInt(params["manager_client_flags"], default: 0)
             self.managerAuthFastPath = parseBool(params["manager_auth_fast_path"], default: true)
+            self.keepaliveIntervalMs = parseInt(params["keepalive_interval_ms"], default: 120_000)
+            self.keepaliveMaxIdleBeforeCheckMs = parseInt(params["keepalive_max_idle_before_check_ms"], default: 600_000)
+            self.keepaliveValidationTimeoutMs = parseInt(params["keepalive_validation_timeout_ms"], default: 5_000)
+            self.leakDetectionThresholdMs = parseInt(params["leak_detection_threshold_ms"], default: 30_000)
+            self.leakDetectionCheckIntervalMs = parseInt(params["leak_detection_check_interval_ms"], default: 10_000)
+            self.leakDetectionCaptureStackTrace = parseBool(params["leak_detection_capture_stack_trace"], default: false)
         }
     }
 }

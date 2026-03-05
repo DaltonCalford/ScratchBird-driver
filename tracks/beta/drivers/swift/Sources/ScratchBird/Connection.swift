@@ -41,6 +41,15 @@ public struct SblrCompiledMessage {
     public let bytecode: Data
 }
 
+struct ScratchBirdResilienceDebugStats {
+    let keepaliveValidationAttempts: Int
+    let keepaliveValidationSuccesses: Int
+    let keepaliveValidationFailures: Int
+    let keepaliveRegisteredConnections: Int
+    let activeLeakCheckouts: Int
+    let detectedLeaks: Int
+}
+
 private let managerProtocolMagic: UInt32 = 0x42444253 // SBDB
 private let managerProtocolVersion: UInt16 = 0x0101
 private let managerHeaderSize = 12
@@ -71,14 +80,24 @@ public final class ScratchBirdConnection {
     private let connectionId = UUID().uuidString
     private let circuitBreaker = CircuitBreaker()
     private let telemetry = TelemetryCollector()
-    private let keepaliveManager = KeepaliveManager()
+    private let keepaliveManager: KeepaliveManager
     private var keepaliveTracker: KeepaliveTracker?
-    private let leakDetector = LeakDetector()
+    private let leakDetector: LeakDetector
     private var leakGuard: LeakDetector.Guard?
 
     private init(config: ScratchBirdConfig, socket: ScratchBirdSocket) {
         self.config = config
         self.socket = socket
+        self.keepaliveManager = KeepaliveManager(config: KeepaliveManager.Config(
+            intervalMs: max(1, config.keepaliveIntervalMs),
+            maxIdleBeforeCheckMs: max(0, config.keepaliveMaxIdleBeforeCheckMs),
+            validationTimeoutMs: max(1, config.keepaliveValidationTimeoutMs)
+        ))
+        self.leakDetector = LeakDetector(config: LeakDetector.Config(
+            thresholdMs: max(1, config.leakDetectionThresholdMs),
+            captureStackTrace: config.leakDetectionCaptureStackTrace,
+            checkIntervalMs: max(1, config.leakDetectionCheckIntervalMs)
+        ))
     }
 
     public static func connect(_ config: ScratchBirdConfig) async throws -> ScratchBirdConnection {
@@ -186,6 +205,19 @@ public final class ScratchBirdConnection {
             schemaNames,
             database: config.database,
             expandSchemaParents: expandSchemaParents
+        )
+    }
+
+    func debugResilienceStats() -> ScratchBirdResilienceDebugStats {
+        let keepalive = keepaliveManager.stats()
+        let leak = leakDetector.stats()
+        return ScratchBirdResilienceDebugStats(
+            keepaliveValidationAttempts: keepalive.validationAttempts,
+            keepaliveValidationSuccesses: keepalive.validationSuccesses,
+            keepaliveValidationFailures: keepalive.validationFailures,
+            keepaliveRegisteredConnections: keepalive.registeredConnections,
+            activeLeakCheckouts: leak.activeCheckouts,
+            detectedLeaks: leak.detectedLeaks
         )
     }
 

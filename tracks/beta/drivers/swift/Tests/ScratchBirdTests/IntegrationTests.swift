@@ -128,6 +128,34 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationKeepaliveValidationRunsForIdleConnection() async throws {
+        var config = try integrationConfig()
+        config.keepaliveIntervalMs = 20
+        config.keepaliveMaxIdleBeforeCheckMs = 0
+        config.keepaliveValidationTimeoutMs = 250
+
+        try await withConnection(config) { conn in
+            try await Task.sleep(nanoseconds: 180_000_000)
+            let stats = conn.debugResilienceStats()
+            XCTAssertGreaterThanOrEqual(stats.keepaliveValidationAttempts, 1)
+            XCTAssertGreaterThanOrEqual(stats.keepaliveValidationSuccesses, 1)
+            XCTAssertEqual(stats.keepaliveRegisteredConnections, 1)
+        }
+    }
+
+    func testIntegrationLeakDetectorReportsLongHeldConnection() async throws {
+        var config = try integrationConfig()
+        config.leakDetectionThresholdMs = 20
+        config.leakDetectionCheckIntervalMs = 10
+
+        try await withConnection(config) { conn in
+            try await Task.sleep(nanoseconds: 140_000_000)
+            let stats = conn.debugResilienceStats()
+            XCTAssertGreaterThanOrEqual(stats.activeLeakCheckouts, 1)
+            XCTAssertGreaterThanOrEqual(stats.detectedLeaks, 1)
+        }
+    }
+
     func testIntegrationAuthFailureMapsTypedAuthorizationException() async throws {
         let config = try badAuthIntegrationConfig()
         do {
