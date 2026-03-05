@@ -11,17 +11,19 @@
 - Lane-local source anchors:
 - `src/scratchbird.mojo:12` (`scratchbird` current-syntax facade exports `ScratchBirdConfig`/`ScratchBirdConnection`/`connect` from native bootstrap)
 - `src/scratchbird.mojo:20` (facade exports native `validate_connect_guards`)
-- `src/scratchbird_native.mojo:28` (native-bootstrap `ScratchBirdConfig` DSN parsing)
-- `src/scratchbird_native.mojo:62` (native-bootstrap lifecycle DSN knob parsing: `cb_*` / `keepalive_*` / `leak_*` / `pipeline_*`)
-- `src/scratchbird_native.mojo:634` (native-bootstrap connect guards: TLS/binary/compression/mode/user+db)
-- `src/scratchbird_native.mojo:652` (native-bootstrap `connect` entrypoint)
-- `src/scratchbird_native.mojo:277` (native-bootstrap `ping` surface)
+- `src/scratchbird_native.mojo:28` (native-bootstrap `ScratchBirdConfig` DSN parsing surface)
+- `src/scratchbird_native.mojo:52` (native-bootstrap DSN host/port extraction for transport-ready config fields)
+- `src/scratchbird_native.mojo:68` (native-bootstrap lifecycle DSN knob parsing: `cb_*` / `keepalive_*` / `leak_*` / `pipeline_*`)
+- `src/scratchbird_native.mojo:953` (native-bootstrap connect guards: TLS/binary/compression/mode/user+db + deterministic auth-fail parity)
+- `src/scratchbird_native.mojo:974` (native-bootstrap `connect` entrypoint)
+- `src/scratchbird_native.mojo:283` (native-bootstrap `ping` surface)
 - `src/scratchbird.py:659` (bridge-shim connect guard enforcement, including deterministic auth-fail simulation)
 - `src/scratchbird.py:1037` (bridge-shim `connect` entrypoint)
 - Lane-local test anchors:
-- `tests/scratchbird_surface.mojo:35` (current-syntax `scratchbird` facade connect/ping/query smoke)
-- `tests/scratchbird_surface.mojo:87` (facade guard SQLSTATE assertions)
-- `tests/native_bootstrap.mojo:53` (native-bootstrap connect/ping/query smoke)
+- `tests/scratchbird_surface.mojo:75` (current-syntax `scratchbird` facade connect/ping/query smoke + DSN host/port parse assertions)
+- `tests/scratchbird_surface.mojo:401` (facade deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
+- `tests/native_bootstrap.mojo:99` (native-bootstrap connect/ping/query smoke + DSN host/port parse assertions)
+- `tests/native_bootstrap.mojo:537` (native-bootstrap deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
 - `tests/integration.py:79` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
 - `tests/integration.py:425` (deterministic fallback DSN keeps direct integration non-skipping by default)
 - `tests/integration.py:433` (deterministic fallback DSN keeps manager-proxy integration non-skipping by default)
@@ -30,7 +32,7 @@
 - `tests/sbdriver_conformance.py:425` (deterministic fallback DSN keeps conformance non-skipping by default)
 - Gaps/next actions:
 - Implement wire-level native transport/auth path in current-syntax `src/scratchbird.mojo` (facade currently delegates to deterministic native bootstrap scaffolding).
-- Add live manager-proxy and bad-auth CI coverage against a running endpoint.
+- Deterministic manager-proxy and bad-auth coverage now runs in the Mojo CI gate; add live manager-proxy and bad-auth CI coverage against a running endpoint.
 
 ## TXN (JDBCBL)
 
@@ -177,11 +179,11 @@
 - Current status: Partial
 - Lane-local source anchors:
 - `src/scratchbird.mojo:17` (facade export of native SQLSTATE extractor)
-- `src/scratchbird_native.mojo:430` (native-bootstrap unsupported query `0A000`)
-- `src/scratchbird_native.mojo:444` (native-bootstrap unsupported parameterized query `0A000`)
-- `src/scratchbird_native.mojo:631` (native-bootstrap unsupported metadata `0A000`)
-- `src/scratchbird_native.mojo:634` (native-bootstrap guard SQLSTATE error mapping)
-- `src/scratchbird_native.mojo:662` (`extract_sqlstate` helper)
+- `src/scratchbird_native.mojo:504` (native-bootstrap unsupported query `0A000`)
+- `src/scratchbird_native.mojo:518` (native-bootstrap unsupported parameterized query `0A000`)
+- `src/scratchbird_native.mojo:712` (native-bootstrap unsupported metadata `0A000`)
+- `src/scratchbird_native.mojo:953` (native-bootstrap guard SQLSTATE error mapping, including deterministic auth-fail guard)
+- `src/scratchbird_native.mojo:984` (`extract_sqlstate` helper)
 - `src/scratchbird.py:236` (bridge-shim `ScratchBirdError` with sqlstate/detail/hint)
 - Lane-local test anchors:
 - `tests/scratchbird_surface.mojo:18` (facade guard SQLSTATE extraction assertions)

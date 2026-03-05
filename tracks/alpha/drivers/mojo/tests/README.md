@@ -31,6 +31,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 
 Expected behavior:
 - native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK` (including native ping, begin/commit/rollback, savepoint lifecycle guards, prepared execute, paging-query rowcount, and post-cancel recovery smoke semantics)
+- native bootstrap/facade smoke now also validates DSN `host`/`port` parsing and deterministic auth-fail guard parity (`sb_test_auth_fail=true` → `28P01`)
 - native bootstrap smoke also validates deterministic SQLSTATE-prefixed guard/unsupported errors via `scratchbird_native.extract_sqlstate(...)`
 - native bootstrap/facade smokes validate active circuit-breaker/keepalive/telemetry plus leak-detector/pipeline hook wiring on query/stream paths, including deterministic SQLSTATE guards for pipeline-capacity (`54000`) and circuit-breaker-open (`08006`), plus auto/manual pipeline flush behavior and breaker recovery semantics
 - metadata execution smoke includes deterministic metadata restriction alias/query shaping helpers (including expanded alias coverage for catalog/index/constraint/routine/type keys, cross-collection schema/table/index/constraint/routine/type predicates, wildcard `LIKE ... ESCAPE '\\'` shaping with escaped-pattern semantics, explicit `IS NULL` predicate shaping, multi-restriction combination semantics, and invalid-restriction SQLSTATE guards) plus `query_metadata_rows(...)`/`query_metadata_rows_restricted(...)`/`query_metadata_rows_restricted_multi(...)` rowcount checks in shim/native-bootstrap/facade paths
@@ -57,6 +58,10 @@ Conformance defaults to a deterministic lane DSN when `SCRATCHBIRD_MOJO_URL`
 is unset, so core tests run as `ok` in local lane runs without external env.
 Integration smoke also defaults to deterministic lane DSNs for direct,
 manager-proxy, and bad-auth paths when corresponding env vars are unset.
+
+CI Mojo gate mirrors the explicit lane sequence:
+`scratchbird_surface.mojo` → `native_bootstrap.mojo` → `metadata_execution.mojo`
+→ `metadata_recursive_schema.mojo` → `integration.py` → `sbdriver-conformance`.
 
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json

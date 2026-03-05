@@ -78,6 +78,8 @@ Legend:
 - **Mojo lane:** Added broader metadata restriction alias-family support (`catalog`, `index`, `constraint`, `routine`, `type`) with expanded predicate coverage for schema/table/index/constraint/routine/type query families.
 - **Mojo lane:** Extended integration smoke metadata checks with deterministic metadata stability and DDL payload contract assertions; synchronized Mojo lane README/checklist/baseline mapping artifacts.
 - **Mojo lane:** Expanded integration smoke to cover transaction/savepoint lifecycle and prepare/stream-cancel recovery checks for direct and manager-proxy execution paths.
+- **Mojo lane:** Added native-bootstrap DSN host/port parsing fields and deterministic native/facade auth-fail guard parity (`sb_test_auth_fail=true` → `28P01`) with smoke assertions.
+- **Mojo lane:** Updated gated CI Mojo lane to run explicit native surface/bootstrap + metadata + integration + conformance sequence.
 
 ---
 

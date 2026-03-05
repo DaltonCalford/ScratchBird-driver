@@ -21,6 +21,7 @@ Current implementation is a Mojo-Python interop lane:
 - `src/scratchbird.mojo` now compiles in current Mojo syntax as a facade over `src/scratchbird_native.mojo`, with deterministic facade smoke in `tests/scratchbird_surface.mojo`.
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), savepoint lifecycle guards (`25000`/`3B001`), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
+- Native bootstrap DSN parsing now includes transport-ready `host`/`port` fields and deterministic auth-fail guard parity via `sb_test_auth_fail=true` (`28P01`) in native/facade smoke coverage.
 - Native bootstrap guard and unsupported-operation failures now use deterministic SQLSTATE-prefixed error strings with extractor coverage (`extract_sqlstate`) in lane tests.
 - Metadata execution parity now includes deterministic metadata restriction helpers (`normalize_metadata_restriction_key`, `resolve_metadata_collection_query_restricted`, `resolve_metadata_collection_query_restricted_multi`, `query_metadata_restricted`, `query_metadata_rows_restricted`, `query_metadata_restricted_multi`, `query_metadata_rows_restricted_multi`) with expanded alias keys (`catalog`/`index`/`constraint`/`routine`/`type`) and cross-collection schema/table/index/constraint/routine/type restriction predicates, exact/wildcard/null restriction shaping (`=`, `LIKE ... ESCAPE '\\'`, `IS NULL`) including escaped wildcard patterns, SQLSTATE guards for invalid restriction payloads (`07001` native count mismatch / `22023` shim non-mapping restrictions), deterministic DDL-editor payload shaping helpers (`build_ddl_editor_schema_payload`, `ddl_editor_schema_payload`), and executable rowcount coverage in shim/native bootstrap/facade scaffolds.
 - Integration smoke now exercises transaction/savepoint lifecycle and prepare/stream-cancel recovery checks in-lane, plus metadata stability/payload checks with schemas/tables/columns rowcount relationship invariants, alias-family restriction execution checks, `ddl_editor_schema_payload(...)` contract/tree-parent checks, and deterministic fallback content assertions for schema restriction/payload shaping.
@@ -60,6 +61,10 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src/scratchbird tests/l
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```
+
+CI (`.github/workflows/ci.yml`, Mojo gated lane) now runs an explicit sequence:
+`scratchbird_surface.mojo`, `native_bootstrap.mojo`, `metadata_execution.mojo`,
+`metadata_recursive_schema.mojo`, `integration.py`, and `sbdriver-conformance`.
 
 Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_URL` for direct smoke

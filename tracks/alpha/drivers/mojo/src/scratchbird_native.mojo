@@ -28,11 +28,14 @@ comptime METADATA_TYPE_INFO_QUERY = "SELECT DISTINCT data_type_id, data_type_nam
 struct ScratchBirdConfig:
     var dsn: String
     var user: String
+    var host: String
+    var port: Int
     var database: String
     var front_door_mode: String
     var sslmode: String
     var binary_transfer: Bool
     var compression: String
+    var sb_test_auth_fail: Bool
     var cb_failure_threshold: Int
     var cb_recovery_timeout_ms: Int
     var cb_success_threshold: Int
@@ -46,6 +49,8 @@ struct ScratchBirdConfig:
     fn __init__(out self, dsn: String):
         self.dsn = dsn
         self.user = _extract_user(dsn)
+        self.host = _extract_host(dsn)
+        self.port = _extract_port(dsn)
         self.database = _extract_database(dsn)
 
         self.front_door_mode = _query_value(dsn, "front_door_mode", "")
@@ -59,6 +64,7 @@ struct ScratchBirdConfig:
         self.sslmode = _query_value(dsn, "sslmode", "require")
         self.binary_transfer = _as_bool(_query_value(dsn, "binary_transfer", "true"))
         self.compression = _query_value(dsn, "compression", "off")
+        self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)
         self.cb_failure_threshold = _query_int(dsn, "cb_failure_threshold", 5)
         self.cb_recovery_timeout_ms = _query_int(dsn, "cb_recovery_timeout_ms", 30000)
         self.cb_success_threshold = _query_int(dsn, "cb_success_threshold", 3)
@@ -561,6 +567,49 @@ fn _extract_database(dsn: String) -> String:
     return String(sections[1])
 
 
+fn _extract_host_port(dsn: String) -> String:
+    var body = _strip_query(_strip_scheme(dsn))
+    if "@" in body:
+        var parts = body.split("@", 1)
+        if len(parts) == 2:
+            body = String(parts[1])
+    if "/" in body:
+        var sections = body.split("/", 1)
+        if len(sections) == 2:
+            body = String(sections[0])
+    return body
+
+
+fn _extract_host(dsn: String) -> String:
+    var host_port = _extract_host_port(dsn)
+    if host_port == "":
+        return ""
+    if ":" in host_port:
+        var sections = host_port.split(":", 1)
+        if len(sections) == 2:
+            return String(sections[0])
+    return host_port
+
+
+fn _extract_port(dsn: String) -> Int:
+    var host_port = _extract_host_port(dsn)
+    if host_port == "":
+        return 3092
+    if ":" not in host_port:
+        return 3092
+    var sections = host_port.split(":", 1)
+    if len(sections) != 2:
+        return 3092
+    var raw = String(sections[1]).strip()
+    if raw == "":
+        return 3092
+    try:
+        return Int(raw)
+    except e:
+        _ = e
+        return 3092
+
+
 fn _query_value(dsn: String, key: String, default_value: String) -> String:
     if "?" not in dsn:
         return default_value
@@ -917,6 +966,9 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.compression.strip().lower() == "zstd":
         raise Error("0A000 compression=zstd is not supported")
+
+    if config.sb_test_auth_fail:
+        raise Error("28P01 authentication failed")
 
 
 fn connect(config: ScratchBirdConfig) raises -> ScratchBirdConnection:

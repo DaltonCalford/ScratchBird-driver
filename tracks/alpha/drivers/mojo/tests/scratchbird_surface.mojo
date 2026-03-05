@@ -77,6 +77,8 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
     )
     _require(cfg.user == "user", "user parse mismatch")
+    _require(cfg.host == "localhost", "host parse mismatch")
+    _require(cfg.port == 3092, "port parse mismatch")
     _require(cfg.database == "testdb", "database parse mismatch")
 
     var conn = scratchbird.connect(cfg)
@@ -395,6 +397,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false",
         "0A000",
         "binary_transfer=false is not supported",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sb_test_auth_fail=true",
+        "28P01",
+        "authentication failed",
     )
 
     print("Mojo scratchbird facade tests OK")

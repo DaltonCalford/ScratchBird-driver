@@ -306,13 +306,18 @@ jobs:
             echo "Skipping Mojo: set MOJO_ENABLED=true to run Mojo tests."
             exit 0
           fi
-          if [ -d /tmp/mojo-env ]; then
-            cd /tmp/mojo-env
-            pixi run mojo test -I "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo/src" "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo/tests"
-          else
+          if [ ! -d /tmp/mojo-env ]; then
             echo "Mojo env missing; ensure setup step completed."
             exit 1
           fi
+          export MOJO_PIXI_MANIFEST=/tmp/mojo-env
+          cd "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo"
+          pixi run -m /tmp/mojo-env --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
+          pixi run -m /tmp/mojo-env --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
+          pixi run -m /tmp/mojo-env --executable mojo run tests/metadata_execution.mojo
+          pixi run -m /tmp/mojo-env --executable mojo run tests/metadata_recursive_schema.mojo
+          python3 tests/integration.py
+          tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 
       - name: Ruby tests
         if: matrix.language == 'ruby'
