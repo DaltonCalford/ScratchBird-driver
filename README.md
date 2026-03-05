@@ -104,6 +104,9 @@ Legend:
 - **Mojo lane:** Aligned bridge-shim CONN guard parity with query-order front-door alias normalization/token enforcement (`08001`), binary transfer and compression compatibility (`binary_transfer=false`, `compression=zstd|none`), deterministic compression rejection for unsupported values, and pool-bound integer guards (`22023`), including updated deterministic manager fallback DSN tokening in integration smoke.
 - **Mojo lane:** Added bridge-shim connect guard parity for malformed query escapes and malformed bracketed-IPv6 DSNs (`22023`), protocol alias normalization (`protocol|parser|dialect`) with native-only rejection (`0A000`), and additional integer guard parity for `default_row_fetch_size`, `connection_lifetime`, and `manager_client_flags` (`22023`).
 - **Mojo lane:** Extended bridge-shim connect guard parity for endpoint/session constraints with `user/database` required (`28000`), explicit empty-host rejection (`28000`) while preserving omitted-host fallback behavior, port validation (`22023` malformed/range), and timeout guard parity for `connect_timeout`, `socket_timeout`, `login_timeout`, and `acquire_timeout` aliases (`22023`).
+- **Mojo lane:** Added bridge-shim malformed-integer guard parity (`22023`) for `prepare_threshold`, `cb_failure_threshold`, `keepalive_max_idle_before_check_ms`, and `pipeline_max_in_flight` via expanded connection guard coverage.
+- **Mojo lane:** Extended bridge-shim malformed-integer lifecycle guard parity (`22023`) for `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests`, and `leak_threshold_ms`.
+- **Mojo lane:** Added bridge-shim malformed-integer guard parity (`22023`) for `pipeline_auto_flush_threshold`.
 
 ---
 

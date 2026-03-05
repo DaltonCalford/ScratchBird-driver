@@ -173,6 +173,42 @@ def main() -> None:
         "scratchbird://user:pass@localhost:3092/testdb?pooling_acquire_timeout=-1",
         "22023",
     )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?prepare_threshold=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?cb_failure_threshold=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?cb_recovery_timeout_ms=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?cb_success_threshold=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?cb_half_open_max_requests=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?keepalive_max_idle_before_check_ms=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?pipeline_max_in_flight=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?pipeline_auto_flush_threshold=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?leak_threshold_ms=bad",
+        "22023",
+    )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sb_test_auth_fail=true",
         "authentication failed",

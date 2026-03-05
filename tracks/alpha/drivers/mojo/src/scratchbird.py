@@ -893,6 +893,60 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         0,
         "manager_client_flags",
     )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("prepare_threshold", "preparethreshold"),
+        5,
+        "prepare_threshold",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("cb_failure_threshold",),
+        5,
+        "cb_failure_threshold",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("cb_recovery_timeout_ms",),
+        30_000,
+        "cb_recovery_timeout_ms",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("cb_success_threshold",),
+        2,
+        "cb_success_threshold",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("cb_half_open_max_requests",),
+        1,
+        "cb_half_open_max_requests",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("keepalive_max_idle_before_check_ms",),
+        30_000,
+        "keepalive_max_idle_before_check_ms",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("pipeline_max_in_flight",),
+        64,
+        "pipeline_max_in_flight",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("pipeline_auto_flush_threshold",),
+        1,
+        "pipeline_auto_flush_threshold",
+    )
+    _ = _dsn_last_int_query_value(
+        config.dsn,
+        ("leak_threshold_ms",),
+        5_000,
+        "leak_threshold_ms",
+    )
     connect_timeout = _dsn_last_int_query_value(
         config.dsn,
         ("connect_timeout", "connecttimeout"),
