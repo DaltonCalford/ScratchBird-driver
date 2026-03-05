@@ -19,6 +19,20 @@ def _deterministic_fallback_dsn() -> str:
     return "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
 
 
+def _deterministic_fallback_manager_dsn() -> str:
+    return (
+        "scratchbird://user:pass@localhost:3092/testdb"
+        "?sslmode=require&front_door_mode=manager_proxy"
+    )
+
+
+def _deterministic_fallback_bad_auth_dsn() -> str:
+    return (
+        "scratchbird://user:pass@localhost:3092/testdb"
+        "?sslmode=require&sb_test_auth_fail=true"
+    )
+
+
 def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
@@ -140,13 +154,17 @@ def main() -> None:
     else:
         print("SCRATCHBIRD_MOJO_URL not set; skipping Mojo direct integration smoke.")
 
-    manager_dsn = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "")
+    manager_dsn = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
+    if not manager_dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
+        manager_dsn = _deterministic_fallback_manager_dsn()
     if manager_dsn:
         _run_smoke_for_dsn(manager_dsn, "manager-proxy integration")
     else:
         print("SCRATCHBIRD_MOJO_MANAGER_URL not set; skipping Mojo manager-proxy smoke.")
 
-    bad_auth_dsn = os.environ.get("SCRATCHBIRD_MOJO_BAD_AUTH_URL", "")
+    bad_auth_dsn = os.environ.get("SCRATCHBIRD_MOJO_BAD_AUTH_URL", "").strip()
+    if not bad_auth_dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
+        bad_auth_dsn = _deterministic_fallback_bad_auth_dsn()
     if bad_auth_dsn:
         _expect_auth_failure(bad_auth_dsn)
     else:

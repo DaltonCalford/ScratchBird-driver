@@ -29,6 +29,8 @@
 - `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
 - `tests/integration.py:56` (integration launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/integration.py:18` (deterministic fallback DSN keeps direct integration smoke non-skipping by default)
+- `tests/integration.py:23` (deterministic fallback DSN keeps manager-proxy integration smoke non-skipping by default)
+- `tests/integration.py:30` (deterministic fallback DSN keeps bad-auth integration smoke non-skipping by default)
 - `tests/sbdriver_conformance.py:73` (conformance launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/sbdriver_conformance.py:37` (deterministic fallback DSN keeps conformance non-skipping by default)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)

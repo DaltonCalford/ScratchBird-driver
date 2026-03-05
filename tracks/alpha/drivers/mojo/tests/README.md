@@ -51,8 +51,8 @@ Conformance manifest `requires` entries are enforced in-harness; unsupported
 requirements are reported as `skipped`.
 Conformance defaults to a deterministic lane DSN when `SCRATCHBIRD_MOJO_URL`
 is unset, so core tests run as `ok` in local lane runs without external env.
-Integration smoke also defaults to the same deterministic lane DSN for the
-direct path when `SCRATCHBIRD_MOJO_URL` is unset.
+Integration smoke also defaults to deterministic lane DSNs for direct,
+manager-proxy, and bad-auth paths when corresponding env vars are unset.
 
 ```bash
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
