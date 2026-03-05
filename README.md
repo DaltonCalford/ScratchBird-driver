@@ -35,7 +35,7 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-04)
+# Driver Capability Matrix (Audit Snapshot: 2026-03-05)
 
 ## Alpha Drivers
 
@@ -51,7 +51,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane, parity scaffolding in place; TXN/EXEC/META/TYPE/ERR/RES remain partial |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded metadata parity scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
 
 ---
 
@@ -66,13 +66,17 @@ Legend:
 
 ---
 
-## Recent Driver Progress (2026-03-04)
+## Recent Driver Progress (2026-03-05)
 
 - **Dart lane:** Added connection-policy rejection parity tests (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`) and aligned checklist/mapping artifacts.
 - **Dart lane:** Expanded type decode and negative-path coverage (core scalar decode paths, text-vs-unknown behavior, range/composite guardrails, unsupported-type checks).
 - **Dart lane:** Added env-gated integration suite for direct and manager-proxy connection paths (`SCRATCHBIRD_TEST_DSN`, `SCRATCHBIRD_TEST_MANAGER_DSN`) covering query, transaction lifecycle, metadata wrappers, and JSON/JSONB roundtrips.
 - **Dart lane:** Introduced typed driver exception hierarchy and structured server error parsing with SQLSTATE/code propagation + SQLSTATE class-based mapping.
 - **Python lane:** Continued JDBC parity hardening for type decode semantics (temporal/unknown/binary edge cases) with expanded deterministic tests and updated lane baseline artifacts.
+- **Mojo lane:** Expanded restriction-aware metadata query shaping across native/facade/shim execution surfaces, including multi-restriction composition helpers and deterministic rowcount wrappers.
+- **Mojo lane:** Added wildcard/escape and null-aware metadata restriction semantics (`LIKE ... ESCAPE '\\'`, `IS NULL`) with deterministic smoke coverage in native bootstrap and facade tests.
+- **Mojo lane:** Added broader metadata restriction alias-family support (`catalog`, `index`, `constraint`, `routine`, `type`) with expanded predicate coverage for schema/table/index/constraint/routine/type query families.
+- **Mojo lane:** Extended integration smoke metadata checks with deterministic metadata stability and DDL payload contract assertions; synchronized Mojo lane README/checklist/baseline mapping artifacts.
 
 ---
 
@@ -196,4 +200,4 @@ Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for 
 
 ---
 
-**Last Updated:** 2026-03-04
+**Last Updated:** 2026-03-05
