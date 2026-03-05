@@ -85,6 +85,7 @@ fn main() raises:
     _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
     _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
     _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
+    _require(cfg.protocol == "native", "protocol default mismatch")
     var cfg_default_port = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
@@ -113,10 +114,22 @@ fn main() raises:
         cfg_pooling_acquire_timeout.acquire_timeout_s == 52,
         "pooling acquire timeout alias mismatch",
     )
+    var cfg_protocol_parser = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&parser=native"
+    )
+    _require(cfg_protocol_parser.protocol == "native", "parser alias protocol mismatch")
+    var cfg_protocol_dialect = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&dialect=native"
+    )
+    _require(cfg_protocol_dialect.protocol == "native", "dialect alias protocol mismatch")
     var cfg_mode_precedence = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=direct&connection_mode=manager_proxy&ingress_mode=managed"
     )
     _require(cfg_mode_precedence.front_door_mode == "direct", "front_door_mode precedence mismatch")
+    var cfg_frontdoormode_alias = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&frontdoormode=managed"
+    )
+    _require(cfg_frontdoormode_alias.front_door_mode == "manager_proxy", "frontdoormode alias normalization mismatch")
     var cfg_connection_mode_alias = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_mode=manager-proxy"
     )
@@ -147,12 +160,32 @@ fn main() raises:
     _require(cfg_alias_override.host == "alias.host", "hostname alias mismatch")
     _require(cfg_alias_override.port == 4101, "alias port mismatch")
     _require(cfg_alias_override.database == "alias_db", "dbname alias mismatch")
+    var cfg_pg_alias_override = scratchbird.ScratchBirdConfig(
+        "scratchbird://localhost:3092/?sslmode=require&pguser=pg_user&pgpassword=pg_pass&pghost=pg.host&pgport=4102&pgdatabase=pg_db"
+    )
+    _require(cfg_pg_alias_override.user == "pg_user", "pguser alias mismatch")
+    _require(cfg_pg_alias_override.password == "pg_pass", "pgpassword alias mismatch")
+    _require(cfg_pg_alias_override.host == "pg.host", "pghost alias mismatch")
+    _require(cfg_pg_alias_override.port == 4102, "pgport alias mismatch")
+    _require(cfg_pg_alias_override.database == "pg_db", "pgdatabase alias mismatch")
+    var cfg_jdbc_alias_override = scratchbird.ScratchBirdConfig(
+        "scratchbird://localhost:3092/?sslmode=require&user=jdbc_user&password=jdbc_pass&servername=jdbc.host&portNumber=4103&databaseName=jdbc_db"
+    )
+    _require(cfg_jdbc_alias_override.host == "jdbc.host", "servername alias mismatch")
+    _require(cfg_jdbc_alias_override.port == 4103, "portnumber alias mismatch")
+    _require(cfg_jdbc_alias_override.database == "jdbc_db", "databasename alias mismatch")
+    var cfg_binarytransfer_alias = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binarytransfer=false"
+    )
+    _require(not cfg_binarytransfer_alias.binary_transfer, "binarytransfer alias mismatch")
     var cfg_manager_dash = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=manager-proxy"
     )
     _require(cfg_manager_dash.front_door_mode == "manager_proxy", "manager-proxy mode normalization mismatch")
     var manager_dash_conn = scratchbird.connect(cfg_manager_dash)
     manager_dash_conn.close()
+    var manager_frontdoor_alias_conn = scratchbird.connect(cfg_frontdoormode_alias)
+    manager_frontdoor_alias_conn.close()
     var manager_conn_mode_conn = scratchbird.connect(cfg_connection_mode_alias)
     manager_conn_mode_conn.close()
     var manager_ingress_mode_conn = scratchbird.connect(cfg_ingress_mode_alias)
@@ -163,6 +196,10 @@ fn main() raises:
     credential_override_hostonly_conn.close()
     var alias_override_conn = scratchbird.connect(cfg_alias_override)
     alias_override_conn.close()
+    var pg_alias_override_conn = scratchbird.connect(cfg_pg_alias_override)
+    pg_alias_override_conn.close()
+    var jdbc_alias_override_conn = scratchbird.connect(cfg_jdbc_alias_override)
+    jdbc_alias_override_conn.close()
 
     var conn = scratchbird.connect(cfg)
     _require(conn.connection_id == "user@localhost:3092/testdb", "connection_id format mismatch")
@@ -483,9 +520,24 @@ fn main() raises:
         "binary_transfer=false is not supported",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?binarytransfer=false",
+        "0A000",
+        "binary_transfer=false is not supported",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?protocol=sql",
+        "0A000",
+        "protocol must be native",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sb_test_auth_fail=true",
         "28P01",
         "authentication failed",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?frontdoormode=invalid",
+        "22023",
+        "front_door_mode must be direct or manager_proxy.",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@:3092/testdb?sslmode=require",

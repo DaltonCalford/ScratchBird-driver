@@ -32,6 +32,7 @@ struct ScratchBirdConfig:
     var host: String
     var port: Int
     var database: String
+    var protocol: String
     var front_door_mode: String
     var sslmode: String
     var binary_transfer: Bool
@@ -53,15 +54,49 @@ struct ScratchBirdConfig:
 
     fn __init__(out self, dsn: String):
         self.dsn = dsn
-        self.user = _query_value_alias(dsn, "user", "username", _extract_user(dsn))
-        self.password = _query_value_alias(dsn, "password", "passwd", _extract_password(dsn))
-        self.host = _query_value_alias(dsn, "host", "hostname", _extract_host(dsn))
-        self.port = _query_int(dsn, "port", _extract_port(dsn))
-        self.database = _query_value_alias(dsn, "database", "dbname", _extract_database(dsn))
+        self.user = _query_value_alias(
+            dsn,
+            "user",
+            "username",
+            _query_value(dsn, "pguser", _extract_user(dsn)),
+        )
+        self.password = _query_value_alias(
+            dsn,
+            "password",
+            "passwd",
+            _query_value(dsn, "pgpassword", _extract_password(dsn)),
+        )
+        self.host = _query_value_alias(
+            dsn,
+            "host",
+            "hostname",
+            _query_value_alias(dsn, "servername", "pghost", _extract_host(dsn)),
+        )
+        self.port = _query_int_alias(
+            dsn,
+            "port",
+            "portnumber",
+            _query_int(dsn, "pgport", _extract_port(dsn)),
+        )
+        self.database = _query_value_alias(
+            dsn,
+            "database",
+            "dbname",
+            _query_value_alias(dsn, "databasename", "pgdatabase", _extract_database(dsn)),
+        )
+
+        var protocol_raw = ""
+        if _query_has_key(dsn, "protocol"):
+            protocol_raw = _query_value(dsn, "protocol", "")
+        elif _query_has_key(dsn, "parser"):
+            protocol_raw = _query_value(dsn, "parser", "")
+        elif _query_has_key(dsn, "dialect"):
+            protocol_raw = _query_value(dsn, "dialect", "")
+        self.protocol = _normalize_protocol_value(protocol_raw)
 
         var front_door_raw = ""
-        if _query_has_key(dsn, "front_door_mode"):
-            front_door_raw = _query_value(dsn, "front_door_mode", "")
+        if _query_has_key(dsn, "front_door_mode") or _query_has_key(dsn, "frontdoormode"):
+            front_door_raw = _query_value_alias(dsn, "front_door_mode", "frontdoormode", "")
         elif _query_has_key(dsn, "connection_mode"):
             front_door_raw = _query_value(dsn, "connection_mode", "")
         elif _query_has_key(dsn, "ingress_mode"):
@@ -69,7 +104,7 @@ struct ScratchBirdConfig:
         self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
         self.sslmode = _query_value(dsn, "sslmode", "require")
-        self.binary_transfer = _as_bool(_query_value(dsn, "binary_transfer", "true"))
+        self.binary_transfer = _as_bool(_query_value_alias(dsn, "binary_transfer", "binarytransfer", "true"))
         self.compression = _query_value(dsn, "compression", "off")
         self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)
         self.connect_timeout_s = _query_int_alias(dsn, "connect_timeout", "connecttimeout", 30)
@@ -796,10 +831,17 @@ fn _connection_identity(
 
 fn _normalize_front_door_mode_value(value: String) -> String:
     var normalized = value.strip().lower().replace("-", "_")
-    if normalized == "managerproxy":
+    if normalized == "managerproxy" or normalized == "managed":
         return "manager_proxy"
     if normalized == "":
         return "direct"
+    return normalized
+
+
+fn _normalize_protocol_value(value: String) -> String:
+    var normalized = value.strip().lower().replace("-", "_")
+    if normalized == "":
+        return "native"
     return normalized
 
 
@@ -1088,8 +1130,11 @@ fn resolve_metadata_collection_query_restricted_multi(
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:
+    if config.protocol != "native":
+        raise Error("0A000 protocol must be native")
+
     var mode = _normalize_front_door_mode_value(config.front_door_mode)
-    if mode != "direct" and mode != "manager_proxy" and mode != "managed":
+    if mode != "direct" and mode != "manager_proxy":
         raise Error("22023 front_door_mode must be direct or manager_proxy.")
 
     if config.user.strip() == "" or config.database.strip() == "":
