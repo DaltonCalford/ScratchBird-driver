@@ -439,6 +439,32 @@ def test_shim_closed_connection_guards() -> None:
     _expect_08003(lambda: conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1))
 
 
+def test_static_closed_connection_guards() -> None:
+    def _expect_08003(fn) -> None:
+        try:
+            fn()
+            raise RuntimeError("expected closed connection operation to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "08003", "closed operation should raise 08003")
+
+    closed_tx = TxnHarness(0)
+    closed_tx._closed = True
+    closed_tx._savepoints = ["sp_1"]
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.begin(closed_tx))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.commit(closed_tx))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.rollback(closed_tx))
+
+    closed_tx._txn_id = 1
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.set_savepoint(closed_tx, "sp_2"))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.release_savepoint(closed_tx, "sp_1"))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.rollback_to_savepoint(closed_tx, "sp_1"))
+
+    closed_query = QueryHarness()
+    closed_query._closed = True
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.query(closed_query, "SELECT 1", None))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata(closed_query, "tables"))
+
+
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
@@ -458,6 +484,7 @@ def main() -> None:
     test_post_cancel_stream_recovery()
     test_close_is_idempotent_for_connection_and_stream()
     test_shim_closed_connection_guards()
+    test_static_closed_connection_guards()
     print("Mojo TXN/EXEC parity tests OK")
 
 

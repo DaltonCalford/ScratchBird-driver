@@ -1053,6 +1053,11 @@ def _normalize_begin_options(kwargs: Mapping[str, Any]) -> Dict[str, int]:
     }
 
 
+def _guard_static_connection_open(conn: Any) -> None:
+    if bool(getattr(conn, "_closed", False)):
+        raise ScratchBirdError("connection is closed", "08003")
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -1320,6 +1325,7 @@ class _ShimStream:
 class ScratchBirdConnection:
     @staticmethod
     def begin(conn: Any, **kwargs: Any) -> None:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) != 0:
             raise ScratchBirdError("transaction already active", "25001")
         normalized = _normalize_begin_options(kwargs)
@@ -1357,6 +1363,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def commit(conn: Any) -> None:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) == 0:
             return
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
@@ -1368,6 +1375,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def rollback(conn: Any) -> None:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) == 0:
             return
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
@@ -1379,6 +1387,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def set_savepoint(conn: Any, name: Optional[str] = None) -> str:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) == 0:
             raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -1396,6 +1405,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def release_savepoint(conn: Any, name: str) -> None:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) == 0:
             raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -1417,6 +1427,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def rollback_to_savepoint(conn: Any, name: str) -> None:
+        _guard_static_connection_open(conn)
         if getattr(conn, "_txn_id", 0) == 0:
             raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -1438,6 +1449,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def query(conn: Any, sql: str, params: Optional[Iterable[Any]] = None) -> Any:
+        _guard_static_connection_open(conn)
         begin = getattr(conn, "_begin_operation", None)
         end = getattr(conn, "_end_operation", None)
         span = begin("query", sql) if callable(begin) else None

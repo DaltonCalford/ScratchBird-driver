@@ -111,6 +111,7 @@ Legend:
 - **Mojo lane:** Added bridge-shim begin-option integer validation parity (`22023`) across transaction knobs (`conflict_action`, `autocommit_mode`, `isolation_level`, `access_mode`, `deferrable`, `wait_mode|wait`, `timeout_ms`) for both wire payload mapping and local shim begin flow, plus closed-connection `prepare` guard parity (`08003`).
 - **Mojo lane:** Aligned bridge-shim wire transaction lifecycle state transitions by updating `_txn_id`/savepoint state after begin/commit/rollback, with deterministic parity assertions in `txn_exec_parity`.
 - **Mojo lane:** Aligned bridge-shim TLS-required guard SQLSTATE parity for `sslmode=disable` / `ssl=disable` (`0A000`) in connection-guard coverage.
+- **Mojo lane:** Added static/wire API closed-connection guards (`08003`) across begin/commit/rollback/savepoint/query helpers to match bridge-shim runtime guard behavior.
 
 ---
 
