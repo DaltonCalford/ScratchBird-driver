@@ -10,6 +10,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P2 (Follow-ups)
 - [x] Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`. Issue: DONE (2026-03-04)
+- [x] Add deterministic execution lifecycle tests for extended-query message order, parameter-mismatch failure handling, and portal-suspension resume flow in `tracks/beta/drivers/r/tests/testthat/test_exec_lifecycle.R`. Issue: DONE (2026-03-05)
 
 ## P3 (Future)
 

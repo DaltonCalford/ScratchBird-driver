@@ -69,11 +69,14 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_sql.R:22`
   - `tests/testthat/test_txn_exec_parity.R:141` (`dbSendQuery` + `dbFetch` + `dbClearResult` lifecycle)
   - `tests/testthat/test_txn_exec_parity.R:182` (`dbExecute` rowcount + full drain behavior)
+  - `tests/testthat/test_exec_lifecycle.R:34` (extended-query parse/bind/execute/sync order)
+  - `tests/testthat/test_exec_lifecycle.R:72` (parameter-count mismatch fail-fast before bind/execute)
+  - `tests/testthat/test_exec_lifecycle.R:102` (portal-suspended execute resume flow)
+  - `tests/testthat/test_exec_lifecycle.R:144` (command-complete + ready terminal state shaping)
   - `tests/testthat/test_integration.R:54` (live simple query)
   - `tests/testthat/test_integration.R:73` (live parameterized query)
 - Gaps / next actions:
   - Expand live integration coverage for incremental fetch/result lifecycle (current new lifecycle checks are mock based).
-  - Add negative-path execution coverage (server error + resource cleanup) in deterministic unit tests.
 
 ## META -> JDBCBL-META
 
