@@ -53,6 +53,8 @@ struct ScratchBirdConnection:
     var front_door_mode: String
     var cancel_requested: Bool
     var txn_active: Bool
+    var savepoint_counter: Int
+    var savepoints: List[String]
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
@@ -61,6 +63,8 @@ struct ScratchBirdConnection:
         self.front_door_mode = config.front_door_mode
         self.cancel_requested = False
         self.txn_active = False
+        self.savepoint_counter = 0
+        self.savepoints = List[String]()
 
     fn query(mut self, sql: String) raises -> Int:
         self.cancel_requested = False
@@ -78,16 +82,58 @@ struct ScratchBirdConnection:
         if self.txn_active:
             raise Error("25001 transaction already active")
         self.txn_active = True
+        self.savepoints = List[String]()
 
     fn commit(mut self):
         if not self.txn_active:
             return
         self.txn_active = False
+        self.savepoints = List[String]()
 
     fn rollback(mut self):
         if not self.txn_active:
             return
         self.txn_active = False
+        self.savepoints = List[String]()
+
+    fn set_savepoint(mut self, name: String = "") raises -> String:
+        if not self.txn_active:
+            raise Error("25000 transaction not active")
+        var resolved = String(name.strip())
+        if resolved == "":
+            self.savepoint_counter += 1
+            resolved = String("sp_") + String(self.savepoint_counter)
+        self.savepoints.append(resolved)
+        return resolved
+
+    fn release_savepoint(mut self, name: String) raises:
+        if not self.txn_active:
+            raise Error("25000 transaction not active")
+        var resolved = String(name.strip())
+        if resolved == "":
+            raise Error("HY000 savepoint name cannot be empty")
+        var idx = _find_savepoint_index(self.savepoints, resolved)
+        if idx < 0:
+            raise Error("3B001 savepoint '" + resolved + "' does not exist")
+        var retained = List[String]()
+        for i in range(len(self.savepoints)):
+            if i != idx:
+                retained.append(self.savepoints[i])
+        self.savepoints = retained^
+
+    fn rollback_to_savepoint(mut self, name: String) raises:
+        if not self.txn_active:
+            raise Error("25000 transaction not active")
+        var resolved = String(name.strip())
+        if resolved == "":
+            raise Error("HY000 savepoint name cannot be empty")
+        var idx = _find_savepoint_index(self.savepoints, resolved)
+        if idx < 0:
+            raise Error("3B001 savepoint '" + resolved + "' does not exist")
+        var retained = List[String]()
+        for i in range(idx + 1):
+            retained.append(self.savepoints[i])
+        self.savepoints = retained^
 
     fn stream(mut self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
         self.cancel_requested = False
@@ -107,6 +153,7 @@ struct ScratchBirdConnection:
     fn close(mut self):
         self.cancel_requested = False
         self.txn_active = False
+        self.savepoints = List[String]()
 
     fn ping(self) -> Bool:
         _ = self
@@ -208,6 +255,15 @@ fn _expected_param_count(sql: String) -> Int:
                 continue
         i += 1
     return max_index
+
+
+fn _find_savepoint_index(savepoints: List[String], target: String) -> Int:
+    var i = len(savepoints)
+    while i > 0:
+        i -= 1
+        if savepoints[i] == target:
+            return i
+    return -1
 
 
 fn _query_result_from_sql(sql: String) raises -> Int:

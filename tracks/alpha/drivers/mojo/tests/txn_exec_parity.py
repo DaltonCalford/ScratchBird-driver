@@ -17,6 +17,8 @@ def _require(condition: bool, message: str) -> None:
 class TxnHarness:
     def __init__(self, txn_id: int):
         self._txn_id = txn_id
+        self._savepoint_counter = 0
+        self._savepoints = []
         self.sent = []
         self.drained = 0
 
@@ -120,6 +122,59 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
     _require(conn.drained == 2, "active txn should drain for commit/rollback")
 
 
+def _decode_savepoint_payload(payload: bytes) -> str:
+    length = struct.unpack("<I", payload[:4])[0]
+    return payload[4 : 4 + length].decode("utf-8")
+
+
+def test_savepoint_messages_and_payloads() -> None:
+    conn = TxnHarness(42)
+    generated = scratchbird.ScratchBirdConnection.set_savepoint(conn)
+    named = scratchbird.ScratchBirdConnection.set_savepoint(conn, "named_sp")
+    scratchbird.ScratchBirdConnection.release_savepoint(conn, "named_sp")
+    scratchbird.ScratchBirdConnection.rollback_to_savepoint(conn, generated)
+
+    _require(generated == "sp_1", "generated savepoint name mismatch")
+    _require(named == "named_sp", "named savepoint mismatch")
+    _require(conn.drained == 4, "savepoint operations should drain once per message")
+    _require(conn.sent[0][0] == scratchbird.MessageType.TXN_SAVEPOINT, "expected TXN_SAVEPOINT message")
+    _require(conn.sent[1][0] == scratchbird.MessageType.TXN_SAVEPOINT, "expected second TXN_SAVEPOINT message")
+    _require(conn.sent[2][0] == scratchbird.MessageType.TXN_RELEASE, "expected TXN_RELEASE message")
+    _require(conn.sent[3][0] == scratchbird.MessageType.TXN_ROLLBACK_TO, "expected TXN_ROLLBACK_TO message")
+    _require(_decode_savepoint_payload(conn.sent[0][1]) == "sp_1", "generated payload mismatch")
+    _require(_decode_savepoint_payload(conn.sent[1][1]) == "named_sp", "named payload mismatch")
+    _require(_decode_savepoint_payload(conn.sent[2][1]) == "named_sp", "release payload mismatch")
+    _require(_decode_savepoint_payload(conn.sent[3][1]) == "sp_1", "rollback_to payload mismatch")
+
+
+def test_savepoint_guards() -> None:
+    inactive = TxnHarness(0)
+    try:
+        scratchbird.ScratchBirdConnection.set_savepoint(inactive)
+        raise RuntimeError("expected inactive savepoint guard")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "25000", "inactive savepoint should raise 25000")
+
+    active = TxnHarness(42)
+    try:
+        scratchbird.ScratchBirdConnection.release_savepoint(active, "")
+        raise RuntimeError("expected empty release savepoint guard")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "HY000", "empty release savepoint should raise HY000")
+
+    try:
+        scratchbird.ScratchBirdConnection.release_savepoint(active, "missing")
+        raise RuntimeError("expected missing release savepoint guard")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "3B001", "missing release savepoint should raise 3B001")
+
+    try:
+        scratchbird.ScratchBirdConnection.rollback_to_savepoint(active, "missing")
+        raise RuntimeError("expected missing rollback savepoint guard")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "3B001", "missing rollback savepoint should raise 3B001")
+
+
 def test_query_none_params_uses_simple_path() -> None:
     conn = QueryHarness()
     result = scratchbird.ScratchBirdConnection.query(conn, "SELECT 1", None)
@@ -168,6 +223,39 @@ def test_shim_ping_and_txn_lifecycle() -> None:
         conn.rollback()
         conn.begin()
         conn.commit()
+    finally:
+        conn.close()
+
+
+def test_shim_savepoint_lifecycle() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        try:
+            conn.set_savepoint()
+            raise RuntimeError("expected savepoint guard when txn inactive")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "25000", "inactive savepoint should raise 25000")
+
+        conn.begin()
+        sp_auto = conn.set_savepoint()
+        _require(sp_auto == "sp_1", "generated savepoint name mismatch")
+        _require(conn.set_savepoint("named_sp") == "named_sp", "named savepoint mismatch")
+        conn.set_savepoint("tail_sp")
+        conn.rollback_to_savepoint("named_sp")
+
+        try:
+            conn.release_savepoint("tail_sp")
+            raise RuntimeError("expected released-by-rollback savepoint to be missing")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "3B001", "rolled-back savepoint should raise 3B001")
+
+        conn.release_savepoint("named_sp")
+        conn.commit()
+        try:
+            conn.release_savepoint("named_sp")
+            raise RuntimeError("expected release guard when txn inactive")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "25000", "inactive release should raise 25000")
     finally:
         conn.close()
 
@@ -249,10 +337,13 @@ def main() -> None:
     test_begin_rejects_nested_transaction()
     test_commit_and_rollback_noop_when_no_active_txn()
     test_commit_and_rollback_send_when_active_txn()
+    test_savepoint_messages_and_payloads()
+    test_savepoint_guards()
     test_query_none_params_uses_simple_path()
     test_query_empty_params_uses_extended_path()
     test_shim_prepare_execute_and_mismatch()
     test_shim_ping_and_txn_lifecycle()
+    test_shim_savepoint_lifecycle()
     test_stream_fetch_boundaries()
     test_cancel_stream_returns_57014()
     test_post_cancel_stream_recovery()

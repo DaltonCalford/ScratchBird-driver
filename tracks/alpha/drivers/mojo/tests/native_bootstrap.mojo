@@ -62,7 +62,23 @@ fn main() raises:
         _require("25001" in String(e), "nested transaction should report 25001")
     conn.rollback()
     conn.begin()
+    var auto_savepoint = conn.set_savepoint()
+    _require(auto_savepoint == "sp_1", "generated savepoint name mismatch")
+    _require(conn.set_savepoint("named_sp") == "named_sp", "named savepoint mismatch")
+    _ = conn.set_savepoint("tail_sp")
+    conn.rollback_to_savepoint("named_sp")
+    try:
+        conn.release_savepoint("tail_sp")
+        raise Error("expected rolled-back savepoint release to fail")
+    except e:
+        _require("3B001" in String(e), "missing savepoint should report 3B001")
+    conn.release_savepoint("named_sp")
     conn.commit()
+    try:
+        _ = conn.set_savepoint()
+        raise Error("expected inactive savepoint guard")
+    except e:
+        _require("25000" in String(e), "inactive savepoint should report 25000")
     conn.commit()
     var p1 = List[String]()
     p1.append("42")

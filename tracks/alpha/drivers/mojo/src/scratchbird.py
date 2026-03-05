@@ -17,6 +17,9 @@ class MessageType:
     TXN_BEGIN = 0x15
     TXN_COMMIT = 0x16
     TXN_ROLLBACK = 0x17
+    TXN_SAVEPOINT = 0x18
+    TXN_RELEASE = 0x19
+    TXN_ROLLBACK_TO = 0x1A
 
 
 ISOLATION_READ_UNCOMMITTED = 0
@@ -697,6 +700,17 @@ def _expected_param_count(sql: str) -> int:
     return max_index
 
 
+def _coerce_savepoint_name(name: Optional[str]) -> str:
+    if name is None:
+        return ""
+    return str(name).strip()
+
+
+def _build_savepoint_payload(name: str) -> bytes:
+    encoded = name.encode("utf-8")
+    return struct.pack("<I", len(encoded)) + encoded
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -712,6 +726,8 @@ class _ShimConnection:
         self.config = config
         self._cancel_requested = False
         self._txn_id = 0
+        self._savepoint_counter = 0
+        self._savepoints: List[str] = []
         self._closed = False
 
     def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
@@ -747,6 +763,7 @@ class _ShimConnection:
     def close(self) -> None:
         self._cancel_requested = False
         self._txn_id = 0
+        self._savepoints = []
         self._closed = True
         return None
 
@@ -761,16 +778,53 @@ class _ShimConnection:
         if self._txn_id != 0:
             raise ScratchBirdError("transaction already active", "25001")
         self._txn_id = 1
+        self._savepoints = []
 
     def commit(self) -> None:
         if self._txn_id == 0:
             return
         self._txn_id = 0
+        self._savepoints = []
 
     def rollback(self) -> None:
         if self._txn_id == 0:
             return
         self._txn_id = 0
+        self._savepoints = []
+
+    def set_savepoint(self, name: Optional[str] = None) -> str:
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            self._savepoint_counter += 1
+            resolved = f"sp_{self._savepoint_counter}"
+        self._savepoints.append(resolved)
+        return resolved
+
+    def release_savepoint(self, name: str) -> None:
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        for idx in range(len(self._savepoints) - 1, -1, -1):
+            if self._savepoints[idx] == resolved:
+                del self._savepoints[idx]
+                return
+        raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+
+    def rollback_to_savepoint(self, name: str) -> None:
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        for idx in range(len(self._savepoints) - 1, -1, -1):
+            if self._savepoints[idx] == resolved:
+                self._savepoints = self._savepoints[: idx + 1]
+                return
+        raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
 
     def stream(
         self,
@@ -861,12 +915,77 @@ class ScratchBirdConnection:
             return
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            savepoints.clear()
 
     @staticmethod
     def rollback(conn: Any) -> None:
         if getattr(conn, "_txn_id", 0) == 0:
             return
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
+        conn._drain_until_ready()
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            savepoints.clear()
+
+    @staticmethod
+    def set_savepoint(conn: Any, name: Optional[str] = None) -> str:
+        if getattr(conn, "_txn_id", 0) == 0:
+            raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            counter = int(getattr(conn, "_savepoint_counter", 0)) + 1
+            setattr(conn, "_savepoint_counter", counter)
+            resolved = f"sp_{counter}"
+        payload = _build_savepoint_payload(resolved)
+        conn._send_message(MessageType.TXN_SAVEPOINT, payload)
+        conn._drain_until_ready()
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            savepoints.append(resolved)
+        return resolved
+
+    @staticmethod
+    def release_savepoint(conn: Any, name: str) -> None:
+        if getattr(conn, "_txn_id", 0) == 0:
+            raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            found = False
+            for idx in range(len(savepoints) - 1, -1, -1):
+                if savepoints[idx] == resolved:
+                    del savepoints[idx]
+                    found = True
+                    break
+            if not found:
+                raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+        payload = _build_savepoint_payload(resolved)
+        conn._send_message(MessageType.TXN_RELEASE, payload)
+        conn._drain_until_ready()
+
+    @staticmethod
+    def rollback_to_savepoint(conn: Any, name: str) -> None:
+        if getattr(conn, "_txn_id", 0) == 0:
+            raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        savepoints = getattr(conn, "_savepoints", None)
+        if isinstance(savepoints, list):
+            found = -1
+            for idx in range(len(savepoints) - 1, -1, -1):
+                if savepoints[idx] == resolved:
+                    found = idx
+                    break
+            if found < 0:
+                raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+            del savepoints[found + 1 :]
+        payload = _build_savepoint_payload(resolved)
+        conn._send_message(MessageType.TXN_ROLLBACK_TO, payload)
         conn._drain_until_ready()
 
     @staticmethod
