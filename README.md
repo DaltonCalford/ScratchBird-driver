@@ -51,7 +51,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping), closed lifecycle guards (`08003`/`HY010`), and deterministic integer/pool-bound guard parity (`22023`); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
 
 ---
 
@@ -95,6 +95,10 @@ Legend:
 - **Mojo lane:** Added JDBC camelCase alias parity for `currentSchema` and `defaultRowFetchSize`, and aligned native/facade connect behavior to allow `binary_transfer=false` and `compression=zstd` while continuing to reject unsupported compression values (for example `gzip`).
 - **Mojo lane:** Added strict malformed-integer DSN guards (`22023`) across numeric property aliases, added malformed bracketed-IPv6 authority guard coverage (`22023`), and aligned invalid `front_door_mode` guard SQLSTATE to `0A000` in native/facade smoke lanes.
 - **Mojo lane:** Aligned front-door alias resolution to JDBC query-order (last matching alias wins), defaulted host-omitted DSNs to `localhost`, updated `current_schema` default to `public`, and accepted `sslmode=disable` / `ssl=disable` in native/facade smoke coverage.
+- **Mojo lane:** Added closed-connection operation guards (`08003`) across query/begin/stream/metadata paths, with deterministic post-close `ping()` behavior (`false`) in native/facade smoke coverage.
+- **Mojo lane:** Added deterministic integer parameter coercion guards (`22023`) for parameterized integer query/prepare paths and DSN pool-bounds validation (`min_pool_size <= max_pool_size`).
+- **Mojo lane:** Added prepared statement lifecycle parity with idempotent `close()` and execute-after-close SQLSTATE guard (`HY010`) in native/facade smoke coverage.
+- **Mojo lane:** Extended closed-connection SQLSTATE parity (`08003`) to `commit`, `rollback`, `cancel`, and metadata query paths in native/facade smoke coverage.
 
 ---
 

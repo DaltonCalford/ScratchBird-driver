@@ -413,11 +413,42 @@ fn main() raises:
         raise Error("expected parameter mismatch")
     except e:
         _require("07001" in String(e), "parameter mismatch should include 07001")
+    var p_bad = List[String]()
+    p_bad.append("not_int")
+    var p_bad_stmt = List[String]()
+    p_bad_stmt.append("not_int")
+    p_bad_stmt.append("2")
+    try:
+        _ = conn.query_with_params("SELECT $1::INTEGER", p_bad)
+        raise Error("expected invalid integer parameter guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "22023",
+            "invalid parameter guard should expose 22023",
+        )
     try:
         _ = stmt.execute(p1)
         raise Error("expected prepared mismatch")
     except e:
         _require("07001" in String(e), "prepared mismatch should include 07001")
+    try:
+        _ = stmt.execute(p_bad_stmt)
+        raise Error("expected prepared invalid integer guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "22023",
+            "prepared invalid parameter guard should expose 22023",
+        )
+    stmt.close()
+    try:
+        _ = stmt.execute(p2)
+        raise Error("expected closed statement guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "HY010",
+            "closed statement guard should expose HY010",
+        )
+    stmt.close()
     _require(
         conn.query_metadata("table") == scratchbird_native.METADATA_TABLES_QUERY,
         "metadata table alias mismatch",
@@ -772,8 +803,65 @@ fn main() raises:
             "unsupported stream query should expose 0A000",
         )
     conn.close()
+    _require(not conn.ping(), "ping should return false after close")
     _require(conn.leak_detector.get_active_count() == 0, "leak detector should release checkout on close")
     _require(not conn.query_pipeline.running, "pipeline should stop on close")
+    try:
+        _ = conn.query("SELECT 1")
+        raise Error("expected query-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "query-on-closed guard should expose 08003",
+        )
+    try:
+        conn.begin()
+        raise Error("expected begin-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "begin-on-closed guard should expose 08003",
+        )
+    try:
+        _ = conn.stream("SELECT 1", 1)
+        raise Error("expected stream-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "stream-on-closed guard should expose 08003",
+        )
+    try:
+        conn.commit()
+        raise Error("expected commit-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "commit-on-closed guard should expose 08003",
+        )
+    try:
+        conn.rollback()
+        raise Error("expected rollback-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "rollback-on-closed guard should expose 08003",
+        )
+    try:
+        conn.cancel()
+        raise Error("expected cancel-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "cancel-on-closed guard should expose 08003",
+        )
+    try:
+        _ = conn.query_metadata("table")
+        raise Error("expected metadata-on-closed guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "metadata-on-closed guard should expose 08003",
+        )
 
     var manager_cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=manager_proxy&manager_auth_token=mode_token"
@@ -914,6 +1002,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&max_pool_size=0",
         "22023",
         "max_pool_size must be >= 1",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&min_pool_size=5&max_pool_size=2",
+        "22023",
+        "min_pool_size must be <= max_pool_size",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_lifetime=-1",

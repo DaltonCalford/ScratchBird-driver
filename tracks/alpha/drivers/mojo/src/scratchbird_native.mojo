@@ -255,6 +255,7 @@ struct ScratchBirdConnection:
     var leak_token: String
     var query_pipeline: pipeline.QueryPipeline
     var ping_count: Int
+    var is_closed: Bool
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
@@ -298,8 +299,10 @@ struct ScratchBirdConnection:
         self.query_pipeline.start(self.connection_id)
         self.keepalive_tracker.mark_active(self.operation_clock_ms)
         self.ping_count = 0
+        self.is_closed = False
 
     fn query(mut self, sql: String) raises -> Int:
+        self._require_open()
         self.cancel_requested = False
         self._prepare_operation()
         var queued_params = List[String]()
@@ -313,6 +316,7 @@ struct ScratchBirdConnection:
             raise e^
 
     fn query_with_params(mut self, sql: String, params: List[String]) raises -> Int:
+        self._require_open()
         self.cancel_requested = False
         self._prepare_operation()
         self._queue_operation("query_with_params", sql, params.copy())
@@ -324,29 +328,33 @@ struct ScratchBirdConnection:
             self._finish_operation("query_with_params", False)
             raise e^
 
-    fn prepare(self, sql: String) -> ScratchBirdStatement:
-        _ = self
+    fn prepare(mut self, sql: String) raises -> ScratchBirdStatement:
+        self._require_open()
         return ScratchBirdStatement(sql)
 
     fn begin(mut self) raises:
+        self._require_open()
         if self.txn_active:
             raise Error("25001 transaction already active")
         self.txn_active = True
         self.savepoints = List[String]()
 
-    fn commit(mut self):
+    fn commit(mut self) raises:
+        self._require_open()
         if not self.txn_active:
             return
         self.txn_active = False
         self.savepoints = List[String]()
 
-    fn rollback(mut self):
+    fn rollback(mut self) raises:
+        self._require_open()
         if not self.txn_active:
             return
         self.txn_active = False
         self.savepoints = List[String]()
 
     fn set_savepoint(mut self, name: String = "") raises -> String:
+        self._require_open()
         if not self.txn_active:
             raise Error("25000 transaction not active")
         var resolved = String(name.strip())
@@ -357,6 +365,7 @@ struct ScratchBirdConnection:
         return resolved
 
     fn release_savepoint(mut self, name: String) raises:
+        self._require_open()
         if not self.txn_active:
             raise Error("25000 transaction not active")
         var resolved = String(name.strip())
@@ -372,6 +381,7 @@ struct ScratchBirdConnection:
         self.savepoints = retained^
 
     fn rollback_to_savepoint(mut self, name: String) raises:
+        self._require_open()
         if not self.txn_active:
             raise Error("25000 transaction not active")
         var resolved = String(name.strip())
@@ -386,6 +396,7 @@ struct ScratchBirdConnection:
         self.savepoints = retained^
 
     fn stream(mut self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
+        self._require_open()
         self.cancel_requested = False
         _ = fetch_size
         self._prepare_operation()
@@ -407,10 +418,14 @@ struct ScratchBirdConnection:
             self._finish_operation("stream", False)
             raise e^
 
-    fn cancel(mut self):
+    fn cancel(mut self) raises:
+        self._require_open()
         self.cancel_requested = True
 
     fn close(mut self):
+        if self.is_closed:
+            return
+        self.is_closed = True
         self.cancel_requested = False
         self.txn_active = False
         self.savepoints = List[String]()
@@ -424,6 +439,7 @@ struct ScratchBirdConnection:
         self.query_pipeline.stop()
 
     fn _prepare_operation(mut self) raises:
+        self._require_open()
         if not self.circuit_breaker.allow_request(self.operation_clock_ms):
             raise Error("08006 Circuit breaker is OPEN")
         if self.keepalive_tracker.needs_validation(self.operation_clock_ms):
@@ -431,6 +447,7 @@ struct ScratchBirdConnection:
                 raise Error("08006 keepalive validation failed")
 
     fn _queue_operation(mut self, operation_name: String, sql: String, params: List[String]) raises:
+        self._require_open()
         if self.query_pipeline.queue(sql, params):
             return
         self._finish_operation(operation_name, False)
@@ -450,11 +467,13 @@ struct ScratchBirdConnection:
         self.telemetry.end_span(span, self.operation_clock_ms, success)
 
     fn ping(mut self) -> Bool:
+        if self.is_closed:
+            return False
         self.ping_count += 1
         return True
 
     fn query_metadata(self, collection_name: String) raises -> String:
-        _ = self
+        self._require_open()
         return resolve_metadata_collection_query(collection_name)
 
     fn query_metadata_rows(mut self, collection_name: String) raises -> Int:
@@ -467,7 +486,7 @@ struct ScratchBirdConnection:
         restriction_key: String = "",
         restriction_value: String = "",
     ) raises -> String:
-        _ = self
+        self._require_open()
         return resolve_metadata_collection_query_restricted(
             collection_name,
             restriction_key,
@@ -493,7 +512,7 @@ struct ScratchBirdConnection:
         restriction_keys: List[String],
         restriction_values: List[String],
     ) raises -> String:
-        _ = self
+        self._require_open()
         return resolve_metadata_collection_query_restricted_multi(
             collection_name,
             restriction_keys,
@@ -512,6 +531,10 @@ struct ScratchBirdConnection:
             restriction_values,
         )
         return self.query(sql)
+
+    fn _require_open(self) raises:
+        if self.is_closed:
+            raise Error("08003 connection is closed")
 
 
 struct ScratchBirdStream:
@@ -542,12 +565,19 @@ struct ScratchBirdStream:
 
 struct ScratchBirdStatement:
     var sql: String
+    var closed: Bool
 
     fn __init__(out self, sql: String):
         self.sql = sql
+        self.closed = False
 
-    fn execute(self, params: List[String]) raises -> Int:
+    fn execute(mut self, params: List[String]) raises -> Int:
+        if self.closed:
+            raise Error("HY010 statement is closed")
         return _query_result_from_sql_with_params(self.sql, params)
+
+    fn close(mut self):
+        self.closed = True
 
 
 fn _as_bool(value: String) -> Bool:
@@ -679,9 +709,17 @@ fn _query_result_from_sql_with_params(sql: String, params: List[String]) raises 
         raise Error("07001 parameter count mismatch")
     var normalized = sql.strip().lower()
     if normalized == "select $1::integer" and expected == 1:
-        return Int(params[0])
+        try:
+            return Int(params[0])
+        except e:
+            _ = e
+            raise Error("22023 invalid integer parameter value")
     if normalized == "select $1::integer, $2::integer" and expected == 2:
-        return Int(params[0]) + Int(params[1])
+        try:
+            return Int(params[0]) + Int(params[1])
+        except e:
+            _ = e
+            raise Error("22023 invalid integer parameter value")
     if expected == 0:
         return _query_result_from_sql(sql)
     raise Error("0A000 unsupported parameterized query in native bootstrap")
@@ -1554,6 +1592,8 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
         raise Error("22023 min_pool_size must be >= 0")
     if config.max_pool_size < 1:
         raise Error("22023 max_pool_size must be >= 1")
+    if config.min_pool_size > config.max_pool_size:
+        raise Error("22023 min_pool_size must be <= max_pool_size")
     if config.connection_lifetime_s < 0:
         raise Error("22023 connection_lifetime must be >= 0")
     if config.manager_client_flags < 0:
