@@ -85,6 +85,10 @@ fn main() raises:
     _require(cfg.socket_timeout_s == 0, "socket timeout default mismatch")
     _require(cfg.login_timeout_s == 30, "login timeout default mismatch")
     _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
+    _require(cfg.auto_commit, "autocommit default mismatch")
+    _require(not cfg.read_only, "readonly default mismatch")
+    _require(cfg.current_schema == "", "current_schema default mismatch")
+    _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
     _require(cfg.protocol == "native", "protocol default mismatch")
     var cfg_default_port = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
@@ -174,6 +178,23 @@ fn main() raises:
     _require(cfg_jdbc_alias_override.host == "jdbc.host", "servername alias mismatch")
     _require(cfg_jdbc_alias_override.port == 4103, "portnumber alias mismatch")
     _require(cfg_jdbc_alias_override.database == "jdbc_db", "databasename alias mismatch")
+    var cfg_session_overrides = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&role=app_role&application_name=app_client&autocommit=false&readonly=true&current_schema=analytics&default_row_fetch_size=128"
+    )
+    _require(cfg_session_overrides.role == "app_role", "role parse mismatch")
+    _require(cfg_session_overrides.application_name == "app_client", "application_name parse mismatch")
+    _require(not cfg_session_overrides.auto_commit, "autocommit parse mismatch")
+    _require(cfg_session_overrides.read_only, "readonly parse mismatch")
+    _require(cfg_session_overrides.current_schema == "analytics", "current_schema parse mismatch")
+    _require(cfg_session_overrides.default_row_fetch_size == 128, "default_row_fetch_size parse mismatch")
+    var cfg_session_aliases = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&applicationname=alias_client&auto_commit=false&read_only=true&searchPath=ops&fetchSize=64"
+    )
+    _require(cfg_session_aliases.application_name == "alias_client", "applicationname alias mismatch")
+    _require(not cfg_session_aliases.auto_commit, "auto_commit alias mismatch")
+    _require(cfg_session_aliases.read_only, "read_only alias mismatch")
+    _require(cfg_session_aliases.current_schema == "ops", "searchPath alias mismatch")
+    _require(cfg_session_aliases.default_row_fetch_size == 64, "fetchSize alias mismatch")
     var cfg_binarytransfer_alias = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binarytransfer=false"
     )
@@ -573,6 +594,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&acquire_timeout=-1",
         "22023",
         "acquire_timeout must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&default_row_fetch_size=-1",
+        "22023",
+        "default_row_fetch_size must be >= 0",
     )
 
     print("Mojo scratchbird facade tests OK")

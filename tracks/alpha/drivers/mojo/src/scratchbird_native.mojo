@@ -32,6 +32,12 @@ struct ScratchBirdConfig:
     var host: String
     var port: Int
     var database: String
+    var role: String
+    var application_name: String
+    var auto_commit: Bool
+    var read_only: Bool
+    var current_schema: String
+    var default_row_fetch_size: Int
     var protocol: String
     var front_door_mode: String
     var sslmode: String
@@ -83,6 +89,22 @@ struct ScratchBirdConfig:
             "database",
             "dbname",
             _query_value_alias(dsn, "databasename", "pgdatabase", _extract_database(dsn)),
+        )
+        self.role = _query_value(dsn, "role", "")
+        self.application_name = _query_value_alias(dsn, "application_name", "applicationname", "")
+        self.auto_commit = _as_bool(_query_value_alias(dsn, "autocommit", "auto_commit", "true"))
+        self.read_only = _as_bool(_query_value_alias(dsn, "readonly", "read_only", "false"))
+        self.current_schema = _query_value_alias(
+            dsn,
+            "current_schema",
+            "search_path",
+            _query_value(dsn, "searchpath", ""),
+        )
+        self.default_row_fetch_size = _query_int_alias(
+            dsn,
+            "default_row_fetch_size",
+            "fetch_size",
+            _query_int(dsn, "fetchsize", 0),
         )
 
         var protocol_raw = ""
@@ -1159,6 +1181,9 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.acquire_timeout_s < 0:
         raise Error("22023 acquire_timeout must be >= 0")
+
+    if config.default_row_fetch_size < 0:
+        raise Error("22023 default_row_fetch_size must be >= 0")
 
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")

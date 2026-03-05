@@ -87,6 +87,7 @@ Legend:
 - **Mojo lane:** Added bracketed-IPv6 DSN endpoint parsing coverage and strict native port-range guard parity (`1..65535`) with native/facade smoke assertions.
 - **Mojo lane:** Added DSN alias parsing parity for native bootstrap (`username`, `passwd`, `hostname`, `dbname`) with matching native/facade smoke coverage.
 - **Mojo lane:** Added JDBC/PG DSN alias parity (`pguser`, `pgpassword`, `pghost`, `pgport`, `pgdatabase`, `servername`, `portNumber`, `databaseName`), added `frontdoormode`/`binarytransfer` alias support, and enforced native-only `protocol|parser|dialect` guards with expanded native/facade smoke coverage.
+- **Mojo lane:** Added JDBC-style session property parsing in native bootstrap (`role`, `application_name|applicationname`, `autocommit|auto_commit`, `readonly|read_only`, `current_schema|search_path|searchPath`, `default_row_fetch_size|fetch_size|fetchSize`) with native/facade guard coverage for non-negative fetch-size defaults.
 
 ---
 
