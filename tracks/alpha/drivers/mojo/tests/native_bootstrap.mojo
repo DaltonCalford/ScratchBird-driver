@@ -627,7 +627,10 @@ fn main() raises:
         _ = stream.next(conn)
         raise Error("expected closed stream to fail")
     except e:
-        _require("stream exhausted" in String(e), "closed stream should report exhaustion")
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "HY010",
+            "closed stream should report HY010",
+        )
 
     var long_stream = conn.stream(
         "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
@@ -650,6 +653,7 @@ fn main() raises:
     _require(conn.keepalive_tracker.last_activity_ms > 0, "keepalive tracker should mark activity")
     _require(conn.query_pipeline.completed_count() > 0, "pipeline should record completed requests")
     _require(conn.leak_detector.get_active_count() == 1, "leak detector should track active checkout")
+    var active_stream_on_close = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
 
     var keepalive_cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&keepalive_max_idle_before_check_ms=0"
@@ -829,6 +833,14 @@ fn main() raises:
         _require(
             scratchbird_native.extract_sqlstate(String(e)) == "08003",
             "stream-on-closed guard should expose 08003",
+        )
+    try:
+        _ = active_stream_on_close.next(conn)
+        raise Error("expected active-stream-on-closed-connection guard")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "08003",
+            "active-stream-on-closed-connection should expose 08003",
         )
     try:
         conn.commit()

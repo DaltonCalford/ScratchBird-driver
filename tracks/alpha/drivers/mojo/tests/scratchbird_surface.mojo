@@ -556,6 +556,14 @@ fn main() raises:
     var post_cancel = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(post_cancel.next(conn) == 1, "post-cancel stream should recover")
     post_cancel.close()
+    try:
+        _ = post_cancel.next(conn)
+        raise Error("expected closed stream to fail")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "HY010",
+            "closed stream should report HY010",
+        )
     var metrics = conn.telemetry.get_metrics()
     _require(len(metrics) > 0 and "total_queries=" in metrics[0], "telemetry metrics should be recorded")
     _require("count=" in conn.telemetry.operation_metrics("query"), "query operation metrics should be recorded")
@@ -563,6 +571,7 @@ fn main() raises:
     _require(conn.keepalive_tracker.last_activity_ms > 0, "keepalive tracker should mark activity")
     _require(conn.query_pipeline.completed_count() > 0, "pipeline should record completed requests")
     _require(conn.leak_detector.get_active_count() == 1, "leak detector should track active checkout")
+    var active_stream_on_close = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     conn.close()
     _require(not conn.ping(), "ping should return false after close")
     _require(conn.leak_detector.get_active_count() == 0, "leak detector should release checkout on close")
@@ -590,6 +599,14 @@ fn main() raises:
         _require(
             scratchbird.extract_sqlstate(String(e)) == "08003",
             "stream-on-closed guard should expose 08003",
+        )
+    try:
+        _ = active_stream_on_close.next(conn)
+        raise Error("expected active-stream-on-closed-connection guard")
+    except e:
+        _require(
+            scratchbird.extract_sqlstate(String(e)) == "08003",
+            "active-stream-on-closed-connection should expose 08003",
         )
     try:
         conn.commit()

@@ -549,13 +549,16 @@ struct ScratchBirdStream:
 
     fn next(mut self, conn: ScratchBirdConnection) raises -> Int:
         if self.closed:
-            raise Error("stream exhausted")
+            raise Error("HY010 stream is closed")
+        if conn.is_closed:
+            self.closed = True
+            raise Error("08003 connection is closed")
         if conn.cancel_requested:
             self.closed = True
             raise Error("57014 query canceled")
         if self.index >= self.total_rows:
             self.closed = True
-            raise Error("stream exhausted")
+            raise Error("HY010 stream is closed")
         self.index += 1
         return self.index
 

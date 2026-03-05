@@ -99,6 +99,7 @@ Legend:
 - **Mojo lane:** Added deterministic integer parameter coercion guards (`22023`) for parameterized integer query/prepare paths and DSN pool-bounds validation (`min_pool_size <= max_pool_size`).
 - **Mojo lane:** Added prepared statement lifecycle parity with idempotent `close()` and execute-after-close SQLSTATE guard (`HY010`) in native/facade smoke coverage.
 - **Mojo lane:** Extended closed-connection SQLSTATE parity (`08003`) to `commit`, `rollback`, `cancel`, and metadata query paths in native/facade smoke coverage.
+- **Mojo lane:** Added stream lifecycle SQLSTATE parity: closed-stream reads now report `HY010`, and reads on active streams after connection close report `08003` in native/facade smoke coverage.
 
 ---
 
