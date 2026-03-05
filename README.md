@@ -81,7 +81,7 @@ Legend:
 - **Mojo lane:** Added native-bootstrap DSN host/port parsing fields and deterministic native/facade auth-fail guard parity (`sb_test_auth_fail=true` → `28P01`) with smoke assertions.
 - **Mojo lane:** Updated gated CI Mojo lane to run explicit native surface/bootstrap + metadata + integration + conformance sequence.
 - **Mojo lane:** Added native timeout alias parsing/guard parity (`connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`, `acquire_timeout|acquiretimeout`, fallback `pooling_acquire_timeout|poolingacquiretimeout`) plus `manager-proxy` normalization coverage in native/facade smoke lanes.
-- **Mojo lane:** Fixed front-door mode source precedence (`front_door_mode` over `connection_mode`/`ingress_mode`) and expanded alias normalization coverage (`managerproxy`) in native/facade smoke tests.
+- **Mojo lane:** Added expanded front-door alias normalization coverage (`managerproxy`) in native/facade smoke tests.
 - **Mojo lane:** Added native credential parsing/override coverage (`user`/`password`, including password-with-colon DSNs and host-only DSN query overrides) in native/facade smoke lanes.
 - **Mojo lane:** Updated native deterministic connection identity to include endpoint context (`user@host:port/database`) with smoke assertions in native/facade lanes.
 - **Mojo lane:** Added bracketed-IPv6 DSN endpoint parsing coverage and strict native port-range guard parity (`1..65535`) with native/facade smoke assertions.
@@ -94,6 +94,7 @@ Legend:
 - **Mojo lane:** Added JDBC TLS material property parsing parity (`sslrootcert`, `sslcert`, `sslkey`, `sslpassword`; plus underscore aliases) with deterministic native/facade default and alias assertions.
 - **Mojo lane:** Added JDBC camelCase alias parity for `currentSchema` and `defaultRowFetchSize`, and aligned native/facade connect behavior to allow `binary_transfer=false` and `compression=zstd` while continuing to reject unsupported compression values (for example `gzip`).
 - **Mojo lane:** Added strict malformed-integer DSN guards (`22023`) across numeric property aliases, added malformed bracketed-IPv6 authority guard coverage (`22023`), and aligned invalid `front_door_mode` guard SQLSTATE to `0A000` in native/facade smoke lanes.
+- **Mojo lane:** Aligned front-door alias resolution to JDBC query-order (last matching alias wins), defaulted host-omitted DSNs to `localhost`, updated `current_schema` default to `public`, and accepted `sslmode=disable` / `ssl=disable` in native/facade smoke coverage.
 
 ---
 
@@ -129,7 +130,7 @@ Emulated protocols (PostgreSQL/MySQL/Firebird) are handled by their own native c
 All baseline drivers aim to implement:
 
 - **Native Wire Protocol (SBWP v1.1)** – ScratchBird native protocol (port 3092)
-- **TLS 1.3 Required** – No plaintext fallback
+- **TLS 1.3 Support** – Driver lanes expose configurable TLS posture; production defaults use TLS and lane-specific parity paths may allow explicit disable
 - **Server-side Prepare/Bind** – PARSE/BIND/EXECUTE for parameters
 - **Transactions** – Always-in-transaction semantics with autocommit mapping
 - **Type Mapping** – Full wire type coverage (including composite/geometry/range)

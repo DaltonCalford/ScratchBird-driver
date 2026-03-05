@@ -183,6 +183,11 @@ fn _assert_config_parsing_extensions() raises:
         "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
     )
     _require(cfg_default_port.port == 3092, "default port parse mismatch")
+    var cfg_host_omitted = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@/testdb?sslmode=require"
+    )
+    _require(cfg_host_omitted.host == "localhost", "host omitted default mismatch")
+    _require(cfg_host_omitted.port == 3092, "host omitted default port mismatch")
     var cfg_ipv6 = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@[::1]:3092/testdb?sslmode=require"
     )
@@ -226,7 +231,11 @@ fn _assert_config_parsing_extensions() raises:
     var cfg_mode_precedence = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=direct&connection_mode=manager_proxy&ingress_mode=managed"
     )
-    _require(cfg_mode_precedence.front_door_mode == "direct", "front_door_mode precedence mismatch")
+    _require(cfg_mode_precedence.front_door_mode == "manager_proxy", "front_door_mode query-order precedence mismatch")
+    var cfg_mode_last_front_door = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ingress_mode=managed&connection_mode=manager_proxy&front_door_mode=direct"
+    )
+    _require(cfg_mode_last_front_door.front_door_mode == "direct", "front_door_mode last-write precedence mismatch")
     var cfg_frontdoormode_alias = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&frontdoormode=managed&manager_auth_token=mode_token"
     )
@@ -288,6 +297,8 @@ fn _assert_config_parsing_extensions() raises:
     manager_conn_mode_conn.close()
     var manager_ingress_mode_conn = scratchbird.connect(cfg_ingress_mode_alias)
     manager_ingress_mode_conn.close()
+    var host_omitted_conn = scratchbird.connect(cfg_host_omitted)
+    host_omitted_conn.close()
     var credential_override_conn = scratchbird.connect(cfg_credential_override)
     credential_override_conn.close()
     var credential_override_hostonly_conn = scratchbird.connect(cfg_credential_override_hostonly)
@@ -315,7 +326,7 @@ fn main() raises:
     _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
     _require(cfg.auto_commit, "autocommit default mismatch")
     _require(not cfg.read_only, "readonly default mismatch")
-    _require(cfg.current_schema == "", "current_schema default mismatch")
+    _require(cfg.current_schema == "public", "current_schema default mismatch")
     _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
     _require(cfg.prepare_threshold == 5, "prepare_threshold default mismatch")
     _require(not cfg.rewrite_batched_inserts, "rewrite_batched_inserts default mismatch")
@@ -643,16 +654,18 @@ fn main() raises:
     )
     breaker_recovery_conn.close()
 
-    _assert_connect_guard(
-        "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",
-        "08004",
-        "TLS is required for ScratchBird connections",
+    var ssl_disable_conn = scratchbird.connect(
+        scratchbird.ScratchBirdConfig(
+            "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable"
+        )
     )
-    _assert_connect_guard(
-        "scratchbird://user:pass@localhost:3092/testdb?ssl=disable",
-        "08004",
-        "TLS is required for ScratchBird connections",
+    ssl_disable_conn.close()
+    var ssl_alias_disable_conn = scratchbird.connect(
+        scratchbird.ScratchBirdConfig(
+            "scratchbird://user:pass@localhost:3092/testdb?ssl=disable"
+        )
     )
+    ssl_alias_disable_conn.close()
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?compression=gzip",
         "0A000",

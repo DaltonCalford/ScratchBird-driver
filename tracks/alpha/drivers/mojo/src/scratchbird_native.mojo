@@ -119,7 +119,7 @@ struct ScratchBirdConfig:
             dsn,
             "current_schema",
             "search_path",
-            _query_value_alias(dsn, "searchpath", "currentschema", ""),
+            _query_value_alias(dsn, "searchpath", "currentschema", "public"),
         )
         self.metadata_expand_schema_parents = _as_bool(
             _query_value_alias(
@@ -205,13 +205,12 @@ struct ScratchBirdConfig:
             protocol_raw = _query_value(dsn, "dialect", "")
         self.protocol = _normalize_protocol_value(protocol_raw)
 
-        var front_door_raw = ""
-        if _query_has_key(dsn, "front_door_mode") or _query_has_key(dsn, "frontdoormode"):
-            front_door_raw = _query_value_alias(dsn, "front_door_mode", "frontdoormode", "")
-        elif _query_has_key(dsn, "connection_mode"):
-            front_door_raw = _query_value(dsn, "connection_mode", "")
-        elif _query_has_key(dsn, "ingress_mode"):
-            front_door_raw = _query_value(dsn, "ingress_mode", "")
+        var front_door_keys = List[String]()
+        front_door_keys.append("front_door_mode")
+        front_door_keys.append("frontdoormode")
+        front_door_keys.append("connection_mode")
+        front_door_keys.append("ingress_mode")
+        var front_door_raw = _query_last_value_for_keys(dsn, front_door_keys, "")
         self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
         self.sslmode = _query_value_alias(dsn, "sslmode", "ssl", "require")
@@ -769,7 +768,7 @@ fn _extract_host_port(dsn: String) -> String:
 fn _extract_host(dsn: String) -> String:
     var host_port = _extract_host_port(dsn)
     if host_port == "":
-        return ""
+        return "localhost"
     if host_port.startswith("[") and "]" in host_port:
         var sections = host_port.split("]", 1)
         if len(sections) == 2:
@@ -998,6 +997,47 @@ fn _query_has_key(dsn: String, key: String) -> Bool:
             if pair.lower() == target:
                 return True
     return False
+
+
+fn _query_last_value_for_keys(
+    dsn: String,
+    keys: List[String],
+    default_value: String,
+) -> String:
+    if "?" not in dsn:
+        return default_value
+    var parts = dsn.split("?", 1)
+    if len(parts) != 2:
+        return default_value
+    var query = String(parts[1])
+    if query == "":
+        return default_value
+    var last = default_value
+    var found = False
+    for raw_pair in query.split("&"):
+        var pair = String(raw_pair)
+        if pair == "":
+            continue
+        if "=" in pair:
+            var kv = pair.split("=", 1)
+            if len(kv) != 2:
+                continue
+            var candidate = String(kv[0]).lower()
+            for key in keys:
+                if candidate == key.lower():
+                    last = _decode_query_component(String(kv[1]))
+                    found = True
+                    break
+        else:
+            var candidate = pair.lower()
+            for key in keys:
+                if candidate == key.lower():
+                    last = ""
+                    found = True
+                    break
+    if found:
+        return last
+    return default_value
 
 
 fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
@@ -1518,9 +1558,6 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
         raise Error("22023 connection_lifetime must be >= 0")
     if config.manager_client_flags < 0:
         raise Error("22023 manager_client_flags must be >= 0")
-
-    if config.sslmode.strip().lower() == "disable":
-        raise Error("08004 TLS is required for ScratchBird connections")
 
     if config.compression.strip().lower() != "off" and config.compression.strip().lower() != "zstd":
         raise Error("0A000 compression=" + config.compression.strip().lower() + " is not supported")
