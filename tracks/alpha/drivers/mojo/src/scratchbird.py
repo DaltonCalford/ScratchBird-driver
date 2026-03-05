@@ -1344,7 +1344,10 @@ def _schema_rows_for_metadata_query(statement: str) -> List[Dict[str, Any]]:
         {"schema_name": "users.alice.dev"},
         {"schema_name": "users.bob.dev"},
         {"schema_name": "sys"},
+        {"schema_name": None},
     ]
+    if re.search(r"schema_name\s+is\s+null", statement, re.IGNORECASE):
+        return [row for row in rows if row.get("schema_name") is None]
     match = re.search(
         r"schema_name\s+(=|like)\s+'((?:''|[^'])*)'(?:\s+escape\s+'((?:''|[^'])*)')?",
         statement,
@@ -1375,6 +1378,8 @@ def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) ->
 
 
 def _comparison_predicate(column: str, restriction_value: str) -> str:
+    if restriction_value.lower() == "null":
+        return f"{column} IS NULL"
     literal = f"'{_escape_sql_literal(restriction_value)}'"
     if "%" in restriction_value or "_" in restriction_value:
         return f"{column} LIKE {literal} ESCAPE '\\'"

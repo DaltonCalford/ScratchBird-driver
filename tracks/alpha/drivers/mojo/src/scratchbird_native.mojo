@@ -716,6 +716,8 @@ fn normalize_metadata_restriction_key(restriction_key: String) raises -> String:
 
 
 fn _comparison_predicate(column: String, restriction_value: String) -> String:
+    if restriction_value.lower() == "null":
+        return column + " IS NULL"
     var literal = "'" + _escape_sql_literal(restriction_value) + "'"
     if "%" in restriction_value or "_" in restriction_value:
         return column + " LIKE " + literal + " ESCAPE '\\'"

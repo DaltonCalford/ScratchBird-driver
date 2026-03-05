@@ -114,6 +114,11 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "restricted schema query should escape SQL literals",
     )
     _require(
+        "schema_name IS NULL"
+        in scratchbird.resolve_metadata_collection_query_restricted("schema", "schema", "null"),
+        "null restriction value should map to IS NULL predicate",
+    )
+    _require(
         "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
         in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "public"),
         "columns schema restriction should map through table-schema subquery",
@@ -165,6 +170,14 @@ def test_resolve_metadata_collection_query_restricted_multi() -> None:
             {"table": r"ord\_%"},
         ),
         "multi restriction SQL should keep escaped wildcard semantics",
+    )
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name IS NULL)"
+        in scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "tables",
+            {"schema": "null"},
+        ),
+        "multi restriction SQL should support IS NULL schema predicates",
     )
     try:
         scratchbird.resolve_metadata_collection_query_restricted_multi(
@@ -308,6 +321,14 @@ def test_connection_ddl_editor_schema_payload_applies_schema_pattern() -> None:
     )
 
 
+def test_shim_schema_metadata_supports_is_null_predicate() -> None:
+    cfg = scratchbird.ScratchBirdConfig("scratchbird://user:pass@localhost:3092/testdb?sslmode=require")
+    conn = scratchbird.connect(cfg)
+    result = conn.query_metadata_restricted("schemas", "schema", "null")
+    _require(result.rowcount == 1, "null schema restriction should return deterministic null schema row")
+    _require(result.rows == [{"schema_name": None}], "null schema restriction should return null schema payload")
+
+
 def test_sql_like_match_supports_escape_and_case_insensitive_semantics() -> None:
     _require(
         scratchbird._sql_like_match("users.alice.dev", "users.%"),
@@ -354,6 +375,7 @@ def main() -> None:
     test_query_metadata_rows_restricted_returns_rowcount()
     test_query_metadata_rows_restricted_multi_returns_rowcount()
     test_connection_ddl_editor_schema_payload_applies_schema_pattern()
+    test_shim_schema_metadata_supports_is_null_predicate()
     test_sql_like_match_supports_escape_and_case_insensitive_semantics()
     test_query_metadata_rejects_unsupported_collection()
     print("Mojo metadata execution tests OK")

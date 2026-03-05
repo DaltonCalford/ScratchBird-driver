@@ -152,6 +152,11 @@ fn main() raises:
         conn.query_metadata_rows_restricted("tables", "table", "ord%") == 1,
         "table wildcard restriction rowcount mismatch",
     )
+    var null_restricted_schema = conn.query_metadata_restricted("schemas", "schema", "null")
+    _require(
+        "schema_name IS NULL" in null_restricted_schema,
+        "null schema restriction should emit IS NULL predicate",
+    )
     var restricted_columns_schema = conn.query_metadata_restricted("columns", "schema", "public")
     _require(
         "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
