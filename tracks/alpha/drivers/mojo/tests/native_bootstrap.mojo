@@ -178,6 +178,31 @@ fn main() raises:
         "schema_name = 'acme''schema'" in restricted_schema,
         "restricted metadata schema query should escape SQL literals",
     )
+    var restricted_columns_schema = conn.query_metadata_restricted("columns", "schema", "public")
+    _require(
+        "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
+        in restricted_columns_schema,
+        "columns schema restriction should map through table-schema subquery",
+    )
+    _require(
+        conn.query_metadata_rows_restricted("columns", "schema", "public") == 1,
+        "columns schema restriction rowcount mismatch",
+    )
+    var restricted_indexes_table = conn.query_metadata_restricted("indexes", "table", "orders")
+    _require(
+        "table_id IN (SELECT table_id FROM sys.tables WHERE table_name = 'orders')" in restricted_indexes_table,
+        "indexes table restriction should map through table-name subquery",
+    )
+    var restricted_index_columns_table = conn.query_metadata_restricted("index_columns", "table", "orders")
+    _require(
+        "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE t.table_name = 'orders')"
+        in restricted_index_columns_table,
+        "index_columns table restriction should map through index-table subquery",
+    )
+    _require(
+        conn.query_metadata_rows_restricted("routines", "schema", "public") == 1,
+        "routines schema restriction rowcount mismatch",
+    )
     _require(
         conn.query_metadata_restricted("tables", "table_name", "") == scratchbird_native.METADATA_TABLES_QUERY,
         "empty restriction value should not mutate metadata query",
@@ -204,7 +229,7 @@ fn main() raises:
     )
     _assert_metadata_guard("unsupported_collection", "0A000", "not supported")
     _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
-    _assert_metadata_restriction_guard("tables", "schema", "0A000", "not supported for 'tables'")
+    _assert_metadata_restriction_guard("tables", "column", "0A000", "not supported for 'tables'")
 
     var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(stream.next(conn) == 1, "stream first row mismatch")

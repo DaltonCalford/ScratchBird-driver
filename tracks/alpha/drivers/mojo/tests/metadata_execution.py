@@ -104,12 +104,22 @@ def test_resolve_metadata_collection_query_restricted() -> None:
         "restricted schema query should escape SQL literals",
     )
     _require(
+        "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = 'public')"
+        in scratchbird.resolve_metadata_collection_query_restricted("columns", "schema", "public"),
+        "columns schema restriction should map through table-schema subquery",
+    )
+    _require(
+        "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE t.table_name = 'orders')"
+        in scratchbird.resolve_metadata_collection_query_restricted("index_columns", "table", "orders"),
+        "index_columns table restriction should map through index-table subquery",
+    )
+    _require(
         scratchbird.resolve_metadata_collection_query_restricted("tables", "table_name", "")
         == scratchbird.METADATA_TABLES_QUERY,
         "empty restriction value should not mutate query",
     )
     try:
-        scratchbird.resolve_metadata_collection_query_restricted("tables", "schema", "public")
+        scratchbird.resolve_metadata_collection_query_restricted("tables", "column", "id")
         raise RuntimeError("expected unsupported collection restriction failure")
     except scratchbird.ScratchBirdError as exc:
         _require(exc.sqlstate == "0A000", "unsupported collection restriction should map to 0A000")
@@ -173,9 +183,9 @@ def test_query_metadata_rows_restricted_returns_rowcount() -> None:
     conn.result = scratchbird.ScratchBirdResult([[1], [2], [3], [4]], [], 4)
     rowcount = scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
         conn,
-        "table",
-        "name",
-        "orders",
+        "routines",
+        "schema",
+        "public",
     )
     _require(rowcount == 4, "query_metadata_rows_restricted should return result rowcount")
 

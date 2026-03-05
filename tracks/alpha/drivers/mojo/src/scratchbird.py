@@ -149,39 +149,6 @@ _METADATA_RESTRICTION_ALIASES = {
     "column_name": "column_name",
 }
 
-_METADATA_RESTRICTION_COLUMNS = {
-    "name": {
-        "schemas": "schema_name",
-        "catalogs": "catalog_name",
-        "tables": "table_name",
-        "table_privileges": "table_name",
-        "columns": "column_name",
-        "column_privileges": "column_name",
-        "index_columns": "column_name",
-        "indexes": "index_name",
-        "constraints": "constraint_name",
-        "primary_keys": "constraint_name",
-        "foreign_keys": "constraint_name",
-        "procedures": "procedure_name",
-        "functions": "function_name",
-        "routines": "routine_name",
-        "type_info": "data_type_name",
-    },
-    "schema_name": {
-        "schemas": "schema_name",
-        "catalogs": "catalog_name",
-    },
-    "table_name": {
-        "tables": "table_name",
-        "table_privileges": "table_name",
-    },
-    "column_name": {
-        "columns": "column_name",
-        "column_privileges": "column_name",
-        "index_columns": "column_name",
-    },
-}
-
 _SCHEMA_KEYS = (
     "schema_name",
     "TABLE_SCHEM",
@@ -1209,17 +1176,103 @@ def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) ->
     return resolved
 
 
-def _metadata_restriction_column(collection_name: str, restriction_key: str) -> str:
-    candidates = _METADATA_RESTRICTION_COLUMNS.get(restriction_key)
-    if candidates is None:
-        raise ScratchBirdError(f"metadata restriction '{restriction_key}' is not supported", "0A000")
-    column = candidates.get(collection_name)
-    if column is None:
+def _table_filter_by_schema_name(literal: str) -> str:
+    return (
+        "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        f"WHERE s.schema_name = {literal})"
+    )
+
+
+def _index_filter_by_schema_name(literal: str) -> str:
+    return (
+        "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id "
+        f"JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = {literal})"
+    )
+
+
+def _table_filter_by_table_name(literal: str) -> str:
+    return f"table_id IN (SELECT table_id FROM sys.tables WHERE table_name = {literal})"
+
+
+def _index_filter_by_table_name(literal: str) -> str:
+    return (
+        "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id "
+        f"WHERE t.table_name = {literal})"
+    )
+
+
+def _metadata_restriction_predicate(collection_name: str, restriction_key: str, restriction_value: str) -> str:
+    literal = f"'{_escape_sql_literal(restriction_value)}'"
+
+    if restriction_key == "name":
+        if collection_name == "schemas":
+            return f"schema_name = {literal}"
+        if collection_name == "catalogs":
+            return f"catalog_name = {literal}"
+        if collection_name in ("tables", "table_privileges"):
+            return f"table_name = {literal}"
+        if collection_name in ("columns", "column_privileges", "index_columns"):
+            return f"column_name = {literal}"
+        if collection_name == "indexes":
+            return f"index_name = {literal}"
+        if collection_name in ("constraints", "primary_keys", "foreign_keys"):
+            return f"constraint_name = {literal}"
+        if collection_name == "procedures":
+            return f"procedure_name = {literal}"
+        if collection_name == "functions":
+            return f"function_name = {literal}"
+        if collection_name == "routines":
+            return f"routine_name = {literal}"
+        if collection_name == "type_info":
+            return f"data_type_name = {literal}"
         raise ScratchBirdError(
             f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
             "0A000",
         )
-    return column
+
+    if restriction_key == "schema_name":
+        if collection_name == "schemas":
+            return f"schema_name = {literal}"
+        if collection_name == "catalogs":
+            return f"catalog_name = {literal}"
+        if collection_name == "tables":
+            return f"schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = {literal})"
+        if collection_name in ("columns", "indexes", "constraints"):
+            return _table_filter_by_schema_name(literal)
+        if collection_name == "index_columns":
+            return _index_filter_by_schema_name(literal)
+        if collection_name in ("primary_keys", "foreign_keys", "table_privileges", "column_privileges"):
+            return _table_filter_by_schema_name(literal)
+        if collection_name in ("procedures", "functions", "routines"):
+            return f"schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = {literal})"
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "table_name":
+        if collection_name in ("tables", "table_privileges"):
+            return f"table_name = {literal}"
+        if collection_name in ("columns", "indexes", "constraints"):
+            return _table_filter_by_table_name(literal)
+        if collection_name == "index_columns":
+            return _index_filter_by_table_name(literal)
+        if collection_name in ("primary_keys", "foreign_keys", "column_privileges"):
+            return _table_filter_by_table_name(literal)
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    if restriction_key == "column_name":
+        if collection_name in ("columns", "column_privileges", "index_columns"):
+            return f"column_name = {literal}"
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+
+    raise ScratchBirdError(f"metadata restriction '{restriction_key}' is not supported", "0A000")
 
 
 def _escape_sql_literal(value: str) -> str:
@@ -1247,8 +1300,7 @@ def resolve_metadata_collection_query_restricted(
     value = "" if restriction_value is None else str(restriction_value).strip()
     if resolved_key == "" or value == "":
         return sql
-    column = _metadata_restriction_column(resolved_collection, resolved_key)
-    predicate = f"{column} = '{_escape_sql_literal(value)}'"
+    predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
     return _append_metadata_filter(sql, predicate)
 
 

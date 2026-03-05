@@ -689,45 +689,83 @@ fn normalize_metadata_restriction_key(restriction_key: String) raises -> String:
     raise Error("0A000 metadata restriction '" + raw + "' is not supported")
 
 
-fn _metadata_restriction_column(collection_name: String, restriction_key: String) raises -> String:
+fn _table_filter_by_schema_name(literal: String) -> String:
+    return "table_id IN (SELECT t.table_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = " + literal + ")"
+
+
+fn _index_filter_by_schema_name(literal: String) -> String:
+    return "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.schema_name = " + literal + ")"
+
+
+fn _table_filter_by_table_name(literal: String) -> String:
+    return "table_id IN (SELECT table_id FROM sys.tables WHERE table_name = " + literal + ")"
+
+
+fn _index_filter_by_table_name(literal: String) -> String:
+    return "index_id IN (SELECT i.index_id FROM sys.indexes i JOIN sys.tables t ON t.table_id = i.table_id WHERE t.table_name = " + literal + ")"
+
+
+fn _metadata_restriction_predicate(
+    collection_name: String,
+    restriction_key: String,
+    restriction_value: String,
+) raises -> String:
+    var literal = "'" + _escape_sql_literal(restriction_value) + "'"
+
     if restriction_key == "name":
         if collection_name == "schemas":
-            return "schema_name"
+            return "schema_name = " + literal
         if collection_name == "catalogs":
-            return "catalog_name"
+            return "catalog_name = " + literal
         if collection_name == "tables" or collection_name == "table_privileges":
-            return "table_name"
+            return "table_name = " + literal
         if collection_name == "columns" or collection_name == "column_privileges" or collection_name == "index_columns":
-            return "column_name"
+            return "column_name = " + literal
         if collection_name == "indexes":
-            return "index_name"
+            return "index_name = " + literal
         if collection_name == "constraints" or collection_name == "primary_keys" or collection_name == "foreign_keys":
-            return "constraint_name"
+            return "constraint_name = " + literal
         if collection_name == "procedures":
-            return "procedure_name"
+            return "procedure_name = " + literal
         if collection_name == "functions":
-            return "function_name"
+            return "function_name = " + literal
         if collection_name == "routines":
-            return "routine_name"
+            return "routine_name = " + literal
         if collection_name == "type_info":
-            return "data_type_name"
+            return "data_type_name = " + literal
         raise Error("0A000 metadata restriction 'name' is not supported for '" + collection_name + "'")
 
     if restriction_key == "schema_name":
         if collection_name == "schemas":
-            return "schema_name"
+            return "schema_name = " + literal
         if collection_name == "catalogs":
-            return "catalog_name"
+            return "catalog_name = " + literal
+        if collection_name == "tables":
+            return "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = " + literal + ")"
+        if collection_name == "columns" or collection_name == "indexes" or collection_name == "constraints":
+            return _table_filter_by_schema_name(literal)
+        if collection_name == "index_columns":
+            return _index_filter_by_schema_name(literal)
+        if collection_name == "primary_keys" or collection_name == "foreign_keys" or collection_name == "table_privileges" or collection_name == "column_privileges":
+            return _table_filter_by_schema_name(literal)
+        if collection_name == "procedures" or collection_name == "functions" or collection_name == "routines":
+            return "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = " + literal + ")"
         raise Error("0A000 metadata restriction 'schema_name' is not supported for '" + collection_name + "'")
 
     if restriction_key == "table_name":
         if collection_name == "tables" or collection_name == "table_privileges":
-            return "table_name"
+            return "table_name = " + literal
+        if collection_name == "columns" or collection_name == "indexes" or collection_name == "constraints":
+            return _table_filter_by_table_name(literal)
+        if collection_name == "index_columns":
+            return _index_filter_by_table_name(literal)
+        if collection_name == "primary_keys" or collection_name == "foreign_keys" or collection_name == "column_privileges":
+            return _table_filter_by_table_name(literal)
         raise Error("0A000 metadata restriction 'table_name' is not supported for '" + collection_name + "'")
 
     if restriction_key == "column_name":
         if collection_name == "columns" or collection_name == "column_privileges" or collection_name == "index_columns":
-            return "column_name"
+            return "column_name = " + literal
         raise Error("0A000 metadata restriction 'column_name' is not supported for '" + collection_name + "'")
 
     raise Error("0A000 metadata restriction '" + restriction_key + "' is not supported")
@@ -763,8 +801,7 @@ fn resolve_metadata_collection_query_restricted(
     var value = String(restriction_value.strip())
     if resolved_key == "" or value == "":
         return sql
-    var column = _metadata_restriction_column(resolved_collection, resolved_key)
-    var predicate = column + " = '" + _escape_sql_literal(value) + "'"
+    var predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
     return _append_metadata_filter(sql, predicate)
 
 
