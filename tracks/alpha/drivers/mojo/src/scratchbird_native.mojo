@@ -6,6 +6,18 @@ from collections import List
 comptime METADATA_SCHEMAS_QUERY = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 comptime METADATA_TABLES_QUERY = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
 comptime METADATA_COLUMNS_QUERY = "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+comptime METADATA_INDEXES_QUERY = "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name"
+comptime METADATA_INDEX_COLUMNS_QUERY = "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position"
+comptime METADATA_CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
+comptime METADATA_PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
+comptime METADATA_FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+comptime METADATA_ROUTINES_QUERY = "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type FROM sys.procedures WHERE is_valid = 1 UNION ALL SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, routine_name"
+comptime METADATA_CATALOGS_QUERY = "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
+comptime METADATA_PRIMARY_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name"
+comptime METADATA_FOREIGN_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name"
+comptime METADATA_TABLE_PRIVILEGES_QUERY = "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name"
+comptime METADATA_COLUMN_PRIVILEGES_QUERY = "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+comptime METADATA_TYPE_INFO_QUERY = "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name"
 
 
 struct ScratchBirdConfig:
@@ -297,6 +309,30 @@ fn _metadata_alias(value: String) -> String:
         return "tables"
     if value == "column" or value == "columns":
         return "columns"
+    if value == "index" or value == "indexes":
+        return "indexes"
+    if value == "index_column" or value == "index_columns" or value == "indexcolumn" or value == "indexcolumns":
+        return "index_columns"
+    if value == "constraint" or value == "constraints":
+        return "constraints"
+    if value == "procedure" or value == "procedures":
+        return "procedures"
+    if value == "function" or value == "functions":
+        return "functions"
+    if value == "routine" or value == "routines":
+        return "routines"
+    if value == "catalog" or value == "catalogs":
+        return "catalogs"
+    if value == "primary_key" or value == "primary_keys" or value == "primarykey" or value == "primarykeys":
+        return "primary_keys"
+    if value == "foreign_key" or value == "foreign_keys" or value == "foreignkey" or value == "foreignkeys":
+        return "foreign_keys"
+    if value == "table_privilege" or value == "table_privileges" or value == "tableprivilege" or value == "tableprivileges":
+        return "table_privileges"
+    if value == "column_privilege" or value == "column_privileges" or value == "columnprivilege" or value == "columnprivileges":
+        return "column_privileges"
+    if value == "type_info" or value == "typeinfo":
+        return "type_info"
     return ""
 
 
@@ -321,6 +357,30 @@ fn resolve_metadata_collection_query(collection_name: String) raises -> String:
         return METADATA_TABLES_QUERY
     if resolved == "columns":
         return METADATA_COLUMNS_QUERY
+    if resolved == "indexes":
+        return METADATA_INDEXES_QUERY
+    if resolved == "index_columns":
+        return METADATA_INDEX_COLUMNS_QUERY
+    if resolved == "constraints":
+        return METADATA_CONSTRAINTS_QUERY
+    if resolved == "procedures":
+        return METADATA_PROCEDURES_QUERY
+    if resolved == "functions":
+        return METADATA_FUNCTIONS_QUERY
+    if resolved == "routines":
+        return METADATA_ROUTINES_QUERY
+    if resolved == "catalogs":
+        return METADATA_CATALOGS_QUERY
+    if resolved == "primary_keys":
+        return METADATA_PRIMARY_KEYS_QUERY
+    if resolved == "foreign_keys":
+        return METADATA_FOREIGN_KEYS_QUERY
+    if resolved == "table_privileges":
+        return METADATA_TABLE_PRIVILEGES_QUERY
+    if resolved == "column_privileges":
+        return METADATA_COLUMN_PRIVILEGES_QUERY
+    if resolved == "type_info":
+        return METADATA_TYPE_INFO_QUERY
     raise Error("metadata collection '" + collection_name + "' is not supported")
 
 

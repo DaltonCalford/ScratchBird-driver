@@ -90,8 +90,28 @@ fn main() raises:
         "metadata schemas query mismatch",
     )
     _require(
+        conn.query_metadata("index_columns") == scratchbird_native.METADATA_INDEX_COLUMNS_QUERY,
+        "metadata index_columns query mismatch",
+    )
+    _require(
+        conn.query_metadata("typeinfo") == scratchbird_native.METADATA_TYPE_INFO_QUERY,
+        "metadata typeinfo alias mismatch",
+    )
+    _require(
+        conn.query_metadata("routines") == scratchbird_native.METADATA_ROUTINES_QUERY,
+        "metadata routines query mismatch",
+    )
+    _require(
         scratchbird_native.normalize_metadata_collection_name("column") == "columns",
         "metadata column alias mismatch",
+    )
+    _require(
+        scratchbird_native.normalize_metadata_collection_name("foreignkey") == "foreign_keys",
+        "metadata foreignkey alias mismatch",
+    )
+    _require(
+        scratchbird_native.normalize_metadata_collection_name("tableprivileges") == "table_privileges",
+        "metadata tableprivileges alias mismatch",
     )
     _assert_metadata_guard("unsupported_collection", "not supported")
 

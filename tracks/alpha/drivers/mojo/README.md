@@ -19,7 +19,7 @@ Current implementation is a Mojo-Python interop lane:
 - Full SBWP v1.1 API surface is represented in-lane through the Python-backed shim.
 - Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
-- Native bootstrap currently covers deterministic connect guards, metadata alias resolution, transaction lifecycle guards (`25001` nested begin), prepare-bind mismatch handling, prepared execute parity, and stream/cancel (`57014`) semantics.
+- Native bootstrap currently covers deterministic connect guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), prepare-bind mismatch handling, prepared execute parity, and stream/cancel (`57014`) semantics.
 - Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
 - Native Mojo transport/auth remains future work.
 
