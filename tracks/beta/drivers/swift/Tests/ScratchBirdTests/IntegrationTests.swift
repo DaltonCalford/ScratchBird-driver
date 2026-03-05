@@ -49,6 +49,46 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationExecuteBatchHelper() async throws {
+        let config = try integrationConfig()
+        try await withConnection(config) { conn in
+            let results = try await conn.executeBatch(
+                "SELECT ?::INTEGER",
+                [[101], [202], [303]]
+            )
+            XCTAssertEqual(results.count, 3)
+            XCTAssertEqual(asInt(results[0].rows[0][0]), 101)
+            XCTAssertEqual(asInt(results[1].rows[0][0]), 202)
+            XCTAssertEqual(asInt(results[2].rows[0][0]), 303)
+        }
+    }
+
+    func testIntegrationQueryMultiHelper() async throws {
+        let config = try integrationConfig()
+        try await withConnection(config) { conn in
+            let results = try await conn.queryMulti([
+                "SELECT 5",
+                "SELECT 6",
+                "SELECT 7",
+            ])
+            XCTAssertEqual(results.count, 3)
+            XCTAssertEqual(asInt(results[0].rows[0][0]), 5)
+            XCTAssertEqual(asInt(results[1].rows[0][0]), 6)
+            XCTAssertEqual(asInt(results[2].rows[0][0]), 7)
+        }
+    }
+
+    func testIntegrationExecuteReturningFirstColumnHelper() async throws {
+        let config = try integrationConfig()
+        try await withConnection(config) { conn in
+            let value = try await conn.executeReturningFirstColumn(
+                "SELECT ?::INTEGER",
+                [404]
+            )
+            XCTAssertEqual(asInt(value), 404)
+        }
+    }
+
     func testIntegrationTransactionAndSavepointLifecycle() async throws {
         let config = try integrationConfig()
         try await withConnection(config) { conn in

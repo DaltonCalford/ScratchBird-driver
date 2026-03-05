@@ -46,6 +46,7 @@
 - Current status: `Partial`
 - Lane-local source anchors:
   - `Sources/ScratchBird/Connection.swift:127-137`
+  - `Sources/ScratchBird/Connection.swift:140-171` helper execution APIs (`executeBatch`, `queryMulti`, `executeReturningFirstColumn`).
   - `Sources/ScratchBird/Connection.swift:284-295`
   - `Sources/ScratchBird/Connection.swift:333-339`
   - `Sources/ScratchBird/Connection.swift:392-449`
@@ -54,10 +55,10 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:50-60`
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:95-104`
-  - `Tests/ScratchBirdTests/IntegrationTests.swift:13-46` env-gated live simple and parameterized execution paths.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift:13-85` env-gated live simple/parameterized execution plus batch/multi/helper execution paths.
 - Gaps/next actions:
   - Add live execution tests for cancellation timing and portal suspend/resume behavior.
-  - Add explicit parity coverage for advanced execution surface area (batch/multi-result/generated-key semantics).
+  - Promote helper-level batch/multi/generated-key semantics to true wire-level parity (single-request multi-result traversal and generated-key metadata fidelity).
 
 ## META (`JDBCBL-META`)
 

@@ -73,6 +73,12 @@ Connection-level metadata wrappers are available for `sys.*` catalog families:
 - `metadataProcedures`, `metadataFunctions`
 - `metadataSchemaTree`, `metadataSchemaTreeRows`
 
+## Execution Helpers
+
+- `executeBatch(sql, paramsBatch)` for sequential batch execution helper semantics.
+- `queryMulti(statements)` for multi-statement helper execution.
+- `executeReturningFirstColumn(sql, params)` for generated-key-style first-column extraction.
+
 ## Pooling
 
 `ScratchBirdConnectionPool` provides lightweight checkout/release and

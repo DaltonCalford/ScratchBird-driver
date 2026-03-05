@@ -17,6 +17,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Add vector literal encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`. Issue: Complete (2026-03-03)
 - [x] Add sys.* metadata helpers in `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift`. Issue: Complete (2026-03-03)
 - [x] Add client-facing metadata execution wrappers and schema-tree accessors in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Complete (2026-03-04)
+- [x] Add execution helper APIs (`executeBatch`, `queryMulti`, `executeReturningFirstColumn`) in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`. Issue: Complete (2026-03-04)
 - [x] Add typed wire-error mapping (SQLSTATE class/exact-state) in `tracks/beta/drivers/swift/Sources/ScratchBird/Errors.swift` and `tracks/beta/drivers/swift/Sources/ScratchBird/Protocol.swift`. Issue: Complete (2026-03-04)
 
 ## P2 (Follow-ups)

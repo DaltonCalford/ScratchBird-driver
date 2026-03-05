@@ -156,6 +156,36 @@ public final class ScratchBirdConnection {
         }.value
     }
 
+    public func executeBatch(_ sql: String, _ paramsBatch: [[Any?]]) async throws -> [ScratchBirdResult] {
+        var results: [ScratchBirdResult] = []
+        results.reserveCapacity(paramsBatch.count)
+        for params in paramsBatch {
+            results.append(try await query(sql, params))
+        }
+        return results
+    }
+
+    public func queryMulti(_ statements: [String]) async throws -> [ScratchBirdResult] {
+        let filtered = statements.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if filtered.isEmpty {
+            return []
+        }
+        var results: [ScratchBirdResult] = []
+        results.reserveCapacity(filtered.count)
+        for sql in filtered {
+            results.append(try await query(sql))
+        }
+        return results
+    }
+
+    public func executeReturningFirstColumn(_ sql: String, _ params: [Any?] = []) async throws -> Any? {
+        let result = try await query(sql, params)
+        if result.rows.isEmpty || result.rows[0].isEmpty {
+            return nil
+        }
+        return result.rows[0][0]
+    }
+
     public func metadataSchemas() async throws -> ScratchBirdResult {
         return try await query(ScratchBirdMetadata.schemasQuery)
     }

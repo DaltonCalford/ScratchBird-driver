@@ -4,6 +4,9 @@
 
 - `connect(_ config: ScratchBirdConfig) async throws -> ScratchBirdConnection`
 - `query(_ sql: String, _ params: [Any?] = []) async throws -> ScratchBirdResult`
+- `executeBatch(_ sql: String, _ paramsBatch: [[Any?]]) async throws -> [ScratchBirdResult]`
+- `queryMulti(_ statements: [String]) async throws -> [ScratchBirdResult]`
+- `executeReturningFirstColumn(_ sql: String, _ params: [Any?] = []) async throws -> Any?`
 - `close() async throws`
 - `begin(...)`, `commit(flags:)`, `rollback(flags:)`
 - `savepoint(_ name)`, `releaseSavepoint(_ name)`, `rollbackToSavepoint(_ name)`
