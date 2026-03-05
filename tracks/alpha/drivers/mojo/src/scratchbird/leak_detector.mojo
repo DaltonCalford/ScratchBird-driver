@@ -1,100 +1,118 @@
-# ScratchBird Mojo Driver - Connection Leak Detector
+# ScratchBird Mojo Driver - Leak detector scaffolding in current Mojo syntax.
 # Copyright (c) 2025-2026 Dalton Calford
 
-from time import time, sleep
-from threading import Lock
+from collections import List
 
-alias LeakLogLevel = Int
-alias LOG_DEBUG = 0
-alias LOG_WARN = 1
-alias LOG_ERROR = 2
+comptime LOG_DEBUG = 0
+comptime LOG_WARN = 1
+comptime LOG_ERROR = 2
 
-@value
+
 struct LeakDetectionConfig:
     var threshold_ms: Int
     var capture_stack_trace: Bool
     var check_interval_ms: Int
-    var log_level: LeakLogLevel
-    
-    fn __init__(inout self):
+    var log_level: Int
+
+    fn __init__(out self):
         self.threshold_ms = 30000
         self.capture_stack_trace = False
         self.check_interval_ms = 10000
         self.log_level = LOG_WARN
 
-struct CheckoutInfo:
-    var checkout_time: Float64
-    var thread_id: Int
-    var metadata: Dict[String, String]
-    
-    fn __init__(inout self, metadata: Dict[String, String]):
-        self.checkout_time = time()
-        self.thread_id = 0  # Current thread
-        self.metadata = metadata
-    
-    fn held_duration_ms(self) -> Int:
-        return int((time() - self.checkout_time) * 1000)
 
-struct LeakDetectionGuard:
-    var detector: Pointer[LeakDetector]
-    var connection_id: String
-    var released: Bool
-    
-    fn __init__(inout self, detector: Pointer[LeakDetector], conn_id: String):
-        self.detector = detector
-        self.connection_id = conn_id
-        self.released = False
-    
-    fn __del__(inout self):
-        self.release()
-    
-    fn release(inout self):
-        if not self.released:
-            self.detector.load().checkin(self.connection_id)
-            self.released = True
+fn _find_checkout_index(connection_ids: List[String], connection_id: String) -> Int:
+    for i in range(len(connection_ids)):
+        if connection_ids[i] == connection_id:
+            return i
+    return -1
 
-class LeakDetector:
-    var config: LeakDetectionConfig
-    var checkouts: Dict[String, CheckoutInfo]
-    var lock: Lock
+
+struct LeakDetector:
+    var threshold_ms: Int
+    var capture_stack_trace: Bool
+    var check_interval_ms: Int
+    var log_level: Int
     var running: Bool
-    
-    fn __init__(inout self, config: LeakDetectionConfig = LeakDetectionConfig()):
-        self.config = config
-        self.checkouts = Dict[String, CheckoutInfo]()
-        self.lock = Lock()
+    var connection_ids: List[String]
+    var checkout_times_ms: List[Int]
+    var metadata_entries: List[String]
+    var warnings: List[String]
+
+    fn __init__(out self, config: LeakDetectionConfig = LeakDetectionConfig()):
+        self.threshold_ms = config.threshold_ms
+        self.capture_stack_trace = config.capture_stack_trace
+        self.check_interval_ms = config.check_interval_ms
+        self.log_level = config.log_level
         self.running = False
-    
-    fn start(inout self):
+        self.connection_ids = List[String]()
+        self.checkout_times_ms = List[Int]()
+        self.metadata_entries = List[String]()
+        self.warnings = List[String]()
+
+    fn start(mut self):
         self.running = True
-    
-    fn stop(inout self):
+
+    fn stop(mut self):
         self.running = False
-    
-    fn checkout(inout self, conn_id: String, metadata: Dict[String, String]) -> LeakDetectionGuard:
-        var info = CheckoutInfo(metadata)
-        with self.lock:
-            self.checkouts[conn_id] = info
-        return LeakDetectionGuard(Pointer.address_of(self), conn_id)
-    
-    fn checkin(inout self, conn_id: String):
-        with self.lock:
-            if conn_id in self.checkouts:
-                var info = self.checkouts[conn_id]
-                del self.checkouts[conn_id]
-                if info.held_duration_ms() > self.config.threshold_ms:
-                    print("Connection held too long: " + conn_id)
-    
+
+    fn checkout(mut self, connection_id: String, metadata: String = "", checkout_time_ms: Int = 0) -> String:
+        var index = _find_checkout_index(self.connection_ids, connection_id)
+        if index >= 0:
+            self.checkout_times_ms[index] = checkout_time_ms
+            self.metadata_entries[index] = metadata
+        else:
+            self.connection_ids.append(connection_id)
+            self.checkout_times_ms.append(checkout_time_ms)
+            self.metadata_entries.append(metadata)
+        return connection_id
+
+    fn checkin(mut self, connection_id: String, now_ms: Int = 0) -> Int:
+        var index = _find_checkout_index(self.connection_ids, connection_id)
+        if index < 0:
+            return 0
+
+        var held_ms = 0
+        if now_ms > self.checkout_times_ms[index]:
+            held_ms = now_ms - self.checkout_times_ms[index]
+        if held_ms > self.threshold_ms:
+            self.warnings.append("conn=" + connection_id + ",held_ms=" + String(held_ms))
+
+        var kept_ids = List[String]()
+        var kept_times = List[Int]()
+        var kept_metadata = List[String]()
+        for i in range(len(self.connection_ids)):
+            if i == index:
+                continue
+            kept_ids.append(self.connection_ids[i])
+            kept_times.append(self.checkout_times_ms[i])
+            kept_metadata.append(self.metadata_entries[i])
+
+        self.connection_ids = kept_ids^
+        self.checkout_times_ms = kept_times^
+        self.metadata_entries = kept_metadata^
+        return held_ms
+
+    fn release_checkout(mut self, token: String, now_ms: Int = 0) -> Int:
+        return self.checkin(token, now_ms)
+
     fn get_active_count(self) -> Int:
-        with self.lock:
-            return len(self.checkouts)
-    
-    fn check_leaks(inout self):
-        with self.lock:
-            for conn_id in self.checkouts:
-                var info = self.checkouts[conn_id]
-                if info.held_duration_ms() > self.config.threshold_ms:
-                    self._log_leak(conn_id, info)
-    
-    fn _log_leak(self, conn_id: String, info: CheckoutInfo):
-        print("POSSIBLE CONNECTION LEAK: conn=" + conn_id + ", held=" + str(info.held_duration_ms()) + "ms")
+        return len(self.connection_ids)
+
+    fn check_leaks(mut self, now_ms: Int) -> List[String]:
+        var leaks = List[String]()
+        for i in range(len(self.connection_ids)):
+            var held_ms = 0
+            if now_ms > self.checkout_times_ms[i]:
+                held_ms = now_ms - self.checkout_times_ms[i]
+            if held_ms > self.threshold_ms:
+                var summary = "conn=" + self.connection_ids[i] + ",held_ms=" + String(held_ms)
+                leaks.append(summary)
+                self.warnings.append(summary)
+        return leaks^
+
+    fn get_warnings(self) -> List[String]:
+        return self.warnings.copy()
+
+    fn clear_warnings(mut self):
+        self.warnings = List[String]()

@@ -221,8 +221,8 @@
 - `src/scratchbird.mojo:1481` (`ScratchBirdConnection.close`)
 - `src/scratchbird.mojo:781` (`ScratchBirdStream.close`)
 - `src/scratchbird.mojo:1492` (`_begin_operation` circuit-breaker/keepalive/telemetry hooks)
-- `src/scratchbird/leak_detector.mojo:56` (`LeakDetector` and guard-based checkin)
-- `src/scratchbird/circuit_breaker.mojo:31` (`CircuitBreaker` state transitions)
+- `src/scratchbird/circuit_breaker.mojo:29` (`CircuitBreaker` deterministic CLOSED/OPEN/HALF_OPEN state transitions)
+- `src/scratchbird/leak_detector.mojo:31` (`LeakDetector` deterministic checkout/checkin/leak-scan bookkeeping)
 - `src/scratchbird/keepalive.mojo:29` (`KeepaliveTracker` current-syntax idle/validation state helpers)
 - `src/scratchbird/keepalive.mojo:66` (`KeepaliveManager` deterministic registration/due-validation bookkeeping)
 - `src/scratchbird/telemetry.mojo:76` (`TelemetryCollector` metrics/slow-log/prometheus scaffold in current syntax)
@@ -231,6 +231,6 @@
 - `tests/integration.mojo:31`
 - `tests/sbdriver_conformance.mojo:212`
 - `tests/txn_exec_parity.py:320` (idempotent close behavior for connection and stream)
-- `tests/lifecycle_scaffolds.mojo:20` (keepalive/telemetry/pipeline deterministic scaffold smoke coverage)
+- `tests/lifecycle_scaffolds.mojo:20` (circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic scaffold smoke coverage)
 - Gaps/next actions:
-- Wire lifecycle scaffold collectors into the active runtime path once native transport cutover work starts using current Mojo syntax.
+- Wire current-syntax resilience scaffolds into the active runtime path once native transport cutover work starts using current Mojo syntax.

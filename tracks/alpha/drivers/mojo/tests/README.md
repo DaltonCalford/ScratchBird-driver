@@ -32,7 +32,7 @@ Expected behavior:
 - native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK` (including native ping, begin/commit/rollback, savepoint lifecycle guards, prepared execute, paging-query rowcount, and post-cancel recovery smoke semantics)
 - native bootstrap smoke also validates deterministic SQLSTATE-prefixed guard/unsupported errors via `scratchbird_native.extract_sqlstate(...)`
 - metadata execution smoke includes deterministic `query_metadata_rows(...)` rowcount checks in both shim and native bootstrap paths
-- lifecycle scaffold test reports `OK` and validates keepalive/telemetry/pipeline deterministic behavior under current Mojo syntax
+- lifecycle scaffold test reports `OK` and validates circuit-breaker/leak-detector/keepalive/telemetry/pipeline deterministic behavior under current Mojo syntax
 - type-codec suite covers vector/range/composite/geometry/network plus temporal/json/jsonb/uuid and array-of-composite wrappers in the bridge shim
 - integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
 

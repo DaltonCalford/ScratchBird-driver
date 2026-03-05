@@ -1,109 +1,126 @@
-# ScratchBird Mojo Driver - Circuit Breaker
+# ScratchBird Mojo Driver - Circuit breaker scaffolding in current Mojo syntax.
 # Copyright (c) 2025-2026 Dalton Calford
 
-from time import time
-from threading import Lock
+comptime STATE_CLOSED = 0
+comptime STATE_OPEN = 1
+comptime STATE_HALF_OPEN = 2
 
-alias CircuitState = Int
-alias STATE_CLOSED = 0
-alias STATE_OPEN = 1
-alias STATE_HALF_OPEN = 2
 
-@value
 struct CircuitBreakerConfig:
     var failure_threshold: Int
     var recovery_timeout_ms: Int
     var success_threshold: Int
     var half_open_max_requests: Int
-    
-    fn __init__(inout self):
+
+    fn __init__(out self):
         self.failure_threshold = 5
         self.recovery_timeout_ms = 30000
         self.success_threshold = 3
         self.half_open_max_requests = 10
 
+
 struct CircuitBreakerError:
     var message: String
-    
-    fn __init__(inout self, msg: String = "Circuit breaker is OPEN"):
-        self.message = msg
 
-class CircuitBreaker:
-    var config: CircuitBreakerConfig
+    fn __init__(out self, message: String = "Circuit breaker is OPEN"):
+        self.message = message
+
+
+struct CircuitBreaker:
+    var failure_threshold: Int
+    var recovery_timeout_ms: Int
+    var success_threshold: Int
+    var half_open_max_requests: Int
     var name: String
-    var state: CircuitState
+    var state: Int
     var failure_count: Int
     var success_count: Int
     var half_open_requests: Int
-    var last_failure_time: Float64
-    var lock: Lock
-    
-    fn __init__(inout self, config: CircuitBreakerConfig = CircuitBreakerConfig(), name: String = "default"):
-        self.config = config
+    var last_failure_time_ms: Int
+
+    fn __init__(out self, config: CircuitBreakerConfig = CircuitBreakerConfig(), name: String = "default"):
+        self.failure_threshold = config.failure_threshold
+        self.recovery_timeout_ms = config.recovery_timeout_ms
+        self.success_threshold = config.success_threshold
+        self.half_open_max_requests = config.half_open_max_requests
         self.name = name
         self.state = STATE_CLOSED
         self.failure_count = 0
         self.success_count = 0
         self.half_open_requests = 0
-        self.last_failure_time = 0
-        self.lock = Lock()
-    
-    fn get_state(self) -> CircuitState:
-        with self.lock:
-            return self.state
-    
-    fn allow_request(inout self) -> Bool:
-        with self.lock:
-            if self.state == STATE_CLOSED:
-                return True
-            elif self.state == STATE_OPEN:
-                if self.last_failure_time > 0 and (time() - self.last_failure_time) * 1000 >= self.config.recovery_timeout_ms:
-                    self.state = STATE_HALF_OPEN
-                    self.failure_count = 0
-                    self.success_count = 0
-                    self.half_open_requests = 0
-                    return self._allow_half_open()
-                return False
-            else:  # STATE_HALF_OPEN
+        self.last_failure_time_ms = 0
+
+    fn get_state(self) -> Int:
+        return self.state
+
+    fn allow_request(mut self, now_ms: Int = 0) -> Bool:
+        if self.state == STATE_CLOSED:
+            return True
+
+        if self.state == STATE_OPEN:
+            if (
+                now_ms > 0
+                and self.last_failure_time_ms > 0
+                and now_ms - self.last_failure_time_ms >= self.recovery_timeout_ms
+            ):
+                self.state = STATE_HALF_OPEN
+                self.failure_count = 0
+                self.success_count = 0
+                self.half_open_requests = 0
                 return self._allow_half_open()
-        return False
-    
-    fn _allow_half_open(inout self) -> Bool:
-        if self.half_open_requests < self.config.half_open_max_requests:
+            return False
+
+        return self._allow_half_open()
+
+    fn _allow_half_open(mut self) -> Bool:
+        if self.half_open_requests < self.half_open_max_requests:
             self.half_open_requests += 1
             return True
         return False
-    
-    fn record_success(inout self):
-        with self.lock:
-            if self.state == STATE_CLOSED:
-                self.failure_count = 0
-            elif self.state == STATE_HALF_OPEN:
-                self.half_open_requests -= 1
-                self.success_count += 1
-                if self.success_count >= self.config.success_threshold:
-                    self.state = STATE_CLOSED
-                    self.failure_count = 0
-                    self.success_count = 0
-    
-    fn record_failure(inout self):
-        with self.lock:
-            if self.state == STATE_CLOSED:
-                self.failure_count += 1
-                if self.failure_count >= self.config.failure_threshold:
-                    self.state = STATE_OPEN
-                    self.last_failure_time = time()
-            elif self.state == STATE_HALF_OPEN:
-                self.half_open_requests -= 1
-                self.state = STATE_OPEN
-                self.last_failure_time = time()
-            elif self.state == STATE_OPEN:
-                self.last_failure_time = time()
-    
-    fn reset(inout self):
-        with self.lock:
-            self.state = STATE_CLOSED
+
+    fn record_success(mut self):
+        if self.state == STATE_CLOSED:
             self.failure_count = 0
+            return
+
+        if self.state == STATE_HALF_OPEN:
+            if self.half_open_requests > 0:
+                self.half_open_requests -= 1
+            self.success_count += 1
+            if self.success_count >= self.success_threshold:
+                self.state = STATE_CLOSED
+                self.failure_count = 0
+                self.success_count = 0
+                self.half_open_requests = 0
+
+    fn record_failure(mut self, now_ms: Int = 0):
+        if self.state == STATE_CLOSED:
+            self.failure_count += 1
+            if self.failure_count >= self.failure_threshold:
+                self.state = STATE_OPEN
+                self.last_failure_time_ms = now_ms
+            return
+
+        if self.state == STATE_HALF_OPEN:
+            if self.half_open_requests > 0:
+                self.half_open_requests -= 1
+            self.state = STATE_OPEN
             self.success_count = 0
-            self.half_open_requests = 0
-            self.last_failure_time = 0
+            self.last_failure_time_ms = now_ms
+            return
+
+        if self.state == STATE_OPEN:
+            self.last_failure_time_ms = now_ms
+
+    fn reset(mut self):
+        self.state = STATE_CLOSED
+        self.failure_count = 0
+        self.success_count = 0
+        self.half_open_requests = 0
+        self.last_failure_time_ms = 0
+
+    fn is_open(self) -> Bool:
+        return self.state == STATE_OPEN
+
+    fn is_half_open(self) -> Bool:
+        return self.state == STATE_HALF_OPEN

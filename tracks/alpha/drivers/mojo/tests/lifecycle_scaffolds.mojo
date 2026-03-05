@@ -7,7 +7,9 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
 from collections import List
+import circuit_breaker
 import keepalive
+import leak_detector
 import pipeline
 import telemetry
 
@@ -35,6 +37,47 @@ fn main() raises:
     manager.unregister("conn_b")
     _require(manager.get_monitored_count() == 1, "keepalive unregister mismatch")
     manager.stop()
+
+    var cb_cfg = circuit_breaker.CircuitBreakerConfig()
+    cb_cfg.failure_threshold = 2
+    cb_cfg.recovery_timeout_ms = 50
+    cb_cfg.success_threshold = 2
+    cb_cfg.half_open_max_requests = 1
+    var breaker = circuit_breaker.CircuitBreaker(cb_cfg, "lane_smoke")
+    _require(breaker.get_state() == circuit_breaker.STATE_CLOSED, "circuit breaker initial state mismatch")
+    _require(breaker.allow_request(0), "closed circuit should allow requests")
+    breaker.record_failure(10)
+    _require(breaker.get_state() == circuit_breaker.STATE_CLOSED, "single failure should keep circuit closed")
+    breaker.record_failure(20)
+    _require(breaker.get_state() == circuit_breaker.STATE_OPEN, "threshold failures should open circuit")
+    _require(not breaker.allow_request(40), "open circuit should reject requests before timeout")
+    _require(breaker.allow_request(80), "open circuit should allow a half-open probe after timeout")
+    _require(not breaker.allow_request(81), "half-open circuit should enforce probe request cap")
+    breaker.record_success()
+    _require(breaker.get_state() == circuit_breaker.STATE_HALF_OPEN, "first half-open success should not close yet")
+    _require(breaker.allow_request(82), "half-open circuit should allow second probe")
+    breaker.record_success()
+    _require(breaker.get_state() == circuit_breaker.STATE_CLOSED, "success threshold should close circuit")
+    breaker.reset()
+    _require(breaker.get_state() == circuit_breaker.STATE_CLOSED, "reset should force circuit closed")
+
+    var leak_cfg = leak_detector.LeakDetectionConfig()
+    leak_cfg.threshold_ms = 100
+    var leaks = leak_detector.LeakDetector(leak_cfg)
+    leaks.start()
+    var token_a = leaks.checkout("conn_a", "role=primary", 0)
+    _ = leaks.checkout("conn_b", "role=analytics", 80)
+    _require(leaks.get_active_count() == 2, "leak detector active count mismatch after checkout")
+    var leak_report = leaks.check_leaks(150)
+    _require(len(leak_report) == 1 and "conn_a" in leak_report[0], "leak detector report mismatch")
+    _require(leaks.checkin("conn_b", 120) == 40, "leak detector held duration mismatch for conn_b")
+    _require(leaks.release_checkout(token_a, 220) == 220, "leak detector token release mismatch")
+    _require(leaks.get_active_count() == 0, "leak detector active count mismatch after release")
+    var warnings = leaks.get_warnings()
+    _require(len(warnings) >= 1, "leak detector warnings should capture threshold breach")
+    leaks.clear_warnings()
+    _require(len(leaks.get_warnings()) == 0, "leak detector clear_warnings mismatch")
+    leaks.stop()
 
     var telemetry_cfg = telemetry.TelemetryConfig()
     telemetry_cfg.slow_query_threshold_ms = 5
