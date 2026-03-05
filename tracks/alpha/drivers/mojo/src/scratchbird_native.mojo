@@ -286,6 +286,32 @@ struct ScratchBirdConnection:
         var sql = resolve_metadata_collection_query(collection_name)
         return self.query(sql)
 
+    fn query_metadata_restricted(
+        self,
+        collection_name: String,
+        restriction_key: String = "",
+        restriction_value: String = "",
+    ) raises -> String:
+        _ = self
+        return resolve_metadata_collection_query_restricted(
+            collection_name,
+            restriction_key,
+            restriction_value,
+        )
+
+    fn query_metadata_rows_restricted(
+        mut self,
+        collection_name: String,
+        restriction_key: String = "",
+        restriction_value: String = "",
+    ) raises -> Int:
+        var sql = resolve_metadata_collection_query_restricted(
+            collection_name,
+            restriction_key,
+            restriction_value,
+        )
+        return self.query(sql)
+
 
 struct ScratchBirdStream:
     var total_rows: Int
@@ -389,6 +415,22 @@ fn _find_savepoint_index(savepoints: List[String], target: String) -> Int:
     return -1
 
 
+fn _matches_metadata_query(actual_sql: String, base_sql: String) -> Bool:
+    var actual = actual_sql.strip().lower()
+    var base = base_sql.strip().lower()
+    if actual == base:
+        return True
+
+    if " order by " in base:
+        var parts = base.split(" order by ", 1)
+        if len(parts) == 2:
+            var prefix = String(parts[0])
+            var order_suffix = String(" order by ") + String(parts[1])
+            if actual.startswith(prefix) and actual.endswith(order_suffix):
+                return True
+    return False
+
+
 fn _query_result_from_sql(sql: String) raises -> Int:
     var normalized = sql.strip().lower()
     if normalized == "select 1":
@@ -397,35 +439,35 @@ fn _query_result_from_sql(sql: String) raises -> Int:
         return 1
     if normalized.startswith("select id from basic_table"):
         return 6
-    if normalized == METADATA_SCHEMAS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_SCHEMAS_QUERY):
         return 1
-    if normalized == METADATA_TABLES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_TABLES_QUERY):
         return 1
-    if normalized == METADATA_COLUMNS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_COLUMNS_QUERY):
         return 1
-    if normalized == METADATA_INDEXES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_INDEXES_QUERY):
         return 1
-    if normalized == METADATA_INDEX_COLUMNS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_INDEX_COLUMNS_QUERY):
         return 1
-    if normalized == METADATA_CONSTRAINTS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_CONSTRAINTS_QUERY):
         return 1
-    if normalized == METADATA_PROCEDURES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_PROCEDURES_QUERY):
         return 1
-    if normalized == METADATA_FUNCTIONS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_FUNCTIONS_QUERY):
         return 1
-    if normalized == METADATA_ROUTINES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_ROUTINES_QUERY):
         return 1
-    if normalized == METADATA_CATALOGS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_CATALOGS_QUERY):
         return 1
-    if normalized == METADATA_PRIMARY_KEYS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_PRIMARY_KEYS_QUERY):
         return 1
-    if normalized == METADATA_FOREIGN_KEYS_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_FOREIGN_KEYS_QUERY):
         return 1
-    if normalized == METADATA_TABLE_PRIVILEGES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_TABLE_PRIVILEGES_QUERY):
         return 1
-    if normalized == METADATA_COLUMN_PRIVILEGES_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_COLUMN_PRIVILEGES_QUERY):
         return 1
-    if normalized == METADATA_TYPE_INFO_QUERY.lower():
+    if _matches_metadata_query(normalized, METADATA_TYPE_INFO_QUERY):
         return 1
     raise Error("0A000 unsupported query in native bootstrap")
 
@@ -629,6 +671,101 @@ fn resolve_metadata_collection_query(collection_name: String) raises -> String:
     if resolved == "type_info":
         return METADATA_TYPE_INFO_QUERY
     raise Error("0A000 metadata collection '" + collection_name + "' is not supported")
+
+
+fn normalize_metadata_restriction_key(restriction_key: String) raises -> String:
+    var raw = restriction_key
+    var normalized = restriction_key.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized == "" or normalized == "none":
+        return ""
+    if normalized == "name" or normalized == "object_name" or normalized == "entity_name":
+        return "name"
+    if normalized == "schema" or normalized == "schema_name" or normalized == "table_schema" or normalized == "table_schem":
+        return "schema_name"
+    if normalized == "table" or normalized == "table_name":
+        return "table_name"
+    if normalized == "column" or normalized == "column_name":
+        return "column_name"
+    raise Error("0A000 metadata restriction '" + raw + "' is not supported")
+
+
+fn _metadata_restriction_column(collection_name: String, restriction_key: String) raises -> String:
+    if restriction_key == "name":
+        if collection_name == "schemas":
+            return "schema_name"
+        if collection_name == "catalogs":
+            return "catalog_name"
+        if collection_name == "tables" or collection_name == "table_privileges":
+            return "table_name"
+        if collection_name == "columns" or collection_name == "column_privileges" or collection_name == "index_columns":
+            return "column_name"
+        if collection_name == "indexes":
+            return "index_name"
+        if collection_name == "constraints" or collection_name == "primary_keys" or collection_name == "foreign_keys":
+            return "constraint_name"
+        if collection_name == "procedures":
+            return "procedure_name"
+        if collection_name == "functions":
+            return "function_name"
+        if collection_name == "routines":
+            return "routine_name"
+        if collection_name == "type_info":
+            return "data_type_name"
+        raise Error("0A000 metadata restriction 'name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "schema_name":
+        if collection_name == "schemas":
+            return "schema_name"
+        if collection_name == "catalogs":
+            return "catalog_name"
+        raise Error("0A000 metadata restriction 'schema_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "table_name":
+        if collection_name == "tables" or collection_name == "table_privileges":
+            return "table_name"
+        raise Error("0A000 metadata restriction 'table_name' is not supported for '" + collection_name + "'")
+
+    if restriction_key == "column_name":
+        if collection_name == "columns" or collection_name == "column_privileges" or collection_name == "index_columns":
+            return "column_name"
+        raise Error("0A000 metadata restriction 'column_name' is not supported for '" + collection_name + "'")
+
+    raise Error("0A000 metadata restriction '" + restriction_key + "' is not supported")
+
+
+fn _escape_sql_literal(value: String) -> String:
+    return value.replace("'", "''")
+
+
+fn _append_metadata_filter(sql: String, predicate: String) -> String:
+    if " ORDER BY " in sql:
+        var parts = sql.split(" ORDER BY ", 1)
+        if len(parts) == 2:
+            var head = String(parts[0])
+            var tail = String(parts[1])
+            if " where " in head.lower():
+                return head + " AND " + predicate + " ORDER BY " + tail
+            return head + " WHERE " + predicate + " ORDER BY " + tail
+
+    if " where " in sql.lower():
+        return sql + " AND " + predicate
+    return sql + " WHERE " + predicate
+
+
+fn resolve_metadata_collection_query_restricted(
+    collection_name: String,
+    restriction_key: String = "",
+    restriction_value: String = "",
+) raises -> String:
+    var resolved_collection = normalize_metadata_collection_name(collection_name)
+    var sql = resolve_metadata_collection_query(resolved_collection)
+    var resolved_key = normalize_metadata_restriction_key(restriction_key)
+    var value = String(restriction_value.strip())
+    if resolved_key == "" or value == "":
+        return sql
+    var column = _metadata_restriction_column(resolved_collection, resolved_key)
+    var predicate = column + " = '" + _escape_sql_literal(value) + "'"
+    return _append_metadata_filter(sql, predicate)
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:

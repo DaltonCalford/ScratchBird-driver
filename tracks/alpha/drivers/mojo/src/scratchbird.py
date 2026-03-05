@@ -135,6 +135,53 @@ _METADATA_COLLECTION_ALIASES = {
     "typeinfo": "type_info",
 }
 
+_METADATA_RESTRICTION_ALIASES = {
+    "name": "name",
+    "object_name": "name",
+    "entity_name": "name",
+    "schema": "schema_name",
+    "schema_name": "schema_name",
+    "table_schema": "schema_name",
+    "table_schem": "schema_name",
+    "table": "table_name",
+    "table_name": "table_name",
+    "column": "column_name",
+    "column_name": "column_name",
+}
+
+_METADATA_RESTRICTION_COLUMNS = {
+    "name": {
+        "schemas": "schema_name",
+        "catalogs": "catalog_name",
+        "tables": "table_name",
+        "table_privileges": "table_name",
+        "columns": "column_name",
+        "column_privileges": "column_name",
+        "index_columns": "column_name",
+        "indexes": "index_name",
+        "constraints": "constraint_name",
+        "primary_keys": "constraint_name",
+        "foreign_keys": "constraint_name",
+        "procedures": "procedure_name",
+        "functions": "function_name",
+        "routines": "routine_name",
+        "type_info": "data_type_name",
+    },
+    "schema_name": {
+        "schemas": "schema_name",
+        "catalogs": "catalog_name",
+    },
+    "table_name": {
+        "tables": "table_name",
+        "table_privileges": "table_name",
+    },
+    "column_name": {
+        "columns": "column_name",
+        "column_privileges": "column_name",
+        "index_columns": "column_name",
+    },
+}
+
 _SCHEMA_KEYS = (
     "schema_name",
     "TABLE_SCHEM",
@@ -1028,6 +1075,41 @@ class ScratchBirdConnection:
         return len(rows)
 
     @staticmethod
+    def query_metadata_restricted(
+        conn: Any,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> Any:
+        metadata_sql = resolve_metadata_collection_query_restricted(
+            collection_name,
+            restriction_key,
+            restriction_value,
+        )
+        return ScratchBirdConnection.query(conn, metadata_sql, None)
+
+    @staticmethod
+    def query_metadata_rows_restricted(
+        conn: Any,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> int:
+        result = ScratchBirdConnection.query_metadata_restricted(
+            conn,
+            collection_name,
+            restriction_key,
+            restriction_value,
+        )
+        rowcount = getattr(result, "rowcount", None)
+        if isinstance(rowcount, int):
+            return rowcount
+        rows = getattr(result, "rows", None)
+        if rows is None:
+            return 0
+        return len(rows)
+
+    @staticmethod
     def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:
         result = ScratchBirdConnection.query_metadata(conn, collection_name)
         rows = getattr(result, "rows", None)
@@ -1114,6 +1196,60 @@ def normalize_metadata_collection_name(collection_name: Optional[str] = None) ->
 def resolve_metadata_collection_query(collection_name: Optional[str] = None) -> str:
     resolved = normalize_metadata_collection_name(collection_name)
     return _METADATA_COLLECTION_QUERY_MAP[resolved]
+
+
+def normalize_metadata_restriction_key(restriction_key: Optional[str] = None) -> str:
+    raw = "" if restriction_key is None else str(restriction_key)
+    normalized = raw.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in ("", "none"):
+        return ""
+    resolved = _METADATA_RESTRICTION_ALIASES.get(normalized)
+    if resolved is None:
+        raise ScratchBirdError(f"metadata restriction '{raw}' is not supported", "0A000")
+    return resolved
+
+
+def _metadata_restriction_column(collection_name: str, restriction_key: str) -> str:
+    candidates = _METADATA_RESTRICTION_COLUMNS.get(restriction_key)
+    if candidates is None:
+        raise ScratchBirdError(f"metadata restriction '{restriction_key}' is not supported", "0A000")
+    column = candidates.get(collection_name)
+    if column is None:
+        raise ScratchBirdError(
+            f"metadata restriction '{restriction_key}' is not supported for '{collection_name}'",
+            "0A000",
+        )
+    return column
+
+
+def _escape_sql_literal(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def _append_metadata_filter(sql: str, predicate: str) -> str:
+    if " ORDER BY " in sql:
+        head, tail = sql.split(" ORDER BY ", 1)
+        joiner = " AND " if " where " in head.lower() else " WHERE "
+        return f"{head}{joiner}{predicate} ORDER BY {tail}"
+    if " where " in sql.lower():
+        return f"{sql} AND {predicate}"
+    return f"{sql} WHERE {predicate}"
+
+
+def resolve_metadata_collection_query_restricted(
+    collection_name: Optional[str] = None,
+    restriction_key: Optional[str] = None,
+    restriction_value: Optional[str] = None,
+) -> str:
+    resolved_collection = normalize_metadata_collection_name(collection_name)
+    sql = resolve_metadata_collection_query(resolved_collection)
+    resolved_key = normalize_metadata_restriction_key(restriction_key)
+    value = "" if restriction_value is None else str(restriction_value).strip()
+    if resolved_key == "" or value == "":
+        return sql
+    column = _metadata_restriction_column(resolved_collection, resolved_key)
+    predicate = f"{column} = '{_escape_sql_literal(value)}'"
+    return _append_metadata_filter(sql, predicate)
 
 
 @dataclass

@@ -32,6 +32,27 @@ fn _assert_connect_guard(dsn: String, expected_sqlstate: String, expected_fragme
         )
 
 
+fn _assert_metadata_restriction_guard(
+    collection_name: String,
+    restriction_key: String,
+    expected_sqlstate: String,
+    expected_fragment: String,
+) raises:
+    try:
+        _ = scratchbird.metadata_query_restricted(collection_name, restriction_key, "x")
+        raise Error("expected metadata restriction guard to reject restriction")
+    except e:
+        var message = String(e)
+        _require(
+            scratchbird.extract_sqlstate(message) == expected_sqlstate,
+            "expected metadata restriction sqlstate '" + expected_sqlstate + "', got '" + scratchbird.extract_sqlstate(message) + "'",
+        )
+        _require(
+            expected_fragment in message,
+            "expected metadata restriction guard containing '" + expected_fragment + "', got '" + message + "'",
+        )
+
+
 fn main() raises:
     var cfg = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
@@ -69,6 +90,26 @@ fn main() raises:
         scratchbird.normalize_metadata_collection_name("columnprivileges") == "column_privileges",
         "metadata alias normalization mismatch",
     )
+    var restricted_tables = conn.query_metadata_restricted("table", "name", "orders")
+    _require(
+        restricted_tables
+        == "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 AND table_name = 'orders' ORDER BY table_name",
+        "restricted metadata table query mismatch",
+    )
+    _require(
+        conn.query_metadata_rows_restricted("table", "name", "orders") == 1,
+        "restricted metadata rowcount mismatch",
+    )
+    _require(
+        scratchbird.metadata_query_restricted("tables", "table_name", "") == scratchbird.METADATA_TABLES_QUERY,
+        "empty restriction value should not mutate metadata query",
+    )
+    _require(
+        scratchbird.normalize_metadata_restriction_key("table_schem") == "schema_name",
+        "metadata restriction alias mismatch for table_schem",
+    )
+    _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
+    _assert_metadata_restriction_guard("tables", "schema", "0A000", "not supported for 'tables'")
 
     var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(stream.next(conn) == 1, "stream first row mismatch")

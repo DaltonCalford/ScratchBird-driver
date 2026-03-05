@@ -81,6 +81,40 @@ def test_resolve_metadata_collection_query_extended_families() -> None:
     )
 
 
+def test_normalize_metadata_restriction_aliases() -> None:
+    _require(scratchbird.normalize_metadata_restriction_key("TABLE_SCHEM") == "schema_name", "schema alias mismatch")
+    _require(scratchbird.normalize_metadata_restriction_key("column") == "column_name", "column alias mismatch")
+    _require(scratchbird.normalize_metadata_restriction_key("none") == "", "none restriction should normalize empty")
+    try:
+        scratchbird.normalize_metadata_restriction_key("unsupported_restriction")
+        raise RuntimeError("expected unsupported restriction failure")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "0A000", "unsupported restriction should map to 0A000")
+
+
+def test_resolve_metadata_collection_query_restricted() -> None:
+    _require(
+        scratchbird.resolve_metadata_collection_query_restricted("table", "name", "orders")
+        == "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 AND table_name = 'orders' ORDER BY table_name",
+        "restricted table query mismatch",
+    )
+    _require(
+        "schema_name = 'acme''schema'"
+        in scratchbird.resolve_metadata_collection_query_restricted("schema", "schema", "acme'schema"),
+        "restricted schema query should escape SQL literals",
+    )
+    _require(
+        scratchbird.resolve_metadata_collection_query_restricted("tables", "table_name", "")
+        == scratchbird.METADATA_TABLES_QUERY,
+        "empty restriction value should not mutate query",
+    )
+    try:
+        scratchbird.resolve_metadata_collection_query_restricted("tables", "schema", "public")
+        raise RuntimeError("expected unsupported collection restriction failure")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "0A000", "unsupported collection restriction should map to 0A000")
+
+
 def test_query_metadata_routes_through_query_path() -> None:
     conn = QueryHarness()
     result = scratchbird.ScratchBirdConnection.query_metadata(conn, "primarykeys")
@@ -103,6 +137,23 @@ def test_query_metadata_routes_through_query_path() -> None:
     )
 
 
+def test_query_metadata_restricted_routes_through_query_path() -> None:
+    conn = QueryHarness()
+    result = scratchbird.ScratchBirdConnection.query_metadata_restricted(conn, "table", "name", "orders")
+    _require(result is conn.result, "query_metadata_restricted should return harness result")
+    sent_payload = None
+    for call in conn.calls:
+        if call[0] == "send" and call[1] == scratchbird.MessageType.QUERY:
+            sent_payload = call[2]
+            break
+    _require(sent_payload is not None, "query_metadata_restricted should send QUERY payload")
+    _require(
+        sent_payload.decode("utf-8")
+        == "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 AND table_name = 'orders' ORDER BY table_name",
+        "query_metadata_restricted should route restricted query SQL",
+    )
+
+
 def test_get_schema_returns_result_rows() -> None:
     conn = QueryHarness()
     conn.result = scratchbird.ScratchBirdResult([[7], [9]], [], 2)
@@ -117,6 +168,18 @@ def test_query_metadata_rows_returns_rowcount() -> None:
     _require(rowcount == 3, "query_metadata_rows should return result rowcount")
 
 
+def test_query_metadata_rows_restricted_returns_rowcount() -> None:
+    conn = QueryHarness()
+    conn.result = scratchbird.ScratchBirdResult([[1], [2], [3], [4]], [], 4)
+    rowcount = scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
+        conn,
+        "table",
+        "name",
+        "orders",
+    )
+    _require(rowcount == 4, "query_metadata_rows_restricted should return result rowcount")
+
+
 def test_query_metadata_rejects_unsupported_collection() -> None:
     conn = QueryHarness()
     try:
@@ -129,9 +192,13 @@ def test_query_metadata_rejects_unsupported_collection() -> None:
 def main() -> None:
     test_normalize_metadata_collection_aliases()
     test_resolve_metadata_collection_query_extended_families()
+    test_normalize_metadata_restriction_aliases()
+    test_resolve_metadata_collection_query_restricted()
     test_query_metadata_routes_through_query_path()
+    test_query_metadata_restricted_routes_through_query_path()
     test_get_schema_returns_result_rows()
     test_query_metadata_rows_returns_rowcount()
+    test_query_metadata_rows_restricted_returns_rowcount()
     test_query_metadata_rejects_unsupported_collection()
     print("Mojo metadata execution tests OK")
 

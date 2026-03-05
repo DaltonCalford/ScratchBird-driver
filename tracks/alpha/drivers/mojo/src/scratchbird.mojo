@@ -16,7 +16,9 @@ from scratchbird_native import ScratchBirdStream
 from scratchbird_native import connect
 from scratchbird_native import extract_sqlstate
 from scratchbird_native import normalize_metadata_collection_name
+from scratchbird_native import normalize_metadata_restriction_key
 from scratchbird_native import resolve_metadata_collection_query
+from scratchbird_native import resolve_metadata_collection_query_restricted
 from scratchbird_native import validate_connect_guards
 from scratchbird_native import METADATA_SCHEMAS_QUERY
 from scratchbird_native import METADATA_TABLES_QUERY
@@ -99,3 +101,15 @@ fn type_info_query() -> String:
 
 fn metadata_query(collection_name: String = DEFAULT_METADATA_COLLECTION) raises -> String:
     return resolve_metadata_collection_query(collection_name)
+
+
+fn metadata_query_restricted(
+    collection_name: String = DEFAULT_METADATA_COLLECTION,
+    restriction_key: String = "",
+    restriction_value: String = "",
+) raises -> String:
+    return resolve_metadata_collection_query_restricted(
+        collection_name,
+        restriction_key,
+        restriction_value,
+    )

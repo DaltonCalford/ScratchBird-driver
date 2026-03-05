@@ -50,6 +50,32 @@ fn _assert_metadata_guard(collection_name: String, expected_sqlstate: String, ex
         )
 
 
+fn _assert_metadata_restriction_guard(
+    collection_name: String,
+    restriction_key: String,
+    expected_sqlstate: String,
+    expected_fragment: String,
+) raises:
+    try:
+        _ = scratchbird_native.resolve_metadata_collection_query_restricted(
+            collection_name,
+            restriction_key,
+            "x",
+        )
+        raise Error("expected metadata restriction guard to reject restriction")
+    except e:
+        var message = String(e)
+        var sqlstate = scratchbird_native.extract_sqlstate(message)
+        _require(
+            sqlstate == expected_sqlstate,
+            "expected metadata restriction sqlstate '" + expected_sqlstate + "', got '" + sqlstate + "'",
+        )
+        _require(
+            expected_fragment in message,
+            "expected metadata restriction guard containing '" + expected_fragment + "', got '" + message + "'",
+        )
+
+
 fn main() raises:
     var cfg = scratchbird_native.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&binary_transfer=true"
@@ -137,6 +163,25 @@ fn main() raises:
         conn.query_metadata_rows("typeinfo") == 1,
         "metadata typeinfo execution rowcount mismatch",
     )
+    var restricted_tables = conn.query_metadata_restricted("table", "name", "orders")
+    _require(
+        restricted_tables
+        == "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 AND table_name = 'orders' ORDER BY table_name",
+        "restricted metadata table query mismatch",
+    )
+    _require(
+        conn.query_metadata_rows_restricted("table", "name", "orders") == 1,
+        "restricted metadata table execution rowcount mismatch",
+    )
+    var restricted_schema = conn.query_metadata_restricted("schema", "schema", "acme'schema")
+    _require(
+        "schema_name = 'acme''schema'" in restricted_schema,
+        "restricted metadata schema query should escape SQL literals",
+    )
+    _require(
+        conn.query_metadata_restricted("tables", "table_name", "") == scratchbird_native.METADATA_TABLES_QUERY,
+        "empty restriction value should not mutate metadata query",
+    )
     _require(
         scratchbird_native.normalize_metadata_collection_name("column") == "columns",
         "metadata column alias mismatch",
@@ -149,7 +194,17 @@ fn main() raises:
         scratchbird_native.normalize_metadata_collection_name("tableprivileges") == "table_privileges",
         "metadata tableprivileges alias mismatch",
     )
+    _require(
+        scratchbird_native.normalize_metadata_restriction_key("TABLE_SCHEM") == "schema_name",
+        "metadata restriction alias mismatch for TABLE_SCHEM",
+    )
+    _require(
+        scratchbird_native.normalize_metadata_restriction_key("column") == "column_name",
+        "metadata restriction alias mismatch for column",
+    )
     _assert_metadata_guard("unsupported_collection", "0A000", "not supported")
+    _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
+    _assert_metadata_restriction_guard("tables", "schema", "0A000", "not supported for 'tables'")
 
     var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(stream.next(conn) == 1, "stream first row mismatch")

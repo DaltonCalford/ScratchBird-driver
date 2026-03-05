@@ -100,24 +100,36 @@
 - Lane-local source anchors:
 - `src/scratchbird.mojo:21` (facade metadata constants exported from native bootstrap)
 - `src/scratchbird.mojo:40` (facade metadata query helper family)
-- `src/scratchbird.mojo:100` (facade `metadata_query(...)` routed through alias resolver)
+- `src/scratchbird.mojo:106` (facade `metadata_query_restricted(...)` routed through restriction-aware resolver)
 - `src/scratchbird_native.mojo:281` (native-bootstrap `query_metadata`)
 - `src/scratchbird_native.mojo:285` (native-bootstrap `query_metadata_rows`)
-- `src/scratchbird_native.mojo:586` (native-bootstrap metadata alias normalization)
-- `src/scratchbird_native.mojo:599` (native-bootstrap metadata query resolution)
-- `src/scratchbird.py:1014` (bridge-shim `query_metadata` route)
-- `src/scratchbird.py:1020` (bridge-shim `query_metadata_rows` executable helper)
+- `src/scratchbird_native.mojo:289` (native-bootstrap `query_metadata_restricted`)
+- `src/scratchbird_native.mojo:302` (native-bootstrap `query_metadata_rows_restricted`)
+- `src/scratchbird_native.mojo:628` (native-bootstrap metadata alias normalization)
+- `src/scratchbird_native.mojo:641` (native-bootstrap metadata query resolution)
+- `src/scratchbird_native.mojo:676` (native-bootstrap metadata restriction alias normalization)
+- `src/scratchbird_native.mojo:755` (native-bootstrap restriction-aware metadata query resolution)
+- `src/scratchbird.py:1061` (bridge-shim `query_metadata` route)
+- `src/scratchbird.py:1067` (bridge-shim `query_metadata_rows` executable helper)
+- `src/scratchbird.py:1078` (bridge-shim `query_metadata_restricted` route)
+- `src/scratchbird.py:1092` (bridge-shim `query_metadata_rows_restricted` executable helper)
+- `src/scratchbird.py:1201` (bridge-shim metadata restriction alias normalization)
+- `src/scratchbird.py:1239` (bridge-shim restriction-aware metadata query resolution)
 - Lane-local test anchors:
 - `tests/scratchbird_surface.mojo:56` (facade metadata alias/query/rowcount assertions)
+- `tests/scratchbird_surface.mojo:93` (facade restricted metadata query and rowcount assertions)
 - `tests/native_bootstrap.mojo:113` (native-bootstrap metadata alias/query assertions)
-- `tests/native_bootstrap.mojo:133` (native-bootstrap metadata executable rowcount assertions)
+- `tests/native_bootstrap.mojo:166` (native-bootstrap restricted metadata query/rowcount assertions)
 - `tests/metadata_execution.py:40` (bridge-shim metadata alias normalization coverage)
 - `tests/metadata_execution.py:55` (bridge-shim extended metadata query resolution coverage)
 - `tests/metadata_execution.py:84` (bridge-shim metadata execution routing coverage)
-- `tests/metadata_execution.py:113` (bridge-shim metadata rowcount helper coverage)
+- `tests/metadata_execution.py:85` (bridge-shim metadata restriction alias normalization coverage)
+- `tests/metadata_execution.py:95` (bridge-shim restriction-aware metadata query resolution coverage)
+- `tests/metadata_execution.py:140` (bridge-shim restricted metadata execution routing coverage)
+- `tests/metadata_execution.py:171` (bridge-shim restricted metadata rowcount helper coverage)
 - Gaps/next actions:
 - Add live metadata stability assertions (schemas/tables/columns) against running endpoints.
-- Expand restriction-aware metadata filtering/payload-shaping checks for editor contracts.
+- Expand metadata payload-shaping checks for editor contracts and multi-restriction/wildcard semantics.
 
 ## TYPE (JDBCBL)
 
