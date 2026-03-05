@@ -80,6 +80,15 @@ fn main() raises:
     _require(cfg.host == "localhost", "host parse mismatch")
     _require(cfg.port == 3092, "port parse mismatch")
     _require(cfg.database == "testdb", "database parse mismatch")
+    var cfg_default_port = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost/testdb?sslmode=require&binary_transfer=true"
+    )
+    _require(cfg_default_port.port == 3092, "default port parse mismatch")
+    var cfg_endpoint_override = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&host=proxy.local&port=4100"
+    )
+    _require(cfg_endpoint_override.host == "proxy.local", "query host override parse mismatch")
+    _require(cfg_endpoint_override.port == 4100, "query port override parse mismatch")
 
     var conn = scratchbird.connect(cfg)
     _require(conn.ping(), "ping should return true")
@@ -402,6 +411,16 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sb_test_auth_fail=true",
         "28P01",
         "authentication failed",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@:3092/testdb?sslmode=require",
+        "28000",
+        "host and database are required",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=0",
+        "22023",
+        "port must be positive",
     )
 
     print("Mojo scratchbird facade tests OK")

@@ -49,8 +49,8 @@ struct ScratchBirdConfig:
     fn __init__(out self, dsn: String):
         self.dsn = dsn
         self.user = _extract_user(dsn)
-        self.host = _extract_host(dsn)
-        self.port = _extract_port(dsn)
+        self.host = _query_value(dsn, "host", _extract_host(dsn))
+        self.port = _query_int(dsn, "port", _extract_port(dsn))
         self.database = _extract_database(dsn)
 
         self.front_door_mode = _query_value(dsn, "front_door_mode", "")
@@ -957,6 +957,12 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
 
     if config.user.strip() == "" or config.database.strip() == "":
         raise Error("28000 user and database are required")
+
+    if config.host.strip() == "":
+        raise Error("28000 host and database are required")
+
+    if config.port <= 0:
+        raise Error("22023 port must be positive")
 
     if config.sslmode.strip().lower() == "disable":
         raise Error("08004 TLS is required for ScratchBird connections")
