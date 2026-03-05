@@ -28,7 +28,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 ```
 
 Expected behavior:
-- native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK`
+- native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK` (including native begin/commit/rollback and prepared execute smoke semantics)
 - integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
 
 ## Conformance Adapter

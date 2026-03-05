@@ -50,6 +50,18 @@ fn main() raises:
     var conn = scratchbird_native.connect(cfg)
     _require(conn.query("SELECT 1") == 1, "SELECT 1 should return 1")
     _require(conn.query("SELECT * FROM type_coverage") == 1, "type_coverage stub should return success")
+    conn.commit()
+    conn.rollback()
+    conn.begin()
+    try:
+        conn.begin()
+        raise Error("expected nested transaction begin to fail")
+    except e:
+        _require("25001" in String(e), "nested transaction should report 25001")
+    conn.rollback()
+    conn.begin()
+    conn.commit()
+    conn.commit()
     var p1 = List[String]()
     p1.append("42")
     _require(conn.query_with_params("SELECT $1::INTEGER", p1) == 42, "single-parameter query mismatch")
@@ -57,11 +69,18 @@ fn main() raises:
     p2.append("5")
     p2.append("7")
     _require(conn.query_with_params("SELECT $1::INTEGER, $2::INTEGER", p2) == 12, "two-parameter query mismatch")
+    var stmt = conn.prepare("SELECT $1::INTEGER, $2::INTEGER")
+    _require(stmt.execute(p2) == 12, "prepared execute mismatch")
     try:
         _ = conn.query_with_params("SELECT $1::INTEGER, $2::INTEGER", p1)
         raise Error("expected parameter mismatch")
     except e:
         _require("07001" in String(e), "parameter mismatch should include 07001")
+    try:
+        _ = stmt.execute(p1)
+        raise Error("expected prepared mismatch")
+    except e:
+        _require("07001" in String(e), "prepared mismatch should include 07001")
     _require(
         conn.query_metadata("table") == scratchbird_native.METADATA_TABLES_QUERY,
         "metadata table alias mismatch",

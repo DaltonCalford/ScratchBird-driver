@@ -40,6 +40,7 @@ struct ScratchBirdConnection:
     var database: String
     var front_door_mode: String
     var cancel_requested: Bool
+    var txn_active: Bool
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
@@ -47,28 +48,34 @@ struct ScratchBirdConnection:
         self.database = config.database
         self.front_door_mode = config.front_door_mode
         self.cancel_requested = False
+        self.txn_active = False
 
     fn query(self, sql: String) raises -> Int:
-        var normalized = sql.strip().lower()
-        if normalized == "select 1":
-            return 1
-        if normalized == "select * from type_coverage":
-            return 1
-        raise Error("unsupported query in native bootstrap")
+        _ = self
+        return _query_result_from_sql(sql)
 
     fn query_with_params(self, sql: String, params: List[String]) raises -> Int:
         _ = self
-        var expected = _expected_param_count(sql)
-        if expected != len(params):
-            raise Error("07001 parameter count mismatch")
-        var normalized = sql.strip().lower()
-        if normalized == "select $1::integer" and expected == 1:
-            return Int(params[0])
-        if normalized == "select $1::integer, $2::integer" and expected == 2:
-            return Int(params[0]) + Int(params[1])
-        if expected == 0:
-            return self.query(sql)
-        raise Error("unsupported parameterized query in native bootstrap")
+        return _query_result_from_sql_with_params(sql, params)
+
+    fn prepare(self, sql: String) -> ScratchBirdStatement:
+        _ = self
+        return ScratchBirdStatement(sql)
+
+    fn begin(mut self) raises:
+        if self.txn_active:
+            raise Error("25001 transaction already active")
+        self.txn_active = True
+
+    fn commit(mut self):
+        if not self.txn_active:
+            return
+        self.txn_active = False
+
+    fn rollback(mut self):
+        if not self.txn_active:
+            return
+        self.txn_active = False
 
     fn stream(self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
         _ = fetch_size
@@ -116,6 +123,16 @@ struct ScratchBirdStream:
 
     fn close(mut self):
         self.closed = True
+
+
+struct ScratchBirdStatement:
+    var sql: String
+
+    fn __init__(out self, sql: String):
+        self.sql = sql
+
+    fn execute(self, params: List[String]) raises -> Int:
+        return _query_result_from_sql_with_params(self.sql, params)
 
 
 fn _as_bool(value: String) -> Bool:
@@ -173,6 +190,29 @@ fn _expected_param_count(sql: String) -> Int:
                 continue
         i += 1
     return max_index
+
+
+fn _query_result_from_sql(sql: String) raises -> Int:
+    var normalized = sql.strip().lower()
+    if normalized == "select 1":
+        return 1
+    if normalized == "select * from type_coverage":
+        return 1
+    raise Error("unsupported query in native bootstrap")
+
+
+fn _query_result_from_sql_with_params(sql: String, params: List[String]) raises -> Int:
+    var expected = _expected_param_count(sql)
+    if expected != len(params):
+        raise Error("07001 parameter count mismatch")
+    var normalized = sql.strip().lower()
+    if normalized == "select $1::integer" and expected == 1:
+        return Int(params[0])
+    if normalized == "select $1::integer, $2::integer" and expected == 2:
+        return Int(params[0]) + Int(params[1])
+    if expected == 0:
+        return _query_result_from_sql(sql)
+    raise Error("unsupported parameterized query in native bootstrap")
 
 
 fn _strip_scheme(dsn: String) -> String:

@@ -13,9 +13,9 @@
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
 - `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
-- `src/scratchbird_native.mojo:5` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
-- `src/scratchbird_native.mojo:145` (native-bootstrap `connect` entrypoint)
-- `src/scratchbird_native.mojo:56` (native-bootstrap `query_with_params` with placeholder counting and `07001` mismatch semantics)
+- `src/scratchbird_native.mojo:11` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
+- `src/scratchbird_native.mojo:345` (native-bootstrap `connect` entrypoint)
+- `src/scratchbird_native.mojo:57` (native-bootstrap `query_with_params` with placeholder counting and `07001` mismatch semantics)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
 - `src/scratchbird.mojo:1641` (`ping`)
@@ -30,8 +30,8 @@
 - `tests/sbdriver_conformance.py:70` (conformance launcher now runs native bootstrap smoke first with fallback controls)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
-- `tests/native_bootstrap.mojo:30` (native bootstrap guard/query smoke path via `mojo run -I src`)
-- `tests/native_bootstrap.mojo:43` (native bootstrap prepare-bind + mismatch guard path)
+- `tests/native_bootstrap.mojo:50` (native bootstrap guard/query smoke path via `mojo run -I src`)
+- `tests/native_bootstrap.mojo:65` (native bootstrap prepare-bind + mismatch guard path)
 - Gaps/next actions:
 - Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
 - Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
@@ -48,11 +48,16 @@
 - `src/scratchbird.mojo:1678` (`rollback` no-op when no active txn)
 - `src/scratchbird.mojo:1703` (`_drain_until_ready` propagates protocol error details)
 - `src/scratchbird.py:205` (bridge-shim nested-transaction guard rails)
+- `src/scratchbird_native.mojo:65` (native-bootstrap `begin` nested-transaction guard `25001`)
+- `src/scratchbird_native.mojo:70` (native-bootstrap `commit` no-op when no active txn)
+- `src/scratchbird_native.mojo:75` (native-bootstrap `rollback` no-op when no active txn)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:55` (`begin` flag/payload mapping assertions)
 - `tests/txn_exec_parity.py:89` (nested `begin()` rejection with SQLSTATE `25001`)
 - `tests/txn_exec_parity.mojo:90` (inactive transaction commit/rollback no-op assertions)
 - `tests/txn_exec_parity.mojo:98` (active transaction commit/rollback message assertions)
+- `tests/native_bootstrap.mojo:55` (native-bootstrap nested `begin()` rejection with `25001`)
+- `tests/native_bootstrap.mojo:53` (native-bootstrap inactive `commit`/`rollback` no-op assertions)
 - Gaps/next actions:
 - Add live transaction integration coverage against a running ScratchBird endpoint.
 
@@ -72,9 +77,12 @@
 - `src/scratchbird.py:206` (bridge-shim `stream` entrypoint)
 - `src/scratchbird.py:217` (bridge-shim `cancel` signal path)
 - `src/scratchbird.py:221` (bridge-shim stream iterator with `57014` cancellation behavior)
-- `src/scratchbird_native.mojo:55` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
-- `src/scratchbird_native.mojo:66` (native-bootstrap `stream`/`cancel` lifecycle entrypoints)
-- `src/scratchbird_native.mojo:88` (native-bootstrap stream iterator with `57014` cancellation behavior)
+- `src/scratchbird_native.mojo:57` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
+- `src/scratchbird_native.mojo:61` (native-bootstrap `prepare` statement scaffold)
+- `src/scratchbird_native.mojo:134` (native-bootstrap prepared `execute` path)
+- `src/scratchbird_native.mojo:80` (native-bootstrap `stream` lifecycle entrypoint)
+- `src/scratchbird_native.mojo:91` (native-bootstrap `cancel` signal path)
+- `src/scratchbird_native.mojo:112` (native-bootstrap stream iterator with `57014` cancellation behavior)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
@@ -86,8 +94,9 @@
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`
 - `tests/sbdriver_conformance.mojo:190`
-- `tests/native_bootstrap.mojo:43` (native-bootstrap prepare-bind + mismatch assertions)
-- `tests/native_bootstrap.mojo:58` (native-bootstrap stream/cancel `57014` assertions)
+- `tests/native_bootstrap.mojo:71` (native-bootstrap prepare-bind + mismatch assertions)
+- `tests/native_bootstrap.mojo:73` (native-bootstrap prepared execute parity assertions)
+- `tests/native_bootstrap.mojo:113` (native-bootstrap stream/cancel `57014` assertions)
 - `tests/README.md:10`
 - Gaps/next actions:
 - Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
@@ -105,8 +114,8 @@
 - `src/scratchbird.mojo:1799` (`build_schema_tree` recursive tree shaping with per-parent uniqueness)
 - `src/scratchbird.mojo:1822` (`expand_schema_metadata_rows` synthetic ancestor row shaping)
 - `src/scratchbird.mojo:1848` (`build_database_default_metadata_rows` database/default branch-style metadata rows)
-- `src/scratchbird_native.mojo:133` (native-bootstrap metadata collection alias normalization)
-- `src/scratchbird_native.mojo:145` (native-bootstrap metadata query resolution)
+- `src/scratchbird_native.mojo:303` (native-bootstrap metadata collection alias normalization)
+- `src/scratchbird_native.mojo:316` (native-bootstrap metadata query resolution)
 - Lane-local test anchors:
 - `tests/metadata_recursive_schema.mojo:24` (database/default branch style row shaping)
 - `tests/metadata_recursive_schema.mojo:54` (dotted parent expansion ordering/uniqueness)
@@ -117,7 +126,7 @@
 - `tests/metadata_execution.py:53` (extended collection query resolution coverage)
 - `tests/metadata_execution.py:80` (metadata execution routing path coverage)
 - `tests/metadata_execution.py:111` (unsupported metadata collection `0A000` behavior)
-- `tests/native_bootstrap.mojo:44` (native-bootstrap metadata alias/query smoke assertions)
+- `tests/native_bootstrap.mojo:84` (native-bootstrap metadata alias/query smoke assertions)
 - `tests/README.md:41` (metadata recursive schema scaffold invocation)
 - Gaps/next actions:
 - Add live metadata integration assertions for schema/table/column result stability against a running ScratchBird endpoint.
