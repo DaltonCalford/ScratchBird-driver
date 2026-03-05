@@ -76,8 +76,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_exec_lifecycle.R:144` (command-complete + ready terminal state shaping)
   - `tests/testthat/test_integration.R:54` (live simple query)
   - `tests/testthat/test_integration.R:73` (live parameterized query)
-- Gaps / next actions:
-  - Expand live integration coverage for incremental fetch/result lifecycle (current new lifecycle checks are mock based).
+  - `tests/testthat/test_integration.R:151` (live incremental fetch lifecycle with `fetch_size`)
 
 ## META -> JDBCBL-META
 
@@ -109,6 +108,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_metadata_execution.R:121` (dbColumnInfo metadata priming + post-call fetch continuity)
   - `tests/testthat/test_metadata_execution.R:167` (dbColumnInfo empty-result projection shape)
   - `tests/testthat/test_integration.R:111` (live metadata query wrappers + schema tree row shaping)
+  - `tests/testthat/test_integration.R:133` (live metadata wrapper family smoke coverage)
 - Gaps / next actions:
   - Expand metadata-family coverage toward richer privilege/key/type and DDL-editor payload parity expectations.
 
@@ -129,7 +129,7 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_types.R:47` (vector/range/composite decode matrix)
   - `tests/testthat/test_types.R:69` (`encode_param` primitive + wrapper dispatch)
   - `tests/testthat/test_types.R:98` (vector/array literal family coverage)
-  - `tests/testthat/test_integration.R:151` (`type_coverage` fixture integration)
+  - `tests/testthat/test_integration.R:194` (`type_coverage` fixture integration)
 
 ## ERR -> JDBCBL-ERR
 
@@ -145,8 +145,8 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `tests/testthat/test_error_parity.R:34` (typed condition class + SQLSTATE/detail/hint propagation)
   - `tests/testthat/test_error_parity.R:59` (unknown SQLSTATE class fallback)
   - `tests/testthat/test_error_parity.R:74` (empty-SQLSTATE generic fallback)
-  - `tests/testthat/test_integration.R:142` (live syntax-error path)
-  - `tests/testthat/test_integration.R:158` (live cancel path expects error)
+  - `tests/testthat/test_integration.R:185` (live syntax-error path)
+  - `tests/testthat/test_integration.R:201` (live cancel path expects error)
   - `tests/testthat/test_config.R:40` (config validation error path)
 
 ## RES -> JDBCBL-RES
@@ -162,9 +162,9 @@ Scope: lane-local S0 artifact only for `tracks/beta/drivers/r`.
   - `R/client.R:258` (`sb_socket_close`)
   - `src/tls_transport.c:78` / `src/tls_transport.c:490` (native transport finalizer and explicit close)
 - Lane-local test anchors:
-  - `tests/testthat/test_integration.R:133` (live ping roundtrip with follow-up query)
-  - `tests/testthat/test_integration.R:142` (live post-error usability)
-  - `tests/testthat/test_integration.R:158` (live cancel during long-running fetch path)
+  - `tests/testthat/test_integration.R:176` (live ping roundtrip with follow-up query)
+  - `tests/testthat/test_integration.R:185` (live post-error usability)
+  - `tests/testthat/test_integration.R:201` (live cancel during long-running fetch path)
   - `tests/testthat/test_resilience_lifecycle.R:36` (`sb_disconnect` repeated-call behavior with non-NULL close followed by NULL-safe close handling).
   - `tests/testthat/test_resilience_lifecycle.R:62` (`dbDisconnect` repeated-call idempotence with stable TRUE return and one real close).
   - `tests/testthat/test_resilience_lifecycle.R:88` (`dbClearResult` idempotent completion path).

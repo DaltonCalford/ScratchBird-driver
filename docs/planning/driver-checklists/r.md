@@ -13,6 +13,8 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Add deterministic execution lifecycle tests for extended-query message order, parameter-mismatch failure handling, and portal-suspension resume flow in `tracks/beta/drivers/r/tests/testthat/test_exec_lifecycle.R`. Issue: DONE (2026-03-05)
 - [x] Add DBI `dbColumnInfo` support (with metadata priming before fetch) in `tracks/beta/drivers/r/R/dbi.R` and `tracks/beta/drivers/r/R/client.R`. Issue: DONE (2026-03-05)
 - [x] Stabilize `sb_rows_to_df` typed column conversion across decoded scalar families in `tracks/beta/drivers/r/R/client.R`. Issue: DONE (2026-03-05)
+- [x] Add env-gated integration coverage for incremental fetch lifecycle with `fetch_size` in `tracks/beta/drivers/r/tests/testthat/test_integration.R`. Issue: DONE (2026-03-05)
+- [x] Add env-gated metadata wrapper-family integration smoke coverage (indexes/index-columns/constraints/procedures/functions) in `tracks/beta/drivers/r/tests/testthat/test_integration.R`. Issue: DONE (2026-03-05)
 
 ## P3 (Future)
 

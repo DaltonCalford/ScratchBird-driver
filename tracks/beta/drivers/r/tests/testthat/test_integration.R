@@ -130,6 +130,49 @@ test_that("integration metadata wrappers and schema tree rows", {
   })
 })
 
+test_that("integration metadata wrapper family smoke", {
+  with_integration_client(function(client) {
+    metadata_queries <- list(
+      sb_metadata_indexes_query(),
+      sb_metadata_index_columns_query(),
+      sb_metadata_constraints_query(),
+      sb_metadata_procedures_query(),
+      sb_metadata_functions_query()
+    )
+
+    for (query in metadata_queries) {
+      result <- sb_get_query(client, query)
+      expect_true(is.data.frame(result))
+      expect_true(ncol(result) > 0)
+    }
+  })
+})
+
+test_that("integration incremental fetch lifecycle with fetch_size", {
+  dsn <- integration_dsn()
+  client <- sb_connect(dsn, fetch_size = 1L)
+  on.exit(sb_disconnect(client), add = TRUE)
+
+  result <- sb_send_query(
+    client,
+    "SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER UNION ALL SELECT ?::INTEGER",
+    list(11L, 22L, 33L)
+  )
+
+  chunk1 <- sb_fetch(result, n = 1)
+  chunk2 <- sb_fetch(result, n = 1)
+  chunk3 <- sb_fetch(result, n = 1)
+  chunk4 <- sb_fetch(result, n = 1)
+
+  expect_equal(nrow(chunk1), 1L)
+  expect_equal(as.integer(chunk1[[1]][[1]]), 11L)
+  expect_equal(nrow(chunk2), 1L)
+  expect_equal(as.integer(chunk2[[1]][[1]]), 22L)
+  expect_equal(nrow(chunk3), 1L)
+  expect_equal(as.integer(chunk3[[1]][[1]]), 33L)
+  expect_equal(nrow(chunk4), 0L)
+})
+
 test_that("integration ping roundtrip", {
   with_integration_client(function(client) {
     scratchbird:::sb_ping(client)
