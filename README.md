@@ -100,6 +100,10 @@ Legend:
 - **Mojo lane:** Added prepared statement lifecycle parity with idempotent `close()` and execute-after-close SQLSTATE guard (`HY010`) in native/facade smoke coverage.
 - **Mojo lane:** Extended closed-connection SQLSTATE parity (`08003`) to `commit`, `rollback`, `cancel`, and metadata query paths in native/facade smoke coverage.
 - **Mojo lane:** Added stream lifecycle SQLSTATE parity: closed-stream reads now report `HY010`, and reads on active streams after connection close report `08003` in native/facade smoke coverage.
+- **Mojo lane:** Aligned bridge-shim TXN/EXEC closed-state parity (`08003`) across query/begin/commit/rollback/cancel/stream/metadata, plus bridge-shim statement/stream lifecycle guards (`HY010`) and deterministic integer coercion guard parity (`22023`) in `txn_exec_parity`.
+- **Mojo lane:** Aligned bridge-shim CONN guard parity with query-order front-door alias normalization/token enforcement (`08001`), binary transfer and compression compatibility (`binary_transfer=false`, `compression=zstd|none`), deterministic compression rejection for unsupported values, and pool-bound integer guards (`22023`), including updated deterministic manager fallback DSN tokening in integration smoke.
+- **Mojo lane:** Added bridge-shim connect guard parity for malformed query escapes and malformed bracketed-IPv6 DSNs (`22023`), protocol alias normalization (`protocol|parser|dialect`) with native-only rejection (`0A000`), and additional integer guard parity for `default_row_fetch_size`, `connection_lifetime`, and `manager_client_flags` (`22023`).
+- **Mojo lane:** Extended bridge-shim connect guard parity for endpoint/session constraints with `user/database` required (`28000`), explicit empty-host rejection (`28000`) while preserving omitted-host fallback behavior, port validation (`22023` malformed/range), and timeout guard parity for `connect_timeout`, `socket_timeout`, `login_timeout`, and `acquire_timeout` aliases (`22023`).
 
 ---
 

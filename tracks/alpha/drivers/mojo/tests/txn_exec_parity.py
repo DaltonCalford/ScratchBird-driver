@@ -204,6 +204,26 @@ def test_shim_prepare_execute_and_mismatch() -> None:
             raise RuntimeError("expected prepared mismatch to raise")
         except scratchbird.ScratchBirdError as exc:
             _require(exc.sqlstate == "07001", "prepared mismatch should raise 07001")
+        try:
+            stmt.execute(["bad", "7"])
+            raise RuntimeError("expected prepared integer coercion guard to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "22023", "prepared integer coercion should raise 22023")
+        stmt.close()
+        stmt.close()
+        try:
+            stmt.execute([5, 7])
+            raise RuntimeError("expected closed statement to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "HY010", "closed statement should raise HY010")
+
+        stmt_conn_closed = conn.prepare("SELECT $1::INTEGER, $2::INTEGER")
+        conn.close()
+        try:
+            stmt_conn_closed.execute([5, 7])
+            raise RuntimeError("expected statement execute on closed connection to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "08003", "statement execute on closed connection should raise 08003")
     finally:
         conn.close()
 
@@ -269,9 +289,9 @@ def test_stream_fetch_boundaries() -> None:
         stream.close()
         try:
             stream.__next__()
-            raise RuntimeError("closed stream should stop iteration")
-        except StopIteration:
-            pass
+            raise RuntimeError("closed stream should raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "HY010", "closed stream should raise HY010")
     finally:
         conn.close()
 
@@ -325,11 +345,39 @@ def test_close_is_idempotent_for_connection_and_stream() -> None:
     stream.close()
     try:
         stream.__next__()
-        raise RuntimeError("closed stream should stop iteration")
-    except StopIteration:
-        pass
+        raise RuntimeError("closed stream should raise")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "HY010", "closed stream should raise HY010")
     conn.close()
     conn.close()
+
+
+def test_shim_closed_connection_guards() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    active_stream = conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1)
+    _ = active_stream.__next__()
+    conn.close()
+
+    try:
+        active_stream.__next__()
+        raise RuntimeError("active stream on closed connection should raise")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "08003", "active stream on closed connection should raise 08003")
+
+    def _expect_08003(fn) -> None:
+        try:
+            fn()
+            raise RuntimeError("expected operation on closed connection to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "08003", "closed connection operation should raise 08003")
+
+    _expect_08003(lambda: conn.query("SELECT 1"))
+    _expect_08003(lambda: conn.begin())
+    _expect_08003(lambda: conn.commit())
+    _expect_08003(lambda: conn.rollback())
+    _expect_08003(lambda: conn.cancel())
+    _expect_08003(lambda: conn.query_metadata("tables"))
+    _expect_08003(lambda: conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1))
 
 
 def main() -> None:
@@ -348,6 +396,7 @@ def main() -> None:
     test_cancel_stream_returns_57014()
     test_post_cancel_stream_recovery()
     test_close_is_idempotent_for_connection_and_stream()
+    test_shim_closed_connection_guards()
     print("Mojo TXN/EXEC parity tests OK")
 
 

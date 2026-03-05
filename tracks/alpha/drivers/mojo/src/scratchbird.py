@@ -690,24 +690,253 @@ def _dsn_query_params(dsn: str) -> Dict[str, str]:
     return {str(key).strip().lower(): value for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)}
 
 
-def _validate_connect_guards(config: ScratchBirdConfig) -> None:
-    params = _dsn_query_params(config.dsn)
-    front_door_mode = str(
-        params.get("front_door_mode", params.get("connection_mode", params.get("ingress_mode", "direct")))
-    ).strip().lower()
-    if front_door_mode not in ("", "direct", "manager_proxy", "manager-proxy", "managed"):
-        raise RuntimeError("front_door_mode must be direct or manager_proxy.")
+def _dsn_last_query_value(dsn: str, keys: Iterable[str], default: Optional[str] = None) -> Optional[str]:
+    if not dsn:
+        return default
+    parsed = urllib.parse.urlparse(dsn)
+    keyset = {str(key).strip().lower() for key in keys}
+    found = False
+    last = default
+    for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
+        candidate = str(key).strip().lower()
+        if candidate in keyset:
+            last = value
+            found = True
+    return last if found else default
 
-    sslmode = str(params.get("sslmode", "require")).strip().lower()
+
+def _dsn_last_int_query_value(
+    dsn: str,
+    keys: Iterable[str],
+    default: int,
+    field_name: str,
+) -> int:
+    raw = _dsn_last_query_value(dsn, keys, None)
+    if raw is None:
+        return default
+    text = str(raw).strip()
+    if text == "":
+        raise ScratchBirdError(f"{field_name} must be a valid integer", "22023")
+    try:
+        return int(text)
+    except ValueError:
+        raise ScratchBirdError(f"{field_name} must be a valid integer", "22023")
+
+
+def _has_malformed_percent_escape(text: str) -> bool:
+    i = 0
+    while i < len(text):
+        if text[i] != "%":
+            i += 1
+            continue
+        if i + 2 >= len(text):
+            return True
+        hi = text[i + 1]
+        lo = text[i + 2]
+        if not (hi.isdigit() or ("a" <= hi.lower() <= "f")):
+            return True
+        if not (lo.isdigit() or ("a" <= lo.lower() <= "f")):
+            return True
+        i += 3
+    return False
+
+
+def _dsn_has_malformed_query_escape(dsn: str) -> bool:
+    if "?" not in dsn:
+        return False
+    query = dsn.split("?", 1)[1]
+    if query.strip() == "":
+        return False
+    return _has_malformed_percent_escape(query)
+
+
+def _dsn_has_malformed_bracketed_ipv6_host(dsn: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(dsn)
+    except ValueError:
+        return True
+    host_port = parsed.netloc
+    if "@" in host_port:
+        host_port = host_port.split("@", 1)[1]
+    host_port = host_port.strip()
+    if host_port == "":
+        return False
+    if host_port.startswith("["):
+        if "]" not in host_port:
+            return True
+        _, suffix = host_port.split("]", 1)
+        suffix = suffix.strip()
+        if suffix == "":
+            return False
+        if not suffix.startswith(":"):
+            return True
+        raw_port = suffix[1:].strip()
+        if raw_port == "":
+            return True
+        return not raw_port.isdigit()
+    return "[" in host_port or "]" in host_port
+
+
+def _normalize_protocol_value(value: Optional[str]) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    if normalized == "":
+        return "native"
+    if normalized in ("scratchbird", "scratchbird_native", "scratchbirdnative"):
+        return "native"
+    return normalized
+
+
+def _validate_connect_guards(config: ScratchBirdConfig) -> None:
+    if _dsn_has_malformed_query_escape(config.dsn):
+        raise ScratchBirdError("DSN query contains malformed percent-escape", "22023")
+    if _dsn_has_malformed_bracketed_ipv6_host(config.dsn):
+        raise ScratchBirdError("DSN contains malformed bracketed IPv6 host", "22023")
+    params = _dsn_query_params(config.dsn)
+    parsed = urllib.parse.urlparse(config.dsn)
+
+    user = parsed.username or ""
+    user_override = _dsn_last_query_value(config.dsn, ("user", "username", "pguser"), None)
+    if user_override is not None:
+        user = str(user_override)
+
+    database = parsed.path.lstrip("/")
+    database_override = _dsn_last_query_value(config.dsn, ("database", "dbname", "databasename", "pgdatabase"), None)
+    if database_override is not None:
+        database = str(database_override)
+
+    host = parsed.hostname or ""
+    host_override = _dsn_last_query_value(config.dsn, ("host", "hostname", "servername", "pghost"), None)
+    if host_override is not None:
+        host = str(host_override)
+        if host.strip() == "":
+            raise ScratchBirdError("host and database are required", "28000")
+    if host.strip() == "":
+        host = "localhost"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ScratchBirdError("port must be a valid integer", "22023")
+    if port is None:
+        port = 3092
+    port_override = _dsn_last_query_value(config.dsn, ("port", "portnumber", "pgport"), None)
+    if port_override is not None:
+        text = str(port_override).strip()
+        if text == "":
+            raise ScratchBirdError("port must be a valid integer", "22023")
+        try:
+            port = int(text)
+        except ValueError:
+            raise ScratchBirdError("port must be a valid integer", "22023")
+
+    if user.strip() == "" or database.strip() == "":
+        raise ScratchBirdError("user and database are required", "28000")
+    if port <= 0:
+        raise ScratchBirdError("port must be positive", "22023")
+    if port > 65535:
+        raise ScratchBirdError("port must be between 1 and 65535", "22023")
+
+    protocol = _normalize_protocol_value(
+        _dsn_last_query_value(config.dsn, ("protocol", "parser", "dialect"), "native")
+    )
+    if protocol != "native":
+        raise ScratchBirdError("protocol must be native", "0A000")
+
+    front_door_mode = str(
+        _dsn_last_query_value(
+            config.dsn,
+            ("front_door_mode", "frontdoormode", "connection_mode", "ingress_mode"),
+            "direct",
+        )
+        or "direct"
+    ).strip().lower()
+    if front_door_mode in ("managerproxy", "manager-proxy", "managed"):
+        front_door_mode = "manager_proxy"
+    if front_door_mode not in ("", "direct", "manager_proxy"):
+        raise RuntimeError("front_door_mode must be direct or manager_proxy.")
+    if front_door_mode == "manager_proxy":
+        token = _dsn_last_query_value(config.dsn, ("manager_auth_token", "mcp_auth_token"), "")
+        if token is None or str(token).strip() == "":
+            raise ScratchBirdError("manager_auth_token is required for manager_proxy mode", "08001")
+
+    sslmode = str(
+        _dsn_last_query_value(config.dsn, ("sslmode", "ssl"), params.get("sslmode", "require"))
+        or "require"
+    ).strip().lower()
     if sslmode == "disable":
         raise RuntimeError("TLS is required for ScratchBird connections")
 
-    if "binary_transfer" in params and not _as_bool(params["binary_transfer"]):
-        raise RuntimeError("binary_transfer=false is not supported")
+    _ = _dsn_last_query_value(config.dsn, ("binary_transfer", "binarytransfer"), None)
+    compression = str(_dsn_last_query_value(config.dsn, ("compression",), "off") or "off").strip().lower()
+    if compression == "none":
+        compression = "off"
+    if compression not in ("off", "zstd", ""):
+        raise RuntimeError("compression must be one of off,zstd,none")
 
-    compression = str(params.get("compression", "off")).strip().lower()
-    if compression == "zstd":
-        raise RuntimeError("compression=zstd is not supported")
+    min_pool_size = _dsn_last_int_query_value(config.dsn, ("min_pool_size", "minpoolsize"), 0, "min_pool_size")
+    max_pool_size = _dsn_last_int_query_value(config.dsn, ("max_pool_size", "maxpoolsize"), 1, "max_pool_size")
+    default_row_fetch_size = _dsn_last_int_query_value(
+        config.dsn,
+        ("default_row_fetch_size", "fetch_size", "fetchsize", "defaultrowfetchsize"),
+        0,
+        "default_row_fetch_size",
+    )
+    connection_lifetime = _dsn_last_int_query_value(
+        config.dsn,
+        ("connection_lifetime", "connectionlifetime", "poolingconnectionlifetime"),
+        0,
+        "connection_lifetime",
+    )
+    manager_client_flags = _dsn_last_int_query_value(
+        config.dsn,
+        ("manager_client_flags", "mcp_client_flags"),
+        0,
+        "manager_client_flags",
+    )
+    connect_timeout = _dsn_last_int_query_value(
+        config.dsn,
+        ("connect_timeout", "connecttimeout"),
+        10,
+        "connect_timeout",
+    )
+    socket_timeout = _dsn_last_int_query_value(
+        config.dsn,
+        ("socket_timeout", "sockettimeout"),
+        10,
+        "socket_timeout",
+    )
+    login_timeout = _dsn_last_int_query_value(
+        config.dsn,
+        ("login_timeout", "logintimeout"),
+        10,
+        "login_timeout",
+    )
+    acquire_timeout = _dsn_last_int_query_value(
+        config.dsn,
+        ("acquire_timeout", "acquiretimeout", "pooling_acquire_timeout", "poolingacquiretimeout"),
+        15,
+        "acquire_timeout",
+    )
+    if min_pool_size < 0:
+        raise ScratchBirdError("min_pool_size must be >= 0", "22023")
+    if max_pool_size < 1:
+        raise ScratchBirdError("max_pool_size must be >= 1", "22023")
+    if min_pool_size > max_pool_size:
+        raise ScratchBirdError("min_pool_size must be <= max_pool_size", "22023")
+    if connect_timeout < 0:
+        raise ScratchBirdError("connect_timeout must be >= 0", "22023")
+    if socket_timeout < 0:
+        raise ScratchBirdError("socket_timeout must be >= 0", "22023")
+    if login_timeout < 0:
+        raise ScratchBirdError("login_timeout must be >= 0", "22023")
+    if acquire_timeout < 0:
+        raise ScratchBirdError("acquire_timeout must be >= 0", "22023")
+    if default_row_fetch_size < 0:
+        raise ScratchBirdError("default_row_fetch_size must be >= 0", "22023")
+    if connection_lifetime < 0:
+        raise ScratchBirdError("connection_lifetime must be >= 0", "22023")
+    if manager_client_flags < 0:
+        raise ScratchBirdError("manager_client_flags must be >= 0", "22023")
 
     if _as_bool(params.get("sb_test_auth_fail", "0")):
         raise ScratchBirdError("authentication failed", "28P01")
@@ -749,10 +978,16 @@ class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
         self._sql = sql
+        self._closed = False
 
     def execute(self, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        if self._closed:
+            raise ScratchBirdError("statement is closed", "HY010")
         bound = [] if params is None else list(params)
         return self._conn.query(self._sql, bound)
+
+    def close(self) -> None:
+        self._closed = True
 
 
 class _ShimConnection:
@@ -764,7 +999,12 @@ class _ShimConnection:
         self._savepoints: List[str] = []
         self._closed = False
 
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise ScratchBirdError("connection is closed", "08003")
+
     def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        self._ensure_open()
         self._cancel_requested = False
         statement = sql.strip().lower()
         bound = list(params) if params is not None else []
@@ -779,9 +1019,15 @@ class _ShimConnection:
             rows = [[idx] for idx in range(1, 33)]
             return ScratchBirdResult(rows, [], len(rows))
         if statement == "select $1::integer":
-            return ScratchBirdResult([[int(bound[0])]], [], 1)
+            try:
+                return ScratchBirdResult([[int(bound[0])]], [], 1)
+            except (TypeError, ValueError):
+                raise ScratchBirdError("invalid integer parameter value", "22023")
         if statement == "select $1::integer, $2::integer":
-            return ScratchBirdResult([[int(bound[0]), int(bound[1])]], [], 1)
+            try:
+                return ScratchBirdResult([[int(bound[0]), int(bound[1])]], [], 1)
+            except (TypeError, ValueError):
+                raise ScratchBirdError("invalid integer parameter value", "22023")
         if "type_coverage" in statement:
             return ScratchBirdResult([["ok"]], [], 1)
         if _is_supported_metadata_query(statement):
@@ -867,6 +1113,8 @@ class _ShimConnection:
         )
 
     def close(self) -> None:
+        if self._closed:
+            return None
         self._cancel_requested = False
         self._txn_id = 0
         self._savepoints = []
@@ -880,6 +1128,7 @@ class _ShimConnection:
         return _ShimStatement(self, sql)
 
     def begin(self, **kwargs: Any) -> None:
+        self._ensure_open()
         _ = kwargs
         if self._txn_id != 0:
             raise ScratchBirdError("transaction already active", "25001")
@@ -887,18 +1136,21 @@ class _ShimConnection:
         self._savepoints = []
 
     def commit(self) -> None:
+        self._ensure_open()
         if self._txn_id == 0:
             return
         self._txn_id = 0
         self._savepoints = []
 
     def rollback(self) -> None:
+        self._ensure_open()
         if self._txn_id == 0:
             return
         self._txn_id = 0
         self._savepoints = []
 
     def set_savepoint(self, name: Optional[str] = None) -> str:
+        self._ensure_open()
         if self._txn_id == 0:
             raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -909,6 +1161,7 @@ class _ShimConnection:
         return resolved
 
     def release_savepoint(self, name: str) -> None:
+        self._ensure_open()
         if self._txn_id == 0:
             raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -921,6 +1174,7 @@ class _ShimConnection:
         raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
 
     def rollback_to_savepoint(self, name: str) -> None:
+        self._ensure_open()
         if self._txn_id == 0:
             raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
@@ -938,12 +1192,14 @@ class _ShimConnection:
         params: Optional[Iterable[Any]] = None,
         fetch_size: int = 0,
     ) -> "_ShimStream":
+        self._ensure_open()
         _ = fetch_size
         self._cancel_requested = False
         result = self.query(sql, params)
         return _ShimStream(self, result.rows)
 
     def cancel(self) -> None:
+        self._ensure_open()
         self._cancel_requested = True
 
 
@@ -959,13 +1215,16 @@ class _ShimStream:
 
     def __next__(self) -> List[Any]:
         if self._closed:
-            raise StopIteration
+            raise ScratchBirdError("stream is closed", "HY010")
+        if self._conn._closed:
+            self._closed = True
+            raise ScratchBirdError("connection is closed", "08003")
         if self._conn._cancel_requested:
             self._closed = True
             raise ScratchBirdError("query canceled", "57014")
         if self._index >= len(self._rows):
             self._closed = True
-            raise StopIteration
+            raise ScratchBirdError("stream is closed", "HY010")
         row = self._rows[self._index]
         self._index += 1
         return row

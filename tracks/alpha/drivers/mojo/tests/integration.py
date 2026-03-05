@@ -26,7 +26,7 @@ def _deterministic_fallback_dsn() -> str:
 def _deterministic_fallback_manager_dsn() -> str:
     return (
         "scratchbird://user:pass@localhost:3092/testdb"
-        "?sslmode=require&front_door_mode=manager_proxy"
+        "?sslmode=require&front_door_mode=manager_proxy&manager_auth_token=deterministic_token"
     )
 
 
