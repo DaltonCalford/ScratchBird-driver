@@ -15,6 +15,10 @@ def _is_truthy(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _deterministic_fallback_dsn() -> str:
+    return "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
+
+
 def _native_bootstrap_command(lane_root: pathlib.Path) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
@@ -128,7 +132,9 @@ def main() -> None:
     lane_root = pathlib.Path(__file__).resolve().parents[1]
     _run_native_bootstrap_smoke(lane_root)
 
-    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "")
+    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
+    if not dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
+        dsn = _deterministic_fallback_dsn()
     if dsn:
         _run_smoke_for_dsn(dsn, "direct integration")
     else:
