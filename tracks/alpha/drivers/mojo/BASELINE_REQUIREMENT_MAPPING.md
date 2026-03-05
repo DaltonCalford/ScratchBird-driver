@@ -137,9 +137,6 @@
 - `tests/native_bootstrap.mojo:84` (native-bootstrap metadata restriction count guard `07001`)
 - `tests/metadata_execution.py:40` (bridge-shim metadata alias normalization coverage)
 - `tests/metadata_execution.py:55` (bridge-shim extended metadata query resolution coverage)
-- `tests/metadata_execution.py:84` (bridge-shim metadata execution routing coverage)
-- `tests/metadata_execution.py:85` (bridge-shim metadata restriction alias normalization coverage)
-- `tests/metadata_execution.py:95` (bridge-shim restriction-aware metadata query resolution coverage)
 - `tests/metadata_execution.py:84` (bridge-shim metadata restriction alias normalization coverage, including catalog/index/constraint/routine/type aliases)
 - `tests/metadata_execution.py:103` (bridge-shim restriction-aware metadata query resolution coverage across alias families)
 - `tests/metadata_execution.py:191` (bridge-shim multi-restriction query-shaping + mapping guard coverage)
@@ -150,11 +147,11 @@
 - `tests/metadata_execution.py:378` (bridge-shim SQL LIKE escape-aware/case-insensitive matcher coverage)
 - `tests/metadata_recursive_schema.py:117` (deterministic editor payload shape contract coverage)
 - `tests/metadata_recursive_schema.py:147` (shim connection default editor payload contract coverage)
-- `tests/integration.py:129` (integration smoke metadata wrapper rowcount stability assertions)
-- `tests/integration.py:135` (integration smoke DDL-editor payload contract-key assertions)
+- `tests/integration.py:192` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
+- `tests/integration.py:167` (integration smoke DDL-editor payload contract + tree-parent assertions)
+- `tests/integration.py:234` (integration smoke deterministic fallback metadata content assertions)
 - Gaps/next actions:
-- Add live metadata stability assertions (schemas/tables/columns) against running endpoints.
-- Add live metadata payload-shaping assertions against running endpoints.
+- Expand metadata stability/payload assertions to runtime managed/listener endpoint matrices once live environments are available.
 
 ## TYPE (JDBCBL)
 
