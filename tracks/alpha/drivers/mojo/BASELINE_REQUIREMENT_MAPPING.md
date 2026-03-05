@@ -7,12 +7,14 @@
 
 ## CONN (JDBCBL)
 
-- Current status: Implemented
+- Current status: Implemented (bridge lane) + Native bootstrap scaffolding
 - Lane-local source anchors:
 - `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
 - `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
+- `src/scratchbird_native.mojo:5` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
+- `src/scratchbird_native.mojo:145` (native-bootstrap `connect` entrypoint)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
 - `src/scratchbird.mojo:1641` (`ping`)
@@ -25,7 +27,9 @@
 - `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
+- `tests/native_bootstrap.mojo:30` (native bootstrap guard/query smoke path via `mojo run -I src`)
 - Gaps/next actions:
+- Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
 - Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
 
 ## TXN (JDBCBL)

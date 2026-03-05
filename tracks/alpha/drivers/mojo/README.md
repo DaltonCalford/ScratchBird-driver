@@ -18,6 +18,7 @@ Current implementation is a Mojo-Python interop lane:
 
 - Full SBWP v1.1 API surface is represented in-lane through the Python-backed shim.
 - Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
+- Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native Mojo transport/auth remains future work.
 
 ## Platform Support
@@ -38,6 +39,7 @@ Current implementation is a Mojo-Python interop lane:
 From `tracks/alpha/drivers/mojo`:
 
 ```bash
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo

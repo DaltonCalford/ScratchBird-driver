@@ -17,6 +17,7 @@ Optional environment overrides:
 Run from lane root (`tracks/alpha/drivers/mojo`):
 
 ```bash
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src tests/native_bootstrap.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
 pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
@@ -27,7 +28,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 ```
 
 Expected behavior:
-- metadata, txn/exec, error-propagation, and type-codec tests report `OK`
+- native bootstrap, metadata, txn/exec, error-propagation, and type-codec tests report `OK`
 - integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
 
 ## Conformance Adapter
