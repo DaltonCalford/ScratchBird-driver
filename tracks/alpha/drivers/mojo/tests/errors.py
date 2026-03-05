@@ -48,6 +48,8 @@ class QueryErrorHarness:
                 detail="simple detail",
                 hint="simple hint",
             )
+        if self.fail_on == "truncated":
+            raise RuntimeError("row data truncated")
         return scratchbird.ScratchBirdResult([[1]], [], 1)
 
 
@@ -99,11 +101,22 @@ def test_auth_guard_exposes_sqlstate() -> None:
         _require(str(exc) == "authentication failed", "auth guard message mismatch")
 
 
+def test_simple_query_truncation_failure_surfaces() -> None:
+    conn = QueryErrorHarness("truncated")
+    try:
+        scratchbird.ScratchBirdConnection.query(conn, "SELECT 1", None)
+        raise RuntimeError("expected truncation failure")
+    except RuntimeError as exc:
+        _require("row data truncated" in str(exc), "truncation error message mismatch")
+    _require(("end", "span", False) in conn.calls, "truncation failure should mark operation unsuccessful")
+
+
 def main() -> None:
     test_scratchbird_error_fields()
     test_simple_query_error_propagates_detail_and_hint()
     test_extended_query_error_propagates_detail_and_hint()
     test_auth_guard_exposes_sqlstate()
+    test_simple_query_truncation_failure_surfaces()
     print("Mojo error propagation tests OK")
 
 

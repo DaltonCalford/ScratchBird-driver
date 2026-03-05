@@ -141,8 +141,9 @@
 - `tests/errors.py:56` (simple-query error propagation of `sqlstate/detail/hint`)
 - `tests/errors.py:74` (extended-query error propagation of `sqlstate/detail/hint`)
 - `tests/errors.py:89` (auth guard SQLSTATE propagation)
+- `tests/errors.py:104` (truncation-style query failure propagation)
 - Gaps/next actions:
-- Add negative tests for protocol/message truncation error paths.
+- Expand truncation-path negative coverage to native binary decode once Mojo transport replaces the bridge shim.
 
 ## RES (JDBCBL)
 
