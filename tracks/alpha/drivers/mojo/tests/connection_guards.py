@@ -61,13 +61,13 @@ def main() -> None:
     _assert_connect_ok(
         "scratchbird://user:pass@localhost:3092/testdb?compression=none",
     )
-    _assert_connect_guard(
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?compression=gzip",
-        "compression must be one of off,zstd,none",
+        "0A000",
     )
-    _assert_connect_guard(
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=invalid",
-        "front_door_mode must be direct or manager_proxy.",
+        "0A000",
     )
     _assert_connect_ok(
         "scratchbird://user:pass@localhost:3092/testdb?protocol=scratchbird-native",
@@ -112,6 +112,16 @@ def main() -> None:
     )
     _assert_connect_ok(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=managerproxy&manager_auth_token=token",
+    )
+    _assert_connect_ok(
+        "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=managerproxy&mcp_auth_token=token",
+    )
+    _assert_connect_ok(
+        "scratchbird://user:pass@localhost:3092/testdb?frontdoormode=managerproxy&ingress_mode=direct",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?frontdoormode=direct&ingress_mode=managerproxy",
+        "08001",
     )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?min_pool_size=bad",

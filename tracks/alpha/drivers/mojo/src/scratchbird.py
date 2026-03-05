@@ -853,7 +853,7 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
     if front_door_mode in ("managerproxy", "manager-proxy", "managed"):
         front_door_mode = "manager_proxy"
     if front_door_mode not in ("", "direct", "manager_proxy"):
-        raise RuntimeError("front_door_mode must be direct or manager_proxy.")
+        raise ScratchBirdError("front_door_mode must be direct or manager_proxy.", "0A000")
     if front_door_mode == "manager_proxy":
         token = _dsn_last_query_value(config.dsn, ("manager_auth_token", "mcp_auth_token"), "")
         if token is None or str(token).strip() == "":
@@ -871,7 +871,7 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
     if compression == "none":
         compression = "off"
     if compression not in ("off", "zstd", ""):
-        raise RuntimeError("compression must be one of off,zstd,none")
+        raise ScratchBirdError(f"compression={compression} is not supported", "0A000")
 
     min_pool_size = _dsn_last_int_query_value(config.dsn, ("min_pool_size", "minpoolsize"), 0, "min_pool_size")
     max_pool_size = _dsn_last_int_query_value(config.dsn, ("max_pool_size", "maxpoolsize"), 1, "max_pool_size")

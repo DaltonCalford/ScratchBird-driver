@@ -107,6 +107,7 @@ Legend:
 - **Mojo lane:** Added bridge-shim malformed-integer guard parity (`22023`) for `prepare_threshold`, `cb_failure_threshold`, `keepalive_max_idle_before_check_ms`, and `pipeline_max_in_flight` via expanded connection guard coverage.
 - **Mojo lane:** Extended bridge-shim malformed-integer lifecycle guard parity (`22023`) for `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests`, and `leak_threshold_ms`.
 - **Mojo lane:** Added bridge-shim malformed-integer guard parity (`22023`) for `pipeline_auto_flush_threshold`.
+- **Mojo lane:** Aligned bridge-shim connect guard SQLSTATE parity for invalid `front_door_mode` and unsupported `compression` (`0A000`), and added alias-precedence/token coverage for `frontdoormode|ingress_mode` with `mcp_auth_token`.
 
 ---
 
