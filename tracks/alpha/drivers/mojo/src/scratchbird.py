@@ -151,6 +151,11 @@ def _dsn_query_params(dsn: str) -> Dict[str, str]:
 
 def _validate_connect_guards(config: ScratchBirdConfig) -> None:
     params = _dsn_query_params(config.dsn)
+    front_door_mode = str(
+        params.get("front_door_mode", params.get("connection_mode", params.get("ingress_mode", "direct")))
+    ).strip().lower()
+    if front_door_mode not in ("", "direct", "manager_proxy", "manager-proxy", "managed"):
+        raise RuntimeError("front_door_mode must be direct or manager_proxy.")
 
     sslmode = str(params.get("sslmode", "require")).strip().lower()
     if sslmode == "disable":
@@ -162,6 +167,9 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
     compression = str(params.get("compression", "off")).strip().lower()
     if compression == "zstd":
         raise RuntimeError("compression=zstd is not supported")
+
+    if _as_bool(params.get("sb_test_auth_fail", "0")):
+        raise ScratchBirdError("authentication failed", "28P01")
 
 
 class _ShimConnection:

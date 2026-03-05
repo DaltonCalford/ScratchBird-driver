@@ -45,6 +45,11 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
 ```
 
+Optional integration env vars:
+- `SCRATCHBIRD_MOJO_URL` for direct smoke
+- `SCRATCHBIRD_MOJO_MANAGER_URL` for manager-proxy smoke
+- `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
+
 ## Next Steps
 
 - Replace the Python transport bridge with native Mojo sockets/TLS

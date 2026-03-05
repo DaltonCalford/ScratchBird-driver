@@ -12,7 +12,7 @@
 - `src/scratchbird.mojo:497` (`ScratchBirdConfig` DSN/config handling)
 - `src/scratchbird.mojo:1244` (`ScratchBirdConnection` construction and connection bootstrap)
 - `src/scratchbird.mojo:1264` (`_connect` TLS socket setup and connect-time validation)
-- `src/scratchbird.py:152` (bridge-shim connect guard enforcement for `sslmode`, `binary_transfer`, `compression`)
+- `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
 - `src/scratchbird.mojo:1641` (`ping`)
@@ -21,8 +21,12 @@
 - `tests/integration.mojo:19`
 - `tests/sbdriver_conformance.mojo:157`
 - `tests/connection_guards.py:26`
+- `tests/connection_guards.py:54` (`front_door_mode` validation guard)
+- `tests/connection_guards.py:58` (deterministic auth-failure guard with SQLSTATE `28P01`)
+- `tests/integration.py:53` (manager-proxy integration smoke branch)
+- `tests/integration.py:59` (bad-auth integration smoke branch)
 - Gaps/next actions:
-- Add lane tests that exercise `front_door_mode=manager_proxy` and auth failure paths.
+- Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
 
 ## TXN (JDBCBL)
 

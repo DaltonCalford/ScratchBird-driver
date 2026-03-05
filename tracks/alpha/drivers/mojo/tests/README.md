@@ -26,7 +26,7 @@ pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
 
 Expected behavior:
 - metadata and txn/exec tests report `OK`
-- integration smoke prints a skip message when `SCRATCHBIRD_MOJO_URL` is not set
+- integration smoke prints skip messages when direct/manager/bad-auth env DSNs are not set
 
 ## Conformance Adapter
 
@@ -40,6 +40,8 @@ tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance
 Environment variables:
 - `SCRATCHBIRD_CONFORMANCE_MANIFEST`: optional manifest path
 - `SCRATCHBIRD_MOJO_URL`: DSN for running query tests
+- `SCRATCHBIRD_MOJO_MANAGER_URL`: optional manager-proxy integration DSN
+- `SCRATCHBIRD_MOJO_BAD_AUTH_URL`: optional bad-auth integration DSN (for shim tests, append `sb_test_auth_fail=true`)
 - `SCRATCHBIRD_MOJO_ENABLE_PREPARE_BIND`: optional override (defaults enabled; set `0` to disable)
 - `SCRATCHBIRD_MOJO_ENABLE_CANCEL`: optional override (defaults enabled; set `0` to disable)
 

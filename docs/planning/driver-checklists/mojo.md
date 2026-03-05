@@ -16,6 +16,6 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P2 (Follow-ups)
 
-- [ ] Add conformance/integration tests. Issue: Open
+- [x] Add conformance/integration coverage for bridge lane (`tracks/alpha/drivers/mojo/tests/sbdriver_conformance.py`, `tracks/alpha/drivers/mojo/tests/integration.py`, `tracks/alpha/drivers/mojo/tests/connection_guards.py`). Issue: DONE (2026-03-05)
 
 ## P3 (Future)
