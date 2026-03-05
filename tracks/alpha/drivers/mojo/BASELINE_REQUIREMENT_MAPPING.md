@@ -15,6 +15,7 @@
 - `src/scratchbird.py:152` (bridge-shim connect guard enforcement for TLS/binary/compression/mode/auth-failure simulation)
 - `src/scratchbird_native.mojo:5` (native-bootstrap `ScratchBirdConfig`/guard parser path in current Mojo syntax)
 - `src/scratchbird_native.mojo:145` (native-bootstrap `connect` entrypoint)
+- `src/scratchbird_native.mojo:56` (native-bootstrap `query_with_params` with placeholder counting and `07001` mismatch semantics)
 - `src/scratchbird.mojo:1304` (`_startup_and_auth` startup/auth exchange)
 - `src/scratchbird.mojo:1390` (`_perform_manager_connect` manager-proxy connect path)
 - `src/scratchbird.mojo:1641` (`ping`)
@@ -28,6 +29,7 @@
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
 - `tests/native_bootstrap.mojo:30` (native bootstrap guard/query smoke path via `mojo run -I src`)
+- `tests/native_bootstrap.mojo:43` (native bootstrap prepare-bind + mismatch guard path)
 - Gaps/next actions:
 - Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
 - Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.

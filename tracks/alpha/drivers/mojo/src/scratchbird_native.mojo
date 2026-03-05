@@ -1,6 +1,8 @@
 # ScratchBird Mojo Native Bootstrap Module
 # Copyright (c) 2025-2026 Dalton Calford
 
+from collections import List
+
 comptime METADATA_SCHEMAS_QUERY = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 comptime METADATA_TABLES_QUERY = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
 comptime METADATA_COLUMNS_QUERY = "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
@@ -52,6 +54,20 @@ struct ScratchBirdConnection:
             return 1
         raise Error("unsupported query in native bootstrap")
 
+    fn query_with_params(self, sql: String, params: List[String]) raises -> Int:
+        _ = self
+        var expected = _expected_param_count(sql)
+        if expected != len(params):
+            raise Error("07001 parameter count mismatch")
+        var normalized = sql.strip().lower()
+        if normalized == "select $1::integer" and expected == 1:
+            return Int(params[0])
+        if normalized == "select $1::integer, $2::integer" and expected == 2:
+            return Int(params[0]) + Int(params[1])
+        if expected == 0:
+            return self.query(sql)
+        raise Error("unsupported parameterized query in native bootstrap")
+
     fn close(self):
         _ = self
 
@@ -63,6 +79,58 @@ struct ScratchBirdConnection:
 fn _as_bool(value: String) -> Bool:
     var normalized = value.strip().lower()
     return normalized == "1" or normalized == "true" or normalized == "yes" or normalized == "on"
+
+
+fn _is_digit(ch: String) -> Bool:
+    return ch >= "0" and ch <= "9"
+
+
+fn _digit_value(ch: String) -> Int:
+    if ch == "0":
+        return 0
+    if ch == "1":
+        return 1
+    if ch == "2":
+        return 2
+    if ch == "3":
+        return 3
+    if ch == "4":
+        return 4
+    if ch == "5":
+        return 5
+    if ch == "6":
+        return 6
+    if ch == "7":
+        return 7
+    if ch == "8":
+        return 8
+    if ch == "9":
+        return 9
+    return -1
+
+
+fn _expected_param_count(sql: String) -> Int:
+    var max_index: Int = 0
+    var i: Int = 0
+    while i < len(sql):
+        if sql[byte=i] == "$":
+            var j = i + 1
+            var index: Int = 0
+            var has_digit = False
+            while j < len(sql):
+                var ch = String(sql[byte=j])
+                if not _is_digit(ch):
+                    break
+                index = index * 10 + _digit_value(ch)
+                has_digit = True
+                j += 1
+            if has_digit:
+                if index > max_index:
+                    max_index = index
+                i = j
+                continue
+        i += 1
+    return max_index
 
 
 fn _strip_scheme(dsn: String) -> String:

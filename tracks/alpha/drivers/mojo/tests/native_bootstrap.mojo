@@ -7,6 +7,7 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
 import scratchbird_native
+from collections import List
 
 
 fn _require(condition: Bool, message: String) raises:
@@ -49,6 +50,18 @@ fn main() raises:
     var conn = scratchbird_native.connect(cfg)
     _require(conn.query("SELECT 1") == 1, "SELECT 1 should return 1")
     _require(conn.query("SELECT * FROM type_coverage") == 1, "type_coverage stub should return success")
+    var p1 = List[String]()
+    p1.append("42")
+    _require(conn.query_with_params("SELECT $1::INTEGER", p1) == 42, "single-parameter query mismatch")
+    var p2 = List[String]()
+    p2.append("5")
+    p2.append("7")
+    _require(conn.query_with_params("SELECT $1::INTEGER, $2::INTEGER", p2) == 12, "two-parameter query mismatch")
+    try:
+        _ = conn.query_with_params("SELECT $1::INTEGER, $2::INTEGER", p1)
+        raise Error("expected parameter mismatch")
+    except e:
+        _require("07001" in String(e), "parameter mismatch should include 07001")
     _require(
         conn.query_metadata("table") == scratchbird_native.METADATA_TABLES_QUERY,
         "metadata table alias mismatch",
