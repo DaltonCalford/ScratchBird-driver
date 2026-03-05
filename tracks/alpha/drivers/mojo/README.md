@@ -20,6 +20,7 @@ Current implementation is a Mojo-Python interop lane:
 - Mojo wrappers and test adapter now execute under pixi-managed Mojo toolchains.
 - Native bootstrap module in current Mojo syntax is available at `src/scratchbird_native.mojo` and validated by `tests/native_bootstrap.mojo`.
 - Native bootstrap currently covers deterministic connect/ping guards, extended metadata alias/query resolution, transaction lifecycle guards (`25001` nested begin), savepoint lifecycle guards (`25000`/`3B001`), prepare-bind mismatch handling, prepared execute parity, paging-query rowcount semantics, and stream/cancel (`57014`) with post-cancel recovery semantics.
+- Native bootstrap guard and unsupported-operation failures now use deterministic SQLSTATE-prefixed error strings with extractor coverage (`extract_sqlstate`) in lane tests.
 - Integration and conformance launchers are native-bootstrap-first with bridge-shim fallback controls.
 - Bridge-shim connection parity now includes `prepare`/statement execute plus deterministic `ping`, transaction lifecycle, and savepoint helpers used by lane tests.
 - Bridge-shim type codecs now include temporal/json/jsonb/uuid wrappers and array-of-composite encode/decode coverage for deterministic lane testing.

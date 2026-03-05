@@ -32,8 +32,8 @@
 - `tests/sbdriver_conformance.py:37` (deterministic fallback DSN keeps conformance non-skipping by default)
 - `tests/integration.py:53` (manager-proxy integration smoke branch)
 - `tests/integration.py:59` (bad-auth integration smoke branch)
-- `tests/native_bootstrap.mojo:50` (native bootstrap connect/ping/query smoke path via `mojo run -I src`)
-- `tests/native_bootstrap.mojo:85` (native bootstrap prepare-bind + mismatch guard path)
+- `tests/native_bootstrap.mojo:60` (native bootstrap connect/ping/query smoke path via `mojo run -I src`)
+- `tests/native_bootstrap.mojo:95` (native bootstrap prepare-bind + mismatch guard path)
 - Gaps/next actions:
 - Replace legacy `src/scratchbird.mojo` syntax/API surface with current Mojo-native transport implementation and retire bridge-first runtime path.
 - Provide CI/dev environment DSNs so manager-proxy and bad-auth integration branches execute against a running endpoint.
@@ -68,9 +68,9 @@
 - `tests/txn_exec_parity.py:150` (savepoint guard SQLSTATE assertions `25000`/`HY000`/`3B001`)
 - `tests/txn_exec_parity.py:211` (shim `ping` + transaction lifecycle helper assertions)
 - `tests/txn_exec_parity.py:230` (shim savepoint lifecycle + rollback-trim assertions)
-- `tests/native_bootstrap.mojo:59` (native-bootstrap nested `begin()` rejection with `25001`)
-- `tests/native_bootstrap.mojo:55` (native-bootstrap inactive `commit`/`rollback` no-op assertions)
-- `tests/native_bootstrap.mojo:65` (native-bootstrap savepoint lifecycle + `25000`/`3B001` guards)
+- `tests/native_bootstrap.mojo:69` (native-bootstrap nested `begin()` rejection with `25001`)
+- `tests/native_bootstrap.mojo:65` (native-bootstrap inactive `commit`/`rollback` no-op assertions)
+- `tests/native_bootstrap.mojo:75` (native-bootstrap savepoint lifecycle + `25000`/`3B001` guards)
 - Gaps/next actions:
 - Add live transaction integration coverage against a running ScratchBird endpoint.
 
@@ -115,11 +115,11 @@
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`
 - `tests/sbdriver_conformance.mojo:190`
-- `tests/native_bootstrap.mojo:85` (native-bootstrap prepare-bind + mismatch assertions)
-- `tests/native_bootstrap.mojo:90` (native-bootstrap prepared execute parity assertions)
-- `tests/native_bootstrap.mojo:54` (native-bootstrap paging query rowcount assertion)
-- `tests/native_bootstrap.mojo:146` (native-bootstrap stream/cancel `57014` assertions)
-- `tests/native_bootstrap.mojo:157` (native-bootstrap post-cancel stream recovery assertion)
+- `tests/native_bootstrap.mojo:95` (native-bootstrap prepare-bind + mismatch assertions)
+- `tests/native_bootstrap.mojo:100` (native-bootstrap prepared execute parity assertions)
+- `tests/native_bootstrap.mojo:64` (native-bootstrap paging query rowcount assertion)
+- `tests/native_bootstrap.mojo:164` (native-bootstrap stream/cancel `57014` assertions)
+- `tests/native_bootstrap.mojo:168` (native-bootstrap post-cancel stream recovery assertion)
 - `tests/README.md:10`
 - Gaps/next actions:
 - Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
@@ -190,6 +190,12 @@
 - `src/scratchbird.mojo:1612` (`_raise_error`)
 - `src/scratchbird.mojo:1511` (`query` wraps operation and propagates failures)
 - `src/scratchbird.mojo:1559` (explicit `ScratchBirdError("parameter count mismatch", "07001")`)
+- `src/scratchbird_native.mojo:148` (native-bootstrap unsupported-stream SQLSTATE `0A000` prefix)
+- `src/scratchbird_native.mojo:277` (native-bootstrap unsupported-query SQLSTATE `0A000` prefix)
+- `src/scratchbird_native.mojo:291` (native-bootstrap unsupported-parameterized-query SQLSTATE `0A000` prefix)
+- `src/scratchbird_native.mojo:412` (metadata unsupported SQLSTATE `0A000` prefix)
+- `src/scratchbird_native.mojo:454` (connect guard SQLSTATE-prefixed error mapping)
+- `src/scratchbird_native.mojo:479` (`extract_sqlstate` helper for deterministic SQLSTATE parsing)
 - Lane-local test anchors:
 - `tests/sbdriver_conformance.mojo:171`
 - `tests/sbdriver_conformance.mojo:188`
@@ -198,6 +204,10 @@
 - `tests/errors.py:74` (extended-query error propagation of `sqlstate/detail/hint`)
 - `tests/errors.py:89` (auth guard SQLSTATE propagation)
 - `tests/errors.py:104` (truncation-style query failure propagation)
+- `tests/native_bootstrap.mojo:25` (connect guard SQLSTATE extraction assertions)
+- `tests/native_bootstrap.mojo:42` (metadata guard SQLSTATE extraction assertions)
+- `tests/native_bootstrap.mojo:172` (unsupported query SQLSTATE `0A000` extraction assertion)
+- `tests/native_bootstrap.mojo:182` (unsupported stream SQLSTATE `0A000` extraction assertion)
 - Gaps/next actions:
 - Expand truncation-path negative coverage to native binary decode once Mojo transport replaces the bridge shim.
 

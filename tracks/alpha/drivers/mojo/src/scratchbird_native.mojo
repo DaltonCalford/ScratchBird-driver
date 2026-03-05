@@ -145,7 +145,7 @@ struct ScratchBirdConnection:
             return ScratchBirdStream(32)
         if normalized == "select 1":
             return ScratchBirdStream(1)
-        raise Error("unsupported stream query in native bootstrap")
+        raise Error("0A000 unsupported stream query in native bootstrap")
 
     fn cancel(mut self):
         self.cancel_requested = True
@@ -274,7 +274,7 @@ fn _query_result_from_sql(sql: String) raises -> Int:
         return 1
     if normalized.startswith("select id from basic_table"):
         return 6
-    raise Error("unsupported query in native bootstrap")
+    raise Error("0A000 unsupported query in native bootstrap")
 
 
 fn _query_result_from_sql_with_params(sql: String, params: List[String]) raises -> Int:
@@ -288,7 +288,7 @@ fn _query_result_from_sql_with_params(sql: String, params: List[String]) raises 
         return Int(params[0]) + Int(params[1])
     if expected == 0:
         return _query_result_from_sql(sql)
-    raise Error("unsupported parameterized query in native bootstrap")
+    raise Error("0A000 unsupported parameterized query in native bootstrap")
 
 
 fn _strip_scheme(dsn: String) -> String:
@@ -409,7 +409,7 @@ fn normalize_metadata_collection_name(collection_name: String) raises -> String:
     if resolved == "":
         resolved = _metadata_alias(normalized.replace("_", ""))
     if resolved == "":
-        raise Error("metadata collection '" + raw + "' is not supported")
+        raise Error("0A000 metadata collection '" + raw + "' is not supported")
     return resolved
 
 
@@ -445,26 +445,45 @@ fn resolve_metadata_collection_query(collection_name: String) raises -> String:
         return METADATA_COLUMN_PRIVILEGES_QUERY
     if resolved == "type_info":
         return METADATA_TYPE_INFO_QUERY
-    raise Error("metadata collection '" + collection_name + "' is not supported")
+    raise Error("0A000 metadata collection '" + collection_name + "' is not supported")
 
 
 fn validate_connect_guards(config: ScratchBirdConfig) raises:
     var mode = config.front_door_mode.strip().lower()
     if mode != "" and mode != "direct" and mode != "manager_proxy" and mode != "manager-proxy" and mode != "managed":
-        raise Error("front_door_mode must be direct or manager_proxy.")
+        raise Error("22023 front_door_mode must be direct or manager_proxy.")
 
     if config.user.strip() == "" or config.database.strip() == "":
-        raise Error("user and database are required")
+        raise Error("28000 user and database are required")
 
     if config.sslmode.strip().lower() == "disable":
-        raise Error("TLS is required for ScratchBird connections")
+        raise Error("08004 TLS is required for ScratchBird connections")
 
     if not config.binary_transfer:
-        raise Error("binary_transfer=false is not supported")
+        raise Error("0A000 binary_transfer=false is not supported")
 
     if config.compression.strip().lower() == "zstd":
-        raise Error("compression=zstd is not supported")
+        raise Error("0A000 compression=zstd is not supported")
 
 
 fn connect(config: ScratchBirdConfig) raises -> ScratchBirdConnection:
     return ScratchBirdConnection(config)
+
+
+fn _is_sqlstate_char(ch: String) -> Bool:
+    if _is_digit(ch):
+        return True
+    return ch >= "A" and ch <= "Z"
+
+
+fn extract_sqlstate(message: String) -> String:
+    var text = message.strip()
+    if len(text) < 5:
+        return ""
+    var code = String()
+    for i in range(5):
+        var ch = String(text[byte=i])
+        if not _is_sqlstate_char(ch):
+            return ""
+        code += ch
+    return code

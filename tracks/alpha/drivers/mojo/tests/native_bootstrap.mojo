@@ -15,25 +15,35 @@ fn _require(condition: Bool, message: String) raises:
         raise Error(message)
 
 
-fn _assert_connect_guard(dsn: String, expected_fragment: String) raises:
+fn _assert_connect_guard(dsn: String, expected_sqlstate: String, expected_fragment: String) raises:
     var cfg = scratchbird_native.ScratchBirdConfig(dsn)
     try:
         _ = scratchbird_native.connect(cfg)
         raise Error("expected connect guard to reject DSN")
     except e:
         var message = String(e)
+        var sqlstate = scratchbird_native.extract_sqlstate(message)
+        _require(
+            sqlstate == expected_sqlstate,
+            "expected sqlstate '" + expected_sqlstate + "', got '" + sqlstate + "'",
+        )
         _require(
             expected_fragment in message,
             "expected guard message containing '" + expected_fragment + "', got '" + message + "'",
         )
 
 
-fn _assert_metadata_guard(collection_name: String, expected_fragment: String) raises:
+fn _assert_metadata_guard(collection_name: String, expected_sqlstate: String, expected_fragment: String) raises:
     try:
         _ = scratchbird_native.normalize_metadata_collection_name(collection_name)
         raise Error("expected metadata guard to reject collection")
     except e:
         var message = String(e)
+        var sqlstate = scratchbird_native.extract_sqlstate(message)
+        _require(
+            sqlstate == expected_sqlstate,
+            "expected metadata sqlstate '" + expected_sqlstate + "', got '" + sqlstate + "'",
+        )
         _require(
             expected_fragment in message,
             "expected metadata guard containing '" + expected_fragment + "', got '" + message + "'",
@@ -131,7 +141,7 @@ fn main() raises:
         scratchbird_native.normalize_metadata_collection_name("tableprivileges") == "table_privileges",
         "metadata tableprivileges alias mismatch",
     )
-    _assert_metadata_guard("unsupported_collection", "not supported")
+    _assert_metadata_guard("unsupported_collection", "0A000", "not supported")
 
     var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(stream.next(conn) == 1, "stream first row mismatch")
@@ -157,6 +167,24 @@ fn main() raises:
     var post_cancel = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
     _require(post_cancel.next(conn) == 1, "post-cancel stream should recover on next operation")
     post_cancel.close()
+
+    try:
+        _ = conn.query("SELECT unsupported_query")
+        raise Error("expected unsupported query to fail")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "0A000",
+            "unsupported query should expose 0A000",
+        )
+
+    try:
+        _ = conn.stream("SELECT unsupported_stream_query", 1)
+        raise Error("expected unsupported stream query to fail")
+    except e:
+        _require(
+            scratchbird_native.extract_sqlstate(String(e)) == "0A000",
+            "unsupported stream query should expose 0A000",
+        )
     conn.close()
 
     var manager_cfg = scratchbird_native.ScratchBirdConfig(
@@ -166,22 +194,27 @@ fn main() raises:
 
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable",
+        "08004",
         "TLS is required for ScratchBird connections",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false",
+        "0A000",
         "binary_transfer=false is not supported",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?compression=zstd",
+        "0A000",
         "compression=zstd is not supported",
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?front_door_mode=invalid",
+        "22023",
         "front_door_mode must be direct or manager_proxy.",
     )
     _assert_connect_guard(
         "scratchbird://@localhost:3092/?sslmode=require",
+        "28000",
         "user and database are required",
     )
 
