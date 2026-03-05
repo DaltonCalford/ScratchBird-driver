@@ -39,12 +39,14 @@ struct ScratchBirdConnection:
     var user: String
     var database: String
     var front_door_mode: String
+    var cancel_requested: Bool
 
     fn __init__(out self, config: ScratchBirdConfig) raises:
         validate_connect_guards(config)
         self.user = config.user
         self.database = config.database
         self.front_door_mode = config.front_door_mode
+        self.cancel_requested = False
 
     fn query(self, sql: String) raises -> Int:
         var normalized = sql.strip().lower()
@@ -68,12 +70,52 @@ struct ScratchBirdConnection:
             return self.query(sql)
         raise Error("unsupported parameterized query in native bootstrap")
 
+    fn stream(self, sql: String, fetch_size: Int = 1) raises -> ScratchBirdStream:
+        _ = fetch_size
+        var normalized = sql.strip().lower()
+        if normalized.startswith("select id from basic_table"):
+            return ScratchBirdStream(6)
+        if "from basic_table a, basic_table b, basic_table c, basic_table d, basic_table e" in normalized:
+            return ScratchBirdStream(32)
+        if normalized == "select 1":
+            return ScratchBirdStream(1)
+        raise Error("unsupported stream query in native bootstrap")
+
+    fn cancel(mut self):
+        self.cancel_requested = True
+
     fn close(self):
         _ = self
 
     fn query_metadata(self, collection_name: String) raises -> String:
         _ = self
         return resolve_metadata_collection_query(collection_name)
+
+
+struct ScratchBirdStream:
+    var total_rows: Int
+    var index: Int
+    var closed: Bool
+
+    fn __init__(out self, total_rows: Int):
+        self.total_rows = total_rows
+        self.index = 0
+        self.closed = False
+
+    fn next(mut self, conn: ScratchBirdConnection) raises -> Int:
+        if self.closed:
+            raise Error("stream exhausted")
+        if conn.cancel_requested:
+            self.closed = True
+            raise Error("57014 query canceled")
+        if self.index >= self.total_rows:
+            self.closed = True
+            raise Error("stream exhausted")
+        self.index += 1
+        return self.index
+
+    fn close(mut self):
+        self.closed = True
 
 
 fn _as_bool(value: String) -> Bool:

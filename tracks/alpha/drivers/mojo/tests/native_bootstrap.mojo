@@ -75,6 +75,28 @@ fn main() raises:
         "metadata column alias mismatch",
     )
     _assert_metadata_guard("unsupported_collection", "not supported")
+
+    var stream = conn.stream("SELECT id FROM basic_table ORDER BY id", 1)
+    _require(stream.next(conn) == 1, "stream first row mismatch")
+    _require(stream.next(conn) == 2, "stream second row mismatch")
+    stream.close()
+    try:
+        _ = stream.next(conn)
+        raise Error("expected closed stream to fail")
+    except e:
+        _require("stream exhausted" in String(e), "closed stream should report exhaustion")
+
+    var long_stream = conn.stream(
+        "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
+        1,
+    )
+    _ = long_stream.next(conn)
+    conn.cancel()
+    try:
+        _ = long_stream.next(conn)
+        raise Error("expected cancelled stream to fail")
+    except e:
+        _require("57014" in String(e), "cancelled stream should report 57014")
     conn.close()
 
     var manager_cfg = scratchbird_native.ScratchBirdConfig(

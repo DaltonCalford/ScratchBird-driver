@@ -70,6 +70,9 @@
 - `src/scratchbird.py:206` (bridge-shim `stream` entrypoint)
 - `src/scratchbird.py:217` (bridge-shim `cancel` signal path)
 - `src/scratchbird.py:221` (bridge-shim stream iterator with `57014` cancellation behavior)
+- `src/scratchbird_native.mojo:55` (native-bootstrap `query_with_params` with placeholder counting + `07001` mismatch)
+- `src/scratchbird_native.mojo:66` (native-bootstrap `stream`/`cancel` lifecycle entrypoints)
+- `src/scratchbird_native.mojo:88` (native-bootstrap stream iterator with `57014` cancellation behavior)
 - Lane-local test anchors:
 - `tests/txn_exec_parity.mojo:108` (`query(..., None)` simple-query path assertion)
 - `tests/txn_exec_parity.mojo:117` (`query(..., [])` extended-query path assertion)
@@ -81,6 +84,8 @@
 - `tests/sbdriver_conformance.mojo:161`
 - `tests/sbdriver_conformance.mojo:174`
 - `tests/sbdriver_conformance.mojo:190`
+- `tests/native_bootstrap.mojo:43` (native-bootstrap prepare-bind + mismatch assertions)
+- `tests/native_bootstrap.mojo:58` (native-bootstrap stream/cancel `57014` assertions)
 - `tests/README.md:10`
 - Gaps/next actions:
 - Add live assertions for streamed fetch boundaries and cancel behavior against long-running statements.
