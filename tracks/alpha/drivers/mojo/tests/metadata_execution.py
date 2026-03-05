@@ -110,6 +110,13 @@ def test_get_schema_returns_result_rows() -> None:
     _require(rows == [[7], [9]], "get_schema should return result rows")
 
 
+def test_query_metadata_rows_returns_rowcount() -> None:
+    conn = QueryHarness()
+    conn.result = scratchbird.ScratchBirdResult([[1], [2], [3]], [], 3)
+    rowcount = scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "table")
+    _require(rowcount == 3, "query_metadata_rows should return result rowcount")
+
+
 def test_query_metadata_rejects_unsupported_collection() -> None:
     conn = QueryHarness()
     try:
@@ -124,6 +131,7 @@ def main() -> None:
     test_resolve_metadata_collection_query_extended_families()
     test_query_metadata_routes_through_query_path()
     test_get_schema_returns_result_rows()
+    test_query_metadata_rows_returns_rowcount()
     test_query_metadata_rejects_unsupported_collection()
     print("Mojo metadata execution tests OK")
 

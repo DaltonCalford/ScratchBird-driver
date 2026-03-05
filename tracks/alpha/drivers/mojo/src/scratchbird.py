@@ -757,6 +757,9 @@ class _ShimConnection:
         metadata_sql = resolve_metadata_collection_query(normalized_collection)
         return self.query(metadata_sql)
 
+    def query_metadata_rows(self, collection_name: Optional[str] = None) -> int:
+        return self.query_metadata(collection_name).rowcount
+
     def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
         return self.query_metadata(collection_name).rows
 
@@ -1012,6 +1015,17 @@ class ScratchBirdConnection:
         resolved = normalize_metadata_collection_name(collection_name)
         metadata_sql = resolve_metadata_collection_query(resolved)
         return ScratchBirdConnection.query(conn, metadata_sql, None)
+
+    @staticmethod
+    def query_metadata_rows(conn: Any, collection_name: Optional[str] = None) -> int:
+        result = ScratchBirdConnection.query_metadata(conn, collection_name)
+        rowcount = getattr(result, "rowcount", None)
+        if isinstance(rowcount, int):
+            return rowcount
+        rows = getattr(result, "rows", None)
+        if rows is None:
+            return 0
+        return len(rows)
 
     @staticmethod
     def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:

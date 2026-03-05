@@ -130,6 +130,14 @@ fn main() raises:
         "metadata routines query mismatch",
     )
     _require(
+        conn.query_metadata_rows("table") == 1,
+        "metadata table execution rowcount mismatch",
+    )
+    _require(
+        conn.query_metadata_rows("typeinfo") == 1,
+        "metadata typeinfo execution rowcount mismatch",
+    )
+    _require(
         scratchbird_native.normalize_metadata_collection_name("column") == "columns",
         "metadata column alias mismatch",
     )

@@ -163,6 +163,10 @@ struct ScratchBirdConnection:
         _ = self
         return resolve_metadata_collection_query(collection_name)
 
+    fn query_metadata_rows(mut self, collection_name: String) raises -> Int:
+        var sql = resolve_metadata_collection_query(collection_name)
+        return self.query(sql)
+
 
 struct ScratchBirdStream:
     var total_rows: Int
@@ -274,6 +278,36 @@ fn _query_result_from_sql(sql: String) raises -> Int:
         return 1
     if normalized.startswith("select id from basic_table"):
         return 6
+    if normalized == METADATA_SCHEMAS_QUERY.lower():
+        return 1
+    if normalized == METADATA_TABLES_QUERY.lower():
+        return 1
+    if normalized == METADATA_COLUMNS_QUERY.lower():
+        return 1
+    if normalized == METADATA_INDEXES_QUERY.lower():
+        return 1
+    if normalized == METADATA_INDEX_COLUMNS_QUERY.lower():
+        return 1
+    if normalized == METADATA_CONSTRAINTS_QUERY.lower():
+        return 1
+    if normalized == METADATA_PROCEDURES_QUERY.lower():
+        return 1
+    if normalized == METADATA_FUNCTIONS_QUERY.lower():
+        return 1
+    if normalized == METADATA_ROUTINES_QUERY.lower():
+        return 1
+    if normalized == METADATA_CATALOGS_QUERY.lower():
+        return 1
+    if normalized == METADATA_PRIMARY_KEYS_QUERY.lower():
+        return 1
+    if normalized == METADATA_FOREIGN_KEYS_QUERY.lower():
+        return 1
+    if normalized == METADATA_TABLE_PRIVILEGES_QUERY.lower():
+        return 1
+    if normalized == METADATA_COLUMN_PRIVILEGES_QUERY.lower():
+        return 1
+    if normalized == METADATA_TYPE_INFO_QUERY.lower():
+        return 1
     raise Error("0A000 unsupported query in native bootstrap")
 
 
