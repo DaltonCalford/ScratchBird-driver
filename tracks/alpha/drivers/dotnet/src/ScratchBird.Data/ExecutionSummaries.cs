@@ -76,6 +76,12 @@ public sealed record ConnectionTelemetrySummary(
     long TotalFailures,
     IReadOnlyList<OperationTelemetrySummary> Operations);
 
+public sealed record SlowOperationSummary(
+    string Operation,
+    long DurationMs,
+    bool Success,
+    DateTimeOffset CapturedUtc);
+
 public sealed record ConnectionDiagnosticsSummary(
     DateTimeOffset CapturedUtc,
     ConnectionState State,
