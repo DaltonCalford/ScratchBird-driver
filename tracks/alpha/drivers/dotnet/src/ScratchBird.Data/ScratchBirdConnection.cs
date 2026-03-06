@@ -392,6 +392,11 @@ public sealed class ScratchBirdConnection : DbConnection
         Unsubscribe(channel);
     }
 
+    public void UnlistenAll()
+    {
+        TrackOperation("Connection.UnlistenAll", () => ExecuteControlCommand("UNLISTEN *"));
+    }
+
     public void Subscribe(ScratchBirdSubscriptionType subscriptionType, string channel, string filterExpr = "")
     {
         var normalizedChannel = NormalizeNotificationChannel(channel);
@@ -411,6 +416,28 @@ public sealed class ScratchBirdConnection : DbConnection
             var client = EnsureConnectedClient();
             client.Unsubscribe(normalizedChannel);
         });
+    }
+
+    public void NotifyChannel(string channel)
+    {
+        NotifyChannel(channel, (string?)null);
+    }
+
+    public void NotifyChannel(string channel, byte[]? payload)
+    {
+        if (payload == null)
+        {
+            NotifyChannel(channel, (string?)null);
+            return;
+        }
+
+        NotifyChannel(channel, Encoding.UTF8.GetString(payload));
+    }
+
+    public void NotifyChannel(string channel, string? payload)
+    {
+        var sql = BuildNotifyCommand(channel, payload);
+        TrackOperation("Connection.NotifyChannel", () => ExecuteControlCommand(sql));
     }
 
     public void AddNotificationListener(Action<ScratchBirdNotification> listener)
@@ -1260,6 +1287,23 @@ public sealed class ScratchBirdConnection : DbConnection
         return normalized;
     }
 
+    internal static string BuildNotifyCommand(string channel, string? payload)
+    {
+        var normalizedChannel = NormalizeNotificationChannel(channel);
+        var sql = $"NOTIFY {QuoteIdentifier(normalizedChannel)}";
+        if (payload == null)
+        {
+            return sql;
+        }
+
+        if (payload.IndexOf('\0') >= 0)
+        {
+            throw new ArgumentException("Notification payload cannot contain NUL bytes", nameof(payload));
+        }
+
+        return $"{sql}, {QuoteSqlLiteral(payload)}";
+    }
+
     private static byte[] CloneBytes(byte[]? value)
     {
         if (value == null || value.Length == 0)
@@ -1268,6 +1312,16 @@ public sealed class ScratchBirdConnection : DbConnection
         }
 
         return (byte[])value.Clone();
+    }
+
+    private void ExecuteControlCommand(string sql)
+    {
+        _ = ExecuteQueryMultiInternal(sql, Array.Empty<ScratchBirdParameter>(), commandTimeoutSeconds: 30, fetchSize: 0);
+    }
+
+    private static string QuoteSqlLiteral(string value)
+    {
+        return $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
     }
 
     private static IReadOnlyList<string> SplitTopLevel(string value, char delimiter)

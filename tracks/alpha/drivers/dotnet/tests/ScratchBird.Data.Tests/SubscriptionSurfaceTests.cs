@@ -57,4 +57,45 @@ public class SubscriptionSurfaceTests
         Assert.Equal(0, operation.Successes);
         Assert.Equal(1, operation.Failures);
     }
+
+    [Fact]
+    public void BuildNotifyCommand_QuotesChannelAndPayload()
+    {
+        var sql = ScratchBirdConnection.BuildNotifyCommand(" chan\"nel ", "O'Reilly");
+        Assert.Equal("NOTIFY \"chan\"\"nel\", 'O''Reilly'", sql);
+    }
+
+    [Fact]
+    public void BuildNotifyCommand_RejectsPayloadWithNul()
+    {
+        Assert.Throws<ArgumentException>(() => ScratchBirdConnection.BuildNotifyCommand("alerts", "bad\0payload"));
+    }
+
+    [Fact]
+    public void NotifyChannel_WhenClosedRecordsFailureTelemetry()
+    {
+        using var connection = new ScratchBirdConnection();
+
+        Assert.Throws<InvalidOperationException>(() => connection.NotifyChannel("alerts"));
+
+        var summary = connection.GetTelemetrySummary();
+        var operation = Assert.Single(summary.Operations, value => value.Operation == "Connection.NotifyChannel");
+        Assert.Equal(1, operation.Invocations);
+        Assert.Equal(0, operation.Successes);
+        Assert.Equal(1, operation.Failures);
+    }
+
+    [Fact]
+    public void UnlistenAll_WhenClosedRecordsFailureTelemetry()
+    {
+        using var connection = new ScratchBirdConnection();
+
+        Assert.Throws<InvalidOperationException>(() => connection.UnlistenAll());
+
+        var summary = connection.GetTelemetrySummary();
+        var operation = Assert.Single(summary.Operations, value => value.Operation == "Connection.UnlistenAll");
+        Assert.Equal(1, operation.Invocations);
+        Assert.Equal(0, operation.Successes);
+        Assert.Equal(1, operation.Failures);
+    }
 }
