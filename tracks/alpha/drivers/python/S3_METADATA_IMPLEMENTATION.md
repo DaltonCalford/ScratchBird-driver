@@ -41,25 +41,25 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - Added wrapper forwarding tests to validate collection + restriction mapping for the expanded convenience wrapper surface.
   - Extended `tests/test_connection_auth_protocol.py` with alias mapping coverage for `metadata_expand_schema_parents`.
   - Added env-gated integration assertions in `tests/test_integration.py` for live metadata wrapper execution and restriction filtering behavior, including wildcard table restrictions and DDL-editor payload shape.
+- Added deterministic always-on runtime metadata contract coverage in `tests/test_runtime_contract_gate.py`:
+  - `test_runtime_gate_metadata_without_env` validates metadata wrapper flow without `SCRATCHBIRD_TEST_DSN`.
 - Updated `BASELINE_REQUIREMENT_MAPPING.md` META row evidence/notes to reflect recursive metadata behavior and tests.
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_metadata_execution.py tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`52 passed, 27 skipped`)
+- Result: PASS (`45 passed, 27 skipped`)
 
-2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`153 passed, 27 skipped`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_runtime_contract_gate.py`
+- Result: PASS (`3 passed`)
+
+3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`214 passed, 27 skipped, 1 warning`)
 
 ## META Status Recommendation
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Reason:
   - This lane now has explicit executable metadata collection routing (`query_metadata` / `get_schema`), expanded convenience wrappers across all supported metadata families, deterministic DDL-editor payload shaping (`ddl_editor_schema_payload` / `build_ddl_editor_schema_payload`) with fixed fixture snapshots, dedicated alias/resolver/unsupported-path tests, and first-class restriction-aware filtering with JDBC-style wildcard support.
   - Recursive schema shaping coverage remains in place for nested metadata navigation behavior.
-  - Env-gated live integration assertions now cover wrapper execution, restriction filtering behavior, and DDL-editor payload shape, including wildcard table filters.
-  - Status remains partial because live metadata validation is still environment-gated and not guaranteed in always-on CI.
-
-## Remaining Gaps
-
-- Live metadata assertions still depend on `SCRATCHBIRD_TEST_DSN`, so default runs can skip this lane.
+  - Deterministic always-on runtime metadata wrapper coverage now validates key execution paths without environment-gated dependencies.

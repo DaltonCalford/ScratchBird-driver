@@ -35,7 +35,7 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-06)
+# Driver Capability Matrix (Audit Snapshot: 2026-03-05)
 
 Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in this audit cycle (hybrid parity path: native facade/bootstrap + opt-in wire bridge + matrixed runtime coverage).
 
@@ -47,7 +47,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 | **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
 | **.NET** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Enterprise lane complete; sustained soak/fault harnesses and cross-runtime contract gate are implemented |
 | **Node.js** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across TXN/EXEC/META/TYPE with expanded lane tests and env-gated live-depth checks |
-| **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
+| **Python** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage |
 | **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Rust** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | Strong core; EXEC parity implemented, remaining depth in CONN/TXN/META |
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
@@ -77,7 +77,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 - **Dart lane:** Expanded type decode and negative-path coverage (core scalar decode paths, text-vs-unknown behavior, range/composite guardrails, unsupported-type checks).
 - **Dart lane:** Added env-gated integration suite for direct and manager-proxy connection paths (`SCRATCHBIRD_TEST_DSN`, `SCRATCHBIRD_TEST_MANAGER_DSN`) covering query, transaction lifecycle, metadata wrappers, and JSON/JSONB roundtrips.
 - **Dart lane:** Introduced typed driver exception hierarchy and structured server error parsing with SQLSTATE/code propagation + SQLSTATE class-based mapping.
-- **Python lane:** Continued JDBC parity hardening for type decode semantics (temporal/unknown/binary edge cases) with expanded deterministic tests and updated lane baseline artifacts.
+- **Python lane:** Closed JDBC baseline parity across CONN/TXN/EXEC/META/TYPE by accepting non-native protocol hints, enabling `sslmode=disable` + `compression=zstd` + `binary_transfer=false` policy parity, and adding always-on runtime contract gate coverage for transaction/multi-result, metadata wrappers, and runtime type decode semantics.
 - **Mojo lane:** Added opt-in SBWP wire bridge runtime (`sb_wire_transport=python` / `SCRATCHBIRD_MOJO_WIRE_TRANSPORT`) in `src/scratchbird.py` with new `tests/wire_transport_bridge.py` coverage for query/prepare/stream/cancel, transaction/savepoint flow, metadata payloads, lifecycle snapshots, and truncation/decode SQLSTATE propagation (`08006`).
 - **Mojo lane:** Expanded integration/conformance harnesses to direct/manager/listener matrix execution (`SCRATCHBIRD_MOJO_*_URLS`) plus long-running stream-cancel and lifecycle snapshot assertions, and added optional live-matrix CI gate (`MOJO_LIVE_MATRIX_ENABLED`) with live DSN vars.
 - **Mojo lane:** Expanded restriction-aware metadata query shaping across native/facade/shim execution surfaces, including multi-restriction composition helpers and deterministic rowcount wrappers.

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import socket
+import struct
 
 import pytest
 
@@ -15,6 +16,7 @@ from scratchbird import errors
 from scratchbird.connection import Connection, ConnectionConfig, connect
 import scratchbird.connection as connection_mod
 from scratchbird.dsn import parse_dsn
+from scratchbird.protocol import FEATURE_COMPRESSION, FEATURE_STREAMING, MessageHeader, MessageType
 
 
 def test_parse_dsn_kv_supports_semicolon_tokens():
@@ -51,6 +53,22 @@ def test_connect_maps_common_conn_aliases(monkeypatch):
     assert cfg.binary_transfer is False
 
 
+def test_connect_accepts_non_native_protocol_hints(monkeypatch):
+    captured = {}
+
+    class FakeConnection:
+        def __init__(self, config):
+            captured["cfg"] = config
+
+    monkeypatch.setattr(connection_mod, "Connection", FakeConnection)
+    connect(
+        "host=server;port=4000;dbname=mydb;username=me;password=secret;"
+        "protocol=jdbc;parser=postgresql;dialect=odbc",
+    )
+    cfg = captured["cfg"]
+    assert cfg.protocol == "native"
+
+
 def test_connect_maps_metadata_expand_schema_parents_aliases(monkeypatch):
     captured = {}
 
@@ -66,6 +84,29 @@ def test_connect_maps_metadata_expand_schema_parents_aliases(monkeypatch):
     )
     cfg = captured["cfg"]
     assert cfg.metadata_expand_schema_parents is True
+
+
+def test_connect_accepts_disable_tls_and_zstd_compression(monkeypatch):
+    captured = {}
+
+    class FakeConnection:
+        def __init__(self, config):
+            captured["cfg"] = config
+
+    monkeypatch.setattr(connection_mod, "Connection", FakeConnection)
+    connect(
+        "host=server;port=4000;dbname=mydb;username=me;password=secret;"
+        "sslmode=disable;binarytransfer=off;compression=zstd",
+    )
+    cfg = captured["cfg"]
+    assert cfg.sslmode == "disable"
+    assert cfg.binary_transfer is False
+    assert cfg.compression == "zstd"
+
+
+def test_connect_rejects_unknown_compression_mode():
+    with pytest.raises(errors.InterfaceError, match="compression must be off or zstd"):
+        connect("host=server;port=4000;dbname=mydb;username=me;compression=gzip")
 
 
 def test_connect_captures_auth_plugin_startup_fields(monkeypatch):
@@ -142,6 +183,109 @@ def test_connect_rejects_manager_proxy_without_token_before_socket(monkeypatch):
 
     with pytest.raises(errors.InterfaceError, match="manager_proxy mode requires manager_auth_token"):
         conn._connect()
+
+
+def test_connect_sslmode_disable_uses_plain_socket_without_tls(monkeypatch):
+    class DummySocket:
+        def __init__(self):
+            self.timeout = None
+            self.closed = False
+
+        def setsockopt(self, *_args, **_kwargs):
+            return None
+
+        def settimeout(self, value):
+            self.timeout = value
+
+        def gettimeout(self):
+            return self.timeout
+
+        def close(self):
+            self.closed = True
+
+    class DummyKeepalive:
+        def __init__(self):
+            self.registered = None
+
+        def register(self, conn_id, callback):
+            self.registered = (conn_id, callback)
+            return object()
+
+    raw_sock = DummySocket()
+    conn = Connection.__new__(Connection)
+    conn._config = ConnectionConfig(
+        host="127.0.0.1",
+        port=3092,
+        user="alice",
+        password="secret",
+        database="db1",
+        protocol="jdbc",
+        sslmode="disable",
+        binary_transfer=False,
+        compression="zstd",
+    )
+    conn._conn_id = "conn-test-disable-tls"
+    conn._keepalive = DummyKeepalive()
+    conn._connected = False
+    conn._socket = None
+    conn._startup_and_auth = lambda: None
+    conn._apply_schema = lambda: None
+
+    monkeypatch.setattr(connection_mod.socket, "create_connection", lambda *_args, **_kwargs: raw_sock)
+    monkeypatch.setattr(
+        connection_mod.ssl,
+        "create_default_context",
+        lambda: pytest.fail("TLS context should not be created when sslmode=disable"),
+    )
+
+    conn._connect()
+
+    assert conn._socket is raw_sock
+    assert conn._connected is True
+    assert conn._config.protocol == "native"
+    assert conn._config.sslmode == "disable"
+    assert conn._config.compression == "zstd"
+    assert conn._keepalive.registered is not None
+
+
+def test_startup_features_include_zstd_without_streaming_when_binary_transfer_disabled():
+    conn = Connection.__new__(Connection)
+    conn._config = ConnectionConfig(
+        user="alice",
+        database="db1",
+        password="secret",
+        compression="zstd",
+        binary_transfer=False,
+    )
+    conn._parameters = {}
+    conn._authed = False
+    conn._attachment_id = b"\x00" * 16
+    conn._txn_id = 0
+
+    sent = []
+    conn._send_message = lambda msg_type, payload, flags=0, force_zero=False: sent.append(
+        (msg_type, payload, flags, force_zero)
+    )
+
+    auth_ok_payload = b"\x11" * 16 + struct.pack("<I", 0)
+    ready_payload = bytearray(20)
+    ready_payload[0] = 0
+    struct.pack_into("<Q", ready_payload, 4, 0)
+    struct.pack_into("<Q", ready_payload, 12, 0)
+
+    queue = [
+        (MessageHeader(MessageType.AUTH_OK, 0, len(auth_ok_payload), 1, b"\xAA" * 16, 0), auth_ok_payload),
+        (MessageHeader(MessageType.READY, 0, len(ready_payload), 2, b"\xAA" * 16, 0), bytes(ready_payload)),
+    ]
+    conn._recv_message = lambda: queue.pop(0)
+
+    conn._startup_and_auth()
+
+    startup = sent[0]
+    assert startup[0] == MessageType.STARTUP
+    features = struct.unpack_from("<Q", startup[1], 4)[0]
+    assert features & FEATURE_COMPRESSION
+    assert (features & FEATURE_STREAMING) == 0
 
 
 def test_read_exact_maps_socket_timeout_to_operational_error():

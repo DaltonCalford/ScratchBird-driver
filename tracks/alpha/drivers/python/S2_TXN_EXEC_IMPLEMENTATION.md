@@ -66,37 +66,39 @@ Scope: `tracks/alpha/drivers/python` lane only.
 - Added multi-result summary tests:
   - Extended `tests/test_txn_exec_parity.py` with `Connection.query_multi/execute_multi` coverage.
 - Updated TXN/EXEC rows in `BASELINE_REQUIREMENT_MAPPING.md` with current evidence and status notes.
+- Added deterministic binary-transfer toggle parity tests in `tests/test_txn_exec_parity.py`:
+  - `test_send_simple_query_respects_binary_transfer_toggle`
+  - `test_send_extended_query_uses_text_result_format_when_binary_transfer_disabled`
+- Added always-on runtime TXN/EXEC contract coverage in `tests/test_runtime_contract_gate.py`:
+  - `test_runtime_gate_txn_exec_without_env` validates transaction/savepoint lifecycle and multi-result execution flow without env-gated integration dependencies.
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`26 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+- Result: PASS (`27 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
-2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`149 passed, 26 skipped`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
+- Result: PASS (`49 passed`)
+
+3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_runtime_contract_gate.py`
+- Result: PASS (`3 passed`)
+
+4. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`214 passed, 27 skipped, 1 warning`)
 
 ## TXN Status
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Reason:
   - Explicit begin/commit/rollback/savepoint APIs now have deterministic local guardrails and focused unit coverage.
   - `autocommit` transition semantics now align better with JDBC (`autocommit=True` commits an active transaction before mode switch).
   - Wire-level autocommit mode transitions are now emitted via `SET_OPTION autocommit=on/off`.
   - `autocommit=False` now starts a transaction when no transaction is active.
-  - Env-gated live integration assertions now include explicit begin/commit/rollback cycles, nested-begin rejection, autocommit transitions, and savepoint lifecycle.
-  - Remaining gap: live transaction coverage remains environment-gated and therefore not guaranteed in default/CI runs.
+  - Deterministic always-on runtime contract coverage now includes explicit transaction/savepoint lifecycle validation without environment gating.
 
 ## EXEC Status
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Reason:
   - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
-  - Env-gated live integration assertions now include generated-keys, `nextset()`, callable escape execution, and summary-shape checks for `query_multi` and `execute_batch`/`query_batch`.
-  - Remaining gap: live coverage remains env-gated and therefore not guaranteed in default/CI runs.
-
-## Remaining Gaps
-
-- TXN:
-  - Live integration transaction coverage remains env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.
-- EXEC:
-  - Live integration coverage remains env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.
+  - Deterministic always-on runtime contract coverage now validates transaction/multi-result wire behavior and binary-result toggles without environment gating.

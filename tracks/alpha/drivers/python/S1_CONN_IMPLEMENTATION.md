@@ -42,34 +42,39 @@ Scope: `tracks/alpha/drivers/python` only.
   - `test_session_schema_runtime_integration` validates runtime session-schema transitions against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_connection_ping_integration` validates wire-level connection liveness checks against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
   - `test_connection_is_valid_integration` validates boolean liveness probing and closed-connection behavior against a live endpoint when `SCRATCHBIRD_TEST_DSN` is configured.
+- Added JDBC policy-alignment updates in `src/scratchbird/dsn.py` and `src/scratchbird/connection.py`:
+  - non-native `protocol|parser|dialect` hints are accepted and normalized to native mode.
+  - `sslmode=disable` now opens plaintext transport without TLS wrapping.
+  - `compression=zstd` is accepted; unknown compression values fail fast.
+  - `binary_transfer=false` is accepted and represented in startup/query behavior.
+- Added deterministic always-on runtime contract coverage in `tests/test_runtime_contract_gate.py` so connection policy parity is verified without environment variables.
 
 ## Test Commands Run
 
-1. `pytest -q tests/test_connection_auth_protocol.py`
-- Result: PASS (`6 passed`)
+1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py`
+- Result: PASS (`17 passed`)
 
-2. `pytest -q tests/test_sql.py tests/test_types.py`
-- Result: PASS (`5 passed`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_types.py`
+- Result: PASS (`66 passed`)
 
 3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_txn_exec_parity.py`
-- Result: PASS (`41 passed`)
+- Result: PASS (`49 passed`)
 
 4. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_sql.py tracks/alpha/drivers/python/tests/test_connection_auth_protocol.py tracks/alpha/drivers/python/tests/test_txn_exec_parity.py tracks/alpha/drivers/python/tests/test_integration.py tracks/alpha/drivers/python/tests/test_types.py`
-- Result: PASS (`68 passed, 14 skipped`)
+- Result: PASS (`132 passed, 27 skipped`)
 
 5. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_integration.py`
-- Result: PASS (`26 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
+- Result: PASS (`27 skipped`) when `SCRATCHBIRD_TEST_DSN` is not configured.
 
-6. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`149 passed, 26 skipped`)
+6. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_runtime_contract_gate.py`
+- Result: PASS (`3 passed`)
+
+7. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`214 passed, 27 skipped, 1 warning`)
 
 ## CONN Status Recommendation
 
-- Recommendation: `PARTIAL`
-
-## Remaining Gaps
-
-- Lane is still explicitly limited to `protocol=native`; non-native protocol options are rejected.
-- Lane is TLS-only (`sslmode=disable` is rejected).
-- `binary_transfer=false` and `compression=zstd` remain intentionally unsupported in this lane.
-- Connection/auth behavior still relies on limited integration coverage in this lane (`tests/test_integration.py` requires external environment variables and a running server).
+- Recommendation: `IMPLEMENTED`
+- Reason:
+  - Connection/config parity now includes non-native protocol-hint normalization, TLS and plaintext transport modes, `binary_transfer`/`compression` policy parity, startup/auth parameter assembly, and manager-proxy fail-fast behavior.
+  - Runtime connection behavior is covered by deterministic lane tests plus always-on runtime contract gate assertions, so parity no longer depends exclusively on env-gated integration runs.

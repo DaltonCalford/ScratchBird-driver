@@ -22,7 +22,13 @@ from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreake
 from .keepalive import KeepaliveManager, KeepaliveConfig
 from .leak_detection import LeakDetector, LeakDetectionConfig
 from .telemetry import TelemetryCollector, TelemetryConfig
-from .dsn import parse_dsn, normalize_front_door_mode, normalize_native_protocol
+from .dsn import (
+    parse_dsn,
+    normalize_compression_mode,
+    normalize_front_door_mode,
+    normalize_native_protocol,
+    normalize_ssl_mode,
+)
 from .cursor import Cursor
 from .protocol import (
     AuthMethod,
@@ -215,7 +221,10 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
         cfg.metadata_expand_schema_parents = raw_expand_schema_parents.lower() in ("1", "true", "yes", "on")
     else:
         cfg.metadata_expand_schema_parents = bool(raw_expand_schema_parents)
-    cfg.sslmode = params.get("sslmode", params.get("ssl", cfg.sslmode))
+    try:
+        cfg.sslmode = normalize_ssl_mode(str(params.get("sslmode", params.get("ssl", cfg.sslmode))))
+    except ValueError as exc:
+        raise errors.InterfaceError(str(exc)) from exc
     cfg.sslrootcert = params.get("sslrootcert", cfg.sslrootcert)
     cfg.sslcert = params.get("sslcert", cfg.sslcert)
     cfg.sslkey = params.get("sslkey", cfg.sslkey)
@@ -229,7 +238,10 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
         cfg.binary_transfer = raw_binary.lower() in ("1", "true", "yes", "on")
     else:
         cfg.binary_transfer = bool(raw_binary)
-    cfg.compression = params.get("compression", cfg.compression) or "off"
+    try:
+        cfg.compression = normalize_compression_mode(str(params.get("compression", cfg.compression) or "off"))
+    except ValueError as exc:
+        raise errors.InterfaceError(str(exc)) from exc
     cfg.manager_auth_token = params.get("manager_auth_token", params.get("mcp_auth_token", cfg.manager_auth_token))
     cfg.manager_username = params.get("manager_username", params.get("mcp_username", cfg.manager_username))
     cfg.manager_database = params.get("manager_database", params.get("mcp_database", cfg.manager_database))
@@ -368,14 +380,12 @@ class Connection:
         try:
             self._config.protocol = normalize_native_protocol(self._config.protocol)
             self._config.front_door_mode = normalize_front_door_mode(self._config.front_door_mode)
+            self._config.sslmode = normalize_ssl_mode(self._config.sslmode)
+            self._config.compression = normalize_compression_mode(self._config.compression)
         except ValueError as exc:
             raise errors.InterfaceError(str(exc)) from exc
         if not self._config.user or not self._config.database:
             raise errors.InterfaceError("user and database are required")
-        if not self._config.binary_transfer:
-            raise errors.NotSupportedError("binary_transfer=false is not supported")
-        if (self._config.compression or "").lower() == "zstd":
-            raise errors.NotSupportedError("compression=zstd is not supported")
         if self._config.front_door_mode == "manager_proxy" and not self._config.manager_auth_token:
             raise errors.InterfaceError("manager_proxy mode requires manager_auth_token")
         try:
@@ -390,31 +400,29 @@ class Connection:
         raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         raw_sock.settimeout(self._config.socket_timeout or None)
 
-        sslmode = (self._config.sslmode or "require").lower()
+        sslmode = self._config.sslmode
         if sslmode == "disable":
-            raw_sock.close()
-            raise errors.InterfaceError("TLS is required for ScratchBird connections")
-
-        ctx = ssl.create_default_context()
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
-        ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-        if sslmode in ("verify-ca", "verify-full"):
-            ctx.check_hostname = sslmode == "verify-full"
-            ctx.verify_mode = ssl.CERT_REQUIRED
+            self._socket = raw_sock
         else:
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-        if self._config.sslrootcert:
-            ctx.load_verify_locations(self._config.sslrootcert)
-        if self._config.sslcert and self._config.sslkey:
-            ctx.load_cert_chain(self._config.sslcert, self._config.sslkey, password=self._config.sslpassword)
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            if sslmode in ("verify-ca", "verify-full"):
+                ctx.check_hostname = sslmode == "verify-full"
+                ctx.verify_mode = ssl.CERT_REQUIRED
+            else:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            if self._config.sslrootcert:
+                ctx.load_verify_locations(self._config.sslrootcert)
+            if self._config.sslcert and self._config.sslkey:
+                ctx.load_cert_chain(self._config.sslcert, self._config.sslkey, password=self._config.sslpassword)
 
-        try:
-            sock = ctx.wrap_socket(raw_sock, server_hostname=self._config.host)
-        except ssl.SSLError as exc:
-            raw_sock.close()
-            raise errors.OperationalError(f"[08001] TLS handshake failed: {exc}") from exc
-        self._socket = sock
+            try:
+                self._socket = ctx.wrap_socket(raw_sock, server_hostname=self._config.host)
+            except ssl.SSLError as exc:
+                raw_sock.close()
+                raise errors.OperationalError(f"[08001] TLS handshake failed: {exc}") from exc
 
         if self._config.front_door_mode == "manager_proxy":
             self._perform_manager_connect()

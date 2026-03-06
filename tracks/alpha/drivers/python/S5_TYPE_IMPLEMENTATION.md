@@ -103,18 +103,23 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `test_encode_daterange_with_string_bounds_roundtrip`
   - `test_encode_tstzrange_with_string_bounds_roundtrip`
   - `test_encode_tsrange_with_string_bounds_roundtrip`
+- Added deterministic always-on runtime type contract coverage in `tests/test_runtime_contract_gate.py`:
+  - `test_runtime_gate_type_decode_without_env` validates runtime decode semantics for `TIMESTAMPTZ`, `NUMERIC`, and `BYTEA` without `SCRATCHBIRD_TEST_DSN`.
 
 ## Tests Run
 
 1. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_types.py`
 - Result: PASS (`59 passed`)
 
-2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
-- Result: PASS (`204 passed, 27 skipped, 1 warning`)
+2. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests/test_runtime_contract_gate.py`
+- Result: PASS (`3 passed`)
+
+3. `PYTHONDONTWRITEBYTECODE=1 pytest -q tracks/alpha/drivers/python/tests`
+- Result: PASS (`214 passed, 27 skipped, 1 warning`)
 
 ## TYPE Status Recommendation
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Reason:
   - Deterministic type parity now explicitly includes `TIMETZ` encode/decode behavior (binary and text) aligned with JDBC lane expectations for zone-aware time payloads, plus typed text decode for scalar and temporal families (`bool`/`int`/`float`/`numeric`/`date`/`time`/`timestamp`/`timestamptz`/`uuid`).
   - Deterministic type parity now also includes typed array OID inference/decode behavior with quoted-string/nested-array literal parsing and typed element conversion coverage.
@@ -129,5 +134,4 @@ Scope: `tracks/alpha/drivers/python` lane only.
   - `BYTEA` decode behavior now aligns with JDBC escape/hex decoding semantics across binary, text, and array decode paths.
   - Wrapper-equivalent families now include explicit encode routing for `blob`/`clob`/`rowid`/`ref`/`sqlxml` wrappers with deterministic lane tests.
   - Parameter encode parity now includes enum-name and custom-object string fallback behavior aligned with JDBC’s text fallback path.
-  - Existing scalar/json/range/composite/vector paths remain covered by unit tests and env-gated integration checks.
-  - Remaining gap: deeper live type coverage is still env-gated and can be skipped when `SCRATCHBIRD_TEST_DSN` is not set.
+  - Existing scalar/json/range/composite/vector paths remain covered by deterministic lane tests, and runtime decode semantics now have always-on contract assertions without environment gating.

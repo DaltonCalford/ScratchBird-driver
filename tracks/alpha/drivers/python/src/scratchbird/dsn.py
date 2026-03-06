@@ -15,9 +15,29 @@ import urllib.parse
 
 def normalize_native_protocol(value: str | None) -> str:
     normalized = (value or "").strip().lower()
-    if normalized in ("", "native", "scratchbird", "scratchbird-native", "scratchbird_native"):
+    # The Python lane currently speaks the native wire protocol only, but accepts
+    # common protocol/dialect hints used by JDBC/ODBC tooling and DSN builders.
+    if normalized in (
+        "",
+        "native",
+        "scratchbird",
+        "scratchbird-native",
+        "scratchbird_native",
+        "sbwp",
+        "postgres",
+        "postgresql",
+        "pg",
+        "jdbc",
+        "odbc",
+        "sql",
+        "mysql",
+        "mariadb",
+        "sqlite",
+        "duckdb",
+        "firebird",
+    ):
         return "native"
-    raise ValueError("Only protocol=native is supported; connect to the native parser listener/port.")
+    return "native"
 
 
 def normalize_front_door_mode(value: str | None) -> str:
@@ -27,6 +47,33 @@ def normalize_front_door_mode(value: str | None) -> str:
     if normalized in ("manager_proxy", "manager-proxy", "managed"):
         return "manager_proxy"
     raise ValueError("front_door_mode must be direct or manager_proxy.")
+
+
+def normalize_ssl_mode(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("", "require"):
+        return "require"
+    if normalized in ("verify-ca", "verifyca"):
+        return "verify-ca"
+    if normalized in ("verify-full", "verifyfull"):
+        return "verify-full"
+    if normalized in ("disable", "off", "false", "0", "no"):
+        return "disable"
+    if normalized in ("on", "true", "1", "yes"):
+        return "require"
+    if normalized in ("allow", "prefer"):
+        # JDBC-compatible lenient modes still negotiate TLS in this lane.
+        return "require"
+    raise ValueError("sslmode must be disable, require, verify-ca, or verify-full.")
+
+
+def normalize_compression_mode(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in ("", "off", "none", "false", "0", "no"):
+        return "off"
+    if normalized in ("zstd", "on", "true", "1", "yes"):
+        return "zstd"
+    raise ValueError("compression must be off or zstd.")
 
 
 def parse_dsn(dsn: str | None) -> dict:

@@ -320,6 +320,40 @@ def test_set_session_schema_executes_schema_statement(monkeypatch):
     assert sent["sql"] == 'SET SCHEMA "analytics"'
 
 
+def test_send_simple_query_respects_binary_transfer_toggle():
+    conn = _new_connection()
+    sent = []
+    conn._send_message = lambda msg_type, payload, flags=0, force_zero=False: sent.append((msg_type, payload, flags, force_zero))
+
+    conn._config.binary_transfer = False
+    conn._send_simple_query("SELECT 1")
+    flags_no_binary = struct.unpack_from("<I", sent[-1][1], 0)[0]
+    assert (flags_no_binary & 0x04) == 0
+
+    conn._config.binary_transfer = True
+    conn._send_simple_query("SELECT 1")
+    flags_binary = struct.unpack_from("<I", sent[-1][1], 0)[0]
+    assert (flags_binary & 0x04) == 0x04
+
+
+def test_send_extended_query_uses_text_result_format_when_binary_transfer_disabled():
+    conn = _new_connection()
+    sent = []
+    conn._send_message = lambda msg_type, payload, flags=0, force_zero=False: sent.append((msg_type, payload, flags, force_zero))
+    conn._describe_statement = lambda _name: 1
+
+    conn._config.binary_transfer = False
+    conn._send_extended_query("SELECT $1", [1], max_rows=0)
+    bind_payload = next(payload for msg_type, payload, _flags, _force_zero in sent if msg_type == MessageType.BIND)
+    assert bind_payload.endswith(b"\x00\x00")
+
+    sent.clear()
+    conn._config.binary_transfer = True
+    conn._send_extended_query("SELECT $1", [1], max_rows=0)
+    bind_payload = next(payload for msg_type, payload, _flags, _force_zero in sent if msg_type == MessageType.BIND)
+    assert bind_payload.endswith(b"\x01\x00\x01\x00")
+
+
 def test_set_session_schema_none_resets_to_public(monkeypatch):
     conn = _new_connection()
     conn._session_schema = "analytics"
