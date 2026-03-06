@@ -168,6 +168,18 @@ public class ConfigTests
     }
 
     [Fact]
+    public void ParsePipelineOptions()
+    {
+        var uriCfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/mydb?pipeline_max_in_flight=32");
+        Assert.Equal(32, uriCfg.PipelineMaxInFlight);
+
+        var kvCfg = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=mydb;pipelinemaxinflight=0");
+        Assert.Equal(0, kvCfg.PipelineMaxInFlight);
+    }
+
+    [Fact]
     public void ParseMetadataExpandSchemaParentsAliases()
     {
         var aliases = new[]

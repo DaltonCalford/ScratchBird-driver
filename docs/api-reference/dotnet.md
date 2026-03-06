@@ -57,6 +57,7 @@ owned by `ScratchBirdConnection`:
   - latest server diagnostics payloads (`QueryPlanSummary`, `SblrSummary`) when available
   - current circuit-breaker status (`CircuitBreakerSummary`)
   - current keepalive status (`KeepaliveSummary`)
+  - current pipeline-capacity status (`PipelineSummary`)
   - current leak-detection status (`LeakSummary`)
 - `ScratchBirdConnection.GetPoolDiagnostics()` returns pooled counters for the current connection configuration.
 - `ScratchBirdConnection.GetPoolDiagnostics(connectionString)` provides static access to pool counters without opening a connection.
@@ -64,6 +65,8 @@ owned by `ScratchBirdConnection`:
 - Circuit-breaker DSN controls: `cb_failure_threshold`, `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests` (disabled when failure threshold is `0`).
 - `ScratchBirdConnection.GetKeepaliveSummary()` returns the keepalive monitor snapshot.
 - Keepalive DSN controls: `keepalive_interval_ms`, `keepalive_max_idle_before_check_ms` (alias `keepalive_max_idle_ms`), `keepalive_validation_timeout_ms`.
+- `ScratchBirdConnection.GetPipelineSummary()` returns the pipeline-capacity monitor snapshot.
+- Pipeline DSN control: `pipeline_max_in_flight` (disabled when set to `0`).
 - `ScratchBirdConnection.GetLeakSummary()` returns the leak monitor snapshot.
 - Leak DSN controls: `leak_threshold_ms`, `leak_capture_stack` (alias `leak_capture_stack_trace`).
 

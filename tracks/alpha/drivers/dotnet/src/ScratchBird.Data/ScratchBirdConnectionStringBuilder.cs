@@ -162,6 +162,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["leak_threshold_ms"] = value;
     }
 
+    public int PipelineMaxInFlight
+    {
+        get => GetInt("pipeline_max_in_flight", 100);
+        set => this["pipeline_max_in_flight"] = value;
+    }
+
     public bool LeakCaptureStackTrace
     {
         get => GetBool("leak_capture_stack", false);

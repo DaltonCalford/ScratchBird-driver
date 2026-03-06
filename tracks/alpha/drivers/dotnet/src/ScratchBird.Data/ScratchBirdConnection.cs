@@ -32,6 +32,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private TelemetryCollector _telemetry = new();
     private CircuitBreaker _circuitBreaker = new();
     private KeepaliveMonitor _keepalive = new();
+    private PipelineMonitor _pipelineMonitor = new();
     private LeakMonitor _leakMonitor = new();
     private readonly object _notificationSync = new();
     private Queue<ScratchBirdNotification>? _notificationQueue;
@@ -60,6 +61,7 @@ public sealed class ScratchBirdConnection : DbConnection
             _telemetry = new TelemetryCollector(BuildTelemetryOptions(_config));
             _circuitBreaker = new CircuitBreaker(BuildCircuitBreakerOptions(_config));
             _keepalive = new KeepaliveMonitor(BuildKeepaliveOptions(_config));
+            _pipelineMonitor = new PipelineMonitor(BuildPipelineOptions(_config));
             _leakMonitor = new LeakMonitor(BuildLeakOptions(_config));
         }
     }
@@ -386,6 +388,7 @@ public sealed class ScratchBirdConnection : DbConnection
             CreateSblrSummary(client?.LastSblr),
             MapCircuitBreakerSummary(_circuitBreaker.Snapshot()),
             MapKeepaliveSummary(_keepalive.Snapshot()),
+            MapPipelineSummary(_pipelineMonitor.Snapshot()),
             MapLeakSummary(_leakMonitor.Snapshot()));
     }
 
@@ -419,6 +422,11 @@ public sealed class ScratchBirdConnection : DbConnection
         return MapKeepaliveSummary(_keepalive.Snapshot());
     }
 
+    public PipelineSummary GetPipelineSummary()
+    {
+        return MapPipelineSummary(_pipelineMonitor.Snapshot());
+    }
+
     public LeakSummary GetLeakSummary()
     {
         return MapLeakSummary(_leakMonitor.Snapshot());
@@ -448,6 +456,15 @@ public sealed class ScratchBirdConnection : DbConnection
             throw new ScratchBirdConnectionException("Circuit breaker is OPEN", "08006");
         }
 
+        if (!_pipelineMonitor.TryAcquire())
+        {
+            RecordTelemetry(operation, TimeSpan.Zero, success: false);
+            throw new ScratchBirdLimitException(
+                "Pipeline capacity exceeded",
+                "54000",
+                $"pipeline_max_in_flight={_config.PipelineMaxInFlight}");
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var success = false;
         try
@@ -468,6 +485,7 @@ public sealed class ScratchBirdConnection : DbConnection
                 _circuitBreaker.RecordSuccess();
             }
 
+            _pipelineMonitor.Release(success);
             _keepalive.MarkActivity();
             RecordTelemetry(operation, stopwatch.Elapsed, success);
         }
@@ -1365,6 +1383,18 @@ public sealed class ScratchBirdConnection : DbConnection
             snapshot.ValidationFailures);
     }
 
+    private static PipelineSummary MapPipelineSummary(PipelineSnapshot snapshot)
+    {
+        return new PipelineSummary(
+            snapshot.Enabled,
+            snapshot.MaxInFlight,
+            snapshot.InFlight,
+            snapshot.TotalAccepted,
+            snapshot.TotalRejected,
+            snapshot.TotalCompleted,
+            snapshot.TotalFailed);
+    }
+
     private static LeakSummary MapLeakSummary(LeakSnapshot snapshot)
     {
         return new LeakSummary(
@@ -1607,6 +1637,11 @@ public sealed class ScratchBirdConnection : DbConnection
             IntervalMs: config.KeepaliveIntervalMs,
             MaxIdleBeforeCheckMs: config.KeepaliveMaxIdleBeforeCheckMs,
             ValidationTimeoutMs: config.KeepaliveValidationTimeoutMs);
+    }
+
+    private static PipelineOptions BuildPipelineOptions(ScratchBirdConfig config)
+    {
+        return new PipelineOptions(config.PipelineMaxInFlight);
     }
 
     private static LeakOptions BuildLeakOptions(ScratchBirdConfig config)

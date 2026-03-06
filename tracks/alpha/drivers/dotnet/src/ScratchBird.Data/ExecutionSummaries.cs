@@ -83,6 +83,15 @@ public sealed record KeepaliveSummary(
     long ValidationSuccesses,
     long ValidationFailures);
 
+public sealed record PipelineSummary(
+    bool Enabled,
+    int MaxInFlight,
+    int InFlight,
+    long TotalAccepted,
+    long TotalRejected,
+    long TotalCompleted,
+    long TotalFailed);
+
 public sealed record LeakSummary(
     bool Enabled,
     bool ActiveCheckout,
@@ -143,4 +152,5 @@ public sealed record ConnectionDiagnosticsSummary(
     SblrSummary? LastSblr,
     CircuitBreakerSummary CircuitBreaker,
     KeepaliveSummary Keepalive,
+    PipelineSummary Pipeline,
     LeakSummary LeakDetection);

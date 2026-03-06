@@ -56,6 +56,7 @@ public sealed class ScratchBirdConfig
     public int KeepaliveIntervalMs { get; set; } = 120000;
     public int KeepaliveMaxIdleBeforeCheckMs { get; set; } = 600000;
     public int KeepaliveValidationTimeoutMs { get; set; } = 5000;
+    public int PipelineMaxInFlight { get; set; } = 100;
     public int LeakThresholdMs { get; set; } = 30000;
     public bool LeakCaptureStackTrace { get; set; } = false;
     public string ManagerAuthToken { get; set; } = string.Empty;
@@ -427,6 +428,11 @@ internal static class DsnParser
             case "keepalivevalidationtimeoutms":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepaliveValidationTimeoutMs))
                     cfg.KeepaliveValidationTimeoutMs = Math.Max(0, keepaliveValidationTimeoutMs);
+                break;
+            case "pipeline_max_in_flight":
+            case "pipelinemaxinflight":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pipelineMaxInFlight))
+                    cfg.PipelineMaxInFlight = Math.Max(0, pipelineMaxInFlight);
                 break;
             case "leak_threshold_ms":
             case "leakthresholdms":
