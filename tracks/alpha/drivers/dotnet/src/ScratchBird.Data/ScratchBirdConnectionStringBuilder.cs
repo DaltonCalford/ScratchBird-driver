@@ -156,6 +156,18 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["keepalive_validation_timeout_ms"] = value;
     }
 
+    public int LeakThresholdMs
+    {
+        get => GetInt("leak_threshold_ms", 30000);
+        set => this["leak_threshold_ms"] = value;
+    }
+
+    public bool LeakCaptureStackTrace
+    {
+        get => GetBool("leak_capture_stack", false);
+        set => this["leak_capture_stack"] = value;
+    }
+
     public bool Enlist
     {
         get => GetBool("Enlist", true);

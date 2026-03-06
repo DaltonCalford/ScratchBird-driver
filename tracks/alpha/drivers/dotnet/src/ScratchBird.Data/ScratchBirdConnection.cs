@@ -32,6 +32,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private TelemetryCollector _telemetry = new();
     private CircuitBreaker _circuitBreaker = new();
     private KeepaliveMonitor _keepalive = new();
+    private LeakMonitor _leakMonitor = new();
     private readonly object _notificationSync = new();
     private Queue<ScratchBirdNotification>? _notificationQueue;
     private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
@@ -59,6 +60,7 @@ public sealed class ScratchBirdConnection : DbConnection
             _telemetry = new TelemetryCollector(BuildTelemetryOptions(_config));
             _circuitBreaker = new CircuitBreaker(BuildCircuitBreakerOptions(_config));
             _keepalive = new KeepaliveMonitor(BuildKeepaliveOptions(_config));
+            _leakMonitor = new LeakMonitor(BuildLeakOptions(_config));
         }
     }
 
@@ -147,6 +149,7 @@ public sealed class ScratchBirdConnection : DbConnection
                 _client.Connect(_config);
             }
             _state = ConnectionState.Open;
+            _leakMonitor.Checkout();
             ApplySchema();
             InstallNotificationBridgeIfNeeded(_client);
         }
@@ -267,6 +270,7 @@ public sealed class ScratchBirdConnection : DbConnection
         _clientLease = null;
         _client = null;
         _activeTransaction = null;
+        _leakMonitor.Checkin();
         _state = ConnectionState.Closed;
         lock (_notificationSync)
         {
@@ -381,7 +385,8 @@ public sealed class ScratchBirdConnection : DbConnection
             CreateQueryPlanSummary(client?.LastPlan),
             CreateSblrSummary(client?.LastSblr),
             MapCircuitBreakerSummary(_circuitBreaker.Snapshot()),
-            MapKeepaliveSummary(_keepalive.Snapshot()));
+            MapKeepaliveSummary(_keepalive.Snapshot()),
+            MapLeakSummary(_leakMonitor.Snapshot()));
     }
 
     public ConnectionTelemetrySummary GetTelemetrySummary()
@@ -412,6 +417,11 @@ public sealed class ScratchBirdConnection : DbConnection
     public KeepaliveSummary GetKeepaliveSummary()
     {
         return MapKeepaliveSummary(_keepalive.Snapshot());
+    }
+
+    public LeakSummary GetLeakSummary()
+    {
+        return MapLeakSummary(_leakMonitor.Snapshot());
     }
 
     public PoolDiagnosticsSummary? GetPoolDiagnostics()
@@ -1355,6 +1365,23 @@ public sealed class ScratchBirdConnection : DbConnection
             snapshot.ValidationFailures);
     }
 
+    private static LeakSummary MapLeakSummary(LeakSnapshot snapshot)
+    {
+        return new LeakSummary(
+            snapshot.Enabled,
+            snapshot.ActiveCheckout,
+            snapshot.ThresholdMs,
+            snapshot.CheckoutUtc,
+            snapshot.LastCheckinUtc,
+            snapshot.CurrentHeldDurationMs,
+            snapshot.LastHeldDurationMs,
+            snapshot.MaxHeldDurationMs,
+            snapshot.PotentialLeakCount,
+            snapshot.Checkouts,
+            snapshot.Checkins,
+            snapshot.CheckoutStackTrace);
+    }
+
     private ProtocolClient EnsureNotificationBridge()
     {
         lock (_notificationSync)
@@ -1580,6 +1607,13 @@ public sealed class ScratchBirdConnection : DbConnection
             IntervalMs: config.KeepaliveIntervalMs,
             MaxIdleBeforeCheckMs: config.KeepaliveMaxIdleBeforeCheckMs,
             ValidationTimeoutMs: config.KeepaliveValidationTimeoutMs);
+    }
+
+    private static LeakOptions BuildLeakOptions(ScratchBirdConfig config)
+    {
+        return new LeakOptions(
+            ThresholdMs: config.LeakThresholdMs,
+            CaptureStackTrace: config.LeakCaptureStackTrace);
     }
 
     private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)

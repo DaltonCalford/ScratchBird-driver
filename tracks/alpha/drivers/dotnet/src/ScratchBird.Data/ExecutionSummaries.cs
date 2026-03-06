@@ -83,6 +83,20 @@ public sealed record KeepaliveSummary(
     long ValidationSuccesses,
     long ValidationFailures);
 
+public sealed record LeakSummary(
+    bool Enabled,
+    bool ActiveCheckout,
+    long ThresholdMs,
+    DateTimeOffset? CheckoutUtc,
+    DateTimeOffset? LastCheckinUtc,
+    long CurrentHeldDurationMs,
+    long LastHeldDurationMs,
+    long MaxHeldDurationMs,
+    long PotentialLeakCount,
+    long Checkouts,
+    long Checkins,
+    string? CheckoutStackTrace);
+
 public sealed record ScratchBirdNotification(
     uint ProcessId,
     string Channel,
@@ -128,4 +142,5 @@ public sealed record ConnectionDiagnosticsSummary(
     QueryPlanSummary? LastPlan,
     SblrSummary? LastSblr,
     CircuitBreakerSummary CircuitBreaker,
-    KeepaliveSummary Keepalive);
+    KeepaliveSummary Keepalive,
+    LeakSummary LeakDetection);

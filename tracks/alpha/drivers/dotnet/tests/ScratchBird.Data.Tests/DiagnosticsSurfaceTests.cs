@@ -38,6 +38,9 @@ public class DiagnosticsSurfaceTests
         Assert.NotNull(diagnostics.Keepalive);
         Assert.True(diagnostics.Keepalive.Enabled);
         Assert.Equal(120000, diagnostics.Keepalive.IntervalMs);
+        Assert.NotNull(diagnostics.LeakDetection);
+        Assert.True(diagnostics.LeakDetection.Enabled);
+        Assert.False(diagnostics.LeakDetection.ActiveCheckout);
     }
 
     [Fact]

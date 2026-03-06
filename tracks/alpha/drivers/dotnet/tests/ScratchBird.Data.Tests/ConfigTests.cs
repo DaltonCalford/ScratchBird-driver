@@ -154,6 +154,20 @@ public class ConfigTests
     }
 
     [Fact]
+    public void ParseLeakOptions()
+    {
+        var uriCfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/mydb?leak_threshold_ms=45000&leak_capture_stack=true");
+        Assert.Equal(45000, uriCfg.LeakThresholdMs);
+        Assert.True(uriCfg.LeakCaptureStackTrace);
+
+        var kvCfg = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=mydb;leakthresholdms=0;leak_capture_stack_trace=1");
+        Assert.Equal(0, kvCfg.LeakThresholdMs);
+        Assert.True(kvCfg.LeakCaptureStackTrace);
+    }
+
+    [Fact]
     public void ParseMetadataExpandSchemaParentsAliases()
     {
         var aliases = new[]

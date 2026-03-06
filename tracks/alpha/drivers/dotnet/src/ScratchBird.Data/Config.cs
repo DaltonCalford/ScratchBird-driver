@@ -56,6 +56,8 @@ public sealed class ScratchBirdConfig
     public int KeepaliveIntervalMs { get; set; } = 120000;
     public int KeepaliveMaxIdleBeforeCheckMs { get; set; } = 600000;
     public int KeepaliveValidationTimeoutMs { get; set; } = 5000;
+    public int LeakThresholdMs { get; set; } = 30000;
+    public bool LeakCaptureStackTrace { get; set; } = false;
     public string ManagerAuthToken { get; set; } = string.Empty;
     public string ManagerUsername { get; set; } = string.Empty;
     public string ManagerDatabase { get; set; } = string.Empty;
@@ -425,6 +427,20 @@ internal static class DsnParser
             case "keepalivevalidationtimeoutms":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepaliveValidationTimeoutMs))
                     cfg.KeepaliveValidationTimeoutMs = Math.Max(0, keepaliveValidationTimeoutMs);
+                break;
+            case "leak_threshold_ms":
+            case "leakthresholdms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var leakThresholdMs))
+                    cfg.LeakThresholdMs = Math.Max(0, leakThresholdMs);
+                break;
+            case "leak_capture_stack":
+            case "leak_capture_stack_trace":
+            case "leakcapturestack":
+            case "leakcapturestacktrace":
+                cfg.LeakCaptureStackTrace = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":
