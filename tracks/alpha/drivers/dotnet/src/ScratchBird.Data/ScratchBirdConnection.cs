@@ -432,6 +432,17 @@ public sealed class ScratchBirdConnection : DbConnection
         return new ScratchBirdQueryPipeline(this, config);
     }
 
+    public async Task<IReadOnlyList<IReadOnlyList<ResultSetSummary>>> ExecutePipelineBatchAsync(
+        IReadOnlyList<ScratchBirdPipelineBatchItem> items,
+        ScratchBirdQueryPipelineConfig? config = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        await using var pipeline = CreateQueryPipeline(config);
+        return await pipeline.ExecuteBatchAsync(items, cancellationToken).ConfigureAwait(false);
+    }
+
     public LeakSummary GetLeakSummary()
     {
         return MapLeakSummary(_leakMonitor.Snapshot());

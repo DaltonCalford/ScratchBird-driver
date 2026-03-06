@@ -193,6 +193,40 @@ public class QueryPipelineSurfaceTests
         Assert.Equal("54000", ex.SqlState);
     }
 
+    [Fact]
+    public async Task ExecuteBatchAsync_UsesBatchItemConvenienceApi()
+    {
+        using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
+        await using var pipeline = new ScratchBirdQueryPipeline(
+            connection,
+            new ScratchBirdQueryPipelineConfig
+            {
+                MaxInFlight = 4,
+                AutoFlush = false,
+                FlushTimeoutMs = 60000
+            },
+            (sql, _, _, _, _) => Task.FromResult(CreateResult(sql)));
+
+        var items = new[]
+        {
+            new ScratchBirdPipelineBatchItem("SELECT 1"),
+            new ScratchBirdPipelineBatchItem("SELECT 2")
+        };
+
+        var results = await pipeline.ExecuteBatchAsync(items).WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(2, results.Count);
+        Assert.Equal("SELECT 1", results[0][0].Command);
+        Assert.Equal("SELECT 2", results[1][0].Command);
+    }
+
+    [Fact]
+    public async Task ConnectionExecutePipelineBatchAsync_ReturnsEmptyForEmptyBatch()
+    {
+        using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
+        var results = await connection.ExecutePipelineBatchAsync(Array.Empty<ScratchBirdPipelineBatchItem>());
+        Assert.Empty(results);
+    }
+
     private static IReadOnlyList<ResultSetSummary> CreateResult(string command)
     {
         return new[]

@@ -28,6 +28,12 @@ public sealed class ScratchBirdQueryPipelineConfig
     }
 }
 
+public sealed record ScratchBirdPipelineBatchItem(
+    string Sql,
+    IReadOnlyList<ScratchBirdParameter>? Parameters = null,
+    int CommandTimeoutSeconds = 30,
+    int FetchSize = 0);
+
 internal delegate Task<IReadOnlyList<ResultSetSummary>> ScratchBirdPipelineExecutor(
     string sql,
     IReadOnlyList<ScratchBirdParameter> parameters,
@@ -149,6 +155,27 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
         return new ScratchBirdQueryPipelineBatch(this);
+    }
+
+    public Task<IReadOnlyList<IReadOnlyList<ResultSetSummary>>> ExecuteBatchAsync(
+        IReadOnlyList<ScratchBirdPipelineBatchItem> items,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var batch = CreateBatch();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            ArgumentNullException.ThrowIfNull(item);
+            batch.Add(
+                item.Sql,
+                item.Parameters,
+                item.CommandTimeoutSeconds,
+                item.FetchSize);
+        }
+
+        return batch.ExecuteAsync(cancellationToken);
     }
 
     public void Dispose()
