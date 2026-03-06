@@ -596,6 +596,52 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should return 0 when rows are missing",
     )
 
+    conn.result = SimpleNamespace(rowcount=None, rows=object())
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 0,
+        "query_metadata_rows should return 0 when rows are unsized",
+    )
+
+
+def test_instance_metadata_rowcount_fallbacks() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount="bad", rows=[[1], [2], [3]])
+        _require(
+            conn.query_metadata_rows("tables") == 3,
+            "instance query_metadata_rows should fall back to len(rows) when rowcount is invalid",
+        )
+
+        conn.query_metadata_restricted = (
+            lambda collection_name=None, restriction_key=None, restriction_value=None: SimpleNamespace(
+                rowcount=None,
+                rows=[[1], [2]],
+            )
+        )
+        _require(
+            conn.query_metadata_rows_restricted("tables", "schema", "public") == 2,
+            "instance query_metadata_rows_restricted should fall back to len(rows) when rowcount missing",
+        )
+
+        conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows=(["a"], ["b"], ["c"]),
+            )
+        )
+        _require(
+            conn.query_metadata_rows_restricted_multi("tables", {"schema": "public"}) == 3,
+            "instance query_metadata_rows_restricted_multi should support tuple row fallback",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows=object())
+        _require(
+            conn.query_metadata_rows("tables") == 0,
+            "instance query_metadata_rows should return 0 when rows are unsized",
+        )
+    finally:
+        conn.close()
+
 
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
@@ -619,6 +665,7 @@ def main() -> None:
     test_shim_closed_connection_guards()
     test_static_closed_connection_guards()
     test_static_metadata_rowcount_fallbacks()
+    test_instance_metadata_rowcount_fallbacks()
     print("Mojo TXN/EXEC parity tests OK")
 
 

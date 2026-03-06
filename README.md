@@ -117,6 +117,7 @@ Legend:
 - **Mojo lane:** Expanded static closed-connection metadata helper coverage (`08003`) for `query_metadata_rows`, `query_metadata_restricted`, and `query_metadata_restricted_multi` paths.
 - **Mojo lane:** Extended static closed-connection metadata helper coverage (`08003`) to `query_metadata_rows_restricted`, `get_schema`, and `ddl_editor_schema_payload` paths.
 - **Mojo lane:** Consolidated static metadata rowcount fallback parity via shared helper semantics (`rowcount` when integer, else `len(rows)` fallback, else `0`) with deterministic TXN parity coverage.
+- **Mojo lane:** Extended shared metadata rowcount fallback parity to instance helpers (`query_metadata_rows*`) and added deterministic unsized-row fallback coverage (`0`).
 
 ---
 

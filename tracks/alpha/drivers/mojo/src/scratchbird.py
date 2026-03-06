@@ -1150,7 +1150,7 @@ class _ShimConnection:
         return self.query(metadata_sql)
 
     def query_metadata_rows(self, collection_name: Optional[str] = None) -> int:
-        return self.query_metadata(collection_name).rowcount
+        return _result_rowcount_or_len(self.query_metadata(collection_name))
 
     def query_metadata_restricted(
         self,
@@ -1171,11 +1171,13 @@ class _ShimConnection:
         restriction_key: Optional[str] = None,
         restriction_value: Optional[str] = None,
     ) -> int:
-        return self.query_metadata_restricted(
-            collection_name,
-            restriction_key,
-            restriction_value,
-        ).rowcount
+        return _result_rowcount_or_len(
+            self.query_metadata_restricted(
+                collection_name,
+                restriction_key,
+                restriction_value,
+            )
+        )
 
     def query_metadata_restricted_multi(
         self,
@@ -1193,7 +1195,7 @@ class _ShimConnection:
         collection_name: Optional[str] = None,
         restrictions: Optional[Mapping[str, Any]] = None,
     ) -> int:
-        return self.query_metadata_restricted_multi(collection_name, restrictions).rowcount
+        return _result_rowcount_or_len(self.query_metadata_restricted_multi(collection_name, restrictions))
 
     def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
         return self.query_metadata(collection_name).rows
