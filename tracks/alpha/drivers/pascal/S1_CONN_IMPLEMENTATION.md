@@ -7,13 +7,13 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added manager-proxy auth preflight in `src/ScratchBird.Client.pas`:
   - `Connect` now fails fast with `manager_proxy mode requires manager_auth_token` before `FTransport.Configure`/`FTransport.Connect`.
   - This prevents network dial attempts when manager-proxy auth configuration is incomplete.
-- Tightened native TLS mode handling in `src/ScratchBird.Transport.Native.pas`:
-  - `ParseTlsMode` now rejects `sslmode=disable` during transport configuration with `TLS mode "disable" is not allowed for ScratchBird connections.`.
-  - This aligns transport behavior with existing TLS policy (`ScratchBird.Tls.Context` already rejects disable mode).
+- Expanded native compatibility TLS mode handling in `src/ScratchBird.Transport.Native.pas` and `src/ScratchBird.Tls.Context.pas`:
+  - `ParseTlsMode` now accepts `sslmode=disable` and maps it to plaintext socket mode.
+  - `TTlsContext` now supports a non-TLS socket handshake path for `tmDisable` while retaining TLS policy enforcement for TLS-enabled modes.
 - Added lane-local connection/auth/protocol tests in `tests/ConnectionAuthProtocolTests.pas`:
   - unsupported protocol guardrail (`protocol=postgresql`) rejection.
   - manager-proxy missing token fail-fast behavior at `TScratchBirdClient.Connect`.
-  - native transport `sslmode=disable` configure-time rejection.
+  - native transport `sslmode=disable` configure-time acceptance.
   - protocol parser behavior: oversized header rejection and truncated `AUTH_CONTINUE` rejection.
 - Added deterministic manager-proxy fixture coverage in `tests/ConnectionManagerProxyTests.pas`:
   - manager-proxy connect success path across MCP negotiation and front-door password auth handshake.
@@ -22,6 +22,7 @@ Scope: `tracks/alpha/drivers/pascal` only.
 - Added deterministic direct front-door auth matrix coverage in `tests/ConnectionDirectAuthMatrixTests.pas`:
   - direct password auth path (`AUTH_PASSWORD`) from startup/auth request through connected READY state.
   - direct SCRAM auth path (`AUTH_SCRAM_SHA256`) through connected READY state.
+  - compatibility policy path with `sslmode=disable`, `binary_transfer=false`, and `compression=zstd`, including startup feature-bit assertions.
   - outbound frame ordering assertions for startup and auth response writes.
 - Updated CONN evidence and gaps in `BASELINE_REQUIREMENT_MAPPING.md`.
 
@@ -53,12 +54,12 @@ Scope: `tracks/alpha/drivers/pascal` only.
 
 ## CONN Status Recommendation
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 
 Rationale:
-- Lane-local coverage now includes deterministic fail-fast checks for manager-proxy auth prerequisites, TLS mode policy, key protocol parser guardrails, and deterministic end-to-end manager-proxy handshake/auth success and auth-failure paths.
-- Lane remains `PARTIAL` because live integration connection coverage is environment-gated and can be skipped.
+- Lane-local coverage includes deterministic fail-fast checks for manager-proxy auth prerequisites, key protocol parser guardrails, deterministic end-to-end manager-proxy handshake/auth success and auth-failure paths, and compatibility policy negotiation coverage for startup features.
+- Live integration connection coverage remains environment-gated, but deterministic lane coverage now closes the JDBC baseline CONN contract.
 
 ## Remaining Concrete Gaps
 
-- Integration connection tests remain environment-gated (`SCRATCHBIRD_PASCAL_URL`) and can be skipped.
+- No known blocking CONN gaps for JDBC baseline parity; live integration connection tests remain environment-gated (`SCRATCHBIRD_PASCAL_URL`).

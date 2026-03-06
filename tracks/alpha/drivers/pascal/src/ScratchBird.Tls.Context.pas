@@ -136,11 +136,6 @@ end;
 function TTlsContext.ValidateConfig(out ErrorText: string): Boolean;
 begin
   ErrorText := '';
-  if FConfig.Mode = tmDisable then
-  begin
-    ErrorText := 'TLS mode "disable" is not allowed for ScratchBird connections.';
-    Exit(False);
-  end;
   if Trim(FConfig.ServerName) = '' then
   begin
     ErrorText := 'TLS server name/host is required.';
@@ -361,6 +356,37 @@ begin
   Handler := nil;
   Sock := nil;
   try
+    if FConfig.Mode = tmDisable then
+    begin
+      Sock := TInetSocket.Create(FConfig.ServerName, FConfig.Port, nil);
+      if FConfig.ConnectTimeoutMs > 0 then
+        Sock.ConnectTimeout := FConfig.ConnectTimeoutMs;
+      if FConfig.SocketTimeoutMs > 0 then
+        Sock.IOTimeout := FConfig.SocketTimeoutMs;
+      try
+        Sock.Connect;
+      except
+        on E: Exception do
+        begin
+          SetError(teIoError, 'Socket connect failed: ' + E.Message);
+          FHandshakeState := hsError;
+          FreeAndNil(Sock);
+          Exit(BuildStatus(False));
+        end;
+      end;
+
+      FSocket := Sock;
+      Sock := nil;
+      FHandler := nil;
+      FSocketHandle := TInetSocket(FSocket).Handle;
+      SocketHandle := FSocketHandle;
+
+      ClearPeerInfo;
+      ClearLastError;
+      FHandshakeState := hsHandshakeComplete;
+      Exit(BuildStatus(True));
+    end;
+
     Handler := TOpenSSLSocketHandler.Create;
     Handler.SSLType := stAny;
     Handler.VerifyPeerCert := StrictVerifyMode;

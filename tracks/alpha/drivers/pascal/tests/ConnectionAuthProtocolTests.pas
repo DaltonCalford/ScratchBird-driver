@@ -74,7 +74,7 @@ begin
   end;
 end;
 
-procedure TestNativeTransportRejectsSslModeDisableAtConfigure;
+procedure TestNativeTransportAllowsSslModeDisableAtConfigure;
 var
   Transport: TNativeScratchBirdTransport;
   Config: TScratchBirdConfig;
@@ -83,13 +83,7 @@ begin
   try
     Config := DefaultConfig;
     Config.SSLMode := 'disable';
-    try
-      Transport.Configure(Config);
-      Fail('expected sslmode=disable configure failure');
-    except
-      on E: Exception do
-        AssertContains('TLS mode "disable" is not allowed for ScratchBird connections', E.Message, 'sslmode disable error');
-    end;
+    Transport.Configure(Config);
   finally
     Transport.Free;
   end;
@@ -145,7 +139,7 @@ begin
   try
     TestParseConfigRejectsUnsupportedProtocol;
     TestManagerProxyRequiresAuthTokenBeforeDial;
-    TestNativeTransportRejectsSslModeDisableAtConfigure;
+    TestNativeTransportAllowsSslModeDisableAtConfigure;
     TestDecodeHeaderRejectsOversizedPayload;
     TestParseAuthContinueRejectsTruncatedPayload;
     Writeln('ConnectionAuthProtocolTests: OK');

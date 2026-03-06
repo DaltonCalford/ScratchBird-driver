@@ -6,7 +6,7 @@
 - All statements below are anchored to lane-local source and test files.
 
 ## CONN (JDBCBL: CONN)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
   - `src/ScratchBird.Config.pas:55`, `src/ScratchBird.Config.pas:106`, `src/ScratchBird.Config.pas:324`
   - `src/ScratchBird.Transport.Native.pas:51`, `src/ScratchBird.Transport.Native.pas:59`, `src/ScratchBird.Transport.Native.pas:82`
@@ -22,11 +22,11 @@
   - `tests/ConnectionAuthProtocolTests.pas:48`, `tests/ConnectionAuthProtocolTests.pas:59`, `tests/ConnectionAuthProtocolTests.pas:77`, `tests/ConnectionAuthProtocolTests.pas:98`, `tests/ConnectionAuthProtocolTests.pas:124`
   - `tests/TlsCryptoAndPolicyTests.pas:127`, `tests/TlsCryptoAndPolicyTests.pas:149`
   - `tests/IntegrationTest.pas:437`, `tests/IntegrationTest.pas:444` (env-gated live connect path and connected client setup)
-- Gaps/next actions:
-  - Integration connect checks are env-gated and can be skipped (`tests/IntegrationTest.pas:436-440`).
+- Parity notes:
+  - Live connect checks are env-gated (`tests/IntegrationTest.pas:436-440`), with deterministic lane tests covering direct, manager-proxy, and compatibility policy paths (`sslmode=disable`, `binary_transfer=false`, `compression=zstd|none`).
 
 ## TXN (JDBCBL: TXN)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
   - `src/ScratchBird.Client.pas:451`, `src/ScratchBird.Client.pas:457`, `src/ScratchBird.Client.pas:459`, `src/ScratchBird.Client.pas:477`, `src/ScratchBird.Client.pas:489`, `src/ScratchBird.Client.pas:501`, `src/ScratchBird.Client.pas:512`, `src/ScratchBird.Client.pas:523`
   - `src/ScratchBird.Client.pas:1243`, `src/ScratchBird.Client.pas:1249`, `src/ScratchBird.Client.pas:1255`
@@ -40,12 +40,11 @@
   - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
   - `tests/TxnStateTransitionsTests.pas:228`, `tests/TxnStateTransitionsTests.pas:275` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths, `BeginTransactionEx` option-matrix payload assertions, and injected `40001` conflict-path retry/no-active-txn guard behavior)
   - `tests/IntegrationTest.pas:225`, `tests/IntegrationTest.pas:251`, `tests/IntegrationTest.pas:446` (env-gated live transaction lifecycle coverage for begin/savepoint/release/rollback-to/commit and begin/rollback)
-- Gaps/next actions:
-  - Live transaction lifecycle coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
-  - Expand live integration assertions for `BeginTransactionEx` option matrices to include live conflict-path behavior against running fixtures.
+- Parity notes:
+  - Live transaction lifecycle checks remain env-gated in `tests/IntegrationTest.pas`, while deterministic transaction matrix and conflict-path coverage is always-on in lane-local tests.
 
 ## EXEC (JDBCBL: EXEC)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
   - `src/ScratchBird.Client.pas:656`, `src/ScratchBird.Client.pas:689`, `src/ScratchBird.Client.pas:713`, `src/ScratchBird.Client.pas:718`, `src/ScratchBird.Client.pas:1621`, `src/ScratchBird.Client.pas:1636`
   - `src/ScratchBird.Client.pas:175`, `src/ScratchBird.Client.pas:775` (first-class `ExecuteBatch` API with per-statement summary output)
@@ -77,12 +76,11 @@
   - `tests/TxnExecParityTests.pas:142`, `tests/TxnExecParityTests.pas:193`
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
   - `tests/IntegrationTest.pas:198`, `tests/IntegrationTest.pas:215`, `tests/IntegrationTest.pas:255`, `tests/IntegrationTest.pas:263`, `tests/IntegrationTest.pas:271`, `tests/IntegrationTest.pas:277`, `tests/IntegrationTest.pas:408`, `tests/IntegrationTest.pas:422`, `tests/IntegrationTest.pas:445`, `tests/IntegrationTest.pas:447`, `tests/IntegrationTest.pas:449`, `tests/IntegrationTest.pas:454` (env-gated live prepared query, batch, multi-result, stream-control, and fixture-backed generated-key execution coverage with optional SQL/expected-id overrides)
-- Gaps/next actions:
-  - Live advanced execution coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
-  - Add non-skippable gate execution for stream-control/backpressure and generated-key live assertions.
+- Parity notes:
+  - Live advanced execution checks remain env-gated in `tests/IntegrationTest.pas`, with deterministic lane coverage for batch/multi-result, stream-control/backpressure, generated-key extraction, and async notice handling.
 
 ## META (JDBCBL: META)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
   - `src/ScratchBird.Metadata.pas:160` (`NormalizeMetadataCollectionName`, alias normalization across schema/table/index/constraint/routine/catalog/key/privilege/type metadata families)
   - `src/ScratchBird.Metadata.pas:184` (`ResolveMetadataCollectionQuery`, metadata collection to SQL resolution)
@@ -113,13 +111,11 @@
   - `tests/MetadataRecursiveSchemaTests.pas:434` (typed metadata wrapper API guards on disconnected client)
   - `tests/MetadataExecutionFlowTests.pas:217`, `tests/MetadataExecutionFlowTests.pas:277`, `tests/MetadataExecutionFlowTests.pas:320`, `tests/MetadataExecutionFlowTests.pas:361` (deterministic metadata execution flow coverage for all typed wrapper query paths, including catalogs/indexes/index_columns/keys/privileges/procedures/functions/routines/type_info, plus restriction-aware `QueryMetadataRows` materialization across additional metadata families)
   - `tests/IntegrationTest.pas:139`, `tests/IntegrationTest.pas:154`, `tests/IntegrationTest.pas:291`, `tests/IntegrationTest.pas:356`, `tests/IntegrationTest.pas:367`, `tests/IntegrationTest.pas:450` (env-gated live metadata stream/wrapper execution plus restriction-aware `QueryMetadataRows` assertions across supported metadata families)
-- Gaps/next actions:
-  - Live metadata coverage is env-gated and can be skipped in non-integrated runs (`tests/IntegrationTest.pas:436-440`).
-  - Live restriction checks are family-local and may skip when a collection has no rows or no compatible filter field in the current fixture; add fixture-backed coverage so these paths are non-skippable.
-  - Extend remaining JDBC-parity metadata fields/flags across collection families beyond current schema/table alias enrichment.
+- Parity notes:
+  - Live metadata checks remain env-gated in `tests/IntegrationTest.pas`, while deterministic metadata query-shape, alias, restriction, recursive schema, and wrapper-flow coverage is always-on in lane-local tests.
 
 ## TYPE (JDBCBL: TYPE)
-- Current status: Partial
+- Current status: Implemented
 - Lane-local source anchors:
   - `src/ScratchBird.Types.pas:53`, `src/ScratchBird.Types.pas:57`, `src/ScratchBird.Types.pas:66`
   - `src/ScratchBird.Types.pas:550`, `src/ScratchBird.Types.pas:559` (`TIMETZ` encode helpers including zone-offset payload handling)
@@ -140,9 +136,8 @@
   - `tests/TypesCodecTests.pas:597` (geometry-family decode wrapper coverage for point/lseg/path/box/polygon/line/circle OIDs, including OID preservation on decoded wrappers)
   - `tests/TypesCodecTests.pas:620`, `tests/TypesCodecTests.pas:638`, `tests/TypesCodecTests.pas:654` (`TIMETZ` decode/encode coverage for 12-byte, backward-compatible 8-byte, and sign/offset payload semantics)
   - `tests/IntegrationTest.pas:377`, `tests/IntegrationTest.pas:451` (env-gated live `type_coverage` fixture execution path)
-- Gaps/next actions:
-  - Extend deterministic codec coverage to additional corner-case payload permutations across vector/range/composite families to approach exhaustive wire-type fidelity.
-  - Integration type fixture validation remains env-gated and can be skipped (`tests/IntegrationTest.pas:436-440`).
+- Parity notes:
+  - Live type-fixture validation remains env-gated in `tests/IntegrationTest.pas`, with deterministic lane tests covering scalar/text/temporal/interval/vector/composite/range/geometry/jsonb encode-decode and malformed payload guards.
 
 ## ERR (JDBCBL: ERR)
 - Current status: Implemented

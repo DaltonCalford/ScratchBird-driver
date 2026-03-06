@@ -83,6 +83,18 @@ begin
   Result.ManagerAuthFastPath := True;
 end;
 
+function NormalizeCompression(const Value: string): string;
+var
+  Normalized: string;
+begin
+  Normalized := LowerCase(Trim(Value));
+  if (Normalized = '') or (Normalized = 'off') or (Normalized = 'none') then
+    Exit('off');
+  if Normalized = 'zstd' then
+    Exit('zstd');
+  raise Exception.Create('compression must be off or zstd.');
+end;
+
 function NormalizeFrontDoorMode(const Value: string): string;
 var
   Normalized: string;
@@ -156,12 +168,7 @@ begin
   else if (KeyLower = 'fetch_size') or (KeyLower = 'fetchsize') or (KeyLower = 'default_fetch_size') then
     Config.FetchSize := StrToIntDef(Value, 0)
   else if KeyLower = 'compression' then
-  begin
-    if SameText(Value, 'zstd') then
-      Config.Compression := 'zstd'
-    else
-      Config.Compression := 'off';
-  end
+    Config.Compression := NormalizeCompression(Value)
   else if (KeyLower = 'manager_auth_token') or (KeyLower = 'mcp_auth_token') then
     Config.ManagerAuthToken := Value
   else if (KeyLower = 'manager_username') or (KeyLower = 'mcp_username') then

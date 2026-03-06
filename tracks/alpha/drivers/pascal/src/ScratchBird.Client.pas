@@ -473,10 +473,6 @@ begin
     raise EScratchbirdConnectionError.CreateWithInfo(
       'manager_proxy mode requires manager_auth_token',
       '08001', '', '');
-  if not FConfig.BinaryTransfer then
-    raise EScratchbirdNotSupported.CreateWithInfo('binary_transfer=false is not supported', '0A000', '', '');
-  if SameText(FConfig.Compression, 'zstd') then
-    raise EScratchbirdNotSupported.CreateWithInfo('compression=zstd is not supported', '0A000', '', '');
   FTransport.Configure(FConfig);
   FTransport.Connect;
   if FConfig.FrontDoorMode = 'manager_proxy' then

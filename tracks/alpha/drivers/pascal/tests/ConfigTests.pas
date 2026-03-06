@@ -44,13 +44,16 @@ begin
     AssertEqual('require', Config.SSLMode, 'sslmode');
     AssertEqualInt(3000, Config.ConnectTimeoutMs, 'connect_timeout');
     AssertEqual('app', Config.ApplicationName, 'application_name');
+    AssertTrue(not Config.BinaryTransfer, 'binary_transfer false parse');
+    AssertEqual('zstd', Config.Compression, 'compression zstd parse');
 
-    Config := ParseConfig('Host=server;Port=4000;Database=db;Username=me;Password=secret;SSL Mode=prefer;Timeout=5;Socket_Timeout=7');
+    Config := ParseConfig('Host=server;Port=4000;Database=db;Username=me;Password=secret;SSL Mode=prefer;Timeout=5;Socket_Timeout=7;Compression=none');
     AssertEqual('server', Config.Host, 'host kv');
     AssertEqualInt(4000, Config.Port, 'port kv');
     AssertEqual('db', Config.Database, 'database kv');
     AssertEqual('me', Config.UserName, 'user kv');
     AssertEqual('secret', Config.Password, 'password kv');
+    AssertEqual('off', Config.Compression, 'compression none alias');
 
     Config := ParseConfig('scratchbird://admin:secret@localhost:3090/mydb?front_door_mode=manager_proxy&manager_auth_token=token&manager_client_flags=7');
     AssertEqual('manager_proxy', Config.FrontDoorMode, 'front_door_mode');
@@ -63,6 +66,14 @@ begin
     except
       on E: Exception do
         AssertTrue(Pos('front_door_mode must be direct or manager_proxy', E.Message) > 0, 'invalid front door error');
+    end;
+
+    try
+      ParseConfig('scratchbird://localhost:3092/db?compression=gzip');
+      raise Exception.Create('expected invalid compression parse failure');
+    except
+      on E: Exception do
+        AssertTrue(Pos('compression must be off or zstd', E.Message) > 0, 'invalid compression error');
     end;
 
     Writeln('ConfigTests: OK');

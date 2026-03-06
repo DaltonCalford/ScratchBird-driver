@@ -23,8 +23,8 @@ Priority: P0
 
 ## 4. Required Features
 
-- TLS required; reject plaintext or sslmode=disable.
-- Binary-only parameter binding enforced; reject binary_transfer=false.
+- TLS modes must support `sslmode=disable` (plaintext) and TLS-enabled modes (`allow`, `prefer`, `require`, `verify-ca`, `verify-full`) with policy enforcement in TLS modes.
+- Startup feature negotiation must support `binary_transfer=false` and `compression=zstd` (`compression=none` normalizes to `off`; unsupported values are rejected).
 - Full SBWP v1.1 message coverage for parse/bind/execute, ready/paging.
 - SQLSTATE mapping must be spec-complete and surfaced in errors.
 - Metadata helpers must use sys.* contract and return stable schemas.

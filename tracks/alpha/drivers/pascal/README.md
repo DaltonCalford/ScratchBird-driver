@@ -17,8 +17,8 @@ The driver now defaults to first-party native transport/TLS units in
 
 Native TLS status for `0.1.0`: runtime TLS is implemented via OpenSSL-backed
 native transport in-driver (connect/handshake/read/write/close), with TLS
-policy handling for `sslmode` (`allow`, `prefer`, `require`, `verify-ca`,
-`verify-full`) and hostname checks in `verify-full`.
+policy handling for `sslmode` (`disable`, `allow`, `prefer`, `require`,
+`verify-ca`, `verify-full`) and hostname checks in `verify-full`.
 
 Temporary compatibility path: define `SCRATCHBIRD_USE_INDY` and add vendored Indy
 paths (`third_party/indy/Lib/Core`, `Lib/Protocols`, `Lib/System`, `Lib/Security`)
