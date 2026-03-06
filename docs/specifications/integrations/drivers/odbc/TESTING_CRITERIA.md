@@ -10,6 +10,8 @@ Category: Standard Protocol
 - Integration tests against live ScratchBird server.
 - Conformance harness integration where applicable.
 - Metadata contract validation tests for sys.* queries.
+- Capability matrix comparisons (`SQLGetFunctions` + `SQLGetInfo`) against expected matrix artifacts.
+- Optional hosted BI vendor smoke coverage (Tableau / Power BI / Excel) when vendor DSN fixtures are available.
 
 ## Integration Validation
 

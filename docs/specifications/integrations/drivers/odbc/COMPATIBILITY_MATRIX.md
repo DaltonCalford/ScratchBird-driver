@@ -9,6 +9,6 @@ Priority: P0
 | Binary-only params | Yes | Implemented | Driver enforces binary-only parameters. |
 | Prepared statements | Yes | Implemented | PARSE/BIND/EXECUTE baseline. |
 | Streaming/paging | Yes | Implemented | Portal paging supported. |
-| Full type matrix | Yes | Partial | Limited coverage vs full SBWP type matrix. |
+| Full type matrix | Yes | Implemented | `SQLGetTypeInfo` and catalog type parsing cover scalar, temporal, network, range, text-search, binary, and vector families. |
 | Metadata helpers | Yes | Implemented | sys.* helper API provided. |
-| SQLSTATE mapping | Yes | Partial | Class-prefix mapping only (per audit). |
+| SQLSTATE mapping | Yes | Implemented | Per-status SQLSTATE mapping is now explicit for constraint, privilege, protocol, cursor, and runtime error families. |

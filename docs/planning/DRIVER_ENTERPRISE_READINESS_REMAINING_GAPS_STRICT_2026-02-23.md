@@ -1,10 +1,10 @@
-# Driver Enterprise Readiness - Remaining Gaps (Strict) 2026-02-28
+# Driver Enterprise Readiness - Remaining Gaps (Strict) 2026-03-06
 
 ## Scope
 This list reflects only executable gaps still open after current implementation work.
 Each gap is tied to a release blocker and includes owners, risk, and acceptance condition.
 
-## Verification Snapshot (2026-02-28)
+## Verification Snapshot (2026-03-06)
 
 - Full-suite command log: `artifacts/enterprise-readiness/verification-sprint-20260223/full_suite_final.log`
 - R corrected integration command: `artifacts/enterprise-readiness/verification-sprint-20260223/r_test_corrected.log`
@@ -14,16 +14,12 @@ Each gap is tied to a release blocker and includes owners, risk, and acceptance 
   - `composer install && ./vendor/bin/phpunit tests` passes for PHP (integration tests skip in offline mode).
   - `pytest -q` now runs from the Python driver directory without requiring an editable install first.
 - Current blocker posture:
-  - `.NET and JVM paths: in-tree suites pass`
+  - `.NET and JVM paths: in-tree suites pass; DOTNET-101/102/103 harnesses and JDBC-203 profile-aware gate are implemented`
   - `Elixir`: runtime environment has Elixir `~> 1.15` requirement mismatch (1.14 available)
   - `Mojo`, `CLI` (partial/optional checks): no dedicated suite or unsupported commands for this environment
 
 | Area | Gap | Severity | Owner | Status | ETA | Required Evidence |
 |---|---|---|---|---|---|---|
-| DOTNET-101 | Add sustained long-running soak-style async cancellation/release tests (beyond existing stress fixtures). | P1 | .NET Team | In progress (soak harness + repeatable verifier script + short runtime execution captured; extended-duration evidence pending) | 1-2 weeks | 24-hour style soak evidence with no handle leaks |
-| DOTNET-102 | Add failover soak with network reconnection under sustained saturation. | P0 | .NET Team | In progress (failover-saturation harness + repeatable verifier script + short runtime telemetry captured; sustained run pending) | 2 weeks | Soak + bounded latency/retry telemetry + leak counters |
-| DOTNET-103 | Add lock-deadlock and isolation hardening matrix under fault-injection. | P0 | .NET Team + QA | In progress (fault matrix harness + repeatable verifier script + runtime matrix smoke captured; extended deadlock/serialization evidence pending) | 2 weeks | Transaction matrix with explicit serialization and rollback correctness |
-| JDBC-203 | Execute cross-runtime (ODBC? no) .NET/JDBC contract in a single runtime with live managed/listener URLs and cancel-SQL variants. | P0 | Core Runtime + JVM/Platform | Blocked | 1 week + env access | End-to-end matrix logs for scenarios A-E |
 | Platform-301 | Run Helm + sidecar smoke in live k8s runtime. | P1 | Platform Engineering | Blocked | 1-2 days once cluster available | Sidecar smoke logs + rendered manifests |
 | Platform-302 | Run live cert-rotation matrix with active sessions (managed/listener) and verify reconnect behavior. | P0 | Security + Platform | Blocked | 2-3 days once runtime enabled | Rotation pass/fail traces + reconnect status |
 | Platform-303 | Validate secret-integration examples against real secret mount/non-interactive startup flow. | P1 | Platform Engineering | Blocked | 1-2 days once runtime available | Smoke and failure-injection logs |

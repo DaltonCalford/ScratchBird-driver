@@ -27,7 +27,7 @@ public:
         rows_affected = 0;
 
         if (sql == "SHOW TABLES") {
-            results = {{"users"}, {"audit_log"}};
+            results = {{"users"}, {"audit_log"}, {"type_matrix"}};
             return SQL_SUCCESS;
         }
         if (sql == "SHOW COLUMNS FROM users") {
@@ -42,6 +42,17 @@ public:
             results = {
                 {"event_id", "BIGINT", "NO", "PRI", "", ""},
                 {"event_time", "TIMESTAMP", "NO", "", "", ""}
+            };
+            return SQL_SUCCESS;
+        }
+        if (sql == "SHOW COLUMNS FROM type_matrix") {
+            results = {
+                {"price", "MONEY", "YES", "", "", ""},
+                {"active_window", "INT4RANGE", "YES", "", "", ""},
+                {"network_addr", "INET", "YES", "", "", ""},
+                {"payload", "BYTEA", "YES", "", "", ""},
+                {"embedding", "VECTOR", "YES", "", "", ""},
+                {"window_size", "INTERVAL", "YES", "", "", ""}
             };
             return SQL_SUCCESS;
         }
@@ -205,6 +216,45 @@ TEST_F(OdbcCatalogTest, ColumnsParseTypesAndPrimaryKeys) {
     EXPECT_EQ(stmt_.rows_[0][2], "users");
     EXPECT_EQ(stmt_.rows_[0][3], "id");
     EXPECT_EQ(stmt_.rows_[0][5], "PRIMARY");
+}
+
+TEST_F(OdbcCatalogTest, ColumnsParseExtendedTypeMatrixShapes) {
+    std::string table_pattern = "type_matrix";
+    SQLRETURN rc = stmt_.columns(nullptr, 0, nullptr, 0,
+                                 toSqlChar(table_pattern), SQL_NTS,
+                                 nullptr, 0);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    ASSERT_EQ(stmt_.rows_.size(), 6u);
+
+    const auto* price_row = findRow(stmt_.rows_, 3, "price");
+    ASSERT_NE(price_row, nullptr);
+    EXPECT_EQ((*price_row)[4], std::to_string(SQL_DECIMAL));
+    EXPECT_EQ((*price_row)[5], "MONEY");
+
+    const auto* range_row = findRow(stmt_.rows_, 3, "active_window");
+    ASSERT_NE(range_row, nullptr);
+    EXPECT_EQ((*range_row)[4], std::to_string(SQL_LONGVARCHAR));
+    EXPECT_EQ((*range_row)[5], "INT4RANGE");
+
+    const auto* inet_row = findRow(stmt_.rows_, 3, "network_addr");
+    ASSERT_NE(inet_row, nullptr);
+    EXPECT_EQ((*inet_row)[4], std::to_string(SQL_VARCHAR));
+    EXPECT_EQ((*inet_row)[5], "INET");
+
+    const auto* payload_row = findRow(stmt_.rows_, 3, "payload");
+    ASSERT_NE(payload_row, nullptr);
+    EXPECT_EQ((*payload_row)[4], std::to_string(SQL_LONGVARBINARY));
+    EXPECT_EQ((*payload_row)[5], "BYTEA");
+
+    const auto* vector_row = findRow(stmt_.rows_, 3, "embedding");
+    ASSERT_NE(vector_row, nullptr);
+    EXPECT_EQ((*vector_row)[4], std::to_string(SQL_LONGVARBINARY));
+    EXPECT_EQ((*vector_row)[5], "VECTOR");
+
+    const auto* interval_row = findRow(stmt_.rows_, 3, "window_size");
+    ASSERT_NE(interval_row, nullptr);
+    EXPECT_EQ((*interval_row)[4], std::to_string(SQL_VARCHAR));
+    EXPECT_EQ((*interval_row)[5], "INTERVAL");
 }
 
 TEST_F(OdbcCatalogTest, ProceduresExposeInputOutputAndResultCounts) {
@@ -474,6 +524,30 @@ public:
     }
 };
 
+class StatusFailureClientBridge : public RecordingClientBridge {
+public:
+    explicit StatusFailureClientBridge(scratchbird::core::Status status,
+                                       std::string message = "status failure")
+        : status_(status), message_(std::move(message)) {}
+
+    SQLRETURN executeSQL(const std::string& sql,
+                         std::vector<std::vector<std::string>>& results,
+                         std::vector<scratchbird::odbc::ColumnMetadata>& columns,
+                         SQLLEN& rows_affected) override {
+        (void)sql;
+        results.clear();
+        columns.clear();
+        rows_affected = 0;
+        last_status_ = status_;
+        last_error_ = message_;
+        return SQL_ERROR;
+    }
+
+private:
+    scratchbird::core::Status status_;
+    std::string message_;
+};
+
 class SmokeClientBridge : public RecordingClientBridge {
 public:
     SQLRETURN executeSQL(const std::string& sql,
@@ -613,6 +687,43 @@ TEST(OdbcExecutionParityTest, ExecuteAndExecDirectPropagateSuccessWithInfo) {
     EXPECT_TRUE(stmt.executed_);
     ASSERT_EQ(bridge_ptr->sql_log.size(), 2u);
     EXPECT_EQ(bridge_ptr->sql_log[1], "SELECT 1");
+}
+
+TEST(OdbcSqlStateMappingTest, MapsGranularStatusesToSpecificSqlStates) {
+    struct MappingCase {
+        scratchbird::core::Status status;
+        const char* expected_sqlstate;
+    };
+
+    const std::vector<MappingCase> cases = {
+        {scratchbird::core::Status::UNIQUE_VIOLATION, "23505"},
+        {scratchbird::core::Status::FOREIGN_KEY_VIOLATION, "23503"},
+        {scratchbird::core::Status::NOT_NULL_VIOLATION, "23502"},
+        {scratchbird::core::Status::CHECK_VIOLATION, "23514"},
+        {scratchbird::core::Status::EXCLUSION_VIOLATION, "23P01"},
+        {scratchbird::core::Status::UNDEFINED_FUNCTION, "42883"},
+        {scratchbird::core::Status::INSUFFICIENT_PRIVILEGE, "42501"},
+        {scratchbird::core::Status::PROTOCOL_VIOLATION, "08S01"},
+        {scratchbird::core::Status::TOO_MANY_CONNECTIONS, "08004"},
+        {scratchbird::core::Status::NO_DATA_FOUND, "02000"},
+    };
+
+    for (const auto& item : cases) {
+        scratchbird::odbc::OdbcEnvironment env;
+        scratchbird::odbc::OdbcConnection conn(&env);
+        conn.connected_ = true;
+        conn.client_bridge_ = std::make_unique<StatusFailureClientBridge>(
+            item.status,
+            "forced status mapping");
+
+        std::vector<std::vector<std::string>> rows;
+        std::vector<scratchbird::odbc::ColumnMetadata> cols;
+        SQLLEN rows_affected = 0;
+        ASSERT_EQ(conn.executeSQL("SELECT 1", rows, cols, rows_affected), SQL_ERROR);
+        const auto* diag = conn.getDiagnostic(1);
+        ASSERT_NE(diag, nullptr);
+        EXPECT_EQ(diag->sqlstate, item.expected_sqlstate);
+    }
 }
 
 TEST(OdbcFetchTest, BindAndFetchPopulateBuffers) {

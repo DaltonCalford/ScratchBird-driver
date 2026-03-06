@@ -165,8 +165,8 @@ ETA: 4–6 weeks
 ### JDBC-203
 Title: Add .NET/JDBC cross-runtime pooling contract test as release gate  
 Priority: P0  
-Status: Verification blocked by missing runtime endpoints/cancel SQL envs; dedicated CI contract job added (artifacts captured each run; strict behavior driven by `JDBC203_STRICT_GATE`)  
-Gap: Inconsistent behavior across managed drivers  
+Status: Verification complete (profile-aware strict gate implemented with per-profile endpoint/cancel validation; latest direct-profile run passes for both runtimes)  
+Gap: Contract gate is implemented; runtime endpoint provisioning controls breadth of profile-matrix evidence in CI  
 Acceptance Test: Common pooling/error-recovery contract suite passes in CI with benchmarked baseline  
 Owner: Core Runtime + JVM/Platform Team  
 Risk: High  

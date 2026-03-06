@@ -113,6 +113,10 @@ bool isStringInfoType(SQLUSMALLINT info_type) {
         case SQL_SPECIAL_CHARACTERS:
         case SQL_NEED_LONG_DATA_LEN:
         case SQL_DESCRIBE_PARAMETER:
+        case SQL_COLLATION_SEQ:
+        case SQL_KEYWORDS:
+        case SQL_XOPEN_CLI_YEAR:
+        case SQL_MAX_ROW_SIZE_INCLUDES_LONG:
         case SQL_DM_VER:
             return true;
         default:

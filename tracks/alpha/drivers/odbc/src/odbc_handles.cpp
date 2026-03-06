@@ -288,44 +288,109 @@ const char* mapStatusToSqlState(core::Status status) {
     switch (status) {
         case core::Status::OK:
             return "00000";
+        case core::Status::FILE_NOT_FOUND:
+            return "HY000";
+        case core::Status::FILE_EXISTS:
+            return "HY000";
+        case core::Status::IO_ERROR:
+            return "58030";
+        case core::Status::INVALID_PATH:
+            return "HY000";
+        case core::Status::PERMISSION_DENIED:
+            return "42501";
+        case core::Status::PAGE_CORRUPT:
+        case core::Status::CHECKSUM_MISMATCH:
+        case core::Status::INDEX_CORRUPTED:
+        case core::Status::DATA_CORRUPTED:
+            return "XX001";
         case core::Status::CONNECTION_FAILURE:
             return "08001";
         case core::Status::CONNECTION_DOES_NOT_EXIST:
             return "08003";
+        case core::Status::PROTOCOL_VIOLATION:
+            return "08S01";
+        case core::Status::TOO_MANY_CONNECTIONS:
+            return "08004";
         case core::Status::INVALID_PASSWORD:
         case core::Status::INVALID_AUTHORIZATION:
             return "28000";
         case core::Status::INVALID_TRANSACTION_STATE:
+        case core::Status::NO_ACTIVE_TRANSACTION:
+        case core::Status::TRANSACTION_ABORTED:
             return "25000";
         case core::Status::READ_ONLY_TRANSACTION:
             return "25006";
         case core::Status::DEADLOCK:
+        case core::Status::LOCK_CONFLICT:
         case core::Status::SERIALIZATION_FAILURE:
             return "40001";
         case core::Status::LOCK_TIMEOUT:
             return "HYT00";
+        case core::Status::CANCELLED:
         case core::Status::QUERY_CANCELED:
             return "HY008";
+        case core::Status::OOM:
+            return "HY001";
+        case core::Status::PAGE_FULL:
+        case core::Status::DISK_FULL:
+            return "53100";
+        case core::Status::NOT_FOUND:
+        case core::Status::NO_DATA_FOUND:
+            return "02000";
         case core::Status::NOT_IMPLEMENTED:
         case core::Status::NOT_SUPPORTED:
             return "HYC00";
+        case core::Status::TYPE_MISMATCH:
+        case core::Status::DATATYPE_MISMATCH:
+            return "22005";
         case core::Status::SYNTAX_ERROR:
             return "42000";
         case core::Status::UNDEFINED_TABLE:
             return "42S02";
         case core::Status::UNDEFINED_COLUMN:
             return "42S22";
+        case core::Status::UNDEFINED_FUNCTION:
+            return "42883";
+        case core::Status::UNDEFINED_OBJECT:
+        case core::Status::INDEX_NOT_FOUND:
+            return "42704";
         case core::Status::DUPLICATE_TABLE:
             return "42S01";
         case core::Status::DUPLICATE_COLUMN:
             return "42S21";
+        case core::Status::DUPLICATE_OBJECT:
+            return "42710";
+        case core::Status::AMBIGUOUS_COLUMN:
+        case core::Status::AMBIGUOUS_FUNCTION:
+            return "42702";
+        case core::Status::WRONG_OBJECT_TYPE:
+            return "42809";
+        case core::Status::INSUFFICIENT_PRIVILEGE:
+            return "42501";
+        case core::Status::INVALID_CURSOR_STATE:
+        case core::Status::CURSOR_ALREADY_OPEN:
+        case core::Status::CURSOR_NOT_OPEN:
+            return "24000";
+        case core::Status::INVALID_CURSOR_NAME:
+        case core::Status::CURSOR_NOT_FOUND:
+            return "34000";
+        case core::Status::TOO_MANY_ROWS:
+            return "21000";
+        case core::Status::RAISE_EXCEPTION:
+        case core::Status::ASSERT_FAILURE:
+            return "P0001";
         case core::Status::CONSTRAINT_VIOLATION:
-        case core::Status::NOT_NULL_VIOLATION:
-        case core::Status::FOREIGN_KEY_VIOLATION:
-        case core::Status::UNIQUE_VIOLATION:
-        case core::Status::CHECK_VIOLATION:
-        case core::Status::EXCLUSION_VIOLATION:
             return "23000";
+        case core::Status::NOT_NULL_VIOLATION:
+            return "23502";
+        case core::Status::FOREIGN_KEY_VIOLATION:
+            return "23503";
+        case core::Status::UNIQUE_VIOLATION:
+            return "23505";
+        case core::Status::CHECK_VIOLATION:
+            return "23514";
+        case core::Status::EXCLUSION_VIOLATION:
+            return "23P01";
         case core::Status::DIVISION_BY_ZERO:
             return "22012";
         case core::Status::NUMERIC_VALUE_OUT_OF_RANGE:
@@ -341,6 +406,21 @@ const char* mapStatusToSqlState(core::Status status) {
             return "22018";
         case core::Status::NULL_VALUE_NOT_ALLOWED:
             return "22004";
+        case core::Status::CONFIGURATION_LIMIT_EXCEEDED:
+        case core::Status::STATEMENT_TOO_COMPLEX:
+        case core::Status::TOO_MANY_COLUMNS:
+            return "54000";
+        case core::Status::COMPRESSION_ERROR:
+        case core::Status::INTERNAL_ERROR:
+            return "HY000";
+        case core::Status::ADMIN_SHUTDOWN:
+        case core::Status::CRASH_SHUTDOWN:
+        case core::Status::DATABASE_DROPPED:
+            return "08006";
+        case core::Status::OBJECT_IN_USE:
+            return "55006";
+        case core::Status::LOCK_NOT_AVAILABLE:
+            return "55P03";
         case core::Status::INVALID_ARGUMENT:
             return "HY009";
         default:
@@ -1393,31 +1473,37 @@ ParsedTypeInfo parseTypeString(const std::string& type_str) {
 
     if (upper == "TINYINT") {
         info.sql_type = SQL_TINYINT;
-    } else if (upper == "SMALLINT") {
+    } else if (upper == "SMALLINT" || upper == "INT2") {
         info.sql_type = SQL_SMALLINT;
-    } else if (upper == "INT" || upper == "INTEGER") {
+    } else if (upper == "INT" || upper == "INTEGER" || upper == "INT4") {
         info.sql_type = SQL_INTEGER;
-    } else if (upper == "BIGINT") {
+    } else if (upper == "BIGINT" || upper == "INT8") {
         info.sql_type = SQL_BIGINT;
-    } else if (upper == "FLOAT") {
+    } else if (upper == "FLOAT" || upper == "REAL" || upper == "FLOAT4") {
         info.sql_type = SQL_REAL;
-    } else if (upper == "DOUBLE") {
+    } else if (upper == "DOUBLE" || upper == "DOUBLE PRECISION" || upper == "FLOAT8") {
         info.sql_type = SQL_DOUBLE;
-    } else if (upper == "DECIMAL" || upper == "NUMERIC") {
+    } else if (upper == "DECIMAL" || upper == "NUMERIC" || upper == "MONEY") {
         info.sql_type = SQL_DECIMAL;
     } else if (upper == "BOOLEAN" || upper == "BOOL") {
         info.sql_type = SQL_BIT;
-    } else if (upper == "CHAR") {
+    } else if (upper == "CHAR" || upper == "BPCHAR") {
         info.sql_type = SQL_CHAR;
     } else if (upper == "VARCHAR") {
         info.sql_type = SQL_VARCHAR;
-    } else if (upper == "TEXT") {
+    } else if (upper == "TEXT" || upper == "TSVECTOR" || upper == "TSQUERY" ||
+               upper == "RECORD" || upper == "INT4RANGE" || upper == "INT8RANGE" ||
+               upper == "NUMRANGE" || upper == "TSRANGE" || upper == "TSTZRANGE" ||
+               upper == "DATERANGE" || upper == "ARRAY" || upper == "COMPOSITE") {
         info.sql_type = SQL_LONGVARCHAR;
     } else if (upper == "BINARY") {
         info.sql_type = SQL_BINARY;
     } else if (upper == "VARBINARY") {
         info.sql_type = SQL_VARBINARY;
-    } else if (upper == "BLOB") {
+    } else if (upper == "BLOB" || upper == "BYTEA" || upper == "VECTOR" ||
+               upper == "POINT" || upper == "LSEG" || upper == "PATH" ||
+               upper == "BOX" || upper == "POLYGON" || upper == "LINE" ||
+               upper == "CIRCLE" || upper == "LINESTRING") {
         info.sql_type = SQL_LONGVARBINARY;
     } else if (upper == "DATE") {
         info.sql_type = SQL_TYPE_DATE;
@@ -1425,14 +1511,13 @@ ParsedTypeInfo parseTypeString(const std::string& type_str) {
         info.sql_type = SQL_TYPE_TIME;
     } else if (upper == "TIMESTAMP" || upper == "TIMESTAMPTZ") {
         info.sql_type = SQL_TYPE_TIMESTAMP;
+    } else if (upper == "INTERVAL" || upper == "INET" || upper == "CIDR" ||
+               upper == "MACADDR" || upper == "MACADDR8") {
+        info.sql_type = SQL_VARCHAR;
     } else if (upper == "UUID") {
         info.sql_type = SQL_GUID;
     } else if (upper == "JSON" || upper == "JSONB" || upper == "XML") {
         info.sql_type = SQL_LONGVARCHAR;
-    } else if (upper == "ARRAY" || upper == "COMPOSITE") {
-        info.sql_type = SQL_LONGVARCHAR;
-    } else if (upper == "VECTOR" || upper == "POINT" || upper == "LINESTRING" || upper == "POLYGON") {
-        info.sql_type = SQL_LONGVARBINARY;
     } else {
         info.sql_type = SQL_VARCHAR;
     }
@@ -1558,9 +1643,27 @@ constexpr TypeInfoEntry kTypeInfoEntries[] = {
     {"JSON", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "JSON", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
     {"JSONB", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "JSONB", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
     {"XML", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "XML", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"TSVECTOR", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "TSVECTOR", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"TSQUERY", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "TSQUERY", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"RECORD", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "RECORD", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"INT4RANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "INT4RANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"INT8RANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "INT8RANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"NUMRANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "NUMRANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"TSRANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "TSRANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"TSTZRANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "TSTZRANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
+    {"DATERANGE", SQL_LONGVARCHAR, 2147483647, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "DATERANGE", 0, 0, SQL_LONGVARCHAR, 0, 0, 0},
     {"BINARY", SQL_BINARY, 255, "0x", "", "length", SQL_NULLABLE, 0, 3, 0, 0, 0, "BINARY", 0, 0, SQL_BINARY, 0, 0, 0},
     {"VARBINARY", SQL_VARBINARY, 65535, "0x", "", "length", SQL_NULLABLE, 0, 3, 0, 0, 0, "VARBINARY", 0, 0, SQL_VARBINARY, 0, 0, 0},
     {"BLOB", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "BLOB", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"BYTEA", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "BYTEA", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"POINT", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "POINT", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"LSEG", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "LSEG", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"PATH", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "PATH", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"BOX", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "BOX", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"POLYGON", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "POLYGON", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"LINE", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "LINE", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"CIRCLE", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "CIRCLE", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
+    {"VECTOR", SQL_LONGVARBINARY, 2147483647, "0x", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "VECTOR", 0, 0, SQL_LONGVARBINARY, 0, 0, 0},
     {"BOOLEAN", SQL_BIT, 1, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "BOOLEAN", 0, 0, SQL_BIT, 0, 0, 0},
     {"TINYINT", SQL_TINYINT, 3, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "TINYINT", 0, 0, SQL_TINYINT, 0, 10, 0},
     {"SMALLINT", SQL_SMALLINT, 5, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "SMALLINT", 0, 0, SQL_SMALLINT, 0, 10, 0},
@@ -1568,12 +1671,19 @@ constexpr TypeInfoEntry kTypeInfoEntries[] = {
     {"BIGINT", SQL_BIGINT, 19, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "BIGINT", 0, 0, SQL_BIGINT, 0, 10, 0},
     {"DECIMAL", SQL_DECIMAL, 38, "", "", "precision,scale", SQL_NULLABLE, 0, 3, 0, 0, 0, "DECIMAL", 0, 9, SQL_DECIMAL, 0, 10, 0},
     {"NUMERIC", SQL_NUMERIC, 38, "", "", "precision,scale", SQL_NULLABLE, 0, 3, 0, 0, 0, "NUMERIC", 0, 9, SQL_NUMERIC, 0, 10, 0},
+    {"MONEY", SQL_DECIMAL, 19, "", "", "", SQL_NULLABLE, 0, 3, 0, 1, 0, "MONEY", 2, 2, SQL_DECIMAL, 0, 10, 0},
     {"REAL", SQL_REAL, 7, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "REAL", 0, 0, SQL_REAL, 0, 2, 0},
     {"FLOAT", SQL_FLOAT, 15, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "FLOAT", 0, 0, SQL_FLOAT, 0, 2, 0},
     {"DOUBLE", SQL_DOUBLE, 15, "", "", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "DOUBLE", 0, 0, SQL_DOUBLE, 0, 2, 0},
+    {"INET", SQL_VARCHAR, 64, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "INET", 0, 0, SQL_VARCHAR, 0, 0, 0},
+    {"CIDR", SQL_VARCHAR, 64, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "CIDR", 0, 0, SQL_VARCHAR, 0, 0, 0},
+    {"MACADDR", SQL_VARCHAR, 32, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "MACADDR", 0, 0, SQL_VARCHAR, 0, 0, 0},
+    {"MACADDR8", SQL_VARCHAR, 32, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "MACADDR8", 0, 0, SQL_VARCHAR, 0, 0, 0},
     {"DATE", SQL_TYPE_DATE, 10, "'", "'", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "DATE", 0, 0, SQL_TYPE_DATE, 0, 0, 0},
     {"TIME", SQL_TYPE_TIME, 8, "'", "'", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "TIME", 0, 0, SQL_TYPE_TIME, 0, 0, 0},
     {"TIMESTAMP", SQL_TYPE_TIMESTAMP, 26, "'", "'", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "TIMESTAMP", 0, 6, SQL_TYPE_TIMESTAMP, 0, 0, 0},
+    {"TIMESTAMPTZ", SQL_TYPE_TIMESTAMP, 35, "'", "'", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "TIMESTAMPTZ", 0, 6, SQL_TYPE_TIMESTAMP, 0, 0, 0},
+    {"INTERVAL", SQL_VARCHAR, 64, "'", "'", "", SQL_NULLABLE, 1, 3, 0, 0, 0, "INTERVAL", 0, 0, SQL_VARCHAR, 0, 0, 0},
     {"UUID", SQL_GUID, 36, "'", "'", "", SQL_NULLABLE, 0, 3, 0, 0, 0, "UUID", 0, 0, SQL_GUID, 0, 0, 0},
 };
 
@@ -5382,6 +5492,39 @@ SQLRETURN OdbcStatement::bulkOperations(SQLSMALLINT operation) {
         SQLLEN rows_affected = 0;
         auto rc = conn_->executeSQL(sql, rows, columns, rows_affected);
         if (rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO) {
+            std::string primary_state{"HY000"};
+            SQLINTEGER primary_native{0};
+            std::string primary_message{"Bulk operation failed"};
+            if (const auto* primary_diag = conn_->getDiagnostic(1)) {
+                primary_state = primary_diag->sqlstate;
+                primary_native = primary_diag->native_error;
+                primary_message = primary_diag->message;
+            }
+
+            setError(primary_state, primary_native, primary_message);
+
+            if (processed > 0) {
+                // If the batch partially applied inside an explicit transaction, attempt rollback
+                // to avoid leaving mixed-success state on the server.
+                auto rollback_rc = conn_->endTransaction(SQL_ROLLBACK);
+                if (rollback_rc != SQL_SUCCESS && rollback_rc != SQL_SUCCESS_WITH_INFO) {
+                    DiagnosticRecord rollback_diag;
+                    rollback_diag.sqlstate = "HY000";
+                    rollback_diag.message = "Rollback after partial batch failure failed";
+                    if (const auto* conn_rollback_diag = conn_->getDiagnostic(1)) {
+                        rollback_diag.sqlstate = conn_rollback_diag->sqlstate;
+                        rollback_diag.native_error = conn_rollback_diag->native_error;
+                        rollback_diag.message =
+                            "Rollback after partial batch failure failed: " + conn_rollback_diag->message;
+                    }
+                    addDiagnostic(rollback_diag);
+                } else {
+                    DiagnosticRecord rollback_diag;
+                    rollback_diag.sqlstate = "01000";
+                    rollback_diag.message = "Partially applied batch was rolled back";
+                    addDiagnostic(rollback_diag);
+                }
+            }
             if (param_status_ptr_) {
                 param_status_ptr_[row] = SQL_PARAM_ERROR;
             }

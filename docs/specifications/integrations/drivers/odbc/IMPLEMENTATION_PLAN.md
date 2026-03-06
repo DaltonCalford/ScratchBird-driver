@@ -18,3 +18,5 @@ Category: Standard Protocol
 
 - Integration tests.
 - Conformance checks.
+- Capability-matrix parity checks for `SQLGetInfo`/`SQLGetFunctions` (driver entry points and handle getters).
+- Enterprise gate hooks for optional hosted BI-vendor smoke (Tableau/Power BI/Excel).

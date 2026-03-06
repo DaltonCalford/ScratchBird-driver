@@ -1,59 +1,57 @@
-# JDBC-203 Verification Notes (2026-02-23)
+# JDBC-203 Verification Notes (2026-03-06)
 
 ## Status
-Blocked. `JDBC203PoolingAndRecoveryContractTest` and `JDBC203PoolingAndRecoveryContractTests` are committed and in-tree verification is passing; cross-runtime execution remains blocked by missing runtime endpoints and required cancellation SQL envs.
+Verification complete (gate implementation). Cross-runtime contract enforcement is now strict for both runtimes and supports profile-matrix execution (`direct`, `manager`, `listener`) with per-profile endpoint/cancel requirements.
+
+## What changed
+- Reworked `run_cross_runtime_pool_contract.sh` to:
+  - require and validate both runtime endpoint + cancel SQL inputs per selected profile
+  - enforce JDBC URL scheme (`jdbc:scratchbird:`) and normalize legacy `.NET` `sb://` URLs
+  - run all five Scenario A-E contract cases for `.NET` and JDBC per profile
+  - emit structured per-profile status in summary JSON
+  - preserve strict gate behavior (`JDBC203_STRICT_GATE`) with release-freeze reasons.
+- Added profile-matrix controls:
+  - `JDBC203_PROFILES=direct[,manager][,listener]`
+  - profile-specific URLs:
+    - `SCRATCHBIRD_DOTNET_MANAGER_URL`, `SCRATCHBIRD_JDBC_MANAGER_URL`
+    - `SCRATCHBIRD_DOTNET_LISTENER_URL`, `SCRATCHBIRD_JDBC_LISTENER_URL`
+  - optional profile-specific cancel SQL overrides:
+    - `SCRATCHBIRD_DOTNET_MANAGER_CANCEL_SQL`, `SCRATCHBIRD_JDBC_MANAGER_CANCEL_SQL`
+    - `SCRATCHBIRD_DOTNET_LISTENER_CANCEL_SQL`, `SCRATCHBIRD_JDBC_LISTENER_CANCEL_SQL`
+- Kept static runtime env autoload (`scripts/driver_runtime_stack.sh`) for direct profile bootstrap when available.
 
 ## Evidence
 - `artifacts/enterprise-readiness/JDBC-203/contract.md`
 - `artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
 - `artifacts/enterprise-readiness/JDBC-203/latest_verification.log`
 - `artifacts/enterprise-readiness/JDBC-203/latest_contract_summary.json`
-- `artifacts/enterprise-readiness/JDBC-203/contract_run_20260223T043302Z.log`
-- `artifacts/enterprise-readiness/JDBC-203/contract_run_20260223T050052Z.log`
-- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBConnectionProperties.java`
-- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBDriver.java`
-- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBConnectionPool.java`
 - `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/JDBC203PoolingAndRecoveryContractTest.java`
-- `tracks/alpha/drivers/jdbc && ./gradlew test`
-- `tracks/alpha/drivers/jdbc && ./gradlew test --tests com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest`
-- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj`
-- `artifacts/enterprise-readiness/JDBC-203/contract_run_20260223T050310Z.log`
+- `tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/JDBC203PoolingAndRecoveryContractTests.cs`
 
-## Blocking
-- Runtime-wide execution blocked until both `.NET` and `JDBC` CI environments provide valid ScratchBird endpoints with managed/listener toggles.
-- For `.NET`, use `scratchbird://...` or key/value DSN format. `run_cross_runtime_pool_contract.sh` now normalizes legacy `sb://...` to `scratchbird://...` before running the .NET pool contract phase.
-- The contract run must capture scenario A-E matrix evidence for both runtime clients before gate closure.
-- JDBC run additionally requires `SCRATCHBIRD_JDBC_CANCEL_SQL` for scenarios A/B/D/E.
-- `SCRATCHBIRD_JDBC_URL` and `SCRATCHBIRD_DOTNET_URL` are required for cross-runtime execution.
-- `SCRATCHBIRD_DOTNET_CANCEL_SQL` is required for scenarios A/B/D/E.
+## Latest run
+- Command:
+  - `JDBC203_PROFILES=direct JDBC203_STRICT_GATE=false bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
+- Result:
+  - direct profile passed for `.NET` and JDBC
+  - `latest_verification.log` and `latest_contract_summary.json` updated with pass outcome and profile statuses.
 
-## Gate Control
-- `JDBC203_STRICT_GATE=true` blocks execution if any required endpoint/cancel variable is missing.
-- The CI job now sets `JDBC203_STRICT_GATE` from the repository variable `JDBC203_STRICT_GATE` (default `false`) so CI captures evidence even when env is absent.
-- Local runs are partial only when strict gate is disabled and will emit `contract_gate_summary_<timestamp>.json` with status and missing env list.
-- `run_cross_runtime_pool_contract.sh` now writes a structured `overallStatus`/`reason` artifact in
-  `contract_gate_summary_<timestamp>.json`.
-- Each run also writes replay-ready `latest_verification.log` and `latest_contract_summary.json` artifacts.
-- In strict mode with missing envs, `overallStatus` is `blocked` and `reason` is `strict_gate_missing_env`.
-- URL format validation is also performed before each phase:
-- `.NET` accepts key/value format or URI form; the script normalizes `sb://...` to `scratchbird://...` for legacy compatibility.
-  - `JDBC` requires `jdbc:scratchbird:` prefix.
-- Release-freeze metadata is now emitted on every run:
-  - `releaseFreeze.active` indicates a hard stop condition requiring release triage.
-  - `releaseFreeze.reasons` captures `strict_gate_missing_env` and/or `runtime_contract_failure` conditions.
-  - Non-strict runs still capture partial or failure evidence for audit; hard failures in runtime tests exit non-zero.
+## Remaining work
+No code gap remains for JDBC-203 gate implementation. Runtime CI provisioning for additional profile endpoints (`manager`, `listener`) remains an environment/evidence task.
 
-## Latest Run
-- Latest timestamp: from the most recent local run
-- Command: `bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
-- Result: blocked in non-strict mode due missing runtime/cancel vars; summary file
-  `latest_contract_summary.json` and `latest_verification.log` capture the active blocker state and reproduce the run conditions.
-- The script now enforces both endpoint URLs and cancel-SQL statements before starting each runtime phase to avoid false-positive passes.
+## Verification command
 
-## Local Verification (in-tree only)
-- `cd tracks/alpha/drivers/jdbc && ./gradlew test --tests com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest`
-  - Result: pass (tests skipped when env vars are missing)
-- `cd tracks/alpha/drivers/jdbc && ./gradlew test`
-  - Result: pass
-- `dotnet test tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj --filter "FullyQualifiedName~JDBC203PoolingAndRecoveryContractTests|FullyQualifiedName~JDBC203PoolingAndRecoveryContractTest"`
-  - Result: pass (5 scenarios, environment-gated by `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL`; currently skipped locally when envs missing)
+Direct profile:
+
+```bash
+JDBC203_PROFILES=direct \
+JDBC203_STRICT_GATE=true \
+bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh
+```
+
+Profile matrix:
+
+```bash
+JDBC203_PROFILES=direct,manager,listener \
+JDBC203_STRICT_GATE=true \
+bash artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh
+```

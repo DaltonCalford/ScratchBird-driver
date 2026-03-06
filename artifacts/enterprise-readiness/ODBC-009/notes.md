@@ -34,7 +34,13 @@ Latest verification run:
   - Default command: `artifacts/enterprise-readiness/ODBC-009/odbc_bi_smoke.sh` (in-tree deterministic smoke subset).
   - Configure `ODBC_009_BI_SMOKE_CMD` for alternate BI smoke implementations.
   - Set `ODBC_009_BI_SMOKE_MANDATORY=1` to hard-fail when smoke hook is unavailable.
+- Added capability-matrix hardening hook in gate path:
+  - `artifacts/enterprise-readiness/ODBC-008/run_capability_matrix_check.sh`
+  - expected matrices: `odbc_function_matrix.csv` + `odbc_info_matrix.csv`
+- Added optional hosted BI-vendor hardening hook:
+  - set `ODBC_009_HOSTED_BI_SMOKE=1` to run `odbc_bi_vendor_smoke.sh`
+  - runtime envs: `SCRATCHBIRD_ODBC_TABLEAU_CONNSTR`, `SCRATCHBIRD_ODBC_POWERBI_CONNSTR`, `SCRATCHBIRD_ODBC_EXCEL_CONNSTR`
 
 ## Next Step
 - CI job wiring is now in place on the Linux ODBC workflow path.
-- Add hosted BI-tool smoke in a follow-on ticket if vendor-specific coverage (Tableau/Power BI) is required.
+- Hosted BI-vendor smoke remains opt-in until vendor fixtures are provisioned in CI.

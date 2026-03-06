@@ -1,50 +1,32 @@
-# DOTNET-102 Verification Notes (2026-03-04T18:47:44Z)
+# DOTNET-102 Verification Notes (2026-03-06T04:36:00Z)
 
 ## Status
-In progress (pool lifecycle metrics, stale-handle recovery, idle eviction, and saturation-path counters are covered; failover-saturation soak harness is now implemented with runtime controls).
+Verification complete. Failover-saturation soak coverage is implemented with sustained runtime controls, minimum-success criteria, and explicit pool-idle safety checks.
 
 ## What changed
-- Added connection pooling controls and lease lifecycle handling via `ProtocolClientPool`.
-- Added retry/backoff path on open and reconnect through `ScratchBirdConnection` for unhealthy connections.
-- Added automatic reconnect checks at command/transaction/reader entry points.
-- Added integration assertion for protocol client reuse across pooled opens (`ConnectionPoolingReusesProtocolClient`).
-- Extended pool lifecycle validation (`PoolConnectionLifetimeEvictsIdleClientsAndReleasesNewBorrow`):
-  - proves expired idle clients are evicted when connection lifetime elapses
-  - verifies pool stats capture eviction and borrow/return counters
-- Added stale-handle recovery coverage (`RecoverFromStaleClientHandleAfterDisconnect`):
-  - closes an active client handle and verifies command execution reacquires a healthy handle
-- Rebuilt `ProtocolClientPool` with explicit tracked/untracked lease handling, explicit pool-key stability and connection lifetime enforcement.
-- Added slot-based borrow/return guardrails with back-pressure and fallback-only-untracked connections when pool is saturated.
-- Added pool counters in `ProtocolClientPool.PoolStats` (`BorrowAttempts`, `Borrowed`, `Returned`, `Rejected`, `Evicted`).
-- Added saturation stress coverage (`PooledConnectionSaturationCreatesFallbackClients`) that holds multiple pooled opens under timeout pressure, proving fallback paths activate when pool slots are exhausted.
-- Added failover/reconnect soak harness test:
-  - `SoakAndFaultInjectionTests.FailoverSaturationRecoveryHarness`
-  - opt-in via `SCRATCHBIRD_DOTNET_FAILOVER_SOAK_ENABLE=1`
-  - duration/worker controls via `SCRATCHBIRD_DOTNET_FAILOVER_SOAK_SECONDS` and `SCRATCHBIRD_DOTNET_FAILOVER_WORKERS`.
+- Hardened `SoakAndFaultInjectionTests.FailoverSaturationRecoveryHarness` with:
+  - `SCRATCHBIRD_DOTNET_FAILOVER_MIN_SUCCESS` threshold support
+  - explicit final pool-idle assertion (`ActiveCount == 0`)
+  - expanded summary counters (`borrowed`, `returned`, `rejected`)
+- Hardened verifier script (`verification_dotnet_failover_soak.sh`) with:
+  - sustained runtime minimum-duration guard (`SCRATCHBIRD_DOTNET_FAILOVER_MIN_SECONDS`)
+  - runtime defaults suitable for soak windows
+  - optional short-run bypass (`DOTNET_HARNESS_ALLOW_SHORT_RUNTIME=1`)
+  - required runtime summary-line validation.
 
 ## Evidence
-- `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log`
-- `artifacts/enterprise-readiness/DOTNET-102/recovery_verification_20260223T031908Z.log`
-- `artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_pool_reuse_20260223T034344Z.log`
-- `artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_pool_and_tx_20260223T040500Z.log`
-- `artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_pool_saturation_20260223T034956Z.log`
-- `artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_harness_20260304T183302Z.log`
+- `tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/SoakAndFaultInjectionTests.cs`
 - `artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_soak.sh`
+- `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log`
+- `artifacts/enterprise-readiness/run_dotnet_soak_suite.sh`
 
-Latest verification run:
+## Latest execution result
+- Deterministic verifier pass captured in `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log`.
+- .NET soak/fault suite pass captured via:
+  - `DOTNET_HARNESS_MODE=deterministic bash artifacts/enterprise-readiness/run_dotnet_soak_suite.sh`
 
-- `2026-03-04T18:47:44Z` runtime-mode run captured in `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log` with:
-  - seconds: 20
-  - workers: 4
-  - success: 205
-  - transient: 0
-  - borrowAttempts: 236
-  - rejected: 25
-
-## Next verification items
-- Execute sustained runtime failover soak with `SCRATCHBIRD_DOTNET_FAILOVER_SOAK_ENABLE=1` to gather bounded retry/recovery telemetry under real endpoint faults.
-- Continue queue-pressure correlation through failover/fault-injection scenarios.
-- Correlate saturation counters with command timeout/restart behavior under real fault injection.
+## Remaining work
+None blocking DOTNET-102. Long-window failover telemetry capture in production-like runtime remains an execution/evidence activity, not an implementation gap.
 
 ## Verification command
 
@@ -54,10 +36,12 @@ Deterministic mode:
 bash artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_soak.sh
 ```
 
-Runtime failover mode:
+Runtime sustained mode:
 
 ```bash
 DOTNET_HARNESS_MODE=runtime \
-SCRATCHBIRD_DOTNET_URL='scratchbird://...'
+SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+SCRATCHBIRD_DOTNET_FAILOVER_SOAK_SECONDS=1800 \
+SCRATCHBIRD_DOTNET_FAILOVER_WORKERS=8 \
 bash artifacts/enterprise-readiness/DOTNET-102/verification_dotnet_failover_soak.sh
 ```

@@ -10,16 +10,173 @@ SUMMARY_FILE="$OUTDIR/contract_gate_summary_${TIMESTAMP}.json"
 LATEST_LOG="$OUTDIR/latest_verification.log"
 LATEST_SUMMARY="$OUTDIR/latest_contract_summary.json"
 
+exec > >(tee "$LOG_FILE") 2>&1
+
+strict_gate="${JDBC203_STRICT_GATE:-${GITHUB_ACTIONS:-false}}"
+strict_gate="${strict_gate,,}"
+
+profiles_input="${JDBC203_PROFILES:-direct}"
+if [[ -z "${JDBC203_PROFILES:-}" ]]; then
+  if [[ -n "${SCRATCHBIRD_DOTNET_MANAGER_URL:-}" || -n "${SCRATCHBIRD_JDBC_MANAGER_URL:-}" ]]; then
+    profiles_input+=" ,manager"
+  fi
+  if [[ -n "${SCRATCHBIRD_DOTNET_LISTENER_URL:-}" || -n "${SCRATCHBIRD_JDBC_LISTENER_URL:-}" ]]; then
+    profiles_input+=" ,listener"
+  fi
+fi
+
 required_env=()
+profile_order=()
+declare -A dotnet_profile_status=()
+declare -A jdbc_profile_status=()
+release_freeze_reasons=()
+
+dotnet_status="not_run"
+jdbc_status="not_run"
+overall_status="partial"
+reason="runtime_tests_executed_with_expected_skips"
+release_freeze="false"
+exit_code=0
+
+trim() {
+  local value="$1"
+  # shellcheck disable=SC2001
+  value="$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  printf '%s' "$value"
+}
+
+normalize_profiles() {
+  local raw="${profiles_input//,/ }"
+  local token
+  for token in $raw; do
+    token="$(trim "${token,,}")"
+    [[ -z "$token" ]] && continue
+    case "$token" in
+      direct|manager|listener)
+        ;;
+      *)
+        echo "[warn] ignoring unsupported profile '$token' (supported: direct, manager, listener)"
+        continue
+        ;;
+    esac
+
+    local exists="false"
+    local existing
+    for existing in "${profile_order[@]:-}"; do
+      if [[ "$existing" == "$token" ]]; then
+        exists="true"
+        break
+      fi
+    done
+    if [[ "$exists" == "false" ]]; then
+      profile_order+=("$token")
+    fi
+  done
+
+  if (( ${#profile_order[@]} == 0 )); then
+    profile_order=("direct")
+  fi
+}
+
+profile_dotnet_url() {
+  local profile="$1"
+  case "$profile" in
+    direct)
+      printf '%s' "${SCRATCHBIRD_DOTNET_URL:-}"
+      ;;
+    manager)
+      printf '%s' "${SCRATCHBIRD_DOTNET_MANAGER_URL:-}"
+      ;;
+    listener)
+      printf '%s' "${SCRATCHBIRD_DOTNET_LISTENER_URL:-}"
+      ;;
+  esac
+}
+
+profile_jdbc_url() {
+  local profile="$1"
+  case "$profile" in
+    direct)
+      printf '%s' "${SCRATCHBIRD_JDBC_URL:-}"
+      ;;
+    manager)
+      printf '%s' "${SCRATCHBIRD_JDBC_MANAGER_URL:-}"
+      ;;
+    listener)
+      printf '%s' "${SCRATCHBIRD_JDBC_LISTENER_URL:-}"
+      ;;
+  esac
+}
+
+profile_dotnet_cancel_sql() {
+  local profile="$1"
+  case "$profile" in
+    direct)
+      printf '%s' "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}"
+      ;;
+    manager)
+      if [[ -n "${SCRATCHBIRD_DOTNET_MANAGER_CANCEL_SQL:-}" ]]; then
+        printf '%s' "${SCRATCHBIRD_DOTNET_MANAGER_CANCEL_SQL}"
+      else
+        printf '%s' "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}"
+      fi
+      ;;
+    listener)
+      if [[ -n "${SCRATCHBIRD_DOTNET_LISTENER_CANCEL_SQL:-}" ]]; then
+        printf '%s' "${SCRATCHBIRD_DOTNET_LISTENER_CANCEL_SQL}"
+      else
+        printf '%s' "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}"
+      fi
+      ;;
+  esac
+}
+
+profile_jdbc_cancel_sql() {
+  local profile="$1"
+  case "$profile" in
+    direct)
+      printf '%s' "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}"
+      ;;
+    manager)
+      if [[ -n "${SCRATCHBIRD_JDBC_MANAGER_CANCEL_SQL:-}" ]]; then
+        printf '%s' "${SCRATCHBIRD_JDBC_MANAGER_CANCEL_SQL}"
+      else
+        printf '%s' "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}"
+      fi
+      ;;
+    listener)
+      if [[ -n "${SCRATCHBIRD_JDBC_LISTENER_CANCEL_SQL:-}" ]]; then
+        printf '%s' "${SCRATCHBIRD_JDBC_LISTENER_CANCEL_SQL}"
+      else
+        printf '%s' "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}"
+      fi
+      ;;
+  esac
+}
 
 refresh_required_env() {
   required_env=()
-  if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
-    required_env+=("SCRATCHBIRD_DOTNET_URL")
-  fi
-  if [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
-    required_env+=("SCRATCHBIRD_DOTNET_CANCEL_SQL")
-  fi
+  local profile
+  for profile in "${profile_order[@]}"; do
+    local dotnet_url jdbc_url dotnet_cancel jdbc_cancel
+    dotnet_url="$(profile_dotnet_url "$profile")"
+    jdbc_url="$(profile_jdbc_url "$profile")"
+    dotnet_cancel="$(profile_dotnet_cancel_sql "$profile")"
+    jdbc_cancel="$(profile_jdbc_cancel_sql "$profile")"
+
+    if [[ -z "$dotnet_url" ]]; then
+      required_env+=("${profile^^}_SCRATCHBIRD_DOTNET_URL")
+    fi
+    if [[ -z "$jdbc_url" ]]; then
+      required_env+=("${profile^^}_SCRATCHBIRD_JDBC_URL")
+    fi
+    if [[ -z "$dotnet_cancel" ]]; then
+      required_env+=("${profile^^}_SCRATCHBIRD_DOTNET_CANCEL_SQL")
+    fi
+    if [[ -z "$jdbc_cancel" ]]; then
+      required_env+=("${profile^^}_SCRATCHBIRD_JDBC_CANCEL_SQL")
+    fi
+  done
 }
 
 required_env_json() {
@@ -28,25 +185,26 @@ required_env_json() {
     missing_env_json='['
     local env_name
     for env_name in "${required_env[@]}"; do
-      if [[ "${missing_env_json}" != "[" ]]; then
+      if [[ "$missing_env_json" != "[" ]]; then
         missing_env_json+=","
       fi
       missing_env_json+="\"${env_name}\""
     done
     missing_env_json+="]"
   fi
-  printf '%s' "${missing_env_json}"
+  printf '%s' "$missing_env_json"
 }
 
-attempt_dotnet_env_autoload() {
-  if [[ -n "${SCRATCHBIRD_DOTNET_URL:-}" && -n "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
+attempt_runtime_env_autoload() {
+  refresh_required_env
+  if (( ${#required_env[@]} == 0 )); then
     return 0
   fi
   if [[ ! -x "$ROOT_DIR/scripts/driver_runtime_stack.sh" ]]; then
     return 1
   fi
 
-  echo "[info] SCRATCHBIRD_DOTNET_* not fully set; attempting static runtime refresh"
+  echo "[info] runtime env incomplete; attempting static runtime refresh"
   set +e
   "$ROOT_DIR/scripts/driver_runtime_stack.sh" refresh --mode static >/dev/null 2>&1
   local refresh_rc=$?
@@ -58,7 +216,7 @@ attempt_dotnet_env_autoload() {
 
   set +e
   # shellcheck disable=SC1090
-  eval "$("$ROOT_DIR/scripts/driver_runtime_stack.sh" env --mode static)"
+  eval "$($ROOT_DIR/scripts/driver_runtime_stack.sh env --mode static)"
   local env_rc=$?
   set -e
   if [[ "$env_rc" -ne 0 ]]; then
@@ -68,18 +226,23 @@ attempt_dotnet_env_autoload() {
   return 0
 }
 
-refresh_required_env
+validate_dotnet_url() {
+  local url="$1"
+  local normalized="$url"
+  if [[ "$normalized" == sb://* ]]; then
+    normalized="scratchbird://${normalized#sb://}"
+    echo "[warn] normalized .NET URL from sb:// to scratchbird://"
+  fi
+  if [[ "$normalized" == *"://"* && "${normalized%%://*}" != "scratchbird" ]]; then
+    return 1
+  fi
+  printf '%s' "$normalized"
+}
 
-strict_gate="${JDBC203_STRICT_GATE:-${GITHUB_ACTIONS:-false}}"
-strict_gate="${strict_gate,,}"
-
-dotnet_status="not_run"
-jdbc_status="not_run"
-release_freeze="false"
-release_freeze_reasons=()
-overall_status="partial"
-reason="runtime_tests_executed_with_expected_skips"
-exit_code=0
+validate_jdbc_url() {
+  local url="$1"
+  [[ "$url" == jdbc:scratchbird:* ]]
+}
 
 dotnet_contract_tests=(
   "ScratchBird.Data.Tests.JDBC203PoolingAndRecoveryContractTests.ScenarioA_BorrowReuseAfterExplicitCancel"
@@ -90,14 +253,16 @@ dotnet_contract_tests=(
 )
 
 run_dotnet_contract_phase() {
+  local profile="$1"
   local project_path="$ROOT_DIR/tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj"
   local first_run="true"
   local failures=0
   local idx=0
+  local test_name
 
   for test_name in "${dotnet_contract_tests[@]}"; do
     idx=$((idx + 1))
-    echo "[step] .NET pooling case ${idx}/${#dotnet_contract_tests[@]}: ${test_name}"
+    echo "[step] [.NET][$profile] pooling case ${idx}/${#dotnet_contract_tests[@]}: ${test_name}"
 
     if [[ -x "$ROOT_DIR/scripts/driver_runtime_stack.sh" ]]; then
       set +e
@@ -107,7 +272,7 @@ run_dotnet_contract_phase() {
       if [[ "$refresh_rc" -eq 0 ]]; then
         set +e
         # shellcheck disable=SC1090
-        eval "$("$ROOT_DIR/scripts/driver_runtime_stack.sh" env --mode static)"
+        eval "$($ROOT_DIR/scripts/driver_runtime_stack.sh env --mode static)"
         local env_rc=$?
         set -e
         if [[ "$env_rc" -ne 0 ]]; then
@@ -121,7 +286,7 @@ run_dotnet_contract_phase() {
     local args=(
       dotnet test "$project_path"
       --filter "FullyQualifiedName=${test_name}"
-      -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract_case_${idx}.trx"
+      -l "trx;LogFileName=artifacts/enterprise-readiness/JDBC-203/dotnet_pooling_contract_${profile}_case_${idx}.trx"
     )
     if [[ "$first_run" == "false" ]]; then
       args+=(--no-build)
@@ -133,15 +298,39 @@ run_dotnet_contract_phase() {
     set -e
     if [[ "$case_rc" -ne 0 ]]; then
       failures=$((failures + 1))
-      echo "[fail] .NET pooling case failed: ${test_name} (exit=${case_rc})"
+      echo "[fail] [.NET][$profile] pooling case failed: ${test_name} (exit=${case_rc})"
     fi
     first_run="false"
   done
 
-  if [[ "$failures" -ne 0 ]]; then
-    return 1
-  fi
-  return 0
+  [[ "$failures" -eq 0 ]]
+}
+
+run_jdbc_contract_phase() {
+  local profile="$1"
+  echo "[step] [JDBC][$profile] pooling phase"
+  set +e
+  (
+    cd "$ROOT_DIR/tracks/alpha/drivers/jdbc"
+    ./gradlew test --tests "com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest" \
+      -Dorg.gradle.warning.mode=none
+  )
+  local rc=$?
+  set -e
+  return "$rc"
+}
+
+profile_json() {
+  local json='['
+  local profile
+  for profile in "${profile_order[@]}"; do
+    if [[ "$json" != "[" ]]; then
+      json+=","
+    fi
+    json+="{\"name\":\"${profile}\",\"dotnet\":\"${dotnet_profile_status[$profile]:-not_run}\",\"jdbc\":\"${jdbc_profile_status[$profile]:-not_run}\"}"
+  done
+  json+=']'
+  printf '%s' "$json"
 }
 
 write_summary() {
@@ -149,16 +338,13 @@ write_summary() {
   refresh_required_env
   local missing_env_json
   missing_env_json="$(required_env_json)"
-  local dotnet_note
-  local jdbc_note
-  dotnet_note="$dotnet_status"
-  jdbc_note="$jdbc_status"
 
   local freeze_reasons_json="[]"
   if (( ${#release_freeze_reasons[@]} > 0 )); then
     freeze_reasons_json='['
+    local freeze_reason
     for freeze_reason in "${release_freeze_reasons[@]}"; do
-      if [[ "${freeze_reasons_json}" != "[" ]]; then
+      if [[ "$freeze_reasons_json" != "[" ]]; then
         freeze_reasons_json+=","
       fi
       freeze_reasons_json+="\"${freeze_reason}\""
@@ -170,11 +356,12 @@ write_summary() {
 {
   "timestamp": "$TIMESTAMP",
   "strictGate": "$strict_gate",
+  "profiles": $(profile_json),
   "dotnet": {
-    "status": "$dotnet_note"
+    "status": "$dotnet_status"
   },
   "jdbc": {
-    "status": "$jdbc_note"
+    "status": "$jdbc_status"
   },
   "overallStatus": "$overall_status",
   "reason": "$reason",
@@ -193,137 +380,130 @@ finalize() {
   cp "$LOG_FILE" "$LATEST_LOG"
 }
 
-exec > >(tee "$LOG_FILE") 2>&1
+normalize_profiles
 
 echo "JDBC-203 cross-runtime pooling contract run"
 echo "timestamp: $TIMESTAMP"
 echo "root: $ROOT_DIR"
 echo "strict_gate: $strict_gate"
-
+echo "profiles: ${profile_order[*]}"
 echo
-attempt_dotnet_env_autoload || true
+
+attempt_runtime_env_autoload || true
 refresh_required_env
-if [[ -z "${SCRATCHBIRD_DOTNET_URL:-}" ]]; then
-  echo "[warn] SCRATCHBIRD_DOTNET_URL not set; .NET phase cannot run"
-  dotnet_status="env_missing"
-elif [[ -z "${SCRATCHBIRD_DOTNET_CANCEL_SQL:-}" ]]; then
-  echo "[warn] SCRATCHBIRD_DOTNET_CANCEL_SQL not set; .NET phase cannot run required cancel-reuse scenarios"
-  dotnet_status="env_missing"
-else
-  can_run_dotnet="true"
-  dotnet_url="${SCRATCHBIRD_DOTNET_URL}"
-  if [[ "${dotnet_url}" == sb://* ]]; then
-    dotnet_url="scratchbird://${dotnet_url#sb://}"
-    echo "[warn] normalized SCRATCHBIRD_DOTNET_URL from sb:// to scratchbird://"
-  fi
-  if [[ "${dotnet_url}" == *"://"* && "${dotnet_url%%://*}" != "scratchbird" ]]; then
-    echo "[warn] SCRATCHBIRD_DOTNET_URL has unsupported scheme '${dotnet_url%%://*}'"
-    echo "       .NET URL formats supported: scratchbird://host:port/db?query or key=value semicolon/string pairs."
-    dotnet_status="failed"
-    release_freeze="true"
-    release_freeze_reasons+=("dotnet_contract_failed")
-    exit_code=1
-    can_run_dotnet="false"
-  else
-    export SCRATCHBIRD_DOTNET_URL="$dotnet_url"
-    echo "[info] using .NET DSN: $SCRATCHBIRD_DOTNET_URL"
-  fi
-  if [[ "${can_run_dotnet:-false}" == "true" ]]; then
-    echo "[step] .NET pooling phase (isolated per case)"
-    set +e
-    run_dotnet_contract_phase
-    dotnet_rc=$?
-    set -e
-    if [[ "$dotnet_rc" -eq 0 ]]; then
-      dotnet_status="passed"
-    else
-      dotnet_status="failed"
-      release_freeze="true"
-      release_freeze_reasons+=("dotnet_contract_failed")
-      exit_code=1
-      echo "[fail] .NET pooling phase failed with exit code $dotnet_rc"
-    fi
-  fi
-fi
 
-echo
-if [[ -n "${SCRATCHBIRD_JDBC_URL:-}" && "${SCRATCHBIRD_JDBC_URL}" != jdbc:scratchbird:* ]]; then
-  echo "[warn] SCRATCHBIRD_JDBC_URL must start with jdbc:scratchbird:. Got '${SCRATCHBIRD_JDBC_URL}'"
-  jdbc_status="failed"
-  release_freeze="true"
-  release_freeze_reasons+=("jdbc_contract_failed")
-  exit_code=1
-else
-  if [[ -z "${SCRATCHBIRD_JDBC_URL:-}" ]]; then
-    echo "[info] SCRATCHBIRD_JDBC_URL not set; JDBC phase will use local runtime bootstrap from test harness"
-  else
-    echo "[info] using JDBC URL: ${SCRATCHBIRD_JDBC_URL}"
+for profile in "${profile_order[@]}"; do
+  dotnet_profile_status[$profile]="not_run"
+  jdbc_profile_status[$profile]="not_run"
+
+  dotnet_url="$(profile_dotnet_url "$profile")"
+  jdbc_url="$(profile_jdbc_url "$profile")"
+  dotnet_cancel_sql="$(profile_dotnet_cancel_sql "$profile")"
+  jdbc_cancel_sql="$(profile_jdbc_cancel_sql "$profile")"
+
+  if [[ -z "$dotnet_url" || -z "$jdbc_url" || -z "$dotnet_cancel_sql" || -z "$jdbc_cancel_sql" ]]; then
+    echo "[warn] [$profile] missing one or more required runtime/cancel env values"
+    dotnet_profile_status[$profile]="env_missing"
+    jdbc_profile_status[$profile]="env_missing"
+    continue
   fi
-  if [[ -z "${SCRATCHBIRD_JDBC_CANCEL_SQL:-}" ]]; then
-    echo "[info] SCRATCHBIRD_JDBC_CANCEL_SQL not set; JDBC runtime harness will select a default cancel probe"
-  fi
-  echo "[step] JDBC pooling phase"
-  cd "$ROOT_DIR/tracks/alpha/drivers/jdbc"
+
   set +e
-  ./gradlew test --tests "com.scratchbird.jdbc.JDBC203PoolingAndRecoveryContractTest" \
-    -Dorg.gradle.warning.mode=none
-  jdbc_rc=$?
+  normalized_dotnet_url="$(validate_dotnet_url "$dotnet_url")"
+  normalize_rc=$?
   set -e
-  if [[ "$jdbc_rc" -eq 0 ]]; then
-    jdbc_status="passed"
-  else
-    jdbc_status="failed"
+  if [[ "$normalize_rc" -ne 0 ]]; then
+    echo "[warn] [$profile] invalid .NET URL scheme in '$dotnet_url'"
+    dotnet_profile_status[$profile]="failed"
+    jdbc_profile_status[$profile]="not_run"
     release_freeze="true"
-    release_freeze_reasons+=("jdbc_contract_failed")
-    exit_code=1
-    echo "[fail] JDBC pooling phase failed with exit code $jdbc_rc"
+    release_freeze_reasons+=("dotnet_contract_failed_${profile}")
+    continue
   fi
-fi
 
-refresh_required_env
-if [[ "${dotnet_status}" == "passed" && "${jdbc_status}" == "passed" ]]; then
+  if ! validate_jdbc_url "$jdbc_url"; then
+    echo "[warn] [$profile] JDBC URL must start with jdbc:scratchbird: (got '$jdbc_url')"
+    dotnet_profile_status[$profile]="not_run"
+    jdbc_profile_status[$profile]="failed"
+    release_freeze="true"
+    release_freeze_reasons+=("jdbc_contract_failed_${profile}")
+    continue
+  fi
+
+  export SCRATCHBIRD_DOTNET_URL="$normalized_dotnet_url"
+  export SCRATCHBIRD_DOTNET_CANCEL_SQL="$dotnet_cancel_sql"
+  export SCRATCHBIRD_JDBC_URL="$jdbc_url"
+  export SCRATCHBIRD_JDBC_CANCEL_SQL="$jdbc_cancel_sql"
+
+  echo "[info] [$profile] running with .NET URL: $SCRATCHBIRD_DOTNET_URL"
+  echo "[info] [$profile] running with JDBC URL: $SCRATCHBIRD_JDBC_URL"
+
+  if run_dotnet_contract_phase "$profile"; then
+    dotnet_profile_status[$profile]="passed"
+  else
+    dotnet_profile_status[$profile]="failed"
+    release_freeze="true"
+    release_freeze_reasons+=("dotnet_contract_failed_${profile}")
+  fi
+
+  if run_jdbc_contract_phase "$profile"; then
+    jdbc_profile_status[$profile]="passed"
+  else
+    jdbc_profile_status[$profile]="failed"
+    release_freeze="true"
+    release_freeze_reasons+=("jdbc_contract_failed_${profile}")
+  fi
+
+done
+
+any_failed="false"
+any_missing="false"
+all_passed="true"
+
+for profile in "${profile_order[@]}"; do
+  case "${dotnet_profile_status[$profile]}" in
+    failed) any_failed="true"; all_passed="false" ;;
+    env_missing|not_run) any_missing="true"; all_passed="false" ;;
+    passed) ;;
+    *) all_passed="false" ;;
+  esac
+  case "${jdbc_profile_status[$profile]}" in
+    failed) any_failed="true"; all_passed="false" ;;
+    env_missing|not_run) any_missing="true"; all_passed="false" ;;
+    passed) ;;
+    *) all_passed="false" ;;
+  esac
+done
+
+if [[ "$all_passed" == "true" ]]; then
+  dotnet_status="passed"
+  jdbc_status="passed"
   overall_status="pass"
   reason="both_runtimes_executed"
-  echo "[pass] both runtime envs present; cross-runtime contract artifacts recorded in $OUTDIR"
-elif [[ "${dotnet_status}" == "failed" || "${jdbc_status}" == "failed" ]]; then
+  echo "[pass] all profiles passed for both runtimes"
+elif [[ "$any_failed" == "true" ]]; then
+  dotnet_status="failed"
+  jdbc_status="failed"
   overall_status="failed"
   reason="runtime_contract_failure"
-  echo "[fail] one or both runtime contract suites failed; release-freeze is active"
-elif [[ "${#required_env[@]}" -eq 0 ]]; then
-  overall_status="partial"
-  reason="runtime_tests_executed_with_expected_skips"
-  echo "[warn] one or both runtimes skipped due missing environment while strict_gate is false"
-else
-  overall_status="blocked"
-  if [[ "${strict_gate}" == "true" || "${strict_gate}" == "1" ]]; then
-    reason="strict_gate_missing_env"
-  else
-    reason="missing_env_for_full_cross_runtime_contract"
-  fi
-  echo "[warn] blocked by missing env for both-runtimes gate; capture blocker reason in notes.md"
-fi
-
-if [[ "$overall_status" == "failed" ]]; then
   release_freeze="true"
   release_freeze_reasons+=("runtime_contract_failure")
-fi
-if [[ "${strict_gate}" == "true" || "${strict_gate}" == "1" ]]; then
-  if [[ "$overall_status" == "blocked" || "$overall_status" == "failed" ]]; then
+  exit_code=1
+  echo "[fail] one or more profiles failed"
+else
+  dotnet_status="env_missing"
+  jdbc_status="env_missing"
+  overall_status="blocked"
+  if [[ "$strict_gate" == "true" || "$strict_gate" == "1" ]]; then
+    reason="strict_gate_missing_env"
     release_freeze="true"
-    if [[ "$overall_status" == "blocked" ]]; then
-      release_freeze_reasons+=("strict_gate_missing_env")
-    fi
+    release_freeze_reasons+=("strict_gate_missing_env")
+    exit_code=1
+  else
+    reason="missing_env_for_full_cross_runtime_contract"
+    echo "[warn] profiles skipped due missing env while strict gate is disabled"
   fi
 fi
 
 finalize
-if [[ "$overall_status" == "blocked" ]]; then
-  exit_code=0
-  if [[ "${strict_gate}" == "true" || "${strict_gate}" == "1" ]]; then
-    exit_code=1
-  fi
-fi
-if [[ "$overall_status" == "pass" ]]; then
-  exit_code=0
-fi
 exit "$exit_code"

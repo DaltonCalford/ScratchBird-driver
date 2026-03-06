@@ -1,6 +1,7 @@
 {
-  "timestamp": "20260228T044231Z",
+  "timestamp": "20260306T044159Z",
   "strictGate": "false",
+  "profiles": [{"name":"direct","dotnet":"passed","jdbc":"passed"}],
   "dotnet": {
     "status": "passed"
   },

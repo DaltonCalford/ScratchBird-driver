@@ -1,0 +1,14 @@
+info_type,value_kind,expected
+17,string,ScratchBird
+36,string,N
+37,string,N
+89,string, 
+103,string,Y
+114,u16,1
+115,u32,0
+120,u32,0
+121,u32,0
+152,u16,1
+10000,string,1995
+10002,string,Y
+171,string,03.80.0000

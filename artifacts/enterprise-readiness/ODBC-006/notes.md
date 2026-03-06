@@ -22,6 +22,11 @@ Status: Verification complete (in-tree ODBC unit suite).
   - `BulkOperationsRejectsNonColumnWiseBindingMode`
   - `BulkOperationsSupportsUpdateAndDeleteByBookmarkCodes`
   - `BulkOperationsPartialFailureStopsExecution`
+  - `BulkOperationsPartialFailureRollsBackWhenTransactionIsActive`
+- Added partial-apply rollback safety in bulk execution:
+  - captures original row failure diagnostics
+  - attempts `SQLEndTran(..., SQL_ROLLBACK)` when rows were already applied
+  - appends rollback outcome diagnostics (`01000` success warning, `HY000` rollback failure)
 - Wired new bulk test file into `tracks/alpha/drivers/odbc/CMakeLists.txt` test executable source list.
 - Command evidence:
   - `cmake -S tracks/alpha/drivers/odbc -B tracks/alpha/drivers/odbc/build -DBUILD_TESTING=ON`

@@ -52,6 +52,59 @@ std::string diagMessage(SQLSMALLINT handle_type, SQLHANDLE handle) {
     return out.str();
 }
 
+void runBiMetadataSmoke(const std::string& conn_str, const char* label) {
+    SQLHENV env = SQL_NULL_HENV;
+    SQLHDBC dbc = SQL_NULL_HDBC;
+    SQLHSTMT stmt = SQL_NULL_HSTMT;
+
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env), SQL_SUCCESS)
+        << label << ": SQLAllocHandle(SQL_HANDLE_ENV) failed";
+    ASSERT_EQ(SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION,
+                            reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC3), 0), SQL_SUCCESS)
+        << label << ": SQLSetEnvAttr(SQL_ATTR_ODBC_VERSION) failed";
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc), SQL_SUCCESS)
+        << label << ": SQLAllocHandle(SQL_HANDLE_DBC) failed";
+
+    SQLCHAR out_conn[1024] = {};
+    SQLSMALLINT out_len = 0;
+    SQLRETURN conn_rc = SQLDriverConnect(dbc,
+                                         nullptr,
+                                         reinterpret_cast<SQLCHAR*>(const_cast<char*>(conn_str.c_str())),
+                                         SQL_NTS,
+                                         out_conn,
+                                         sizeof(out_conn),
+                                         &out_len,
+                                         SQL_DRIVER_NOPROMPT);
+    ASSERT_TRUE(SQL_SUCCEEDED(conn_rc))
+        << label << ": SQLDriverConnect failed: " << diagMessage(SQL_HANDLE_DBC, dbc);
+
+    SQLCHAR dbms_name[128] = {};
+    SQLSMALLINT dbms_name_len = 0;
+    ASSERT_TRUE(SQL_SUCCEEDED(SQLGetInfo(dbc,
+                                         SQL_DBMS_NAME,
+                                         dbms_name,
+                                         sizeof(dbms_name),
+                                         &dbms_name_len)))
+        << label << ": SQLGetInfo(SQL_DBMS_NAME) failed: " << diagMessage(SQL_HANDLE_DBC, dbc);
+
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt), SQL_SUCCESS)
+        << label << ": SQLAllocHandle(SQL_HANDLE_STMT) failed";
+
+    SQLRETURN tables_rc = SQLTables(stmt, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0);
+    ASSERT_TRUE(SQL_SUCCEEDED(tables_rc))
+        << label << ": SQLTables failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    (void)SQLCloseCursor(stmt);
+
+    SQLRETURN columns_rc = SQLColumns(stmt, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0);
+    ASSERT_TRUE(SQL_SUCCEEDED(columns_rc))
+        << label << ": SQLColumns failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+
+    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+    SQLDisconnect(dbc);
+    SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+    SQLFreeHandle(SQL_HANDLE_ENV, env);
+}
+
 }  // namespace
 
 TEST(OdbcExternalRuntimeTest, ConnectsThroughListenerAndQueriesFixtureData) {
@@ -100,4 +153,28 @@ TEST(OdbcExternalRuntimeTest, ConnectsThroughListenerAndQueriesFixtureData) {
     SQLDisconnect(dbc);
     SQLFreeHandle(SQL_HANDLE_DBC, dbc);
     SQLFreeHandle(SQL_HANDLE_ENV, env);
+}
+
+TEST(OdbcExternalRuntimeTest, HostedTableauMetadataSmoke) {
+    const char* conn_env = std::getenv("SCRATCHBIRD_ODBC_TABLEAU_CONNSTR");
+    if (conn_env == nullptr || std::string(conn_env).empty()) {
+        GTEST_SKIP() << "SCRATCHBIRD_ODBC_TABLEAU_CONNSTR is not set";
+    }
+    runBiMetadataSmoke(conn_env, "Tableau");
+}
+
+TEST(OdbcExternalRuntimeTest, HostedPowerBiMetadataSmoke) {
+    const char* conn_env = std::getenv("SCRATCHBIRD_ODBC_POWERBI_CONNSTR");
+    if (conn_env == nullptr || std::string(conn_env).empty()) {
+        GTEST_SKIP() << "SCRATCHBIRD_ODBC_POWERBI_CONNSTR is not set";
+    }
+    runBiMetadataSmoke(conn_env, "Power BI");
+}
+
+TEST(OdbcExternalRuntimeTest, HostedExcelMetadataSmoke) {
+    const char* conn_env = std::getenv("SCRATCHBIRD_ODBC_EXCEL_CONNSTR");
+    if (conn_env == nullptr || std::string(conn_env).empty()) {
+        GTEST_SKIP() << "SCRATCHBIRD_ODBC_EXCEL_CONNSTR is not set";
+    }
+    runBiMetadataSmoke(conn_env, "Excel");
 }

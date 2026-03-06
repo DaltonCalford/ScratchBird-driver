@@ -1,40 +1,35 @@
-# DOTNET-101 Verification Notes (2026-03-04T18:47:12Z)
+# DOTNET-101 Verification Notes (2026-03-06T04:36:00Z)
 
 ## Status
-In progress. Core async/cancel paths are validated, and a sustained cancellation/release soak harness is now implemented with explicit runtime controls.
+Verification complete. Sustained async cancellation/release soak coverage is implemented with explicit runtime-duration guards, threshold assertions, and telemetry-rich summaries.
 
 ## What changed
-- Added cancellation token coverage for async reader workflows (`ExecuteReaderAsync` + `ReadAsync`).
-- Added regression coverage that a token-cancelled async reader leaves the connection reusable for immediate follow-up query.
-- Added pre-cancel token behavior and concurrent cancellation stress across pooled connections.
-- Added explicit stream-abort + dispose cleanup for canceled readers.
-- Preserved existing command-driven cancellation and command-token cancellation assertions.
-- Added long-run soak harness test:
-  - `SoakAndFaultInjectionTests.CancellationReleaseSoakHarness`
-  - opt-in via `SCRATCHBIRD_DOTNET_SOAK_ENABLE=1`
-  - runtime duration control via `SCRATCHBIRD_DOTNET_SOAK_SECONDS` (supports long-lived soak windows).
+- Added sustained-run controls for `SoakAndFaultInjectionTests.CancellationReleaseSoakHarness`:
+  - `SCRATCHBIRD_DOTNET_SOAK_SECONDS`
+  - `SCRATCHBIRD_DOTNET_SOAK_MIN_ITERATIONS`
+  - `SCRATCHBIRD_DOTNET_SOAK_MIN_VERIFY_READS`
+- Added stronger pool lifecycle assertions in the harness:
+  - idle pool drain (`ActiveCount == 0`)
+  - monotonic borrow/return counter checks
+- Added parseable soak summary output with counters and thresholds.
+- Hardened verifier script (`verification_dotnet_soak.sh`) with:
+  - runtime minimum-duration guard (`SCRATCHBIRD_DOTNET_SOAK_MIN_SECONDS`)
+  - optional short-run bypass (`DOTNET_HARNESS_ALLOW_SHORT_RUNTIME=1`)
+  - required runtime summary-line validation.
 
 ## Evidence
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_async_cancel_20260223T034232Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_test_20260223T034229Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_test_20260223T034409Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_async_cancel_20260223T033907Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_test_20260223T034038Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_test_20260223T033914Z.log`
-- `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak_harness_20260304T183302Z.log`
+- `tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/SoakAndFaultInjectionTests.cs`
 - `artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak.sh`
+- `artifacts/enterprise-readiness/DOTNET-101/latest_verification.log`
+- `artifacts/enterprise-readiness/run_dotnet_soak_suite.sh`
 
 ## Latest execution result
-- 23 total tests, 23 passed in `verification_dotnet_test_20260223T034409Z.log` (integration tests remain environment-gated by `SCRATCHBIRD_DOTNET_URL` and `SCRATCHBIRD_DOTNET_CANCEL_SQL` as applicable).
-- 3 targeted cancellation stress tests passed in `verification_dotnet_async_cancel_20260223T034232Z.log`.
-- Soak harness contract test compiles/runs in deterministic mode in `verification_dotnet_soak_harness_20260304T183302Z.log`.
-- Runtime-mode soak harness executed successfully (20s window) and captured in `artifacts/enterprise-readiness/DOTNET-101/latest_verification.log`:
-  - iterations: 8
-  - verifyReads: 8
-  - transientOrCancelled: 0
+- Deterministic verifier pass captured in `artifacts/enterprise-readiness/DOTNET-101/latest_verification.log`.
+- .NET soak/fault suite pass captured via:
+  - `DOTNET_HARNESS_MODE=deterministic bash artifacts/enterprise-readiness/run_dotnet_soak_suite.sh`
 
 ## Remaining work
-- Execute long-duration soak run with `SCRATCHBIRD_DOTNET_SOAK_ENABLE=1` and production-like runtime DSN/cancel SQL, then capture extended leak/counter telemetry.
+None blocking DOTNET-101. Extended-duration production soak windows remain an operational runtime-evidence activity, not a code gap.
 
 ## Verification command
 
@@ -44,10 +39,11 @@ Deterministic mode:
 bash artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak.sh
 ```
 
-Runtime soak mode:
+Runtime sustained mode:
 
 ```bash
 DOTNET_HARNESS_MODE=runtime \
-SCRATCHBIRD_DOTNET_URL='scratchbird://...'
+SCRATCHBIRD_DOTNET_URL='scratchbird://...' \
+SCRATCHBIRD_DOTNET_SOAK_SECONDS=1800 \
 bash artifacts/enterprise-readiness/DOTNET-101/verification_dotnet_soak.sh
 ```

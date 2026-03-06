@@ -29,11 +29,17 @@ public class SoakAndFaultInjectionTests
         }
 
         var durationSeconds = GetIntEnv("SCRATCHBIRD_DOTNET_SOAK_SECONDS", defaultValue: 90, minValue: 5, maxValue: 86400);
+        var minIterations = GetIntEnv("SCRATCHBIRD_DOTNET_SOAK_MIN_ITERATIONS", defaultValue: Math.Max(1, durationSeconds / 3), minValue: 1, maxValue: 1_000_000);
+        var minVerifyReads = GetIntEnv("SCRATCHBIRD_DOTNET_SOAK_MIN_VERIFY_READS", defaultValue: 1, minValue: 0, maxValue: 1_000_000);
         var dsn = EnsureSocketTimeout(RequireDsn(), 30);
         var cancelSql = RequireCancelSql();
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 4, connectionLifetime: 30, minPoolSize: 0);
         var startedAt = DateTime.UtcNow;
         var until = startedAt.AddSeconds(durationSeconds);
+        var initialStats = GetPoolStats(poolingDsn);
+        var initialBorrowAttempts = initialStats?.BorrowAttempts ?? 0;
+        var initialBorrowed = initialStats?.Borrowed ?? 0;
+        var initialReturned = initialStats?.Returned ?? 0;
 
         var iterations = 0;
         var successfulVerifyReads = 0;
@@ -84,15 +90,18 @@ public class SoakAndFaultInjectionTests
         if (finalStats.HasValue)
         {
             Assert.Equal(0, finalStats.Value.ActiveCount);
+            Assert.True(finalStats.Value.BorrowAttempts >= initialBorrowAttempts);
+            Assert.True(finalStats.Value.Borrowed >= initialBorrowed);
+            Assert.True(finalStats.Value.Returned >= initialReturned);
         }
 
-        Assert.True(iterations > 0, "expected soak harness to execute at least one iteration");
+        Assert.True(iterations >= minIterations, $"expected soak harness to execute at least {minIterations} iteration(s)");
         Assert.True(
-            successfulVerifyReads > 0 || transientOrCancelled > 0,
-            "expected at least one verification read or transient cancel outcome");
+            successfulVerifyReads >= minVerifyReads || transientOrCancelled > 0,
+            $"expected at least {minVerifyReads} verification read(s) or one transient/cancel outcome");
 
         Console.WriteLine(
-            $"DOTNET-101 soak summary: seconds={durationSeconds}, iterations={iterations}, verifyReads={successfulVerifyReads}, transientOrCancelled={transientOrCancelled}");
+            $"DOTNET-101 soak summary: seconds={durationSeconds}, iterations={iterations}, verifyReads={successfulVerifyReads}, transientOrCancelled={transientOrCancelled}, minIterations={minIterations}, minVerifyReads={minVerifyReads}, activeCount={(finalStats?.ActiveCount ?? -1)}, borrowAttempts={(finalStats?.BorrowAttempts ?? -1)}, borrowed={(finalStats?.Borrowed ?? -1)}, returned={(finalStats?.Returned ?? -1)}, rejected={(finalStats?.Rejected ?? -1)}");
     }
 
     [Fact]
@@ -105,6 +114,7 @@ public class SoakAndFaultInjectionTests
 
         var durationSeconds = GetIntEnv("SCRATCHBIRD_DOTNET_FAILOVER_SOAK_SECONDS", defaultValue: 60, minValue: 5, maxValue: 7200);
         var workerCount = GetIntEnv("SCRATCHBIRD_DOTNET_FAILOVER_WORKERS", defaultValue: 6, minValue: 2, maxValue: 32);
+        var minSuccess = GetIntEnv("SCRATCHBIRD_DOTNET_FAILOVER_MIN_SUCCESS", defaultValue: Math.Max(1, workerCount), minValue: 1, maxValue: 1_000_000);
 
         var dsn = EnsureSocketTimeout(RequireDsn(), 20);
         var poolingDsn = AddPoolingFlags(dsn, maxPoolSize: 2, connectionLifetime: 45, minPoolSize: 0);
@@ -156,15 +166,16 @@ public class SoakAndFaultInjectionTests
 
         await Task.WhenAll(workerTasks);
 
-        Assert.True(success > 0, "expected at least one successful operation in failover saturation harness");
+        Assert.True(success >= minSuccess, $"expected at least {minSuccess} successful operation(s) in failover saturation harness");
         Assert.True(hardFailures.IsEmpty, string.Join(" | ", hardFailures.Select(ex => ex.GetType().Name + ": " + ex.Message)));
 
         var finalStats = WaitForIdlePool(poolingDsn, retries: 30, delayMs: 100);
         Assert.NotNull(finalStats);
+        Assert.Equal(0, finalStats!.Value.ActiveCount);
         Assert.True(finalStats!.Value.BorrowAttempts > 0);
 
         Console.WriteLine(
-            $"DOTNET-102 failover soak summary: seconds={durationSeconds}, workers={workerCount}, success={success}, transient={transient}, borrowAttempts={finalStats.Value.BorrowAttempts}, rejected={finalStats.Value.Rejected}");
+            $"DOTNET-102 failover soak summary: seconds={durationSeconds}, workers={workerCount}, success={success}, transient={transient}, minSuccess={minSuccess}, activeCount={finalStats.Value.ActiveCount}, borrowAttempts={finalStats.Value.BorrowAttempts}, borrowed={finalStats.Value.Borrowed}, returned={finalStats.Value.Returned}, rejected={finalStats.Value.Rejected}");
     }
 
     [Fact]
@@ -175,6 +186,7 @@ public class SoakAndFaultInjectionTests
             return;
         }
 
+        var rounds = GetIntEnv("SCRATCHBIRD_DOTNET_FAULT_MATRIX_ROUNDS", defaultValue: 4, minValue: 1, maxValue: 512);
         var dsn = EnsureSocketTimeout(RequireDsn(), 30);
         var table = $"dotnet_fault_matrix_{Guid.NewGuid():N}";
 
@@ -190,59 +202,72 @@ public class SoakAndFaultInjectionTests
         }
 
         var matrixChecks = 0;
+        var committedOutcomes = 0;
+        var contendedOutcomes = 0;
         try
         {
-            foreach (var isolation in new[] { IsolationLevel.ReadCommitted, IsolationLevel.Serializable })
+            for (var round = 0; round < rounds; round++)
             {
-                using var blockerConn = new ScratchBirdConnection(dsn);
-                blockerConn.Open();
-
-                using var blockerTx = blockerConn.BeginTransaction(isolation);
-                using (var blockerCmd = blockerConn.CreateCommand())
+                foreach (var isolation in new[] { IsolationLevel.ReadCommitted, IsolationLevel.Serializable })
                 {
-                    blockerCmd.Transaction = blockerTx;
-                    blockerCmd.CommandTimeout = 2;
-                    blockerCmd.CommandText = $"UPDATE {table} SET value = value + 1 WHERE id = 1";
-                    blockerCmd.ExecuteNonQuery();
+                    using var blockerConn = new ScratchBirdConnection(dsn);
+                    blockerConn.Open();
+
+                    using var blockerTx = blockerConn.BeginTransaction(isolation);
+                    using (var blockerCmd = blockerConn.CreateCommand())
+                    {
+                        blockerCmd.Transaction = blockerTx;
+                        blockerCmd.CommandTimeout = 2;
+                        blockerCmd.CommandText = $"UPDATE {table} SET value = value + 1 WHERE id = 1";
+                        blockerCmd.ExecuteNonQuery();
+                    }
+
+                    var contenderTask = Task.Run(async () =>
+                    {
+                        using var contenderConn = new ScratchBirdConnection(dsn);
+                        contenderConn.Open();
+                        using var contenderTx = contenderConn.BeginTransaction(isolation);
+                        using var contenderCmd = contenderConn.CreateCommand();
+                        contenderCmd.Transaction = contenderTx;
+                        contenderCmd.CommandTimeout = 1;
+                        contenderCmd.CommandText = $"UPDATE {table} SET value = value + 1 WHERE id = 1";
+                        using var cts = new CancellationTokenSource(450);
+
+                        try
+                        {
+                            await contenderCmd.ExecuteNonQueryAsync(cts.Token);
+                            contenderTx.Commit();
+                            return "committed";
+                        }
+                        catch (Exception ex) when (IsExpectedSoakException(ex))
+                        {
+                            SafeRollback(contenderTx);
+                            return "contended";
+                        }
+                    });
+
+                    await Task.Delay(300);
+                    SafeRollback(blockerTx);
+
+                    var outcome = await contenderTask;
+                    Assert.True(outcome is "committed" or "contended", $"unexpected matrix outcome: {outcome}");
+                    if (outcome == "committed")
+                    {
+                        committedOutcomes++;
+                    }
+                    else
+                    {
+                        contendedOutcomes++;
+                    }
+
+                    using var verifyConn = new ScratchBirdConnection(dsn);
+                    verifyConn.Open();
+                    using var verify = verifyConn.CreateCommand();
+                    verify.CommandText = $"SELECT COUNT(*) FROM {table}";
+                    Assert.True(Convert.ToInt32(verify.ExecuteScalar()) >= 1);
+
+                    matrixChecks++;
                 }
-
-                var contenderTask = Task.Run(async () =>
-                {
-                    using var contenderConn = new ScratchBirdConnection(dsn);
-                    contenderConn.Open();
-                    using var contenderTx = contenderConn.BeginTransaction(isolation);
-                    using var contenderCmd = contenderConn.CreateCommand();
-                    contenderCmd.Transaction = contenderTx;
-                    contenderCmd.CommandTimeout = 1;
-                    contenderCmd.CommandText = $"UPDATE {table} SET value = value + 1 WHERE id = 1";
-                    using var cts = new CancellationTokenSource(450);
-
-                    try
-                    {
-                        await contenderCmd.ExecuteNonQueryAsync(cts.Token);
-                        contenderTx.Commit();
-                        return "committed";
-                    }
-                    catch (Exception ex) when (IsExpectedSoakException(ex))
-                    {
-                        SafeRollback(contenderTx);
-                        return "contended";
-                    }
-                });
-
-                await Task.Delay(300);
-                SafeRollback(blockerTx);
-
-                var outcome = await contenderTask;
-                Assert.True(outcome is "committed" or "contended", $"unexpected matrix outcome: {outcome}");
-
-                using var verifyConn = new ScratchBirdConnection(dsn);
-                verifyConn.Open();
-                using var verify = verifyConn.CreateCommand();
-                verify.CommandText = $"SELECT COUNT(*) FROM {table}";
-                Assert.True(Convert.ToInt32(verify.ExecuteScalar()) >= 1);
-
-                matrixChecks++;
             }
         }
         finally
@@ -261,7 +286,10 @@ public class SoakAndFaultInjectionTests
             }
         }
 
-        Assert.True(matrixChecks >= 2, "expected matrix coverage for configured isolation levels");
+        Assert.True(matrixChecks >= rounds * 2, $"expected matrix coverage for configured isolation levels across {rounds} round(s)");
+        Assert.True(committedOutcomes + contendedOutcomes == matrixChecks);
+        Console.WriteLine(
+            $"DOTNET-103 fault-matrix summary: rounds={rounds}, checks={matrixChecks}, committed={committedOutcomes}, contended={contendedOutcomes}");
     }
 
     private static bool IsEnabled(string environmentVariable)

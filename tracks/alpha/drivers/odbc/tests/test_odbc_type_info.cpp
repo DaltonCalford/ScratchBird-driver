@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <set>
+#include <string>
 
 #include "scratchbird/odbc/odbc_handles.h"
 
@@ -40,4 +42,36 @@ TEST(OdbcTypeInfoTest, ReturnsAllTypes) {
 
     ASSERT_EQ(conn->getTypeInfo(SQL_UNKNOWN_TYPE, stmt), SQL_SUCCESS);
     EXPECT_EQ(stmt->fetch(), SQL_SUCCESS);
+}
+
+TEST(OdbcTypeInfoTest, ReturnsExtendedTypeMatrixCoverage) {
+    OdbcEnvironment env;
+    auto* conn = env.createConnection();
+    ASSERT_NE(conn, nullptr);
+    auto* stmt = conn->createStatement();
+    ASSERT_NE(stmt, nullptr);
+
+    ASSERT_EQ(conn->getTypeInfo(SQL_UNKNOWN_TYPE, stmt), SQL_SUCCESS);
+
+    std::set<std::string> type_names;
+    while (true) {
+        auto rc = stmt->fetch();
+        if (rc == scratchbird::odbc::SQL_NO_DATA) {
+            break;
+        }
+        ASSERT_EQ(rc, SQL_SUCCESS);
+        char type_name[64] = {};
+        scratchbird::odbc::SQLLEN out_len = 0;
+        ASSERT_EQ(stmt->getData(1, SQL_C_CHAR, type_name, sizeof(type_name), &out_len), SQL_SUCCESS);
+        type_names.insert(type_name);
+    }
+
+    EXPECT_TRUE(type_names.count("MONEY") == 1u);
+    EXPECT_TRUE(type_names.count("INTERVAL") == 1u);
+    EXPECT_TRUE(type_names.count("INET") == 1u);
+    EXPECT_TRUE(type_names.count("INT4RANGE") == 1u);
+    EXPECT_TRUE(type_names.count("BYTEA") == 1u);
+    EXPECT_TRUE(type_names.count("VECTOR") == 1u);
+    EXPECT_TRUE(type_names.count("TSVECTOR") == 1u);
+    EXPECT_TRUE(type_names.count("TIMESTAMPTZ") == 1u);
 }

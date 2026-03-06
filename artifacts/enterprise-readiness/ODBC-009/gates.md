@@ -17,7 +17,11 @@ This gate is the minimum artifact set required before ODBC release unblock.
   - `table`/`columns` style metadata discovery
   - `procedures`/`procedureColumns` metadata traversal
   - a basic native protocol execution path
+- ODBC capability matrix checks pass against expected function/info matrices:
+  - `artifacts/enterprise-readiness/ODBC-008/odbc_function_matrix.csv`
+  - `artifacts/enterprise-readiness/ODBC-008/odbc_info_matrix.csv`
 - If `ODBC_009_BI_SMOKE_CMD` is configured, it completes successfully.
+- If `ODBC_009_HOSTED_BI_SMOKE=1`, hosted vendor smoke passes for configured Tableau/Power BI/Excel DSNs.
 - No critical warnings or hard-fail state from memory/perf sanity checks.
 
 ## Fail Criteria
@@ -27,6 +31,8 @@ This gate is the minimum artifact set required before ODBC release unblock.
 - Test execution timeouts or unrecoverable runtime instability.
 - Memory/performance baseline regression versus previous sample (`ODBC_009_ELAPSED_REGRESSION_THRESHOLD` / `ODBC_009_MAX_RSS_REGRESSION_THRESHOLD`).
 - BI smoke command failure or missing command while `ODBC_009_BI_SMOKE_MANDATORY=1`.
+- Capability matrix comparison failure while `ODBC_009_CAPABILITY_MATRIX_MANDATORY=1`.
+- Hosted BI-vendor smoke failure while `ODBC_009_HOSTED_BI_SMOKE=1`, or missing enable flag while `ODBC_009_HOSTED_BI_SMOKE_MANDATORY=1`.
 - Missing or stale log artifacts that prevent audit reproducibility.
 
 ## Reproducibility Controls

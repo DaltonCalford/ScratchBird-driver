@@ -22,6 +22,11 @@ elapsed_threshold="${ODBC_009_ELAPSED_REGRESSION_THRESHOLD:-2}"
 rss_threshold="${ODBC_009_MAX_RSS_REGRESSION_THRESHOLD:-2}"
 mandatory_bi_smoke="${ODBC_009_BI_SMOKE_MANDATORY:-0}"
 bi_smoke_cmd="${ODBC_009_BI_SMOKE_CMD:-}"
+hosted_bi_smoke="${ODBC_009_HOSTED_BI_SMOKE:-0}"
+hosted_bi_smoke_mandatory="${ODBC_009_HOSTED_BI_SMOKE_MANDATORY:-0}"
+hosted_bi_smoke_cmd="${ODBC_009_HOSTED_BI_SMOKE_CMD:-$SCRIPT_DIR/odbc_bi_vendor_smoke.sh}"
+capability_matrix_mandatory="${ODBC_009_CAPABILITY_MATRIX_MANDATORY:-1}"
+capability_matrix_check_cmd="${ODBC_009_CAPABILITY_MATRIX_CHECK_CMD:-$REPO_ROOT/artifacts/enterprise-readiness/ODBC-008/run_capability_matrix_check.sh}"
 default_bi_smoke_script="$SCRIPT_DIR/odbc_bi_smoke.sh"
 if [[ -z "$bi_smoke_cmd" && -x "$default_bi_smoke_script" ]]; then
   bi_smoke_cmd="$default_bi_smoke_script"
@@ -176,6 +181,21 @@ PY
     unset ODBC_009_SMOKE_BINARY
   fi
 
+  export ODBC_008_EXPECTED_FUNCTION_MATRIX_PATH="${ODBC_008_EXPECTED_FUNCTION_MATRIX_PATH:-$REPO_ROOT/artifacts/enterprise-readiness/ODBC-008/odbc_function_matrix.csv}"
+  export ODBC_008_EXPECTED_INFO_MATRIX_PATH="${ODBC_008_EXPECTED_INFO_MATRIX_PATH:-$REPO_ROOT/artifacts/enterprise-readiness/ODBC-008/odbc_info_matrix.csv}"
+  export ODBC_008_CAPABILITY_MATRIX_PATH="${ODBC_008_CAPABILITY_MATRIX_PATH:-$REPO_ROOT/artifacts/enterprise-readiness/ODBC-008/latest_function_matrix_export.csv}"
+
+  if [[ -x "$capability_matrix_check_cmd" ]]; then
+    echo "Running ODBC capability matrix comparison: $capability_matrix_check_cmd"
+    "$capability_matrix_check_cmd"
+  else
+    if [[ "$capability_matrix_mandatory" == "1" ]]; then
+      echo "ERROR: capability matrix check command is unavailable: $capability_matrix_check_cmd"
+      exit 1
+    fi
+    echo "Capability matrix check command unavailable; skipping."
+  fi
+
   if [[ -n "$bi_smoke_cmd" ]]; then
     echo "Running BI smoke command: $bi_smoke_cmd"
     if ! eval "$bi_smoke_cmd"; then
@@ -190,6 +210,20 @@ PY
       exit 1
     fi
     echo "BI smoke command not configured; running placeholder-only checks."
+  fi
+
+  if [[ "$hosted_bi_smoke" == "1" ]]; then
+    echo "Running hosted BI-vendor smoke command: $hosted_bi_smoke_cmd"
+    if ! eval "$hosted_bi_smoke_cmd"; then
+      echo "ERROR: hosted BI-vendor smoke command failed."
+      exit 1
+    fi
+    echo "Hosted BI-vendor smoke command completed."
+  elif [[ "$hosted_bi_smoke_mandatory" == "1" ]]; then
+    echo "ERROR: hosted BI-vendor smoke is mandatory but ODBC_009_HOSTED_BI_SMOKE is not enabled."
+    exit 1
+  else
+    echo "Hosted BI-vendor smoke is disabled (set ODBC_009_HOSTED_BI_SMOKE=1 to enable)."
   fi
 
   echo "ODBC-009 gate checks passed."

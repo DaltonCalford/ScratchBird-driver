@@ -15,11 +15,20 @@ Define a deterministic contract for .NET and JDBC behavior on pooling, cancellat
   - `SCRATCHBIRD_JDBC_URL` in `jdbc:scratchbird://host:port/database?...` format
   - `SCRATCHBIRD_JDBC_CANCEL_SQL`
 
+Profile matrix support:
+- `JDBC203_PROFILES=direct[,manager][,listener]`
+- Optional profile-specific endpoints:
+  - `SCRATCHBIRD_DOTNET_MANAGER_URL`, `SCRATCHBIRD_JDBC_MANAGER_URL`
+  - `SCRATCHBIRD_DOTNET_LISTENER_URL`, `SCRATCHBIRD_JDBC_LISTENER_URL`
+- Optional profile-specific cancel SQL overrides:
+  - `SCRATCHBIRD_DOTNET_MANAGER_CANCEL_SQL`, `SCRATCHBIRD_JDBC_MANAGER_CANCEL_SQL`
+  - `SCRATCHBIRD_DOTNET_LISTENER_CANCEL_SQL`, `SCRATCHBIRD_JDBC_LISTENER_CANCEL_SQL`
+
 ## Gate Script
 - `run_cross_runtime_pool_contract.sh` enforces optional strict mode:
   - Set `JDBC203_STRICT_GATE=true` to block when any required endpoint/cancel environment is missing.
   - The default CI path in `ci.yml` sets `JDBC203_STRICT_GATE` explicitly from repository variable (fallback `false`) to avoid mandatory blocking in environments without both runtimes.
-  - Non-strict mode records partial results when only one runtime is reachable.
+  - Non-strict mode records partial/blocker results when one or more required profile envs are unavailable.
   - `.NET` contract scenarios run in isolated per-case invocations with a runtime-stack refresh boundary between cases to avoid cross-test listener state carryover.
 - Summary file: `contract_gate_summary_<timestamp>.json`.
 

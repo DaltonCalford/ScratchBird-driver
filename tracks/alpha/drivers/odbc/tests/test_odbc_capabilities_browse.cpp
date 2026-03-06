@@ -3,8 +3,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <array>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -227,6 +229,149 @@ static std::size_t countOccurrences(const std::string& value, const std::string&
         pos += token.size();
     }
     return count;
+}
+
+static std::string trim(const std::string& value) {
+    std::size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return {};
+    }
+    std::size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+struct FunctionMatrixRow {
+    SQLUSMALLINT function_id{0};
+    SQLUSMALLINT advertised{0};
+};
+
+struct InfoMatrixRow {
+    SQLUSMALLINT info_type{0};
+    std::string value_kind;
+    std::string expected;
+};
+
+static bool parseMatrixUint(const std::string& text, SQLUSMALLINT* out) {
+    if (!out) {
+        return false;
+    }
+    try {
+        auto value = std::stoul(trim(text));
+        if (value > 0xFFFFu) {
+            return false;
+        }
+        *out = static_cast<SQLUSMALLINT>(value);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static std::vector<FunctionMatrixRow> loadFunctionMatrixCsv(const std::string& path,
+                                                            std::string* error) {
+    std::vector<FunctionMatrixRow> rows;
+    std::ifstream in(path);
+    if (!in.good()) {
+        if (error) {
+            *error = "Failed to open function matrix: " + path;
+        }
+        return rows;
+    }
+
+    std::string line;
+    std::size_t line_number = 0;
+    while (std::getline(in, line)) {
+        ++line_number;
+        std::string row = trim(line);
+        if (row.empty() || row[0] == '#') {
+            continue;
+        }
+        if (line_number == 1 && row.find("function_id") != std::string::npos) {
+            continue;
+        }
+
+        std::stringstream ss(row);
+        std::string function_id_text;
+        std::string advertised_text;
+        if (!std::getline(ss, function_id_text, ',') ||
+            !std::getline(ss, advertised_text)) {
+            if (error) {
+                *error = "Malformed function matrix row at line " + std::to_string(line_number);
+            }
+            rows.clear();
+            return rows;
+        }
+
+        FunctionMatrixRow parsed;
+        if (!parseMatrixUint(function_id_text, &parsed.function_id) ||
+            !parseMatrixUint(advertised_text, &parsed.advertised)) {
+            if (error) {
+                *error = "Invalid numeric value in function matrix row at line " +
+                         std::to_string(line_number);
+            }
+            rows.clear();
+            return rows;
+        }
+        rows.push_back(parsed);
+    }
+
+    return rows;
+}
+
+static std::vector<InfoMatrixRow> loadInfoMatrixCsv(const std::string& path,
+                                                    std::string* error) {
+    std::vector<InfoMatrixRow> rows;
+    std::ifstream in(path);
+    if (!in.good()) {
+        if (error) {
+            *error = "Failed to open info matrix: " + path;
+        }
+        return rows;
+    }
+
+    std::string line;
+    std::size_t line_number = 0;
+    while (std::getline(in, line)) {
+        ++line_number;
+        std::string row = trim(line);
+        if (row.empty() || row[0] == '#') {
+            continue;
+        }
+        if (line_number == 1 && row.find("info_type") != std::string::npos) {
+            continue;
+        }
+
+        auto first_comma = row.find(',');
+        auto second_comma = (first_comma == std::string::npos)
+                                ? std::string::npos
+                                : row.find(',', first_comma + 1);
+        if (first_comma == std::string::npos || second_comma == std::string::npos) {
+            if (error) {
+                *error = "Malformed info matrix row at line " + std::to_string(line_number);
+            }
+            rows.clear();
+            return rows;
+        }
+
+        std::string info_type_text = row.substr(0, first_comma);
+        std::string value_kind = row.substr(first_comma + 1, second_comma - first_comma - 1);
+        std::string expected = row.substr(second_comma + 1);
+
+        InfoMatrixRow parsed;
+        if (!parseMatrixUint(info_type_text, &parsed.info_type)) {
+            if (error) {
+                *error = "Invalid info_type in info matrix row at line " +
+                         std::to_string(line_number);
+            }
+            rows.clear();
+            return rows;
+        }
+        parsed.value_kind = trim(value_kind);
+        parsed.expected = trim(expected);
+        rows.push_back(parsed);
+    }
+
+    return rows;
 }
 
 TEST(OdbcMetadataShapingTest, DatabaseDefaultRowsExposeDefaultBranchPaths) {
@@ -501,6 +646,139 @@ TEST_F(OdbcCapabilityBrowseTest, GetFunctionsSupportsAllFunctionsBitmapAlias) {
     EXPECT_TRUE(std::equal(std::begin(all_functions_map),
                            std::end(all_functions_map),
                            std::begin(legacy_function_map)));
+}
+
+TEST_F(OdbcCapabilityBrowseTest, DriverEntryGetFunctionsMatchesConnectionGetter) {
+    SQLUSMALLINT handle_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    SQLUSMALLINT driver_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+
+    ASSERT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, handle_map), SQL_SUCCESS);
+    ASSERT_EQ(SQLGetFunctions(reinterpret_cast<SQLHDBC>(&conn_),
+                              SQL_API_ODBC3_ALL_FUNCTIONS,
+                              driver_map),
+              SQL_SUCCESS);
+    EXPECT_TRUE(std::equal(std::begin(handle_map), std::end(handle_map), std::begin(driver_map)));
+}
+
+TEST_F(OdbcCapabilityBrowseTest, DriverEntryGetInfoMatchesConnectionGetter) {
+    std::array<SQLUSMALLINT, 4> string_info = {
+        SQL_DBMS_NAME,
+        SQL_MULT_RESULT_SETS,
+        SQL_XOPEN_CLI_YEAR,
+        SQL_MAX_ROW_SIZE_INCLUDES_LONG,
+    };
+
+    for (auto info_type : string_info) {
+        char handle_value[128] = {};
+        char driver_value[128] = {};
+        SQLSMALLINT handle_len = 0;
+        SQLSMALLINT driver_len = 0;
+        ASSERT_EQ(conn_.getInfo(info_type, handle_value, sizeof(handle_value), &handle_len), SQL_SUCCESS);
+        ASSERT_EQ(SQLGetInfo(reinterpret_cast<SQLHDBC>(&conn_),
+                             info_type,
+                             driver_value,
+                             sizeof(driver_value),
+                             &driver_len),
+                  SQL_SUCCESS);
+        EXPECT_STREQ(handle_value, driver_value);
+        EXPECT_EQ(handle_len, driver_len);
+    }
+
+    SQLUSMALLINT u16_handle = 0;
+    SQLUSMALLINT u16_driver = 0;
+    SQLSMALLINT len_handle = 0;
+    SQLSMALLINT len_driver = 0;
+    ASSERT_EQ(conn_.getInfo(SQL_CATALOG_LOCATION, &u16_handle, sizeof(u16_handle), &len_handle), SQL_SUCCESS);
+    ASSERT_EQ(SQLGetInfo(reinterpret_cast<SQLHDBC>(&conn_),
+                         SQL_CATALOG_LOCATION,
+                         &u16_driver,
+                         sizeof(u16_driver),
+                         &len_driver),
+              SQL_SUCCESS);
+    EXPECT_EQ(u16_handle, u16_driver);
+    EXPECT_EQ(len_handle, len_driver);
+
+    SQLUINTEGER u32_handle = 0;
+    SQLUINTEGER u32_driver = 0;
+    ASSERT_EQ(conn_.getInfo(SQL_OJ_CAPABILITIES, &u32_handle, sizeof(u32_handle), &len_handle), SQL_SUCCESS);
+    ASSERT_EQ(SQLGetInfo(reinterpret_cast<SQLHDBC>(&conn_),
+                         SQL_OJ_CAPABILITIES,
+                         &u32_driver,
+                         sizeof(u32_driver),
+                         &len_driver),
+              SQL_SUCCESS);
+    EXPECT_EQ(u32_handle, u32_driver);
+    EXPECT_EQ(len_handle, len_driver);
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetFunctionsCanCompareAgainstExpectedCsvMatrix) {
+    const char* matrix_path = std::getenv("ODBC_008_EXPECTED_FUNCTION_MATRIX_PATH");
+    if (!matrix_path || std::strlen(matrix_path) == 0) {
+        GTEST_SKIP() << "ODBC_008_EXPECTED_FUNCTION_MATRIX_PATH is not set";
+    }
+
+    std::string parse_error;
+    auto expected_rows = loadFunctionMatrixCsv(matrix_path, &parse_error);
+    ASSERT_TRUE(parse_error.empty()) << parse_error;
+    ASSERT_FALSE(expected_rows.empty()) << "Expected function matrix is empty: " << matrix_path;
+
+    SQLUSMALLINT function_map[SQL_API_ODBC3_ALL_FUNCTIONS_SIZE] = {};
+    ASSERT_EQ(conn_.getFunctions(SQL_API_ODBC3_ALL_FUNCTIONS, function_map), SQL_SUCCESS);
+
+    for (const auto& row : expected_rows) {
+        EXPECT_EQ(isFunctionAdvertised(function_map, row.function_id), row.advertised != 0)
+            << "Capability matrix mismatch for function id " << row.function_id;
+    }
+}
+
+TEST_F(OdbcCapabilityBrowseTest, GetInfoCanCompareAgainstExpectedCsvMatrix) {
+    const char* matrix_path = std::getenv("ODBC_008_EXPECTED_INFO_MATRIX_PATH");
+    if (!matrix_path || std::strlen(matrix_path) == 0) {
+        GTEST_SKIP() << "ODBC_008_EXPECTED_INFO_MATRIX_PATH is not set";
+    }
+
+    std::string parse_error;
+    auto expected_rows = loadInfoMatrixCsv(matrix_path, &parse_error);
+    ASSERT_TRUE(parse_error.empty()) << parse_error;
+    ASSERT_FALSE(expected_rows.empty()) << "Expected info matrix is empty: " << matrix_path;
+
+    for (const auto& row : expected_rows) {
+        if (row.value_kind == "string") {
+            char value[256] = {};
+            SQLSMALLINT len = 0;
+            ASSERT_EQ(conn_.getInfo(row.info_type, value, sizeof(value), &len), SQL_SUCCESS)
+                << "SQLGetInfo failed for info_type " << row.info_type;
+            EXPECT_EQ(std::string(value), row.expected)
+                << "Info matrix string mismatch for info_type " << row.info_type;
+            continue;
+        }
+        if (row.value_kind == "u16") {
+            SQLUSMALLINT value = 0;
+            SQLSMALLINT len = 0;
+            ASSERT_EQ(conn_.getInfo(row.info_type, &value, sizeof(value), &len), SQL_SUCCESS)
+                << "SQLGetInfo failed for info_type " << row.info_type;
+            SQLUSMALLINT expected = 0;
+            ASSERT_TRUE(parseMatrixUint(row.expected, &expected))
+                << "Invalid expected u16 value in info matrix for info_type " << row.info_type;
+            EXPECT_EQ(value, expected)
+                << "Info matrix u16 mismatch for info_type " << row.info_type;
+            continue;
+        }
+        if (row.value_kind == "u32") {
+            SQLUINTEGER value = 0;
+            SQLSMALLINT len = 0;
+            ASSERT_EQ(conn_.getInfo(row.info_type, &value, sizeof(value), &len), SQL_SUCCESS)
+                << "SQLGetInfo failed for info_type " << row.info_type;
+            SQLUSMALLINT expected_u16 = 0;
+            ASSERT_TRUE(parseMatrixUint(row.expected, &expected_u16))
+                << "Invalid expected u32 value in info matrix for info_type " << row.info_type;
+            EXPECT_EQ(value, static_cast<SQLUINTEGER>(expected_u16))
+                << "Info matrix u32 mismatch for info_type " << row.info_type;
+            continue;
+        }
+        FAIL() << "Unsupported value_kind in info matrix for info_type "
+               << row.info_type << ": " << row.value_kind;
+    }
 }
 
 TEST_F(OdbcCapabilityBrowseTest, BrowseConnectPathFallbackParsesHierarchicalPath) {

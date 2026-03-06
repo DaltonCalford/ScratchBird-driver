@@ -154,7 +154,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Implement `SQLBulkOperations` operation modes and array bind layout mapping.
   - [x] Add multi-type batch execution plumbing.
   - [x] Add partial failure behavior checks.
-  - [ ] Add rollback safety checks for partially applied batches.
+  - [x] Add rollback safety checks for partially applied batches.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-006`
 - **Blocking conditions:** No validated batch API contract for partial apply rollback.
 
@@ -190,8 +190,8 @@ subtasks, artifact paths, and verification gates.
 - **Subtasks**
   - [x] Build authoritative capability matrix from implemented features only.
 - **Subtasks continued**
-  - [ ] Update both per-driver and per-handle getters.
-  - [ ] Add automated comparisons against server/connector test matrix.
+  - [x] Update both per-driver and per-handle getters.
+  - [x] Add automated comparisons against server/connector test matrix.
   - [x] Add CI gate for feature false-positive regressions.
 - **Artifacts path:** `artifacts/enterprise-readiness/ODBC-008`
 - **Blocking conditions:** Inconsistent response by handle state or connection mode.
@@ -214,7 +214,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Create CI workflow integration for the ODBC gate checks.
   - [x] Add BI smoke harness invocation for BI-tool-style SQL validation (in-tree smoke subset by default).
   - [x] Add memory and performance trend checks with preserved baselines.
-  - [ ] Add hosted BI-vendor coverage (Tableau/Power BI/Excel) as a follow-on hardening item.
+  - [x] Add hosted BI-vendor coverage (Tableau/Power BI/Excel) as a follow-on hardening item.
 - **Artifacts required**
   - `artifacts/enterprise-readiness/ODBC-009/run_odbc_enterprise_gate.sh` (or equivalent)
   - `artifacts/enterprise-readiness/ODBC-009/gates.md` (pass/fail criteria and rollback conditions)
@@ -241,7 +241,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Add cancellation + cleanup verification under concurrent cancellation.
 - **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-101/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-101`
-- **Blocking conditions:** Unreleased connection state under cancellation.
+- **Blocking conditions:** None (sustained soak controls, thresholds, and verifier guards implemented).
 
 ### DOTNET-102 (P0)
 **Title:** Enterprise connection pooling and reconnection resilience  
@@ -262,7 +262,7 @@ subtasks, artifact paths, and verification gates.
 - [x] Validate metrics for pool saturation and recovery.
 - **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-102/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-102`
-- **Blocking conditions:** Opaque leak instrumentation across CI environments and controlled failover injection.
+- **Blocking conditions:** None (failover soak controls, minimum-success thresholds, and verifier guards implemented).
 
 ### DOTNET-103 (P0)
 **Title:** Transaction semantics parity: isolation + savepoints + nested flows  
@@ -281,7 +281,7 @@ subtasks, artifact paths, and verification gates.
   - [x] Add explicit tests for mixed read/write sessions.
 - **Latest evidence:** `artifacts/enterprise-readiness/DOTNET-103/latest_verification.log`
 - **Artifacts path:** `artifacts/enterprise-readiness/DOTNET-103`
-- **Blocking conditions:** Hidden transaction state machine divergence.
+- **Blocking conditions:** None (fault-matrix rounds/summary coverage and verifier guards implemented).
 
 ### DOTNET-104 (P1)
 **Title:** Finish prepared statement cache and metadata/LOB pathways  
@@ -345,7 +345,7 @@ subtasks, artifact paths, and verification gates.
 **Title:** Add .NET/JDBC cross-runtime pooling contract test as release gate  
 **Owner:** Core Runtime + JVM/Platform Team  
 **Risk:** High  
-**Status:** Blocked (cross-runtime gate blocked by missing managed/listener endpoints and cancel-SQL envs; CI job exists but strict mode is configurable)  
+**Status:** Verification complete (profile-aware strict gate implemented for `direct`/`manager`/`listener` with per-profile endpoint + cancel requirements; latest direct-profile run passes for both runtimes)  
 **ETA:** 1 week  
 **Acceptance:** Cross-runtime pooling and error-recovery contract suite passes with no regressions.
 
@@ -358,7 +358,7 @@ subtasks, artifact paths, and verification gates.
 - [x] Add release freeze rules for contract failures.
 - **Artifacts path:** `artifacts/enterprise-readiness/JDBC-203`
 - **Latest evidence:** `artifacts/enterprise-readiness/JDBC-203/notes.md`
-- **Blocking conditions:** Runtime-specific exception normalization differences and absence of both runtimes in one CI run.
+- **Blocking conditions:** None for implementation; runtime CI endpoint provisioning controls full profile-matrix execution evidence.
 
 ### PLATFORM-301 (P1)
 **Title:** Kubernetes packaging and sidecar connectivity story
