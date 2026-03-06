@@ -81,128 +81,165 @@ struct ScratchBirdConfig:
 
     fn __init__(out self, dsn: String):
         self.dsn = dsn
-        self.user = _query_value_alias(
-            dsn,
-            "user",
-            "username",
-            _query_value(dsn, "pguser", _extract_user(dsn)),
-        )
-        self.password = _query_value_alias(
-            dsn,
-            "password",
-            "passwd",
-            _query_value(dsn, "pgpassword", _extract_password(dsn)),
-        )
-        self.host = _query_value_alias(
-            dsn,
-            "host",
-            "hostname",
-            _query_value_alias(dsn, "servername", "pghost", _extract_host(dsn)),
-        )
-        self.port = _query_int_alias(
-            dsn,
-            "port",
-            "portnumber",
-            _query_int(dsn, "pgport", _extract_port(dsn)),
-        )
-        self.database = _query_value_alias(
-            dsn,
-            "database",
-            "dbname",
-            _query_value_alias(dsn, "databasename", "pgdatabase", _extract_database(dsn)),
-        )
+        var user_keys = List[String]()
+        user_keys.append("user")
+        user_keys.append("username")
+        user_keys.append("pguser")
+        self.user = _query_last_value_for_keys(dsn, user_keys, _extract_user(dsn))
+
+        var password_keys = List[String]()
+        password_keys.append("password")
+        password_keys.append("passwd")
+        password_keys.append("pgpassword")
+        self.password = _query_last_value_for_keys(dsn, password_keys, _extract_password(dsn))
+
+        var host_keys = List[String]()
+        host_keys.append("host")
+        host_keys.append("hostname")
+        host_keys.append("servername")
+        host_keys.append("pghost")
+        self.host = _query_last_value_for_keys(dsn, host_keys, _extract_host(dsn))
+
+        var port_keys = List[String]()
+        port_keys.append("port")
+        port_keys.append("portnumber")
+        port_keys.append("pgport")
+        self.port = _query_last_int_for_keys(dsn, port_keys, _extract_port(dsn))
+
+        var database_keys = List[String]()
+        database_keys.append("database")
+        database_keys.append("dbname")
+        database_keys.append("databasename")
+        database_keys.append("pgdatabase")
+        self.database = _query_last_value_for_keys(dsn, database_keys, _extract_database(dsn))
         self.role = _query_value(dsn, "role", "")
-        self.application_name = _query_value_alias(dsn, "application_name", "applicationname", "")
+        var application_name_keys = List[String]()
+        application_name_keys.append("application_name")
+        application_name_keys.append("applicationname")
+        self.application_name = _query_last_value_for_keys(dsn, application_name_keys, "")
         self.auto_commit = _as_bool(_query_value_alias(dsn, "autocommit", "auto_commit", "true"))
         self.read_only = _as_bool(_query_value_alias(dsn, "readonly", "read_only", "false"))
-        self.current_schema = _query_value_alias(
-            dsn,
-            "current_schema",
-            "search_path",
-            _query_value_alias(dsn, "searchpath", "currentschema", "public"),
-        )
+        var current_schema_keys = List[String]()
+        current_schema_keys.append("current_schema")
+        current_schema_keys.append("search_path")
+        current_schema_keys.append("searchpath")
+        current_schema_keys.append("currentschema")
+        self.current_schema = _query_last_value_for_keys(dsn, current_schema_keys, "public")
+        var metadata_expand_schema_parents_keys = List[String]()
+        metadata_expand_schema_parents_keys.append("metadata_expand_schema_parents")
+        metadata_expand_schema_parents_keys.append("metadataexpandschemaparents")
+        metadata_expand_schema_parents_keys.append("expand_schema_parents")
+        metadata_expand_schema_parents_keys.append("expandschemaparents")
+        metadata_expand_schema_parents_keys.append("dbeaver_expand_schema_parents")
+        metadata_expand_schema_parents_keys.append("dbeaverexpandschemaparents")
         self.metadata_expand_schema_parents = _as_bool(
-            _query_value_alias(
+            _query_last_value_for_keys(
                 dsn,
-                "metadata_expand_schema_parents",
-                "metadataexpandschemaparents",
-                _query_value_alias(
-                    dsn,
-                    "expand_schema_parents",
-                    "expandschemaparents",
-                    _query_value_alias(
-                        dsn,
-                        "dbeaver_expand_schema_parents",
-                        "dbeaverexpandschemaparents",
-                        "false",
-                    ),
-                ),
+                metadata_expand_schema_parents_keys,
+                "false",
             )
         )
-        self.default_row_fetch_size = _query_int_alias(
-            dsn,
-            "default_row_fetch_size",
-            "fetch_size",
-            _query_int_alias(dsn, "fetchsize", "defaultrowfetchsize", 0),
+        var default_row_fetch_size_keys = List[String]()
+        default_row_fetch_size_keys.append("default_row_fetch_size")
+        default_row_fetch_size_keys.append("fetch_size")
+        default_row_fetch_size_keys.append("fetchsize")
+        default_row_fetch_size_keys.append("defaultrowfetchsize")
+        self.default_row_fetch_size = _query_last_int_for_keys(dsn, default_row_fetch_size_keys, 0)
+
+        var prepare_threshold_keys = List[String]()
+        prepare_threshold_keys.append("prepare_threshold")
+        prepare_threshold_keys.append("preparethreshold")
+        self.prepare_threshold = _query_last_int_for_keys(dsn, prepare_threshold_keys, 5)
+
+        var rewrite_batched_inserts_keys = List[String]()
+        rewrite_batched_inserts_keys.append("rewrite_batched_inserts")
+        rewrite_batched_inserts_keys.append("rewritebatchedinserts")
+        self.rewrite_batched_inserts = _as_bool(
+            _query_last_value_for_keys(dsn, rewrite_batched_inserts_keys, "false")
         )
-        self.prepare_threshold = _query_int_alias(dsn, "prepare_threshold", "preparethreshold", 5)
-        self.rewrite_batched_inserts = _query_bool_alias(
-            dsn,
-            "rewrite_batched_inserts",
-            "rewritebatchedinserts",
-            False,
-        )
+        var logger_level_keys = List[String]()
+        logger_level_keys.append("logger_level")
+        logger_level_keys.append("loggerlevel")
+        logger_level_keys.append("log_level")
+        logger_level_keys.append("loglevel")
         self.logger_level = _normalize_logger_level(
-            _query_value_alias(
-                dsn,
-                "logger_level",
-                "loggerlevel",
-                _query_value_alias(dsn, "log_level", "loglevel", "OFF"),
-            )
-        )
-        self.logger_file = _query_value_alias(
-            dsn,
-            "logger_file",
-            "loggerfile",
-            _query_value_alias(dsn, "log_file", "logfile", ""),
-        )
-        self.tcp_keepalive = _query_bool(dsn, "tcpkeepalive", True)
-        self.pooling_enabled = _query_bool(dsn, "pooling", True)
-        self.min_pool_size = _query_int_alias(dsn, "min_pool_size", "minpoolsize", 0)
-        self.max_pool_size = _query_int_alias(dsn, "max_pool_size", "maxpoolsize", 10)
-        self.connection_lifetime_s = _query_int_alias(
-            dsn,
-            "connection_lifetime",
-            "connectionlifetime",
-            _query_int(dsn, "poolingconnectionlifetime", 30),
-        )
-        self.manager_auth_token = _query_value_alias(dsn, "manager_auth_token", "mcp_auth_token", "")
-        self.manager_username = _query_value_alias(dsn, "manager_username", "mcp_username", "")
-        self.manager_database = _query_value_alias(dsn, "manager_database", "mcp_database", "")
-        self.manager_connection_profile = _query_value_alias(
-            dsn,
-            "manager_connection_profile",
-            "mcp_connection_profile",
-            "native_v3",
-        )
-        self.manager_client_intent = _query_value_alias(
-            dsn,
-            "manager_client_intent",
-            "mcp_client_intent",
-            "native_v3",
-        )
-        self.manager_client_flags = _query_int_alias(dsn, "manager_client_flags", "mcp_client_flags", 0)
-        self.manager_auth_fast_path = _as_bool(
-            _query_value_alias(dsn, "manager_auth_fast_path", "mcp_auth_fast_path", "true")
+            _query_last_value_for_keys(dsn, logger_level_keys, "OFF")
         )
 
-        var protocol_raw = ""
-        if _query_has_key(dsn, "protocol"):
-            protocol_raw = _query_value(dsn, "protocol", "")
-        elif _query_has_key(dsn, "parser"):
-            protocol_raw = _query_value(dsn, "parser", "")
-        elif _query_has_key(dsn, "dialect"):
-            protocol_raw = _query_value(dsn, "dialect", "")
+        var logger_file_keys = List[String]()
+        logger_file_keys.append("logger_file")
+        logger_file_keys.append("loggerfile")
+        logger_file_keys.append("log_file")
+        logger_file_keys.append("logfile")
+        self.logger_file = _query_last_value_for_keys(dsn, logger_file_keys, "")
+        self.tcp_keepalive = _query_bool(dsn, "tcpkeepalive", True)
+        self.pooling_enabled = _query_bool(dsn, "pooling", True)
+        var min_pool_size_keys = List[String]()
+        min_pool_size_keys.append("min_pool_size")
+        min_pool_size_keys.append("minpoolsize")
+        self.min_pool_size = _query_last_int_for_keys(dsn, min_pool_size_keys, 0)
+
+        var max_pool_size_keys = List[String]()
+        max_pool_size_keys.append("max_pool_size")
+        max_pool_size_keys.append("maxpoolsize")
+        self.max_pool_size = _query_last_int_for_keys(dsn, max_pool_size_keys, 10)
+
+        var connection_lifetime_keys = List[String]()
+        connection_lifetime_keys.append("connection_lifetime")
+        connection_lifetime_keys.append("connectionlifetime")
+        connection_lifetime_keys.append("poolingconnectionlifetime")
+        self.connection_lifetime_s = _query_last_int_for_keys(dsn, connection_lifetime_keys, 30)
+
+        var manager_auth_token_keys = List[String]()
+        manager_auth_token_keys.append("manager_auth_token")
+        manager_auth_token_keys.append("mcp_auth_token")
+        self.manager_auth_token = _query_last_value_for_keys(dsn, manager_auth_token_keys, "")
+
+        var manager_username_keys = List[String]()
+        manager_username_keys.append("manager_username")
+        manager_username_keys.append("mcp_username")
+        self.manager_username = _query_last_value_for_keys(dsn, manager_username_keys, "")
+
+        var manager_database_keys = List[String]()
+        manager_database_keys.append("manager_database")
+        manager_database_keys.append("mcp_database")
+        self.manager_database = _query_last_value_for_keys(dsn, manager_database_keys, "")
+
+        var manager_connection_profile_keys = List[String]()
+        manager_connection_profile_keys.append("manager_connection_profile")
+        manager_connection_profile_keys.append("mcp_connection_profile")
+        self.manager_connection_profile = _query_last_value_for_keys(
+            dsn,
+            manager_connection_profile_keys,
+            "native_v3",
+        )
+
+        var manager_client_intent_keys = List[String]()
+        manager_client_intent_keys.append("manager_client_intent")
+        manager_client_intent_keys.append("mcp_client_intent")
+        self.manager_client_intent = _query_last_value_for_keys(
+            dsn,
+            manager_client_intent_keys,
+            "native_v3",
+        )
+
+        var manager_client_flags_keys = List[String]()
+        manager_client_flags_keys.append("manager_client_flags")
+        manager_client_flags_keys.append("mcp_client_flags")
+        self.manager_client_flags = _query_last_int_for_keys(dsn, manager_client_flags_keys, 0)
+
+        var manager_auth_fast_path_keys = List[String]()
+        manager_auth_fast_path_keys.append("manager_auth_fast_path")
+        manager_auth_fast_path_keys.append("mcp_auth_fast_path")
+        self.manager_auth_fast_path = _as_bool(
+            _query_last_value_for_keys(dsn, manager_auth_fast_path_keys, "true")
+        )
+
+        var protocol_keys = List[String]()
+        protocol_keys.append("protocol")
+        protocol_keys.append("parser")
+        protocol_keys.append("dialect")
+        var protocol_raw = _query_last_value_for_keys(dsn, protocol_keys, "")
         self.protocol = _normalize_protocol_value(protocol_raw)
 
         var front_door_keys = List[String]()
@@ -213,18 +250,38 @@ struct ScratchBirdConfig:
         var front_door_raw = _query_last_value_for_keys(dsn, front_door_keys, "")
         self.front_door_mode = _normalize_front_door_mode_value(front_door_raw)
 
-        self.sslmode = _query_value_alias(dsn, "sslmode", "ssl", "require")
+        var sslmode_keys = List[String]()
+        sslmode_keys.append("sslmode")
+        sslmode_keys.append("ssl")
+        self.sslmode = _query_last_value_for_keys(dsn, sslmode_keys, "require")
         self.ssl_root_cert = _query_value_alias(dsn, "ssl_root_cert", "sslrootcert", "")
         self.ssl_cert = _query_value_alias(dsn, "ssl_cert", "sslcert", "")
         self.ssl_key = _query_value_alias(dsn, "ssl_key", "sslkey", "")
         self.ssl_password = _query_value_alias(dsn, "ssl_password", "sslpassword", "")
-        self.binary_transfer = _as_bool(_query_value_alias(dsn, "binary_transfer", "binarytransfer", "true"))
+        var binary_transfer_keys = List[String]()
+        binary_transfer_keys.append("binary_transfer")
+        binary_transfer_keys.append("binarytransfer")
+        self.binary_transfer = _as_bool(_query_last_value_for_keys(dsn, binary_transfer_keys, "true"))
         self.compression = _normalize_compression_value(_query_value(dsn, "compression", "off"))
         self.sb_test_auth_fail = _query_bool(dsn, "sb_test_auth_fail", False)
-        self.connect_timeout_s = _query_int_alias(dsn, "connect_timeout", "connecttimeout", 30)
-        self.socket_timeout_s = _query_int_alias(dsn, "socket_timeout", "sockettimeout", 0)
-        self.login_timeout_s = _query_int_alias(dsn, "login_timeout", "logintimeout", 30)
-        self.acquire_timeout_s = _query_int_alias(dsn, "acquire_timeout", "acquiretimeout", _query_int_alias(dsn, "pooling_acquire_timeout", "poolingacquiretimeout", 30))
+        var connect_timeout_keys = List[String]()
+        connect_timeout_keys.append("connect_timeout")
+        connect_timeout_keys.append("connecttimeout")
+        self.connect_timeout_s = _query_last_int_for_keys(dsn, connect_timeout_keys, 30)
+        var socket_timeout_keys = List[String]()
+        socket_timeout_keys.append("socket_timeout")
+        socket_timeout_keys.append("sockettimeout")
+        self.socket_timeout_s = _query_last_int_for_keys(dsn, socket_timeout_keys, 0)
+        var login_timeout_keys = List[String]()
+        login_timeout_keys.append("login_timeout")
+        login_timeout_keys.append("logintimeout")
+        self.login_timeout_s = _query_last_int_for_keys(dsn, login_timeout_keys, 30)
+        var acquire_timeout_keys = List[String]()
+        acquire_timeout_keys.append("acquire_timeout")
+        acquire_timeout_keys.append("acquiretimeout")
+        acquire_timeout_keys.append("pooling_acquire_timeout")
+        acquire_timeout_keys.append("poolingacquiretimeout")
+        self.acquire_timeout_s = _query_last_int_for_keys(dsn, acquire_timeout_keys, 30)
         self.cb_failure_threshold = _query_int(dsn, "cb_failure_threshold", 5)
         self.cb_recovery_timeout_ms = _query_int(dsn, "cb_recovery_timeout_ms", 30000)
         self.cb_success_threshold = _query_int(dsn, "cb_success_threshold", 3)
@@ -1081,6 +1138,21 @@ fn _query_last_value_for_keys(
     return default_value
 
 
+fn _query_last_int_for_keys(
+    dsn: String,
+    keys: List[String],
+    default_value: Int,
+) -> Int:
+    var raw = _query_last_value_for_keys(dsn, keys, "")
+    if raw.strip() == "":
+        return default_value
+    try:
+        return Int(raw)
+    except e:
+        _ = e
+        return default_value
+
+
 fn _query_int(dsn: String, key: String, default_value: Int) -> Int:
     var raw = _query_value(dsn, key, "")
     if raw.strip() == "":
@@ -1118,6 +1190,40 @@ fn _query_int_alias_is_malformed(
         return _query_int_is_malformed(dsn, primary_key)
     if _query_has_key(dsn, alias_key):
         return _query_int_is_malformed(dsn, alias_key)
+    return False
+
+
+fn _query_any_int_for_keys_is_malformed(dsn: String, keys: List[String]) -> Bool:
+    if "?" not in dsn:
+        return False
+    var parts = dsn.split("?", 1)
+    if len(parts) != 2:
+        return False
+    var query = String(parts[1])
+    if query == "":
+        return False
+    for raw_pair in query.split("&"):
+        var pair = String(raw_pair)
+        if pair == "":
+            continue
+        if "=" in pair:
+            var kv = pair.split("=", 1)
+            if len(kv) != 2:
+                continue
+            var candidate = String(kv[0]).lower()
+            var value = _decode_query_component(String(kv[1]))
+            for key in keys:
+                if candidate == key.lower():
+                    if not _is_valid_int_text(value):
+                        return True
+                    break
+        else:
+            var candidate = pair.lower()
+            for key in keys:
+                if candidate == key.lower():
+                    if not _is_valid_int_text(""):
+                        return True
+                    break
     return False
 
 
@@ -1533,27 +1639,66 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
     if _dsn_has_malformed_bracketed_ipv6_host(config.dsn):
         raise Error("22023 DSN contains malformed bracketed IPv6 host")
 
-    if _query_int_alias_is_malformed(config.dsn, "port", "portnumber") or _query_int_is_malformed(config.dsn, "pgport"):
+    var port_keys = List[String]()
+    port_keys.append("port")
+    port_keys.append("portnumber")
+    port_keys.append("pgport")
+    if _query_any_int_for_keys_is_malformed(config.dsn, port_keys):
         raise Error("22023 port must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "connect_timeout", "connecttimeout"):
+    var connect_timeout_keys = List[String]()
+    connect_timeout_keys.append("connect_timeout")
+    connect_timeout_keys.append("connecttimeout")
+    if _query_any_int_for_keys_is_malformed(config.dsn, connect_timeout_keys):
         raise Error("22023 connect_timeout must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "socket_timeout", "sockettimeout"):
+    var socket_timeout_keys = List[String]()
+    socket_timeout_keys.append("socket_timeout")
+    socket_timeout_keys.append("sockettimeout")
+    if _query_any_int_for_keys_is_malformed(config.dsn, socket_timeout_keys):
         raise Error("22023 socket_timeout must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "login_timeout", "logintimeout"):
+    var login_timeout_keys = List[String]()
+    login_timeout_keys.append("login_timeout")
+    login_timeout_keys.append("logintimeout")
+    if _query_any_int_for_keys_is_malformed(config.dsn, login_timeout_keys):
         raise Error("22023 login_timeout must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "acquire_timeout", "acquiretimeout") or _query_int_alias_is_malformed(config.dsn, "pooling_acquire_timeout", "poolingacquiretimeout"):
+    var acquire_timeout_keys = List[String]()
+    acquire_timeout_keys.append("acquire_timeout")
+    acquire_timeout_keys.append("acquiretimeout")
+    acquire_timeout_keys.append("pooling_acquire_timeout")
+    acquire_timeout_keys.append("poolingacquiretimeout")
+    if _query_any_int_for_keys_is_malformed(config.dsn, acquire_timeout_keys):
         raise Error("22023 acquire_timeout must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "default_row_fetch_size", "fetch_size") or _query_int_alias_is_malformed(config.dsn, "fetchsize", "defaultrowfetchsize"):
+    var default_row_fetch_size_keys = List[String]()
+    default_row_fetch_size_keys.append("default_row_fetch_size")
+    default_row_fetch_size_keys.append("fetch_size")
+    default_row_fetch_size_keys.append("fetchsize")
+    default_row_fetch_size_keys.append("defaultrowfetchsize")
+    if _query_any_int_for_keys_is_malformed(config.dsn, default_row_fetch_size_keys):
         raise Error("22023 default_row_fetch_size must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "prepare_threshold", "preparethreshold"):
+    var prepare_threshold_keys = List[String]()
+    prepare_threshold_keys.append("prepare_threshold")
+    prepare_threshold_keys.append("preparethreshold")
+    if _query_any_int_for_keys_is_malformed(config.dsn, prepare_threshold_keys):
         raise Error("22023 prepare_threshold must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "min_pool_size", "minpoolsize"):
+    var min_pool_size_keys = List[String]()
+    min_pool_size_keys.append("min_pool_size")
+    min_pool_size_keys.append("minpoolsize")
+    if _query_any_int_for_keys_is_malformed(config.dsn, min_pool_size_keys):
         raise Error("22023 min_pool_size must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "max_pool_size", "maxpoolsize"):
+    var max_pool_size_keys = List[String]()
+    max_pool_size_keys.append("max_pool_size")
+    max_pool_size_keys.append("maxpoolsize")
+    if _query_any_int_for_keys_is_malformed(config.dsn, max_pool_size_keys):
         raise Error("22023 max_pool_size must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "connection_lifetime", "connectionlifetime") or _query_int_is_malformed(config.dsn, "poolingconnectionlifetime"):
+    var connection_lifetime_keys = List[String]()
+    connection_lifetime_keys.append("connection_lifetime")
+    connection_lifetime_keys.append("connectionlifetime")
+    connection_lifetime_keys.append("poolingconnectionlifetime")
+    if _query_any_int_for_keys_is_malformed(config.dsn, connection_lifetime_keys):
         raise Error("22023 connection_lifetime must be a valid integer")
-    if _query_int_alias_is_malformed(config.dsn, "manager_client_flags", "mcp_client_flags"):
+    var manager_client_flags_keys = List[String]()
+    manager_client_flags_keys.append("manager_client_flags")
+    manager_client_flags_keys.append("mcp_client_flags")
+    if _query_any_int_for_keys_is_malformed(config.dsn, manager_client_flags_keys):
         raise Error("22023 manager_client_flags must be a valid integer")
     if _query_int_is_malformed(config.dsn, "cb_failure_threshold"):
         raise Error("22023 cb_failure_threshold must be a valid integer")

@@ -35,7 +35,7 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-05)
+# Driver Capability Matrix (Audit Snapshot: 2026-03-06)
 
 ## Alpha Drivers
 
@@ -51,7 +51,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping), closed lifecycle guards (`08003`/`HY010`), and deterministic integer/pool-bound guard parity (`22023`); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
+| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), query-order last-key precedence across credential/endpoint/manager alias families (`user|username|pguser`, `password|passwd|pgpassword`, `host|hostname|servername|pghost`, `database|dbname|databaseName|pgdatabase`, `port|portNumber|pgport`, `manager_auth_token|mcp_auth_token`), trailing malformed-alias guard rejection for `port` and `default_row_fetch_size` families (`22023`), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping), closed lifecycle guards (`08003`/`HY010`), and deterministic integer/pool-bound guard parity (`22023`); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
 
 ---
 
@@ -66,7 +66,7 @@ Legend:
 
 ---
 
-## Recent Driver Progress (2026-03-05)
+## Recent Driver Progress (2026-03-06)
 
 - **Dart lane:** Added connection-policy rejection parity tests (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`) and aligned checklist/mapping artifacts.
 - **Dart lane:** Expanded type decode and negative-path coverage (core scalar decode paths, text-vs-unknown behavior, range/composite guardrails, unsupported-type checks).
@@ -126,6 +126,8 @@ Legend:
 - **Mojo lane:** Aligned bridge-shim metadata helper guard precedence so closed connections return SQLSTATE `08003` before unsupported collection/restriction validation (static and instance paths).
 - **Mojo lane:** Expanded metadata restriction alias normalization to accept collapsed/camel forms (for example `tableSchem`, `tableCatalog`, `dataTypeName`) across shim/native surfaces and deterministic metadata tests.
 - **Mojo lane:** Added metadata multi-restriction duplicate-alias precedence (`last matching key wins`, including empty-value clear semantics) across shim/native query shaping paths.
+- **Mojo lane:** Aligned native timeout alias parsing/guards with shim query-order precedence (`connect/socket/login/acquire` timeout aliases now evaluate by last matching key and reject malformed trailing aliases deterministically).
+- **Mojo lane:** Aligned native DSN alias precedence with shim for credential/endpoint/manager families (`user|username|pguser`, `password|passwd|pgpassword`, `host|hostname|servername|pghost`, `database|dbname|databaseName|pgdatabase`, `port|portNumber|pgport`, `manager_auth_token|mcp_auth_token`) and added deterministic trailing-alias malformed-value guard parity for `port` and `default_row_fetch_size` alias families (`22023`).
 
 ---
 
@@ -248,4 +250,4 @@ Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for 
 
 ---
 
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-03-06

@@ -212,6 +212,28 @@ fn _assert_config_parsing_extensions() raises:
         cfg_pooling_acquire_timeout.acquire_timeout_s == 52,
         "pooling acquire timeout alias mismatch",
     )
+    var cfg_timeout_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connect_timeout=5&connecttimeout=6&socket_timeout=7&sockettimeout=8&login_timeout=9&logintimeout=10&acquire_timeout=11&poolingacquiretimeout=12"
+    )
+    _require(cfg_timeout_precedence.connect_timeout_s == 6, "connect timeout last-alias precedence mismatch")
+    _require(cfg_timeout_precedence.socket_timeout_s == 8, "socket timeout last-alias precedence mismatch")
+    _require(cfg_timeout_precedence.login_timeout_s == 10, "login timeout last-alias precedence mismatch")
+    _require(cfg_timeout_precedence.acquire_timeout_s == 12, "acquire timeout last-alias precedence mismatch")
+    var cfg_endpoint_identity_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://localhost:3092/testdb?sslmode=require&user=u1&username=u2&pguser=u3&password=p1&passwd=p2&pgpassword=p3&host=h1&hostname=h2&servername=h3&pghost=h4&database=db1&dbname=db2&databaseName=db3&pgdatabase=db4&port=4100&portNumber=4101&pgport=4102"
+    )
+    _require(cfg_endpoint_identity_precedence.user == "u3", "user alias last-key precedence mismatch")
+    _require(cfg_endpoint_identity_precedence.password == "p3", "password alias last-key precedence mismatch")
+    _require(cfg_endpoint_identity_precedence.host == "h4", "host alias last-key precedence mismatch")
+    _require(cfg_endpoint_identity_precedence.database == "db4", "database alias last-key precedence mismatch")
+    _require(cfg_endpoint_identity_precedence.port == 4102, "port alias last-key precedence mismatch")
+    var cfg_manager_token_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=managerproxy&manager_auth_token=token_a&mcp_auth_token=token_b"
+    )
+    _require(
+        cfg_manager_token_precedence.manager_auth_token == "token_b",
+        "manager token alias last-key precedence mismatch",
+    )
     var cfg_protocol_parser = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&parser=native"
     )
@@ -309,6 +331,8 @@ fn _assert_config_parsing_extensions() raises:
     pg_alias_override_conn.close()
     var jdbc_alias_override_conn = scratchbird.connect(cfg_jdbc_alias_override)
     jdbc_alias_override_conn.close()
+    var manager_token_precedence_conn = scratchbird.connect(cfg_manager_token_precedence)
+    manager_token_precedence_conn.close()
 
 
 fn main() raises:
@@ -854,12 +878,27 @@ fn main() raises:
         "port must be a valid integer",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&port=4100&portNumber=bad",
+        "22023",
+        "port must be a valid integer",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connecttimeout=abc",
         "22023",
         "connect_timeout must be a valid integer",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connect_timeout=5&connecttimeout=abc",
+        "22023",
+        "connect_timeout must be a valid integer",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&defaultRowFetchSize=abc",
+        "22023",
+        "default_row_fetch_size must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&default_row_fetch_size=64&fetchSize=abc",
         "22023",
         "default_row_fetch_size must be a valid integer",
     )

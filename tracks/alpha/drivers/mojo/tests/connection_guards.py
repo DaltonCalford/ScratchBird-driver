@@ -127,6 +127,25 @@ def main() -> None:
         "scratchbird://user:pass@localhost:3092/testdb?frontdoormode=direct&ingress_mode=managerproxy",
         "08001",
     )
+    _assert_connect_ok(
+        "scratchbird://localhost:3092/testdb?sslmode=require&user=u1&username=u2&pguser=u3&password=p1&passwd=p2&pgpassword=p3&host=h1&hostname=h2&servername=h3&pghost=h4&database=db1&dbname=db2&databaseName=db3&pgdatabase=db4&port=4100&portNumber=4101&pgport=4102",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://localhost:3092/testdb?sslmode=require&user=u1&pguser=",
+        "28000",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://localhost:3092/testdb?sslmode=require&host=h1&pghost=",
+        "28000",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://localhost:3092/testdb?sslmode=require&database=db1&pgdatabase=",
+        "28000",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&front_door_mode=managerproxy&manager_auth_token=token_a&mcp_auth_token=",
+        "08001",
+    )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?min_pool_size=bad",
         "22023",
@@ -141,6 +160,10 @@ def main() -> None:
     )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?default_row_fetch_size=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?default_row_fetch_size=64&fetchSize=bad",
         "22023",
     )
     _assert_connect_guard_sqlstate(
@@ -168,6 +191,10 @@ def main() -> None:
         "22023",
     )
     _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?port=4100&portNumber=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?port=0",
         "22023",
     )
@@ -177,6 +204,13 @@ def main() -> None:
     )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?connect_timeout=bad",
+        "22023",
+    )
+    _assert_connect_ok(
+        "scratchbird://user:pass@localhost:3092/testdb?connect_timeout=5&connecttimeout=6&socket_timeout=7&sockettimeout=8&login_timeout=9&logintimeout=10&acquire_timeout=11&poolingacquiretimeout=12",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?connect_timeout=5&connecttimeout=bad",
         "22023",
     )
     _assert_connect_guard_sqlstate(
