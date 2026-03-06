@@ -39,6 +39,12 @@ host=localhost port=3092 dbname=mydb user=myuser password=mypass
 
 See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
 
+Pooling tuning options:
+
+- `Pooling=true|false`
+- `MinPoolSize`, `MaxPoolSize`, `ConnectionLifetime`
+- `PoolingAcquireTimeout` (seconds) or `PoolAcquireTimeoutMs` (milliseconds)
+
 ## TLS
 
 TLS 1.3 is required. `sslmode=disable` is rejected.

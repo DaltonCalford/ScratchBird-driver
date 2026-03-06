@@ -32,11 +32,23 @@ public sealed class ScratchBirdConfig
     public string ApplicationName { get; set; } = "scratchbird_dotnet";
     public bool BinaryTransfer { get; set; } = true;
     public string Compression { get; set; } = "off";
+    public int ConnectClientFlags { get; set; } = 0x0100;
+    public string AuthMethodId { get; set; } = "";
+    public string AuthMethodPayload { get; set; } = "";
+    public string AuthPayloadJson { get; set; } = "";
+    public string AuthPayloadB64 { get; set; } = "";
+    public string AuthProviderProfile { get; set; } = "";
+    public string AuthRequiredMethods { get; set; } = "";
+    public string AuthForbiddenMethods { get; set; } = "";
+    public bool AuthRequireChannelBinding { get; set; } = false;
+    public string WorkloadIdentityToken { get; set; } = "";
+    public string ProxyPrincipalAssertion { get; set; } = "";
     public int DefaultFetchSize { get; set; } = 0;
     public bool Pooling { get; set; } = false;
     public int MinPoolSize { get; set; } = 0;
     public int MaxPoolSize { get; set; } = 100;
     public int ConnectionLifetime { get; set; } = 0;
+    public int PoolAcquireTimeoutMs { get; set; } = 250;
     public string ManagerAuthToken { get; set; } = string.Empty;
     public string ManagerUsername { get; set; } = string.Empty;
     public string ManagerDatabase { get; set; } = string.Empty;
@@ -256,6 +268,55 @@ internal static class DsnParser
             case "compression":
                 cfg.Compression = value.Equals("zstd", StringComparison.OrdinalIgnoreCase) ? "zstd" : "off";
                 break;
+            case "client_flags":
+            case "connect_client_flags":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var clientFlags))
+                    cfg.ConnectClientFlags = clientFlags;
+                break;
+            case "auth_method_id":
+            case "authmethodid":
+                cfg.AuthMethodId = value.Trim();
+                break;
+            case "auth_method_payload":
+            case "authmethodpayload":
+                cfg.AuthMethodPayload = value;
+                break;
+            case "auth_payload_json":
+            case "authpayloadjson":
+                cfg.AuthPayloadJson = value;
+                break;
+            case "auth_payload_b64":
+            case "authpayloadb64":
+                cfg.AuthPayloadB64 = value;
+                break;
+            case "auth_provider_profile":
+            case "authproviderprofile":
+                cfg.AuthProviderProfile = value.Trim();
+                break;
+            case "auth_required_methods":
+            case "authrequiredmethods":
+                cfg.AuthRequiredMethods = value.Trim();
+                break;
+            case "auth_forbidden_methods":
+            case "authforbiddenmethods":
+                cfg.AuthForbiddenMethods = value.Trim();
+                break;
+            case "auth_require_channel_binding":
+            case "authrequirechannelbinding":
+                cfg.AuthRequireChannelBinding = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "workload_identity_token":
+            case "workloadidentitytoken":
+                cfg.WorkloadIdentityToken = value;
+                break;
+            case "proxy_principal_assertion":
+            case "proxyprincipalassertion":
+            case "proxy_assertion":
+                cfg.ProxyPrincipalAssertion = value;
+                break;
             case "fetch_size":
             case "fetchsize":
             case "default_fetch_size":
@@ -281,6 +342,23 @@ internal static class DsnParser
             case "connection_lifetime":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lifetime))
                     cfg.ConnectionLifetime = Math.Max(0, lifetime);
+                break;
+            case "poolacquiretimeout":
+            case "pool_acquire_timeout":
+            case "poolingacquiretimeout":
+            case "pooling_acquire_timeout":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var acquireTimeoutSeconds))
+                {
+                    var nonNegativeSeconds = Math.Max(0, acquireTimeoutSeconds);
+                    cfg.PoolAcquireTimeoutMs = (int)Math.Min(int.MaxValue, (long)nonNegativeSeconds * 1000L);
+                }
+                break;
+            case "poolacquiretimeoutms":
+            case "pool_acquire_timeout_ms":
+            case "poolingacquiretimeoutms":
+            case "pooling_acquire_timeout_ms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var acquireTimeoutMs))
+                    cfg.PoolAcquireTimeoutMs = Math.Max(0, acquireTimeoutMs);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":

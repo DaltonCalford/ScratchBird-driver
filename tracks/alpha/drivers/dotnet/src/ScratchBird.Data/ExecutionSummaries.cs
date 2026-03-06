@@ -5,6 +5,8 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
+using System.Data;
+
 namespace ScratchBird.Data;
 
 public sealed record FieldSummary(string Name, uint TypeOid, ushort Format, bool Nullable);
@@ -26,3 +28,64 @@ public sealed record BatchItemSummary(
 public sealed record BatchSummary(
     IReadOnlyList<BatchItemSummary> Items,
     long TotalRowCount);
+
+public sealed record PoolDiagnosticsSummary(
+    int ActiveCount,
+    int IdleCount,
+    int MaxSize,
+    int MinSize,
+    long BorrowAttempts,
+    long Borrowed,
+    long Returned,
+    long Rejected,
+    long Evicted);
+
+public sealed record QueryPlanSummary(
+    uint Format,
+    ulong PlanningTimeUs,
+    ulong EstimatedRows,
+    ulong EstimatedCost,
+    byte[] Plan);
+
+public sealed record SblrSummary(
+    ulong Hash,
+    uint Version,
+    byte[] Bytecode);
+
+public sealed record ScratchBirdNotification(
+    uint ProcessId,
+    string Channel,
+    byte[] Payload,
+    char? ChangeType,
+    ulong? RowId,
+    DateTimeOffset ReceivedUtc);
+
+public sealed record OperationTelemetrySummary(
+    string Operation,
+    long Invocations,
+    long Successes,
+    long Failures,
+    long TotalDurationMs,
+    long MaxDurationMs,
+    double AverageDurationMs);
+
+public sealed record ConnectionTelemetrySummary(
+    DateTimeOffset CapturedUtc,
+    long TotalInvocations,
+    long TotalSuccesses,
+    long TotalFailures,
+    IReadOnlyList<OperationTelemetrySummary> Operations);
+
+public sealed record ConnectionDiagnosticsSummary(
+    DateTimeOffset CapturedUtc,
+    ConnectionState State,
+    bool IsHealthy,
+    string FrontDoorMode,
+    string Protocol,
+    string Host,
+    int Port,
+    string Database,
+    bool Pooling,
+    PoolDiagnosticsSummary? Pool,
+    QueryPlanSummary? LastPlan,
+    SblrSummary? LastSblr);

@@ -107,6 +107,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["ConnectionLifetime"] = value;
     }
 
+    public int PoolAcquireTimeoutMs
+    {
+        get => GetInt("PoolAcquireTimeoutMs", 250);
+        set => this["PoolAcquireTimeoutMs"] = value;
+    }
+
     public bool Enlist
     {
         get => GetBool("Enlist", true);

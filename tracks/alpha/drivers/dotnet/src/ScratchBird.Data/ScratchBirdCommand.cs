@@ -7,6 +7,7 @@
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Linq;
 
 namespace ScratchBird.Data;
@@ -140,12 +141,12 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override int ExecuteNonQuery()
     {
-        return ExecuteNonQueryCore();
+        return TrackCommandOperation("Command.ExecuteNonQuery", ExecuteNonQueryCore);
     }
 
     private int ExecuteNonQueryCore()
     {
-        using var reader = ExecuteReader(CommandBehavior.SingleResult);
+        using var reader = ExecuteDbDataReaderCore(CommandBehavior.SingleResult);
         while (reader.Read())
         {
         }
@@ -180,18 +181,21 @@ public sealed class ScratchBirdCommand : DbCommand
 
     public override object? ExecuteScalar()
     {
-        using var reader = ExecuteReader(CommandBehavior.SingleResult);
-        object? first = null;
-        if (reader.Read())
+        return TrackCommandOperation("Command.ExecuteScalar", () =>
         {
-            first = reader.GetValue(0);
-        }
+            using var reader = ExecuteDbDataReaderCore(CommandBehavior.SingleResult);
+            object? first = null;
+            if (reader.Read())
+            {
+                first = reader.GetValue(0);
+            }
 
-        while (reader.Read())
-        {
-        }
+            while (reader.Read())
+            {
+            }
 
-        return first;
+            return first;
+        });
     }
 
     public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
@@ -232,6 +236,11 @@ public sealed class ScratchBirdCommand : DbCommand
 
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
+        return TrackCommandOperation("Command.ExecuteReader", () => ExecuteDbDataReaderCore(behavior));
+    }
+
+    private ScratchBirdDataReader ExecuteDbDataReaderCore(CommandBehavior behavior)
+    {
         ValidateCommandExecutionState();
 
         var connection = _connection!;
@@ -245,8 +254,9 @@ public sealed class ScratchBirdCommand : DbCommand
         }
         var timeoutMs = _commandTimeout > 0 ? _commandTimeout * 1000 : 0;
         var maxRows = _fetchSize > 0 ? _fetchSize : connection.Config.DefaultFetchSize;
+        var outputMapper = CreateCallableOutputMapper();
         var stream = client.ExecuteQuery(normalized.Sql, normalized.Parameters, timeoutMs, maxRows);
-        return new ScratchBirdDataReader(stream, behavior, connection);
+        return new ScratchBirdDataReader(stream, behavior, connection, outputMapper);
     }
 
     private NormalizedQuery NormalizeParameters()
@@ -267,14 +277,17 @@ public sealed class ScratchBirdCommand : DbCommand
     private NormalizedQuery BuildStoredProcedureCall()
     {
         var parameters = _parameters.Cast<ScratchBirdParameter>().ToList();
+        var bindParameters = parameters
+            .Where(parameter => parameter.Direction != ParameterDirection.ReturnValue)
+            .ToList();
         var routine = FormatRoutineName(_commandText);
-        var placeholders = parameters.Count == 0
+        var placeholders = bindParameters.Count == 0
             ? string.Empty
-            : string.Join(", ", Enumerable.Range(1, parameters.Count).Select(index => $"${index}"));
+            : string.Join(", ", Enumerable.Range(1, bindParameters.Count).Select(index => $"${index}"));
         var sql = placeholders.Length == 0
             ? $"CALL {routine}()"
             : $"CALL {routine}({placeholders})";
-        return new NormalizedQuery(sql, parameters);
+        return new NormalizedQuery(sql, bindParameters);
     }
 
     private static string FormatRoutineName(string routineName)
@@ -365,6 +378,22 @@ public sealed class ScratchBirdCommand : DbCommand
         return new ScratchBirdParameter();
     }
 
+    private T TrackCommandOperation<T>(string operation, Func<T> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var result = action();
+            success = true;
+            return result;
+        }
+        finally
+        {
+            _connection?.RecordTelemetry(operation, stopwatch.Elapsed, success);
+        }
+    }
+
     private void ValidateCommandExecutionState()
     {
         if (_connection == null || _connection.State != ConnectionState.Open)
@@ -376,6 +405,8 @@ public sealed class ScratchBirdCommand : DbCommand
         {
             throw new InvalidOperationException("CommandText must be set");
         }
+
+        ValidateParameterDirections();
 
         if (_transaction == null)
         {
@@ -406,6 +437,112 @@ public sealed class ScratchBirdCommand : DbCommand
         {
             throw new InvalidOperationException("Transaction is not active on this connection");
         }
+    }
+
+    private void ValidateParameterDirections()
+    {
+        var parameters = _parameters.Cast<ScratchBirdParameter>().ToList();
+        if (parameters.Count == 0)
+        {
+            return;
+        }
+
+        if (_commandType != CommandType.StoredProcedure)
+        {
+            if (parameters.Any(parameter => parameter.Direction != ParameterDirection.Input))
+            {
+                throw new NotSupportedException("Output, InputOutput, and ReturnValue parameters require CommandType.StoredProcedure");
+            }
+            return;
+        }
+
+        if (parameters.Count(parameter => parameter.Direction == ParameterDirection.ReturnValue) > 1)
+        {
+            throw new InvalidOperationException("StoredProcedure commands support at most one ReturnValue parameter");
+        }
+
+        foreach (var parameter in parameters)
+        {
+            if (parameter.Direction != ParameterDirection.Input
+                && parameter.Direction != ParameterDirection.Output
+                && parameter.Direction != ParameterDirection.InputOutput
+                && parameter.Direction != ParameterDirection.ReturnValue)
+            {
+                throw new NotSupportedException($"Unsupported parameter direction: {parameter.Direction}");
+            }
+        }
+    }
+
+    private Action<object?[]?>? CreateCallableOutputMapper()
+    {
+        if (_commandType != CommandType.StoredProcedure)
+        {
+            return null;
+        }
+
+        var parameters = _parameters.Cast<ScratchBirdParameter>().ToList();
+        if (!parameters.Any(IsOutputDirection))
+        {
+            return null;
+        }
+
+        var mapped = false;
+        return row =>
+        {
+            if (mapped)
+            {
+                return;
+            }
+
+            mapped = true;
+            ApplyCallableOutputValues(parameters, row);
+        };
+    }
+
+    private static bool IsOutputDirection(ScratchBirdParameter parameter)
+    {
+        return parameter.Direction == ParameterDirection.Output
+            || parameter.Direction == ParameterDirection.InputOutput
+            || parameter.Direction == ParameterDirection.ReturnValue;
+    }
+
+    private static void ApplyCallableOutputValues(IReadOnlyList<ScratchBirdParameter> parameters, object?[]? firstRow)
+    {
+        var returnValue = parameters.FirstOrDefault(parameter => parameter.Direction == ParameterDirection.ReturnValue);
+        var outputParameters = parameters
+            .Where(parameter =>
+                parameter.Direction == ParameterDirection.Output
+                || parameter.Direction == ParameterDirection.InputOutput)
+            .ToList();
+
+        var column = 0;
+        if (returnValue != null)
+        {
+            returnValue.Value = ResolveCallableOutputValue(firstRow, column, returnValue);
+            column++;
+        }
+
+        foreach (var outputParameter in outputParameters)
+        {
+            outputParameter.Value = ResolveCallableOutputValue(firstRow, column, outputParameter);
+            column++;
+        }
+    }
+
+    private static object? ResolveCallableOutputValue(object?[]? firstRow, int column, ScratchBirdParameter parameter)
+    {
+        if (firstRow == null || column < 0 || column >= firstRow.Length)
+        {
+            if (parameter.Direction == ParameterDirection.InputOutput)
+            {
+                return parameter.Value;
+            }
+
+            return DBNull.Value;
+        }
+
+        var value = firstRow[column];
+        return value ?? DBNull.Value;
     }
 
 }

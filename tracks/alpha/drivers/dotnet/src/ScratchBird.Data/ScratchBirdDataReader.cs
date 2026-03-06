@@ -18,17 +18,27 @@ public sealed class ScratchBirdDataReader : DbDataReader
     private readonly ProtocolClient.QueryStream _stream;
     private readonly CommandBehavior _behavior;
     private readonly ScratchBirdConnection? _connection;
+    private readonly Action<object?[]?>? _firstResultCompletedCallback;
     private object?[]? _currentRow;
     private bool _closed;
     private bool _done;
+    private bool _resultComplete;
     private bool _prefetched;
     private int _recordsAffected;
+    private int _resultIndex;
+    private object?[]? _firstResultFirstRow;
+    private bool _firstResultCallbackInvoked;
 
-    internal ScratchBirdDataReader(ProtocolClient.QueryStream stream, CommandBehavior behavior, ScratchBirdConnection? connection)
+    internal ScratchBirdDataReader(
+        ProtocolClient.QueryStream stream,
+        CommandBehavior behavior,
+        ScratchBirdConnection? connection,
+        Action<object?[]?>? firstResultCompletedCallback = null)
     {
         _stream = stream;
         _behavior = behavior;
         _connection = connection;
+        _firstResultCompletedCallback = firstResultCompletedCallback;
         _recordsAffected = -1;
     }
 
@@ -44,6 +54,10 @@ public sealed class ScratchBirdDataReader : DbDataReader
     {
         get
         {
+            if (_closed || _done || _resultComplete)
+            {
+                return false;
+            }
             if (_currentRow != null)
             {
                 return true;
@@ -51,12 +65,12 @@ public sealed class ScratchBirdDataReader : DbDataReader
             var row = _stream.ReadNextRow();
             if (row != null)
             {
+                CaptureFirstResultRow(row);
                 _currentRow = row;
                 _prefetched = true;
                 return true;
             }
-            _done = true;
-            _recordsAffected = (int)_stream.RowsAffected;
+            MarkCurrentResultComplete();
             return false;
         }
     }
@@ -71,6 +85,10 @@ public sealed class ScratchBirdDataReader : DbDataReader
         {
             return false;
         }
+        if (_resultComplete)
+        {
+            return false;
+        }
         if (_prefetched)
         {
             _prefetched = false;
@@ -80,10 +98,10 @@ public sealed class ScratchBirdDataReader : DbDataReader
         var row = _stream.ReadNextRow();
         if (row == null)
         {
-            _done = true;
-            _recordsAffected = (int)_stream.RowsAffected;
+            MarkCurrentResultComplete();
             return false;
         }
+        CaptureFirstResultRow(row);
         _currentRow = row;
         return true;
     }
@@ -128,12 +146,73 @@ public sealed class ScratchBirdDataReader : DbDataReader
 
     public override bool NextResult()
     {
-        return false;
+        if (_closed || _done)
+        {
+            return false;
+        }
+
+        _currentRow = null;
+        _prefetched = false;
+
+        var completingFirstResult = _resultIndex == 0 && !_firstResultCallbackInvoked;
+        var moved = _stream.NextResult();
+        if (completingFirstResult)
+        {
+            TryInvokeFirstResultCallback();
+        }
+        if (!moved)
+        {
+            _done = true;
+            _resultComplete = true;
+            _recordsAffected = SaturatingLongToInt(_stream.RowsAffected);
+            return false;
+        }
+
+        _resultIndex++;
+        _resultComplete = false;
+        _recordsAffected = -1;
+        return true;
     }
 
-    public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
+    public override async Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        using var registration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!_done)
+                {
+                    _stream.Cancel();
+                }
+            }
+            catch
+            {
+                // best effort cleanup only; ignore transport-level cancellation errors
+            }
+        });
+
+        try
+        {
+            return await Task.Run(NextResult, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            throw;
+        }
     }
 
     public override string GetName(int ordinal)
@@ -353,8 +432,15 @@ public sealed class ScratchBirdDataReader : DbDataReader
                     while (_stream.ReadNextRow() != null)
                     {
                     }
+                    while (_stream.NextResult())
+                    {
+                        while (_stream.ReadNextRow() != null)
+                        {
+                        }
+                    }
                     _done = true;
-                    _recordsAffected = (int)_stream.RowsAffected;
+                    _resultComplete = true;
+                    _recordsAffected = SaturatingLongToInt(_stream.RowsAffected);
                 }
                 catch
                 {
@@ -366,6 +452,7 @@ public sealed class ScratchBirdDataReader : DbDataReader
                 _stream.Cancel();
             }
         }
+        TryInvokeFirstResultCallback();
         _stream.Dispose();
         _closed = true;
         if (_behavior.HasFlag(CommandBehavior.CloseConnection))
@@ -380,5 +467,51 @@ public sealed class ScratchBirdDataReader : DbDataReader
         {
             throw new InvalidOperationException("No current row");
         }
+    }
+
+    private void MarkCurrentResultComplete()
+    {
+        _resultComplete = true;
+        _recordsAffected = SaturatingLongToInt(_stream.RowsAffected);
+        _done = _stream.IsDone;
+        TryInvokeFirstResultCallback();
+    }
+
+    private static int SaturatingLongToInt(long value)
+    {
+        if (value < int.MinValue)
+        {
+            return int.MinValue;
+        }
+
+        if (value > int.MaxValue)
+        {
+            return int.MaxValue;
+        }
+
+        return (int)value;
+    }
+
+    private void CaptureFirstResultRow(object?[] row)
+    {
+        if (_resultIndex != 0 || _firstResultFirstRow != null)
+        {
+            return;
+        }
+
+        var copy = new object?[row.Length];
+        Array.Copy(row, copy, row.Length);
+        _firstResultFirstRow = copy;
+    }
+
+    private void TryInvokeFirstResultCallback()
+    {
+        if (_firstResultCallbackInvoked || _resultIndex != 0)
+        {
+            return;
+        }
+
+        _firstResultCallbackInvoked = true;
+        _firstResultCompletedCallback?.Invoke(_firstResultFirstRow);
     }
 }

@@ -504,6 +504,72 @@ public class IntegrationTests
     }
 
     [Fact]
+    public void DataReaderNextResultTraversesMultipleSelectResultSets()
+    {
+        var dsn = RequireDsn();
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1 AS first_value; SELECT 2 AS second_value";
+
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1, Convert.ToInt32(reader.GetValue(0)));
+            Assert.False(reader.Read());
+
+            Assert.True(reader.NextResult());
+            Assert.True(reader.Read());
+            Assert.Equal(2, Convert.ToInt32(reader.GetValue(0)));
+            Assert.False(reader.Read());
+
+            Assert.False(reader.NextResult());
+        }
+        catch (ScratchBirdNotSupportedException)
+        {
+            return;
+        }
+        catch (ScratchBirdException ex) when (IsTransientIntegrationException(ex))
+        {
+            return;
+        }
+    }
+
+    [Fact]
+    public void DataReaderNextResultSkipsUnreadRowsAndAdvances()
+    {
+        var dsn = RequireDsn();
+        using var conn = new ScratchBirdConnection(dsn);
+        conn.Open();
+
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1 AS value UNION ALL SELECT 2 AS value; SELECT 3 AS value";
+
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1, Convert.ToInt32(reader.GetValue(0)));
+
+            Assert.True(reader.NextResult());
+            Assert.True(reader.Read());
+            Assert.Equal(3, Convert.ToInt32(reader.GetValue(0)));
+            Assert.False(reader.Read());
+            Assert.False(reader.NextResult());
+        }
+        catch (ScratchBirdNotSupportedException)
+        {
+            return;
+        }
+        catch (ScratchBirdException ex) when (IsTransientIntegrationException(ex))
+        {
+            return;
+        }
+    }
+
+    [Fact]
     public void ExecuteBatchReturnsSummary()
     {
         var dsn = RequireDsn();

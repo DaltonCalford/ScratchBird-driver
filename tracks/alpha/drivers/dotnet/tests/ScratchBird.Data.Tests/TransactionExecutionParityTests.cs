@@ -128,6 +128,90 @@ public class TransactionExecutionParityTests
     }
 
     [Fact]
+    public void Prepare_ForStoredProcedureExcludesReturnValueFromCallableArgs()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = "sys.echo_value";
+        command.Parameters.Add(new ScratchBirdParameter("ret", null) { Direction = ParameterDirection.ReturnValue });
+        command.Parameters.Add(new ScratchBirdParameter("in1", 11) { Direction = ParameterDirection.Input });
+        command.Parameters.Add(new ScratchBirdParameter("out1", null) { Direction = ParameterDirection.Output });
+        command.Parameters.Add(new ScratchBirdParameter("inout1", 7) { Direction = ParameterDirection.InputOutput });
+
+        command.Prepare();
+
+        var prepared = (object?)GetPrivateField(command, "_preparedQuery");
+        Assert.NotNull(prepared);
+        var sql = (string?)prepared!.GetType().GetProperty("Sql")?.GetValue(prepared);
+        Assert.Equal("CALL \"sys\".\"echo_value\"($1, $2, $3)", sql);
+
+        var preparedParams = (IReadOnlyList<ScratchBirdParameter>?)prepared.GetType().GetProperty("Parameters")?.GetValue(prepared);
+        Assert.NotNull(preparedParams);
+        Assert.Equal(3, preparedParams!.Count);
+        Assert.DoesNotContain(preparedParams, parameter => parameter.Direction == ParameterDirection.ReturnValue);
+    }
+
+    [Fact]
+    public void ExecuteNonQuery_RejectsOutputDirectionForCommandTypeText()
+    {
+        using var connection = CreateOpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandType = CommandType.Text;
+        command.CommandText = "SELECT 1";
+        command.Parameters.Add(new ScratchBirdParameter("p1", null) { Direction = ParameterDirection.Output });
+
+        var ex = Assert.Throws<NotSupportedException>(() => command.ExecuteNonQuery());
+        Assert.Contains("CommandType.StoredProcedure", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ApplyCallableOutputValues_MapsReturnOutputAndInputOutput()
+    {
+        var parameters = new List<ScratchBirdParameter>
+        {
+            new("ret", null) { Direction = ParameterDirection.ReturnValue },
+            new("in1", 5) { Direction = ParameterDirection.Input },
+            new("out1", null) { Direction = ParameterDirection.Output },
+            new("inout1", 7) { Direction = ParameterDirection.InputOutput }
+        };
+
+        var method = typeof(ScratchBirdCommand).GetMethod(
+            "ApplyCallableOutputValues",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        method!.Invoke(null, new object?[] { parameters, new object?[] { 99, "done", 123 } });
+
+        Assert.Equal(99, parameters[0].Value);
+        Assert.Equal("done", parameters[2].Value);
+        Assert.Equal(123, parameters[3].Value);
+    }
+
+    [Fact]
+    public void ApplyCallableOutputValues_SetsDbNullForMissingOutputColumns()
+    {
+        var parameters = new List<ScratchBirdParameter>
+        {
+            new("ret", null) { Direction = ParameterDirection.ReturnValue },
+            new("in1", 5) { Direction = ParameterDirection.Input },
+            new("out1", null) { Direction = ParameterDirection.Output },
+            new("inout1", 7) { Direction = ParameterDirection.InputOutput }
+        };
+
+        var method = typeof(ScratchBirdCommand).GetMethod(
+            "ApplyCallableOutputValues",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        method!.Invoke(null, new object?[] { parameters, new object?[] { 42 } });
+
+        Assert.Equal(42, parameters[0].Value);
+        Assert.Equal(DBNull.Value, parameters[2].Value);
+        Assert.Equal(7, parameters[3].Value);
+    }
+
+    [Fact]
     public void NativeCallableSql_RewritesJdbcEscapeSyntax()
     {
         using var connection = new ScratchBirdConnection();

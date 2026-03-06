@@ -57,14 +57,60 @@ public class ConfigTests
     }
 
     [Fact]
+    public void ParseAuthPluginAndPinningParams()
+    {
+        var cfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://user:pass@localhost:3092/mydb" +
+            "?client_flags=257&auth_method_id=scratchbird.auth.proxy_assertion" +
+            "&auth_method_payload=opaque" +
+            "&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D" +
+            "&auth_payload_b64=YWJj" +
+            "&auth_provider_profile=corp_primary" +
+            "&auth_required_methods=SCRAM_SHA_256%2CTOKEN" +
+            "&auth_forbidden_methods=MD5" +
+            "&auth_require_channel_binding=true" +
+            "&workload_identity_token=jwt-token" +
+            "&proxy_principal_assertion=signed-assertion");
+
+        Assert.Equal(257, cfg.ConnectClientFlags);
+        Assert.Equal("scratchbird.auth.proxy_assertion", cfg.AuthMethodId);
+        Assert.Equal("opaque", cfg.AuthMethodPayload);
+        Assert.Equal("{\"subject\":\"alice\"}", cfg.AuthPayloadJson);
+        Assert.Equal("YWJj", cfg.AuthPayloadB64);
+        Assert.Equal("corp_primary", cfg.AuthProviderProfile);
+        Assert.Equal("SCRAM_SHA_256,TOKEN", cfg.AuthRequiredMethods);
+        Assert.Equal("MD5", cfg.AuthForbiddenMethods);
+        Assert.True(cfg.AuthRequireChannelBinding);
+        Assert.Equal("jwt-token", cfg.WorkloadIdentityToken);
+        Assert.Equal("signed-assertion", cfg.ProxyPrincipalAssertion);
+    }
+
+    [Fact]
     public void ParsePoolingOptions()
     {
-        var cfg = ScratchBirdConfig.FromConnectionString("Host=localhost;Port=3092;Database=pooling;Username=app;Password=secret;Pooling=true;MinPoolSize=2;MaxPoolSize=25;ConnectionLifetime=60");
+        var cfg = ScratchBirdConfig.FromConnectionString("Host=localhost;Port=3092;Database=pooling;Username=app;Password=secret;Pooling=true;MinPoolSize=2;MaxPoolSize=25;ConnectionLifetime=60;PoolAcquireTimeoutMs=150");
 
         Assert.True(cfg.Pooling);
         Assert.Equal(2, cfg.MinPoolSize);
         Assert.Equal(25, cfg.MaxPoolSize);
         Assert.Equal(60, cfg.ConnectionLifetime);
+        Assert.Equal(150, cfg.PoolAcquireTimeoutMs);
+    }
+
+    [Fact]
+    public void ParsePoolingAcquireTimeoutAliases()
+    {
+        var kvSeconds = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=pooling;Username=app;Password=secret;Pooling=true;PoolingAcquireTimeout=2");
+        Assert.Equal(2000, kvSeconds.PoolAcquireTimeoutMs);
+
+        var uriSeconds = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/pooling?pool_acquire_timeout=3");
+        Assert.Equal(3000, uriSeconds.PoolAcquireTimeoutMs);
+
+        var uriMs = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/pooling?pool_acquire_timeout_ms=125");
+        Assert.Equal(125, uriMs.PoolAcquireTimeoutMs);
     }
 
     [Fact]

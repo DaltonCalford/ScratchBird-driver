@@ -8,6 +8,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -28,6 +29,12 @@ public sealed class ScratchBirdConnection : DbConnection
     private ProtocolClientPool.Lease? _clientLease;
     private ScratchBirdTransaction? _activeTransaction;
     private bool _disposed;
+    private readonly TelemetryCollector _telemetry = new();
+    private readonly object _notificationSync = new();
+    private Queue<ScratchBirdNotification>? _notificationQueue;
+    private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
+    private ProtocolClient? _notificationBridgeClient;
+    private bool _notificationBridgeRequested;
 
     public ScratchBirdConnection() { }
 
@@ -69,8 +76,11 @@ public sealed class ScratchBirdConnection : DbConnection
             return;
         }
 
-        OpenWithRetry();
-        _state = ConnectionState.Open;
+        TrackOperation("Connection.Open", () =>
+        {
+            OpenWithRetry();
+            _state = ConnectionState.Open;
+        });
     }
 
     private void OpenWithRetry(CancellationToken cancellationToken)
@@ -133,12 +143,17 @@ public sealed class ScratchBirdConnection : DbConnection
             }
             _state = ConnectionState.Open;
             ApplySchema();
+            InstallNotificationBridgeIfNeeded(_client);
         }
         catch
         {
             _clientLease?.Dispose();
             _clientLease = null;
             _client = null;
+            lock (_notificationSync)
+            {
+                _notificationBridgeClient = null;
+            }
             throw;
         }
     }
@@ -177,7 +192,17 @@ public sealed class ScratchBirdConnection : DbConnection
             return;
         }
 
-        await Task.Run(() => OpenWithRetry(cancellationToken), cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            await Task.Run(() => OpenWithRetry(cancellationToken), cancellationToken);
+            success = true;
+        }
+        finally
+        {
+            RecordTelemetry("Connection.OpenAsync", stopwatch.Elapsed, success);
+        }
     }
 
     public override void Close()
@@ -192,6 +217,10 @@ public sealed class ScratchBirdConnection : DbConnection
         _client = null;
         _activeTransaction = null;
         _state = ConnectionState.Closed;
+        lock (_notificationSync)
+        {
+            _notificationBridgeClient = null;
+        }
         lease?.Dispose();
     }
 
@@ -222,19 +251,22 @@ public sealed class ScratchBirdConnection : DbConnection
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
     {
-        if (_state != ConnectionState.Open)
+        return TrackOperation("Connection.BeginTransaction", () =>
         {
-            throw new InvalidOperationException("Connection is not open");
-        }
-        if (HasActiveTransaction)
-        {
-            throw new InvalidOperationException("Connection already has an active transaction");
-        }
+            if (_state != ConnectionState.Open)
+            {
+                throw new InvalidOperationException("Connection is not open");
+            }
+            if (HasActiveTransaction)
+            {
+                throw new InvalidOperationException("Connection already has an active transaction");
+            }
 
-        GetConnectedClient().Begin(isolationLevel);
-        var transaction = new ScratchBirdTransaction(this, isolationLevel);
-        _activeTransaction = transaction;
-        return transaction;
+            GetConnectedClient().Begin(isolationLevel);
+            var transaction = new ScratchBirdTransaction(this, isolationLevel);
+            _activeTransaction = transaction;
+            return (DbTransaction)transaction;
+        });
     }
 
     internal bool HasActiveTransaction
@@ -281,31 +313,200 @@ public sealed class ScratchBirdConnection : DbConnection
         return normalized.Sql;
     }
 
+    public ConnectionDiagnosticsSummary GetDiagnostics()
+    {
+        var client = _client;
+        return new ConnectionDiagnosticsSummary(
+            DateTimeOffset.UtcNow,
+            _state,
+            client?.IsHealthy ?? false,
+            _config.FrontDoorMode,
+            _config.Protocol,
+            _config.Host,
+            _config.Port,
+            _config.Database,
+            _config.Pooling,
+            GetPoolDiagnostics(),
+            CreateQueryPlanSummary(client?.LastPlan),
+            CreateSblrSummary(client?.LastSblr));
+    }
+
+    public ConnectionTelemetrySummary GetTelemetrySummary()
+    {
+        return _telemetry.Snapshot();
+    }
+
+    public void ResetTelemetry()
+    {
+        _telemetry.Reset();
+    }
+
+    public PoolDiagnosticsSummary? GetPoolDiagnostics()
+    {
+        return MapPoolDiagnostics(ProtocolClientPool.GetStats(_config));
+    }
+
+    public static PoolDiagnosticsSummary? GetPoolDiagnostics(string connectionString)
+    {
+        var config = ScratchBirdConfig.FromConnectionString(connectionString);
+        return MapPoolDiagnostics(ProtocolClientPool.GetStats(config));
+    }
+
+    internal void RecordTelemetry(string operation, TimeSpan duration, bool success)
+    {
+        _telemetry.Record(operation, duration, success);
+    }
+
+    private T TrackOperation<T>(string operation, Func<T> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var success = false;
+        try
+        {
+            var result = action();
+            success = true;
+            return result;
+        }
+        finally
+        {
+            RecordTelemetry(operation, stopwatch.Elapsed, success);
+        }
+    }
+
+    private void TrackOperation(string operation, Action action)
+    {
+        _ = TrackOperation(operation, () =>
+        {
+            action();
+            return 0;
+        });
+    }
+
+    public void AddNotificationListener(Action<ScratchBirdNotification> listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+        EnsureNotificationBridge();
+        lock (_notificationSync)
+        {
+            _notificationListeners ??= new HashSet<Action<ScratchBirdNotification>>();
+            _notificationListeners.Add(listener);
+        }
+    }
+
+    public bool RemoveNotificationListener(Action<ScratchBirdNotification> listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+        EnsureNotificationBridge();
+        lock (_notificationSync)
+        {
+            return _notificationListeners != null && _notificationListeners.Remove(listener);
+        }
+    }
+
+    public ScratchBirdNotification? GetNotification()
+    {
+        EnsureNotificationBridge();
+        lock (_notificationSync)
+        {
+            if (_notificationQueue == null || _notificationQueue.Count == 0)
+            {
+                return null;
+            }
+
+            return CloneNotification(_notificationQueue.Dequeue());
+        }
+    }
+
+    public IReadOnlyList<ScratchBirdNotification> GetNotifications()
+    {
+        EnsureNotificationBridge();
+        lock (_notificationSync)
+        {
+            if (_notificationQueue == null || _notificationQueue.Count == 0)
+            {
+                return Array.Empty<ScratchBirdNotification>();
+            }
+
+            var drained = new List<ScratchBirdNotification>(_notificationQueue.Count);
+            while (_notificationQueue.Count > 0)
+            {
+                drained.Add(CloneNotification(_notificationQueue.Dequeue()));
+            }
+            return drained;
+        }
+    }
+
+    public void ClearNotifications()
+    {
+        EnsureNotificationBridge();
+        lock (_notificationSync)
+        {
+            _notificationQueue?.Clear();
+        }
+    }
+
+    internal void AcceptNotification(
+        uint processId,
+        string channel,
+        byte[] payload,
+        char? changeType,
+        ulong? rowId)
+    {
+        var notification = new ScratchBirdNotification(
+            processId,
+            channel,
+            CloneBytes(payload),
+            changeType,
+            rowId,
+            DateTimeOffset.UtcNow);
+        Action<ScratchBirdNotification>[] listeners;
+        lock (_notificationSync)
+        {
+            (_notificationQueue ??= new Queue<ScratchBirdNotification>()).Enqueue(notification);
+            listeners = _notificationListeners?.ToArray() ?? Array.Empty<Action<ScratchBirdNotification>>();
+        }
+
+        foreach (var listener in listeners)
+        {
+            try
+            {
+                listener(CloneNotification(notification));
+            }
+            catch
+            {
+                // Consumer listener exceptions must not break connection protocol handling.
+            }
+        }
+    }
+
     public ResultSetSummary Call(
         string sql,
         IReadOnlyList<ScratchBirdParameter>? parameters = null,
         int commandTimeoutSeconds = 30,
         int fetchSize = 0)
     {
-        var normalized = SqlHelpers.NormalizeCallable(sql, NormalizeParameterList(parameters));
-        var resultSets = ExecuteQueryMultiInternal(
-            normalized.Sql,
-            normalized.Parameters,
-            commandTimeoutSeconds,
-            fetchSize);
-        var preferred = resultSets.LastOrDefault(set => set.Rows.Count > 0);
-        if (preferred != null)
+        return TrackOperation("Connection.Call", () =>
         {
-            return preferred;
-        }
-        return resultSets.Count > 0
-            ? resultSets[^1]
-            : new ResultSetSummary(
-                Array.Empty<object?[]>(),
-                0,
-                Array.Empty<FieldSummary>(),
-                string.Empty,
-                0);
+            var normalized = SqlHelpers.NormalizeCallable(sql, NormalizeParameterList(parameters));
+            var resultSets = ExecuteQueryMultiInternal(
+                normalized.Sql,
+                normalized.Parameters,
+                commandTimeoutSeconds,
+                fetchSize);
+            var preferred = resultSets.LastOrDefault(set => set.Rows.Count > 0);
+            if (preferred != null)
+            {
+                return preferred;
+            }
+            return resultSets.Count > 0
+                ? resultSets[^1]
+                : new ResultSetSummary(
+                    Array.Empty<object?[]>(),
+                    0,
+                    Array.Empty<FieldSummary>(),
+                    string.Empty,
+                    0);
+        });
     }
 
     public IReadOnlyList<ResultSetSummary> QueryMulti(
@@ -314,34 +515,37 @@ public sealed class ScratchBirdConnection : DbConnection
         int commandTimeoutSeconds = 30,
         int fetchSize = 0)
     {
-        var normalized = SqlHelpers.Normalize(sql, NormalizeParameterList(parameters));
-        if (normalized.Parameters.Count == 0)
+        return TrackOperation("Connection.QueryMulti", () =>
         {
-            var statements = SplitSqlStatements(normalized.Sql);
-            if (statements.Count > 1)
+            var normalized = SqlHelpers.Normalize(sql, NormalizeParameterList(parameters));
+            if (normalized.Parameters.Count == 0)
             {
-                var expanded = new List<ResultSetSummary>();
-                foreach (var statement in statements)
+                var statements = SplitSqlStatements(normalized.Sql);
+                if (statements.Count > 1)
                 {
-                    if (string.IsNullOrWhiteSpace(statement))
+                    var expanded = new List<ResultSetSummary>();
+                    foreach (var statement in statements)
                     {
-                        continue;
+                        if (string.IsNullOrWhiteSpace(statement))
+                        {
+                            continue;
+                        }
+                        expanded.AddRange(ExecuteQueryMultiInternal(
+                            statement,
+                            Array.Empty<ScratchBirdParameter>(),
+                            commandTimeoutSeconds,
+                            fetchSize));
                     }
-                    expanded.AddRange(ExecuteQueryMultiInternal(
-                        statement,
-                        Array.Empty<ScratchBirdParameter>(),
-                        commandTimeoutSeconds,
-                        fetchSize));
+                    return (IReadOnlyList<ResultSetSummary>)expanded;
                 }
-                return expanded;
             }
-        }
 
-        return ExecuteQueryMultiInternal(
-            normalized.Sql,
-            normalized.Parameters,
-            commandTimeoutSeconds,
-            fetchSize);
+            return ExecuteQueryMultiInternal(
+                normalized.Sql,
+                normalized.Parameters,
+                commandTimeoutSeconds,
+                fetchSize);
+        });
     }
 
     public IReadOnlyList<ResultSetSummary> ExecuteMulti(
@@ -359,52 +563,55 @@ public sealed class ScratchBirdConnection : DbConnection
         int commandTimeoutSeconds = 30,
         int fetchSize = 0)
     {
-        ArgumentNullException.ThrowIfNull(batchParameters);
-        if (batchParameters.Count == 0)
+        return TrackOperation("Connection.ExecuteBatch", () =>
         {
-            throw new ArgumentException("batch parameters are required", nameof(batchParameters));
-        }
-
-        var items = new List<BatchItemSummary>(batchParameters.Count);
-        long totalRowCount = 0;
-        for (var i = 0; i < batchParameters.Count; i++)
-        {
-            var currentParameters = batchParameters[i] ?? Array.Empty<ScratchBirdParameter>();
-            var resultSets = QueryMulti(sql, currentParameters, commandTimeoutSeconds, fetchSize);
-            long rowCount = 0;
-            IReadOnlyList<FieldSummary> fields = Array.Empty<FieldSummary>();
-            var command = string.Empty;
-            long lastInsertId = 0;
-
-            foreach (var set in resultSets)
+            ArgumentNullException.ThrowIfNull(batchParameters);
+            if (batchParameters.Count == 0)
             {
-                if (set.RowCount > 0)
-                {
-                    rowCount += set.RowCount;
-                }
-                if (set.Fields.Count > 0)
-                {
-                    fields = set.Fields;
-                }
-                if (!string.IsNullOrEmpty(set.Command))
-                {
-                    command = set.Command;
-                }
-                if (set.LastInsertId != 0)
-                {
-                    lastInsertId = set.LastInsertId;
-                }
+                throw new ArgumentException("batch parameters are required", nameof(batchParameters));
             }
 
-            if (rowCount > 0)
+            var items = new List<BatchItemSummary>(batchParameters.Count);
+            long totalRowCount = 0;
+            for (var i = 0; i < batchParameters.Count; i++)
             {
-                totalRowCount += rowCount;
+                var currentParameters = batchParameters[i] ?? Array.Empty<ScratchBirdParameter>();
+                var resultSets = QueryMulti(sql, currentParameters, commandTimeoutSeconds, fetchSize);
+                long rowCount = 0;
+                IReadOnlyList<FieldSummary> fields = Array.Empty<FieldSummary>();
+                var command = string.Empty;
+                long lastInsertId = 0;
+
+                foreach (var set in resultSets)
+                {
+                    if (set.RowCount > 0)
+                    {
+                        rowCount += set.RowCount;
+                    }
+                    if (set.Fields.Count > 0)
+                    {
+                        fields = set.Fields;
+                    }
+                    if (!string.IsNullOrEmpty(set.Command))
+                    {
+                        command = set.Command;
+                    }
+                    if (set.LastInsertId != 0)
+                    {
+                        lastInsertId = set.LastInsertId;
+                    }
+                }
+
+                if (rowCount > 0)
+                {
+                    totalRowCount += rowCount;
+                }
+
+                items.Add(new BatchItemSummary(i, rowCount, fields, command, lastInsertId));
             }
 
-            items.Add(new BatchItemSummary(i, rowCount, fields, command, lastInsertId));
-        }
-
-        return new BatchSummary(items, totalRowCount);
+            return new BatchSummary(items, totalRowCount);
+        });
     }
 
     public BatchSummary QueryBatch(
@@ -422,11 +629,14 @@ public sealed class ScratchBirdConnection : DbConnection
         int commandTimeoutSeconds = 30,
         int fetchSize = 0)
     {
-        var resultSets = QueryMulti(sql, parameters, commandTimeoutSeconds, fetchSize);
-        return resultSets
-            .Where(set => set.LastInsertId != 0)
-            .Select(set => set.LastInsertId)
-            .ToArray();
+        return TrackOperation("Connection.ExecuteWithGeneratedKeys", () =>
+        {
+            var resultSets = QueryMulti(sql, parameters, commandTimeoutSeconds, fetchSize);
+            return (IReadOnlyList<long>)resultSets
+                .Where(set => set.LastInsertId != 0)
+                .Select(set => set.LastInsertId)
+                .ToArray();
+        });
     }
 
     public override System.Data.DataTable GetSchema()
@@ -441,59 +651,62 @@ public sealed class ScratchBirdConnection : DbConnection
 
     public override System.Data.DataTable GetSchema(string collectionName, string[]? restrictionValues)
     {
-        if (_state != ConnectionState.Open)
+        return TrackOperation("Connection.GetSchema", () =>
         {
-            throw new InvalidOperationException("Connection is not open");
-        }
+            if (_state != ConnectionState.Open)
+            {
+                throw new InvalidOperationException("Connection is not open");
+            }
 
-        var collectionKey = NormalizeCollectionName(collectionName);
-        if (string.Equals(collectionKey, "catalogs", StringComparison.Ordinal))
-        {
-            return BuildCatalogsMetadataTable(collectionName, restrictionValues);
-        }
+            var collectionKey = NormalizeCollectionName(collectionName);
+            if (string.Equals(collectionKey, "catalogs", StringComparison.Ordinal))
+            {
+                return BuildCatalogsMetadataTable(collectionName, restrictionValues);
+            }
 
-        var query = collectionKey switch
-        {
-            "catalogs" => ScratchBirdMetadata.CatalogsQuery,
-            "tables" => ScratchBirdMetadata.TablesQuery,
-            "columns" => ScratchBirdMetadata.ColumnsQuery,
-            "schemas" => ScratchBirdMetadata.SchemasQuery,
-            "indexes" => ScratchBirdMetadata.IndexesQuery,
-            "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
-            "constraints" => ScratchBirdMetadata.ConstraintsQuery,
-            "primarykeys" => ScratchBirdMetadata.PrimaryKeysQuery,
-            "foreignkeys" => ScratchBirdMetadata.ForeignKeysQuery,
-            "tableprivileges" => ScratchBirdMetadata.TablePrivilegesQuery,
-            "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
-            "procedures" => ScratchBirdMetadata.ProceduresQuery,
-            "functions" => ScratchBirdMetadata.FunctionsQuery,
-            "routines" => ScratchBirdMetadata.RoutinesQuery,
-            "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
-            _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
-        };
+            var query = collectionKey switch
+            {
+                "catalogs" => ScratchBirdMetadata.CatalogsQuery,
+                "tables" => ScratchBirdMetadata.TablesQuery,
+                "columns" => ScratchBirdMetadata.ColumnsQuery,
+                "schemas" => ScratchBirdMetadata.SchemasQuery,
+                "indexes" => ScratchBirdMetadata.IndexesQuery,
+                "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
+                "constraints" => ScratchBirdMetadata.ConstraintsQuery,
+                "primarykeys" => ScratchBirdMetadata.PrimaryKeysQuery,
+                "foreignkeys" => ScratchBirdMetadata.ForeignKeysQuery,
+                "tableprivileges" => ScratchBirdMetadata.TablePrivilegesQuery,
+                "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
+                "procedures" => ScratchBirdMetadata.ProceduresQuery,
+                "functions" => ScratchBirdMetadata.FunctionsQuery,
+                "routines" => ScratchBirdMetadata.RoutinesQuery,
+                "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
+                _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
+            };
 
-        using var cmd = CreateDbCommand();
-        cmd.CommandText = query;
-        using var reader = cmd.ExecuteReader();
-        _ = reader.HasRows; // Prime row-description metadata before FieldCount/column enumeration.
+            using var cmd = CreateDbCommand();
+            cmd.CommandText = query;
+            using var reader = cmd.ExecuteReader();
+            _ = reader.HasRows; // Prime row-description metadata before FieldCount/column enumeration.
 
-        var table = new System.Data.DataTable(collectionName);
-        for (var i = 0; i < reader.FieldCount; i++)
-        {
-            table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
-        }
-
-        while (reader.Read())
-        {
-            var row = table.NewRow();
+            var table = new System.Data.DataTable(collectionName);
             for (var i = 0; i < reader.FieldCount; i++)
             {
-                row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
             }
-            table.Rows.Add(row);
-        }
 
-        return ShapeMetadataTable(table, collectionKey, restrictionValues, _config.MetadataExpandSchemaParents);
+            while (reader.Read())
+            {
+                var row = table.NewRow();
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                }
+                table.Rows.Add(row);
+            }
+
+            return ShapeMetadataTable(table, collectionKey, restrictionValues, _config.MetadataExpandSchemaParents);
+        });
     }
 
     private static string NormalizeCollectionName(string? collectionName)
@@ -911,6 +1124,98 @@ public sealed class ScratchBirdConnection : DbConnection
     private static string QuoteIdentifier(string name)
     {
         return $"\"{name.Replace("\"", "\"\"")}\"";
+    }
+
+    internal static PoolDiagnosticsSummary? MapPoolDiagnostics(ProtocolClientPool.PoolStats? stats)
+    {
+        if (!stats.HasValue)
+        {
+            return null;
+        }
+
+        var value = stats.Value;
+        return new PoolDiagnosticsSummary(
+            value.ActiveCount,
+            value.IdleCount,
+            value.MaxSize,
+            value.MinSize,
+            value.BorrowAttempts,
+            value.Borrowed,
+            value.Returned,
+            value.Rejected,
+            value.Evicted);
+    }
+
+    internal static QueryPlanSummary? CreateQueryPlanSummary(
+        (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan)? plan)
+    {
+        if (!plan.HasValue)
+        {
+            return null;
+        }
+
+        var value = plan.Value;
+        return new QueryPlanSummary(
+            value.Format,
+            value.PlanningTimeUs,
+            value.EstimatedRows,
+            value.EstimatedCost,
+            CloneBytes(value.Plan));
+    }
+
+    internal static SblrSummary? CreateSblrSummary((ulong Hash, uint Version, byte[] Bytecode)? sblr)
+    {
+        if (!sblr.HasValue)
+        {
+            return null;
+        }
+
+        var value = sblr.Value;
+        return new SblrSummary(
+            value.Hash,
+            value.Version,
+            CloneBytes(value.Bytecode));
+    }
+
+    private ProtocolClient EnsureNotificationBridge()
+    {
+        lock (_notificationSync)
+        {
+            _notificationBridgeRequested = true;
+        }
+
+        var client = EnsureConnectedClient();
+        InstallNotificationBridgeIfNeeded(client);
+        return client;
+    }
+
+    private void InstallNotificationBridgeIfNeeded(ProtocolClient client)
+    {
+        lock (_notificationSync)
+        {
+            if (!_notificationBridgeRequested || ReferenceEquals(_notificationBridgeClient, client))
+            {
+                return;
+            }
+
+            client.OnNotification(AcceptNotification);
+            _notificationBridgeClient = client;
+        }
+    }
+
+    private static ScratchBirdNotification CloneNotification(ScratchBirdNotification notification)
+    {
+        return notification with { Payload = CloneBytes(notification.Payload) };
+    }
+
+    private static byte[] CloneBytes(byte[]? value)
+    {
+        if (value == null || value.Length == 0)
+        {
+            return Array.Empty<byte>();
+        }
+
+        return (byte[])value.Clone();
     }
 
     private static IReadOnlyList<string> SplitTopLevel(string value, char delimiter)

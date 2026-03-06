@@ -38,24 +38,30 @@ internal sealed class ProtocolClientPool
 
     internal sealed class ClientPool
     {
-        private const int BorrowTimeoutMs = 250;
         private readonly ConcurrentQueue<PooledClient> _idle = new();
         private readonly ConcurrentDictionary<ProtocolClient, DateTimeOffset> _active = new();
         private readonly SemaphoreSlim _slots;
+        private int _borrowTimeoutMs;
         private long _borrowAttempts;
         private long _borrowed;
         private long _returned;
         private long _rejected;
         private long _evicted;
 
-        public ClientPool(int maxSize)
+        public ClientPool(int maxSize, int borrowTimeoutMs)
         {
             MaxSize = Math.Max(1, maxSize);
             _slots = new SemaphoreSlim(MaxSize, MaxSize);
+            _borrowTimeoutMs = Math.Max(0, borrowTimeoutMs);
         }
 
         public int MaxSize { get; set; }
         public int MinSize { get; set; }
+        public int BorrowTimeoutMs
+        {
+            get => Volatile.Read(ref _borrowTimeoutMs);
+            set => Volatile.Write(ref _borrowTimeoutMs, Math.Max(0, value));
+        }
 
         public int ActiveCount => _active.Count;
         public int IdleCount => _idle.Count;
@@ -147,7 +153,13 @@ internal sealed class ProtocolClientPool
             }
 
             // Avoid indefinite block; fallback clients can still be created outside the pool.
-            return _slots.Wait(BorrowTimeoutMs);
+            var timeoutMs = BorrowTimeoutMs;
+            if (timeoutMs <= 0)
+            {
+                return false;
+            }
+
+            return _slots.Wait(timeoutMs);
         }
 
         private static bool IsExpired(DateTimeOffset createdUtc, DateTimeOffset now, TimeSpan maxAge)
@@ -199,12 +211,13 @@ internal sealed class ProtocolClientPool
         var key = BuildPoolKey(config);
         var pool = Pools.GetOrAdd(
             key,
-            _ => new ClientPool(Math.Max(1, config.MaxPoolSize))
+            _ => new ClientPool(Math.Max(1, config.MaxPoolSize), Math.Max(0, config.PoolAcquireTimeoutMs))
             {
                 MinSize = Math.Max(0, config.MinPoolSize)
             });
         pool.MaxSize = Math.Max(1, config.MaxPoolSize);
         pool.MinSize = Math.Max(0, config.MinPoolSize);
+        pool.BorrowTimeoutMs = Math.Max(0, config.PoolAcquireTimeoutMs);
 
         var maxAge = TimeSpan.FromSeconds(Math.Max(0, config.ConnectionLifetime));
         if (pool.TryBorrow(maxAge, out var protocolClient))
@@ -261,6 +274,6 @@ internal sealed class ProtocolClientPool
 
     private static string BuildPoolKey(ScratchBirdConfig config)
     {
-        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}|{config.SslMode}|{config.AllowInsecureDisable}|{config.SslRootCert}|{config.SslCert}|{config.ManagerAuthFastPath}|{config.ManagerClientFlags}|{config.MaxPoolSize}|{config.MinPoolSize}|{config.ConnectionLifetime}";
+        return $"{config.FrontDoorMode}|{config.Protocol}|{config.Host}:{config.Port}|{config.Database}|{config.Username}|{config.Schema}|{config.ManagerConnectionProfile}|{config.ManagerClientIntent}|{config.SslMode}|{config.AllowInsecureDisable}|{config.SslRootCert}|{config.SslCert}|{config.ManagerAuthFastPath}|{config.ManagerClientFlags}|{config.MaxPoolSize}|{config.MinPoolSize}|{config.ConnectionLifetime}|{config.PoolAcquireTimeoutMs}";
     }
 }

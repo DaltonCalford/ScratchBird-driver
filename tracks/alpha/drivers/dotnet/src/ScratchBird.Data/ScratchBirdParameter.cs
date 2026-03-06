@@ -43,9 +43,12 @@ public sealed class ScratchBirdParameter : DbParameter
         get => _direction;
         set
         {
-            if (value != ParameterDirection.Input)
+            if (value != ParameterDirection.Input
+                && value != ParameterDirection.Output
+                && value != ParameterDirection.InputOutput
+                && value != ParameterDirection.ReturnValue)
             {
-                throw new NotSupportedException("Only input parameters are supported");
+                throw new NotSupportedException("Supported parameter directions: Input, Output, InputOutput, ReturnValue");
             }
             _direction = value;
         }

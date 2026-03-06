@@ -492,7 +492,8 @@ internal sealed class ProtocolClient
         var parameters = new Dictionary<string, string>
         {
             ["database"] = config.Database,
-            ["user"] = config.Username
+            ["user"] = config.Username,
+            ["client_flags"] = config.ConnectClientFlags.ToString(CultureInfo.InvariantCulture)
         };
         if (!string.IsNullOrWhiteSpace(config.Role))
         {
@@ -501,6 +502,50 @@ internal sealed class ProtocolClient
         if (!string.IsNullOrWhiteSpace(config.ApplicationName))
         {
             parameters["application_name"] = config.ApplicationName;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthMethodId))
+        {
+            if (!config.AuthMethodId.StartsWith("scratchbird.auth.", StringComparison.Ordinal))
+            {
+                throw new ScratchBirdAuthException("invalid auth_method_id namespace", "28000");
+            }
+            parameters["auth_method_id"] = config.AuthMethodId;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthMethodPayload))
+        {
+            parameters["auth_method_payload"] = config.AuthMethodPayload;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthPayloadJson))
+        {
+            parameters["auth_payload_json"] = config.AuthPayloadJson;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthPayloadB64))
+        {
+            parameters["auth_payload_b64"] = config.AuthPayloadB64;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthProviderProfile))
+        {
+            parameters["auth_provider_profile"] = config.AuthProviderProfile;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthRequiredMethods))
+        {
+            parameters["auth_required_methods"] = config.AuthRequiredMethods;
+        }
+        if (!string.IsNullOrWhiteSpace(config.AuthForbiddenMethods))
+        {
+            parameters["auth_forbidden_methods"] = config.AuthForbiddenMethods;
+        }
+        if (config.AuthRequireChannelBinding)
+        {
+            parameters["auth_require_channel_binding"] = "1";
+        }
+        if (!string.IsNullOrWhiteSpace(config.WorkloadIdentityToken))
+        {
+            parameters["workload_identity_token"] = config.WorkloadIdentityToken;
+        }
+        if (!string.IsNullOrWhiteSpace(config.ProxyPrincipalAssertion))
+        {
+            parameters["proxy_principal_assertion"] = config.ProxyPrincipalAssertion;
         }
 
         var features = 0UL;
@@ -1410,6 +1455,11 @@ internal sealed class ProtocolClient
         private string _command = string.Empty;
         private readonly int _pageSize;
         private bool _disposed;
+        private bool _hasCurrentResult;
+        private bool _currentResultComplete;
+        private long _rowsReadInResult;
+        private ProtocolMessage? _pendingMessage;
+        private readonly Queue<object?[]> _pendingRows = new();
 
         private readonly CancellationTokenSource? _timeoutCts;
         private CancellationTokenRegistration _timeoutCancelRegistration;
@@ -1467,6 +1517,54 @@ internal sealed class ProtocolClient
         public IReadOnlyList<ColumnInfo> Columns => _columns;
         public long RowsAffected => _rowsAffected;
         public string Command => _command;
+        public bool IsDone => _done;
+
+        public bool NextResult()
+        {
+            if (_done)
+            {
+                return false;
+            }
+
+            if (!_hasCurrentResult)
+            {
+                if (!EnsureCurrentResult())
+                {
+                    return false;
+                }
+            }
+
+            if (!_currentResultComplete)
+            {
+                DrainCurrentResult();
+            }
+
+            if (_done)
+            {
+                return false;
+            }
+
+            ResetCurrentResultState();
+            return EnsureCurrentResult();
+        }
+
+        public void DrainAllResults()
+        {
+            if (_done)
+            {
+                return;
+            }
+
+            if (_hasCurrentResult && !_currentResultComplete)
+            {
+                DrainCurrentResult();
+            }
+
+            while (!_done && NextResult())
+            {
+                DrainCurrentResult();
+            }
+        }
 
         public object?[]? ReadNextRow()
         {
@@ -1475,9 +1573,25 @@ internal sealed class ProtocolClient
                 return null;
             }
 
+            if (!EnsureCurrentResult())
+            {
+                return null;
+            }
+
+            if (_pendingRows.Count > 0)
+            {
+                _rowsReadInResult++;
+                return _pendingRows.Dequeue();
+            }
+
+            if (_currentResultComplete)
+            {
+                return null;
+            }
+
             while (true)
             {
-                var msg = _client.Receive();
+                var msg = NextMessage();
                 if (_client.HandleAsyncMessage(msg))
                 {
                     continue;
@@ -1499,13 +1613,13 @@ internal sealed class ProtocolClient
                             var format = i < _columns.Count ? _columns[i].Format : (byte)TypeDecoder.FormatBinary;
                             row[i] = TypeDecoder.Decode(typeOid, values[i].Data, format);
                         }
+                        _rowsReadInResult++;
                         return row;
                     }
                     case MessageType.COMMAND_COMPLETE:
                     {
-                        var parsed = ProtocolCodec.ParseCommandComplete(msg.Payload);
-                        _command = parsed.Tag;
-                        _rowsAffected = (long)parsed.Rows;
+                        ApplyCommandComplete(msg.Payload);
+                        PrefetchBoundaryMessage();
                         break;
                     }
                     case MessageType.PORTAL_SUSPENDED:
@@ -1516,16 +1630,198 @@ internal sealed class ProtocolClient
                     }
                     case MessageType.READY:
                     {
-                        var ready = ProtocolCodec.ParseReady(msg.Payload);
-                        _client._txnId = ready.TxnId;
-                        _done = true;
-                        _timeoutCts?.Cancel();
+                        MarkReady(msg.Payload);
                         return null;
                     }
                     case MessageType.EMPTY_QUERY:
                         break;
                 }
+
+                if (_currentResultComplete)
+                {
+                    return null;
+                }
             }
+        }
+
+        private bool EnsureCurrentResult()
+        {
+            if (_done)
+            {
+                return false;
+            }
+
+            if (_hasCurrentResult)
+            {
+                return true;
+            }
+
+            ResetCurrentResultState();
+
+            while (!_done)
+            {
+                var msg = NextMessage();
+                if (_client.HandleAsyncMessage(msg))
+                {
+                    continue;
+                }
+
+                switch ((MessageType)msg.Header.Type)
+                {
+                    case MessageType.ERROR:
+                        throw _client.BuildQueryException(msg.Payload);
+                    case MessageType.ROW_DESCRIPTION:
+                        _columns = ProtocolCodec.ParseRowDescription(msg.Payload);
+                        _hasCurrentResult = true;
+                        return true;
+                    case MessageType.DATA_ROW:
+                    {
+                        _hasCurrentResult = true;
+                        var values = ProtocolCodec.ParseDataRow(msg.Payload);
+                        var row = new object?[values.Count];
+                        for (var i = 0; i < values.Count; i++)
+                        {
+                            var typeOid = i < _columns.Count ? _columns[i].TypeOid : 0;
+                            var format = i < _columns.Count ? _columns[i].Format : (byte)TypeDecoder.FormatBinary;
+                            row[i] = TypeDecoder.Decode(typeOid, values[i].Data, format);
+                        }
+                        _pendingRows.Enqueue(row);
+                        return true;
+                    }
+                    case MessageType.COMMAND_COMPLETE:
+                        _hasCurrentResult = true;
+                        ApplyCommandComplete(msg.Payload);
+                        PrefetchBoundaryMessage();
+                        return true;
+                    case MessageType.PORTAL_SUSPENDED:
+                    {
+                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
+                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        break;
+                    }
+                    case MessageType.READY:
+                        MarkReady(msg.Payload);
+                        return false;
+                    case MessageType.EMPTY_QUERY:
+                        break;
+                }
+            }
+
+            return false;
+        }
+
+        private void DrainCurrentResult()
+        {
+            if (_done || !_hasCurrentResult || _currentResultComplete)
+            {
+                return;
+            }
+
+            while (!_done && !_currentResultComplete)
+            {
+                var msg = NextMessage();
+                if (_client.HandleAsyncMessage(msg))
+                {
+                    continue;
+                }
+
+                switch ((MessageType)msg.Header.Type)
+                {
+                    case MessageType.ERROR:
+                        throw _client.BuildQueryException(msg.Payload);
+                    case MessageType.ROW_DESCRIPTION:
+                        _columns = ProtocolCodec.ParseRowDescription(msg.Payload);
+                        break;
+                    case MessageType.DATA_ROW:
+                        _rowsReadInResult++;
+                        break;
+                    case MessageType.COMMAND_COMPLETE:
+                        ApplyCommandComplete(msg.Payload);
+                        PrefetchBoundaryMessage();
+                        return;
+                    case MessageType.PORTAL_SUSPENDED:
+                    {
+                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
+                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        break;
+                    }
+                    case MessageType.READY:
+                        MarkReady(msg.Payload);
+                        return;
+                    case MessageType.EMPTY_QUERY:
+                        break;
+                }
+            }
+        }
+
+        private void ApplyCommandComplete(byte[] payload)
+        {
+            var parsed = ProtocolCodec.ParseCommandComplete(payload);
+            _command = parsed.Tag;
+            var reportedRows = SaturatingUlongToLong(parsed.Rows);
+            _rowsAffected = reportedRows == 0 && _rowsReadInResult > 0
+                ? _rowsReadInResult
+                : reportedRows;
+            _currentResultComplete = true;
+            _hasCurrentResult = true;
+        }
+
+        private void PrefetchBoundaryMessage()
+        {
+            while (!_done)
+            {
+                var msg = _client.Receive();
+                if (_client.HandleAsyncMessage(msg))
+                {
+                    continue;
+                }
+
+                if ((MessageType)msg.Header.Type == MessageType.EMPTY_QUERY)
+                {
+                    continue;
+                }
+
+                if ((MessageType)msg.Header.Type == MessageType.READY)
+                {
+                    MarkReady(msg.Payload);
+                    return;
+                }
+
+                _pendingMessage = msg;
+                return;
+            }
+        }
+
+        private ProtocolMessage NextMessage()
+        {
+            if (_pendingMessage != null)
+            {
+                var pending = _pendingMessage;
+                _pendingMessage = null;
+                return pending;
+            }
+
+            return _client.Receive();
+        }
+
+        private void MarkReady(byte[] payload)
+        {
+            var ready = ProtocolCodec.ParseReady(payload);
+            _client._txnId = ready.TxnId;
+            _done = true;
+            _currentResultComplete = true;
+            _timeoutCts?.Cancel();
+        }
+
+        private void ResetCurrentResultState()
+        {
+            _columns = new List<ColumnInfo>();
+            _rowsAffected = -1;
+            _command = string.Empty;
+            _rowsReadInResult = 0;
+            _hasCurrentResult = false;
+            _currentResultComplete = false;
+            _pendingRows.Clear();
         }
     }
 }
