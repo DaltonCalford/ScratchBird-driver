@@ -119,6 +119,7 @@ Legend:
 - **Mojo lane:** Consolidated static metadata rowcount fallback parity via shared helper semantics (`rowcount` when integer, else `len(rows)` fallback, else `0`) with deterministic TXN parity coverage.
 - **Mojo lane:** Extended shared metadata rowcount fallback parity to instance helpers (`query_metadata_rows*`) and added deterministic unsized-row fallback coverage (`0`).
 - **Mojo lane:** Added shared metadata row extraction fallback semantics (`rows` list/tuple normalization, unsized rows -> `[]`) for static and instance `get_schema` helper parity.
+- **Mojo lane:** Aligned static and instance `ddl_editor_schema_payload` restriction routes with shared metadata rows fallback semantics (tuple normalization and unsized-row `[]` fallback).
 
 ---
 

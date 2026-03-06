@@ -1226,7 +1226,7 @@ class _ShimConnection:
         if restrictions is None:
             rows = self.get_schema("schemas")
         else:
-            rows = self.query_metadata_restricted_multi("schemas", restrictions).rows
+            rows = _result_rows_or_empty(self.query_metadata_restricted_multi("schemas", restrictions))
         return build_ddl_editor_schema_payload(
             rows,
             schema_pattern=pattern,
@@ -1586,8 +1586,7 @@ class ScratchBirdConnection:
                 "schemas",
                 restrictions,
             )
-            result_rows = getattr(result, "rows", None)
-            rows = result_rows if result_rows is not None else []
+            rows = _result_rows_or_empty(result)
         return build_ddl_editor_schema_payload(
             rows,
             schema_pattern=pattern,

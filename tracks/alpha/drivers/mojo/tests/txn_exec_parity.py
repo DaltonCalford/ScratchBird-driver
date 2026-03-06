@@ -667,6 +667,68 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         conn.close()
 
 
+def test_ddl_editor_payload_rows_fallbacks() -> None:
+    static_conn = QueryHarness()
+    static_conn.result = SimpleNamespace(
+        rowcount=None,
+        rows=(
+            {"schema_name": "users.alice.dev"},
+            {"schema_name": "users.bob.dev"},
+        ),
+    )
+    payload = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        static_conn,
+        "users.%",
+        True,
+    )
+    _require(
+        payload["schemaPaths"] == ["users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev"],
+        "static ddl payload should normalize tuple rows",
+    )
+    _require(payload["schemaPattern"] == "users.%", "static ddl payload schemaPattern mismatch")
+    _require(payload["expandSchemaParents"] is True, "static ddl payload expandSchemaParents mismatch")
+
+    static_conn.result = SimpleNamespace(rowcount=None, rows=object())
+    payload_unsized = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        static_conn,
+        "users.%",
+        False,
+    )
+    _require(payload_unsized["schemaPaths"] == [], "static ddl payload should fallback to empty rows for unsized payload")
+
+    instance_conn = scratchbird.connect(_shim_cfg())
+    try:
+        instance_conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows=(
+                    {"schema_name": "users.alice.dev"},
+                    {"schema_name": "users.bob.dev"},
+                ),
+            )
+        )
+        instance_payload = instance_conn.ddl_editor_schema_payload("users.%", True)
+        _require(
+            instance_payload["schemaPaths"]
+            == ["users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev"],
+            "instance ddl payload should normalize tuple rows",
+        )
+
+        instance_conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows=object(),
+            )
+        )
+        instance_payload_unsized = instance_conn.ddl_editor_schema_payload("users.%", False)
+        _require(
+            instance_payload_unsized["schemaPaths"] == [],
+            "instance ddl payload should fallback to empty rows for unsized payload",
+        )
+    finally:
+        instance_conn.close()
+
+
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
@@ -690,6 +752,7 @@ def main() -> None:
     test_static_closed_connection_guards()
     test_static_metadata_rowcount_fallbacks()
     test_instance_metadata_rowcount_fallbacks()
+    test_ddl_editor_payload_rows_fallbacks()
     print("Mojo TXN/EXEC parity tests OK")
 
 
