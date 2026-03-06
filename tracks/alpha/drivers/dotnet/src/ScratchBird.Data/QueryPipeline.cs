@@ -145,6 +145,12 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
         _flushSignal.Release();
     }
 
+    public ScratchBirdQueryPipelineBatch CreateBatch()
+    {
+        ThrowIfDisposed();
+        return new ScratchBirdQueryPipelineBatch(this);
+    }
+
     public void Dispose()
     {
         DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -339,4 +345,77 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
             _completion.TrySetCanceled(cancellationToken);
         }
     }
+}
+
+public sealed class ScratchBirdQueryPipelineBatch
+{
+    private readonly ScratchBirdQueryPipeline _pipeline;
+    private readonly List<BatchItem> _items = new();
+
+    internal ScratchBirdQueryPipelineBatch(ScratchBirdQueryPipeline pipeline)
+    {
+        _pipeline = pipeline;
+    }
+
+    public int Count => _items.Count;
+
+    public ScratchBirdQueryPipelineBatch Add(
+        string sql,
+        IReadOnlyList<ScratchBirdParameter>? parameters = null,
+        int commandTimeoutSeconds = 30,
+        int fetchSize = 0)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            throw new ArgumentException("SQL is required", nameof(sql));
+        }
+
+        if (commandTimeoutSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(commandTimeoutSeconds), "commandTimeoutSeconds must be non-negative");
+        }
+
+        if (fetchSize < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fetchSize), "fetchSize must be non-negative");
+        }
+
+        _items.Add(new BatchItem(
+            sql,
+            parameters ?? Array.Empty<ScratchBirdParameter>(),
+            commandTimeoutSeconds,
+            fetchSize));
+        return this;
+    }
+
+    public async Task<IReadOnlyList<IReadOnlyList<ResultSetSummary>>> ExecuteAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_items.Count == 0)
+        {
+            return Array.Empty<IReadOnlyList<ResultSetSummary>>();
+        }
+
+        var tasks = new Task<IReadOnlyList<ResultSetSummary>>[_items.Count];
+        for (var i = 0; i < _items.Count; i++)
+        {
+            var item = _items[i];
+            tasks[i] = _pipeline.QueueAsync(
+                item.Sql,
+                item.Parameters,
+                item.CommandTimeoutSeconds,
+                item.FetchSize,
+                cancellationToken);
+        }
+
+        _pipeline.Flush();
+        var results = await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return results;
+    }
+
+    private readonly record struct BatchItem(
+        string Sql,
+        IReadOnlyList<ScratchBirdParameter> Parameters,
+        int CommandTimeoutSeconds,
+        int FetchSize);
 }

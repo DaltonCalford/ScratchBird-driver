@@ -121,6 +121,78 @@ public class QueryPipelineSurfaceTests
         Assert.Equal(42, config.FlushTimeoutMs);
     }
 
+    [Fact]
+    public async Task Batch_ExecuteAsync_QueuesAndReturnsOrderedResults()
+    {
+        var executed = new List<string>();
+        using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
+        await using var pipeline = new ScratchBirdQueryPipeline(
+            connection,
+            new ScratchBirdQueryPipelineConfig
+            {
+                MaxInFlight = 4,
+                AutoFlush = false,
+                FlushTimeoutMs = 60000
+            },
+            (sql, _, _, _, _) =>
+            {
+                lock (executed)
+                {
+                    executed.Add(sql);
+                }
+
+                return Task.FromResult(CreateResult(sql));
+            });
+
+        var batch = pipeline.CreateBatch()
+            .Add("SELECT 1")
+            .Add("SELECT 2");
+
+        var results = await batch.ExecuteAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, batch.Count);
+        Assert.Equal(2, results.Count);
+        Assert.Equal("SELECT 1", results[0][0].Command);
+        Assert.Equal("SELECT 2", results[1][0].Command);
+        Assert.Equal(new[] { "SELECT 1", "SELECT 2" }, executed);
+    }
+
+    [Fact]
+    public async Task Batch_ExecuteAsync_ReturnsEmptyWhenNoItemsQueued()
+    {
+        using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
+        await using var pipeline = connection.CreateQueryPipeline();
+
+        var results = await pipeline.CreateBatch().ExecuteAsync();
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task Batch_ExecuteAsync_PropagatesCapacityErrors()
+    {
+        using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
+        await using var pipeline = new ScratchBirdQueryPipeline(
+            connection,
+            new ScratchBirdQueryPipelineConfig
+            {
+                MaxInFlight = 1,
+                AutoFlush = false,
+                FlushTimeoutMs = 60000
+            },
+            async (sql, _, _, _, cancellationToken) =>
+            {
+                await Task.Delay(50, cancellationToken);
+                return CreateResult(sql);
+            });
+
+        var batch = pipeline.CreateBatch()
+            .Add("SELECT 1")
+            .Add("SELECT 2");
+
+        var ex = await Assert.ThrowsAsync<ScratchBirdLimitException>(async () => await batch.ExecuteAsync());
+        Assert.Equal("54000", ex.SqlState);
+    }
+
     private static IReadOnlyList<ResultSetSummary> CreateResult(string command)
     {
         return new[]

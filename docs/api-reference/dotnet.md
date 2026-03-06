@@ -15,6 +15,7 @@
 - `ScratchBirdConnectionStringBuilder`
 - `ScratchBirdQueryPipeline`
 - `ScratchBirdQueryPipelineConfig`
+- `ScratchBirdQueryPipelineBatch`
 - `ScratchBirdFactory`
 
 ## Wrapper Types
@@ -76,8 +77,11 @@ owned by `ScratchBirdConnection`:
 
 - `ScratchBirdConnection.CreateQueryPipeline(config)` creates a single-worker query pipeline similar to JDBC `QueryPipeline`.
 - `ScratchBirdQueryPipeline.QueueAsync(...)` enqueues SQL for asynchronous execution and returns `Task<IReadOnlyList<ResultSetSummary>>`.
+- `ScratchBirdQueryPipeline.CreateBatch()` creates a fluent batch builder (`ScratchBirdQueryPipelineBatch`).
 - `ScratchBirdQueryPipeline.Flush()` triggers immediate processing of queued requests.
 - `ScratchBirdQueryPipeline.PendingCount`, `InFlightCount`, and `HasCapacity` expose runtime queue/capacity state.
+- `ScratchBirdQueryPipelineBatch.Add(...)` appends queued statements and returns the same builder for chaining.
+- `ScratchBirdQueryPipelineBatch.ExecuteAsync()` enqueues the full batch, flushes once, and returns ordered per-statement results.
 - `ScratchBirdQueryPipelineConfig` controls queue behavior:
   - `MaxInFlight`
   - `AutoFlush`
