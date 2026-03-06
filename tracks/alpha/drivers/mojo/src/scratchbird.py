@@ -1154,6 +1154,7 @@ class _ShimConnection:
         return ScratchBirdResult([], [], 0)
 
     def query_metadata(self, collection_name: Optional[str] = None) -> ScratchBirdResult:
+        self._ensure_open()
         normalized_collection = normalize_metadata_collection_name(collection_name)
         metadata_sql = resolve_metadata_collection_query(normalized_collection)
         return self.query(metadata_sql)
@@ -1167,6 +1168,7 @@ class _ShimConnection:
         restriction_key: Optional[str] = None,
         restriction_value: Optional[str] = None,
     ) -> ScratchBirdResult:
+        self._ensure_open()
         metadata_sql = resolve_metadata_collection_query_restricted(
             collection_name,
             restriction_key,
@@ -1193,6 +1195,7 @@ class _ShimConnection:
         collection_name: Optional[str] = None,
         restrictions: Optional[Mapping[str, Any]] = None,
     ) -> ScratchBirdResult:
+        self._ensure_open()
         metadata_sql = resolve_metadata_collection_query_restricted_multi(
             collection_name,
             restrictions,
@@ -1495,6 +1498,7 @@ class ScratchBirdConnection:
 
     @staticmethod
     def query_metadata(conn: Any, collection_name: Optional[str] = None) -> Any:
+        _guard_static_connection_open(conn)
         resolved = normalize_metadata_collection_name(collection_name)
         metadata_sql = resolve_metadata_collection_query(resolved)
         return ScratchBirdConnection.query(conn, metadata_sql, None)
@@ -1511,6 +1515,7 @@ class ScratchBirdConnection:
         restriction_key: Optional[str] = None,
         restriction_value: Optional[str] = None,
     ) -> Any:
+        _guard_static_connection_open(conn)
         metadata_sql = resolve_metadata_collection_query_restricted(
             collection_name,
             restriction_key,
@@ -1539,6 +1544,7 @@ class ScratchBirdConnection:
         collection_name: Optional[str] = None,
         restrictions: Optional[Mapping[str, Any]] = None,
     ) -> Any:
+        _guard_static_connection_open(conn)
         metadata_sql = resolve_metadata_collection_query_restricted_multi(
             collection_name,
             restrictions,

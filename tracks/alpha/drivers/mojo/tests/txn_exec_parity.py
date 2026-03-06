@@ -483,6 +483,9 @@ def test_shim_closed_connection_guards() -> None:
     _expect_08003(lambda: conn.rollback())
     _expect_08003(lambda: conn.cancel())
     _expect_08003(lambda: conn.query_metadata("tables"))
+    _expect_08003(lambda: conn.query_metadata("unsupported_collection"))
+    _expect_08003(lambda: conn.query_metadata_restricted("tables", "unsupported_restriction", "public"))
+    _expect_08003(lambda: conn.query_metadata_restricted_multi("tables", object()))
     _expect_08003(lambda: conn.stream("SELECT id FROM basic_table ORDER BY id", None, 1))
 
 
@@ -510,6 +513,7 @@ def test_static_closed_connection_guards() -> None:
     closed_query._closed = True
     _expect_08003(lambda: scratchbird.ScratchBirdConnection.query(closed_query, "SELECT 1", None))
     _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata(closed_query, "tables"))
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata(closed_query, "unsupported_collection"))
     _expect_08003(lambda: scratchbird.ScratchBirdConnection.query_metadata_rows(closed_query, "tables"))
     _expect_08003(
         lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted(
@@ -520,10 +524,25 @@ def test_static_closed_connection_guards() -> None:
         )
     )
     _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted(
+            closed_query,
+            "tables",
+            "unsupported_restriction",
+            "public",
+        )
+    )
+    _expect_08003(
         lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted_multi(
             closed_query,
             "tables",
             {"schema": "public"},
+        )
+    )
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_restricted_multi(
+            closed_query,
+            "tables",
+            object(),
         )
     )
     _expect_08003(
