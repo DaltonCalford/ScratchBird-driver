@@ -168,6 +168,24 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["pipeline_max_in_flight"] = value;
     }
 
+    public bool PipelineAutoFlush
+    {
+        get => GetBool("pipeline_auto_flush", true);
+        set => this["pipeline_auto_flush"] = value;
+    }
+
+    public int PipelineAutoFlushThreshold
+    {
+        get => GetInt("pipeline_auto_flush_threshold", 10);
+        set => this["pipeline_auto_flush_threshold"] = value;
+    }
+
+    public int PipelineFlushTimeoutMs
+    {
+        get => GetInt("pipeline_flush_timeout_ms", 5000);
+        set => this["pipeline_flush_timeout_ms"] = value;
+    }
+
     public bool LeakCaptureStackTrace
     {
         get => GetBool("leak_capture_stack", false);

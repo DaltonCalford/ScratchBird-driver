@@ -68,7 +68,7 @@ owned by `ScratchBirdConnection`:
 - `ScratchBirdConnection.GetKeepaliveSummary()` returns the keepalive monitor snapshot.
 - Keepalive DSN controls: `keepalive_interval_ms`, `keepalive_max_idle_before_check_ms` (alias `keepalive_max_idle_ms`), `keepalive_validation_timeout_ms`.
 - `ScratchBirdConnection.GetPipelineSummary()` returns the pipeline-capacity monitor snapshot.
-- Pipeline DSN control: `pipeline_max_in_flight` (disabled when set to `0`).
+- Pipeline DSN controls: `pipeline_max_in_flight` (disabled when set to `0`), `pipeline_auto_flush`, `pipeline_auto_flush_threshold`, `pipeline_flush_timeout_ms`.
 - `ScratchBirdConnection.GetLeakSummary()` returns the leak monitor snapshot.
 - Leak DSN controls: `leak_threshold_ms`, `leak_capture_stack` (alias `leak_capture_stack_trace`).
 

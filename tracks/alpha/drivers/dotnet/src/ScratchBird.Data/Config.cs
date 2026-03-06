@@ -57,6 +57,9 @@ public sealed class ScratchBirdConfig
     public int KeepaliveMaxIdleBeforeCheckMs { get; set; } = 600000;
     public int KeepaliveValidationTimeoutMs { get; set; } = 5000;
     public int PipelineMaxInFlight { get; set; } = 100;
+    public bool PipelineAutoFlush { get; set; } = true;
+    public int PipelineAutoFlushThreshold { get; set; } = 10;
+    public int PipelineFlushTimeoutMs { get; set; } = 5000;
     public int LeakThresholdMs { get; set; } = 30000;
     public bool LeakCaptureStackTrace { get; set; } = false;
     public string ManagerAuthToken { get; set; } = string.Empty;
@@ -433,6 +436,23 @@ internal static class DsnParser
             case "pipelinemaxinflight":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pipelineMaxInFlight))
                     cfg.PipelineMaxInFlight = Math.Max(0, pipelineMaxInFlight);
+                break;
+            case "pipeline_auto_flush":
+            case "pipelineautoflush":
+                cfg.PipelineAutoFlush = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "pipeline_auto_flush_threshold":
+            case "pipelineautoflushthreshold":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pipelineAutoFlushThreshold))
+                    cfg.PipelineAutoFlushThreshold = Math.Max(1, pipelineAutoFlushThreshold);
+                break;
+            case "pipeline_flush_timeout_ms":
+            case "pipelineflushtimeoutms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pipelineFlushTimeoutMs))
+                    cfg.PipelineFlushTimeoutMs = Math.Max(1, pipelineFlushTimeoutMs);
                 break;
             case "leak_threshold_ms":
             case "leakthresholdms":

@@ -171,12 +171,23 @@ public class ConfigTests
     public void ParsePipelineOptions()
     {
         var uriCfg = ScratchBirdConfig.FromConnectionString(
-            "scratchbird://app:secret@localhost:3092/mydb?pipeline_max_in_flight=32");
+            "scratchbird://app:secret@localhost:3092/mydb" +
+            "?pipeline_max_in_flight=32" +
+            "&pipeline_auto_flush=false" +
+            "&pipeline_auto_flush_threshold=7" +
+            "&pipeline_flush_timeout_ms=1200");
         Assert.Equal(32, uriCfg.PipelineMaxInFlight);
+        Assert.False(uriCfg.PipelineAutoFlush);
+        Assert.Equal(7, uriCfg.PipelineAutoFlushThreshold);
+        Assert.Equal(1200, uriCfg.PipelineFlushTimeoutMs);
 
         var kvCfg = ScratchBirdConfig.FromConnectionString(
-            "Host=localhost;Port=3092;Database=mydb;pipelinemaxinflight=0");
+            "Host=localhost;Port=3092;Database=mydb;" +
+            "pipelinemaxinflight=0;pipelineautoflush=1;pipelineautoflushthreshold=9;pipelineflushtimeoutms=25");
         Assert.Equal(0, kvCfg.PipelineMaxInFlight);
+        Assert.True(kvCfg.PipelineAutoFlush);
+        Assert.Equal(9, kvCfg.PipelineAutoFlushThreshold);
+        Assert.Equal(25, kvCfg.PipelineFlushTimeoutMs);
     }
 
     [Fact]

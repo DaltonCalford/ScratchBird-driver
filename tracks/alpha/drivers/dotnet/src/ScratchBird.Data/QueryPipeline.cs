@@ -282,7 +282,10 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
     {
         return new ScratchBirdQueryPipelineConfig
         {
-            MaxInFlight = connection.Config.PipelineMaxInFlight
+            MaxInFlight = connection.Config.PipelineMaxInFlight,
+            AutoFlush = connection.Config.PipelineAutoFlush,
+            AutoFlushThreshold = connection.Config.PipelineAutoFlushThreshold,
+            FlushTimeoutMs = connection.Config.PipelineFlushTimeoutMs
         };
     }
 

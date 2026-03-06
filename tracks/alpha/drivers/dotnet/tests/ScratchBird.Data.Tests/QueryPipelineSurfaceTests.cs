@@ -110,11 +110,15 @@ public class QueryPipelineSurfaceTests
     public void CreateQueryPipeline_UsesConnectionPipelineDefaults()
     {
         using var connection = new ScratchBirdConnection(
-            "Host=localhost;Port=3092;Database=main;pipeline_max_in_flight=3");
+            "Host=localhost;Port=3092;Database=main;pipeline_max_in_flight=3;" +
+            "pipeline_auto_flush=0;pipeline_auto_flush_threshold=6;pipeline_flush_timeout_ms=42");
         using var pipeline = connection.CreateQueryPipeline();
 
         var config = GetPrivateField<ScratchBirdQueryPipelineConfig>(pipeline, "_config");
         Assert.Equal(3, config.MaxInFlight);
+        Assert.False(config.AutoFlush);
+        Assert.Equal(6, config.AutoFlushThreshold);
+        Assert.Equal(42, config.FlushTimeoutMs);
     }
 
     private static IReadOnlyList<ResultSetSummary> CreateResult(string command)
