@@ -9,6 +9,8 @@ package scratchbird
 
 import (
 	"encoding/binary"
+	"math"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -231,7 +233,156 @@ func TestTypeMetadataHelpers(t *testing.T) {
 	if got := scanTypeForOID(oidJSONB); got != reflect.TypeOf(JSONB{}) {
 		t.Fatalf("scan type jsonb mismatch: %v", got)
 	}
+	if got := scanTypeForOID(oidTimetz); got != reflect.TypeOf(TimeTZ{}) {
+		t.Fatalf("scan type timetz mismatch: %v", got)
+	}
+	if got := scanTypeForOID(oidPoint); got != reflect.TypeOf(Geometry{}) {
+		t.Fatalf("scan type geometry mismatch: %v", got)
+	}
 	if got := scanTypeForOID(999999); got != reflect.TypeOf("") {
 		t.Fatalf("scan type default mismatch: %v", got)
 	}
+}
+
+func TestEncodeDecodeTimeTZ(t *testing.T) {
+	param, oid, err := encodeParam(TimeTZ{Micros: 123456, OffsetSecondsWest: -3600})
+	if err != nil {
+		t.Fatalf("encode timetz failed: %v", err)
+	}
+	if oid != oidTimetz {
+		t.Fatalf("timetz oid mismatch: got %d want %d", oid, oidTimetz)
+	}
+	decodedAny, err := decodeBinaryValue(oidTimetz, param.data)
+	if err != nil {
+		t.Fatalf("decode timetz failed: %v", err)
+	}
+	decoded, ok := decodedAny.(TimeTZ)
+	if !ok {
+		t.Fatalf("decoded timetz type mismatch: %T", decodedAny)
+	}
+	if decoded.Micros != 123456 || decoded.OffsetSecondsWest != -3600 {
+		t.Fatalf("decoded timetz mismatch: %#v", decoded)
+	}
+}
+
+func TestDecodeBinaryValueOIDMatrix(t *testing.T) {
+	ts := time.Date(2026, time.March, 6, 12, 34, 56, 0, time.UTC)
+	dateVal := time.Date(2026, time.March, 6, 0, 0, 0, 0, time.UTC)
+	intervalVal := Interval{Micros: 1200, Days: 2, Months: 3}
+	ipVal := net.ParseIP("127.0.0.1")
+
+	int2 := make([]byte, 2)
+	binary.LittleEndian.PutUint16(int2, uint16(42))
+	int4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(int4, uint32(42))
+	int8 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(int8, uint64(42))
+	float4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(float4, math.Float32bits(1.5))
+	float8 := make([]byte, 8)
+	binary.LittleEndian.PutUint64(float8, math.Float64bits(2.5))
+	money := make([]byte, 8)
+	binary.LittleEndian.PutUint64(money, uint64(99))
+
+	tests := []struct {
+		name    string
+		oid     uint32
+		payload []byte
+		assert  func(t *testing.T, got any)
+	}{
+		{"bool", oidBool, []byte{1}, func(t *testing.T, got any) { assertEqual(t, got, true) }},
+		{"int2", oidInt2, int2, func(t *testing.T, got any) { assertEqual(t, got, int16(42)) }},
+		{"int4", oidInt4, int4, func(t *testing.T, got any) { assertEqual(t, got, int32(42)) }},
+		{"int8", oidInt8, int8, func(t *testing.T, got any) { assertEqual(t, got, int64(42)) }},
+		{"float4", oidFloat4, float4, func(t *testing.T, got any) { assertEqual(t, got, float32(1.5)) }},
+		{"float8", oidFloat8, float8, func(t *testing.T, got any) { assertEqual(t, got, float64(2.5)) }},
+		{"numeric", oidNumeric, encodeLengthPrefixed([]byte("12.34")), func(t *testing.T, got any) { assertEqual(t, got, "12.34") }},
+		{"money", oidMoney, money, func(t *testing.T, got any) { assertEqual(t, got, int64(99)) }},
+		{"text", oidText, encodeLengthPrefixed([]byte("hello")), func(t *testing.T, got any) { assertEqual(t, got, "hello") }},
+		{"char", oidChar, encodeLengthPrefixed([]byte("c")), func(t *testing.T, got any) { assertEqual(t, got, "c") }},
+		{"bpchar", oidBPChar, encodeLengthPrefixed([]byte("bp")), func(t *testing.T, got any) { assertEqual(t, got, "bp") }},
+		{"json", oidJSON, encodeLengthPrefixed([]byte(`{"k":1}`)), func(t *testing.T, got any) { assertEqual(t, got, `{"k":1}`) }},
+		{"jsonb", oidJSONB, encodeLengthPrefixed([]byte(`{"k":1}`)), func(t *testing.T, got any) {
+			v, ok := got.(JSONB)
+			if !ok || string(v.Raw) != `{"k":1}` {
+				t.Fatalf("jsonb mismatch: %#v", got)
+			}
+		}},
+		{"xml", oidXML, encodeLengthPrefixed([]byte("<x/>")), func(t *testing.T, got any) { assertEqual(t, got, "<x/>") }},
+		{"bytea", oidBytea, encodeLengthPrefixed([]byte{0x61, 0x62}), func(t *testing.T, got any) { assertEqual(t, got, []byte{0x61, 0x62}) }},
+		{"date", oidDate, encodeDate(dateVal), func(t *testing.T, got any) { assertEqual(t, got, dateVal) }},
+		{"time", oidTime, encodeTimeMicros(12345), func(t *testing.T, got any) { assertEqual(t, got, 12345*time.Microsecond) }},
+		{"timetz", oidTimetz, encodeTimetz(TimeTZ{Micros: 12345, OffsetSecondsWest: -3600}), func(t *testing.T, got any) {
+			assertEqual(t, got, TimeTZ{Micros: 12345, OffsetSecondsWest: -3600})
+		}},
+		{"timestamp", oidTimestamp, encodeTimestamp(ts), func(t *testing.T, got any) { assertEqual(t, got, ts) }},
+		{"timestamptz", oidTimestamptz, encodeTimestamp(ts), func(t *testing.T, got any) { assertEqual(t, got, ts) }},
+		{"interval", oidInterval, encodeInterval(intervalVal), func(t *testing.T, got any) { assertEqual(t, got, intervalVal) }},
+		{"uuid", oidUUID, []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, func(t *testing.T, got any) {
+			assertEqual(t, got, "00010203-0405-0607-0809-0a0b0c0d0e0f")
+		}},
+		{"inet", oidInet, encodeLengthPrefixed([]byte(ipVal.String())), func(t *testing.T, got any) { assertEqual(t, got, "127.0.0.1") }},
+		{"cidr", oidCidr, encodeLengthPrefixed([]byte("127.0.0.0/24")), func(t *testing.T, got any) { assertEqual(t, got, "127.0.0.0/24") }},
+		{"macaddr", oidMacaddr, encodeLengthPrefixed([]byte("08:00:2b:01:02:03")), func(t *testing.T, got any) { assertEqual(t, got, "08:00:2b:01:02:03") }},
+		{"tsvector", oidTSVector, encodeLengthPrefixed([]byte("'fat':2")), func(t *testing.T, got any) { assertEqual(t, got, "'fat':2") }},
+		{"tsquery", oidTSQuery, encodeLengthPrefixed([]byte("fat & rat")), func(t *testing.T, got any) { assertEqual(t, got, "fat & rat") }},
+		{"int4range", oidInt4Range, mustEncodeRange(t, Range[int32]{Lower: 1, Upper: 2}), func(t *testing.T, got any) {
+			r, ok := got.(Range[any])
+			if !ok {
+				t.Fatalf("range type mismatch: %T", got)
+			}
+			assertEqual(t, r.Lower, int32(1))
+			assertEqual(t, r.Upper, int32(2))
+		}},
+		{"vector", oidSBVector, encodeLengthPrefixed([]byte("[1,2,3]")), func(t *testing.T, got any) {
+			assertEqual(t, got, []float32{1, 2, 3})
+		}},
+		{"record", oidRecord, mustEncodeComposite(t), func(t *testing.T, got any) {
+			comp, ok := got.(Composite)
+			if !ok || len(comp.Fields) != 1 {
+				t.Fatalf("composite mismatch: %#v", got)
+			}
+		}},
+		{"geometry", oidPoint, encodeLengthPrefixed([]byte{0x01, 0x02}), func(t *testing.T, got any) {
+			g, ok := got.(Geometry)
+			if !ok || !reflect.DeepEqual(g.WKB, []byte{0x01, 0x02}) {
+				t.Fatalf("geometry mismatch: %#v", got)
+			}
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := decodeBinaryValue(tc.oid, tc.payload)
+			if err != nil {
+				t.Fatalf("decode failed: %v", err)
+			}
+			tc.assert(t, got)
+		})
+	}
+}
+
+func assertEqual(t *testing.T, got, want any) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("value mismatch: got %#v want %#v", got, want)
+	}
+}
+
+func mustEncodeRange(t *testing.T, value Range[int32]) []byte {
+	t.Helper()
+	data, err := encodeRange(int32RangeOID, value)
+	if err != nil {
+		t.Fatalf("encode range failed: %v", err)
+	}
+	return data
+}
+
+func mustEncodeComposite(t *testing.T) []byte {
+	t.Helper()
+	data, _, err := encodeComposite(Composite{Fields: []CompositeField{{OID: oidInt4, Value: int32(7)}}})
+	if err != nil {
+		t.Fatalf("encode composite failed: %v", err)
+	}
+	return data
 }

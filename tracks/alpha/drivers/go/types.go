@@ -70,11 +70,11 @@ const (
 )
 
 const (
-	rangeEmpty  = 0x01
-	rangeLbInc  = 0x02
-	rangeUbInc  = 0x04
-	rangeLbInf  = 0x08
-	rangeUbInf  = 0x10
+	rangeEmpty = 0x01
+	rangeLbInc = 0x02
+	rangeUbInc = 0x04
+	rangeLbInf = 0x08
+	rangeUbInf = 0x10
 )
 
 type JSONB struct {
@@ -109,31 +109,36 @@ type Interval struct {
 	Months int32
 }
 
-type Date struct{
+type Date struct {
 	Time time.Time
 }
 
-type Time struct{
+type Time struct {
 	Micros int64
 }
 
-type Timestamp struct{
+type TimeTZ struct {
+	Micros            int64
+	OffsetSecondsWest int32
+}
+
+type Timestamp struct {
 	Time time.Time
 }
 
-type TimestampTZ struct{
+type TimestampTZ struct {
 	Time time.Time
 }
 
-type Decimal struct{
+type Decimal struct {
 	Value string
 }
 
-type Money struct{
+type Money struct {
 	Cents int64
 }
 
-type RawValue struct{
+type RawValue struct {
 	OID  uint32
 	Data []byte
 }
@@ -256,6 +261,8 @@ func encodeParam(value any) (paramValue, uint32, error) {
 		return paramValue{data: encodeDate(v.Time)}, oidDate, nil
 	case Time:
 		return paramValue{data: encodeTimeMicros(v.Micros)}, oidTime, nil
+	case TimeTZ:
+		return paramValue{data: encodeTimetz(v)}, oidTimetz, nil
 	case Timestamp:
 		return paramValue{data: encodeTimestamp(v.Time)}, oidTimestamp, nil
 	case TimestampTZ:
@@ -332,7 +339,7 @@ func decodeBinaryValue(oid uint32, data []byte) (any, error) {
 			return int64(binary.LittleEndian.Uint64(data)), nil
 		}
 		return int64(0), nil
-	case oidText, oidVarchar, oidChar, oidJSON, oidXML, oidTSVector, oidTSQuery:
+	case oidText, oidVarchar, oidChar, oidBPChar, oidJSON, oidXML, oidTSVector, oidTSQuery:
 		return string(stripLengthPrefix(data)), nil
 	case oidJSONB:
 		return JSONB{Raw: append([]byte{}, stripLengthPrefix(data)...)}, nil
@@ -342,6 +349,8 @@ func decodeBinaryValue(oid uint32, data []byte) (any, error) {
 		return decodeDate(data), nil
 	case oidTime:
 		return decodeTime(data), nil
+	case oidTimetz:
+		return decodeTimetz(data), nil
 	case oidTimestamp:
 		return decodeTimestamp(data), nil
 	case oidTimestamptz:
@@ -352,6 +361,8 @@ func decodeBinaryValue(oid uint32, data []byte) (any, error) {
 		return bytesToUUIDString(data), nil
 	case oidInet, oidCidr, oidMacaddr, oidMacaddr8:
 		return string(stripLengthPrefix(data)), nil
+	case oidPoint, oidLseg, oidPath, oidBox, oidPolygon, oidLine, oidCircle:
+		return decodeGeometry(data), nil
 	case oidInt4Range, oidInt8Range, oidNumRange, oidTSRange, oidTstzRange, oidDateRange:
 		return decodeRange(oid, data)
 	case oidSBVector:
@@ -582,6 +593,13 @@ func encodeTimeMicros(micros int64) []byte {
 	return buf
 }
 
+func encodeTimetz(value TimeTZ) []byte {
+	buf := make([]byte, 12)
+	binary.LittleEndian.PutUint64(buf[0:8], uint64(value.Micros))
+	binary.LittleEndian.PutUint32(buf[8:12], uint32(value.OffsetSecondsWest))
+	return buf
+}
+
 func encodeTimestamp(t time.Time) []byte {
 	base := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	micros := t.UTC().Sub(base).Microseconds()
@@ -615,6 +633,18 @@ func decodeTime(data []byte) time.Duration {
 	return time.Duration(micros) * time.Microsecond
 }
 
+func decodeTimetz(data []byte) TimeTZ {
+	if len(data) < 8 {
+		return TimeTZ{}
+	}
+	micros := int64(binary.LittleEndian.Uint64(data[0:8]))
+	offset := int32(0)
+	if len(data) >= 12 {
+		offset = int32(binary.LittleEndian.Uint32(data[8:12]))
+	}
+	return TimeTZ{Micros: micros, OffsetSecondsWest: offset}
+}
+
 func decodeTimestamp(data []byte) time.Time {
 	if len(data) < 8 {
 		return time.Time{}
@@ -640,6 +670,10 @@ func bytesToUUIDString(data []byte) string {
 	}
 	hexStr := hex.EncodeToString(data)
 	return hexStr[0:8] + "-" + hexStr[8:12] + "-" + hexStr[12:16] + "-" + hexStr[16:20] + "-" + hexStr[20:]
+}
+
+func decodeGeometry(data []byte) Geometry {
+	return Geometry{WKB: append([]byte{}, stripLengthPrefix(data)...)}
 }
 
 func parseArrayLiteral(text string) []any {
@@ -805,6 +839,8 @@ func oidName(oid uint32) string {
 		return "date"
 	case oidTime:
 		return "time"
+	case oidTimetz:
+		return "timetz"
 	case oidTimestamp:
 		return "timestamp"
 	case oidTimestamptz:
@@ -845,6 +881,20 @@ func oidName(oid uint32) string {
 		return "daterange"
 	case oidSBVector:
 		return "vector"
+	case oidPoint:
+		return "point"
+	case oidLseg:
+		return "lseg"
+	case oidPath:
+		return "path"
+	case oidBox:
+		return "box"
+	case oidPolygon:
+		return "polygon"
+	case oidLine:
+		return "line"
+	case oidCircle:
+		return "circle"
 	default:
 		return "unknown"
 	}
@@ -870,23 +920,27 @@ func scanTypeForOID(oid uint32) reflect.Type {
 		return reflect.TypeOf(time.Time{})
 	case oidTime:
 		return reflect.TypeOf(time.Duration(0))
+	case oidTimetz:
+		return reflect.TypeOf(TimeTZ{})
 	case oidInterval:
 		return reflect.TypeOf(Interval{})
 	case oidJSONB:
 		return reflect.TypeOf(JSONB{})
 	case oidSBVector:
 		return reflect.TypeOf([]float32{})
+	case oidPoint, oidLseg, oidPath, oidBox, oidPolygon, oidLine, oidCircle:
+		return reflect.TypeOf(Geometry{})
 	default:
 		return reflect.TypeOf("")
 	}
 }
 
 const (
-	int32RangeOID     = oidInt4Range
-	int64RangeOID     = oidInt8Range
-	decimalRangeOID   = oidNumRange
-	dateRangeOID      = oidDateRange
-	timestampRangeOID = oidTSRange
+	int32RangeOID       = oidInt4Range
+	int64RangeOID       = oidInt8Range
+	decimalRangeOID     = oidNumRange
+	dateRangeOID        = oidDateRange
+	timestampRangeOID   = oidTSRange
 	timestamptzRangeOID = oidTstzRange
 )
 

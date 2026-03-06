@@ -44,6 +44,10 @@ type Config struct {
 	ManagerClientIntent         string
 	ManagerClientFlags          uint16
 	ManagerAuthFastPath         bool
+	AuthMethodID                string
+	AuthPayloadJSON             string
+	AuthPayloadB64              string
+	AuthProviderProfile         string
 }
 
 func defaultConfig() Config {
@@ -141,7 +145,23 @@ func parseKeyValue(dsn string) (Config, error) {
 
 func normalizeNativeProtocol(value string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "native", "scratchbird", "scratchbird-native", "scratchbird_native":
+	case "",
+		"native",
+		"scratchbird",
+		"scratchbird-native",
+		"scratchbird_native",
+		"sbwp",
+		"postgres",
+		"postgresql",
+		"pg",
+		"jdbc",
+		"odbc",
+		"sql",
+		"mysql",
+		"mariadb",
+		"sqlite",
+		"duckdb",
+		"firebird":
 		return "native", true
 	default:
 		return "", false
@@ -154,6 +174,32 @@ func normalizeFrontDoorMode(value string) (string, bool) {
 		return "direct", true
 	case "manager_proxy", "manager-proxy", "managed":
 		return "manager_proxy", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeSSLMode(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "require", "on", "true", "1", "yes", "allow", "prefer":
+		return "require", true
+	case "verify-ca", "verifyca":
+		return "verify-ca", true
+	case "verify-full", "verifyfull":
+		return "verify-full", true
+	case "disable", "off", "false", "0", "no":
+		return "disable", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeCompressionMode(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "off", "none", "false", "0", "no":
+		return "off", true
+	case "zstd", "on", "true", "1", "yes":
+		return "zstd", true
 	default:
 		return "", false
 	}
@@ -189,8 +235,12 @@ func applyParam(cfg *Config, key, value string) error {
 			return errors.New("only protocol=native is supported; connect to the native parser listener/port")
 		}
 		cfg.Protocol = normalized
-	case "sslmode", "ssl mode":
-		cfg.SSLMode = value
+	case "sslmode", "ssl mode", "ssl":
+		normalized, ok := normalizeSSLMode(value)
+		if !ok {
+			return errors.New("sslmode must be disable, require, verify-ca, or verify-full")
+		}
+		cfg.SSLMode = normalized
 	case "sslrootcert":
 		cfg.SSLRootCert = value
 	case "sslcert":
@@ -210,13 +260,13 @@ func applyParam(cfg *Config, key, value string) error {
 	case "application_name", "applicationname":
 		cfg.Application = value
 	case "binary_transfer", "binarytransfer":
-		cfg.BinaryTransfer = value == "1" || strings.EqualFold(value, "true")
+		cfg.BinaryTransfer = parseBoolParam(value)
 	case "compression":
-		if strings.EqualFold(value, "zstd") {
-			cfg.Compression = "zstd"
-		} else {
-			cfg.Compression = "off"
+		normalized, ok := normalizeCompressionMode(value)
+		if !ok {
+			return errors.New("compression must be off or zstd")
 		}
+		cfg.Compression = normalized
 	case "fetch_size", "fetchsize", "default_fetch_size":
 		if rows, err := strconv.Atoi(value); err == nil && rows >= 0 {
 			cfg.FetchSize = uint32(rows)
@@ -239,6 +289,14 @@ func applyParam(cfg *Config, key, value string) error {
 		}
 	case "manager_auth_fast_path", "mcp_auth_fast_path":
 		cfg.ManagerAuthFastPath = parseBoolParam(value)
+	case authParamMethodID, "authmethodid":
+		cfg.AuthMethodID = value
+	case authParamPayloadJSON, "authpayloadjson":
+		cfg.AuthPayloadJSON = value
+	case authParamPayloadB64, "authpayloadb64":
+		cfg.AuthPayloadB64 = value
+	case authParamProviderProfile, "authproviderprofile":
+		cfg.AuthProviderProfile = value
 	}
 	return nil
 }

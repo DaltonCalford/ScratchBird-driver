@@ -91,3 +91,28 @@ fn parse_auth_plugin_selection_params_into_extra() {
         Some("default")
     );
 }
+
+#[test]
+fn parse_protocol_hints_normalize_to_native() {
+    let cfg = Config::from_dsn(
+        "scratchbird://user:pass@localhost:3092/mydb?protocol=jdbc&parser=postgresql&dialect=odbc",
+    )
+    .unwrap();
+    assert_eq!(cfg.protocol, "native");
+}
+
+#[test]
+fn parse_rejects_unknown_compression_mode() {
+    let err = Config::from_dsn("scratchbird://user:pass@localhost:3092/mydb?compression=gzip")
+        .unwrap_err();
+    assert_eq!(err.message, "compression must be off or zstd");
+}
+
+#[test]
+fn parse_metadata_expand_schema_parent_aliases() {
+    let cfg = Config::from_dsn(
+        "scratchbird://user:pass@localhost:3092/mydb?metadata_expand_schema_parents=true&dbeaver_expand_schema_parents=0&expand_schema_parents=1",
+    )
+    .unwrap();
+    assert!(cfg.metadata_expand_schema_parents);
+}

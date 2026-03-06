@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
@@ -89,11 +90,18 @@ func (c *Conn) connect(ctx context.Context) error {
 		return &Error{Kind: ErrNotSupported, Message: "front_door_mode must be direct or manager_proxy", SQLState: "0A000"}
 	}
 	c.config.FrontDoorMode = frontDoorMode
-	if !c.config.BinaryTransfer {
-		return &Error{Kind: ErrNotSupported, Message: "binary_transfer=false is not supported", SQLState: "0A000"}
+	sslMode, ok := normalizeSSLMode(c.config.SSLMode)
+	if !ok {
+		return &Error{Kind: ErrNotSupported, Message: "sslmode must be disable, require, verify-ca, or verify-full", SQLState: "0A000"}
 	}
-	if strings.EqualFold(c.config.Compression, "zstd") {
-		return &Error{Kind: ErrNotSupported, Message: "compression=zstd is not supported", SQLState: "0A000"}
+	c.config.SSLMode = sslMode
+	compressionMode, ok := normalizeCompressionMode(c.config.Compression)
+	if !ok {
+		return &Error{Kind: ErrNotSupported, Message: "compression must be off or zstd", SQLState: "0A000"}
+	}
+	c.config.Compression = compressionMode
+	if c.config.FrontDoorMode == "manager_proxy" && c.config.ManagerAuthToken == "" {
+		return &Error{Kind: ErrConnection, Message: "manager_proxy mode requires manager_auth_token", SQLState: "08001"}
 	}
 	address := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	dialer := &net.Dialer{Timeout: c.config.ConnectTimeout}
@@ -194,9 +202,9 @@ func (c *Conn) applyTLS(ctx context.Context) error {
 		mode = "require"
 	}
 	if mode == "disable" {
-		return &Error{Kind: ErrConnection, Message: "TLS is required", SQLState: "08001"}
+		return nil
 	}
-	tlsConfig, err := c.buildTLSConfig()
+	tlsConfig, err := c.buildTLSConfig(mode)
 	if err != nil {
 		return err
 	}
@@ -208,10 +216,13 @@ func (c *Conn) applyTLS(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) buildTLSConfig() (*tls.Config, error) {
+func (c *Conn) buildTLSConfig(mode string) (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		ServerName: c.config.Host,
+	}
+	if mode == "require" {
+		cfg.InsecureSkipVerify = true
 	}
 	if c.config.SSLCert != "" {
 		cert, err := loadTLSKeyPair(c.config.SSLCert, c.config.SSLKey, c.config.SSLPassword)
@@ -497,6 +508,15 @@ func (c *Conn) handshake(ctx context.Context) error {
 	if c.config.Application != "" {
 		params["application_name"] = c.config.Application
 	}
+	selection := AuthPluginSelection{
+		MethodID:        c.config.AuthMethodID,
+		PayloadJSON:     c.config.AuthPayloadJSON,
+		PayloadB64:      c.config.AuthPayloadB64,
+		ProviderProfile: c.config.AuthProviderProfile,
+	}
+	if err := ApplyAuthPluginSelection(params, selection); err != nil {
+		return &Error{Kind: ErrData, Message: err.Error(), SQLState: "22023"}
+	}
 	payload := buildStartupPayload(features, params)
 	if err := c.sendMessage(msgStartup, payload, 0, true); err != nil {
 		return err
@@ -581,6 +601,12 @@ func (c *Conn) handleAuthRequest(method authMethod, data []byte, scram *scramCli
 			return scram, err
 		}
 		return scram, nil
+	case authMD5, authCertificate, authGSSAPI, authSSPI, authLDAP, authSAML, authOIDC, authMFATOTP, authClusterPKI:
+		payload := c.buildGenericAuthPayload(data)
+		if err := c.sendMessage(msgAuthResponse, payload, 0, true); err != nil {
+			return scram, err
+		}
+		return scram, nil
 	default:
 		return scram, &Error{Kind: ErrAuth, Message: "unsupported auth method", SQLState: "28000"}
 	}
@@ -600,9 +626,34 @@ func (c *Conn) handleAuthContinue(method authMethod, data []byte, scram *scramCl
 			return nil, err
 		}
 		return scram, nil
+	case authMD5, authCertificate, authGSSAPI, authSSPI, authLDAP, authSAML, authOIDC, authMFATOTP, authClusterPKI:
+		payload := c.buildGenericAuthPayload(data)
+		if err := c.sendMessage(msgAuthResponse, payload, 0, true); err != nil {
+			return nil, err
+		}
+		return scram, nil
 	default:
 		return scram, &Error{Kind: ErrAuth, Message: "unsupported auth method", SQLState: "28000"}
 	}
+}
+
+func (c *Conn) buildGenericAuthPayload(challenge []byte) []byte {
+	if c.config.AuthPayloadB64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(c.config.AuthPayloadB64)
+		if err == nil {
+			return decoded
+		}
+	}
+	if c.config.AuthPayloadJSON != "" {
+		return []byte(c.config.AuthPayloadJSON)
+	}
+	if c.config.Password != "" {
+		return []byte(c.config.Password)
+	}
+	if len(challenge) > 0 {
+		return append([]byte{}, challenge...)
+	}
+	return nil
 }
 
 func (c *Conn) Prepare(query string) (driver.Stmt, error) {
@@ -1413,11 +1464,13 @@ func (c *Conn) CheckNamedValue(nv *driver.NamedValue) error {
 
 func (c *Conn) ensureOpen(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return errors.New("connection is closed")
 	}
-	if c.raw == nil {
+	alreadyOpen := c.raw != nil
+	c.mu.Unlock()
+	if !alreadyOpen {
 		return c.connect(ctx)
 	}
 	return nil

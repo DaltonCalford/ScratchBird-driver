@@ -2,27 +2,29 @@
 
 ## What Changed
 
-- Hardened TLS mode handling in [`conn.go`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/conn.go):
-  - `applyTLS` now trims whitespace before SSL mode comparison, so values like `"  DISABLE  "` are consistently rejected as non-compliant (`TLS is required`).
-  - `buildTLSConfig` now fails fast when `sslrootcert` does not contain parseable PEM certificates (`failed to parse sslrootcert PEM`), instead of silently accepting an empty CA pool.
-- Added targeted connection/auth/protocol unit coverage in [`conn_protocol_test.go`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/conn_protocol_test.go):
-  - Connection guardrails: unsupported protocol and `binary_transfer=false` are rejected before dialing.
-  - TLS behavior: whitespace-trimmed `sslmode=disable` rejection and invalid CA PEM rejection.
-  - Protocol/auth parsing: oversized header rejection, truncated `AUTH_CONTINUE` rejection, auth plugin namespace validation and param wiring.
-- Updated CONN evidence anchors in [`BASELINE_REQUIREMENT_MAPPING.md`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/BASELINE_REQUIREMENT_MAPPING.md).
+- Expanded DSN/property normalization in [`config.go`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/config.go):
+  - Protocol aliases (`jdbc`, `odbc`, `postgresql`, `scratchbird-native` variants) now normalize to `native`.
+  - `sslmode` accepts JDBC-compatible aliases and normalizes to `disable|require|verify-ca|verify-full`.
+  - `compression` accepts `off|zstd` plus aliases and rejects unknown values.
+  - `binary_transfer` now uses strict bool parsing while allowing `false`.
+  - Auth plugin startup fields are parsed (`auth_method_id`, `auth_payload_json`, `auth_payload_b64`, `auth_provider_profile` + aliases).
+- Updated connect/auth behavior in [`conn.go`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/conn.go):
+  - `sslmode=disable` now bypasses TLS instead of hard-rejecting.
+  - `compression=zstd` and `binary_transfer=false` are accepted.
+  - `front_door_mode=manager_proxy` now fails fast with `08001` when `manager_auth_token` is missing.
+  - Startup auth plugin selection is applied through protocol params.
+  - Additional auth methods (`md5`, `certificate`, `gssapi/sspi`, `ldap`, `saml`, `oidc`, `mfa`, `cluster pki`) now route through generic auth payload handling.
+  - Fixed `ensureOpen` lock ordering to avoid connect/handshake deadlock.
+- Added always-on runtime contract coverage in [`runtime_contract_gate_test.go`](/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go/runtime_contract_gate_test.go):
+  - Manager-proxy handshake/auth path with no environment dependency.
+  - Startup feature-bit and query-flag assertions for compression/binary-transfer parity.
 
 ## Targeted Tests Run
 
-- `cd /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go && go test ./... -run 'TestApplyTLSDisableModeTrimsWhitespace|TestBuildTLSConfigRejectsInvalidRootCertPEM|TestConnectRejectsUnsupportedProtocolBeforeDial|TestConnectRejectsBinaryTransferFalseBeforeDial|TestDecodeHeaderRejectsPayloadTooLarge|TestParseAuthContinueRejectsTruncatedPayload|TestApplyAuthPluginSelectionRejectsInvalidNamespace|TestApplyAuthPluginSelectionSetsParams'`
-  - Result: `PASS` (`ok github.com/scratchbird/scratchbird-go`, conformance package had no matching tests)
+- `cd /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/go && go test ./...`
+  - Result: `PASS`
 
 ## CONN Status Recommendation
 
-- `PARTIAL` (remains partial after this change set).
+- `IMPLEMENTED` (baseline-complete for the 0.1.0 scope).
 
-## Remaining Concrete Gaps
-
-- `binary_transfer=false` is still explicitly unsupported in `connect`.
-- `compression=zstd` is still explicitly unsupported in `connect`.
-- Auth negotiation currently supports password and SCRAM-SHA-256 paths; other advertised auth methods remain unsupported.
-- No lane integration test currently exercises end-to-end `manager_proxy` handshake/auth against a live manager endpoint.

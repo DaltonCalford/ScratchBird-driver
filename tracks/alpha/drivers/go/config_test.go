@@ -51,9 +51,12 @@ func TestParseKeyValue(t *testing.T) {
 }
 
 func TestParseRejectsNonNativeProtocol(t *testing.T) {
-	_, err := ParseConfig("scratchbird://localhost:3092/db?protocol=postgresql")
-	if err == nil {
-		t.Fatalf("expected parse failure for non-native protocol")
+	cfg, err := ParseConfig("scratchbird://localhost:3092/db?protocol=jdbc&parser=postgresql&dialect=odbc")
+	if err != nil {
+		t.Fatalf("unexpected parse failure for protocol hints: %v", err)
+	}
+	if cfg.Protocol != "native" {
+		t.Fatalf("expected protocol=native, got %q", cfg.Protocol)
 	}
 }
 
@@ -109,5 +112,34 @@ func TestParseMetadataExpandSchemaParents(t *testing.T) {
 	}
 	if cfg.MetadataExpandSchemaParents {
 		t.Fatalf("expected metadataExpandSchemaParents=false when explicitly disabled")
+	}
+}
+
+func TestParseRejectsUnknownCompressionValue(t *testing.T) {
+	if _, err := ParseConfig("scratchbird://localhost:3092/db?compression=gzip"); err == nil {
+		t.Fatalf("expected parse failure for unsupported compression")
+	}
+}
+
+func TestParseAuthPluginStartupParams(t *testing.T) {
+	cfg, err := ParseConfig(
+		"scratchbird://user:pass@localhost:3092/mydb?" +
+			"auth_method_id=scratchbird.auth.oidc&auth_payload_json=%7B%22aud%22%3A%22sb%22%7D&" +
+			"auth_payload_b64=YWJj&auth_provider_profile=corp",
+	)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if cfg.AuthMethodID != "scratchbird.auth.oidc" {
+		t.Fatalf("unexpected auth method id: %q", cfg.AuthMethodID)
+	}
+	if cfg.AuthPayloadJSON != `{"aud":"sb"}` {
+		t.Fatalf("unexpected auth payload json: %q", cfg.AuthPayloadJSON)
+	}
+	if cfg.AuthPayloadB64 != "YWJj" {
+		t.Fatalf("unexpected auth payload b64: %q", cfg.AuthPayloadB64)
+	}
+	if cfg.AuthProviderProfile != "corp" {
+		t.Fatalf("unexpected auth provider profile: %q", cfg.AuthProviderProfile)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -51,9 +52,8 @@ func TestApplyTLSDisableModeTrimsWhitespace(t *testing.T) {
 	defer cancel()
 
 	err := conn.applyTLS(ctx)
-	requireDriverError(t, err, ErrConnection, "08001")
-	if !strings.Contains(err.Error(), "TLS is required") {
-		t.Fatalf("expected TLS-required error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected disable mode to bypass TLS, got %v", err)
 	}
 }
 
@@ -66,7 +66,7 @@ func TestBuildTLSConfigRejectsInvalidRootCertPEM(t *testing.T) {
 	conn := &Conn{config: defaultConfig()}
 	conn.config.SSLRootCert = caPath
 
-	_, err := conn.buildTLSConfig()
+	_, err := conn.buildTLSConfig("verify-full")
 	if err == nil {
 		t.Fatalf("expected invalid PEM error")
 	}
@@ -75,25 +75,40 @@ func TestBuildTLSConfigRejectsInvalidRootCertPEM(t *testing.T) {
 	}
 }
 
-func TestConnectRejectsUnsupportedProtocolBeforeDial(t *testing.T) {
+func TestConnectNormalizesProtocolAliasBeforeDial(t *testing.T) {
 	conn := &Conn{config: defaultConfig()}
 	conn.config.Protocol = "postgresql"
+	conn.config.Host = "127.0.0.1"
+	conn.config.Port = 1
+	conn.config.SSLMode = "disable"
 
 	err := conn.connect(context.Background())
-	requireDriverError(t, err, ErrNotSupported, "0A000")
-	if conn.raw != nil {
-		t.Fatalf("expected no network dial for unsupported protocol")
+	requireDriverError(t, err, ErrConnection, "08001")
+	if conn.config.Protocol != "native" {
+		t.Fatalf("expected protocol alias normalization to native, got %q", conn.config.Protocol)
 	}
 }
 
-func TestConnectRejectsBinaryTransferFalseBeforeDial(t *testing.T) {
+func TestConnectAllowsBinaryTransferFalseAndZstd(t *testing.T) {
 	conn := &Conn{config: defaultConfig()}
+	conn.config.Host = "127.0.0.1"
+	conn.config.Port = 1
 	conn.config.BinaryTransfer = false
+	conn.config.Compression = "zstd"
+	conn.config.SSLMode = "disable"
 
 	err := conn.connect(context.Background())
-	requireDriverError(t, err, ErrNotSupported, "0A000")
+	requireDriverError(t, err, ErrConnection, "08001")
+}
+
+func TestConnectRejectsManagerProxyWithoutTokenBeforeDial(t *testing.T) {
+	conn := &Conn{config: defaultConfig()}
+	conn.config.FrontDoorMode = "manager_proxy"
+
+	err := conn.connect(context.Background())
+	requireDriverError(t, err, ErrConnection, "08001")
 	if conn.raw != nil {
-		t.Fatalf("expected no network dial for unsupported binary_transfer setting")
+		t.Fatalf("expected no network dial for missing manager token")
 	}
 }
 
@@ -154,4 +169,188 @@ func TestApplyAuthPluginSelectionSetsParams(t *testing.T) {
 	if params[authParamProviderProfile] != "native_v3" {
 		t.Fatalf("unexpected provider profile: %q", params[authParamProviderProfile])
 	}
+}
+
+func TestHandshakeIncludesAuthPluginSelectionParams(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		defer server.Close()
+
+		msg, err := readMessage(server)
+		if err != nil {
+			errCh <- fmt.Errorf("read startup message: %w", err)
+			return
+		}
+		if msg.header.typ != msgStartup {
+			errCh <- fmt.Errorf("expected startup message, got %v", msg.header.typ)
+			return
+		}
+		if len(msg.body) < 12 {
+			errCh <- fmt.Errorf("startup payload too short: %d", len(msg.body))
+			return
+		}
+		params := parseStartupParams(msg.body[12:])
+		if params[authParamMethodID] != "scratchbird.auth.oidc" {
+			errCh <- fmt.Errorf("unexpected auth method id: %q", params[authParamMethodID])
+			return
+		}
+		if params[authParamPayloadJSON] != `{"aud":"sb"}` {
+			errCh <- fmt.Errorf("unexpected auth payload json: %q", params[authParamPayloadJSON])
+			return
+		}
+		if params[authParamPayloadB64] != "YWJj" {
+			errCh <- fmt.Errorf("unexpected auth payload b64: %q", params[authParamPayloadB64])
+			return
+		}
+		if params[authParamProviderProfile] != "corp" {
+			errCh <- fmt.Errorf("unexpected auth provider profile: %q", params[authParamProviderProfile])
+			return
+		}
+
+		authPayload := make([]byte, 20)
+		attachment := [16]byte{0x11}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgAuthOk, attachmentID: attachment}, authPayload)); err != nil {
+			errCh <- fmt.Errorf("write auth ok: %w", err)
+			return
+		}
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady, attachmentID: attachment}, testReadyPayload(0, 0, 0))); err != nil {
+			errCh <- fmt.Errorf("write ready: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+
+	cfg := defaultConfig()
+	cfg.User = "alice"
+	cfg.Password = "secret"
+	cfg.Database = "db1"
+	cfg.AuthMethodID = "scratchbird.auth.oidc"
+	cfg.AuthPayloadJSON = `{"aud":"sb"}`
+	cfg.AuthPayloadB64 = "YWJj"
+	cfg.AuthProviderProfile = "corp"
+	conn := &Conn{config: cfg, raw: client}
+	if err := conn.handshake(context.Background()); err != nil {
+		t.Fatalf("handshake failed: %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHandleAuthRequestSupportsAdditionalMethods(t *testing.T) {
+	methods := []authMethod{
+		authMD5,
+		authCertificate,
+		authGSSAPI,
+		authSSPI,
+		authLDAP,
+		authSAML,
+		authOIDC,
+		authMFATOTP,
+		authClusterPKI,
+	}
+	for _, method := range methods {
+		t.Run(fmt.Sprintf("method_%d", method), func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+
+			errCh := make(chan error, 1)
+			go func() {
+				defer close(errCh)
+				defer server.Close()
+				msg, err := readMessage(server)
+				if err != nil {
+					errCh <- fmt.Errorf("read auth response: %w", err)
+					return
+				}
+				if msg.header.typ != msgAuthResponse {
+					errCh <- fmt.Errorf("expected auth response, got %v", msg.header.typ)
+					return
+				}
+				if got := string(msg.body); got != "secret" {
+					errCh <- fmt.Errorf("auth payload mismatch: got %q", got)
+					return
+				}
+				errCh <- nil
+			}()
+
+			cfg := defaultConfig()
+			cfg.Password = "secret"
+			conn := &Conn{config: cfg, raw: client}
+			if _, err := conn.handleAuthRequest(method, []byte("challenge"), nil); err != nil {
+				t.Fatalf("handle auth request failed: %v", err)
+			}
+			if err := <-errCh; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestHandleAuthContinueSupportsAdditionalMethods(t *testing.T) {
+	methods := []authMethod{
+		authMD5,
+		authCertificate,
+		authGSSAPI,
+		authSSPI,
+		authLDAP,
+		authSAML,
+		authOIDC,
+		authMFATOTP,
+		authClusterPKI,
+	}
+	for _, method := range methods {
+		t.Run(fmt.Sprintf("method_%d", method), func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+
+			errCh := make(chan error, 1)
+			go func() {
+				defer close(errCh)
+				defer server.Close()
+				msg, err := readMessage(server)
+				if err != nil {
+					errCh <- fmt.Errorf("read auth response: %w", err)
+					return
+				}
+				if msg.header.typ != msgAuthResponse {
+					errCh <- fmt.Errorf("expected auth response, got %v", msg.header.typ)
+					return
+				}
+				if got := string(msg.body); got != "secret" {
+					errCh <- fmt.Errorf("auth payload mismatch: got %q", got)
+					return
+				}
+				errCh <- nil
+			}()
+
+			cfg := defaultConfig()
+			cfg.Password = "secret"
+			conn := &Conn{config: cfg, raw: client}
+			if _, err := conn.handleAuthContinue(method, []byte("challenge"), nil); err != nil {
+				t.Fatalf("handle auth continue failed: %v", err)
+			}
+			if err := <-errCh; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func parseStartupParams(payload []byte) map[string]string {
+	params := map[string]string{}
+	parts := strings.Split(string(payload), "\x00")
+	for i := 0; i+1 < len(parts); i += 2 {
+		key := parts[i]
+		value := parts[i+1]
+		if key == "" {
+			break
+		}
+		params[key] = value
+	}
+	return params
 }

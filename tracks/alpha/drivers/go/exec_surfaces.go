@@ -80,15 +80,13 @@ func (c *Conn) QueryMultiContext(ctx context.Context, query string, args []drive
 
 	summaries := make([]ResultSetSummary, 0, 1)
 	for {
-		fields := summarizeFields(rows.columns)
 		dataRows := make([][]driver.Value, 0)
 		for {
-			dest := make([]driver.Value, len(rows.columns))
-			err := rows.Next(dest)
+			row, err := rows.nextRow()
 			if err == nil {
-				row := make([]driver.Value, len(dest))
-				copy(row, dest)
-				dataRows = append(dataRows, row)
+				copied := make([]driver.Value, len(row))
+				copy(copied, row)
+				dataRows = append(dataRows, copied)
 				continue
 			}
 			if errors.Is(err, io.EOF) {
@@ -96,6 +94,7 @@ func (c *Conn) QueryMultiContext(ctx context.Context, query string, args []drive
 			}
 			return nil, err
 		}
+		fields := summarizeFields(rows.columns)
 		summaries = append(summaries, ResultSetSummary{
 			Rows:         dataRows,
 			RowCount:     rows.rowsAffected,

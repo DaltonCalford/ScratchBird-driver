@@ -39,6 +39,7 @@ pub struct Config {
     pub manager_client_intent: String,
     pub manager_client_flags: u16,
     pub manager_auth_fast_path: bool,
+    pub metadata_expand_schema_parents: bool,
     pub extra: HashMap<String, String>,
 }
 
@@ -72,6 +73,7 @@ impl Default for Config {
             manager_client_intent: "native_v3".to_string(),
             manager_client_flags: 0,
             manager_auth_fast_path: true,
+            metadata_expand_schema_parents: false,
             extra: HashMap::new(),
         }
     }
@@ -140,9 +142,9 @@ impl Config {
 
 fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => {
-            Some("native")
-        }
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" | "sbwp"
+        | "postgres" | "postgresql" | "pg" | "jdbc" | "odbc" | "sql" | "mysql" | "mariadb"
+        | "sqlite" | "duckdb" | "firebird" => Some("native"),
         _ => None,
     }
 }
@@ -153,6 +155,31 @@ fn normalize_front_door_mode(value: &str) -> Option<&'static str> {
         "manager_proxy" | "manager-proxy" | "managed" => Some("manager_proxy"),
         _ => None,
     }
+}
+
+fn normalize_ssl_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "require" | "on" | "true" | "1" | "yes" | "allow" | "prefer" => Some("require"),
+        "verify-ca" | "verifyca" => Some("verify-ca"),
+        "verify-full" | "verifyfull" => Some("verify-full"),
+        "disable" | "off" | "false" | "0" | "no" => Some("disable"),
+        _ => None,
+    }
+}
+
+fn normalize_compression_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "off" | "none" | "false" | "0" | "no" => Some("off"),
+        "zstd" | "on" | "true" | "1" | "yes" => Some("zstd"),
+        _ => None,
+    }
+}
+
+fn parse_bool_param(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
@@ -182,7 +209,15 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
             })?;
             cfg.protocol = normalized.to_string();
         }
-        "sslmode" | "ssl mode" => cfg.sslmode = value.to_string(),
+        "sslmode" | "ssl mode" | "ssl" => {
+            let normalized = normalize_ssl_mode(value).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::Connection,
+                    "sslmode must be disable, require, verify-ca, or verify-full",
+                )
+            })?;
+            cfg.sslmode = normalized.to_string();
+        }
         "sslrootcert" => cfg.sslrootcert = Some(value.to_string()),
         "sslcert" => cfg.sslcert = Some(value.to_string()),
         "sslkey" => cfg.sslkey = Some(value.to_string()),
@@ -199,14 +234,13 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
         }
         "application_name" | "applicationname" => cfg.application_name = value.to_string(),
         "binary_transfer" | "binarytransfer" => {
-            cfg.binary_transfer = matches!(value, "1" | "true" | "TRUE");
+            cfg.binary_transfer = parse_bool_param(value);
         }
         "compression" => {
-            cfg.compression = if value.eq_ignore_ascii_case("zstd") {
-                "zstd".to_string()
-            } else {
-                "off".to_string()
-            };
+            let normalized = normalize_compression_mode(value).ok_or_else(|| {
+                Error::new(ErrorKind::Connection, "compression must be off or zstd")
+            })?;
+            cfg.compression = normalized.to_string();
         }
         "fetch_size" | "fetchsize" | "default_fetch_size" => {
             if let Ok(rows) = value.parse::<u32>() {
@@ -226,11 +260,15 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
             cfg.manager_client_flags = value.parse::<u16>().unwrap_or(cfg.manager_client_flags)
         }
         "manager_auth_fast_path" | "mcp_auth_fast_path" => {
-            let normalized = value.trim().to_ascii_lowercase();
-            cfg.manager_auth_fast_path = normalized == "1"
-                || normalized == "true"
-                || normalized == "yes"
-                || normalized == "on";
+            cfg.manager_auth_fast_path = parse_bool_param(value);
+        }
+        "metadata_expand_schema_parents"
+        | "metadataexpandschemaparents"
+        | "expand_schema_parents"
+        | "expandschemaparents"
+        | "dbeaver_expand_schema_parents"
+        | "dbeaverexpandschemaparents" => {
+            cfg.metadata_expand_schema_parents = parse_bool_param(value);
         }
         other => {
             cfg.extra.insert(other.to_string(), value.to_string());

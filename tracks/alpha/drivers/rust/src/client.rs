@@ -9,7 +9,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
 use rand::RngCore;
+use serde_json::{json, Value as JsonValue};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -20,7 +23,11 @@ use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
 use crate::config::Config;
 use crate::errors::{error_from_sqlstate, Error, ErrorKind, Result};
 use crate::keepalive::{KeepaliveConfig, KeepaliveTracker};
-use crate::metadata::{normalize_metadata_collection_name, resolve_metadata_collection_query};
+use crate::metadata::{
+    build_metadata_schema_tree, list_metadata_schema_paths, normalize_metadata_collection_name,
+    resolve_metadata_collection_query, MetadataRow, MetadataSchemaTree, MetadataSchemaTreeNode,
+    MetadataSchemaTreeOptions,
+};
 use crate::protocol;
 use crate::protocol::MessageHeader;
 use crate::scram::ScramExchange;
@@ -47,9 +54,9 @@ const MCP_AUTH_METHOD_TOKEN: u8 = 4;
 
 fn normalize_native_protocol(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" => {
-            Some("native")
-        }
+        "" | "native" | "scratchbird" | "scratchbird-native" | "scratchbird_native" | "sbwp"
+        | "postgres" | "postgresql" | "pg" | "jdbc" | "odbc" | "sql" | "mysql" | "mariadb"
+        | "sqlite" | "duckdb" | "firebird" => Some("native"),
         _ => None,
     }
 }
@@ -58,6 +65,24 @@ fn normalize_front_door_mode(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
         "" | "direct" => Some("direct"),
         "manager_proxy" | "manager-proxy" | "managed" => Some("manager_proxy"),
+        _ => None,
+    }
+}
+
+fn normalize_ssl_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "require" | "on" | "true" | "1" | "yes" | "allow" | "prefer" => Some("require"),
+        "verify-ca" | "verifyca" => Some("verify-ca"),
+        "verify-full" | "verifyfull" => Some("verify-full"),
+        "disable" | "off" | "false" | "0" | "no" => Some("disable"),
+        _ => None,
+    }
+}
+
+fn normalize_compression_mode(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "off" | "none" | "false" | "0" | "no" => Some("off"),
+        "zstd" | "on" | "true" | "1" | "yes" => Some("zstd"),
         _ => None,
     }
 }
@@ -79,6 +104,7 @@ pub struct Client {
     config: Config,
     stream: Option<Box<dyn AsyncReadWrite>>,
     connected: bool,
+    autocommit: bool,
     attachment_id: [u8; 16],
     txn_id: u64,
     sequence: u32,
@@ -218,6 +244,7 @@ impl Client {
             config,
             stream: None,
             connected: false,
+            autocommit: true,
             attachment_id: [0u8; 16],
             txn_id: 0,
             sequence: 0,
@@ -271,28 +298,33 @@ impl Client {
             })?;
         self.config.front_door_mode = front_door_mode.to_string();
 
+        let ssl_mode = normalize_ssl_mode(&self.config.sslmode).ok_or_else(|| {
+            Error::with_sqlstate(
+                ErrorKind::NotSupported,
+                "sslmode must be disable, require, verify-ca, or verify-full",
+                Some("0A000".to_string()),
+                None,
+                None,
+            )
+        })?;
+        self.config.sslmode = ssl_mode.to_string();
+
+        let compression_mode =
+            normalize_compression_mode(&self.config.compression).ok_or_else(|| {
+                Error::with_sqlstate(
+                    ErrorKind::NotSupported,
+                    "compression must be off or zstd",
+                    Some("0A000".to_string()),
+                    None,
+                    None,
+                )
+            })?;
+        self.config.compression = compression_mode.to_string();
+
         if self.config.user.is_empty() || self.config.database.is_empty() {
             return Err(Error::new(
                 ErrorKind::Connection,
                 "user and database are required",
-            ));
-        }
-        if !self.config.binary_transfer {
-            return Err(Error::with_sqlstate(
-                ErrorKind::NotSupported,
-                "binary_transfer=false is not supported",
-                Some("0A000".to_string()),
-                None,
-                None,
-            ));
-        }
-        if self.config.compression.eq_ignore_ascii_case("zstd") {
-            return Err(Error::with_sqlstate(
-                ErrorKind::NotSupported,
-                "compression=zstd is not supported",
-                Some("0A000".to_string()),
-                None,
-                None,
             ));
         }
         if self.config.front_door_mode == "manager_proxy"
@@ -592,6 +624,88 @@ impl Client {
                 None,
             )
         })
+    }
+
+    pub async fn get_schema(
+        &mut self,
+        collection: &str,
+        restrictions: Option<&HashMap<String, String>>,
+    ) -> Result<Vec<MetadataRow>> {
+        let result = if let Some(restrictions) = restrictions {
+            self.query_metadata_with_restrictions(collection, restrictions)
+                .await?
+        } else {
+            self.query_metadata(collection).await?
+        };
+        Ok(query_result_to_metadata_rows(&result))
+    }
+
+    pub async fn get_schema_tree(
+        &mut self,
+        schema_pattern: Option<&str>,
+        expand_parents: Option<bool>,
+    ) -> Result<MetadataSchemaTree> {
+        let rows = self.get_schema("schemas", None).await?;
+        let rows = filter_schema_metadata_rows_by_pattern(rows, schema_pattern);
+        let expand = expand_parents.unwrap_or(self.config.metadata_expand_schema_parents);
+
+        Ok(build_metadata_schema_tree(
+            &rows,
+            MetadataSchemaTreeOptions {
+                expand_parents: expand,
+                database: if self.config.database.is_empty() {
+                    None
+                } else {
+                    Some(self.config.database.clone())
+                },
+            },
+        ))
+    }
+
+    pub async fn ddl_editor_schema_payload(
+        &mut self,
+        schema_pattern: Option<&str>,
+        expand_schema_parents: Option<bool>,
+    ) -> Result<JsonValue> {
+        let rows = self.get_schema("schemas", None).await?;
+        let rows = filter_schema_metadata_rows_by_pattern(rows, schema_pattern);
+        let expand = expand_schema_parents.unwrap_or(self.config.metadata_expand_schema_parents);
+        let schema_paths = list_metadata_schema_paths(&rows, expand);
+        let tree = build_metadata_schema_tree(
+            &rows,
+            MetadataSchemaTreeOptions {
+                expand_parents: expand,
+                database: None,
+            },
+        );
+
+        Ok(json!({
+            "schemaPattern": schema_pattern,
+            "expandSchemaParents": expand,
+            "schemaPaths": schema_paths,
+            "schemaTree": schema_tree_nodes_to_payload(&tree.schemas),
+        }))
+    }
+
+    pub fn autocommit(&self) -> bool {
+        self.autocommit
+    }
+
+    pub async fn set_autocommit(&mut self, enabled: bool) -> Result<()> {
+        self.ensure_connected()?;
+        if self.autocommit == enabled {
+            return Ok(());
+        }
+        if enabled && self.has_active_transaction() {
+            self.commit_transaction(None).await?;
+        }
+        self.set_option("autocommit", if enabled { "on" } else { "off" })
+            .await?;
+        if !enabled && !self.has_active_transaction() {
+            self.begin_transaction(None).await?;
+        }
+        self.autocommit = enabled;
+        Ok(())
     }
 
     pub async fn begin(&mut self, options: Option<TxnBeginOptions>) -> Result<()> {
@@ -1362,7 +1476,7 @@ impl Client {
             match msg.header.msg_type {
                 protocol::MSG_NEGOTIATE_VERSION => continue,
                 protocol::MSG_AUTH_REQUEST => {
-                    let (method, _data) = protocol::parse_auth_request(&msg.payload)?;
+                    let (method, data) = protocol::parse_auth_request(&msg.payload)?;
                     match method {
                         protocol::AUTH_OK => continue,
                         protocol::AUTH_PASSWORD => {
@@ -1379,27 +1493,57 @@ impl Client {
                             self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true)
                                 .await?;
                         }
+                        protocol::AUTH_MD5
+                        | protocol::AUTH_CERTIFICATE
+                        | protocol::AUTH_GSSAPI
+                        | protocol::AUTH_SSPI
+                        | protocol::AUTH_LDAP
+                        | protocol::AUTH_SAML
+                        | protocol::AUTH_OIDC
+                        | protocol::AUTH_MFA_TOTP
+                        | protocol::AUTH_CLUSTER_PKI => {
+                            let payload = self.build_generic_auth_payload(&data);
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true)
+                                .await?;
+                        }
                         _ => return Err(Error::new(ErrorKind::Auth, "unsupported auth method")),
                     }
                 }
                 protocol::MSG_AUTH_CONTINUE => {
                     let (method, _stage, data) = protocol::parse_auth_continue(&msg.payload)?;
-                    if method != protocol::AUTH_SCRAM_SHA256 {
-                        return Err(Error::new(ErrorKind::Auth, "unsupported auth continue"));
+                    match method {
+                        protocol::AUTH_SCRAM_SHA256 => {
+                            let exchange = scram.as_mut().ok_or_else(|| {
+                                Error::new(ErrorKind::Auth, "SCRAM state missing")
+                            })?;
+                            let server_first = String::from_utf8_lossy(&data).to_string();
+                            let client_final = exchange
+                                .handle_server_first(&self.config.password, &server_first)?;
+                            self.send_message(
+                                protocol::MSG_AUTH_RESPONSE,
+                                client_final.as_bytes(),
+                                0,
+                                true,
+                            )
+                            .await?;
+                        }
+                        protocol::AUTH_MD5
+                        | protocol::AUTH_CERTIFICATE
+                        | protocol::AUTH_GSSAPI
+                        | protocol::AUTH_SSPI
+                        | protocol::AUTH_LDAP
+                        | protocol::AUTH_SAML
+                        | protocol::AUTH_OIDC
+                        | protocol::AUTH_MFA_TOTP
+                        | protocol::AUTH_CLUSTER_PKI => {
+                            let payload = self.build_generic_auth_payload(&data);
+                            self.send_message(protocol::MSG_AUTH_RESPONSE, &payload, 0, true)
+                                .await?;
+                        }
+                        _ => {
+                            return Err(Error::new(ErrorKind::Auth, "unsupported auth continue"));
+                        }
                     }
-                    let exchange = scram
-                        .as_mut()
-                        .ok_or_else(|| Error::new(ErrorKind::Auth, "SCRAM state missing"))?;
-                    let server_first = String::from_utf8_lossy(&data).to_string();
-                    let client_final =
-                        exchange.handle_server_first(&self.config.password, &server_first)?;
-                    self.send_message(
-                        protocol::MSG_AUTH_RESPONSE,
-                        client_final.as_bytes(),
-                        0,
-                        true,
-                    )
-                    .await?;
                 }
                 protocol::MSG_AUTH_OK => {
                     let (_session_id, info) = protocol::parse_auth_ok(&msg.payload)?;
@@ -1427,6 +1571,23 @@ impl Client {
                 _ => continue,
             }
         }
+    }
+
+    fn build_generic_auth_payload(&self, challenge: &[u8]) -> Vec<u8> {
+        if let Some(encoded) = self.config.extra.get(protocol::AUTH_PARAM_PAYLOAD_B64) {
+            if let Ok(decoded) = BASE64_STANDARD.decode(encoded.trim()) {
+                return decoded;
+            }
+        }
+        if let Some(payload_json) = self.config.extra.get(protocol::AUTH_PARAM_PAYLOAD_JSON) {
+            if !payload_json.is_empty() {
+                return payload_json.as_bytes().to_vec();
+            }
+        }
+        if !self.config.password.is_empty() {
+            return self.config.password.as_bytes().to_vec();
+        }
+        challenge.to_vec()
     }
 
     async fn apply_schema(&mut self) -> Result<()> {
@@ -2408,6 +2569,166 @@ fn parse_uuid_bytes(value: &str) -> Option<[u8; 16]> {
     Some(bytes)
 }
 
+fn query_result_to_metadata_rows(result: &QueryResult) -> Vec<MetadataRow> {
+    let mut rows = Vec::with_capacity(result.rows.len());
+    for row in &result.rows {
+        let mut metadata_row = MetadataRow::with_capacity(result.columns.len());
+        for (index, column) in result.columns.iter().enumerate() {
+            let value = row.get(index).cloned().unwrap_or(Value::Null);
+            metadata_row.insert(column.name.clone(), value_to_json(&value));
+        }
+        rows.push(metadata_row);
+    }
+    rows
+}
+
+fn filter_schema_metadata_rows_by_pattern(
+    rows: Vec<MetadataRow>,
+    schema_pattern: Option<&str>,
+) -> Vec<MetadataRow> {
+    let Some(pattern) = schema_pattern
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return rows;
+    };
+
+    rows.into_iter()
+        .filter(|row| {
+            metadata_row_schema_name(row)
+                .map(|schema| like_match(schema, pattern))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn metadata_row_schema_name(row: &MetadataRow) -> Option<&str> {
+    const CANDIDATES: [&str; 6] = [
+        "schema_name",
+        "TABLE_SCHEM",
+        "table_schem",
+        "table_schema",
+        "TABLE_SCHEMA",
+        "schema",
+    ];
+    for candidate in CANDIDATES {
+        if let Some(value) = row.get(candidate).or_else(|| {
+            row.iter()
+                .find_map(|(key, value)| key.eq_ignore_ascii_case(candidate).then_some(value))
+        }) {
+            if let Some(text) = value.as_str() {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+fn like_match(value: &str, pattern: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    let pattern = pattern.to_ascii_lowercase();
+    let value_chars: Vec<char> = value.chars().collect();
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    like_match_chars(&value_chars, &pattern_chars, 0, 0)
+}
+
+fn like_match_chars(value: &[char], pattern: &[char], vi: usize, pi: usize) -> bool {
+    if pi >= pattern.len() {
+        return vi >= value.len();
+    }
+
+    match pattern[pi] {
+        '\\' => {
+            if pi + 1 >= pattern.len() {
+                return vi >= value.len();
+            }
+            if vi >= value.len() || value[vi] != pattern[pi + 1] {
+                return false;
+            }
+            like_match_chars(value, pattern, vi + 1, pi + 2)
+        }
+        '%' => {
+            let mut idx = vi;
+            while idx <= value.len() {
+                if like_match_chars(value, pattern, idx, pi + 1) {
+                    return true;
+                }
+                idx += 1;
+            }
+            false
+        }
+        '_' => {
+            if vi >= value.len() {
+                false
+            } else {
+                like_match_chars(value, pattern, vi + 1, pi + 1)
+            }
+        }
+        literal => {
+            if vi >= value.len() || value[vi] != literal {
+                false
+            } else {
+                like_match_chars(value, pattern, vi + 1, pi + 1)
+            }
+        }
+    }
+}
+
+fn schema_tree_nodes_to_payload(nodes: &[MetadataSchemaTreeNode]) -> Vec<JsonValue> {
+    nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "name": node.name,
+                "path": node.path,
+                "terminal": node.terminal,
+                "children": schema_tree_nodes_to_payload(&node.children),
+            })
+        })
+        .collect()
+}
+
+fn value_to_json(value: &Value) -> JsonValue {
+    match value {
+        Value::Null => JsonValue::Null,
+        Value::Bool(v) => JsonValue::from(*v),
+        Value::Int16(v) => JsonValue::from(*v),
+        Value::Int32(v) => JsonValue::from(*v),
+        Value::Int64(v) => JsonValue::from(*v),
+        Value::Float32(v) => JsonValue::from(*v),
+        Value::Float64(v) => JsonValue::from(*v),
+        Value::Decimal(v) => JsonValue::String(v.to_string()),
+        Value::String(v) => JsonValue::String(v.clone()),
+        Value::Bytes(v) => JsonValue::String(String::from_utf8_lossy(v).to_string()),
+        Value::Date(v) => JsonValue::String(v.to_string()),
+        Value::Time(v) => JsonValue::String(v.to_string()),
+        Value::Timestamp(v) => JsonValue::String(v.to_rfc3339()),
+        Value::Interval(v) => JsonValue::String(format!("{}:{}:{}", v.months, v.days, v.micros)),
+        Value::Uuid(v) => JsonValue::String(v.clone()),
+        Value::Json(v) => v.clone(),
+        Value::Jsonb(v) => serde_json::from_slice(&v.raw)
+            .unwrap_or_else(|_| JsonValue::String(String::from_utf8_lossy(&v.raw).to_string())),
+        Value::Vector(v) => JsonValue::Array(v.iter().map(|item| JsonValue::from(*item)).collect()),
+        Value::Array(v) => JsonValue::Array(v.iter().map(value_to_json).collect()),
+        Value::Range(v) => JsonValue::String(format!("{v:?}")),
+        Value::Geometry(v) => JsonValue::String(format!("{:?}", v.wkb)),
+        Value::Composite(v) => {
+            let fields: Vec<JsonValue> = v
+                .fields
+                .iter()
+                .map(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(value_to_json)
+                        .unwrap_or(JsonValue::Null)
+                })
+                .collect();
+            JsonValue::Array(fields)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2425,6 +2746,32 @@ mod tests {
             err.message,
             "manager_proxy mode requires manager_auth_token"
         );
+    }
+
+    #[test]
+    fn preflight_connect_allows_binary_transfer_false_and_zstd() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.binary_transfer = false;
+        cfg.compression = "zstd".to_string();
+        let mut client = Client::new(cfg);
+        let params = client.preflight_connect().unwrap();
+        assert_eq!(client.config.compression, "zstd");
+        assert!(!client.config.binary_transfer);
+        assert_eq!(params.get("database").map(String::as_str), Some("db"));
+    }
+
+    #[test]
+    fn preflight_connect_rejects_unknown_compression() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.compression = "gzip".to_string();
+        let mut client = Client::new(cfg);
+        let err = client.preflight_connect().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
     }
 
     #[test]
@@ -2495,6 +2842,45 @@ mod tests {
     }
 
     #[test]
+    fn build_generic_auth_payload_prefers_b64_then_json_then_password() {
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.password = "secret".to_string();
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
+            "{\"token\":\"json\"}".to_string(),
+        );
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PAYLOAD_B64.to_string(),
+            "YWJj".to_string(),
+        );
+        let client = Client::new(cfg);
+        let payload = client.build_generic_auth_payload(b"challenge");
+        assert_eq!(payload, b"abc");
+
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.password = "secret".to_string();
+        cfg.extra.insert(
+            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
+            "{\"token\":\"json\"}".to_string(),
+        );
+        let client = Client::new(cfg);
+        let payload = client.build_generic_auth_payload(b"challenge");
+        assert_eq!(payload, b"{\"token\":\"json\"}");
+
+        let mut cfg = Config::default();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.password = "secret".to_string();
+        let client = Client::new(cfg);
+        let payload = client.build_generic_auth_payload(b"challenge");
+        assert_eq!(payload, b"secret");
+    }
+
+    #[test]
     fn native_sql_rewrites_named_placeholders() {
         let client = Client::new(Config::default());
         let mut params = HashMap::new();
@@ -2546,6 +2932,14 @@ mod tests {
         assert_eq!(err.kind, ErrorKind::Transaction);
         assert_eq!(err.sqlstate.as_deref(), Some("25000"));
         assert_eq!(err.message, "transaction already active");
+    }
+
+    #[tokio::test]
+    async fn set_autocommit_requires_connected_client() {
+        let mut client = Client::new(Config::default());
+        let err = client.set_autocommit(false).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Connection);
+        assert_eq!(err.message, "client is not connected");
     }
 
     #[test]
@@ -2840,5 +3234,33 @@ mod tests {
             Value::String(value) => assert_eq!(value, "sync_profiles"),
             other => panic!("unexpected routine value: {other:?}"),
         }
+    }
+
+    #[test]
+    fn like_match_supports_wildcards_and_escape() {
+        assert!(like_match("users.alice", "users.%"));
+        assert!(like_match("users_alice", "users\\_alice"));
+        assert!(like_match("ab", "a_"));
+        assert!(!like_match("users.alice", "admin.%"));
+    }
+
+    #[test]
+    fn filter_schema_metadata_rows_by_pattern_applies_case_insensitive_match() {
+        let rows = vec![
+            HashMap::from([(
+                "schema_name".to_string(),
+                JsonValue::String("users.alice".to_string()),
+            )]),
+            HashMap::from([(
+                "schema_name".to_string(),
+                JsonValue::String("admin.root".to_string()),
+            )]),
+        ];
+        let filtered = filter_schema_metadata_rows_by_pattern(rows, Some("USERS.%"));
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].get("schema_name"),
+            Some(&JsonValue::String("users.alice".to_string()))
+        );
     }
 }

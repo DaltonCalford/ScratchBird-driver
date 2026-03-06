@@ -1,37 +1,30 @@
 # DLB-RUST-002 S1 CONN Implementation
 
-Date: 2026-03-03
+Date: 2026-03-06  
 Lane: `tracks/alpha/drivers/rust`
 
 ## What Changed
 
-1. Added connection preflight validation in `src/client.rs`:
-   - `preflight_connect()` now normalizes protocol/front-door mode and validates required connect settings before any socket dial.
-   - Added fail-fast manager proxy guard: `manager_proxy` now requires `manager_auth_token` before transport connect.
-2. Added startup auth plugin selection wiring in `src/client.rs`:
-   - `build_startup_params()` now composes startup params and applies `auth_method_id`, `auth_payload_json`, `auth_payload_b64`, and `auth_provider_profile` via `protocol::apply_auth_plugin_selection`.
-   - `handshake()` now accepts prebuilt startup params from preflight.
-3. Expanded lane CONN tests:
-   - `src/client.rs` unit tests for manager-proxy token preflight, auth plugin startup param injection, and invalid auth namespace rejection.
-   - `tests/config_test.rs` additions for DSN precedence behavior (URI/query and key-value) and auth plugin parameter capture into `Config.extra`.
-4. Updated CONN evidence anchors in `BASELINE_REQUIREMENT_MAPPING.md` to reflect the new code/test evidence.
+1. Closed connection policy parity in `src/config.rs` and `src/client.rs`:
+   - Protocol aliases (`jdbc`, `odbc`, `postgresql`, etc.) now normalize to `native`.
+   - `sslmode` is normalized/validated (`disable|require|verify-ca|verify-full` + aliases).
+   - `compression` is normalized/validated (`off|zstd` + aliases); unknown values are rejected.
+   - `binary_transfer=false` and `compression=zstd` are accepted and negotiated instead of hard-rejected.
+2. Expanded auth handling in `src/client.rs` handshake:
+   - Added runtime support for additional auth request/continue methods (`md5`, `certificate`, `gssapi/sspi`, `ldap`, `saml`, `oidc`, `mfa`, `cluster_pki`) via generic auth payload selection.
+   - Added generic auth payload precedence (`auth_payload_b64` -> `auth_payload_json` -> password -> challenge bytes).
+3. Added always-on deterministic runtime CONN contract suite in `tests/runtime_contract_gate_test.rs`:
+   - Full manager-proxy MCP handshake success path.
+   - Deterministic manager-proxy auth failure path.
+   - Deterministic on-wire password and SCRAM-SHA-256 auth flows.
+   - Capability parity assertions for startup feature bits and query flags under `binary_transfer=false` + `compression=zstd`.
 
-## Test Commands Run
+## Tests Run
 
-1. `cargo test --test config_test` -> PASS (`6 passed, 0 failed`)
-2. `cargo test preflight_connect_requires_manager_auth_token` -> PASS (`1 passed, 0 failed`)
-3. `cargo test build_startup_params_` -> PASS (`2 passed, 0 failed`)
+1. `cargo test`
+   - Result: `PASS`
 
 ## CONN Status Recommendation
 
-Recommendation: `PARTIAL`
+Recommendation: `IMPLEMENTED` (baseline-complete for 0.1.0 scope).
 
-Rationale:
-- DSN parsing, precedence checks, direct/manager-proxy mode handling, startup/auth negotiation paths, and auth plugin startup parameter validation now have stronger lane-local evidence.
-- Remaining CONN evidence is still incomplete for full `MET` because end-to-end auth/front-door protocol paths are environment-gated in lane tests.
-
-## Remaining Concrete Gaps
-
-1. No deterministic lane test that exercises full on-wire manager-proxy handshake against a controllable MCP endpoint (success + auth failure variants).
-2. No deterministic lane test that executes both password and SCRAM-SHA-256 authentication end-to-end on a controlled server fixture (current async integration tests are DSN/env dependent).
-3. Capability negotiation remains limited by current lane behavior (`compression=zstd` and `binary_transfer=false` are explicitly rejected), so negotiated feature-path coverage is not complete.
