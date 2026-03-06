@@ -73,6 +73,17 @@ public class SBConnectionProperties {
     private String managerClientIntent = "native_v3";
     private int managerClientFlags = 0;
     private boolean managerAuthFastPath = true;
+    private int connectClientFlags = 0x0100;
+    private String authMethodId;
+    private String authMethodPayload;
+    private String authPayloadJson;
+    private String authPayloadB64;
+    private String authProviderProfile;
+    private String authRequiredMethods;
+    private String authForbiddenMethods;
+    private boolean authRequireChannelBinding = false;
+    private String workloadIdentityToken;
+    private String proxyPrincipalAssertion;
     private boolean reWriteBatchedInserts = false;
 
     // Logging
@@ -274,6 +285,58 @@ public class SBConnectionProperties {
                     "yes".equalsIgnoreCase(value) ||
                     "on".equalsIgnoreCase(value);
                 break;
+            case "client_flags":
+            case "connect_client_flags":
+                this.connectClientFlags = Integer.parseInt(value);
+                break;
+            case "auth_method_id":
+            case "authmethodid":
+                if (!value.trim().isEmpty() && !value.startsWith("scratchbird.auth.")) {
+                    throw new IllegalArgumentException("invalid auth_method_id namespace");
+                }
+                this.authMethodId = value.trim();
+                break;
+            case "auth_method_payload":
+            case "authmethodpayload":
+                this.authMethodPayload = value;
+                break;
+            case "auth_payload_json":
+            case "authpayloadjson":
+                this.authPayloadJson = value;
+                break;
+            case "auth_payload_b64":
+            case "authpayloadb64":
+                this.authPayloadB64 = value;
+                break;
+            case "auth_provider_profile":
+            case "authproviderprofile":
+                this.authProviderProfile = value;
+                break;
+            case "auth_required_methods":
+            case "authrequiredmethods":
+                this.authRequiredMethods = value;
+                break;
+            case "auth_forbidden_methods":
+            case "authforbiddenmethods":
+                this.authForbiddenMethods = value;
+                break;
+            case "auth_require_channel_binding":
+            case "authrequirechannelbinding":
+                this.authRequireChannelBinding =
+                    "1".equals(value) ||
+                    "true".equalsIgnoreCase(value) ||
+                    "yes".equalsIgnoreCase(value) ||
+                    "on".equalsIgnoreCase(value);
+                break;
+            case "workload_identity_token":
+            case "workloadidentitytoken":
+                this.workloadIdentityToken = value;
+                break;
+            case "proxy_principal_assertion":
+            case "proxyprincipalassertion":
+            case "proxy_assertion":
+                this.proxyPrincipalAssertion = value;
+                break;
             case "rewritebatchedinserts":
             case "rewrite_batched_inserts":
                 this.reWriteBatchedInserts = Boolean.parseBoolean(value);
@@ -409,6 +472,40 @@ public class SBConnectionProperties {
             case "manager_auth_fast_path":
             case "mcp_auth_fast_path":
                 return String.valueOf(managerAuthFastPath);
+            case "client_flags":
+            case "connect_client_flags":
+                return String.valueOf(connectClientFlags);
+            case "auth_method_id":
+            case "authmethodid":
+                return authMethodId;
+            case "auth_method_payload":
+            case "authmethodpayload":
+                return authMethodPayload;
+            case "auth_payload_json":
+            case "authpayloadjson":
+                return authPayloadJson;
+            case "auth_payload_b64":
+            case "authpayloadb64":
+                return authPayloadB64;
+            case "auth_provider_profile":
+            case "authproviderprofile":
+                return authProviderProfile;
+            case "auth_required_methods":
+            case "authrequiredmethods":
+                return authRequiredMethods;
+            case "auth_forbidden_methods":
+            case "authforbiddenmethods":
+                return authForbiddenMethods;
+            case "auth_require_channel_binding":
+            case "authrequirechannelbinding":
+                return String.valueOf(authRequireChannelBinding);
+            case "workload_identity_token":
+            case "workloadidentitytoken":
+                return workloadIdentityToken;
+            case "proxy_principal_assertion":
+            case "proxyprincipalassertion":
+            case "proxy_assertion":
+                return proxyPrincipalAssertion;
             case "rewritebatchedinserts":
             case "rewrite_batched_inserts":
                 return String.valueOf(reWriteBatchedInserts);
@@ -735,6 +832,99 @@ public class SBConnectionProperties {
         this.managerAuthFastPath = managerAuthFastPath;
     }
 
+    public int getConnectClientFlags() {
+        return connectClientFlags;
+    }
+
+    public void setConnectClientFlags(int connectClientFlags) {
+        this.connectClientFlags = connectClientFlags;
+    }
+
+    public String getAuthMethodId() {
+        return authMethodId;
+    }
+
+    public void setAuthMethodId(String authMethodId) {
+        if (authMethodId != null &&
+            !authMethodId.trim().isEmpty() &&
+            !authMethodId.startsWith("scratchbird.auth.")) {
+            throw new IllegalArgumentException("invalid auth_method_id namespace");
+        }
+        this.authMethodId = authMethodId != null ? authMethodId.trim() : null;
+    }
+
+    public String getAuthMethodPayload() {
+        return authMethodPayload;
+    }
+
+    public void setAuthMethodPayload(String authMethodPayload) {
+        this.authMethodPayload = authMethodPayload;
+    }
+
+    public String getAuthPayloadJson() {
+        return authPayloadJson;
+    }
+
+    public void setAuthPayloadJson(String authPayloadJson) {
+        this.authPayloadJson = authPayloadJson;
+    }
+
+    public String getAuthPayloadB64() {
+        return authPayloadB64;
+    }
+
+    public void setAuthPayloadB64(String authPayloadB64) {
+        this.authPayloadB64 = authPayloadB64;
+    }
+
+    public String getAuthProviderProfile() {
+        return authProviderProfile;
+    }
+
+    public void setAuthProviderProfile(String authProviderProfile) {
+        this.authProviderProfile = authProviderProfile;
+    }
+
+    public String getAuthRequiredMethods() {
+        return authRequiredMethods;
+    }
+
+    public void setAuthRequiredMethods(String authRequiredMethods) {
+        this.authRequiredMethods = authRequiredMethods;
+    }
+
+    public String getAuthForbiddenMethods() {
+        return authForbiddenMethods;
+    }
+
+    public void setAuthForbiddenMethods(String authForbiddenMethods) {
+        this.authForbiddenMethods = authForbiddenMethods;
+    }
+
+    public boolean isAuthRequireChannelBinding() {
+        return authRequireChannelBinding;
+    }
+
+    public void setAuthRequireChannelBinding(boolean authRequireChannelBinding) {
+        this.authRequireChannelBinding = authRequireChannelBinding;
+    }
+
+    public String getWorkloadIdentityToken() {
+        return workloadIdentityToken;
+    }
+
+    public void setWorkloadIdentityToken(String workloadIdentityToken) {
+        this.workloadIdentityToken = workloadIdentityToken;
+    }
+
+    public String getProxyPrincipalAssertion() {
+        return proxyPrincipalAssertion;
+    }
+
+    public void setProxyPrincipalAssertion(String proxyPrincipalAssertion) {
+        this.proxyPrincipalAssertion = proxyPrincipalAssertion;
+    }
+
     public boolean isReWriteBatchedInserts() {
         return reWriteBatchedInserts;
     }
@@ -830,6 +1020,17 @@ public class SBConnectionProperties {
         if (managerClientIntent != null && !managerClientIntent.isEmpty()) props.setProperty("manager_client_intent", managerClientIntent);
         props.setProperty("manager_client_flags", String.valueOf(managerClientFlags));
         props.setProperty("manager_auth_fast_path", String.valueOf(managerAuthFastPath));
+        props.setProperty("connect_client_flags", String.valueOf(connectClientFlags));
+        if (authMethodId != null && !authMethodId.isEmpty()) props.setProperty("auth_method_id", authMethodId);
+        if (authMethodPayload != null && !authMethodPayload.isEmpty()) props.setProperty("auth_method_payload", authMethodPayload);
+        if (authPayloadJson != null && !authPayloadJson.isEmpty()) props.setProperty("auth_payload_json", authPayloadJson);
+        if (authPayloadB64 != null && !authPayloadB64.isEmpty()) props.setProperty("auth_payload_b64", authPayloadB64);
+        if (authProviderProfile != null && !authProviderProfile.isEmpty()) props.setProperty("auth_provider_profile", authProviderProfile);
+        if (authRequiredMethods != null && !authRequiredMethods.isEmpty()) props.setProperty("auth_required_methods", authRequiredMethods);
+        if (authForbiddenMethods != null && !authForbiddenMethods.isEmpty()) props.setProperty("auth_forbidden_methods", authForbiddenMethods);
+        props.setProperty("auth_require_channel_binding", String.valueOf(authRequireChannelBinding));
+        if (workloadIdentityToken != null && !workloadIdentityToken.isEmpty()) props.setProperty("workload_identity_token", workloadIdentityToken);
+        if (proxyPrincipalAssertion != null && !proxyPrincipalAssertion.isEmpty()) props.setProperty("proxy_principal_assertion", proxyPrincipalAssertion);
         props.setProperty("reWriteBatchedInserts", String.valueOf(reWriteBatchedInserts));
         props.setProperty("loggerLevel", loggerLevel);
         if (loggerFile != null) props.setProperty("loggerFile", loggerFile);

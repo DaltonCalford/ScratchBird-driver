@@ -190,6 +190,64 @@ final class ConnectionConnTest extends TestCase
         }
     }
 
+    public function testHandshakeStartupIncludesAuthPluginAndPinningParams(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $cfg = Config::fromDsn(
+            'scratchbird://user:pass@localhost:3092/mydb'
+            . '?connect_client_flags=257'
+            . '&auth_method_id=scratchbird.auth.proxy_assertion'
+            . '&auth_method_payload=opaque'
+            . '&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D'
+            . '&auth_payload_b64=YWJj'
+            . '&auth_provider_profile=corp_primary'
+            . '&auth_required_methods=SCRAM_SHA_256%2CTOKEN'
+            . '&auth_forbidden_methods=MD5'
+            . '&auth_require_channel_binding=true'
+            . '&workload_identity_token=jwt-token'
+            . '&proxy_principal_assertion=signed-assertion'
+        );
+        $conn = $this->newConnectionWithSocket($cfg, $client);
+
+        try {
+            $attachment = str_repeat("\0", 16);
+            $authOkPayload = chr(Protocol::AUTH_OK) . "\0\0\0";
+            $readyPayload = chr(0) . "\0\0\0" . pack('V4', 0, 0, 0, 0);
+            $this->writeExact($server, Protocol::encodeMessage(Protocol::MSG_AUTH_REQUEST, $authOkPayload, 0, 1, $attachment, 0));
+            $this->writeExact($server, Protocol::encodeMessage(Protocol::MSG_READY, $readyPayload, 0, 2, $attachment, 0));
+
+            $this->invokeHandshake($conn);
+
+            [$startupType, $startupPayload] = $this->readProtocolFrame($server);
+            $this->assertSame(Protocol::MSG_STARTUP, $startupType);
+            $params = $this->parseStartupParams($startupPayload);
+            $this->assertSame('257', $params['client_flags'] ?? null);
+            $this->assertSame('scratchbird.auth.proxy_assertion', $params['auth_method_id'] ?? null);
+            $this->assertSame('opaque', $params['auth_method_payload'] ?? null);
+            $this->assertSame('{"subject":"alice"}', $params['auth_payload_json'] ?? null);
+            $this->assertSame('YWJj', $params['auth_payload_b64'] ?? null);
+            $this->assertSame('corp_primary', $params['auth_provider_profile'] ?? null);
+            $this->assertSame('SCRAM_SHA_256,TOKEN', $params['auth_required_methods'] ?? null);
+            $this->assertSame('MD5', $params['auth_forbidden_methods'] ?? null);
+            $this->assertSame('1', $params['auth_require_channel_binding'] ?? null);
+            $this->assertSame('jwt-token', $params['workload_identity_token'] ?? null);
+            $this->assertSame('signed-assertion', $params['proxy_principal_assertion'] ?? null);
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testHandshakeRejectsInvalidAuthMethodNamespace(): void
+    {
+        $cfg = Config::fromDsn('scratchbird://user:pass@localhost:3092/mydb?auth_method_id=invalid.namespace');
+        $conn = $this->newConnectionWithoutConstructor($cfg);
+
+        $this->expectException(ScratchBirdAuthException::class);
+        $this->expectExceptionMessage('invalid auth_method_id namespace');
+        $this->invokeHandshake($conn);
+    }
+
     private function newConnectionWithoutConstructor(Config $cfg): Connection
     {
         $class = new ReflectionClass(Connection::class);
@@ -279,6 +337,14 @@ final class ConnectionConnTest extends TestCase
         $method->invoke($conn);
     }
 
+    private function invokeHandshake(Connection $conn): void
+    {
+        $class = new ReflectionClass(Connection::class);
+        $method = $class->getMethod('handshake');
+        $method->setAccessible(true);
+        $method->invoke($conn);
+    }
+
     private function queueManagerFrame($server, int $type, string $payload): void
     {
         $frame = pack('V', 0x42444253)
@@ -303,6 +369,31 @@ final class ConnectionConnTest extends TestCase
             $this->readExact($server, $length);
         }
         return $type;
+    }
+
+    private function readProtocolFrame($stream): array
+    {
+        $header = $this->readExact($stream, Protocol::HEADER_SIZE);
+        [$type, , $length] = Protocol::decodeHeader($header);
+        $payload = $length > 0 ? $this->readExact($stream, $length) : '';
+        return [$type, $payload];
+    }
+
+    private function parseStartupParams(string $payload): array
+    {
+        $params = [];
+        if (strlen($payload) <= 12) {
+            return $params;
+        }
+        $items = explode("\0", substr($payload, 12));
+        for ($i = 0; $i + 1 < count($items); $i += 2) {
+            $key = $items[$i];
+            if ($key === '') {
+                break;
+            }
+            $params[$key] = $items[$i + 1];
+        }
+        return $params;
     }
 
     private function managerAuthPayloadSuccess(): string

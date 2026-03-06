@@ -929,12 +929,46 @@ final class Connection
         $params = [
             'database' => $this->config->database,
             'user' => $this->config->user,
+            'client_flags' => (string)$this->config->connectClientFlags,
         ];
         if ($this->config->role !== '') {
             $params['role'] = $this->config->role;
         }
         if ($this->config->applicationName !== '') {
             $params['application_name'] = $this->config->applicationName;
+        }
+        if ($this->config->authMethodId !== '') {
+            if (!str_starts_with($this->config->authMethodId, 'scratchbird.auth.')) {
+                throw new ScratchBirdAuthException('invalid auth_method_id namespace', '28000');
+            }
+            $params['auth_method_id'] = $this->config->authMethodId;
+        }
+        if ($this->config->authMethodPayload !== '') {
+            $params['auth_method_payload'] = $this->config->authMethodPayload;
+        }
+        if ($this->config->authPayloadJson !== '') {
+            $params['auth_payload_json'] = $this->config->authPayloadJson;
+        }
+        if ($this->config->authPayloadB64 !== '') {
+            $params['auth_payload_b64'] = $this->config->authPayloadB64;
+        }
+        if ($this->config->authProviderProfile !== '') {
+            $params['auth_provider_profile'] = $this->config->authProviderProfile;
+        }
+        if ($this->config->authRequiredMethods !== '') {
+            $params['auth_required_methods'] = $this->config->authRequiredMethods;
+        }
+        if ($this->config->authForbiddenMethods !== '') {
+            $params['auth_forbidden_methods'] = $this->config->authForbiddenMethods;
+        }
+        if ($this->config->authRequireChannelBinding) {
+            $params['auth_require_channel_binding'] = '1';
+        }
+        if ($this->config->workloadIdentityToken !== '') {
+            $params['workload_identity_token'] = $this->config->workloadIdentityToken;
+        }
+        if ($this->config->proxyPrincipalAssertion !== '') {
+            $params['proxy_principal_assertion'] = $this->config->proxyPrincipalAssertion;
         }
         $startup = Protocol::buildStartupPayload($features, $params);
         $this->sendMessage(Protocol::MSG_STARTUP, $startup, 0, true);

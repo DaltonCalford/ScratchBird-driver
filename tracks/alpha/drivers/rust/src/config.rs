@@ -39,6 +39,17 @@ pub struct Config {
     pub manager_client_intent: String,
     pub manager_client_flags: u16,
     pub manager_auth_fast_path: bool,
+    pub connect_client_flags: u16,
+    pub auth_method_id: String,
+    pub auth_method_payload: String,
+    pub auth_payload_json: String,
+    pub auth_payload_b64: String,
+    pub auth_provider_profile: String,
+    pub auth_required_methods: String,
+    pub auth_forbidden_methods: String,
+    pub auth_require_channel_binding: bool,
+    pub workload_identity_token: String,
+    pub proxy_principal_assertion: String,
     pub metadata_expand_schema_parents: bool,
     pub extra: HashMap<String, String>,
 }
@@ -73,6 +84,17 @@ impl Default for Config {
             manager_client_intent: "native_v3".to_string(),
             manager_client_flags: 0,
             manager_auth_fast_path: true,
+            connect_client_flags: 0x0100,
+            auth_method_id: String::new(),
+            auth_method_payload: String::new(),
+            auth_payload_json: String::new(),
+            auth_payload_b64: String::new(),
+            auth_provider_profile: String::new(),
+            auth_required_methods: String::new(),
+            auth_forbidden_methods: String::new(),
+            auth_require_channel_binding: false,
+            workload_identity_token: String::new(),
+            proxy_principal_assertion: String::new(),
             metadata_expand_schema_parents: false,
             extra: HashMap::new(),
         }
@@ -261,6 +283,31 @@ fn apply_param(cfg: &mut Config, key: &str, value: &str) -> Result<()> {
         }
         "manager_auth_fast_path" | "mcp_auth_fast_path" => {
             cfg.manager_auth_fast_path = parse_bool_param(value);
+        }
+        "client_flags" | "connect_client_flags" => {
+            cfg.connect_client_flags = value.parse::<u16>().unwrap_or(cfg.connect_client_flags);
+        }
+        "auth_method_id" | "authmethodid" => cfg.auth_method_id = value.to_string(),
+        "auth_method_payload" | "authmethodpayload" => cfg.auth_method_payload = value.to_string(),
+        "auth_payload_json" | "authpayloadjson" => cfg.auth_payload_json = value.to_string(),
+        "auth_payload_b64" | "authpayloadb64" => cfg.auth_payload_b64 = value.to_string(),
+        "auth_provider_profile" | "authproviderprofile" => {
+            cfg.auth_provider_profile = value.to_string()
+        }
+        "auth_required_methods" | "authrequiredmethods" => {
+            cfg.auth_required_methods = value.to_string()
+        }
+        "auth_forbidden_methods" | "authforbiddenmethods" => {
+            cfg.auth_forbidden_methods = value.to_string()
+        }
+        "auth_require_channel_binding" | "authrequirechannelbinding" => {
+            cfg.auth_require_channel_binding = parse_bool_param(value);
+        }
+        "workload_identity_token" | "workloadidentitytoken" => {
+            cfg.workload_identity_token = value.to_string()
+        }
+        "proxy_principal_assertion" | "proxyprincipalassertion" | "proxy_assertion" => {
+            cfg.proxy_principal_assertion = value.to_string()
         }
         "metadata_expand_schema_parents"
         | "metadataexpandschemaparents"

@@ -60,5 +60,12 @@ bool resolveMetadataCollectionQuery(
 
 std::string metadataCollectionNotSupportedMessage(const std::string& collection_name);
 
+// Build deterministic DDL-editor metadata payload JSON:
+// {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"}.
+std::string buildMetadataDdlEditorSchemaPayloadJson(
+    const std::vector<std::string>& schema_names,
+    const std::string* schema_pattern,
+    bool expand_schema_parents);
+
 } // namespace client
 } // namespace scratchbird

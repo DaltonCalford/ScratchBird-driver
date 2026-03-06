@@ -63,6 +63,7 @@ import {
   parseQueryPlan,
   parseSblrCompiled,
   parseErrorMessage,
+  applyAuthPluginSelection,
   MessageHeader,
   NotificationMessage,
   QueryPlanMessage,
@@ -349,6 +350,7 @@ export class Client {
     if (!this.config.managerClientIntent) this.config.managerClientIntent = "native_v3";
     if (this.config.managerClientFlags === undefined) this.config.managerClientFlags = 0;
     if (this.config.managerAuthFastPath === undefined) this.config.managerAuthFastPath = true;
+    if (this.config.connectClientFlags === undefined) this.config.connectClientFlags = 0x0100;
     this.sessionSchema = normalizeSessionSchema(this.config.schema);
   }
 
@@ -1019,6 +1021,7 @@ export class Client {
     const params: Record<string, string> = {
       database: this.config.database ?? "",
       user: this.config.user ?? "",
+      client_flags: String(this.config.connectClientFlags ?? 0x0100),
     };
     if (this.config.role) {
       params.role = this.config.role;
@@ -1026,6 +1029,18 @@ export class Client {
     if (this.config.applicationName) {
       params.application_name = this.config.applicationName;
     }
+    applyAuthPluginSelection(params, {
+      methodId: this.config.authMethodId,
+      methodPayload: this.config.authMethodPayload,
+      payloadJson: this.config.authPayloadJson,
+      payloadB64: this.config.authPayloadB64,
+      providerProfile: this.config.authProviderProfile,
+      requiredMethods: this.config.authRequiredMethods,
+      forbiddenMethods: this.config.authForbiddenMethods,
+      requireChannelBinding: this.config.authRequireChannelBinding === true,
+      workloadIdentityToken: this.config.workloadIdentityToken,
+      proxyPrincipalAssertion: this.config.proxyPrincipalAssertion,
+    });
     const startup = buildStartupPayload(this.requestedFeatures(), params);
     await this.protocol.sendMessage(MessageType.STARTUP, startup, 0, true);
 

@@ -73,6 +73,7 @@ typedef enum sb_type {
     SB_TYPE_MONEY = 21,
     SB_TYPE_DATE = 30,
     SB_TYPE_TIME = 31,
+    SB_TYPE_TIME_TZ = 35,
     SB_TYPE_TIMESTAMP = 32,
     SB_TYPE_TIMESTAMP_TZ = 33,
     SB_TYPE_INTERVAL = 34,
@@ -142,6 +143,26 @@ typedef struct sb_column_meta {
     int nullable;
 } sb_column_meta;
 
+typedef struct sb_txn_options {
+    uint16_t flags;
+    uint8_t conflict_action;
+    uint8_t autocommit_mode;
+    uint8_t isolation_level;
+    uint8_t access_mode;
+    uint8_t deferrable;
+    uint8_t wait_mode;
+    uint32_t timeout_ms;
+} sb_txn_options;
+
+typedef void (*sb_notification_listener_fn)(const char* channel,
+                                            const uint8_t* payload,
+                                            size_t payload_len,
+                                            uint32_t process_id,
+                                            uint8_t change_type,
+                                            uint64_t row_id,
+                                            int has_row_id,
+                                            void* user_data);
+
 static inline const char* sb_metadata_schemas_query(void) {
     return "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
 }
@@ -202,12 +223,20 @@ static inline const char* sb_metadata_type_info_query(void) {
     return "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 }
 
+static inline const char* sb_metadata_ddl_fields_query(void) {
+    return "SELECT table_id, column_id, column_name, data_type_name, default_value, generation_expression, is_nullable, is_identity, is_generated FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+}
+
 sb_connection* sb_connect(const char* conn_str, sb_error* err);
 void sb_disconnect(sb_connection* conn);
 
 sb_result* sb_execute(sb_connection* conn, const char* sql, sb_error* err);
 sb_result* sb_query(sb_connection* conn, const char* sql, sb_error* err);
 sb_result* sb_metadata_query(sb_connection* conn, const char* collection_name, sb_error* err);
+char* sb_metadata_schema_payload(sb_connection* conn,
+                                 const char* schema_pattern,
+                                 int expand_schema_parents,
+                                 sb_error* err);
 int sb_cancel(sb_connection* conn, sb_error* err);
 int sb_set_option(sb_connection* conn, const char* name, const char* value, sb_error* err);
 int sb_ping(sb_connection* conn, sb_error* err);
@@ -215,6 +244,8 @@ int sb_is_healthy(sb_connection* conn, sb_error* err);
 
 int sb_fetch(sb_result* result, sb_row* row, sb_error* err);
 void sb_result_free(sb_result* result);
+int64_t sb_rows_affected(sb_result* result);
+void sb_memory_free(void* ptr);
 
 int sb_column_count(sb_result* result);
 int sb_get_column_meta(sb_result* result, int index, sb_column_meta* out);
@@ -230,14 +261,47 @@ sb_result* sb_execute_prepared(sb_prepared* stmt, sb_error* err);
 void sb_prepared_free(sb_prepared* stmt);
 
 int sb_tx_begin(sb_connection* conn, sb_error* err);
+int sb_tx_begin_ex(sb_connection* conn, const sb_txn_options* options, sb_error* err);
 int sb_tx_commit(sb_connection* conn, sb_error* err);
 int sb_tx_rollback(sb_connection* conn, sb_error* err);
+int sb_tx_savepoint(sb_connection* conn, const char* name, sb_error* err);
+int sb_tx_release_savepoint(sb_connection* conn, const char* name, sb_error* err);
+int sb_tx_rollback_to(sb_connection* conn, const char* name, sb_error* err);
 
 int sb_subscribe(sb_connection* conn, uint8_t subscribe_type,
                  const char* channel, const char* filter, sb_error* err);
 int sb_unsubscribe(sb_connection* conn, const char* channel, sb_error* err);
+int sb_listen(sb_connection* conn, const char* channel, const char* filter, sb_error* err);
+int sb_unlisten(sb_connection* conn, const char* channel, sb_error* err);
+int sb_unlisten_all(sb_connection* conn, sb_error* err);
+int sb_notify_channel(sb_connection* conn,
+                      const char* channel,
+                      const uint8_t* payload,
+                      size_t payload_len,
+                      sb_error* err);
+int sb_poll_notifications(sb_connection* conn, sb_error* err);
+size_t sb_notification_count(sb_connection* conn);
+char* sb_get_notification(sb_connection* conn, sb_error* err);
+char* sb_get_notifications(sb_connection* conn, sb_error* err);
+void sb_clear_notifications(sb_connection* conn);
+uint64_t sb_add_notification_listener(sb_connection* conn,
+                                      sb_notification_listener_fn listener,
+                                      void* user_data,
+                                      sb_error* err);
+int sb_remove_notification_listener(sb_connection* conn,
+                                    uint64_t listener_id,
+                                    sb_error* err);
 int sb_stream_control(sb_connection* conn, uint8_t control_type,
                       uint32_t window_size, uint32_t timeout_ms, sb_error* err);
+
+char* sb_get_diagnostics_json(sb_connection* conn, sb_error* err);
+char* sb_get_telemetry_summary_json(sb_connection* conn, sb_error* err);
+int sb_reset_telemetry(sb_connection* conn, sb_error* err);
+char* sb_get_slow_operations_json(sb_connection* conn, sb_error* err);
+char* sb_export_telemetry_prometheus(sb_connection* conn, sb_error* err);
+char* sb_get_circuit_breaker_summary_json(sb_connection* conn, sb_error* err);
+char* sb_get_keepalive_summary_json(sb_connection* conn, sb_error* err);
+char* sb_get_leak_summary_json(sb_connection* conn, sb_error* err);
 
 int sb_attach_create(sb_connection* conn, const char* mode, const char* db_name, sb_error* err);
 int sb_attach_detach(sb_connection* conn, sb_error* err);

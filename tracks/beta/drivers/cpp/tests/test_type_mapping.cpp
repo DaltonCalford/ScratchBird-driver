@@ -27,6 +27,7 @@ TEST(TypeMappingConformance, MapsWireOidsToSbTypes) {
     EXPECT_EQ(sb_test_map_type_oid(kOidBytea), SB_TYPE_BLOB);
     EXPECT_EQ(sb_test_map_type_oid(kOidDate), SB_TYPE_DATE);
     EXPECT_EQ(sb_test_map_type_oid(kOidTime), SB_TYPE_TIME);
+    EXPECT_EQ(sb_test_map_type_oid(kOidTimetz), SB_TYPE_TIME_TZ);
     EXPECT_EQ(sb_test_map_type_oid(kOidTimestamp), SB_TYPE_TIMESTAMP);
     EXPECT_EQ(sb_test_map_type_oid(kOidTimestamptz), SB_TYPE_TIMESTAMP_TZ);
     EXPECT_EQ(sb_test_map_type_oid(kOidInterval), SB_TYPE_INTERVAL);
@@ -37,6 +38,8 @@ TEST(TypeMappingConformance, MapsWireOidsToSbTypes) {
     EXPECT_EQ(sb_test_map_type_oid(kOidMacaddr8), SB_TYPE_MACADDR);
     EXPECT_EQ(sb_test_map_type_oid(kOidSbVector), SB_TYPE_VECTOR);
     EXPECT_EQ(sb_test_map_type_oid(kOidRecord), SB_TYPE_COMPOSITE);
+    EXPECT_EQ(sb_test_map_type_oid(kOidInt4Array), SB_TYPE_ARRAY);
+    EXPECT_EQ(sb_test_map_type_oid(kOidTextArray), SB_TYPE_ARRAY);
     EXPECT_EQ(sb_test_map_type_oid(kOidInt4Range), SB_TYPE_RANGE);
     EXPECT_EQ(sb_test_map_type_oid(kOidInt8Range), SB_TYPE_RANGE);
     EXPECT_EQ(sb_test_map_type_oid(kOidNumRange), SB_TYPE_RANGE);
@@ -67,13 +70,16 @@ TEST(TypeMappingConformance, MapsSbTypesToWireOids) {
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_BLOB), kOidBytea);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_DATE), kOidDate);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_TIME), kOidTime);
+    EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_TIME_TZ), kOidTimetz);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_TIMESTAMP), kOidTimestamp);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_TIMESTAMP_TZ), kOidTimestamptz);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_INTERVAL), kOidInterval);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_UUID), kOidUuid);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_GEOMETRY), kOidPoint);
+    EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_ARRAY), kOidTextArray);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_VECTOR), kOidSbVector);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_COMPOSITE), kOidRecord);
+    EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_RANGE), kOidInt4Range);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_INET), kOidInet);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_CIDR), kOidCidr);
     EXPECT_EQ(sb_test_map_sb_type_to_oid(SB_TYPE_MACADDR), kOidMacaddr);

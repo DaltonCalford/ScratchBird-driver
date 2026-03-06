@@ -99,6 +99,7 @@ struct OperationMetrics {
     std::atomic<uint64_t> count{0};
     std::atomic<uint64_t> total_time_ms{0};
     std::atomic<uint64_t> avg_time_ms{0};
+    std::atomic<uint64_t> max_time_ms{0};
     std::atomic<uint64_t> error_count{0};
     
     void Record(uint64_t duration_ms, bool success);
@@ -116,6 +117,7 @@ struct OperationMetricsSnapshot {
     uint64_t count;
     uint64_t total_time_ms;
     uint64_t avg_time_ms;
+    uint64_t max_time_ms;
     uint64_t error_count;
 };
 
@@ -147,6 +149,8 @@ public:
     // Metrics
     Metrics GetMetrics() const;
     std::vector<SlowQueryLog> GetSlowQueries() const;
+    std::string ExportSlowQueriesJson() const;
+    void Reset();
     
     // Utility
     static std::string SanitizeQuery(const std::string& sql);

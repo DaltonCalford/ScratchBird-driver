@@ -38,6 +38,17 @@ export interface ClientConfig {
   managerClientIntent?: string;
   managerClientFlags?: number;
   managerAuthFastPath?: boolean;
+  connectClientFlags?: number;
+  authMethodId?: string;
+  authMethodPayload?: string;
+  authPayloadJson?: string;
+  authPayloadB64?: string;
+  authProviderProfile?: string;
+  authRequiredMethods?: string;
+  authForbiddenMethods?: string;
+  authRequireChannelBinding?: boolean;
+  workloadIdentityToken?: string;
+  proxyPrincipalAssertion?: string;
 }
 
 export interface FieldDef {

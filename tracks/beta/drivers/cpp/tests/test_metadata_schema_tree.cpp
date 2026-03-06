@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "nlohmann/json.hpp"
 #include "scratchbird/client/metadata.h"
 #include "scratchbird/client/scratchbird_client.h"
 
@@ -135,6 +136,10 @@ TEST(MetadataSchemaTreeTest, ResolvesExtendedCollectionQueries) {
     ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("type_info", &query_sql, &normalized));
     EXPECT_EQ(normalized, "type_info");
     EXPECT_EQ(query_sql, sb_metadata_type_info_query());
+
+    ASSERT_TRUE(scratchbird::client::resolveMetadataCollectionQuery("ddlfields", &query_sql, &normalized));
+    EXPECT_EQ(normalized, "ddl_fields");
+    EXPECT_EQ(query_sql, sb_metadata_ddl_fields_query());
 }
 
 TEST(MetadataSchemaTreeTest, RejectsUnsupportedCollection) {
@@ -143,4 +148,43 @@ TEST(MetadataSchemaTreeTest, RejectsUnsupportedCollection) {
     EXPECT_EQ(
         scratchbird::client::metadataCollectionNotSupportedMessage("nope_collection"),
         "metadata collection 'nope_collection' is not supported");
+}
+
+TEST(MetadataSchemaTreeTest, BuildsDdlEditorSchemaPayloadJsonWithPatternAndParentExpansion) {
+    const std::string schema_pattern = "users.%";
+    const std::string payload_json = scratchbird::client::buildMetadataDdlEditorSchemaPayloadJson(
+        {"users.alice.dev", "users.bob.dev", "sys"},
+        &schema_pattern,
+        true);
+
+    const auto payload = nlohmann::json::parse(payload_json);
+    ASSERT_TRUE(payload.is_object());
+    EXPECT_EQ(payload["schemaPattern"], "users.%");
+    EXPECT_TRUE(payload["expandSchemaParents"].get<bool>());
+    EXPECT_EQ(
+        payload["schemaPaths"].get<std::vector<std::string>>(),
+        (std::vector<std::string>{"users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev"}));
+
+    ASSERT_TRUE(payload["schemaTree"].is_array());
+    ASSERT_FALSE(payload["schemaTree"].empty());
+    const auto& root = payload["schemaTree"][0];
+    EXPECT_EQ(root["name"], "users");
+    EXPECT_EQ(root["path"], "users");
+    EXPECT_TRUE(root["terminal"].get<bool>());
+    ASSERT_TRUE(root["children"].is_array());
+}
+
+TEST(MetadataSchemaTreeTest, BuildsDdlEditorSchemaPayloadJsonWithoutPattern) {
+    const std::string payload_json = scratchbird::client::buildMetadataDdlEditorSchemaPayloadJson(
+        {"users.alice.dev", "sys"},
+        nullptr,
+        false);
+
+    const auto payload = nlohmann::json::parse(payload_json);
+    ASSERT_TRUE(payload.is_object());
+    EXPECT_TRUE(payload["schemaPattern"].is_null());
+    EXPECT_FALSE(payload["expandSchemaParents"].get<bool>());
+    EXPECT_EQ(
+        payload["schemaPaths"].get<std::vector<std::string>>(),
+        (std::vector<std::string>{"users.alice.dev", "sys"}));
 }

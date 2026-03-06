@@ -77,4 +77,43 @@ public class SBDriverTest {
             "jdbc:scratchbird://localhost:3092/demo?dbeaver_expand_schema_parents=true", null);
         assertEquals("true", props.getProperty("metadataExpandSchemaParents"));
     }
+
+    @Test
+    public void parsesAuthPluginAndPinningParams() throws SQLException {
+        SBConnectionProperties props = SBDriver.parseURL(
+            "jdbc:scratchbird://localhost:3092/demo" +
+                "?connect_client_flags=257" +
+                "&auth_method_id=scratchbird.auth.proxy_assertion" +
+                "&auth_method_payload=opaque" +
+                "&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D" +
+                "&auth_payload_b64=YWJj" +
+                "&auth_provider_profile=corp_primary" +
+                "&auth_required_methods=SCRAM_SHA_256%2CTOKEN" +
+                "&auth_forbidden_methods=MD5" +
+                "&auth_require_channel_binding=true" +
+                "&workload_identity_token=jwt-token" +
+                "&proxy_principal_assertion=signed-assertion",
+            null);
+
+        assertEquals("257", props.getProperty("connect_client_flags"));
+        assertEquals("scratchbird.auth.proxy_assertion", props.getProperty("auth_method_id"));
+        assertEquals("opaque", props.getProperty("auth_method_payload"));
+        assertEquals("{\"subject\":\"alice\"}", props.getProperty("auth_payload_json"));
+        assertEquals("YWJj", props.getProperty("auth_payload_b64"));
+        assertEquals("corp_primary", props.getProperty("auth_provider_profile"));
+        assertEquals("SCRAM_SHA_256,TOKEN", props.getProperty("auth_required_methods"));
+        assertEquals("MD5", props.getProperty("auth_forbidden_methods"));
+        assertEquals("true", props.getProperty("auth_require_channel_binding"));
+        assertEquals("jwt-token", props.getProperty("workload_identity_token"));
+        assertEquals("signed-assertion", props.getProperty("proxy_principal_assertion"));
+    }
+
+    @Test
+    public void rejectsInvalidAuthMethodNamespace() {
+        SQLException ex = assertThrows(SQLException.class, () ->
+            SBDriver.parseURL(
+                "jdbc:scratchbird://localhost:3092/demo?auth_method_id=invalid.namespace",
+                null));
+        assertEquals("0A000", ex.getSQLState());
+    }
 }

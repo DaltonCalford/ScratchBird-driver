@@ -148,10 +148,16 @@ func TestApplyAuthPluginSelectionRejectsInvalidNamespace(t *testing.T) {
 func TestApplyAuthPluginSelectionSetsParams(t *testing.T) {
 	params := map[string]string{}
 	err := ApplyAuthPluginSelection(params, AuthPluginSelection{
-		MethodID:        "scratchbird.auth.password",
-		PayloadJSON:     `{"otp":"123456"}`,
-		PayloadB64:      "YWJj",
-		ProviderProfile: "native_v3",
+		MethodID:                "scratchbird.auth.password",
+		MethodPayload:           "opaque",
+		PayloadJSON:             `{"otp":"123456"}`,
+		PayloadB64:              "YWJj",
+		ProviderProfile:         "native_v3",
+		RequiredMethods:         "SCRAM_SHA_256,TOKEN",
+		ForbiddenMethods:        "MD5",
+		RequireChannelBinding:   true,
+		WorkloadIdentityToken:   "jwt-token",
+		ProxyPrincipalAssertion: "signed-assertion",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -159,6 +165,9 @@ func TestApplyAuthPluginSelectionSetsParams(t *testing.T) {
 
 	if params[authParamMethodID] != "scratchbird.auth.password" {
 		t.Fatalf("unexpected method id: %q", params[authParamMethodID])
+	}
+	if params[authParamMethodPayload] != "opaque" {
+		t.Fatalf("unexpected method payload: %q", params[authParamMethodPayload])
 	}
 	if params[authParamPayloadJSON] != `{"otp":"123456"}` {
 		t.Fatalf("unexpected payload json: %q", params[authParamPayloadJSON])
@@ -168,6 +177,21 @@ func TestApplyAuthPluginSelectionSetsParams(t *testing.T) {
 	}
 	if params[authParamProviderProfile] != "native_v3" {
 		t.Fatalf("unexpected provider profile: %q", params[authParamProviderProfile])
+	}
+	if params[authParamRequiredMethods] != "SCRAM_SHA_256,TOKEN" {
+		t.Fatalf("unexpected required methods: %q", params[authParamRequiredMethods])
+	}
+	if params[authParamForbiddenMethods] != "MD5" {
+		t.Fatalf("unexpected forbidden methods: %q", params[authParamForbiddenMethods])
+	}
+	if params[authParamRequireChannelBinding] != "1" {
+		t.Fatalf("unexpected require channel binding flag: %q", params[authParamRequireChannelBinding])
+	}
+	if params[authParamWorkloadIdentityToken] != "jwt-token" {
+		t.Fatalf("unexpected workload identity token: %q", params[authParamWorkloadIdentityToken])
+	}
+	if params[authParamProxyPrincipalAssertion] != "signed-assertion" {
+		t.Fatalf("unexpected proxy principal assertion: %q", params[authParamProxyPrincipalAssertion])
 	}
 }
 
@@ -194,8 +218,16 @@ func TestHandshakeIncludesAuthPluginSelectionParams(t *testing.T) {
 			return
 		}
 		params := parseStartupParams(msg.body[12:])
+		if params["client_flags"] != "257" {
+			errCh <- fmt.Errorf("unexpected client flags: %q", params["client_flags"])
+			return
+		}
 		if params[authParamMethodID] != "scratchbird.auth.oidc" {
 			errCh <- fmt.Errorf("unexpected auth method id: %q", params[authParamMethodID])
+			return
+		}
+		if params[authParamMethodPayload] != "opaque" {
+			errCh <- fmt.Errorf("unexpected auth method payload: %q", params[authParamMethodPayload])
 			return
 		}
 		if params[authParamPayloadJSON] != `{"aud":"sb"}` {
@@ -208,6 +240,26 @@ func TestHandshakeIncludesAuthPluginSelectionParams(t *testing.T) {
 		}
 		if params[authParamProviderProfile] != "corp" {
 			errCh <- fmt.Errorf("unexpected auth provider profile: %q", params[authParamProviderProfile])
+			return
+		}
+		if params[authParamRequiredMethods] != "SCRAM_SHA_256,TOKEN" {
+			errCh <- fmt.Errorf("unexpected auth required methods: %q", params[authParamRequiredMethods])
+			return
+		}
+		if params[authParamForbiddenMethods] != "MD5" {
+			errCh <- fmt.Errorf("unexpected auth forbidden methods: %q", params[authParamForbiddenMethods])
+			return
+		}
+		if params[authParamRequireChannelBinding] != "1" {
+			errCh <- fmt.Errorf("unexpected auth require channel binding: %q", params[authParamRequireChannelBinding])
+			return
+		}
+		if params[authParamWorkloadIdentityToken] != "jwt-token" {
+			errCh <- fmt.Errorf("unexpected workload identity token: %q", params[authParamWorkloadIdentityToken])
+			return
+		}
+		if params[authParamProxyPrincipalAssertion] != "signed-assertion" {
+			errCh <- fmt.Errorf("unexpected proxy principal assertion: %q", params[authParamProxyPrincipalAssertion])
 			return
 		}
 
@@ -228,10 +280,17 @@ func TestHandshakeIncludesAuthPluginSelectionParams(t *testing.T) {
 	cfg.User = "alice"
 	cfg.Password = "secret"
 	cfg.Database = "db1"
+	cfg.ConnectClientFlags = 257
 	cfg.AuthMethodID = "scratchbird.auth.oidc"
+	cfg.AuthMethodPayload = "opaque"
 	cfg.AuthPayloadJSON = `{"aud":"sb"}`
 	cfg.AuthPayloadB64 = "YWJj"
 	cfg.AuthProviderProfile = "corp"
+	cfg.AuthRequiredMethods = "SCRAM_SHA_256,TOKEN"
+	cfg.AuthForbiddenMethods = "MD5"
+	cfg.AuthRequireChannelBinding = true
+	cfg.WorkloadIdentityToken = "jwt-token"
+	cfg.ProxyPrincipalAssertion = "signed-assertion"
 	conn := &Conn{config: cfg, raw: client}
 	if err := conn.handshake(context.Background()); err != nil {
 		t.Fatalf("handshake failed: %v", err)

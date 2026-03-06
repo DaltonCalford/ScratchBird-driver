@@ -4,6 +4,7 @@
  * Copyright (c) 2025-2026 Dalton Calford
  */
 #include <scratchbird/client/keepalive.h>
+#include <algorithm>
 #include <cstring>
 
 namespace scratchbird {
@@ -85,9 +86,14 @@ size_t KeepaliveManager::GetMonitoredCount() const {
 
 void KeepaliveManager::CheckLoop() {
     while (!stop_requested_) {
-        // Sleep for interval
-        std::this_thread::sleep_for(std::chrono::milliseconds(config_.interval_ms));
-        
+        // Sleep in short slices so Stop() can join promptly.
+        uint32_t remaining_ms = config_.interval_ms;
+        while (!stop_requested_ && remaining_ms > 0) {
+            const uint32_t slice = std::min<uint32_t>(remaining_ms, 100u);
+            std::this_thread::sleep_for(std::chrono::milliseconds(slice));
+            remaining_ms -= slice;
+        }
+
         if (stop_requested_) break;
         
         // Check all connections

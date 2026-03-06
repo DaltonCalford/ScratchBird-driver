@@ -191,6 +191,21 @@ def main() -> None:
         "22023",
     )
     _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?connect_client_flags=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?client_flags=-1",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?auth_method_id=invalid.namespace",
+        "28000",
+    )
+    _assert_connect_ok(
+        "scratchbird://user:pass@localhost:3092/testdb?connect_client_flags=257&auth_method_id=scratchbird.auth.proxy_principal_assertion",
+    )
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?mcp_client_flags=-1",
         "22023",
     )

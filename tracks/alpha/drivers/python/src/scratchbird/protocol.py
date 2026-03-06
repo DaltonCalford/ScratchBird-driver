@@ -162,17 +162,29 @@ SUB_TYPE_QUERY = 2
 SUB_TYPE_EVENT = 3
 
 AUTH_PARAM_METHOD_ID = "auth_method_id"
+AUTH_PARAM_METHOD_PAYLOAD = "auth_method_payload"
 AUTH_PARAM_PAYLOAD_JSON = "auth_payload_json"
 AUTH_PARAM_PAYLOAD_B64 = "auth_payload_b64"
 AUTH_PARAM_PROVIDER_PROFILE = "auth_provider_profile"
+AUTH_PARAM_REQUIRED_METHODS = "auth_required_methods"
+AUTH_PARAM_FORBIDDEN_METHODS = "auth_forbidden_methods"
+AUTH_PARAM_REQUIRE_CHANNEL_BINDING = "auth_require_channel_binding"
+AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN = "workload_identity_token"
+AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION = "proxy_principal_assertion"
 
 
 @dataclass
 class AuthPluginSelection:
     method_id: str = ""
+    method_payload: str = ""
     payload_json: str = ""
     payload_b64: str = ""
     provider_profile: str = ""
+    required_methods: str = ""
+    forbidden_methods: str = ""
+    require_channel_binding: bool = False
+    workload_identity_token: str = ""
+    proxy_principal_assertion: str = ""
 
 
 def apply_auth_plugin_selection(params: Dict[str, str], selection: AuthPluginSelection) -> None:
@@ -181,12 +193,24 @@ def apply_auth_plugin_selection(params: Dict[str, str], selection: AuthPluginSel
         raise ValueError("invalid auth_method_id namespace")
     if method_id:
         params[AUTH_PARAM_METHOD_ID] = method_id
+    if selection.method_payload:
+        params[AUTH_PARAM_METHOD_PAYLOAD] = selection.method_payload
     if selection.payload_json:
         params[AUTH_PARAM_PAYLOAD_JSON] = selection.payload_json
     if selection.payload_b64:
         params[AUTH_PARAM_PAYLOAD_B64] = selection.payload_b64
     if selection.provider_profile:
         params[AUTH_PARAM_PROVIDER_PROFILE] = selection.provider_profile
+    if selection.required_methods:
+        params[AUTH_PARAM_REQUIRED_METHODS] = selection.required_methods
+    if selection.forbidden_methods:
+        params[AUTH_PARAM_FORBIDDEN_METHODS] = selection.forbidden_methods
+    if selection.require_channel_binding:
+        params[AUTH_PARAM_REQUIRE_CHANNEL_BINDING] = "1"
+    if selection.workload_identity_token:
+        params[AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN] = selection.workload_identity_token
+    if selection.proxy_principal_assertion:
+        params[AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION] = selection.proxy_principal_assertion
 
 
 @dataclass

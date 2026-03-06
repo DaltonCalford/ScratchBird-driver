@@ -135,6 +135,35 @@ fn _assert_config_session_pooling_manager_extensions() raises:
     _require(cfg_manager_overrides.manager_client_intent == "mgr_intent", "manager_client_intent alias mismatch")
     _require(cfg_manager_overrides.manager_client_flags == 7, "manager_client_flags alias mismatch")
     _require(not cfg_manager_overrides.manager_auth_fast_path, "manager_auth_fast_path alias mismatch")
+    var cfg_auth_overrides = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connect_client_flags=257&auth_method_id=scratchbird.auth.proxy_principal_assertion&auth_method_payload=opaque&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D&auth_payload_b64=YWJj&auth_provider_profile=corp_primary&auth_required_methods=SCRAM_SHA_256%2CTOKEN&auth_forbidden_methods=MD5&auth_require_channel_binding=true&workload_identity_token=jwt-token&proxy_principal_assertion=signed-assertion"
+    )
+    _require(cfg_auth_overrides.connect_client_flags == 257, "connect_client_flags parse mismatch")
+    _require(
+        cfg_auth_overrides.auth_method_id == "scratchbird.auth.proxy_principal_assertion",
+        "auth_method_id parse mismatch",
+    )
+    _require(cfg_auth_overrides.auth_method_payload == "opaque", "auth_method_payload parse mismatch")
+    _require(
+        cfg_auth_overrides.auth_payload_json == "{\"subject\":\"alice\"}",
+        "auth_payload_json parse mismatch",
+    )
+    _require(cfg_auth_overrides.auth_payload_b64 == "YWJj", "auth_payload_b64 parse mismatch")
+    _require(cfg_auth_overrides.auth_provider_profile == "corp_primary", "auth_provider_profile parse mismatch")
+    _require(
+        cfg_auth_overrides.auth_required_methods == "SCRAM_SHA_256,TOKEN",
+        "auth_required_methods parse mismatch",
+    )
+    _require(cfg_auth_overrides.auth_forbidden_methods == "MD5", "auth_forbidden_methods parse mismatch")
+    _require(cfg_auth_overrides.auth_require_channel_binding, "auth_require_channel_binding parse mismatch")
+    _require(
+        cfg_auth_overrides.workload_identity_token == "jwt-token",
+        "workload_identity_token parse mismatch",
+    )
+    _require(
+        cfg_auth_overrides.proxy_principal_assertion == "signed-assertion",
+        "proxy_principal_assertion parse mismatch",
+    )
     var cfg_manager_defaults = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
     )
@@ -395,6 +424,17 @@ fn main() raises:
     _require(cfg.max_pool_size == 10, "max_pool_size default mismatch")
     _require(cfg.connection_lifetime_s == 30, "connection_lifetime default mismatch")
     _require(cfg.manager_client_flags == 0, "manager_client_flags default mismatch")
+    _require(cfg.connect_client_flags == 256, "connect_client_flags default mismatch")
+    _require(cfg.auth_method_id == "", "auth_method_id default mismatch")
+    _require(cfg.auth_method_payload == "", "auth_method_payload default mismatch")
+    _require(cfg.auth_payload_json == "", "auth_payload_json default mismatch")
+    _require(cfg.auth_payload_b64 == "", "auth_payload_b64 default mismatch")
+    _require(cfg.auth_provider_profile == "", "auth_provider_profile default mismatch")
+    _require(cfg.auth_required_methods == "", "auth_required_methods default mismatch")
+    _require(cfg.auth_forbidden_methods == "", "auth_forbidden_methods default mismatch")
+    _require(not cfg.auth_require_channel_binding, "auth_require_channel_binding default mismatch")
+    _require(cfg.workload_identity_token == "", "workload_identity_token default mismatch")
+    _require(cfg.proxy_principal_assertion == "", "proxy_principal_assertion default mismatch")
     _require(cfg.protocol == "native", "protocol default mismatch")
     _assert_config_parsing_extensions()
 
@@ -936,6 +976,16 @@ fn main() raises:
         "manager_client_flags must be a valid integer",
     )
     _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connect_client_flags=abc",
+        "22023",
+        "connect_client_flags must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&auth_method_id=invalid.namespace",
+        "28000",
+        "invalid auth_method_id namespace",
+    )
+    _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&prepare_threshold=5&preparethreshold=abc",
         "22023",
         "prepare_threshold must be a valid integer",
@@ -1039,6 +1089,11 @@ fn main() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&manager_client_flags=-1",
         "22023",
         "manager_client_flags must be >= 0",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&client_flags=-1",
+        "22023",
+        "connect_client_flags must be >= 0",
     )
 
     print("Mojo scratchbird facade tests OK")

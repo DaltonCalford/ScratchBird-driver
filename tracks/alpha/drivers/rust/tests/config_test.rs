@@ -69,27 +69,22 @@ fn parse_key_value_precedence_latest_override_wins() {
 }
 
 #[test]
-fn parse_auth_plugin_selection_params_into_extra() {
+fn parse_auth_plugin_selection_params() {
     let cfg = Config::from_dsn(
-        "scratchbird://user:pass@localhost:3092/mydb?auth_method_id=scratchbird.auth.password&auth_payload_json=%7B%22tenant%22%3A%22alpha%22%7D&auth_payload_b64=dGVzdA%3D%3D&auth_provider_profile=default",
+        "scratchbird://user:pass@localhost:3092/mydb?connect_client_flags=257&auth_method_id=scratchbird.auth.password&auth_method_payload=opaque&auth_payload_json=%7B%22tenant%22%3A%22alpha%22%7D&auth_payload_b64=dGVzdA%3D%3D&auth_provider_profile=default&auth_required_methods=SCRAM_SHA_256%2CTOKEN&auth_forbidden_methods=MD5&auth_require_channel_binding=true&workload_identity_token=jwt-token&proxy_principal_assertion=signed-assertion",
     )
     .unwrap();
-    assert_eq!(
-        cfg.extra.get("auth_method_id").map(String::as_str),
-        Some("scratchbird.auth.password")
-    );
-    assert_eq!(
-        cfg.extra.get("auth_payload_json").map(String::as_str),
-        Some("{\"tenant\":\"alpha\"}")
-    );
-    assert_eq!(
-        cfg.extra.get("auth_payload_b64").map(String::as_str),
-        Some("dGVzdA==")
-    );
-    assert_eq!(
-        cfg.extra.get("auth_provider_profile").map(String::as_str),
-        Some("default")
-    );
+    assert_eq!(cfg.connect_client_flags, 257);
+    assert_eq!(cfg.auth_method_id, "scratchbird.auth.password");
+    assert_eq!(cfg.auth_method_payload, "opaque");
+    assert_eq!(cfg.auth_payload_json, "{\"tenant\":\"alpha\"}");
+    assert_eq!(cfg.auth_payload_b64, "dGVzdA==");
+    assert_eq!(cfg.auth_provider_profile, "default");
+    assert_eq!(cfg.auth_required_methods, "SCRAM_SHA_256,TOKEN");
+    assert_eq!(cfg.auth_forbidden_methods, "MD5");
+    assert!(cfg.auth_require_channel_binding);
+    assert_eq!(cfg.workload_identity_token, "jwt-token");
+    assert_eq!(cfg.proxy_principal_assertion, "signed-assertion");
 }
 
 #[test]

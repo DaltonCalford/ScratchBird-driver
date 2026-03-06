@@ -60,6 +60,32 @@ begin
     AssertEqual('token', Config.ManagerAuthToken, 'manager_auth_token');
     AssertEqualInt(7, Config.ManagerClientFlags, 'manager_client_flags');
 
+    Config := ParseConfig(
+      'scratchbird://user:pass@localhost:3092/mydb' +
+      '?connect_client_flags=257' +
+      '&auth_method_id=scratchbird.auth.proxy_assertion' +
+      '&auth_method_payload=opaque' +
+      '&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D' +
+      '&auth_payload_b64=YWJj' +
+      '&auth_provider_profile=corp_primary' +
+      '&auth_required_methods=SCRAM_SHA_256%2CTOKEN' +
+      '&auth_forbidden_methods=MD5' +
+      '&auth_require_channel_binding=true' +
+      '&workload_identity_token=jwt-token' +
+      '&proxy_principal_assertion=signed-assertion'
+    );
+    AssertEqualInt(257, Config.ConnectClientFlags, 'connect_client_flags');
+    AssertEqual('scratchbird.auth.proxy_assertion', Config.AuthMethodId, 'auth_method_id');
+    AssertEqual('opaque', Config.AuthMethodPayload, 'auth_method_payload');
+    AssertEqual('{"subject":"alice"}', Config.AuthPayloadJson, 'auth_payload_json');
+    AssertEqual('YWJj', Config.AuthPayloadB64, 'auth_payload_b64');
+    AssertEqual('corp_primary', Config.AuthProviderProfile, 'auth_provider_profile');
+    AssertEqual('SCRAM_SHA_256,TOKEN', Config.AuthRequiredMethods, 'auth_required_methods');
+    AssertEqual('MD5', Config.AuthForbiddenMethods, 'auth_forbidden_methods');
+    AssertTrue(Config.AuthRequireChannelBinding, 'auth_require_channel_binding');
+    AssertEqual('jwt-token', Config.WorkloadIdentityToken, 'workload_identity_token');
+    AssertEqual('signed-assertion', Config.ProxyPrincipalAssertion, 'proxy_principal_assertion');
+
     try
       ParseConfig('scratchbird://localhost:3092/db?front_door_mode=invalid');
       raise Exception.Create('expected invalid front_door_mode parse failure');

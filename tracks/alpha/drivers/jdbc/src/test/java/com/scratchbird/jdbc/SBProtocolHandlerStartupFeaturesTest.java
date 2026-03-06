@@ -32,6 +32,37 @@ class SBProtocolHandlerStartupFeaturesTest {
         assertEquals(FEATURE_COMPRESSION | FEATURE_STREAMING, startupFeatureBits(true, "zstd"));
     }
 
+    @Test
+    void startupPayloadIncludesAuthPluginAndPinningParams() throws Exception {
+        SBConnectionProperties properties = new SBConnectionProperties();
+        properties.setDatabase("main");
+        properties.setUser("scratchbird");
+        properties.setAuthMethodId("scratchbird.auth.proxy_assertion");
+        properties.setAuthMethodPayload("opaque");
+        properties.setAuthPayloadJson("{\"subject\":\"alice\"}");
+        properties.setAuthPayloadB64("YWJj");
+        properties.setAuthProviderProfile("corp_primary");
+        properties.setAuthRequiredMethods("SCRAM_SHA_256,TOKEN");
+        properties.setAuthForbiddenMethods("MD5");
+        properties.setAuthRequireChannelBinding(true);
+        properties.setWorkloadIdentityToken("jwt-token");
+        properties.setProxyPrincipalAssertion("signed-assertion");
+
+        byte[] message = startupFrame(properties);
+        String text = new String(message, StandardCharsets.UTF_8);
+
+        assertTrue(text.contains("auth_method_id"));
+        assertTrue(text.contains("auth_method_payload"));
+        assertTrue(text.contains("auth_payload_json"));
+        assertTrue(text.contains("auth_payload_b64"));
+        assertTrue(text.contains("auth_provider_profile"));
+        assertTrue(text.contains("auth_required_methods"));
+        assertTrue(text.contains("auth_forbidden_methods"));
+        assertTrue(text.contains("auth_require_channel_binding"));
+        assertTrue(text.contains("workload_identity_token"));
+        assertTrue(text.contains("proxy_principal_assertion"));
+    }
+
     private static long startupFeatureBits(boolean binaryTransfer, String compression) throws Exception {
         SBConnectionProperties properties = new SBConnectionProperties();
         properties.setBinaryTransfer(binaryTransfer);
@@ -39,6 +70,16 @@ class SBProtocolHandlerStartupFeaturesTest {
         properties.setDatabase("main");
         properties.setUser("scratchbird");
 
+        byte[] message = startupFrame(properties);
+        int marker = indexOf(message, "database".getBytes(StandardCharsets.UTF_8));
+        assertTrue(marker >= 8, "startup frame did not include expected parameter block");
+        int featureOffset = marker - 8;
+        ByteBuffer payload = ByteBuffer.wrap(message).order(ByteOrder.LITTLE_ENDIAN);
+        payload.position(featureOffset);
+        return payload.getLong();
+    }
+
+    private static byte[] startupFrame(SBConnectionProperties properties) throws Exception {
         SBProtocolHandler protocol = new SBProtocolHandler(properties);
         ByteArrayOutputStream networkBuffer = new ByteArrayOutputStream();
         setField(protocol, "outputStream", networkBuffer);
@@ -47,13 +88,7 @@ class SBProtocolHandlerStartupFeaturesTest {
         sendStartup.setAccessible(true);
         sendStartup.invoke(protocol);
 
-        byte[] message = networkBuffer.toByteArray();
-        int marker = indexOf(message, "database".getBytes(StandardCharsets.UTF_8));
-        assertTrue(marker >= 8, "startup frame did not include expected parameter block");
-        int featureOffset = marker - 8;
-        ByteBuffer payload = ByteBuffer.wrap(message).order(ByteOrder.LITTLE_ENDIAN);
-        payload.position(featureOffset);
-        return payload.getLong();
+        return networkBuffer.toByteArray();
     }
 
     private static int indexOf(byte[] value, byte[] needle) {

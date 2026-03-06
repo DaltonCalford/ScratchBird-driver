@@ -499,8 +499,9 @@ func (c *Conn) handshake(ctx context.Context) error {
 	c.params = map[string]string{}
 	features := c.requestedFeatures()
 	params := map[string]string{
-		"database": c.config.Database,
-		"user":     c.config.User,
+		"database":     c.config.Database,
+		"user":         c.config.User,
+		"client_flags": strconv.FormatUint(uint64(c.config.ConnectClientFlags), 10),
 	}
 	if c.config.Role != "" {
 		params["role"] = c.config.Role
@@ -509,10 +510,16 @@ func (c *Conn) handshake(ctx context.Context) error {
 		params["application_name"] = c.config.Application
 	}
 	selection := AuthPluginSelection{
-		MethodID:        c.config.AuthMethodID,
-		PayloadJSON:     c.config.AuthPayloadJSON,
-		PayloadB64:      c.config.AuthPayloadB64,
-		ProviderProfile: c.config.AuthProviderProfile,
+		MethodID:                c.config.AuthMethodID,
+		MethodPayload:           c.config.AuthMethodPayload,
+		PayloadJSON:             c.config.AuthPayloadJSON,
+		PayloadB64:              c.config.AuthPayloadB64,
+		ProviderProfile:         c.config.AuthProviderProfile,
+		RequiredMethods:         c.config.AuthRequiredMethods,
+		ForbiddenMethods:        c.config.AuthForbiddenMethods,
+		RequireChannelBinding:   c.config.AuthRequireChannelBinding,
+		WorkloadIdentityToken:   c.config.WorkloadIdentityToken,
+		ProxyPrincipalAssertion: c.config.ProxyPrincipalAssertion,
 	}
 	if err := ApplyAuthPluginSelection(params, selection); err != nil {
 		return &Error{Kind: ErrData, Message: err.Error(), SQLState: "22023"}

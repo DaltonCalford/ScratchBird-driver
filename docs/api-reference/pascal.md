@@ -39,11 +39,21 @@
 - `SetOption(Name, Value)`
 - `Ping`, `Terminate`, `Cancel`
 - `Subscribe(SubscribeType, Channel, FilterExpr)`, `Unsubscribe(Channel)`
+- Notification lifecycle helpers:
+  - `Listen(Channel, FilterExpr)`, `Unlisten(Channel)`, `UnlistenAll()`
+  - `NotifyChannel(Channel)`, `NotifyChannel(Channel, Payload)`
+  - `AddNotificationListener(Handler)`, `RemoveNotificationListener(ListenerId)`
+  - `GetNotification(out Notice)`, `GetNotifications()`, `ClearNotifications()`, `NotificationCount()`
 - `ExecuteSblr(SblrHash, Bytecode, Params)`
 - `StreamControl(ControlType, WindowSize, TimeoutMs)`
 - `AttachCreate(EmulationMode, DbName)`, `AttachDetach`, `AttachList`
 - `OnNotification` event handler
 - `GetLastPlan(out Plan)`, `GetLastSblr(out Compiled)`
+- Enterprise diagnostics/observability helpers:
+  - `GetDiagnosticsJson()`
+  - `GetTelemetrySummaryJson()`, `ResetTelemetry()`
+  - `GetSlowOperationsJson()`, `ExportTelemetryPrometheus()`
+  - `GetCircuitBreakerSummaryJson()`, `GetKeepaliveSummaryJson()`, `GetLeakSummaryJson()`
 
 ## Wrapper Types
 

@@ -33,6 +33,17 @@ final class Config
     public string $applicationName = 'scratchbird_php';
     public bool $binaryTransfer = true;
     public string $compression = 'off';
+    public int $connectClientFlags = 0x0100;
+    public string $authMethodId = '';
+    public string $authMethodPayload = '';
+    public string $authPayloadJson = '';
+    public string $authPayloadB64 = '';
+    public string $authProviderProfile = '';
+    public string $authRequiredMethods = '';
+    public string $authForbiddenMethods = '';
+    public bool $authRequireChannelBinding = false;
+    public string $workloadIdentityToken = '';
+    public string $proxyPrincipalAssertion = '';
     public int $fetchSize = 0;
     public string $managerAuthToken = '';
     public string $managerUsername = '';
@@ -191,6 +202,51 @@ final class Config
                 break;
             case 'compression':
                 $cfg->compression = self::normalizeCompression($value);
+                break;
+            case 'client_flags':
+            case 'connect_client_flags':
+                $cfg->connectClientFlags = (int)$value;
+                break;
+            case 'auth_method_id':
+            case 'authmethodid':
+                $cfg->authMethodId = trim($value);
+                break;
+            case 'auth_method_payload':
+            case 'authmethodpayload':
+                $cfg->authMethodPayload = $value;
+                break;
+            case 'auth_payload_json':
+            case 'authpayloadjson':
+                $cfg->authPayloadJson = $value;
+                break;
+            case 'auth_payload_b64':
+            case 'authpayloadb64':
+                $cfg->authPayloadB64 = $value;
+                break;
+            case 'auth_provider_profile':
+            case 'authproviderprofile':
+                $cfg->authProviderProfile = trim($value);
+                break;
+            case 'auth_required_methods':
+            case 'authrequiredmethods':
+                $cfg->authRequiredMethods = trim($value);
+                break;
+            case 'auth_forbidden_methods':
+            case 'authforbiddenmethods':
+                $cfg->authForbiddenMethods = trim($value);
+                break;
+            case 'auth_require_channel_binding':
+            case 'authrequirechannelbinding':
+                $cfg->authRequireChannelBinding = self::parseBool($value, $cfg->authRequireChannelBinding);
+                break;
+            case 'workload_identity_token':
+            case 'workloadidentitytoken':
+                $cfg->workloadIdentityToken = $value;
+                break;
+            case 'proxy_principal_assertion':
+            case 'proxyprincipalassertion':
+            case 'proxy_assertion':
+                $cfg->proxyPrincipalAssertion = $value;
                 break;
             case 'fetch_size':
             case 'fetchsize':

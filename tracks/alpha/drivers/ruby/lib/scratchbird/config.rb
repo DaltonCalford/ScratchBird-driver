@@ -15,7 +15,11 @@ module Scratchbird
                   :binary_transfer, :compression, :front_door_mode, :manager_auth_token,
                   :manager_username, :manager_database, :manager_connection_profile,
                   :manager_client_intent, :manager_client_flags, :manager_auth_fast_path,
-                  :metadata_expand_schema_parents
+                  :metadata_expand_schema_parents, :connect_client_flags, :auth_method_id,
+                  :auth_method_payload, :auth_payload_json, :auth_payload_b64,
+                  :auth_provider_profile, :auth_required_methods, :auth_forbidden_methods,
+                  :auth_require_channel_binding, :workload_identity_token,
+                  :proxy_principal_assertion
 
     def initialize
       @host = "localhost"
@@ -45,6 +49,17 @@ module Scratchbird
       @manager_client_flags = 0
       @manager_auth_fast_path = true
       @metadata_expand_schema_parents = false
+      @connect_client_flags = 0x0100
+      @auth_method_id = ""
+      @auth_method_payload = ""
+      @auth_payload_json = ""
+      @auth_payload_b64 = ""
+      @auth_provider_profile = ""
+      @auth_required_methods = ""
+      @auth_forbidden_methods = ""
+      @auth_require_channel_binding = false
+      @workload_identity_token = ""
+      @proxy_principal_assertion = ""
     end
 
     def self.parse(dsn)
@@ -168,6 +183,30 @@ module Scratchbird
       when "manager_auth_fast_path", "mcp_auth_fast_path"
         cfg.manager_auth_fast_path = value.to_s.downcase == "true" || value.to_s == "1" ||
           value.to_s.downcase == "yes" || value.to_s.downcase == "on"
+      when "client_flags", "connect_client_flags"
+        cfg.connect_client_flags = value.to_i
+      when "auth_method_id", "authmethodid"
+        cfg.auth_method_id = value.to_s.strip
+      when "auth_method_payload", "authmethodpayload"
+        cfg.auth_method_payload = value
+      when "auth_payload_json", "authpayloadjson"
+        cfg.auth_payload_json = value
+      when "auth_payload_b64", "authpayloadb64"
+        cfg.auth_payload_b64 = value
+      when "auth_provider_profile", "authproviderprofile"
+        cfg.auth_provider_profile = value.to_s.strip
+      when "auth_required_methods", "authrequiredmethods"
+        cfg.auth_required_methods = value.to_s.strip
+      when "auth_forbidden_methods", "authforbiddenmethods"
+        cfg.auth_forbidden_methods = value.to_s.strip
+      when "auth_require_channel_binding", "authrequirechannelbinding"
+        normalized = value.to_s.downcase
+        cfg.auth_require_channel_binding = normalized == "true" || value.to_s == "1" ||
+          normalized == "yes" || normalized == "on"
+      when "workload_identity_token", "workloadidentitytoken"
+        cfg.workload_identity_token = value
+      when "proxy_principal_assertion", "proxyprincipalassertion", "proxy_assertion"
+        cfg.proxy_principal_assertion = value
       end
     end
   end

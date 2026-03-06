@@ -130,17 +130,50 @@ TEST(DriverDefaultsEnvTest, ParsesManagerProxyConnectionParams) {
     EXPECT_FALSE(cfg.manager_auth_fast_path);
 }
 
-TEST(DriverDefaultsEnvTest, ParsesLocalIpcTransportParams) {
+TEST(DriverDefaultsEnvTest, ParsesBinaryTransferAndCompressionCompatibilityParams) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "scratchbird://admin:pw@127.0.0.1:3090/main?"
+        "binary_transfer=false&compression=zstd",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_FALSE(cfg.binary_transfer);
+    EXPECT_TRUE(cfg.enable_compression);
+}
+
+TEST(DriverDefaultsEnvTest, RejectsUnsupportedCompressionMode) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "scratchbird://admin:pw@127.0.0.1:3090/main?compression=gzip",
+        cfg,
+        &ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
+    EXPECT_NE(ctx.message.find("compression"), std::string::npos);
+}
+
+TEST(DriverDefaultsEnvTest, RejectsIpcTransportParams) {
     scratchbird::client::NetworkClientConfig cfg;
     scratchbird::core::ErrorContext ctx;
     auto status = scratchbird::client::parseDriverConnectionString(
         "database=main;transport_mode=local_ipc;ipc_method=unix;ipc_path=build/ipc/scratchbird-main.sock",
         cfg,
         &ctx);
-    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
-    EXPECT_EQ(cfg.transport_mode, "local_ipc");
-    EXPECT_EQ(cfg.ipc_method, scratchbird::server::IPCMethod::UNIX_SOCKET);
-    EXPECT_EQ(cfg.ipc_path, "build/ipc/scratchbird-main.sock");
+    EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
+    EXPECT_NE(ctx.message.find("not supported"), std::string::npos);
+}
+
+TEST(DriverDefaultsEnvTest, RejectsUnixServerEndpoint) {
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "server=unix:/tmp/scratchbird.sock;database=main",
+        cfg,
+        &ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
+    EXPECT_NE(ctx.message.find("IPC/unix socket"), std::string::npos);
 }
 
 TEST(DriverDefaultsEnvTest, ManagedTransportSetsManagerProxyFrontDoor) {

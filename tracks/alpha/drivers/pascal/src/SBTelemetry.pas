@@ -64,6 +64,8 @@ type
     constructor Create;
     destructor Destroy; override;
     procedure RecordSample(DurationMs: Cardinal);
+    procedure Reset;
+    procedure Snapshot(out Ms0_10, Ms10_100, Ms100_1000, Ms1000_10000, MsOver10000: Cardinal);
     function ToString: string;
   end;
   
@@ -78,6 +80,7 @@ type
     constructor Create;
     destructor Destroy; override;
     procedure RecordSample(DurationMs: Cardinal; Success: Boolean);
+    procedure Snapshot(out Count, TotalTimeMs, AvgTimeMs, ErrorCount: Cardinal);
     function ToString: string;
   end;
   
@@ -116,6 +119,9 @@ type
     function GetSuccessfulQueries: Cardinal;
     function GetFailedQueries: Cardinal;
     function ExportPrometheusMetrics: string;
+    function ExportTelemetrySummaryJson: string;
+    function ExportSlowQueriesJson: string;
+    procedure Reset;
     class function SanitizeQuery(const SQL: string): string;
   end;
 
@@ -155,6 +161,32 @@ begin
   Result.SlowQueryThresholdMs := 1000;
   Result.SanitizeQueries := True;
   Result.SampleRate := 1.0;
+end;
+
+function JsonEscape(const Value: string): string;
+var
+  I: Integer;
+  Ch: Char;
+begin
+  Result := '';
+  for I := 1 to Length(Value) do
+  begin
+    Ch := Value[I];
+    case Ch of
+      '"': Result := Result + '\"';
+      '\': Result := Result + '\\';
+      #8: Result := Result + '\b';
+      #9: Result := Result + '\t';
+      #10: Result := Result + '\n';
+      #12: Result := Result + '\f';
+      #13: Result := Result + '\r';
+    else
+      if Ord(Ch) < 32 then
+        Result := Result + '\u00' + IntToHex(Ord(Ch), 2)
+      else
+        Result := Result + Ch;
+    end;
+  end;
 end;
 
 { TSpanContext }
@@ -252,6 +284,34 @@ begin
   end;
 end;
 
+procedure TLatencyHistogram.Reset;
+begin
+  FLock.Enter;
+  try
+    FMs0_10 := 0;
+    FMs10_100 := 0;
+    FMs100_1000 := 0;
+    FMs1000_10000 := 0;
+    FMsOver10000 := 0;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TLatencyHistogram.Snapshot(out Ms0_10, Ms10_100, Ms100_1000, Ms1000_10000, MsOver10000: Cardinal);
+begin
+  FLock.Enter;
+  try
+    Ms0_10 := FMs0_10;
+    Ms10_100 := FMs10_100;
+    Ms100_1000 := FMs100_1000;
+    Ms1000_10000 := FMs1000_10000;
+    MsOver10000 := FMsOver10000;
+  finally
+    FLock.Leave;
+  end;
+end;
+
 function TLatencyHistogram.ToString: string;
 begin
   FLock.Enter;
@@ -289,6 +349,19 @@ begin
     FAvgTimeMs := FTotalTimeMs div FCount;
     if not Success then
       Inc(FErrorCount);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TOperationMetrics.Snapshot(out Count, TotalTimeMs, AvgTimeMs, ErrorCount: Cardinal);
+begin
+  FLock.Enter;
+  try
+    Count := FCount;
+    TotalTimeMs := FTotalTimeMs;
+    AvgTimeMs := FAvgTimeMs;
+    ErrorCount := FErrorCount;
   finally
     FLock.Leave;
   end;
@@ -484,10 +557,9 @@ end;
 
 function TTelemetryCollector.ExportPrometheusMetrics: string;
 var
-  Total, Successful: Cardinal;
+  Total: Cardinal;
 begin
   Total := GetTotalQueries;
-  Successful := GetSuccessfulQueries;
   
   Result := '# HELP scratchbird_queries_total Total number of queries' + LineEnding +
             '# TYPE scratchbird_queries_total counter' + LineEnding +
@@ -495,6 +567,145 @@ begin
             '# HELP scratchbird_query_duration_ms Query duration histogram' + LineEnding +
             '# TYPE scratchbird_query_duration_ms histogram' + LineEnding +
             FHistogram.ToString;
+end;
+
+function TTelemetryCollector.ExportTelemetrySummaryJson: string;
+var
+  TotalQueries, TotalSuccesses, TotalFailures, TotalDuration: Cardinal;
+  H0_10, H10_100, H100_1000, H1000_10000, HOver10000: Cardinal;
+  I: Integer;
+  OperationName: string;
+  Metrics: TOperationMetrics;
+  Count, TotalTimeMs, AvgTimeMs, ErrorCount: Cardinal;
+  OperationsJson: string;
+begin
+  FMetricsLock.Enter;
+  try
+    TotalQueries := FTotalQueries;
+    TotalSuccesses := FSuccessfulQueries;
+    TotalFailures := FFailedQueries;
+    TotalDuration := FTotalQueryTimeMs;
+  finally
+    FMetricsLock.Leave;
+  end;
+
+  FHistogram.Snapshot(H0_10, H10_100, H100_1000, H1000_10000, HOver10000);
+
+  OperationsJson := '';
+  FOpMetricsLock.Enter;
+  try
+    for I := 0 to FOperationMetrics.Count - 1 do
+    begin
+      OperationName := FOperationMetrics[I];
+      Metrics := TOperationMetrics(FOperationMetrics.Objects[I]);
+      if Metrics = nil then
+        Continue;
+      Metrics.Snapshot(Count, TotalTimeMs, AvgTimeMs, ErrorCount);
+      if OperationsJson <> '' then
+        OperationsJson := OperationsJson + ',';
+      OperationsJson := OperationsJson + '{' +
+        '"operation":"' + JsonEscape(OperationName) + '",' +
+        '"invocations":' + IntToStr(Count) + ',' +
+        '"successes":' + IntToStr(Count - ErrorCount) + ',' +
+        '"failures":' + IntToStr(ErrorCount) + ',' +
+        '"total_duration_ms":' + IntToStr(TotalTimeMs) + ',' +
+        '"average_duration_ms":' + IntToStr(AvgTimeMs) +
+        '}';
+    end;
+  finally
+    FOpMetricsLock.Leave;
+  end;
+
+  Result := '{' +
+    '"total_invocations":' + IntToStr(TotalQueries) + ',' +
+    '"total_successes":' + IntToStr(TotalSuccesses) + ',' +
+    '"total_failures":' + IntToStr(TotalFailures) + ',' +
+    '"total_duration_ms":' + IntToStr(TotalDuration) + ',' +
+    '"operations":[' + OperationsJson + '],' +
+    '"histogram":{' +
+      '"ms_0_10":' + IntToStr(H0_10) + ',' +
+      '"ms_10_100":' + IntToStr(H10_100) + ',' +
+      '"ms_100_1000":' + IntToStr(H100_1000) + ',' +
+      '"ms_1000_10000":' + IntToStr(H1000_10000) + ',' +
+      '"ms_over_10000":' + IntToStr(HOver10000) +
+    '}' +
+  '}';
+end;
+
+function TTelemetryCollector.ExportSlowQueriesJson: string;
+var
+  Logs: TList;
+  I: Integer;
+  Log: TSlowQueryLog;
+  Items: string;
+begin
+  Items := '';
+  Logs := FSlowQueries.LockList;
+  try
+    for I := 0 to Logs.Count - 1 do
+    begin
+      Log := TSlowQueryLog(Logs[I]);
+      if Log = nil then
+        Continue;
+      if Items <> '' then
+        Items := Items + ',';
+      Items := Items + '{' +
+        '"trace_id":"' + JsonEscape(Log.TraceID) + '",' +
+        '"operation":"' + JsonEscape(Log.SpanName) + '",' +
+        '"duration_ms":' + IntToStr(Log.DurationMs) + ',' +
+        '"captured_unix_ms":' + IntToStr(DateTimeToUnix(Log.Timestamp, False) * 1000) +
+      '}';
+    end;
+  finally
+    FSlowQueries.UnlockList;
+  end;
+  Result := '[' + Items + ']';
+end;
+
+procedure TTelemetryCollector.Reset;
+var
+  Spans: TList;
+  Logs: TList;
+  I: Integer;
+begin
+  FMetricsLock.Enter;
+  try
+    FTotalQueries := 0;
+    FSuccessfulQueries := 0;
+    FFailedQueries := 0;
+    FTotalQueryTimeMs := 0;
+  finally
+    FMetricsLock.Leave;
+  end;
+
+  FHistogram.Reset;
+
+  FOpMetricsLock.Enter;
+  try
+    for I := 0 to FOperationMetrics.Count - 1 do
+      FOperationMetrics.Objects[I].Free;
+    FOperationMetrics.Clear;
+  finally
+    FOpMetricsLock.Leave;
+  end;
+
+  Logs := FSlowQueries.LockList;
+  try
+    for I := Logs.Count - 1 downto 0 do
+      TObject(Logs[I]).Free;
+    Logs.Clear;
+  finally
+    FSlowQueries.UnlockList;
+  end;
+
+  Spans := FSpans.LockList;
+  try
+    for I := Spans.Count - 1 downto 0 do
+      TObject(Spans[I]).Free;
+    Spans.Clear;
+  finally
+    FSpans.UnlockList;
+  end;
 end;
 
 class function TTelemetryCollector.SanitizeQuery(const SQL: string): string;

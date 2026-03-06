@@ -38,7 +38,7 @@ const {
   LeakDetector,
   TelemetryCollector,
 } = require("../dist/index.js");
-const { MessageType } = require("../dist/protocol.js");
+const { MessageType, applyAuthPluginSelection } = require("../dist/protocol.js");
 
 test("parseDsn supports uri", () => {
   const cfg = parseDsn("scratchbird://user:pass@localhost:3092/db?sslmode=require");
@@ -70,6 +70,65 @@ test("parseDsn supports metadataExpandSchemaParents aliases", () => {
   const fromKv = parseDsn("host=127.0.0.1 dbname=mydb user=me expandSchemaParents=1");
   assert.equal(fromUri.metadataExpandSchemaParents, true);
   assert.equal(fromKv.metadataExpandSchemaParents, true);
+});
+
+test("parseDsn supports auth plugin and pinning params", () => {
+  const cfg = parseDsn(
+    "scratchbird://user:pass@localhost:3092/db"
+      + "?connect_client_flags=257"
+      + "&auth_method_id=scratchbird.auth.proxy_assertion"
+      + "&auth_method_payload=opaque"
+      + "&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D"
+      + "&auth_payload_b64=YWJj"
+      + "&auth_provider_profile=corp_primary"
+      + "&auth_required_methods=SCRAM_SHA_256%2CTOKEN"
+      + "&auth_forbidden_methods=MD5"
+      + "&auth_require_channel_binding=true"
+      + "&workload_identity_token=jwt-token"
+      + "&proxy_principal_assertion=signed-assertion",
+  );
+  assert.equal(cfg.connectClientFlags, 257);
+  assert.equal(cfg.authMethodId, "scratchbird.auth.proxy_assertion");
+  assert.equal(cfg.authMethodPayload, "opaque");
+  assert.equal(cfg.authPayloadJson, "{\"subject\":\"alice\"}");
+  assert.equal(cfg.authPayloadB64, "YWJj");
+  assert.equal(cfg.authProviderProfile, "corp_primary");
+  assert.equal(cfg.authRequiredMethods, "SCRAM_SHA_256,TOKEN");
+  assert.equal(cfg.authForbiddenMethods, "MD5");
+  assert.equal(cfg.authRequireChannelBinding, true);
+  assert.equal(cfg.workloadIdentityToken, "jwt-token");
+  assert.equal(cfg.proxyPrincipalAssertion, "signed-assertion");
+});
+
+test("applyAuthPluginSelection sets extended params and rejects invalid namespace", () => {
+  const params = {};
+  applyAuthPluginSelection(params, {
+    methodId: "scratchbird.auth.proxy_assertion",
+    methodPayload: "opaque",
+    payloadJson: "{\"subject\":\"alice\"}",
+    payloadB64: "YWJj",
+    providerProfile: "corp_primary",
+    requiredMethods: "SCRAM_SHA_256,TOKEN",
+    forbiddenMethods: "MD5",
+    requireChannelBinding: true,
+    workloadIdentityToken: "jwt-token",
+    proxyPrincipalAssertion: "signed-assertion",
+  });
+  assert.equal(params.auth_method_id, "scratchbird.auth.proxy_assertion");
+  assert.equal(params.auth_method_payload, "opaque");
+  assert.equal(params.auth_payload_json, "{\"subject\":\"alice\"}");
+  assert.equal(params.auth_payload_b64, "YWJj");
+  assert.equal(params.auth_provider_profile, "corp_primary");
+  assert.equal(params.auth_required_methods, "SCRAM_SHA_256,TOKEN");
+  assert.equal(params.auth_forbidden_methods, "MD5");
+  assert.equal(params.auth_require_channel_binding, "1");
+  assert.equal(params.workload_identity_token, "jwt-token");
+  assert.equal(params.proxy_principal_assertion, "signed-assertion");
+
+  assert.throws(
+    () => applyAuthPluginSelection({}, { methodId: "invalid.namespace" }),
+    /Invalid auth_method_id namespace/,
+  );
 });
 
 test("normalizeQuery rewrites positional", () => {

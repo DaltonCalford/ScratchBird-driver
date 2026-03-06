@@ -5,6 +5,7 @@
  */
 #include "scratchbird/client/telemetry.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -77,6 +78,10 @@ void OperationMetrics::Record(uint64_t duration_ms, bool success) {
     auto count_val = count.fetch_add(1) + 1;
     auto total_val = total_time_ms.fetch_add(duration_ms) + duration_ms;
     avg_time_ms.store(total_val / count_val);
+    uint64_t current_max = max_time_ms.load();
+    while (duration_ms > current_max &&
+           !max_time_ms.compare_exchange_weak(current_max, duration_ms)) {
+    }
     if (!success) {
         error_count.fetch_add(1);
     }
@@ -123,6 +128,7 @@ Metrics TelemetryCollector::GetMetrics() const {
                 pair.second->count.load(),
                 pair.second->total_time_ms.load(),
                 pair.second->avg_time_ms.load(),
+                pair.second->max_time_ms.load(),
                 pair.second->error_count.load()
             });
         }
@@ -140,6 +146,28 @@ Metrics TelemetryCollector::GetMetrics() const {
 std::vector<SlowQueryLog> TelemetryCollector::GetSlowQueries() const {
     std::lock_guard<std::mutex> lock(slow_queries_mutex_);
     return slow_queries_;
+}
+
+std::string TelemetryCollector::ExportSlowQueriesJson() const {
+    std::ostringstream oss;
+    oss << "[";
+    const auto logs = GetSlowQueries();
+    for (size_t i = 0; i < logs.size(); ++i) {
+        const auto& log = logs[i];
+        if (i != 0) {
+            oss << ",";
+        }
+        const auto epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            log.timestamp.time_since_epoch()).count();
+        oss << "{"
+            << "\"trace_id\":\"" << log.trace_id << "\","
+            << "\"operation\":\"" << log.span_name << "\","
+            << "\"duration_ms\":" << log.duration_ms << ","
+            << "\"captured_unix_ms\":" << epoch_ms
+            << "}";
+    }
+    oss << "]";
+    return oss.str();
 }
 
 std::string TelemetryCollector::SanitizeQuery(const std::string& sql) {
@@ -180,6 +208,26 @@ std::string TelemetryCollector::ExportPrometheusMetrics() const {
     oss << "scratchbird_query_duration_ms_bucket{le=\"1000\"} "
         << (m.latency_histogram.ms_0_10 + m.latency_histogram.ms_10_100 + m.latency_histogram.ms_100_1000) << "\n";
     return oss.str();
+}
+
+void TelemetryCollector::Reset() {
+    total_queries_.store(0);
+    successful_queries_.store(0);
+    failed_queries_.store(0);
+    total_query_time_ms_.store(0);
+    histogram_.ms_0_10.store(0);
+    histogram_.ms_10_100.store(0);
+    histogram_.ms_100_1000.store(0);
+    histogram_.ms_1000_10000.store(0);
+    histogram_.ms_over_10000.store(0);
+    {
+        std::lock_guard<std::mutex> lock(metrics_mutex_);
+        operation_metrics_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(slow_queries_mutex_);
+        slow_queries_.clear();
+    }
 }
 
 void TelemetryCollector::RecordQueryMetrics(const std::string& operation, uint64_t duration_ms, bool success) {

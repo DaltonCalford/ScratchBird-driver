@@ -250,6 +250,54 @@ class TestConnAuthProtocol < Minitest::Test
     assert_equal "SCRAM server signature mismatch", err.message
   end
 
+  def test_handshake_startup_includes_auth_plugin_and_pinning_params
+    cfg = base_config
+    cfg.auth_method_id = "scratchbird.auth.proxy_assertion"
+    cfg.auth_method_payload = "opaque"
+    cfg.auth_payload_json = "{\"subject\":\"alice\"}"
+    cfg.auth_payload_b64 = "YWJj"
+    cfg.auth_provider_profile = "corp_primary"
+    cfg.auth_required_methods = "SCRAM_SHA_256,TOKEN"
+    cfg.auth_forbidden_methods = "MD5"
+    cfg.auth_require_channel_binding = true
+    cfg.workload_identity_token = "jwt-token"
+    cfg.proxy_principal_assertion = "signed-assertion"
+    client = Scratchbird::Client.new(cfg)
+    startup_payload = nil
+
+    client.define_singleton_method(:send_message) do |type, payload, _flags, _force_zero|
+      if type == Scratchbird::Protocol::MSG_STARTUP
+        startup_payload = payload
+        raise "startup_sent"
+      end
+      1
+    end
+
+    err = assert_raises(RuntimeError) { client.send(:handshake) }
+    assert_equal "startup_sent", err.message
+    startup_text = startup_payload.to_s
+    assert_includes startup_text, "client_flags\000256\000"
+    assert_includes startup_text, "auth_method_id\000scratchbird.auth.proxy_assertion\000"
+    assert_includes startup_text, "auth_method_payload\000opaque\000"
+    assert_includes startup_text, "auth_payload_json\000{\"subject\":\"alice\"}\000"
+    assert_includes startup_text, "auth_payload_b64\000YWJj\000"
+    assert_includes startup_text, "auth_provider_profile\000corp_primary\000"
+    assert_includes startup_text, "auth_required_methods\000SCRAM_SHA_256,TOKEN\000"
+    assert_includes startup_text, "auth_forbidden_methods\000MD5\000"
+    assert_includes startup_text, "auth_require_channel_binding\0001\000"
+    assert_includes startup_text, "workload_identity_token\000jwt-token\000"
+    assert_includes startup_text, "proxy_principal_assertion\000signed-assertion\000"
+  end
+
+  def test_handshake_rejects_invalid_auth_method_namespace
+    cfg = base_config
+    cfg.auth_method_id = "invalid.namespace"
+    client = Scratchbird::Client.new(cfg)
+
+    err = assert_raises(Scratchbird::AuthError) { client.send(:handshake) }
+    assert_equal "invalid auth_method_id namespace", err.message
+  end
+
   def test_protocol_parse_auth_continue_round_trip
     payload = [Scratchbird::Protocol::AUTH_SCRAM_SHA256, 2, 0, 0].pack("C4")
     payload << [5].pack("V")

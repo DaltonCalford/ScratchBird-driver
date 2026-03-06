@@ -15,26 +15,38 @@ import (
 )
 
 const (
-	protocolMagic = 0x53425750 // SBWP
-	protocolMajor = 1
-	protocolMinor = 1
-	protocolVer   = (protocolMajor << 8) | protocolMinor
-	headerSize    = 40
+	protocolMagic  = 0x53425750 // SBWP
+	protocolMajor  = 1
+	protocolMinor  = 1
+	protocolVer    = (protocolMajor << 8) | protocolMinor
+	headerSize     = 40
 	maxMessageSize = 1024 * 1024 * 1024
 )
 
 const (
-	authParamMethodID        = "auth_method_id"
-	authParamPayloadJSON     = "auth_payload_json"
-	authParamPayloadB64      = "auth_payload_b64"
-	authParamProviderProfile = "auth_provider_profile"
+	authParamMethodID                = "auth_method_id"
+	authParamMethodPayload           = "auth_method_payload"
+	authParamPayloadJSON             = "auth_payload_json"
+	authParamPayloadB64              = "auth_payload_b64"
+	authParamProviderProfile         = "auth_provider_profile"
+	authParamRequiredMethods         = "auth_required_methods"
+	authParamForbiddenMethods        = "auth_forbidden_methods"
+	authParamRequireChannelBinding   = "auth_require_channel_binding"
+	authParamWorkloadIdentityToken   = "workload_identity_token"
+	authParamProxyPrincipalAssertion = "proxy_principal_assertion"
 )
 
 type AuthPluginSelection struct {
-	MethodID        string
-	PayloadJSON     string
-	PayloadB64      string
-	ProviderProfile string
+	MethodID                string
+	MethodPayload           string
+	PayloadJSON             string
+	PayloadB64              string
+	ProviderProfile         string
+	RequiredMethods         string
+	ForbiddenMethods        string
+	RequireChannelBinding   bool
+	WorkloadIdentityToken   string
+	ProxyPrincipalAssertion string
 }
 
 func ApplyAuthPluginSelection(params map[string]string, selection AuthPluginSelection) error {
@@ -48,6 +60,9 @@ func ApplyAuthPluginSelection(params map[string]string, selection AuthPluginSele
 	if methodID != "" {
 		params[authParamMethodID] = methodID
 	}
+	if selection.MethodPayload != "" {
+		params[authParamMethodPayload] = selection.MethodPayload
+	}
 	if selection.PayloadJSON != "" {
 		params[authParamPayloadJSON] = selection.PayloadJSON
 	}
@@ -57,79 +72,94 @@ func ApplyAuthPluginSelection(params map[string]string, selection AuthPluginSele
 	if selection.ProviderProfile != "" {
 		params[authParamProviderProfile] = selection.ProviderProfile
 	}
+	if selection.RequiredMethods != "" {
+		params[authParamRequiredMethods] = selection.RequiredMethods
+	}
+	if selection.ForbiddenMethods != "" {
+		params[authParamForbiddenMethods] = selection.ForbiddenMethods
+	}
+	if selection.RequireChannelBinding {
+		params[authParamRequireChannelBinding] = "1"
+	}
+	if selection.WorkloadIdentityToken != "" {
+		params[authParamWorkloadIdentityToken] = selection.WorkloadIdentityToken
+	}
+	if selection.ProxyPrincipalAssertion != "" {
+		params[authParamProxyPrincipalAssertion] = selection.ProxyPrincipalAssertion
+	}
 	return nil
 }
 
 type messageType byte
 
 const (
-	msgStartup     messageType = 0x01
-	msgAuthResponse messageType = 0x02
-	msgQuery       messageType = 0x03
-	msgParse       messageType = 0x04
-	msgBind        messageType = 0x05
-	msgDescribe    messageType = 0x06
-	msgExecute     messageType = 0x07
-	msgClose       messageType = 0x08
-	msgSync        messageType = 0x09
-	msgFlush       messageType = 0x0A
-	msgCancel      messageType = 0x0B
-	msgTerminate   messageType = 0x0C
-	msgCopyData    messageType = 0x0D
-	msgCopyDone    messageType = 0x0E
-	msgCopyFail    messageType = 0x0F
-	msgSblrExecute messageType = 0x10
-	msgSubscribe   messageType = 0x11
-	msgUnsubscribe messageType = 0x12
+	msgStartup        messageType = 0x01
+	msgAuthResponse   messageType = 0x02
+	msgQuery          messageType = 0x03
+	msgParse          messageType = 0x04
+	msgBind           messageType = 0x05
+	msgDescribe       messageType = 0x06
+	msgExecute        messageType = 0x07
+	msgClose          messageType = 0x08
+	msgSync           messageType = 0x09
+	msgFlush          messageType = 0x0A
+	msgCancel         messageType = 0x0B
+	msgTerminate      messageType = 0x0C
+	msgCopyData       messageType = 0x0D
+	msgCopyDone       messageType = 0x0E
+	msgCopyFail       messageType = 0x0F
+	msgSblrExecute    messageType = 0x10
+	msgSubscribe      messageType = 0x11
+	msgUnsubscribe    messageType = 0x12
 	msgFederatedQuery messageType = 0x13
 	msgStreamControl  messageType = 0x14
-	msgTxnBegin    messageType = 0x15
-	msgTxnCommit   messageType = 0x16
-	msgTxnRollback messageType = 0x17
-	msgTxnSavepoint messageType = 0x18
-	msgTxnRelease   messageType = 0x19
-	msgTxnRollbackTo messageType = 0x1A
-	msgPing        messageType = 0x1B
-	msgSetOption   messageType = 0x1C
-	msgClusterAuth messageType = 0x1D
-	msgAttachCreate messageType = 0x1E
-	msgAttachDetach messageType = 0x1F
-	msgAttachList  messageType = 0x20
+	msgTxnBegin       messageType = 0x15
+	msgTxnCommit      messageType = 0x16
+	msgTxnRollback    messageType = 0x17
+	msgTxnSavepoint   messageType = 0x18
+	msgTxnRelease     messageType = 0x19
+	msgTxnRollbackTo  messageType = 0x1A
+	msgPing           messageType = 0x1B
+	msgSetOption      messageType = 0x1C
+	msgClusterAuth    messageType = 0x1D
+	msgAttachCreate   messageType = 0x1E
+	msgAttachDetach   messageType = 0x1F
+	msgAttachList     messageType = 0x20
 
-	msgAuthRequest       messageType = 0x40
-	msgAuthOk            messageType = 0x41
-	msgAuthContinue      messageType = 0x42
-	msgReady             messageType = 0x43
-	msgRowDescription    messageType = 0x44
-	msgDataRow           messageType = 0x45
-	msgCommandComplete   messageType = 0x46
-	msgEmptyQuery        messageType = 0x47
-	msgError             messageType = 0x48
-	msgNotice            messageType = 0x49
-	msgParseComplete     messageType = 0x4A
-	msgBindComplete      messageType = 0x4B
-	msgCloseComplete     messageType = 0x4C
-	msgPortalSuspended   messageType = 0x4D
-	msgNoData            messageType = 0x4E
-	msgParameterStatus   messageType = 0x4F
+	msgAuthRequest          messageType = 0x40
+	msgAuthOk               messageType = 0x41
+	msgAuthContinue         messageType = 0x42
+	msgReady                messageType = 0x43
+	msgRowDescription       messageType = 0x44
+	msgDataRow              messageType = 0x45
+	msgCommandComplete      messageType = 0x46
+	msgEmptyQuery           messageType = 0x47
+	msgError                messageType = 0x48
+	msgNotice               messageType = 0x49
+	msgParseComplete        messageType = 0x4A
+	msgBindComplete         messageType = 0x4B
+	msgCloseComplete        messageType = 0x4C
+	msgPortalSuspended      messageType = 0x4D
+	msgNoData               messageType = 0x4E
+	msgParameterStatus      messageType = 0x4F
 	msgParameterDescription messageType = 0x50
-	msgCopyInResponse    messageType = 0x51
-	msgCopyOutResponse   messageType = 0x52
-	msgCopyBothResponse  messageType = 0x53
-	msgNotification      messageType = 0x54
-	msgFunctionResult    messageType = 0x55
-	msgNegotiateVersion  messageType = 0x56
-	msgSblrCompiled      messageType = 0x57
-	msgQueryPlan         messageType = 0x58
-	msgStreamReady       messageType = 0x59
-	msgStreamData        messageType = 0x5A
-	msgStreamEnd         messageType = 0x5B
-	msgTxnStatus         messageType = 0x5C
-	msgPong              messageType = 0x5D
-	msgClusterAuthOk     messageType = 0x5E
-	msgFederatedResult   messageType = 0x5F
-	msgHeartbeat         messageType = 0x80
-	msgExtension         messageType = 0x81
+	msgCopyInResponse       messageType = 0x51
+	msgCopyOutResponse      messageType = 0x52
+	msgCopyBothResponse     messageType = 0x53
+	msgNotification         messageType = 0x54
+	msgFunctionResult       messageType = 0x55
+	msgNegotiateVersion     messageType = 0x56
+	msgSblrCompiled         messageType = 0x57
+	msgQueryPlan            messageType = 0x58
+	msgStreamReady          messageType = 0x59
+	msgStreamData           messageType = 0x5A
+	msgStreamEnd            messageType = 0x5B
+	msgTxnStatus            messageType = 0x5C
+	msgPong                 messageType = 0x5D
+	msgClusterAuthOk        messageType = 0x5E
+	msgFederatedResult      messageType = 0x5F
+	msgHeartbeat            messageType = 0x80
+	msgExtension            messageType = 0x81
 )
 
 const (
@@ -179,11 +209,11 @@ const (
 )
 
 const (
-	txnFlagHasIsolation uint16 = 0x0001
-	txnFlagHasAccess    uint16 = 0x0002
+	txnFlagHasIsolation  uint16 = 0x0001
+	txnFlagHasAccess     uint16 = 0x0002
 	txnFlagHasDeferrable uint16 = 0x0004
-	txnFlagHasWait      uint16 = 0x0008
-	txnFlagHasTimeout   uint16 = 0x0010
+	txnFlagHasWait       uint16 = 0x0008
+	txnFlagHasTimeout    uint16 = 0x0010
 	txnFlagHasAutocommit uint16 = 0x0020
 )
 
@@ -205,18 +235,18 @@ const (
 type authMethod byte
 
 const (
-	authOK            authMethod = 0
-	authPassword      authMethod = 1
-	authMD5           authMethod = 2
-	authScramSha256   authMethod = 3
-	authCertificate   authMethod = 4
-	authGSSAPI        authMethod = 5
-	authSSPI          authMethod = 6
-	authLDAP          authMethod = 7
-	authSAML          authMethod = 8
-	authOIDC          authMethod = 9
-	authMFATOTP       authMethod = 10
-	authClusterPKI    authMethod = 11
+	authOK          authMethod = 0
+	authPassword    authMethod = 1
+	authMD5         authMethod = 2
+	authScramSha256 authMethod = 3
+	authCertificate authMethod = 4
+	authGSSAPI      authMethod = 5
+	authSSPI        authMethod = 6
+	authLDAP        authMethod = 7
+	authSAML        authMethod = 8
+	authOIDC        authMethod = 9
+	authMFATOTP     authMethod = 10
+	authClusterPKI  authMethod = 11
 )
 
 type messageHeader struct {
@@ -952,8 +982,8 @@ func buildCopyFailPayload(errorMessage string) []byte {
 // ============================================================================
 
 type CopyInResponse struct {
-	Format       byte
-	WindowBytes  uint32
+	Format      byte
+	WindowBytes uint32
 }
 
 type CopyOutResponse struct {

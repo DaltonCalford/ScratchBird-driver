@@ -94,4 +94,34 @@ final class ConfigTest extends TestCase
         $this->expectExceptionMessage('compression must be off or zstd');
         Config::fromDsn('compression=gzip');
     }
+
+    public function testParseAuthPluginAndPinningParams(): void
+    {
+        $cfg = Config::fromDsn(
+            'scratchbird://user:pass@localhost:3092/mydb'
+            . '?connect_client_flags=257'
+            . '&auth_method_id=scratchbird.auth.proxy_assertion'
+            . '&auth_method_payload=opaque'
+            . '&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D'
+            . '&auth_payload_b64=YWJj'
+            . '&auth_provider_profile=corp_primary'
+            . '&auth_required_methods=SCRAM_SHA_256%2CTOKEN'
+            . '&auth_forbidden_methods=MD5'
+            . '&auth_require_channel_binding=true'
+            . '&workload_identity_token=jwt-token'
+            . '&proxy_principal_assertion=signed-assertion'
+        );
+
+        $this->assertSame(257, $cfg->connectClientFlags);
+        $this->assertSame('scratchbird.auth.proxy_assertion', $cfg->authMethodId);
+        $this->assertSame('opaque', $cfg->authMethodPayload);
+        $this->assertSame('{"subject":"alice"}', $cfg->authPayloadJson);
+        $this->assertSame('YWJj', $cfg->authPayloadB64);
+        $this->assertSame('corp_primary', $cfg->authProviderProfile);
+        $this->assertSame('SCRAM_SHA_256,TOKEN', $cfg->authRequiredMethods);
+        $this->assertSame('MD5', $cfg->authForbiddenMethods);
+        $this->assertTrue($cfg->authRequireChannelBinding);
+        $this->assertSame('jwt-token', $cfg->workloadIdentityToken);
+        $this->assertSame('signed-assertion', $cfg->proxyPrincipalAssertion);
+    }
 }

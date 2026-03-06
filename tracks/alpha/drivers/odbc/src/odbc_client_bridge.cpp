@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <cctype>
 
 #include "scratchbird/core/type_extractor.h"
 #include "scratchbird/client/driver_config.h"
@@ -18,6 +19,33 @@ SQLRETURN statusToReturn(core::Status status) {
 constexpr int32_t kDaysFrom1970To2000 = 10957;
 constexpr int64_t kMicrosPerSecond = 1000000LL;
 constexpr int64_t kMicrosPerDay = 86400LL * kMicrosPerSecond;
+
+std::string trimAscii(const std::string& value) {
+    size_t start = 0;
+    while (start < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[start])) != 0) {
+        ++start;
+    }
+    size_t end = value.size();
+    while (end > start &&
+           std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
+        --end;
+    }
+    return value.substr(start, end - start);
+}
+
+std::vector<std::string> splitMethodList(const std::string& csv) {
+    std::vector<std::string> out;
+    std::stringstream ss(csv);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        token = trimAscii(token);
+        if (!token.empty()) {
+            out.push_back(token);
+        }
+    }
+    return out;
+}
 
 template <typename T>
 bool decodeScalar(const std::vector<uint8_t>& data, T& out) {
@@ -254,6 +282,17 @@ client::NetworkClientConfig OdbcClientBridge::buildConfig(const ConnectionParams
     cfg.manager_client_intent = params.manager_client_intent;
     cfg.manager_client_flags = params.manager_client_flags;
     cfg.manager_auth_fast_path = params.manager_auth_fast_path;
+    cfg.connect_client_flags = params.connect_client_flags;
+    cfg.auth_method_id = params.auth_method_id;
+    cfg.auth_method_payload = params.auth_method_payload;
+    cfg.auth_payload_json = params.auth_payload_json;
+    cfg.auth_payload_b64 = params.auth_payload_b64;
+    cfg.auth_provider_profile = params.auth_provider_profile;
+    cfg.auth_required_methods = splitMethodList(params.auth_required_methods);
+    cfg.auth_forbidden_methods = splitMethodList(params.auth_forbidden_methods);
+    cfg.auth_require_channel_binding = params.auth_require_channel_binding;
+    cfg.workload_identity_token = params.workload_identity_token;
+    cfg.proxy_principal_assertion = params.proxy_principal_assertion;
     client::applyDriverDefaultsFromEnv(cfg);
     return cfg;
 }

@@ -55,6 +55,17 @@ struct ScratchBirdConfig:
     var manager_client_intent: String
     var manager_client_flags: Int
     var manager_auth_fast_path: Bool
+    var connect_client_flags: Int
+    var auth_method_id: String
+    var auth_method_payload: String
+    var auth_payload_json: String
+    var auth_payload_b64: String
+    var auth_provider_profile: String
+    var auth_required_methods: String
+    var auth_forbidden_methods: String
+    var auth_require_channel_binding: Bool
+    var workload_identity_token: String
+    var proxy_principal_assertion: String
     var protocol: String
     var front_door_mode: String
     var sslmode: String
@@ -240,6 +251,68 @@ struct ScratchBirdConfig:
         manager_auth_fast_path_keys.append("mcp_auth_fast_path")
         self.manager_auth_fast_path = _as_bool(
             _query_last_value_for_keys(dsn, manager_auth_fast_path_keys, "true")
+        )
+
+        var connect_client_flags_keys = List[String]()
+        connect_client_flags_keys.append("client_flags")
+        connect_client_flags_keys.append("connect_client_flags")
+        self.connect_client_flags = _query_last_int_for_keys(dsn, connect_client_flags_keys, 256)
+
+        var auth_method_id_keys = List[String]()
+        auth_method_id_keys.append("auth_method_id")
+        auth_method_id_keys.append("authmethodid")
+        self.auth_method_id = _query_last_value_for_keys(dsn, auth_method_id_keys, "")
+
+        var auth_method_payload_keys = List[String]()
+        auth_method_payload_keys.append("auth_method_payload")
+        auth_method_payload_keys.append("authmethodpayload")
+        self.auth_method_payload = _query_last_value_for_keys(dsn, auth_method_payload_keys, "")
+
+        var auth_payload_json_keys = List[String]()
+        auth_payload_json_keys.append("auth_payload_json")
+        auth_payload_json_keys.append("authpayloadjson")
+        self.auth_payload_json = _query_last_value_for_keys(dsn, auth_payload_json_keys, "")
+
+        var auth_payload_b64_keys = List[String]()
+        auth_payload_b64_keys.append("auth_payload_b64")
+        auth_payload_b64_keys.append("authpayloadb64")
+        self.auth_payload_b64 = _query_last_value_for_keys(dsn, auth_payload_b64_keys, "")
+
+        var auth_provider_profile_keys = List[String]()
+        auth_provider_profile_keys.append("auth_provider_profile")
+        auth_provider_profile_keys.append("authproviderprofile")
+        self.auth_provider_profile = _query_last_value_for_keys(dsn, auth_provider_profile_keys, "")
+
+        var auth_required_methods_keys = List[String]()
+        auth_required_methods_keys.append("auth_required_methods")
+        auth_required_methods_keys.append("authrequiredmethods")
+        self.auth_required_methods = _query_last_value_for_keys(dsn, auth_required_methods_keys, "")
+
+        var auth_forbidden_methods_keys = List[String]()
+        auth_forbidden_methods_keys.append("auth_forbidden_methods")
+        auth_forbidden_methods_keys.append("authforbiddenmethods")
+        self.auth_forbidden_methods = _query_last_value_for_keys(dsn, auth_forbidden_methods_keys, "")
+
+        var auth_require_channel_binding_keys = List[String]()
+        auth_require_channel_binding_keys.append("auth_require_channel_binding")
+        auth_require_channel_binding_keys.append("authrequirechannelbinding")
+        self.auth_require_channel_binding = _as_bool(
+            _query_last_value_for_keys(dsn, auth_require_channel_binding_keys, "false")
+        )
+
+        var workload_identity_token_keys = List[String]()
+        workload_identity_token_keys.append("workload_identity_token")
+        workload_identity_token_keys.append("workloadidentitytoken")
+        self.workload_identity_token = _query_last_value_for_keys(dsn, workload_identity_token_keys, "")
+
+        var proxy_principal_assertion_keys = List[String]()
+        proxy_principal_assertion_keys.append("proxy_principal_assertion")
+        proxy_principal_assertion_keys.append("proxyprincipalassertion")
+        proxy_principal_assertion_keys.append("proxy_assertion")
+        self.proxy_principal_assertion = _query_last_value_for_keys(
+            dsn,
+            proxy_principal_assertion_keys,
+            "",
         )
 
         var protocol_keys = List[String]()
@@ -1726,6 +1799,11 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
     manager_client_flags_keys.append("mcp_client_flags")
     if _query_any_int_for_keys_is_malformed(config.dsn, manager_client_flags_keys):
         raise Error("22023 manager_client_flags must be a valid integer")
+    var connect_client_flags_keys = List[String]()
+    connect_client_flags_keys.append("client_flags")
+    connect_client_flags_keys.append("connect_client_flags")
+    if _query_any_int_for_keys_is_malformed(config.dsn, connect_client_flags_keys):
+        raise Error("22023 connect_client_flags must be a valid integer")
     if _query_int_is_malformed(config.dsn, "cb_failure_threshold"):
         raise Error("22023 cb_failure_threshold must be a valid integer")
     if _query_int_is_malformed(config.dsn, "cb_recovery_timeout_ms"):
@@ -1787,6 +1865,10 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
         raise Error("22023 connection_lifetime must be >= 0")
     if config.manager_client_flags < 0:
         raise Error("22023 manager_client_flags must be >= 0")
+    if config.connect_client_flags < 0:
+        raise Error("22023 connect_client_flags must be >= 0")
+    if config.auth_method_id.strip() != "" and not config.auth_method_id.startswith("scratchbird.auth."):
+        raise Error("28000 invalid auth_method_id namespace")
 
     if config.compression.strip().lower() != "off" and config.compression.strip().lower() != "zstd":
         raise Error("0A000 compression=" + config.compression.strip().lower() + " is not supported")

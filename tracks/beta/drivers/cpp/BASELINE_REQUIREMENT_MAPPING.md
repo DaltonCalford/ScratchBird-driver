@@ -7,104 +7,97 @@
 
 ## CONN (JDBCBL: CONN)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `src/scratchbird_client_c.cpp` (`sb_connect`, `sb_disconnect`, `sb_ping`, `sb_set_option`, `sb_is_healthy`)
   - `src/network_client.cpp` (`resolveConnectionAddress`, `NetworkClient::connect`, `NetworkClient::handshake`)
   - `src/driver_config.cpp` (`parseDriverConnectionString`, `applyDriverDefaultsFromEnv`)
-  - `src/network_client.cpp` now routes `transport_mode=local_ipc` + `ipc_method=pipe` through local loopback fallback instead of hard-failing.
+  - `src/network_client.cpp` and `src/driver_config.cpp` enforce IP-only transport (`inet_listener` or `managed`) and reject IPC/embedded connection settings before dial.
   - `src/network_client.cpp` now fail-fast validates `manager_proxy` token presence and `auth_method_id` namespace before dialing.
+  - `src/driver_config.cpp` now accepts JDBC-compatible transport policy knobs (`binary_transfer=false`, `compression=zstd|off`) and rejects unsupported compression modes.
 - Lane-local test anchors:
-  - `tests/test_driver_defaults.cpp` (`ParsesManagerProxyConnectionParams`, `ParsesLocalIpcTransportParams`, `ManagedTransportSetsManagerProxyFrontDoor`, auth pinning tests)
-  - `tests/test_driver_connectivity.cpp` (`ConnectsToLocalListener`, `ConnectsWithPasswordAuthChallengeAndCarriesAuthParams`, `ConnectsWithLocalIpcPipeFallback`, `RejectsInvalidAuthMethodIdBeforeDial`, `RejectsManagerProxyModeWithoutTokenBeforeDial`)
+  - `tests/test_driver_defaults.cpp` (`ParsesManagerProxyConnectionParams`, `RejectsIpcTransportParams`, `RejectsUnixServerEndpoint`, `ManagedTransportSetsManagerProxyFrontDoor`, auth pinning tests)
+  - `tests/test_driver_connectivity.cpp` (`ConnectsToLocalListener`, `ConnectsWithPasswordAuthChallengeAndCarriesAuthParams`, `ConnectsWithCompressionCompatibilityParamsFromDsn`, `RejectsIpcTransportBeforeDial`, `RejectsInvalidAuthMethodIdBeforeDial`, `RejectsManagerProxyModeWithoutTokenBeforeDial`, `ConnectsThroughManagerProxyHandshake`, `ManagerProxyAuthFailureMapsToInvalidAuthorization`)
 - Gaps / next actions:
-  - Add native OS named-pipe transport support; current `ipc_method=pipe` behavior is a local loopback fallback rather than true named-pipe I/O.
-  - Add a true embedded transport implementation path; current code routes embedded mode through local IPC.
-  - Add deterministic lane tests for full manager-proxy handshake/auth success and failure paths.
+  - No open S0 CONN parity gaps. IP-only transport in this lane (`inet_listener` and `managed`) is intentional design scope, with driver-side IPC/embedded delegated to ScratchBird server/engine layers.
 
 ## TXN (JDBCBL: TXN)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
-  - `src/scratchbird_client_c.cpp` (`sb_tx_begin`, `sb_tx_commit`, `sb_tx_rollback`)
-  - `src/network_client.cpp` (`NetworkClient::beginTransaction`, `NetworkClient::commit`, `NetworkClient::rollback`, `mapProtocolError`, `drainUntilReady`)
+  - `src/scratchbird_client_c.cpp` (`sb_tx_begin`, `sb_tx_commit`, `sb_tx_rollback`, `sb_tx_savepoint`, `sb_tx_release_savepoint`, `sb_tx_rollback_to`)
+  - `src/network_client.cpp` (`NetworkClient::beginTransaction`, `NetworkClient::commit`, `NetworkClient::rollback`, `NetworkClient::savepoint`, `NetworkClient::releaseSavepoint`, `NetworkClient::rollbackToSavepoint`, `mapProtocolError`, `drainUntilReady`)
   - `src/connection.cpp` (`Connection::beginTransaction`, `Connection::commit`, `Connection::rollback`, savepoint helpers)
 - Lane-local test anchors:
-  - `tests/test_driver_connectivity.cpp` (`TransactionRoundTripBeginCommitRollback`, `RollbackMapsNoActiveTransactionSqlState`)
+  - `tests/test_driver_connectivity.cpp` (`TransactionRoundTripBeginCommitRollback`, `SavepointRoundTripUsesTxnMessages`, `RollbackMapsNoActiveTransactionSqlState`, `CommitMapsReadOnlyAndAbortedSqlStates`, `CApiSavepointAndSqlStateMappingAtBoundary`)
 - Gaps / next actions:
-  - Add savepoint transaction tests (`SAVEPOINT`, `ROLLBACK TO`, `RELEASE`) at network/C API level.
-  - Add coverage for additional transaction SQLSTATE mappings (for example `25P02`, `25006`) at the API boundary.
-  - Decide whether savepoint helpers should be exposed in the C API (currently available in C++ `Connection` only).
+  - No open S0 TXN parity gaps.
 
 ## EXEC (JDBCBL: EXEC)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `src/scratchbird_client_c.cpp` (`sb_execute`, `sb_query`, `sb_prepare`, `sb_bind_index`, `sb_bind_name`, `sb_execute_prepared`, `sb_cancel`, `sb_execute_sblr`, `sb_attach_*`)
   - `src/network_client.cpp` (`NetworkClient::executeQuery`, `prepare`, `executePrepared`, `prepareServerStatement`, `executeServerStatement`, `closeServerStatement`, `sendQueryCancel`, `executeSblr`, `streamControl`, terminal `Ready`/error sequence handling)
   - `src/protocol/sbwp_protocol.cpp` (payload/message builders consumed by execution paths)
 - Lane-local test anchors:
-  - `tests/test_driver_connectivity.cpp` (`QueryClearsCancelSequenceAfterReady`, `PrepareAndExecutePreparedRoundTrip`)
+  - `tests/test_driver_connectivity.cpp` (`QueryClearsCancelSequenceAfterReady`, `CancelDuringInFlightQueryUsesCancelMessage`, `PrepareAndExecutePreparedRoundTrip`, `ExecuteServerStatementAndCloseRoundTrip`, `ExecuteSblrAndAttachFlowsRoundTrip`)
   - `tests/test_paging_payload.cpp` (`PagingConformance.BuildsStreamControlPayload`) covers stream-control payload encoding.
 - Gaps / next actions:
-  - Add lane tests for `executeServerStatement`/`closeServerStatement` and SBLR execution paths.
-  - Add deterministic in-flight cancel behavior coverage (`sendQueryCancel` during active execution, not only post-ready state).
-  - Add test coverage for attach create/detach/list execution paths.
+  - No open S0 EXEC parity gaps.
 
 ## META (JDBCBL: META)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `include/scratchbird/client/scratchbird_client.h` (`sb_metadata_*_query` helper SQL strings)
-  - `include/scratchbird/client/metadata.h` (schema tree shaping plus metadata collection normalization/query resolution APIs)
-  - `src/metadata.cpp` (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`, `normalizeMetadataCollectionName`, `resolveMetadataCollectionQuery`)
-  - `src/scratchbird_client_c.cpp` (`sb_metadata_query`)
+  - `include/scratchbird/client/metadata.h` (schema tree shaping plus metadata collection normalization/query resolution APIs, DDL-editor schema payload shaping)
+  - `src/metadata.cpp` (`metadataSchemaPathsForNavigation`, `buildMetadataSchemaTree`, `buildMetadataSchemaTreeRows`, `normalizeMetadataCollectionName`, `resolveMetadataCollectionQuery`, `buildMetadataDdlEditorSchemaPayloadJson`)
+  - `src/scratchbird_client_c.cpp` (`sb_metadata_query`, `sb_metadata_schema_payload`)
   - `src/network_client.cpp` row-description parsing in execution paths populates column metadata
   - `src/scratchbird_client_c.cpp` (`sb_column_count`, `sb_get_column_meta`)
 - Lane-local test anchors:
-  - `tests/test_metadata_schema_tree.cpp` (`TreeRowsStartAtDatabaseAndExposeTopBranches`, `ParentExpansionAddsDottedSchemaAncestors`, `ParentDoesNotAllowDuplicateChildNames`, `SameLeafNameUnderDifferentParentsIsPreserved`, `NormalizesCollectionAliasesForExtendedFamilies`, `ResolvesExtendedCollectionQueries`, `RejectsUnsupportedCollection`)
+  - `tests/test_metadata_schema_tree.cpp` (`TreeRowsStartAtDatabaseAndExposeTopBranches`, `ParentExpansionAddsDottedSchemaAncestors`, `ParentDoesNotAllowDuplicateChildNames`, `SameLeafNameUnderDifferentParentsIsPreserved`, `NormalizesCollectionAliasesForExtendedFamilies`, `ResolvesExtendedCollectionQueries`, `RejectsUnsupportedCollection`, `BuildsDdlEditorSchemaPayloadJsonWithPatternAndParentExpansion`, `BuildsDdlEditorSchemaPayloadJsonWithoutPattern`)
   - `tests/test_type_mapping.cpp` (`MetadataQueryRequiresConnectionHandle`)
+  - `tests/test_driver_connectivity.cpp` (`MetadataQueryReturnsColumnMetadataAndTypedValues`, `CApiMetadataSchemaPayloadIncludesDdlEditorFields`)
 - Gaps / next actions:
-  - Add live metadata query assertions that validate `sb_metadata_query` + result-column metadata extraction (`sb_get_column_meta`) through concrete endpoint-driven flows.
-  - Add DDL-editor completeness validation for metadata payload fields beyond schema-tree shaping.
+  - No open S0 META parity gaps.
 
 ## TYPE (JDBCBL: TYPE)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `src/scratchbird_client_c.cpp` (`map_type_oid`, `map_sb_type_to_oid`, `sb_value_get`, `apply_bind_value`, `build_param_value`)
   - `src/core/type_extractor.cpp` (date/time component extraction used by value decoding)
-  - `src/scratchbird_client_c.cpp` returns `0` for some outbound OID defaults (`SB_TYPE_ARRAY`, `SB_TYPE_RANGE`) unless caller supplies `type_oid`.
+  - `src/scratchbird_client_c.cpp` now supplies default outbound OIDs for `SB_TYPE_ARRAY`/`SB_TYPE_RANGE`.
 - Lane-local test anchors:
   - `tests/test_type_mapping.cpp` (`MapsWireOidsToSbTypes`, `MapsSbTypesToWireOids`)
+  - `tests/test_driver_connectivity.cpp` (`ArrayBindUsesDefaultOutboundOidMapping`, `MetadataQueryReturnsColumnMetadataAndTypedValues`)
 - Gaps / next actions:
-  - Complete default outbound OID mapping for array/range cases where possible.
-  - Add tests for full value encode/decode paths (`sb_value_get`, `build_param_value`, `apply_bind_value`) beyond OID mapping.
+  - No open S0 TYPE parity gaps.
 
 ## ERR (JDBCBL: ERR)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `src/network_client.cpp` (`mapProtocolError`) maps protocol SQLSTATE classes/messages to `core::Status` and writes SQLSTATE into `ErrorContext`
   - `src/scratchbird_client_c.cpp` (`map_status`, `set_error`) maps `core::Status` to C API `sb_error_code`
   - `src/core/sqlstate.cpp` (`statusToSQLState`)
   - `include/scratchbird/core/error_context.h` (`ErrorContext`, `setSQLState`, `SET_ERROR_CONTEXT`)
 - Lane-local test anchors:
-  - None found in `tests/` that exercise protocol-error to status/code/sqlstate mapping.
+  - `tests/test_driver_connectivity.cpp` (`RollbackMapsNoActiveTransactionSqlState`, `CommitMapsReadOnlyAndAbortedSqlStates`, `ManagerProxyAuthFailureMapsToInvalidAuthorization`, `FeatureNotSupportedMapsToCNotImplemented`, `CApiSavepointAndSqlStateMappingAtBoundary`)
 - Gaps / next actions:
-  - Add unit tests for SQLSTATE -> `core::Status` -> `sb_error_code` mapping behavior.
-  - Add regression tests for feature-not-supported, auth, and transaction-conflict mappings.
+  - No open S0 ERR parity gaps.
 
 ## RES (JDBCBL: RES)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `src/scratchbird_client_c.cpp` (`sb_result_free`, `sb_prepared_free`, `sb_disconnect`) and connection lifecycle wiring for keepalive/leak tracking
   - `src/leak_detector.cpp` (`LeakDetector` and C wrappers `sb_leak_detector_*`)
   - `src/statement_cache.cpp` (`sb_stmt_cache_*`)
-  - `include/scratchbird/client/pool.h` declares pool/retry/batch/health APIs with no implementation found under `src/`
+  - `src/pool.cpp` (`sb_pool_*`, `sb_with_retry`, `sb_query_with_retry`, `sb_execute_with_retry`, `sb_batch_execute`, `sb_bulk_insert`, `sb_connection_*`)
 - Lane-local test anchors:
-  - None found in `tests/` for leak detector, statement cache eviction, or pool/retry lifecycle behavior.
+  - `tests/test_driver_connectivity.cpp` (`StatementCacheAndLeakDetectorLifecycle`, `PoolAcquireReleaseAndRetryUtility`, `BatchExecuteSupportsParameterizedOperations`, `BulkInsertExecutesPreparedInsertRows`)
 - Gaps / next actions:
-  - Implement or explicitly gate/remove undeployed pool/retry/batch/health APIs declared in `pool.h`.
-  - Add lane tests for statement-cache eviction correctness and leak-detector checkout/checkin behavior.
+  - No open S0 RES parity gaps.

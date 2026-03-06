@@ -124,14 +124,23 @@ func TestParseRejectsUnknownCompressionValue(t *testing.T) {
 func TestParseAuthPluginStartupParams(t *testing.T) {
 	cfg, err := ParseConfig(
 		"scratchbird://user:pass@localhost:3092/mydb?" +
-			"auth_method_id=scratchbird.auth.oidc&auth_payload_json=%7B%22aud%22%3A%22sb%22%7D&" +
-			"auth_payload_b64=YWJj&auth_provider_profile=corp",
+			"connect_client_flags=257&auth_method_id=scratchbird.auth.oidc&auth_method_payload=opaque&" +
+			"auth_payload_json=%7B%22aud%22%3A%22sb%22%7D&auth_payload_b64=YWJj&" +
+			"auth_provider_profile=corp&auth_required_methods=SCRAM_SHA_256%2CTOKEN&" +
+			"auth_forbidden_methods=MD5&auth_require_channel_binding=true&" +
+			"workload_identity_token=jwt-token&proxy_principal_assertion=signed-assertion",
 	)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
+	if cfg.ConnectClientFlags != 257 {
+		t.Fatalf("unexpected connect client flags: %d", cfg.ConnectClientFlags)
+	}
 	if cfg.AuthMethodID != "scratchbird.auth.oidc" {
 		t.Fatalf("unexpected auth method id: %q", cfg.AuthMethodID)
+	}
+	if cfg.AuthMethodPayload != "opaque" {
+		t.Fatalf("unexpected auth method payload: %q", cfg.AuthMethodPayload)
 	}
 	if cfg.AuthPayloadJSON != `{"aud":"sb"}` {
 		t.Fatalf("unexpected auth payload json: %q", cfg.AuthPayloadJSON)
@@ -141,5 +150,20 @@ func TestParseAuthPluginStartupParams(t *testing.T) {
 	}
 	if cfg.AuthProviderProfile != "corp" {
 		t.Fatalf("unexpected auth provider profile: %q", cfg.AuthProviderProfile)
+	}
+	if cfg.AuthRequiredMethods != "SCRAM_SHA_256,TOKEN" {
+		t.Fatalf("unexpected auth required methods: %q", cfg.AuthRequiredMethods)
+	}
+	if cfg.AuthForbiddenMethods != "MD5" {
+		t.Fatalf("unexpected auth forbidden methods: %q", cfg.AuthForbiddenMethods)
+	}
+	if !cfg.AuthRequireChannelBinding {
+		t.Fatalf("expected auth require channel binding=true")
+	}
+	if cfg.WorkloadIdentityToken != "jwt-token" {
+		t.Fatalf("unexpected workload identity token: %q", cfg.WorkloadIdentityToken)
+	}
+	if cfg.ProxyPrincipalAssertion != "signed-assertion" {
+		t.Fatalf("unexpected proxy principal assertion: %q", cfg.ProxyPrincipalAssertion)
 	}
 }

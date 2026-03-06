@@ -45,6 +45,17 @@ type
     ManagerClientIntent: string;
     ManagerClientFlags: Integer;
     ManagerAuthFastPath: Boolean;
+    ConnectClientFlags: Integer;
+    AuthMethodId: string;
+    AuthMethodPayload: string;
+    AuthPayloadJson: string;
+    AuthPayloadB64: string;
+    AuthProviderProfile: string;
+    AuthRequiredMethods: string;
+    AuthForbiddenMethods: string;
+    AuthRequireChannelBinding: Boolean;
+    WorkloadIdentityToken: string;
+    ProxyPrincipalAssertion: string;
   end;
 
 function DefaultConfig: TScratchBirdConfig;
@@ -81,6 +92,17 @@ begin
   Result.ManagerClientIntent := 'native_v3';
   Result.ManagerClientFlags := 0;
   Result.ManagerAuthFastPath := True;
+  Result.ConnectClientFlags := $0100;
+  Result.AuthMethodId := '';
+  Result.AuthMethodPayload := '';
+  Result.AuthPayloadJson := '';
+  Result.AuthPayloadB64 := '';
+  Result.AuthProviderProfile := '';
+  Result.AuthRequiredMethods := '';
+  Result.AuthForbiddenMethods := '';
+  Result.AuthRequireChannelBinding := False;
+  Result.WorkloadIdentityToken := '';
+  Result.ProxyPrincipalAssertion := '';
 end;
 
 function NormalizeCompression(const Value: string): string;
@@ -182,7 +204,30 @@ begin
   else if (KeyLower = 'manager_client_flags') or (KeyLower = 'mcp_client_flags') then
     Config.ManagerClientFlags := StrToIntDef(Value, 0)
   else if (KeyLower = 'manager_auth_fast_path') or (KeyLower = 'mcp_auth_fast_path') then
-    Config.ManagerAuthFastPath := ParseBoolean(Value);
+    Config.ManagerAuthFastPath := ParseBoolean(Value)
+  else if (KeyLower = 'client_flags') or (KeyLower = 'connect_client_flags') then
+    Config.ConnectClientFlags := StrToIntDef(Value, Config.ConnectClientFlags)
+  else if (KeyLower = 'auth_method_id') or (KeyLower = 'authmethodid') then
+    Config.AuthMethodId := Trim(Value)
+  else if (KeyLower = 'auth_method_payload') or (KeyLower = 'authmethodpayload') then
+    Config.AuthMethodPayload := Value
+  else if (KeyLower = 'auth_payload_json') or (KeyLower = 'authpayloadjson') then
+    Config.AuthPayloadJson := Value
+  else if (KeyLower = 'auth_payload_b64') or (KeyLower = 'authpayloadb64') then
+    Config.AuthPayloadB64 := Value
+  else if (KeyLower = 'auth_provider_profile') or (KeyLower = 'authproviderprofile') then
+    Config.AuthProviderProfile := Trim(Value)
+  else if (KeyLower = 'auth_required_methods') or (KeyLower = 'authrequiredmethods') then
+    Config.AuthRequiredMethods := Trim(Value)
+  else if (KeyLower = 'auth_forbidden_methods') or (KeyLower = 'authforbiddenmethods') then
+    Config.AuthForbiddenMethods := Trim(Value)
+  else if (KeyLower = 'auth_require_channel_binding') or (KeyLower = 'authrequirechannelbinding') then
+    Config.AuthRequireChannelBinding := ParseBoolean(Value)
+  else if (KeyLower = 'workload_identity_token') or (KeyLower = 'workloadidentitytoken') then
+    Config.WorkloadIdentityToken := Value
+  else if (KeyLower = 'proxy_principal_assertion') or (KeyLower = 'proxyprincipalassertion') or
+          (KeyLower = 'proxy_assertion') then
+    Config.ProxyPrincipalAssertion := Value;
 end;
 
 function UrlDecode(const Value: string): string;

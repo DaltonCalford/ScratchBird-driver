@@ -819,6 +819,17 @@ struct ConnectionParams {
     std::string manager_client_intent{"native_v3"};
     uint16_t manager_client_flags{0};
     bool manager_auth_fast_path{true};
+    uint16_t connect_client_flags{0x0100};
+    std::string auth_method_id;
+    std::string auth_method_payload;
+    std::string auth_payload_json;
+    std::string auth_payload_b64;
+    std::string auth_provider_profile;
+    std::string auth_required_methods;
+    std::string auth_forbidden_methods;
+    bool auth_require_channel_binding{false};
+    std::string workload_identity_token;
+    std::string proxy_principal_assertion;
     uint32_t connect_timeout{30};
     uint32_t query_timeout{0};
     std::string application_name;

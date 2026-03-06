@@ -840,6 +840,37 @@ public class SBProtocolHandler {
         if (props.getApplicationName() != null) {
             params.put("application_name", props.getApplicationName());
         }
+        params.put("client_flags", String.valueOf(props.getConnectClientFlags()));
+        if (props.getAuthMethodId() != null && !props.getAuthMethodId().isEmpty()) {
+            params.put("auth_method_id", props.getAuthMethodId());
+        }
+        if (props.getAuthMethodPayload() != null && !props.getAuthMethodPayload().isEmpty()) {
+            params.put("auth_method_payload", props.getAuthMethodPayload());
+        }
+        if (props.getAuthPayloadJson() != null && !props.getAuthPayloadJson().isEmpty()) {
+            params.put("auth_payload_json", props.getAuthPayloadJson());
+        }
+        if (props.getAuthPayloadB64() != null && !props.getAuthPayloadB64().isEmpty()) {
+            params.put("auth_payload_b64", props.getAuthPayloadB64());
+        }
+        if (props.getAuthProviderProfile() != null && !props.getAuthProviderProfile().isEmpty()) {
+            params.put("auth_provider_profile", props.getAuthProviderProfile());
+        }
+        if (props.getAuthRequiredMethods() != null && !props.getAuthRequiredMethods().isEmpty()) {
+            params.put("auth_required_methods", props.getAuthRequiredMethods());
+        }
+        if (props.getAuthForbiddenMethods() != null && !props.getAuthForbiddenMethods().isEmpty()) {
+            params.put("auth_forbidden_methods", props.getAuthForbiddenMethods());
+        }
+        if (props.isAuthRequireChannelBinding()) {
+            params.put("auth_require_channel_binding", "1");
+        }
+        if (props.getWorkloadIdentityToken() != null && !props.getWorkloadIdentityToken().isEmpty()) {
+            params.put("workload_identity_token", props.getWorkloadIdentityToken());
+        }
+        if (props.getProxyPrincipalAssertion() != null && !props.getProxyPrincipalAssertion().isEmpty()) {
+            params.put("proxy_principal_assertion", props.getProxyPrincipalAssertion());
+        }
 
         long features = 0;
         if ("zstd".equalsIgnoreCase(props.getCompression())) {

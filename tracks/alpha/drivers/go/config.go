@@ -44,10 +44,17 @@ type Config struct {
 	ManagerClientIntent         string
 	ManagerClientFlags          uint16
 	ManagerAuthFastPath         bool
+	ConnectClientFlags          uint16
 	AuthMethodID                string
+	AuthMethodPayload           string
 	AuthPayloadJSON             string
 	AuthPayloadB64              string
 	AuthProviderProfile         string
+	AuthRequiredMethods         string
+	AuthForbiddenMethods        string
+	AuthRequireChannelBinding   bool
+	WorkloadIdentityToken       string
+	ProxyPrincipalAssertion     string
 }
 
 func defaultConfig() Config {
@@ -66,6 +73,7 @@ func defaultConfig() Config {
 		ManagerConnectionProfile: "native_v3",
 		ManagerClientIntent:      "native_v3",
 		ManagerAuthFastPath:      true,
+		ConnectClientFlags:       0x0100,
 	}
 }
 
@@ -289,14 +297,30 @@ func applyParam(cfg *Config, key, value string) error {
 		}
 	case "manager_auth_fast_path", "mcp_auth_fast_path":
 		cfg.ManagerAuthFastPath = parseBoolParam(value)
+	case "client_flags", "connect_client_flags":
+		if flags, err := strconv.ParseUint(value, 10, 16); err == nil {
+			cfg.ConnectClientFlags = uint16(flags)
+		}
 	case authParamMethodID, "authmethodid":
 		cfg.AuthMethodID = value
+	case authParamMethodPayload, "authmethodpayload":
+		cfg.AuthMethodPayload = value
 	case authParamPayloadJSON, "authpayloadjson":
 		cfg.AuthPayloadJSON = value
 	case authParamPayloadB64, "authpayloadb64":
 		cfg.AuthPayloadB64 = value
 	case authParamProviderProfile, "authproviderprofile":
 		cfg.AuthProviderProfile = value
+	case authParamRequiredMethods, "authrequiredmethods":
+		cfg.AuthRequiredMethods = value
+	case authParamForbiddenMethods, "authforbiddenmethods":
+		cfg.AuthForbiddenMethods = value
+	case authParamRequireChannelBinding, "authrequirechannelbinding":
+		cfg.AuthRequireChannelBinding = parseBoolParam(value)
+	case authParamWorkloadIdentityToken, "workloadidentitytoken":
+		cfg.WorkloadIdentityToken = value
+	case authParamProxyPrincipalAssertion, "proxyprincipalassertion", "proxy_assertion":
+		cfg.ProxyPrincipalAssertion = value
 	}
 	return nil
 }

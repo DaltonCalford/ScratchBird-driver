@@ -14,7 +14,7 @@ unit ScratchBird.Client;
 interface
 
 uses
-  SysUtils, Classes,
+  SysUtils, Classes, DateUtils,
   ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Errors, ScratchBird.Scram, ScratchBird.Types, ScratchBird.Sql, ScratchBird.Metadata,
   ScratchBird.Transport, ScratchBird.Transport.Native,
   {$IFDEF SCRATCHBIRD_USE_INDY}
@@ -59,6 +59,11 @@ type
   end;
 
   TNotificationHandler = procedure(const Notice: TNotification) of object;
+
+  TNotificationListenerEntry = record
+    Id: UInt64;
+    Handler: TNotificationHandler;
+  end;
 
   TQueryPlan = record
     Format: Cardinal;
@@ -110,6 +115,9 @@ type
     FHasLastPlan: Boolean;
     FLastSblr: TSblrCompiled;
     FHasLastSblr: Boolean;
+    FNotificationQueue: TArray<TNotification>;
+    FNotificationListeners: TArray<TNotificationListenerEntry>;
+    FNextNotificationListenerId: UInt64;
     FCircuitBreaker: TCircuitBreaker;
     FTelemetry: TTelemetryCollector;
     FKeepaliveTracker: TKeepaliveTracker;
@@ -141,6 +149,8 @@ type
     procedure EnsureTransactionActive(const Operation: string);
     function NormalizeSavepointName(const Name: string): string;
     function NormalizeSqlText(const Sql: string): string;
+    procedure EnqueueNotification(const Notice: TNotification);
+    procedure DispatchNotificationListeners(const Notice: TNotification);
     procedure InitializeClient(const Transport: IScratchBirdTransport);
     function BeginOperation(const Name, Sql: string): TSpanContext;
     procedure EndOperation(Span: TSpanContext; Success: Boolean);
@@ -163,6 +173,17 @@ type
     procedure Terminate;
     procedure Subscribe(SubscribeType: Byte; const Channel, FilterExpr: string);
     procedure Unsubscribe(const Channel: string);
+    procedure Listen(const Channel: string; const FilterExpr: string = '');
+    procedure Unlisten(const Channel: string);
+    procedure UnlistenAll;
+    procedure NotifyChannel(const Channel: string); overload;
+    procedure NotifyChannel(const Channel, Payload: string); overload;
+    function AddNotificationListener(const Handler: TNotificationHandler): UInt64;
+    function RemoveNotificationListener(ListenerId: UInt64): Boolean;
+    function GetNotification(out Notice: TNotification): Boolean;
+    function GetNotifications: TArray<TNotification>;
+    procedure ClearNotifications;
+    function NotificationCount: Integer;
     function ExecuteSblr(SblrHash: UInt64; const Bytecode: TBytes; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
     procedure StreamControl(ControlType: Byte; WindowSize, TimeoutMs: Cardinal);
     procedure AttachCreate(const EmulationMode, DbName: string);
@@ -195,6 +216,14 @@ type
     function GetTablePrivileges: TScratchBirdResultStream;
     function GetColumnPrivileges: TScratchBirdResultStream;
     function GetTypeInfo: TScratchBirdResultStream;
+    function GetDiagnosticsJson: string;
+    function GetTelemetrySummaryJson: string;
+    procedure ResetTelemetry;
+    function GetSlowOperationsJson: string;
+    function ExportTelemetryPrometheus: string;
+    function GetCircuitBreakerSummaryJson: string;
+    function GetKeepaliveSummaryJson: string;
+    function GetLeakSummaryJson: string;
     procedure Cancel;
     function GetLastPlan(out Plan: TQueryPlan): Boolean;
     function GetLastSblr(out Compiled: TSblrCompiled): Boolean;
@@ -314,6 +343,47 @@ begin
   Result := 'SET SCHEMA ' + QuoteIdentifier(Trimmed);
 end;
 
+function EscapeJson(const Value: string): string;
+var
+  I: Integer;
+  Ch: Char;
+begin
+  Result := '';
+  for I := 1 to Length(Value) do
+  begin
+    Ch := Value[I];
+    case Ch of
+      '"': Result := Result + '\"';
+      '\': Result := Result + '\\';
+      #8: Result := Result + '\b';
+      #9: Result := Result + '\t';
+      #10: Result := Result + '\n';
+      #12: Result := Result + '\f';
+      #13: Result := Result + '\r';
+    else
+      if Ord(Ch) < 32 then
+        Result := Result + '\u00' + IntToHex(Ord(Ch), 2)
+      else
+        Result := Result + Ch;
+    end;
+  end;
+end;
+
+function BytesToHex(const Data: TBytes): string;
+const
+  HexChars: array[0..15] of Char = ('0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f');
+var
+  I: Integer;
+begin
+  SetLength(Result, Length(Data) * 2);
+  for I := 0 to High(Data) do
+  begin
+    Result[I * 2 + 1] := HexChars[(Data[I] shr 4) and $0F];
+    Result[I * 2 + 2] := HexChars[Data[I] and $0F];
+  end;
+end;
+
 constructor TScratchBirdResultStream.Create(Client: TObject);
 begin
   inherited Create;
@@ -402,6 +472,9 @@ begin
   FHasLastPlan := False;
   FHasLastSblr := False;
   FOnNotification := nil;
+  SetLength(FNotificationQueue, 0);
+  SetLength(FNotificationListeners, 0);
+  FNextNotificationListenerId := 1;
   FConnectionId := 'conn-' + IntToStr(NativeInt(Self));
   FCircuitBreaker := TCircuitBreaker.Create(DefaultCircuitBreakerConfig, 'pascal');
   FTelemetry := TTelemetryCollector.Create(DefaultTelemetryConfig);
@@ -491,6 +564,7 @@ begin
   FTransport.Disconnect;
   FConnected := False;
   FTxnId := 0;
+  SetLength(FNotificationQueue, 0);
   if Length(FAttachmentId) = 16 then
     FillChar(FAttachmentId[0], 16, 0);
   if Assigned(FLeakDetector) then
@@ -648,6 +722,97 @@ procedure TScratchBirdClient.Unsubscribe(const Channel: string);
 begin
   SendMessage(MSG_UNSUBSCRIBE, BuildUnsubscribePayload(Channel), 0, False);
   DrainUntilReady;
+end;
+
+procedure TScratchBirdClient.Listen(const Channel: string; const FilterExpr: string);
+begin
+  Subscribe(SUB_TYPE_CHANNEL, Channel, FilterExpr);
+end;
+
+procedure TScratchBirdClient.Unlisten(const Channel: string);
+begin
+  Unsubscribe(Channel);
+end;
+
+procedure TScratchBirdClient.UnlistenAll;
+begin
+  ExecSQL('UNLISTEN *');
+end;
+
+procedure TScratchBirdClient.NotifyChannel(const Channel: string);
+begin
+  NotifyChannel(Channel, '');
+end;
+
+procedure TScratchBirdClient.NotifyChannel(const Channel, Payload: string);
+var
+  Sql: string;
+begin
+  Sql := 'NOTIFY ' + QuoteIdentifier(Channel);
+  if Payload <> '' then
+    Sql := Sql + ', ''' + StringReplace(Payload, '''', '''''', [rfReplaceAll]) + '''';
+  ExecSQL(Sql);
+end;
+
+function TScratchBirdClient.AddNotificationListener(const Handler: TNotificationHandler): UInt64;
+var
+  Index: Integer;
+begin
+  if not Assigned(Handler) then
+    raise EScratchbirdConnectionError.CreateWithInfo('listener is required', '22004', '', '');
+  Result := FNextNotificationListenerId;
+  Inc(FNextNotificationListenerId);
+  Index := Length(FNotificationListeners);
+  SetLength(FNotificationListeners, Index + 1);
+  FNotificationListeners[Index].Id := Result;
+  FNotificationListeners[Index].Handler := Handler;
+end;
+
+function TScratchBirdClient.RemoveNotificationListener(ListenerId: UInt64): Boolean;
+var
+  I, LastIndex: Integer;
+begin
+  Result := False;
+  for I := 0 to High(FNotificationListeners) do
+  begin
+    if FNotificationListeners[I].Id = ListenerId then
+    begin
+      LastIndex := High(FNotificationListeners);
+      if I <> LastIndex then
+        FNotificationListeners[I] := FNotificationListeners[LastIndex];
+      SetLength(FNotificationListeners, LastIndex);
+      Exit(True);
+    end;
+  end;
+end;
+
+function TScratchBirdClient.GetNotification(out Notice: TNotification): Boolean;
+var
+  I: Integer;
+begin
+  Result := Length(FNotificationQueue) > 0;
+  if not Result then
+    Exit(False);
+  Notice := FNotificationQueue[0];
+  for I := 1 to High(FNotificationQueue) do
+    FNotificationQueue[I - 1] := FNotificationQueue[I];
+  SetLength(FNotificationQueue, Length(FNotificationQueue) - 1);
+end;
+
+function TScratchBirdClient.GetNotifications: TArray<TNotification>;
+begin
+  Result := Copy(FNotificationQueue);
+  SetLength(FNotificationQueue, 0);
+end;
+
+procedure TScratchBirdClient.ClearNotifications;
+begin
+  SetLength(FNotificationQueue, 0);
+end;
+
+function TScratchBirdClient.NotificationCount: Integer;
+begin
+  Result := Length(FNotificationQueue);
 end;
 
 function TScratchBirdClient.ExecuteSblr(SblrHash: UInt64; const Bytecode: TBytes; const Params: array of TScratchBirdParamInput): TScratchBirdResultStream;
@@ -964,6 +1129,109 @@ begin
   Result := QueryMetadata('type_info');
 end;
 
+function TScratchBirdClient.GetTelemetrySummaryJson: string;
+begin
+  if Assigned(FTelemetry) then
+    Result := FTelemetry.ExportTelemetrySummaryJson
+  else
+    Result := '{"total_invocations":0,"total_successes":0,"total_failures":0,"total_duration_ms":0,"operations":[],"histogram":{"ms_0_10":0,"ms_10_100":0,"ms_100_1000":0,"ms_1000_10000":0,"ms_over_10000":0}}';
+end;
+
+procedure TScratchBirdClient.ResetTelemetry;
+begin
+  if Assigned(FTelemetry) then
+    FTelemetry.Reset;
+end;
+
+function TScratchBirdClient.GetSlowOperationsJson: string;
+begin
+  if Assigned(FTelemetry) then
+    Result := FTelemetry.ExportSlowQueriesJson
+  else
+    Result := '[]';
+end;
+
+function TScratchBirdClient.ExportTelemetryPrometheus: string;
+begin
+  if Assigned(FTelemetry) then
+    Result := FTelemetry.ExportPrometheusMetrics
+  else
+    Result := '';
+end;
+
+function TScratchBirdClient.GetCircuitBreakerSummaryJson: string;
+var
+  Stats: TCircuitBreakerStats;
+  StateText: string;
+begin
+  if not Assigned(FCircuitBreaker) then
+    Exit('{"state":"open","failure_count":0,"success_count":0}');
+  Stats := FCircuitBreaker.GetStats;
+  case Stats.State of
+    csClosed: StateText := 'closed';
+    csHalfOpen: StateText := 'half_open';
+  else
+    StateText := 'open';
+  end;
+  Result := '{' +
+    '"state":"' + StateText + '",' +
+    '"failure_count":' + IntToStr(Stats.FailureCount) + ',' +
+    '"success_count":' + IntToStr(Stats.SuccessCount) +
+  '}';
+end;
+
+function TScratchBirdClient.GetKeepaliveSummaryJson: string;
+var
+  IdleMs: Cardinal;
+  MonitoredCount: Integer;
+begin
+  IdleMs := 0;
+  if Assigned(FKeepaliveTracker) then
+    IdleMs := FKeepaliveTracker.GetIdleDurationMs;
+  if FConnected then
+    MonitoredCount := 1
+  else
+    MonitoredCount := 0;
+  Result := '{' +
+    '"monitored_count":' + IntToStr(MonitoredCount) + ',' +
+    '"idle_duration_ms":' + IntToStr(IdleMs) +
+  '}';
+end;
+
+function TScratchBirdClient.GetLeakSummaryJson: string;
+var
+  ActiveCount: Integer;
+begin
+  ActiveCount := 0;
+  if Assigned(FLeakDetector) then
+    ActiveCount := FLeakDetector.GetActiveCount;
+  Result := '{' +
+    '"active_checkouts":' + IntToStr(ActiveCount) + ',' +
+    '"potential_leaks":0' +
+  '}';
+end;
+
+function TScratchBirdClient.GetDiagnosticsJson: string;
+var
+  TelemetrySummary: string;
+begin
+  TelemetrySummary := GetTelemetrySummaryJson;
+  Result := '{' +
+    '"captured_unix_ms":' + IntToStr(DateTimeToUnix(Now, False) * 1000) + ',' +
+    '"connected":' + LowerCase(BoolToStr(FConnected, True)) + ',' +
+    '"front_door_mode":"' + EscapeJson(FConfig.FrontDoorMode) + '",' +
+    '"protocol":"' + EscapeJson(FConfig.Protocol) + '",' +
+    '"host":"' + EscapeJson(FConfig.Host) + '",' +
+    '"port":' + IntToStr(FConfig.Port) + ',' +
+    '"database":"' + EscapeJson(FConfig.Database) + '",' +
+    '"notification_queue_depth":' + IntToStr(NotificationCount) + ',' +
+    '"circuit":' + GetCircuitBreakerSummaryJson + ',' +
+    '"keepalive":' + GetKeepaliveSummaryJson + ',' +
+    '"leak_detection":' + GetLeakSummaryJson + ',' +
+    '"telemetry":' + TelemetrySummary +
+  '}';
+end;
+
 procedure TScratchBirdClient.Cancel;
 begin
   SendMessage(MSG_CANCEL, BuildCancelPayload(0, FLastQuerySequence), MSG_FLAG_URGENT, False);
@@ -1217,10 +1485,35 @@ begin
   try
     Params.Values['database'] := FConfig.Database;
     Params.Values['user'] := FConfig.UserName;
+    Params.Values['client_flags'] := IntToStr(FConfig.ConnectClientFlags);
     if FConfig.Role <> '' then
       Params.Values['role'] := FConfig.Role;
     if FConfig.ApplicationName <> '' then
       Params.Values['application_name'] := FConfig.ApplicationName;
+    if FConfig.AuthMethodId <> '' then
+    begin
+      if Copy(FConfig.AuthMethodId, 1, Length('scratchbird.auth.')) <> 'scratchbird.auth.' then
+        raise EScratchbirdAuthError.CreateWithInfo('invalid auth_method_id namespace', '28000', '', '');
+      Params.Values['auth_method_id'] := FConfig.AuthMethodId;
+    end;
+    if FConfig.AuthMethodPayload <> '' then
+      Params.Values['auth_method_payload'] := FConfig.AuthMethodPayload;
+    if FConfig.AuthPayloadJson <> '' then
+      Params.Values['auth_payload_json'] := FConfig.AuthPayloadJson;
+    if FConfig.AuthPayloadB64 <> '' then
+      Params.Values['auth_payload_b64'] := FConfig.AuthPayloadB64;
+    if FConfig.AuthProviderProfile <> '' then
+      Params.Values['auth_provider_profile'] := FConfig.AuthProviderProfile;
+    if FConfig.AuthRequiredMethods <> '' then
+      Params.Values['auth_required_methods'] := FConfig.AuthRequiredMethods;
+    if FConfig.AuthForbiddenMethods <> '' then
+      Params.Values['auth_forbidden_methods'] := FConfig.AuthForbiddenMethods;
+    if FConfig.AuthRequireChannelBinding then
+      Params.Values['auth_require_channel_binding'] := '1';
+    if FConfig.WorkloadIdentityToken <> '' then
+      Params.Values['workload_identity_token'] := FConfig.WorkloadIdentityToken;
+    if FConfig.ProxyPrincipalAssertion <> '' then
+      Params.Values['proxy_principal_assertion'] := FConfig.ProxyPrincipalAssertion;
     Features := 0;
     if SameText(FConfig.Compression, 'zstd') then
       Features := Features or FEATURE_COMPRESSION;
@@ -1325,6 +1618,26 @@ begin
   end;
 end;
 
+procedure TScratchBirdClient.EnqueueNotification(const Notice: TNotification);
+var
+  Index: Integer;
+begin
+  Index := Length(FNotificationQueue);
+  SetLength(FNotificationQueue, Index + 1);
+  FNotificationQueue[Index] := Notice;
+end;
+
+procedure TScratchBirdClient.DispatchNotificationListeners(const Notice: TNotification);
+var
+  I: Integer;
+begin
+  for I := 0 to High(FNotificationListeners) do
+  begin
+    if Assigned(FNotificationListeners[I].Handler) then
+      FNotificationListeners[I].Handler(Notice);
+  end;
+end;
+
 function TScratchBirdClient.HandleAsyncMessage(const Msg: TScratchBirdMessage): Boolean;
 var
   Name, Value: string;
@@ -1342,8 +1655,10 @@ begin
     MSG_NOTIFICATION:
       begin
         ParseNotification(Msg.Payload, Notice);
+        EnqueueNotification(Notice);
         if Assigned(FOnNotification) then
           FOnNotification(Notice);
+        DispatchNotificationListeners(Notice);
       end;
     MSG_QUERY_PLAN:
       begin

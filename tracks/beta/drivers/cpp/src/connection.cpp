@@ -663,8 +663,6 @@ core::Status Connection::connect(const ConnectionConfig& config,
     net_cfg.transport_mode = config.transport_mode.empty() ? "inet_listener" : config.transport_mode;
     net_cfg.host = config.host.empty() ? "127.0.0.1" : config.host;
     net_cfg.port = config.tcp_port;
-    net_cfg.ipc_method = config.ipc_method;
-    net_cfg.ipc_path = config.ipc_path;
     net_cfg.front_door_mode = config.front_door_mode.empty() ? "direct" : config.front_door_mode;
     net_cfg.manager_auth_token = config.manager_auth_token;
     net_cfg.manager_username = config.manager_username;
@@ -788,17 +786,23 @@ core::Status Connection::rollback(core::ErrorContext* ctx) {
 
 core::Status Connection::savepoint(const std::string& name,
                                    core::ErrorContext* ctx) {
-    return execute("SAVEPOINT " + name, nullptr, ctx);
+    core::Status status = impl_->client.savepoint(name, ctx);
+    impl_->last_error = impl_->client.lastError();
+    return status;
 }
 
 core::Status Connection::releaseSavepoint(const std::string& name,
                                           core::ErrorContext* ctx) {
-    return execute("RELEASE SAVEPOINT " + name, nullptr, ctx);
+    core::Status status = impl_->client.releaseSavepoint(name, ctx);
+    impl_->last_error = impl_->client.lastError();
+    return status;
 }
 
 core::Status Connection::rollbackTo(const std::string& name,
                                     core::ErrorContext* ctx) {
-    return execute("ROLLBACK TO SAVEPOINT " + name, nullptr, ctx);
+    core::Status status = impl_->client.rollbackToSavepoint(name, ctx);
+    impl_->last_error = impl_->client.lastError();
+    return status;
 }
 
 void Connection::setAutoCommit(bool enabled) {

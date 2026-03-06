@@ -69,12 +69,6 @@ bool isManagerProxyMode(const std::string& value) {
     return lower == "manager_proxy" || lower == "manager-proxy" || lower == "managed";
 }
 
-bool isLocalIpcTransport(const std::string& value) {
-    std::string lower = toLower(value);
-    return lower == "local_ipc" || lower == "local-ipc" || lower == "ipc" ||
-           lower == "local";
-}
-
 bool isManagedTransport(const std::string& value) {
     std::string lower = toLower(value);
     return lower == "managed" || lower == "manager" ||
@@ -86,12 +80,6 @@ bool isInetTransport(const std::string& value) {
     return lower.empty() || lower == "inet_listener" || lower == "inet" ||
            lower == "listener" || lower == "tcp" || lower == "tcp_listener" ||
            lower == "network";
-}
-
-bool isEmbeddedTransport(const std::string& value) {
-    std::string lower = toLower(value);
-    return lower == "embedded" || lower == "inproc" ||
-           lower == "in-process" || lower == "in_process";
 }
 
 std::string joinMethodList(const std::vector<std::string>& methods) {
@@ -129,86 +117,12 @@ bool hasPinningOverlap(const std::vector<std::string>& required,
     return false;
 }
 
-std::string sanitizeDatabaseName(std::string value) {
-    std::string out;
-    out.reserve(value.size());
-    for (char ch : value) {
-        if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-') {
-            out.push_back(ch);
-        }
-    }
-    if (out.empty()) {
-        out = "default";
-    }
-    return out;
-}
-
-std::string defaultIpcPathForDatabase(const std::string& database_name,
-                                      server::IPCMethod method) {
-    std::string safe_name = sanitizeDatabaseName(database_name);
-    if (method == server::IPCMethod::NAMED_PIPE) {
-        return "\\\\.\\pipe\\scratchbird-" + safe_name;
-    }
-    return "build/ipc/scratchbird-" + safe_name + ".sock";
-}
-
-server::IPCMethod resolveLocalIpcMethod(server::IPCMethod requested) {
-    if (requested != server::IPCMethod::AUTO) {
-        return requested;
-    }
-#ifdef _WIN32
-    return server::IPCMethod::TCP_LOCALHOST;
-#else
-    return server::IPCMethod::UNIX_SOCKET;
-#endif
-}
-
 core::Status resolveConnectionAddress(const NetworkClientConfig& config,
                                       network::NetworkAddress& address_out,
-                                      bool& local_ipc_transport,
                                       core::ErrorContext* ctx) {
-    local_ipc_transport = false;
     std::string transport = toLower(config.transport_mode);
     if (transport.empty()) {
         transport = "inet_listener";
-    }
-
-    if (isEmbeddedTransport(transport)) {
-        // The beta client does not have an in-process engine entry-point yet.
-        // Route embedded mode through local IPC transport for compatibility.
-        transport = "local_ipc";
-    }
-
-    if (isLocalIpcTransport(transport)) {
-        server::IPCMethod method = resolveLocalIpcMethod(config.ipc_method);
-        if (method == server::IPCMethod::NAMED_PIPE) {
-            // Socket transport for OS named pipes is not wired yet in this lane.
-            // Route pipe mode through local loopback to keep local IPC profiles usable.
-            method = server::IPCMethod::TCP_LOCALHOST;
-        }
-        if (method == server::IPCMethod::UNIX_SOCKET) {
-#ifdef _WIN32
-            return setError(ctx,
-                            core::Status::NOT_SUPPORTED,
-                            "transport_mode=local_ipc with ipc_method=unix is not supported on Windows");
-#else
-            std::string socket_path = config.ipc_path.empty()
-                ? defaultIpcPathForDatabase(config.database, method)
-                : config.ipc_path;
-            if (socket_path.empty()) {
-                return setError(ctx, core::Status::INVALID_ARGUMENT, "IPC socket path is required");
-            }
-            address_out = network::NetworkAddress(socket_path);
-            local_ipc_transport = true;
-            return core::Status::OK;
-#endif
-        }
-
-        address_out.family = network::AddressFamily::IPV4;
-        address_out.host = "127.0.0.1";
-        address_out.port = config.port;
-        local_ipc_transport = true;
-        return core::Status::OK;
     }
 
     if (isManagedTransport(transport) || isInetTransport(transport)) {
@@ -220,7 +134,7 @@ core::Status resolveConnectionAddress(const NetworkClientConfig& config,
 
     return setError(ctx,
                     core::Status::INVALID_ARGUMENT,
-                    "transport_mode must be embedded, local_ipc, inet_listener, or managed");
+                    "transport_mode must be inet_listener or managed (C/C++ driver is IP-only)");
 }
 
 void appendU16(std::vector<uint8_t>& out, uint16_t value) {
@@ -293,6 +207,53 @@ std::vector<uint8_t> base64Decode(const std::string& input) {
     }
     out.resize(final_len);
     return out;
+}
+
+std::string trimWhitespace(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+bool isGenericAuthMethod(protocol::AuthMethod method) {
+    switch (method) {
+        case protocol::AuthMethod::Md5:
+        case protocol::AuthMethod::Certificate:
+        case protocol::AuthMethod::Gssapi:
+        case protocol::AuthMethod::Sspi:
+        case protocol::AuthMethod::Ldap:
+        case protocol::AuthMethod::Saml:
+        case protocol::AuthMethod::Oidc:
+        case protocol::AuthMethod::MfaTotp:
+        case protocol::AuthMethod::ClusterPki:
+            return true;
+        default:
+            return false;
+    }
+}
+
+std::vector<uint8_t> buildGenericAuthPayload(const NetworkClientConfig& config,
+                                             const std::vector<uint8_t>& challenge) {
+    if (!config.auth_payload_b64.empty()) {
+        const std::string encoded = trimWhitespace(config.auth_payload_b64);
+        if (!encoded.empty()) {
+            auto decoded = base64Decode(encoded);
+            if (!decoded.empty()) {
+                return decoded;
+            }
+        }
+    }
+    if (!config.auth_payload_json.empty()) {
+        return std::vector<uint8_t>(config.auth_payload_json.begin(),
+                                    config.auth_payload_json.end());
+    }
+    if (!config.password.empty()) {
+        return std::vector<uint8_t>(config.password.begin(), config.password.end());
+    }
+    return challenge;
 }
 
 std::string escapeScram(const std::string& value) {
@@ -952,8 +913,7 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
     }
 
     network::NetworkAddress address;
-    bool local_ipc_transport = false;
-    core::Status status = resolveConnectionAddress(config_, address, local_ipc_transport, ctx);
+    core::Status status = resolveConnectionAddress(config_, address, ctx);
     if (status != core::Status::OK) {
         return status;
     }
@@ -966,10 +926,6 @@ core::Status NetworkClient::connect(const NetworkClientConfig& config,
     socket_ = network::Socket::connect(address, options, ctx);
     if (!socket_) {
         return setError(ctx, core::Status::CONNECTION_FAILURE, "Connection failed");
-    }
-
-    if (local_ipc_transport) {
-        config_.ssl_mode = network::SSLMode::DISABLED;
     }
 
     if (config_.ssl_mode != network::SSLMode::DISABLED) {
@@ -1726,13 +1682,25 @@ bool NetworkClient::takeLastSblrCompiled(protocol::SblrCompiled& out) {
     return true;
 }
 
-core::Status NetworkClient::beginTransaction(core::ErrorContext* ctx) {
-    auto payload = protocol::buildTxnBeginPayload(0, 0, 0, 0, 0, 0, 0, 0);
+core::Status NetworkClient::beginTransaction(const TransactionOptions& options,
+                                             core::ErrorContext* ctx) {
+    auto payload = protocol::buildTxnBeginPayload(options.flags,
+                                                  options.conflict_action,
+                                                  options.autocommit_mode,
+                                                  options.isolation_level,
+                                                  options.access_mode,
+                                                  options.deferrable,
+                                                  options.wait_mode,
+                                                  options.timeout_ms);
     auto status = sendMessage(protocol::MessageType::TxnBegin, payload, 0, false, nullptr, ctx);
     if (status != core::Status::OK) {
         return status;
     }
     return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::beginTransaction(core::ErrorContext* ctx) {
+    return beginTransaction(TransactionOptions{}, ctx);
 }
 
 core::Status NetworkClient::commit(core::ErrorContext* ctx) {
@@ -1747,6 +1715,45 @@ core::Status NetworkClient::commit(core::ErrorContext* ctx) {
 core::Status NetworkClient::rollback(core::ErrorContext* ctx) {
     auto payload = protocol::buildTxnRollbackPayload(0);
     auto status = sendMessage(protocol::MessageType::TxnRollback, payload, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::savepoint(const std::string& name,
+                                      core::ErrorContext* ctx) {
+    if (name.empty()) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT, "Savepoint name is required");
+    }
+    auto payload = protocol::buildTxnSavepointPayload(name);
+    auto status = sendMessage(protocol::MessageType::TxnSavepoint, payload, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::releaseSavepoint(const std::string& name,
+                                             core::ErrorContext* ctx) {
+    if (name.empty()) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT, "Savepoint name is required");
+    }
+    auto payload = protocol::buildTxnReleasePayload(name);
+    auto status = sendMessage(protocol::MessageType::TxnRelease, payload, 0, false, nullptr, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+}
+
+core::Status NetworkClient::rollbackToSavepoint(const std::string& name,
+                                                core::ErrorContext* ctx) {
+    if (name.empty()) {
+        return setError(ctx, core::Status::INVALID_ARGUMENT, "Savepoint name is required");
+    }
+    auto payload = protocol::buildTxnRollbackToPayload(name);
+    auto status = sendMessage(protocol::MessageType::TxnRollbackTo, payload, 0, false, nullptr, ctx);
     if (status != core::Status::OK) {
         return status;
     }
@@ -2290,6 +2297,14 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                     }
                     continue;
                 }
+                if (isGenericAuthMethod(method)) {
+                    std::vector<uint8_t> resp = buildGenericAuthPayload(config_, data);
+                    status = sendMessage(protocol::MessageType::AuthResponse, resp, 0, true, nullptr, ctx);
+                    if (status != core::Status::OK) {
+                        return status;
+                    }
+                    continue;
+                }
                 return setError(ctx, core::Status::INVALID_AUTHORIZATION, "Unsupported auth method");
             }
             case protocol::MessageType::AuthContinue: {
@@ -2300,20 +2315,38 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                 if (status != core::Status::OK) {
                     return status;
                 }
-                if (!scram || method != protocol::AuthMethod::ScramSha256) {
-                    return setError(ctx, core::Status::INVALID_AUTHORIZATION, "SCRAM state missing");
+                if (method == protocol::AuthMethod::ScramSha256) {
+                    if (!scram) {
+                        return setError(ctx,
+                                        core::Status::INVALID_AUTHORIZATION,
+                                        "SCRAM state missing");
+                    }
+                    std::string client_final;
+                    std::string error;
+                    if (!scram->handleServerFirst(config_.password,
+                                                  std::string(data.begin(), data.end()),
+                                                  client_final,
+                                                  error)) {
+                        return setError(ctx, core::Status::INVALID_AUTHORIZATION, error);
+                    }
+                    std::vector<uint8_t> resp(client_final.begin(), client_final.end());
+                    status = sendMessage(protocol::MessageType::AuthResponse, resp, 0, true, nullptr, ctx);
+                    if (status != core::Status::OK) {
+                        return status;
+                    }
+                    continue;
                 }
-                std::string client_final;
-                std::string error;
-                if (!scram->handleServerFirst(config_.password, std::string(data.begin(), data.end()), client_final, error)) {
-                    return setError(ctx, core::Status::INVALID_AUTHORIZATION, error);
+                if (isGenericAuthMethod(method)) {
+                    std::vector<uint8_t> resp = buildGenericAuthPayload(config_, data);
+                    status = sendMessage(protocol::MessageType::AuthResponse, resp, 0, true, nullptr, ctx);
+                    if (status != core::Status::OK) {
+                        return status;
+                    }
+                    continue;
                 }
-                std::vector<uint8_t> resp(client_final.begin(), client_final.end());
-                status = sendMessage(protocol::MessageType::AuthResponse, resp, 0, true, nullptr, ctx);
-                if (status != core::Status::OK) {
-                    return status;
-                }
-                continue;
+                return setError(ctx,
+                                core::Status::INVALID_AUTHORIZATION,
+                                "Unsupported auth continue method");
             }
             case protocol::MessageType::AuthOk: {
                 std::vector<uint8_t> session_id;

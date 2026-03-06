@@ -192,6 +192,55 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
         value.toLowerCase() === "yes" ||
         value.toLowerCase() === "on";
       break;
+    case "client_flags":
+    case "connect_client_flags":
+      config.connectClientFlags = Number(value) || 0;
+      break;
+    case "auth_method_id":
+    case "authmethodid":
+      config.authMethodId = value.trim();
+      break;
+    case "auth_method_payload":
+    case "authmethodpayload":
+      config.authMethodPayload = value;
+      break;
+    case "auth_payload_json":
+    case "authpayloadjson":
+      config.authPayloadJson = value;
+      break;
+    case "auth_payload_b64":
+    case "authpayloadb64":
+      config.authPayloadB64 = value;
+      break;
+    case "auth_provider_profile":
+    case "authproviderprofile":
+      config.authProviderProfile = value.trim();
+      break;
+    case "auth_required_methods":
+    case "authrequiredmethods":
+      config.authRequiredMethods = value.trim();
+      break;
+    case "auth_forbidden_methods":
+    case "authforbiddenmethods":
+      config.authForbiddenMethods = value.trim();
+      break;
+    case "auth_require_channel_binding":
+    case "authrequirechannelbinding":
+      config.authRequireChannelBinding =
+        value.toLowerCase() === "true" ||
+        value === "1" ||
+        value.toLowerCase() === "yes" ||
+        value.toLowerCase() === "on";
+      break;
+    case "workload_identity_token":
+    case "workloadidentitytoken":
+      config.workloadIdentityToken = value;
+      break;
+    case "proxy_principal_assertion":
+    case "proxyprincipalassertion":
+    case "proxy_assertion":
+      config.proxyPrincipalAssertion = value;
+      break;
     default:
       break;
   }

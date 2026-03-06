@@ -991,6 +991,20 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         0,
         "manager_client_flags",
     )
+    connect_client_flags = _dsn_last_int_query_value(
+        config.dsn,
+        ("client_flags", "connect_client_flags"),
+        0x0100,
+        "connect_client_flags",
+    )
+    auth_method_id = str(
+        _dsn_last_query_value(
+            config.dsn,
+            ("auth_method_id", "authmethodid"),
+            "",
+        )
+        or ""
+    ).strip()
     _ = _dsn_last_int_query_value(
         config.dsn,
         ("prepare_threshold", "preparethreshold"),
@@ -1089,6 +1103,10 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         raise ScratchBirdError("connection_lifetime must be >= 0", "22023")
     if manager_client_flags < 0:
         raise ScratchBirdError("manager_client_flags must be >= 0", "22023")
+    if connect_client_flags < 0:
+        raise ScratchBirdError("connect_client_flags must be >= 0", "22023")
+    if auth_method_id != "" and not auth_method_id.startswith("scratchbird.auth."):
+        raise ScratchBirdError("invalid auth_method_id namespace", "28000")
 
     if _as_bool(params.get("sb_test_auth_fail", "0")):
         raise ScratchBirdError("authentication failed", "28P01")

@@ -342,6 +342,10 @@ impl Client {
         let mut params = HashMap::new();
         params.insert("database".to_string(), self.config.database.clone());
         params.insert("user".to_string(), self.config.user.clone());
+        params.insert(
+            "client_flags".to_string(),
+            self.config.connect_client_flags.to_string(),
+        );
         if !self.config.role.is_empty() {
             params.insert("role".to_string(), self.config.role.clone());
         }
@@ -351,31 +355,112 @@ impl Client {
                 self.config.application_name.clone(),
             );
         }
-        let auth_plugin_selection = protocol::AuthPluginSelection {
-            method_id: self
-                .config
+        let method_id = if !self.config.auth_method_id.is_empty() {
+            self.config.auth_method_id.clone()
+        } else {
+            self.config
                 .extra
                 .get(protocol::AUTH_PARAM_METHOD_ID)
                 .cloned()
-                .unwrap_or_default(),
-            payload_json: self
-                .config
+                .unwrap_or_default()
+        };
+        let method_payload = if !self.config.auth_method_payload.is_empty() {
+            self.config.auth_method_payload.clone()
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_METHOD_PAYLOAD)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let payload_json = if !self.config.auth_payload_json.is_empty() {
+            self.config.auth_payload_json.clone()
+        } else {
+            self.config
                 .extra
                 .get(protocol::AUTH_PARAM_PAYLOAD_JSON)
                 .cloned()
-                .unwrap_or_default(),
-            payload_b64: self
-                .config
+                .unwrap_or_default()
+        };
+        let payload_b64 = if !self.config.auth_payload_b64.is_empty() {
+            self.config.auth_payload_b64.clone()
+        } else {
+            self.config
                 .extra
                 .get(protocol::AUTH_PARAM_PAYLOAD_B64)
                 .cloned()
-                .unwrap_or_default(),
-            provider_profile: self
-                .config
+                .unwrap_or_default()
+        };
+        let provider_profile = if !self.config.auth_provider_profile.is_empty() {
+            self.config.auth_provider_profile.clone()
+        } else {
+            self.config
                 .extra
                 .get(protocol::AUTH_PARAM_PROVIDER_PROFILE)
                 .cloned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+        };
+        let required_methods = if !self.config.auth_required_methods.is_empty() {
+            self.config.auth_required_methods.clone()
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_REQUIRED_METHODS)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let forbidden_methods = if !self.config.auth_forbidden_methods.is_empty() {
+            self.config.auth_forbidden_methods.clone()
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_FORBIDDEN_METHODS)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let require_channel_binding = if self.config.auth_require_channel_binding {
+            true
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_REQUIRE_CHANNEL_BINDING)
+                .map(|value| {
+                    matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false)
+        };
+        let workload_identity_token = if !self.config.workload_identity_token.is_empty() {
+            self.config.workload_identity_token.clone()
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let proxy_principal_assertion = if !self.config.proxy_principal_assertion.is_empty() {
+            self.config.proxy_principal_assertion.clone()
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let auth_plugin_selection = protocol::AuthPluginSelection {
+            method_id,
+            method_payload,
+            payload_json,
+            payload_b64,
+            provider_profile,
+            required_methods,
+            forbidden_methods,
+            require_channel_binding,
+            workload_identity_token,
+            proxy_principal_assertion,
         };
         protocol::apply_auth_plugin_selection(&mut params, &auth_plugin_selection)?;
         Ok(params)
@@ -1574,12 +1659,28 @@ impl Client {
     }
 
     fn build_generic_auth_payload(&self, challenge: &[u8]) -> Vec<u8> {
-        if let Some(encoded) = self.config.extra.get(protocol::AUTH_PARAM_PAYLOAD_B64) {
+        let payload_b64 = if !self.config.auth_payload_b64.is_empty() {
+            Some(self.config.auth_payload_b64.as_str())
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_PAYLOAD_B64)
+                .map(String::as_str)
+        };
+        if let Some(encoded) = payload_b64 {
             if let Ok(decoded) = BASE64_STANDARD.decode(encoded.trim()) {
                 return decoded;
             }
         }
-        if let Some(payload_json) = self.config.extra.get(protocol::AUTH_PARAM_PAYLOAD_JSON) {
+        let payload_json = if !self.config.auth_payload_json.is_empty() {
+            Some(self.config.auth_payload_json.as_str())
+        } else {
+            self.config
+                .extra
+                .get(protocol::AUTH_PARAM_PAYLOAD_JSON)
+                .map(String::as_str)
+        };
+        if let Some(payload_json) = payload_json {
             if !payload_json.is_empty() {
                 return payload_json.as_bytes().to_vec();
             }
@@ -2779,32 +2880,34 @@ mod tests {
         let mut cfg = Config::default();
         cfg.user = "tester".to_string();
         cfg.database = "db".to_string();
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_METHOD_ID.to_string(),
-            "scratchbird.auth.password".to_string(),
-        );
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
-            "{\"tenant\":\"alpha\"}".to_string(),
-        );
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PAYLOAD_B64.to_string(),
-            "dGVzdA==".to_string(),
-        );
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PROVIDER_PROFILE.to_string(),
-            "default".to_string(),
-        );
+        cfg.connect_client_flags = 257;
+        cfg.auth_method_id = "scratchbird.auth.password".to_string();
+        cfg.auth_method_payload = "opaque".to_string();
+        cfg.auth_payload_json = "{\"tenant\":\"alpha\"}".to_string();
+        cfg.auth_payload_b64 = "dGVzdA==".to_string();
+        cfg.auth_provider_profile = "default".to_string();
+        cfg.auth_required_methods = "SCRAM_SHA_256,TOKEN".to_string();
+        cfg.auth_forbidden_methods = "MD5".to_string();
+        cfg.auth_require_channel_binding = true;
+        cfg.workload_identity_token = "jwt-token".to_string();
+        cfg.proxy_principal_assertion = "signed-assertion".to_string();
         let client = Client::new(cfg);
         let params = client.build_startup_params().unwrap();
 
         assert_eq!(params.get("database").map(String::as_str), Some("db"));
         assert_eq!(params.get("user").map(String::as_str), Some("tester"));
+        assert_eq!(params.get("client_flags").map(String::as_str), Some("257"));
         assert_eq!(
             params
                 .get(protocol::AUTH_PARAM_METHOD_ID)
                 .map(String::as_str),
             Some("scratchbird.auth.password")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_METHOD_PAYLOAD)
+                .map(String::as_str),
+            Some("opaque")
         );
         assert_eq!(
             params
@@ -2824,6 +2927,36 @@ mod tests {
                 .map(String::as_str),
             Some("default")
         );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_REQUIRED_METHODS)
+                .map(String::as_str),
+            Some("SCRAM_SHA_256,TOKEN")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_FORBIDDEN_METHODS)
+                .map(String::as_str),
+            Some("MD5")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_REQUIRE_CHANNEL_BINDING)
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN)
+                .map(String::as_str),
+            Some("jwt-token")
+        );
+        assert_eq!(
+            params
+                .get(protocol::AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION)
+                .map(String::as_str),
+            Some("signed-assertion")
+        );
     }
 
     #[test]
@@ -2831,10 +2964,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.user = "tester".to_string();
         cfg.database = "db".to_string();
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_METHOD_ID.to_string(),
-            "custom.invalid".to_string(),
-        );
+        cfg.auth_method_id = "custom.invalid".to_string();
         let client = Client::new(cfg);
         let err = client.build_startup_params().unwrap_err();
         assert_eq!(err.kind, ErrorKind::Auth);
@@ -2847,14 +2977,8 @@ mod tests {
         cfg.user = "tester".to_string();
         cfg.database = "db".to_string();
         cfg.password = "secret".to_string();
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
-            "{\"token\":\"json\"}".to_string(),
-        );
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PAYLOAD_B64.to_string(),
-            "YWJj".to_string(),
-        );
+        cfg.auth_payload_json = "{\"token\":\"json\"}".to_string();
+        cfg.auth_payload_b64 = "YWJj".to_string();
         let client = Client::new(cfg);
         let payload = client.build_generic_auth_payload(b"challenge");
         assert_eq!(payload, b"abc");
@@ -2863,10 +2987,7 @@ mod tests {
         cfg.user = "tester".to_string();
         cfg.database = "db".to_string();
         cfg.password = "secret".to_string();
-        cfg.extra.insert(
-            protocol::AUTH_PARAM_PAYLOAD_JSON.to_string(),
-            "{\"token\":\"json\"}".to_string(),
-        );
+        cfg.auth_payload_json = "{\"token\":\"json\"}".to_string();
         let client = Client::new(cfg);
         let payload = client.build_generic_auth_payload(b"challenge");
         assert_eq!(payload, b"{\"token\":\"json\"}");

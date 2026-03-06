@@ -760,9 +760,28 @@ module Scratchbird
       features = 0
       features |= Protocol::FEATURE_COMPRESSION if @config.compression.to_s.downcase == "zstd"
       features |= Protocol::FEATURE_STREAMING if @config.binary_transfer
-      params = { "database" => @config.database, "user" => @config.user }
+      params = {
+        "database" => @config.database,
+        "user" => @config.user,
+        "client_flags" => @config.connect_client_flags.to_i.to_s
+      }
       params["role"] = @config.role if @config.role.to_s != ""
       params["application_name"] = @config.application_name if @config.application_name.to_s != ""
+      if @config.auth_method_id.to_s != ""
+        unless @config.auth_method_id.start_with?("scratchbird.auth.")
+          raise AuthError, "invalid auth_method_id namespace"
+        end
+        params["auth_method_id"] = @config.auth_method_id
+      end
+      params["auth_method_payload"] = @config.auth_method_payload if @config.auth_method_payload.to_s != ""
+      params["auth_payload_json"] = @config.auth_payload_json if @config.auth_payload_json.to_s != ""
+      params["auth_payload_b64"] = @config.auth_payload_b64 if @config.auth_payload_b64.to_s != ""
+      params["auth_provider_profile"] = @config.auth_provider_profile if @config.auth_provider_profile.to_s != ""
+      params["auth_required_methods"] = @config.auth_required_methods if @config.auth_required_methods.to_s != ""
+      params["auth_forbidden_methods"] = @config.auth_forbidden_methods if @config.auth_forbidden_methods.to_s != ""
+      params["auth_require_channel_binding"] = "1" if @config.auth_require_channel_binding
+      params["workload_identity_token"] = @config.workload_identity_token if @config.workload_identity_token.to_s != ""
+      params["proxy_principal_assertion"] = @config.proxy_principal_assertion if @config.proxy_principal_assertion.to_s != ""
       startup = Protocol.build_startup_payload(features, params)
       send_message(Protocol::MSG_STARTUP, startup, 0, true)
 

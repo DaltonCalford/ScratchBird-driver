@@ -7,7 +7,6 @@
 
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
-#include "scratchbird/server/ipc_server.h"
 
 namespace scratchbird {
 namespace client {
@@ -18,12 +17,10 @@ struct ConnectionConfig {
     std::string password;
     std::string protocol{"native"};
 
-    // embedded | local_ipc | inet_listener | managed
+    // inet_listener | managed
     std::string transport_mode{"inet_listener"};
     std::string host{"127.0.0.1"};
     uint16_t tcp_port{3092};
-    server::IPCMethod ipc_method{server::IPCMethod::AUTO};
-    std::string ipc_path;
     std::string front_door_mode{"direct"};
 
     std::string manager_auth_token;

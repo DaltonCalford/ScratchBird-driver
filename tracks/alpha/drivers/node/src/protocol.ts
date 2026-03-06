@@ -150,15 +150,27 @@ export const SUB_TYPE_QUERY = 2;
 export const SUB_TYPE_EVENT = 3;
 
 export const AUTH_PARAM_METHOD_ID = "auth_method_id";
+export const AUTH_PARAM_METHOD_PAYLOAD = "auth_method_payload";
 export const AUTH_PARAM_PAYLOAD_JSON = "auth_payload_json";
 export const AUTH_PARAM_PAYLOAD_B64 = "auth_payload_b64";
 export const AUTH_PARAM_PROVIDER_PROFILE = "auth_provider_profile";
+export const AUTH_PARAM_REQUIRED_METHODS = "auth_required_methods";
+export const AUTH_PARAM_FORBIDDEN_METHODS = "auth_forbidden_methods";
+export const AUTH_PARAM_REQUIRE_CHANNEL_BINDING = "auth_require_channel_binding";
+export const AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN = "workload_identity_token";
+export const AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION = "proxy_principal_assertion";
 
 export interface AuthPluginSelection {
   methodId?: string;
+  methodPayload?: string;
   payloadJson?: string;
   payloadB64?: string;
   providerProfile?: string;
+  requiredMethods?: string;
+  forbiddenMethods?: string;
+  requireChannelBinding?: boolean;
+  workloadIdentityToken?: string;
+  proxyPrincipalAssertion?: string;
 }
 
 export function applyAuthPluginSelection(
@@ -172,6 +184,9 @@ export function applyAuthPluginSelection(
   if (methodId) {
     params[AUTH_PARAM_METHOD_ID] = methodId;
   }
+  if (selection.methodPayload) {
+    params[AUTH_PARAM_METHOD_PAYLOAD] = selection.methodPayload;
+  }
   if (selection.payloadJson) {
     params[AUTH_PARAM_PAYLOAD_JSON] = selection.payloadJson;
   }
@@ -180,6 +195,21 @@ export function applyAuthPluginSelection(
   }
   if (selection.providerProfile) {
     params[AUTH_PARAM_PROVIDER_PROFILE] = selection.providerProfile;
+  }
+  if (selection.requiredMethods) {
+    params[AUTH_PARAM_REQUIRED_METHODS] = selection.requiredMethods;
+  }
+  if (selection.forbiddenMethods) {
+    params[AUTH_PARAM_FORBIDDEN_METHODS] = selection.forbiddenMethods;
+  }
+  if (selection.requireChannelBinding) {
+    params[AUTH_PARAM_REQUIRE_CHANNEL_BINDING] = "1";
+  }
+  if (selection.workloadIdentityToken) {
+    params[AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN] = selection.workloadIdentityToken;
+  }
+  if (selection.proxyPrincipalAssertion) {
+    params[AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION] = selection.proxyPrincipalAssertion;
   }
 }
 

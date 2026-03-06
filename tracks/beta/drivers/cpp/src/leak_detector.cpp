@@ -4,8 +4,10 @@
  * Copyright (c) 2025-2026 Dalton Calford
  */
 #include <scratchbird/client/leak_detector.h>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
 
 namespace scratchbird {
 namespace client {
@@ -132,8 +134,13 @@ LeakDetector::LeakStats LeakDetector::GetStats() const {
 
 void LeakDetector::MonitorLoop() {
     while (!stop_requested_) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(config_.check_interval_ms));
-        
+        uint32_t remaining_ms = config_.check_interval_ms;
+        while (!stop_requested_ && remaining_ms > 0) {
+            const uint32_t slice = std::min<uint32_t>(remaining_ms, 100u);
+            std::this_thread::sleep_for(std::chrono::milliseconds(slice));
+            remaining_ms -= slice;
+        }
+
         if (!stop_requested_) {
             CheckLeaks();
         }
@@ -179,6 +186,15 @@ void LeakDetector::LogLeak(const std::string& conn_id, const CheckoutInfo& info,
 namespace scratchbird {
 extern "C" {
 
+namespace {
+using DetectorType = scratchbird::client::LeakDetector;
+using GuardType = scratchbird::client::LeakDetectionGuard;
+
+std::mutex g_c_api_guard_mutex;
+std::unordered_map<DetectorType*,
+                   std::unordered_map<std::string, std::unique_ptr<GuardType>>> g_c_api_guards;
+}
+
 sb_leak_detector* sb_leak_detector_create(const struct sb_leak_detection_config* config) {
     auto* detector = new scratchbird::client::LeakDetector(
         config ? *config : scratchbird::sb_leak_detection_config_default()
@@ -188,7 +204,12 @@ sb_leak_detector* sb_leak_detector_create(const struct sb_leak_detection_config*
 
 void sb_leak_detector_destroy(sb_leak_detector* detector) {
     if (detector) {
-        delete reinterpret_cast<scratchbird::client::LeakDetector*>(detector);
+        auto* typed = reinterpret_cast<scratchbird::client::LeakDetector*>(detector);
+        {
+            std::lock_guard<std::mutex> lock(g_c_api_guard_mutex);
+            g_c_api_guards.erase(typed);
+        }
+        delete typed;
     }
 }
 
@@ -206,26 +227,49 @@ void sb_leak_detector_stop(sb_leak_detector* detector) {
 
 void sb_leak_detector_checkout(sb_leak_detector* detector, const char* conn_id) {
     if (detector && conn_id) {
-        reinterpret_cast<scratchbird::client::LeakDetector*>(detector)->Checkout(conn_id);
+        auto* typed = reinterpret_cast<scratchbird::client::LeakDetector*>(detector);
+        auto guard = typed->Checkout(conn_id);
+        std::lock_guard<std::mutex> lock(g_c_api_guard_mutex);
+        g_c_api_guards[typed][conn_id] = std::move(guard);
     }
 }
 
 void sb_leak_detector_checkout_with_metadata(sb_leak_detector* detector, const char* conn_id,
                                               const char** keys, const char** values, size_t count) {
     if (detector && conn_id) {
+        auto* typed = reinterpret_cast<scratchbird::client::LeakDetector*>(detector);
         std::map<std::string, std::string> metadata;
         for (size_t i = 0; i < count; i++) {
             if (keys[i] && values[i]) {
                 metadata[keys[i]] = values[i];
             }
         }
-        reinterpret_cast<scratchbird::client::LeakDetector*>(detector)->Checkout(conn_id, metadata);
+        auto guard = typed->Checkout(conn_id, metadata);
+        std::lock_guard<std::mutex> lock(g_c_api_guard_mutex);
+        g_c_api_guards[typed][conn_id] = std::move(guard);
     }
 }
 
 void sb_leak_detector_checkin(sb_leak_detector* detector, const char* conn_id) {
     if (detector && conn_id) {
-        reinterpret_cast<scratchbird::client::LeakDetector*>(detector)->Checkin(conn_id);
+        auto* typed = reinterpret_cast<scratchbird::client::LeakDetector*>(detector);
+        std::unique_ptr<GuardType> guard;
+        {
+            std::lock_guard<std::mutex> lock(g_c_api_guard_mutex);
+            auto detector_it = g_c_api_guards.find(typed);
+            if (detector_it != g_c_api_guards.end()) {
+                auto conn_it = detector_it->second.find(conn_id);
+                if (conn_it != detector_it->second.end()) {
+                    guard = std::move(conn_it->second);
+                    detector_it->second.erase(conn_it);
+                }
+            }
+        }
+        if (guard) {
+            guard->Release();
+            return;
+        }
+        typed->Checkin(conn_id);
     }
 }
 

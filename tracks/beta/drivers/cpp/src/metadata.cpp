@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "nlohmann/json.hpp"
+
 namespace scratchbird {
 namespace client {
 
@@ -110,6 +112,8 @@ constexpr const char* kMetadataColumnPrivilegesQuery =
     "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
 constexpr const char* kMetadataTypeInfoQuery =
     "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
+constexpr const char* kMetadataDdlFieldsQuery =
+    "SELECT table_id, column_id, column_name, data_type_name, default_value, generation_expression, is_nullable, is_identity, is_generated FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
 
 const std::unordered_map<std::string, std::string> kMetadataCollectionAliases = {
     {"schema", "schemas"},
@@ -150,8 +154,14 @@ const std::unordered_map<std::string, std::string> kMetadataCollectionAliases = 
     {"column_privileges", "column_privileges"},
     {"columnprivilege", "column_privileges"},
     {"columnprivileges", "column_privileges"},
+    {"type", "type_info"},
+    {"types", "type_info"},
     {"type_info", "type_info"},
     {"typeinfo", "type_info"},
+    {"ddlfield", "ddl_fields"},
+    {"ddlfields", "ddl_fields"},
+    {"ddl_field", "ddl_fields"},
+    {"ddl_fields", "ddl_fields"},
 };
 
 const std::unordered_map<std::string, std::string> kMetadataCollectionQueries = {
@@ -170,6 +180,7 @@ const std::unordered_map<std::string, std::string> kMetadataCollectionQueries = 
     {"table_privileges", kMetadataTablePrivilegesQuery},
     {"column_privileges", kMetadataColumnPrivilegesQuery},
     {"type_info", kMetadataTypeInfoQuery},
+    {"ddl_fields", kMetadataDdlFieldsQuery},
 };
 
 std::string normalizeMetadataCollectionKey(const std::string& collection_name) {
@@ -366,6 +377,122 @@ std::string metadataCollectionNotSupportedMessage(const std::string& collection_
         ? std::string(kDefaultMetadataCollection)
         : collection_name;
     return "metadata collection '" + candidate + "' is not supported";
+}
+
+namespace {
+
+std::string normalizeLikeText(const std::string& input) {
+    std::string out = input;
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return out;
+}
+
+bool likeMatchChars(const std::string& value,
+                    const std::string& pattern,
+                    size_t value_index,
+                    size_t pattern_index) {
+    while (pattern_index < pattern.size()) {
+        char token = pattern[pattern_index];
+        if (token == '%') {
+            while (pattern_index + 1 < pattern.size() && pattern[pattern_index + 1] == '%') {
+                ++pattern_index;
+            }
+            if (pattern_index + 1 == pattern.size()) {
+                return true;
+            }
+            for (size_t cursor = value_index; cursor <= value.size(); ++cursor) {
+                if (likeMatchChars(value, pattern, cursor, pattern_index + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (token == '_') {
+            if (value_index >= value.size()) {
+                return false;
+            }
+            ++value_index;
+            ++pattern_index;
+            continue;
+        }
+        if (token == '\\' && pattern_index + 1 < pattern.size()) {
+            ++pattern_index;
+            token = pattern[pattern_index];
+        }
+        if (value_index >= value.size() || value[value_index] != token) {
+            return false;
+        }
+        ++value_index;
+        ++pattern_index;
+    }
+    return value_index == value.size();
+}
+
+bool metadataLikeMatch(const std::string& value, const std::string& pattern) {
+    return likeMatchChars(
+        normalizeLikeText(value),
+        normalizeLikeText(pattern),
+        0,
+        0);
+}
+
+nlohmann::json schemaTreeNodesToPayload(
+    const std::vector<std::unique_ptr<MetadataSchemaTreeNode>>& nodes) {
+    nlohmann::json payload = nlohmann::json::array();
+    for (const auto& node : nodes) {
+        if (!node) {
+            continue;
+        }
+        payload.push_back({
+            {"name", node->name},
+            {"path", node->full_path},
+            {"terminal", node->terminal},
+            {"children", schemaTreeNodesToPayload(node->children)},
+        });
+    }
+    return payload;
+}
+
+} // namespace
+
+std::string buildMetadataDdlEditorSchemaPayloadJson(
+    const std::vector<std::string>& schema_names,
+    const std::string* schema_pattern,
+    bool expand_schema_parents) {
+    std::vector<std::string> filtered;
+    filtered.reserve(schema_names.size());
+    std::unordered_set<std::string> seen;
+
+    for (const auto& raw : schema_names) {
+        const std::string normalized = normalizeSchemaPath(raw);
+        if (normalized.empty()) {
+            continue;
+        }
+        if (schema_pattern != nullptr && !metadataLikeMatch(normalized, *schema_pattern)) {
+            continue;
+        }
+        if (seen.insert(normalized).second) {
+            filtered.push_back(normalized);
+        }
+    }
+
+    const std::vector<std::string> schema_paths =
+        metadataSchemaPathsForNavigation(filtered, expand_schema_parents);
+    const MetadataSchemaTree schema_tree =
+        buildMetadataSchemaTree(filtered, "", expand_schema_parents);
+
+    nlohmann::json payload = nlohmann::json::object();
+    if (schema_pattern != nullptr) {
+        payload["schemaPattern"] = *schema_pattern;
+    } else {
+        payload["schemaPattern"] = nullptr;
+    }
+    payload["expandSchemaParents"] = expand_schema_parents;
+    payload["schemaPaths"] = schema_paths;
+    payload["schemaTree"] = schemaTreeNodesToPayload(schema_tree.schemas);
+    return payload.dump();
 }
 
 } // namespace client

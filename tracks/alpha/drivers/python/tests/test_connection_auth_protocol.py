@@ -119,14 +119,24 @@ def test_connect_captures_auth_plugin_startup_fields(monkeypatch):
     monkeypatch.setattr(connection_mod, "Connection", FakeConnection)
     connect(
         "scratchbird://alice:secret@localhost:3092/mydb?"
-        "auth_method_id=scratchbird.auth.oidc&auth_payload_json=%7B%22aud%22%3A%22sb%22%7D"
-        "&auth_payload_b64=YWJj&auth_provider_profile=corp",
+        "connect_client_flags=257&auth_method_id=scratchbird.auth.oidc&auth_method_payload=opaque"
+        "&auth_payload_json=%7B%22aud%22%3A%22sb%22%7D&auth_payload_b64=YWJj"
+        "&auth_provider_profile=corp&auth_required_methods=SCRAM_SHA_256%2CTOKEN"
+        "&auth_forbidden_methods=MD5&auth_require_channel_binding=true"
+        "&workload_identity_token=jwt-token&proxy_principal_assertion=signed-assertion",
     )
     cfg = captured["cfg"]
+    assert cfg.connect_client_flags == 257
     assert cfg.auth_method_id == "scratchbird.auth.oidc"
+    assert cfg.auth_method_payload == "opaque"
     assert cfg.auth_payload_json == '{"aud":"sb"}'
     assert cfg.auth_payload_b64 == "YWJj"
     assert cfg.auth_provider_profile == "corp"
+    assert cfg.auth_required_methods == "SCRAM_SHA_256,TOKEN"
+    assert cfg.auth_forbidden_methods == "MD5"
+    assert cfg.auth_require_channel_binding is True
+    assert cfg.workload_identity_token == "jwt-token"
+    assert cfg.proxy_principal_assertion == "signed-assertion"
 
 
 def test_build_startup_params_includes_auth_plugin_selection():
@@ -136,21 +146,35 @@ def test_build_startup_params_includes_auth_plugin_selection():
         database="db1",
         role="analyst",
         application_name="pytest",
+        connect_client_flags=257,
         auth_method_id="scratchbird.auth.oidc",
+        auth_method_payload="opaque",
         auth_payload_json='{"aud":"sb"}',
         auth_payload_b64="YWJj",
         auth_provider_profile="corp",
+        auth_required_methods="SCRAM_SHA_256,TOKEN",
+        auth_forbidden_methods="MD5",
+        auth_require_channel_binding=True,
+        workload_identity_token="jwt-token",
+        proxy_principal_assertion="signed-assertion",
     )
 
     params = conn._build_startup_params()
     assert params["database"] == "db1"
     assert params["user"] == "alice"
+    assert params["client_flags"] == "257"
     assert params["role"] == "analyst"
     assert params["application_name"] == "pytest"
     assert params["auth_method_id"] == "scratchbird.auth.oidc"
+    assert params["auth_method_payload"] == "opaque"
     assert params["auth_payload_json"] == '{"aud":"sb"}'
     assert params["auth_payload_b64"] == "YWJj"
     assert params["auth_provider_profile"] == "corp"
+    assert params["auth_required_methods"] == "SCRAM_SHA_256,TOKEN"
+    assert params["auth_forbidden_methods"] == "MD5"
+    assert params["auth_require_channel_binding"] == "1"
+    assert params["workload_identity_token"] == "jwt-token"
+    assert params["proxy_principal_assertion"] == "signed-assertion"
 
 
 def test_startup_and_auth_rejects_invalid_auth_plugin_namespace():

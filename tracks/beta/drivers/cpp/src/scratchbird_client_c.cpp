@@ -1,11 +1,18 @@
 #include "scratchbird/client/scratchbird_client.h"
 
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <functional>
 #include <memory>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "scratchbird/client/circuit_breaker.h"
@@ -20,6 +27,11 @@
 #include "scratchbird/protocol/sbwp_protocol.h"
 
 struct sb_connection {
+    struct NotificationListener {
+        sb_notification_listener_fn fn{nullptr};
+        void* user_data{nullptr};
+    };
+
     scratchbird::client::NetworkClient client;
     scratchbird::client::NetworkClientConfig config;
     scratchbird::client::CircuitBreaker circuit_breaker;
@@ -29,6 +41,10 @@ struct sb_connection {
     scratchbird::client::LeakDetector leak_detector;
     std::unique_ptr<scratchbird::client::LeakDetectionGuard> leak_guard;
     std::string connection_id;
+    std::deque<scratchbird::client::NetworkClient::Notification> notification_queue;
+    std::unordered_map<uint64_t, NotificationListener> notification_listeners;
+    uint64_t next_listener_id{1};
+    std::mutex notification_mutex;
 };
 
 struct sb_prepared {
@@ -50,12 +66,157 @@ constexpr int64_t kMicrosPerSecond = 1000000LL;
 constexpr int64_t kMicrosPerDay = 86400LL * kMicrosPerSecond;
 constexpr int64_t kMicrosFrom1970To2000 = kMicrosPerDay * kDaysFrom1970To2000;
 
+void set_error(sb_error* err, sb_error_code code, const std::string& message);
+
+std::string jsonEscape(const std::string& value) {
+    std::ostringstream out;
+    for (unsigned char ch : value) {
+        switch (ch) {
+            case '\"': out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b"; break;
+            case '\f': out << "\\f"; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    out << "\\u00"
+                        << "0123456789abcdef"[(ch >> 4) & 0x0F]
+                        << "0123456789abcdef"[ch & 0x0F];
+                } else {
+                    out << static_cast<char>(ch);
+                }
+        }
+    }
+    return out.str();
+}
+
+std::string hexEncode(const uint8_t* data, size_t len) {
+    static const char* kHex = "0123456789abcdef";
+    std::string out;
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; ++i) {
+        out.push_back(kHex[(data[i] >> 4) & 0x0F]);
+        out.push_back(kHex[data[i] & 0x0F]);
+    }
+    return out;
+}
+
+std::string hexEncode(const std::vector<uint8_t>& data) {
+    return hexEncode(data.data(), data.size());
+}
+
+char* allocateCString(const std::string& value, sb_error* err, const char* oom_message) {
+    char* out = static_cast<char*>(std::malloc(value.size() + 1));
+    if (!out) {
+        set_error(err, SB_ERR_OUT_OF_MEMORY, oom_message ? oom_message : "Out of memory");
+        return nullptr;
+    }
+    std::memcpy(out, value.c_str(), value.size() + 1);
+    set_error(err, SB_OK, "");
+    return out;
+}
+
+std::string quoteSqlIdentifier(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('"');
+    for (char ch : value) {
+        if (ch == '"') {
+            out.push_back('"');
+        }
+        out.push_back(ch);
+    }
+    out.push_back('"');
+    return out;
+}
+
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+        out.push_back(ch);
+    }
+    out.push_back('\'');
+    return out;
+}
+
 void set_error(sb_error* err, sb_error_code code, const std::string& message) {
     if (!err) {
         return;
     }
     err->code = code;
     std::snprintf(err->message, sizeof(err->message), "%s", message.c_str());
+}
+
+std::string toLowerAscii(std::string value) {
+    for (char& ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
+std::string trimAscii(const std::string& value) {
+    size_t start = 0;
+    while (start < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[start])) != 0) {
+        ++start;
+    }
+    size_t end = value.size();
+    while (end > start &&
+           std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
+        --end;
+    }
+    return value.substr(start, end - start);
+}
+
+std::string decodeTextColumnValue(const scratchbird::protocol::ColumnValue& value) {
+    if (value.is_null || value.data.empty()) {
+        return "";
+    }
+
+    const uint8_t* ptr = value.data.data();
+    size_t len = value.data.size();
+    if (len >= 4) {
+        const uint32_t payload_len = static_cast<uint32_t>(value.data[0]) |
+            (static_cast<uint32_t>(value.data[1]) << 8) |
+            (static_cast<uint32_t>(value.data[2]) << 16) |
+            (static_cast<uint32_t>(value.data[3]) << 24);
+        if (payload_len <= len - 4) {
+            ptr += 4;
+            len = payload_len;
+        }
+    }
+
+    return trimAscii(std::string(reinterpret_cast<const char*>(ptr), len));
+}
+
+int findSchemaNameColumnIndex(const sb_result* result) {
+    if (!result) {
+        return -1;
+    }
+
+    static const char* kCandidates[] = {
+        "schema_name",
+        "table_schem",
+        "table_schema",
+        "schema",
+    };
+
+    for (size_t i = 0; i < result->column_names.size(); ++i) {
+        const std::string normalized = toLowerAscii(result->column_names[i]);
+        for (const char* candidate : kCandidates) {
+            if (normalized == candidate) {
+                return static_cast<int>(i);
+            }
+        }
+    }
+    return -1;
 }
 
 sb_error_code map_status(scratchbird::core::Status status) {
@@ -82,6 +243,10 @@ sb_error_code map_status(scratchbird::core::Status status) {
             return SB_ERR_DEADLOCK;
         case Status::SERIALIZATION_FAILURE:
             return SB_ERR_SERIALIZATION;
+        case Status::READ_ONLY_TRANSACTION:
+        case Status::INVALID_TRANSACTION_STATE:
+        case Status::LOCK_CONFLICT:
+            return SB_ERR_TXN_CONFLICT;
         case Status::TRANSACTION_ABORTED:
             return SB_ERR_TXN_ABORTED;
         case Status::NO_ACTIVE_TRANSACTION:
@@ -110,6 +275,53 @@ struct OperationSpan {
     std::unique_ptr<scratchbird::client::SpanContext> span;
 };
 
+int drain_notifications(sb_connection* conn) {
+    if (!conn) {
+        return 0;
+    }
+    std::vector<scratchbird::client::NetworkClient::Notification> drained;
+    conn->client.drainNotifications(drained);
+    if (drained.empty()) {
+        return 0;
+    }
+
+    std::vector<sb_connection::NotificationListener> listeners;
+    {
+        std::lock_guard<std::mutex> lock(conn->notification_mutex);
+        listeners.reserve(conn->notification_listeners.size());
+        for (const auto& pair : conn->notification_listeners) {
+            listeners.push_back(pair.second);
+        }
+        for (const auto& item : drained) {
+            conn->notification_queue.push_back(item);
+        }
+    }
+
+    if (!listeners.empty()) {
+        for (const auto& item : drained) {
+            const int has_row_id = item.row_id != 0 ? 1 : 0;
+            for (const auto& listener : listeners) {
+                if (!listener.fn) {
+                    continue;
+                }
+                try {
+                    listener.fn(item.channel.c_str(),
+                                item.payload.data(),
+                                item.payload.size(),
+                                item.process_id,
+                                item.change_type,
+                                item.row_id,
+                                has_row_id,
+                                listener.user_data);
+                } catch (...) {
+                }
+            }
+        }
+    }
+
+    return static_cast<int>(drained.size());
+}
+
 bool start_operation(sb_connection* conn, const char* op_name, const char* sql, OperationSpan& ctx, sb_error* err) {
     if (!conn->circuit_breaker.AllowRequest()) {
         set_error(err, SB_ERR_CONNECTION_FAILED, "Circuit breaker is OPEN");
@@ -135,6 +347,7 @@ void end_operation(sb_connection* conn, OperationSpan& ctx, bool success) {
     if (ctx.span) {
         conn->telemetry.EndSpan(*ctx.span, success);
     }
+    drain_notifications(conn);
 }
 
 static std::atomic<uint64_t> kConnectionCounter{0};
@@ -179,6 +392,8 @@ sb_type map_type_oid(uint32_t type_oid) {
             return SB_TYPE_DATE;
         case kOidTime:
             return SB_TYPE_TIME;
+        case kOidTimetz:
+            return SB_TYPE_TIME_TZ;
         case kOidTimestamp:
             return SB_TYPE_TIMESTAMP;
         case kOidTimestamptz:
@@ -208,6 +423,9 @@ sb_type map_type_oid(uint32_t type_oid) {
             return SB_TYPE_VECTOR;
         case kOidRecord:
             return SB_TYPE_COMPOSITE;
+        case kOidInt4Array:
+        case kOidTextArray:
+            return SB_TYPE_ARRAY;
         case kOidInt4Range:
         case kOidInt8Range:
         case kOidNumRange:
@@ -258,6 +476,8 @@ uint32_t map_sb_type_to_oid(sb_type type) {
             return kOidDate;
         case SB_TYPE_TIME:
             return kOidTime;
+        case SB_TYPE_TIME_TZ:
+            return kOidTimetz;
         case SB_TYPE_TIMESTAMP:
             return kOidTimestamp;
         case SB_TYPE_TIMESTAMP_TZ:
@@ -271,11 +491,11 @@ uint32_t map_sb_type_to_oid(sb_type type) {
         case SB_TYPE_GEOMETRY:
             return kOidPoint;
         case SB_TYPE_ARRAY:
-            return 0;
+            return kOidTextArray;
         case SB_TYPE_COMPOSITE:
             return kOidRecord;
         case SB_TYPE_RANGE:
-            return 0;
+            return kOidInt4Range;
         case SB_TYPE_VECTOR:
             return kOidSbVector;
         case SB_TYPE_INET:
@@ -442,7 +662,8 @@ int apply_bind_value(scratchbird::client::NetworkPreparedStatement& stmt, size_t
             stmt.setDate(index, days_since_2000);
             return SB_OK;
         }
-        case SB_TYPE_TIME: {
+        case SB_TYPE_TIME:
+        case SB_TYPE_TIME_TZ: {
             int64_t micros = (static_cast<int64_t>(value->data.time_val.hour) * 3600 +
                               static_cast<int64_t>(value->data.time_val.minute) * 60 +
                               static_cast<int64_t>(value->data.time_val.second)) * 1000000LL +
@@ -606,7 +827,8 @@ int build_param_value(const sb_value* value, scratchbird::protocol::ParamValue& 
             out.data[3] = static_cast<uint8_t>((days_since_2000 >> 24) & 0xFF);
             return SB_OK;
         }
-        case SB_TYPE_TIME: {
+        case SB_TYPE_TIME:
+        case SB_TYPE_TIME_TZ: {
             int64_t micros = (static_cast<int64_t>(value->data.time_val.hour) * 3600 +
                               static_cast<int64_t>(value->data.time_val.minute) * 60 +
                               static_cast<int64_t>(value->data.time_val.second)) * kMicrosPerSecond +
@@ -742,6 +964,59 @@ sb_result* sb_metadata_query(sb_connection* conn, const char* collection_name, s
     return sb_query(conn, metadata_sql.c_str(), err);
 }
 
+char* sb_metadata_schema_payload(sb_connection* conn,
+                                 const char* schema_pattern,
+                                 int expand_schema_parents,
+                                 sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_NULL_POINTER, "Connection required");
+        return nullptr;
+    }
+
+    sb_error query_err{};
+    sb_result* schemas = sb_metadata_query(conn, "schemas", &query_err);
+    if (!schemas) {
+        set_error(err, query_err.code, query_err.message);
+        return nullptr;
+    }
+
+    const int schema_col = findSchemaNameColumnIndex(schemas);
+    if (schema_col < 0) {
+        sb_result_free(schemas);
+        set_error(err, SB_ERR_PROTOCOL, "schemas metadata result is missing schema-name column");
+        return nullptr;
+    }
+
+    std::vector<std::string> schema_names;
+    schema_names.reserve(schemas->results.rows.size());
+    for (const auto& row : schemas->results.rows) {
+        if (static_cast<size_t>(schema_col) >= row.size()) {
+            continue;
+        }
+        const std::string schema_name = decodeTextColumnValue(row[static_cast<size_t>(schema_col)]);
+        if (!schema_name.empty()) {
+            schema_names.push_back(schema_name);
+        }
+    }
+    sb_result_free(schemas);
+
+    const std::string pattern_value = schema_pattern ? std::string(schema_pattern) : std::string();
+    const std::string* pattern_ptr = schema_pattern ? &pattern_value : nullptr;
+    const std::string payload_json = scratchbird::client::buildMetadataDdlEditorSchemaPayloadJson(
+        schema_names,
+        pattern_ptr,
+        expand_schema_parents != 0);
+
+    char* out = static_cast<char*>(std::malloc(payload_json.size() + 1));
+    if (!out) {
+        set_error(err, SB_ERR_OUT_OF_MEMORY, "Out of memory allocating metadata payload");
+        return nullptr;
+    }
+    std::memcpy(out, payload_json.c_str(), payload_json.size() + 1);
+    set_error(err, SB_OK, "");
+    return out;
+}
+
 int sb_fetch(sb_result* result, sb_row* row, sb_error* err) {
     if (!result || !row) {
         set_error(err, SB_ERR_NULL_POINTER, "Result and row required");
@@ -759,6 +1034,17 @@ int sb_fetch(sb_result* result, sb_row* row, sb_error* err) {
 
 void sb_result_free(sb_result* result) {
     delete result;
+}
+
+int64_t sb_rows_affected(sb_result* result) {
+    if (!result) {
+        return 0;
+    }
+    return result->results.rows_affected;
+}
+
+void sb_memory_free(void* ptr) {
+    std::free(ptr);
 }
 
 int sb_column_count(sb_result* result) {
@@ -870,7 +1156,8 @@ int sb_value_get(sb_row* row, int column, sb_value* out) {
             decode_date(days, out);
             break;
         }
-        case SB_TYPE_TIME: {
+        case SB_TYPE_TIME:
+        case SB_TYPE_TIME_TZ: {
             int64_t micros = 0;
             if (data.size() >= sizeof(micros)) {
                 std::memcpy(&micros, data.data(), sizeof(micros));
@@ -1081,13 +1368,30 @@ void sb_prepared_free(sb_prepared* stmt) {
     delete stmt;
 }
 
+int sb_tx_begin_ex(sb_connection* conn, const sb_txn_options* options, sb_error* err);
+
 int sb_tx_begin(sb_connection* conn, sb_error* err) {
+    const sb_txn_options defaults{};
+    return sb_tx_begin_ex(conn, &defaults, err);
+}
+
+int sb_tx_begin_ex(sb_connection* conn, const sb_txn_options* options, sb_error* err) {
     if (!conn) {
         set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
         return SB_ERR_INVALID_HANDLE;
     }
+    const sb_txn_options opts = options ? *options : sb_txn_options{};
+    scratchbird::client::NetworkClient::TransactionOptions tx_opts;
+    tx_opts.flags = opts.flags;
+    tx_opts.conflict_action = opts.conflict_action;
+    tx_opts.autocommit_mode = opts.autocommit_mode;
+    tx_opts.isolation_level = opts.isolation_level;
+    tx_opts.access_mode = opts.access_mode;
+    tx_opts.deferrable = opts.deferrable;
+    tx_opts.wait_mode = opts.wait_mode;
+    tx_opts.timeout_ms = opts.timeout_ms;
     scratchbird::core::ErrorContext ctx;
-    auto status = conn->client.beginTransaction(&ctx);
+    auto status = conn->client.beginTransaction(tx_opts, &ctx);
     set_error(err, map_status(status), ctx.message);
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
 }
@@ -1110,6 +1414,51 @@ int sb_tx_rollback(sb_connection* conn, sb_error* err) {
     }
     scratchbird::core::ErrorContext ctx;
     auto status = conn->client.rollback(&ctx);
+    set_error(err, map_status(status), ctx.message);
+    return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_tx_savepoint(sb_connection* conn, const char* name, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    if (!name || name[0] == '\0') {
+        set_error(err, SB_ERR_INVALID_PARAM, "Savepoint name is required");
+        return SB_ERR_INVALID_PARAM;
+    }
+    scratchbird::core::ErrorContext ctx;
+    auto status = conn->client.savepoint(name, &ctx);
+    set_error(err, map_status(status), ctx.message);
+    return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_tx_release_savepoint(sb_connection* conn, const char* name, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    if (!name || name[0] == '\0') {
+        set_error(err, SB_ERR_INVALID_PARAM, "Savepoint name is required");
+        return SB_ERR_INVALID_PARAM;
+    }
+    scratchbird::core::ErrorContext ctx;
+    auto status = conn->client.releaseSavepoint(name, &ctx);
+    set_error(err, map_status(status), ctx.message);
+    return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_tx_rollback_to(sb_connection* conn, const char* name, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    if (!name || name[0] == '\0') {
+        set_error(err, SB_ERR_INVALID_PARAM, "Savepoint name is required");
+        return SB_ERR_INVALID_PARAM;
+    }
+    scratchbird::core::ErrorContext ctx;
+    auto status = conn->client.rollbackToSavepoint(name, &ctx);
     set_error(err, map_status(status), ctx.message);
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
 }
@@ -1144,6 +1493,9 @@ int sb_ping(sb_connection* conn, sb_error* err) {
     scratchbird::core::ErrorContext ctx;
     auto status = conn->client.ping(&ctx);
     set_error(err, map_status(status), ctx.message);
+    if (status == scratchbird::core::Status::OK) {
+        drain_notifications(conn);
+    }
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
 }
 
@@ -1164,6 +1516,9 @@ int sb_subscribe(sb_connection* conn, uint8_t subscribe_type,
         filter ? filter : "",
         &ctx);
     set_error(err, map_status(status), ctx.message);
+    if (status == scratchbird::core::Status::OK) {
+        drain_notifications(conn);
+    }
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
 }
 
@@ -1175,7 +1530,174 @@ int sb_unsubscribe(sb_connection* conn, const char* channel, sb_error* err) {
     scratchbird::core::ErrorContext ctx;
     auto status = conn->client.unsubscribeNotifications(channel, &ctx);
     set_error(err, map_status(status), ctx.message);
+    if (status == scratchbird::core::Status::OK) {
+        drain_notifications(conn);
+    }
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_listen(sb_connection* conn, const char* channel, const char* filter, sb_error* err) {
+    return sb_subscribe(conn, scratchbird::protocol::kSubTypeChannel, channel, filter, err);
+}
+
+int sb_unlisten(sb_connection* conn, const char* channel, sb_error* err) {
+    return sb_unsubscribe(conn, channel, err);
+}
+
+int sb_unlisten_all(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    sb_result* result = sb_execute(conn, "UNLISTEN *", err);
+    if (!result) {
+        return err ? err->code : SB_ERR_UNKNOWN;
+    }
+    sb_result_free(result);
+    set_error(err, SB_OK, "");
+    return SB_OK;
+}
+
+int sb_notify_channel(sb_connection* conn,
+                      const char* channel,
+                      const uint8_t* payload,
+                      size_t payload_len,
+                      sb_error* err) {
+    if (!conn || !channel) {
+        set_error(err, SB_ERR_NULL_POINTER, "Connection and channel required");
+        return SB_ERR_NULL_POINTER;
+    }
+    std::string sql = "NOTIFY " + quoteSqlIdentifier(channel);
+    if (payload && payload_len > 0) {
+        const std::string payload_text = "hex:" + hexEncode(payload, payload_len);
+        sql += ", " + quoteSqlLiteral(payload_text);
+    }
+    sb_result* result = sb_execute(conn, sql.c_str(), err);
+    if (!result) {
+        return err ? err->code : SB_ERR_UNKNOWN;
+    }
+    sb_result_free(result);
+    set_error(err, SB_OK, "");
+    return SB_OK;
+}
+
+int sb_poll_notifications(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    const int count = drain_notifications(conn);
+    set_error(err, SB_OK, "");
+    return count;
+}
+
+size_t sb_notification_count(sb_connection* conn) {
+    if (!conn) {
+        return 0;
+    }
+    drain_notifications(conn);
+    std::lock_guard<std::mutex> lock(conn->notification_mutex);
+    return conn->notification_queue.size();
+}
+
+char* sb_get_notification(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    drain_notifications(conn);
+    scratchbird::client::NetworkClient::Notification notice;
+    {
+        std::lock_guard<std::mutex> lock(conn->notification_mutex);
+        if (conn->notification_queue.empty()) {
+            set_error(err, SB_OK, "");
+            return nullptr;
+        }
+        notice = conn->notification_queue.front();
+        conn->notification_queue.pop_front();
+    }
+    std::ostringstream payload;
+    payload << "{"
+            << "\"process_id\":" << notice.process_id << ","
+            << "\"channel\":\"" << jsonEscape(notice.channel) << "\","
+            << "\"payload_hex\":\"" << hexEncode(notice.payload) << "\","
+            << "\"change_type\":" << static_cast<uint32_t>(notice.change_type) << ","
+            << "\"row_id\":" << notice.row_id << ","
+            << "\"has_row_id\":" << (notice.row_id != 0 ? "true" : "false")
+            << "}";
+    return allocateCString(payload.str(), err, "Out of memory allocating notification payload");
+}
+
+char* sb_get_notifications(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    drain_notifications(conn);
+    std::deque<scratchbird::client::NetworkClient::Notification> notices;
+    {
+        std::lock_guard<std::mutex> lock(conn->notification_mutex);
+        notices.swap(conn->notification_queue);
+    }
+    std::ostringstream payload;
+    payload << "[";
+    for (size_t i = 0; i < notices.size(); ++i) {
+        const auto& notice = notices[i];
+        if (i != 0) {
+            payload << ",";
+        }
+        payload << "{"
+                << "\"process_id\":" << notice.process_id << ","
+                << "\"channel\":\"" << jsonEscape(notice.channel) << "\","
+                << "\"payload_hex\":\"" << hexEncode(notice.payload) << "\","
+                << "\"change_type\":" << static_cast<uint32_t>(notice.change_type) << ","
+                << "\"row_id\":" << notice.row_id << ","
+                << "\"has_row_id\":" << (notice.row_id != 0 ? "true" : "false")
+                << "}";
+    }
+    payload << "]";
+    return allocateCString(payload.str(), err, "Out of memory allocating notifications payload");
+}
+
+void sb_clear_notifications(sb_connection* conn) {
+    if (!conn) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(conn->notification_mutex);
+    conn->notification_queue.clear();
+}
+
+uint64_t sb_add_notification_listener(sb_connection* conn,
+                                      sb_notification_listener_fn listener,
+                                      void* user_data,
+                                      sb_error* err) {
+    if (!conn || !listener) {
+        set_error(err, SB_ERR_NULL_POINTER, "Connection and listener required");
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(conn->notification_mutex);
+    const uint64_t id = conn->next_listener_id++;
+    conn->notification_listeners[id] = sb_connection::NotificationListener{listener, user_data};
+    set_error(err, SB_OK, "");
+    return id;
+}
+
+int sb_remove_notification_listener(sb_connection* conn,
+                                    uint64_t listener_id,
+                                    sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    std::lock_guard<std::mutex> lock(conn->notification_mutex);
+    auto it = conn->notification_listeners.find(listener_id);
+    if (it == conn->notification_listeners.end()) {
+        set_error(err, SB_ERR_INVALID_PARAM, "Notification listener not found");
+        return SB_ERR_INVALID_PARAM;
+    }
+    conn->notification_listeners.erase(it);
+    set_error(err, SB_OK, "");
+    return SB_OK;
 }
 
 int sb_stream_control(sb_connection* conn, uint8_t control_type,
@@ -1188,6 +1710,187 @@ int sb_stream_control(sb_connection* conn, uint8_t control_type,
     auto status = conn->client.streamControl(control_type, window_size, timeout_ms, &ctx);
     set_error(err, map_status(status), ctx.message);
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+char* sb_get_telemetry_summary_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    const auto metrics = conn->telemetry.GetMetrics();
+    std::ostringstream json;
+    json << "{"
+         << "\"total_invocations\":" << metrics.total_queries << ","
+         << "\"total_successes\":" << metrics.successful_queries << ","
+         << "\"total_failures\":" << metrics.failed_queries << ","
+         << "\"total_duration_ms\":" << metrics.total_query_time_ms << ","
+         << "\"operations\":[";
+    size_t index = 0;
+    for (const auto& pair : metrics.operation_metrics) {
+        if (index++ != 0) {
+            json << ",";
+        }
+        json << "{"
+             << "\"operation\":\"" << jsonEscape(pair.first) << "\","
+             << "\"invocations\":" << pair.second.count << ","
+             << "\"failures\":" << pair.second.error_count << ","
+             << "\"successes\":" << (pair.second.count - pair.second.error_count) << ","
+             << "\"total_duration_ms\":" << pair.second.total_time_ms << ","
+             << "\"average_duration_ms\":" << pair.second.avg_time_ms << ","
+             << "\"max_duration_ms\":" << pair.second.max_time_ms
+             << "}";
+    }
+    json << "],"
+         << "\"histogram\":{"
+         << "\"ms_0_10\":" << metrics.latency_histogram.ms_0_10 << ","
+         << "\"ms_10_100\":" << metrics.latency_histogram.ms_10_100 << ","
+         << "\"ms_100_1000\":" << metrics.latency_histogram.ms_100_1000 << ","
+         << "\"ms_1000_10000\":" << metrics.latency_histogram.ms_1000_10000 << ","
+         << "\"ms_over_10000\":" << metrics.latency_histogram.ms_over_10000
+         << "}"
+         << "}";
+    return allocateCString(json.str(), err, "Out of memory allocating telemetry summary");
+}
+
+int sb_reset_telemetry(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    conn->telemetry.Reset();
+    set_error(err, SB_OK, "");
+    return SB_OK;
+}
+
+char* sb_get_slow_operations_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    return allocateCString(conn->telemetry.ExportSlowQueriesJson(),
+                           err,
+                           "Out of memory allocating slow operation summary");
+}
+
+char* sb_export_telemetry_prometheus(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    return allocateCString(conn->telemetry.ExportPrometheusMetrics(),
+                           err,
+                           "Out of memory allocating telemetry export");
+}
+
+char* sb_get_circuit_breaker_summary_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    const auto stats = conn->circuit_breaker.GetStats();
+    const char* state = "open";
+    switch (stats.state) {
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_CLOSED:
+            state = "closed";
+            break;
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_HALF_OPEN:
+            state = "half_open";
+            break;
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_OPEN:
+        default:
+            state = "open";
+            break;
+    }
+    std::ostringstream json;
+    json << "{"
+         << "\"state\":\"" << state << "\","
+         << "\"failure_count\":" << stats.failure_count << ","
+         << "\"success_count\":" << stats.success_count << ","
+         << "\"half_open_requests\":" << stats.half_open_requests
+         << "}";
+    return allocateCString(json.str(), err, "Out of memory allocating circuit summary");
+}
+
+char* sb_get_keepalive_summary_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    const auto monitored = conn->keepalive_manager.GetMonitoredCount();
+    uint64_t idle_ms = 0;
+    if (conn->keepalive_tracker) {
+        idle_ms = static_cast<uint64_t>(conn->keepalive_tracker->GetIdleDuration().count());
+    }
+    std::ostringstream json;
+    json << "{"
+         << "\"monitored_count\":" << monitored << ","
+         << "\"idle_duration_ms\":" << idle_ms
+         << "}";
+    return allocateCString(json.str(), err, "Out of memory allocating keepalive summary");
+}
+
+char* sb_get_leak_summary_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    const auto stats = conn->leak_detector.GetStats();
+    std::ostringstream json;
+    json << "{"
+         << "\"active_checkouts\":" << stats.active_checkouts << ","
+         << "\"potential_leaks\":" << stats.potential_leaks
+         << "}";
+    return allocateCString(json.str(), err, "Out of memory allocating leak summary");
+}
+
+char* sb_get_diagnostics_json(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return nullptr;
+    }
+    drain_notifications(conn);
+    const auto metrics = conn->telemetry.GetMetrics();
+    const auto circuit = conn->circuit_breaker.GetStats();
+    const auto leak = conn->leak_detector.GetStats();
+    const auto monitored = conn->keepalive_manager.GetMonitoredCount();
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const char* circuit_state = "open";
+    switch (circuit.state) {
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_CLOSED:
+            circuit_state = "closed";
+            break;
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_HALF_OPEN:
+            circuit_state = "half_open";
+            break;
+        case scratchbird::sb_circuit_state::SB_CIRCUIT_OPEN:
+        default:
+            circuit_state = "open";
+            break;
+    }
+    size_t queue_depth = 0;
+    {
+        std::lock_guard<std::mutex> lock(conn->notification_mutex);
+        queue_depth = conn->notification_queue.size();
+    }
+    std::ostringstream json;
+    json << "{"
+         << "\"captured_unix_ms\":" << now_ms << ","
+         << "\"is_healthy\":" << (conn->client.isConnected() ? "true" : "false") << ","
+         << "\"front_door_mode\":\"" << jsonEscape(conn->config.front_door_mode) << "\","
+         << "\"protocol\":\"" << jsonEscape(conn->config.protocol) << "\","
+         << "\"host\":\"" << jsonEscape(conn->config.host) << "\","
+         << "\"port\":" << conn->config.port << ","
+         << "\"database\":\"" << jsonEscape(conn->config.database) << "\","
+         << "\"telemetry_total_invocations\":" << metrics.total_queries << ","
+         << "\"telemetry_total_failures\":" << metrics.failed_queries << ","
+         << "\"circuit_state\":\"" << circuit_state << "\","
+         << "\"keepalive_monitored_count\":" << monitored << ","
+         << "\"leak_active_checkouts\":" << leak.active_checkouts << ","
+         << "\"leak_potential_count\":" << leak.potential_leaks << ","
+         << "\"notification_queue_depth\":" << queue_depth
+         << "}";
+    return allocateCString(json.str(), err, "Out of memory allocating diagnostics payload");
 }
 
 int sb_attach_create(sb_connection* conn, const char* mode, const char* db_name, sb_error* err) {

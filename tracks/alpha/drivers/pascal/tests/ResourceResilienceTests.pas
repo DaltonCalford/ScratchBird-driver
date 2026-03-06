@@ -15,8 +15,10 @@ uses
   cthreads,
   {$ENDIF}
   SysUtils,
+  SBTelemetry,
   SBKeepalive,
-  SBLeakDetector;
+  SBLeakDetector,
+  ScratchBird.Client;
 
 type
   TPingerProbe = class
@@ -27,6 +29,12 @@ type
     constructor Create(Healthy: Boolean = True);
     function Ping: Boolean;
     property Calls: Integer read FCalls;
+  end;
+
+  TNotificationSink = class
+  public
+    Calls: Integer;
+    procedure Handle(const Notice: TNotification);
   end;
 
 procedure Fail(const MessageText: string);
@@ -58,6 +66,12 @@ begin
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
 end;
 
+procedure AssertContains(const Needle, Haystack, MessageText: string);
+begin
+  if Pos(Needle, Haystack) = 0 then
+    Fail(MessageText + ': missing "' + Needle + '" in "' + Haystack + '"');
+end;
+
 constructor TPingerProbe.Create(Healthy: Boolean);
 begin
   inherited Create;
@@ -69,6 +83,11 @@ function TPingerProbe.Ping: Boolean;
 begin
   Inc(FCalls);
   Result := FHealthy;
+end;
+
+procedure TNotificationSink.Handle(const Notice: TNotification);
+begin
+  Inc(Calls);
 end;
 
 procedure TestKeepaliveTrackerValidationWindow;
@@ -195,6 +214,64 @@ begin
   end;
 end;
 
+procedure TestTelemetryCollectorJsonAndReset;
+var
+  Config: TTelemetryConfig;
+  Collector: TTelemetryCollector;
+  Span: TSpanContext;
+  Summary, Slow, ResetSummary: string;
+begin
+  Config := DefaultTelemetryConfig;
+  Config.SlowQueryThresholdMs := 0;
+  Collector := TTelemetryCollector.Create(Config);
+  try
+    Span := Collector.StartSpan('query');
+    Sleep(1);
+    Collector.EndSpan(Span, True);
+
+    Summary := Collector.ExportTelemetrySummaryJson;
+    AssertContains('"total_invocations":1', Summary, 'telemetry summary invocation count');
+    AssertContains('"operation":"query"', Summary, 'telemetry summary operation name');
+
+    Slow := Collector.ExportSlowQueriesJson;
+    AssertContains('"operation":"query"', Slow, 'slow query export operation');
+
+    Collector.Reset;
+    ResetSummary := Collector.ExportTelemetrySummaryJson;
+    AssertContains('"total_invocations":0', ResetSummary, 'telemetry reset invocation count');
+  finally
+    Collector.Free;
+  end;
+end;
+
+procedure TestClientEnterpriseSurfaceNoConnect;
+var
+  Client: TScratchBirdClient;
+  Sink: TNotificationSink;
+  ListenerId: UInt64;
+  Diagnostics: string;
+begin
+  Client := TScratchBirdClient.Create;
+  Sink := TNotificationSink.Create;
+  try
+    ListenerId := Client.AddNotificationListener(Sink.Handle);
+    AssertTrue(ListenerId > 0, 'listener id should be assigned');
+    AssertTrue(Client.RemoveNotificationListener(ListenerId), 'listener should be removable');
+    AssertFalse(Client.RemoveNotificationListener(ListenerId), 'listener remove should be idempotent false');
+
+    AssertEqualInt(0, Client.NotificationCount, 'notification queue starts empty');
+    AssertEqualString('[]', Client.GetSlowOperationsJson, 'slow operations start empty');
+    AssertContains('"total_invocations":0', Client.GetTelemetrySummaryJson, 'client telemetry starts at zero');
+
+    Diagnostics := Client.GetDiagnosticsJson;
+    AssertContains('"connected":false', Diagnostics, 'diagnostics connected state');
+    AssertContains('"notification_queue_depth":0', Diagnostics, 'diagnostics queue depth');
+  finally
+    Sink.Free;
+    Client.Free;
+  end;
+end;
+
 begin
   try
     TestKeepaliveTrackerValidationWindow;
@@ -202,6 +279,8 @@ begin
     TestCheckoutInfoCapturesMetadataPairs;
     TestLeakDetectorCheckoutCheckinAndReplace;
     TestLeakDetectorBackgroundLifecycle;
+    TestTelemetryCollectorJsonAndReset;
+    TestClientEnterpriseSurfaceNoConnect;
     Writeln('ResourceResilienceTests: OK');
   except
     on E: Exception do

@@ -75,9 +75,15 @@ from .protocol import (
     build_attach_create_payload,
     build_startup_payload,
     AUTH_PARAM_METHOD_ID,
+    AUTH_PARAM_METHOD_PAYLOAD,
     AUTH_PARAM_PAYLOAD_JSON,
     AUTH_PARAM_PAYLOAD_B64,
     AUTH_PARAM_PROVIDER_PROFILE,
+    AUTH_PARAM_REQUIRED_METHODS,
+    AUTH_PARAM_FORBIDDEN_METHODS,
+    AUTH_PARAM_REQUIRE_CHANNEL_BINDING,
+    AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN,
+    AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION,
     AuthPluginSelection,
     apply_auth_plugin_selection,
     build_copy_data_payload,
@@ -155,10 +161,17 @@ class ConnectionConfig:
     manager_client_intent: str = "native_v3"
     manager_client_flags: int = 0
     manager_auth_fast_path: bool = True
+    connect_client_flags: int = 0x0100
     auth_method_id: Optional[str] = None
+    auth_method_payload: Optional[str] = None
     auth_payload_json: Optional[str] = None
     auth_payload_b64: Optional[str] = None
     auth_provider_profile: Optional[str] = None
+    auth_required_methods: Optional[str] = None
+    auth_forbidden_methods: Optional[str] = None
+    auth_require_channel_binding: bool = False
+    workload_identity_token: Optional[str] = None
+    proxy_principal_assertion: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -257,6 +270,12 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             cfg.manager_client_flags = int(raw_manager_flags)
         except ValueError:
             cfg.manager_client_flags = 0
+    raw_connect_flags = params.get("client_flags", params.get("connect_client_flags"))
+    if raw_connect_flags is not None:
+        try:
+            cfg.connect_client_flags = int(raw_connect_flags)
+        except ValueError:
+            cfg.connect_client_flags = 0x0100
     raw_fast_path = params.get("manager_auth_fast_path", params.get("mcp_auth_fast_path"))
     if raw_fast_path is not None:
         if isinstance(raw_fast_path, str):
@@ -264,11 +283,36 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
         else:
             cfg.manager_auth_fast_path = bool(raw_fast_path)
     cfg.auth_method_id = params.get(AUTH_PARAM_METHOD_ID, params.get("authmethodid", cfg.auth_method_id))
+    cfg.auth_method_payload = params.get(AUTH_PARAM_METHOD_PAYLOAD, params.get("authmethodpayload", cfg.auth_method_payload))
     cfg.auth_payload_json = params.get(AUTH_PARAM_PAYLOAD_JSON, params.get("authpayloadjson", cfg.auth_payload_json))
     cfg.auth_payload_b64 = params.get(AUTH_PARAM_PAYLOAD_B64, params.get("authpayloadb64", cfg.auth_payload_b64))
     cfg.auth_provider_profile = params.get(
         AUTH_PARAM_PROVIDER_PROFILE,
         params.get("authproviderprofile", cfg.auth_provider_profile),
+    )
+    cfg.auth_required_methods = params.get(
+        AUTH_PARAM_REQUIRED_METHODS,
+        params.get("authrequiredmethods", cfg.auth_required_methods),
+    )
+    cfg.auth_forbidden_methods = params.get(
+        AUTH_PARAM_FORBIDDEN_METHODS,
+        params.get("authforbiddenmethods", cfg.auth_forbidden_methods),
+    )
+    raw_require_channel_binding = params.get(
+        AUTH_PARAM_REQUIRE_CHANNEL_BINDING,
+        params.get("authrequirechannelbinding", cfg.auth_require_channel_binding),
+    )
+    if isinstance(raw_require_channel_binding, str):
+        cfg.auth_require_channel_binding = raw_require_channel_binding.lower() in ("1", "true", "yes", "on")
+    else:
+        cfg.auth_require_channel_binding = bool(raw_require_channel_binding)
+    cfg.workload_identity_token = params.get(
+        AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN,
+        params.get("workloadidentitytoken", cfg.workload_identity_token),
+    )
+    cfg.proxy_principal_assertion = params.get(
+        AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION,
+        params.get("proxyprincipalassertion", params.get("proxy_assertion", cfg.proxy_principal_assertion)),
     )
     cfg.extra = {
         k: v
@@ -330,14 +374,29 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             "mcp_client_flags",
             "manager_auth_fast_path",
             "mcp_auth_fast_path",
+            "client_flags",
+            "connect_client_flags",
             AUTH_PARAM_METHOD_ID,
             "authmethodid",
+            AUTH_PARAM_METHOD_PAYLOAD,
+            "authmethodpayload",
             AUTH_PARAM_PAYLOAD_JSON,
             "authpayloadjson",
             AUTH_PARAM_PAYLOAD_B64,
             "authpayloadb64",
             AUTH_PARAM_PROVIDER_PROFILE,
             "authproviderprofile",
+            AUTH_PARAM_REQUIRED_METHODS,
+            "authrequiredmethods",
+            AUTH_PARAM_FORBIDDEN_METHODS,
+            "authforbiddenmethods",
+            AUTH_PARAM_REQUIRE_CHANNEL_BINDING,
+            "authrequirechannelbinding",
+            AUTH_PARAM_WORKLOAD_IDENTITY_TOKEN,
+            "workloadidentitytoken",
+            AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION,
+            "proxyprincipalassertion",
+            "proxy_assertion",
         }
     }
 
@@ -1258,6 +1317,7 @@ class Connection:
         params = {
             "database": self._config.database or "",
             "user": self._config.user or "",
+            "client_flags": str(int(self._config.connect_client_flags or 0x0100) & 0xFFFF),
         }
         if self._config.role:
             params["role"] = self._config.role
@@ -1265,9 +1325,15 @@ class Connection:
             params["application_name"] = self._config.application_name
         selection = AuthPluginSelection(
             method_id=self._config.auth_method_id or "",
+            method_payload=self._config.auth_method_payload or "",
             payload_json=self._config.auth_payload_json or "",
             payload_b64=self._config.auth_payload_b64 or "",
             provider_profile=self._config.auth_provider_profile or "",
+            required_methods=self._config.auth_required_methods or "",
+            forbidden_methods=self._config.auth_forbidden_methods or "",
+            require_channel_binding=bool(self._config.auth_require_channel_binding),
+            workload_identity_token=self._config.workload_identity_token or "",
+            proxy_principal_assertion=self._config.proxy_principal_assertion or "",
         )
         apply_auth_plugin_selection(params, selection)
         return params

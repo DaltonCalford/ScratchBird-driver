@@ -55,6 +55,21 @@ bool parseBool(const std::string& value, bool& out) {
     return false;
 }
 
+bool parseCompressionMode(const std::string& value, bool& enabled) {
+    const std::string lower = toLower(trim(value));
+    if (lower.empty() || lower == "off" || lower == "none" || lower == "false" ||
+        lower == "0" || lower == "disable" || lower == "disabled") {
+        enabled = false;
+        return true;
+    }
+    if (lower == "zstd" || lower == "true" || lower == "1" ||
+        lower == "on" || lower == "enable" || lower == "enabled") {
+        enabled = true;
+        return true;
+    }
+    return false;
+}
+
 bool parseProtocol(const std::string& value, std::string& normalized) {
     std::string lower = toLower(trim(value));
     if (lower == "native" || lower == "scratchbird" ||
@@ -86,42 +101,9 @@ bool parseTransportMode(const std::string& value, std::string& normalized) {
         normalized = "inet_listener";
         return true;
     }
-    if (lower == "local" || lower == "ipc" || lower == "local_ipc" ||
-        lower == "local-ipc" || lower == "unix" || lower == "unix_socket" ||
-        lower == "pipe" || lower == "named_pipe") {
-        normalized = "local_ipc";
-        return true;
-    }
     if (lower == "managed" || lower == "manager" || lower == "manager_proxy" ||
         lower == "manager-proxy" || lower == "mcp") {
         normalized = "managed";
-        return true;
-    }
-    if (lower == "embedded" || lower == "inproc" || lower == "in-process" ||
-        lower == "in_process") {
-        normalized = "embedded";
-        return true;
-    }
-    return false;
-}
-
-bool parseIPCMethod(const std::string& value, server::IPCMethod& method) {
-    std::string lower = toLower(trim(value));
-    if (lower.empty() || lower == "auto") {
-        method = server::IPCMethod::AUTO;
-        return true;
-    }
-    if (lower == "unix" || lower == "unix_socket" || lower == "socket") {
-        method = server::IPCMethod::UNIX_SOCKET;
-        return true;
-    }
-    if (lower == "pipe" || lower == "named_pipe" || lower == "named-pipe") {
-        method = server::IPCMethod::NAMED_PIPE;
-        return true;
-    }
-    if (lower == "tcp" || lower == "tcp_localhost" || lower == "localhost" ||
-        lower == "inet") {
-        method = server::IPCMethod::TCP_LOCALHOST;
         return true;
     }
     return false;
@@ -363,12 +345,13 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
         const std::string& value = entry.second;
         if (key == "server" || key == "host") {
             if (value.rfind("unix:", 0) == 0) {
-                config.transport_mode = "local_ipc";
-                config.ipc_method = server::IPCMethod::UNIX_SOCKET;
-                config.ipc_path = value.substr(5);
-            } else {
-                config.host = value;
+                if (ctx) {
+                    ctx->message =
+                        "IPC/unix socket endpoints are not supported by the C/C++ driver; use host:port over IP.";
+                }
+                return core::Status::INVALID_ARGUMENT;
             }
+            config.host = value;
         } else if (key == "port") {
             uint32_t parsed = 0;
             if (!parseUint32(value, parsed) || parsed > 65535) {
@@ -392,7 +375,8 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             std::string normalized;
             if (!parseTransportMode(value, normalized)) {
                 if (ctx) {
-                    ctx->message = "transport_mode must be embedded, local_ipc, inet_listener, or managed";
+                    ctx->message =
+                        "transport_mode must be inet_listener or managed (C/C++ driver is IP-only; IPC/embedded modes are not supported)";
                 }
                 return core::Status::INVALID_ARGUMENT;
             }
@@ -403,21 +387,18 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
                 config.front_door_mode = "direct";
             }
         } else if (key == "ipc_method") {
-            server::IPCMethod parsed = server::IPCMethod::AUTO;
-            if (!parseIPCMethod(value, parsed)) {
+            if (!trim(value).empty()) {
                 if (ctx) {
-                    ctx->message = "Invalid ipc_method (expected auto|unix|pipe|tcp)";
+                    ctx->message = "ipc_method is not supported by the C/C++ driver (IP transport only)";
                 }
                 return core::Status::INVALID_ARGUMENT;
             }
-            config.ipc_method = parsed;
-            if (parsed != server::IPCMethod::TCP_LOCALHOST) {
-                config.transport_mode = "local_ipc";
-            }
         } else if (key == "ipc_path" || key == "socket_path" || key == "pipe_name") {
-            config.ipc_path = value;
             if (!value.empty()) {
-                config.transport_mode = "local_ipc";
+                if (ctx) {
+                    ctx->message = "ipc_path/socket_path/pipe_name are not supported by the C/C++ driver";
+                }
+                return core::Status::INVALID_ARGUMENT;
             }
         } else if (key == "protocol" || key == "parser" || key == "dialect") {
             std::string normalized;
@@ -513,6 +494,24 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             config.ssl_key = value;
         } else if (key == "sslrootcert") {
             config.ssl_root_cert = value;
+        } else if (key == "binary_transfer" || key == "binarytransfer") {
+            bool parsed = false;
+            if (!parseBool(value, parsed)) {
+                if (ctx) {
+                    ctx->message = "Invalid binary_transfer (expected true/false)";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.binary_transfer = parsed;
+        } else if (key == "compression") {
+            bool compression_enabled = false;
+            if (!parseCompressionMode(value, compression_enabled)) {
+                if (ctx) {
+                    ctx->message = "compression must be off or zstd";
+                }
+                return core::Status::INVALID_ARGUMENT;
+            }
+            config.enable_compression = compression_enabled;
         } else if (key == "connecttimeout" || key == "connect_timeout" || key == "timeout") {
             uint32_t ms = normalizeTimeoutMs(key, value);
             if (ms > 0) {
@@ -720,18 +719,6 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
             config.transport_mode = normalized;
         }
     }
-    if (const char* ipc_method = getEnv("SCRATCHBIRD_IPC_METHOD")) {
-        server::IPCMethod parsed = server::IPCMethod::AUTO;
-        if (parseIPCMethod(ipc_method, parsed)) {
-            config.ipc_method = parsed;
-        }
-    }
-    if (const char* ipc_path = getEnv("SCRATCHBIRD_IPC_PATH")) {
-        config.ipc_path = ipc_path;
-    }
-    if (const char* socket_path = getEnv("SCRATCHBIRD_SOCKET_PATH")) {
-        config.ipc_path = socket_path;
-    }
     if (const char* role = getEnv("SCRATCHBIRD_ROLE")) {
         config.role = role;
     }
@@ -835,6 +822,18 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
         config.allow_password_fallback = (std::string(allow_pw) == "1" ||
                                           std::string(allow_pw) == "true" ||
                                           std::string(allow_pw) == "TRUE");
+    }
+    if (const char* binary_transfer = getEnv("SCRATCHBIRD_BINARY_TRANSFER")) {
+        bool parsed = false;
+        if (parseBool(binary_transfer, parsed)) {
+            config.binary_transfer = parsed;
+        }
+    }
+    if (const char* compression_mode = getEnv("SCRATCHBIRD_COMPRESSION")) {
+        bool compression_enabled = false;
+        if (parseCompressionMode(compression_mode, compression_enabled)) {
+            config.enable_compression = compression_enabled;
+        }
     }
     if (const char* compression = getEnv("SCRATCHBIRD_ENABLE_COMPRESSION")) {
         config.enable_compression = (std::string(compression) == "1" ||

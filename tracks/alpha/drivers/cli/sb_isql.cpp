@@ -109,6 +109,17 @@ struct IsqlConfig {
     std::string manager_client_intent = "native_v3";
     std::string manager_client_flags;
     std::string manager_auth_fast_path;
+    std::string connect_client_flags = "256";
+    std::string auth_method_id;
+    std::string auth_method_payload;
+    std::string auth_payload_json;
+    std::string auth_payload_b64;
+    std::string auth_provider_profile;
+    std::string auth_required_methods;
+    std::string auth_forbidden_methods;
+    std::string auth_require_channel_binding;
+    std::string workload_identity_token;
+    std::string proxy_principal_assertion;
     std::string ssl_mode;
     std::vector<std::pair<std::string, std::string>> conn_options;
 
@@ -2974,6 +2985,17 @@ void printUsage(const char* program) {
     std::cout << "      --manager-auth-token=<token>  Manager auth token\n";
     std::cout << "      --manager-user=<name> Manager user (optional)\n";
     std::cout << "      --manager-db=<name>   Manager target database\n";
+    std::cout << "      --client-flags=<n>    Startup client flags (default: 256)\n";
+    std::cout << "      --auth-method-id=<id> Auth plugin method id\n";
+    std::cout << "      --auth-method-payload=<v> Auth plugin opaque payload\n";
+    std::cout << "      --auth-payload-json=<j> Auth plugin JSON payload\n";
+    std::cout << "      --auth-payload-b64=<b64> Auth plugin base64 payload\n";
+    std::cout << "      --auth-provider-profile=<p> Auth provider profile\n";
+    std::cout << "      --auth-required-methods=<csv> Required auth methods\n";
+    std::cout << "      --auth-forbidden-methods=<csv> Forbidden auth methods\n";
+    std::cout << "      --auth-require-channel-binding=<bool> Require channel binding\n";
+    std::cout << "      --workload-identity-token=<tok> Workload identity token\n";
+    std::cout << "      --proxy-principal-assertion=<tok> Proxy principal assertion\n";
     std::cout << "      --sslmode=<mode>      disable|allow|prefer|require|verify-ca|verify-full\n";
     std::cout << "      --conn-opt key=value  Extra connection option (repeatable)\n";
     std::cout << "  -c, --command=<sql>       Execute single command and exit\n";
@@ -3165,6 +3187,17 @@ std::string buildConnectionTarget(const std::string& database_override) {
     appendConnParam(params, "manager_client_intent", g_config.manager_client_intent);
     appendConnParam(params, "manager_client_flags", g_config.manager_client_flags);
     appendConnParam(params, "manager_auth_fast_path", g_config.manager_auth_fast_path);
+    appendConnParam(params, "client_flags", g_config.connect_client_flags);
+    appendConnParam(params, "auth_method_id", g_config.auth_method_id);
+    appendConnParam(params, "auth_method_payload", g_config.auth_method_payload);
+    appendConnParam(params, "auth_payload_json", g_config.auth_payload_json);
+    appendConnParam(params, "auth_payload_b64", g_config.auth_payload_b64);
+    appendConnParam(params, "auth_provider_profile", g_config.auth_provider_profile);
+    appendConnParam(params, "auth_required_methods", g_config.auth_required_methods);
+    appendConnParam(params, "auth_forbidden_methods", g_config.auth_forbidden_methods);
+    appendConnParam(params, "auth_require_channel_binding", g_config.auth_require_channel_binding);
+    appendConnParam(params, "workload_identity_token", g_config.workload_identity_token);
+    appendConnParam(params, "proxy_principal_assertion", g_config.proxy_principal_assertion);
     appendConnParam(params, "sslmode", g_config.ssl_mode);
 
     for (const auto& kv : g_config.conn_options) {
@@ -3241,6 +3274,50 @@ bool parseArgs(int argc, char* argv[]) {
             g_config.manager_database = argv[++i];
         } else if (arg.rfind("--manager-db=", 0) == 0) {
             g_config.manager_database = arg.substr(13);
+        } else if (arg == "--client-flags" && i + 1 < argc) {
+            g_config.connect_client_flags = argv[++i];
+        } else if (arg.rfind("--client-flags=", 0) == 0) {
+            g_config.connect_client_flags = arg.substr(15);
+        } else if (arg == "--auth-method-id" && i + 1 < argc) {
+            g_config.auth_method_id = argv[++i];
+        } else if (arg.rfind("--auth-method-id=", 0) == 0) {
+            g_config.auth_method_id = arg.substr(17);
+        } else if (arg == "--auth-method-payload" && i + 1 < argc) {
+            g_config.auth_method_payload = argv[++i];
+        } else if (arg.rfind("--auth-method-payload=", 0) == 0) {
+            g_config.auth_method_payload = arg.substr(22);
+        } else if (arg == "--auth-payload-json" && i + 1 < argc) {
+            g_config.auth_payload_json = argv[++i];
+        } else if (arg.rfind("--auth-payload-json=", 0) == 0) {
+            g_config.auth_payload_json = arg.substr(20);
+        } else if (arg == "--auth-payload-b64" && i + 1 < argc) {
+            g_config.auth_payload_b64 = argv[++i];
+        } else if (arg.rfind("--auth-payload-b64=", 0) == 0) {
+            g_config.auth_payload_b64 = arg.substr(19);
+        } else if (arg == "--auth-provider-profile" && i + 1 < argc) {
+            g_config.auth_provider_profile = argv[++i];
+        } else if (arg.rfind("--auth-provider-profile=", 0) == 0) {
+            g_config.auth_provider_profile = arg.substr(24);
+        } else if (arg == "--auth-required-methods" && i + 1 < argc) {
+            g_config.auth_required_methods = argv[++i];
+        } else if (arg.rfind("--auth-required-methods=", 0) == 0) {
+            g_config.auth_required_methods = arg.substr(24);
+        } else if (arg == "--auth-forbidden-methods" && i + 1 < argc) {
+            g_config.auth_forbidden_methods = argv[++i];
+        } else if (arg.rfind("--auth-forbidden-methods=", 0) == 0) {
+            g_config.auth_forbidden_methods = arg.substr(25);
+        } else if (arg == "--auth-require-channel-binding" && i + 1 < argc) {
+            g_config.auth_require_channel_binding = argv[++i];
+        } else if (arg.rfind("--auth-require-channel-binding=", 0) == 0) {
+            g_config.auth_require_channel_binding = arg.substr(31);
+        } else if (arg == "--workload-identity-token" && i + 1 < argc) {
+            g_config.workload_identity_token = argv[++i];
+        } else if (arg.rfind("--workload-identity-token=", 0) == 0) {
+            g_config.workload_identity_token = arg.substr(26);
+        } else if (arg == "--proxy-principal-assertion" && i + 1 < argc) {
+            g_config.proxy_principal_assertion = argv[++i];
+        } else if (arg.rfind("--proxy-principal-assertion=", 0) == 0) {
+            g_config.proxy_principal_assertion = arg.substr(28);
         } else if (arg == "--manager-profile" && i + 1 < argc) {
             g_config.manager_connection_profile = argv[++i];
         } else if (arg.rfind("--manager-profile=", 0) == 0) {

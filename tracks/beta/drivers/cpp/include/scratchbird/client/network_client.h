@@ -18,18 +18,15 @@
 #include "scratchbird/network/network.h"
 #include "scratchbird/protocol/sbwp_protocol.h"
 #include "scratchbird/security/tls_config.h"
-#include "scratchbird/server/ipc_server.h"
 
 namespace scratchbird {
 namespace client {
 
 struct NetworkClientConfig {
-    // embedded | local_ipc | inet_listener | managed
+    // inet_listener | managed
     std::string transport_mode{"inet_listener"};
     std::string host{"127.0.0.1"};
     uint16_t port{network::DEFAULT_NATIVE_PORT};
-    server::IPCMethod ipc_method{server::IPCMethod::AUTO};
-    std::string ipc_path;
 
     std::string protocol{"native"};
     std::string front_door_mode{"direct"};  // direct | manager_proxy
@@ -73,6 +70,7 @@ struct NetworkClientConfig {
     std::string workload_identity_token;
     std::string proxy_principal_assertion;
     bool allow_password_fallback{false};
+    bool binary_transfer{true};
     bool enable_compression{false};
 };
 
@@ -136,6 +134,17 @@ private:
 
 class NetworkClient {
 public:
+    struct TransactionOptions {
+        uint16_t flags{0};
+        uint8_t conflict_action{0};
+        uint8_t autocommit_mode{0};
+        uint8_t isolation_level{0};
+        uint8_t access_mode{0};
+        uint8_t deferrable{0};
+        uint8_t wait_mode{0};
+        uint32_t timeout_ms{0};
+    };
+
     NetworkClient();
     ~NetworkClient();
 
@@ -220,9 +229,17 @@ public:
     bool takeLastQueryPlan(protocol::QueryPlan& out);
     bool takeLastSblrCompiled(protocol::SblrCompiled& out);
 
+    core::Status beginTransaction(const TransactionOptions& options,
+                                  core::ErrorContext* ctx = nullptr);
     core::Status beginTransaction(core::ErrorContext* ctx = nullptr);
     core::Status commit(core::ErrorContext* ctx = nullptr);
     core::Status rollback(core::ErrorContext* ctx = nullptr);
+    core::Status savepoint(const std::string& name,
+                           core::ErrorContext* ctx = nullptr);
+    core::Status releaseSavepoint(const std::string& name,
+                                  core::ErrorContext* ctx = nullptr);
+    core::Status rollbackToSavepoint(const std::string& name,
+                                     core::ErrorContext* ctx = nullptr);
 
     void setCopyInputStream(std::istream* in) { copy_input_stream_ = in; }
     void setCopyOutputStream(std::ostream* out) { copy_output_stream_ = out; }

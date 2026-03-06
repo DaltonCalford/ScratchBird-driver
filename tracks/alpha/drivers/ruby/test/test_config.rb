@@ -61,4 +61,32 @@ class TestConfig < Minitest::Test
       Scratchbird::Config.parse("scratchbird://localhost:3092/db?front_door_mode=invalid")
     end
   end
+
+  def test_parse_auth_plugin_and_pinning_params
+    cfg = Scratchbird::Config.parse(
+      "scratchbird://user:pass@localhost:3092/mydb" \
+      "?connect_client_flags=257" \
+      "&auth_method_id=scratchbird.auth.proxy_assertion" \
+      "&auth_method_payload=opaque" \
+      "&auth_payload_json=%7B%22subject%22%3A%22alice%22%7D" \
+      "&auth_payload_b64=YWJj" \
+      "&auth_provider_profile=corp_primary" \
+      "&auth_required_methods=SCRAM_SHA_256%2CTOKEN" \
+      "&auth_forbidden_methods=MD5" \
+      "&auth_require_channel_binding=true" \
+      "&workload_identity_token=jwt-token" \
+      "&proxy_principal_assertion=signed-assertion"
+    )
+    assert_equal 257, cfg.connect_client_flags
+    assert_equal "scratchbird.auth.proxy_assertion", cfg.auth_method_id
+    assert_equal "opaque", cfg.auth_method_payload
+    assert_equal "{\"subject\":\"alice\"}", cfg.auth_payload_json
+    assert_equal "YWJj", cfg.auth_payload_b64
+    assert_equal "corp_primary", cfg.auth_provider_profile
+    assert_equal "SCRAM_SHA_256,TOKEN", cfg.auth_required_methods
+    assert_equal "MD5", cfg.auth_forbidden_methods
+    assert_equal true, cfg.auth_require_channel_binding
+    assert_equal "jwt-token", cfg.workload_identity_token
+    assert_equal "signed-assertion", cfg.proxy_principal_assertion
+  end
 end

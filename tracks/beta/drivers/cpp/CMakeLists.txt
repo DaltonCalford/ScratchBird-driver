@@ -9,6 +9,7 @@ add_library(scratchbird_client
     src/leak_detector.cpp
     src/telemetry.cpp
     src/statement_cache.cpp
+    src/pool.cpp
     src/driver_config.cpp
     src/network_client.cpp
     src/protocol/sbwp_protocol.cpp

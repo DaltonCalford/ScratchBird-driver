@@ -3278,6 +3278,32 @@ SQLRETURN OdbcConnection::parseConnectionString(const std::string& conn_str) {
         } else if (key == "manager_auth_fast_path" || key == "mcp_auth_fast_path") {
             const auto lower = toLower(value);
             params_.manager_auth_fast_path = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "client_flags" || key == "connect_client_flags") {
+            try {
+                params_.connect_client_flags = static_cast<uint16_t>(std::stoul(value));
+            } catch (...) {
+            }
+        } else if (key == "auth_method_id" || key == "authmethodid") {
+            params_.auth_method_id = value;
+        } else if (key == "auth_method_payload" || key == "authmethodpayload") {
+            params_.auth_method_payload = value;
+        } else if (key == "auth_payload_json" || key == "authpayloadjson") {
+            params_.auth_payload_json = value;
+        } else if (key == "auth_payload_b64" || key == "authpayloadb64") {
+            params_.auth_payload_b64 = value;
+        } else if (key == "auth_provider_profile" || key == "authproviderprofile") {
+            params_.auth_provider_profile = value;
+        } else if (key == "auth_required_methods" || key == "authrequiredmethods") {
+            params_.auth_required_methods = value;
+        } else if (key == "auth_forbidden_methods" || key == "authforbiddenmethods") {
+            params_.auth_forbidden_methods = value;
+        } else if (key == "auth_require_channel_binding" || key == "authrequirechannelbinding") {
+            const auto lower = toLower(value);
+            params_.auth_require_channel_binding = (lower == "true" || lower == "1" || lower == "yes" || lower == "on");
+        } else if (key == "workload_identity_token" || key == "workloadidentitytoken") {
+            params_.workload_identity_token = value;
+        } else if (key == "proxy_principal_assertion" || key == "proxyprincipalassertion" || key == "proxy_assertion") {
+            params_.proxy_principal_assertion = value;
         } else if (key == "timeout" || key == "connecttimeout") {
             try {
                 params_.connect_timeout = static_cast<uint32_t>(std::stoul(value));
@@ -3490,6 +3516,104 @@ SQLRETURN OdbcConnection::applyDsnConfig(const std::string& dsn_name) {
     if (!manager_fast_path.empty()) {
         params_.manager_auth_fast_path =
             (manager_fast_path == "true" || manager_fast_path == "1" || manager_fast_path == "yes");
+    }
+
+    auto client_flags = getEntry("client_flags");
+    if (client_flags.empty()) {
+        client_flags = getEntry("connect_client_flags");
+    }
+    if (!client_flags.empty()) {
+        try {
+            params_.connect_client_flags = static_cast<uint16_t>(std::stoul(client_flags));
+        } catch (...) {
+        }
+    }
+
+    auto auth_method_id = getEntry("auth_method_id");
+    if (auth_method_id.empty()) {
+        auth_method_id = getEntry("authmethodid");
+    }
+    if (!auth_method_id.empty()) {
+        params_.auth_method_id = auth_method_id;
+    }
+
+    auto auth_method_payload = getEntry("auth_method_payload");
+    if (auth_method_payload.empty()) {
+        auth_method_payload = getEntry("authmethodpayload");
+    }
+    if (!auth_method_payload.empty()) {
+        params_.auth_method_payload = auth_method_payload;
+    }
+
+    auto auth_payload_json = getEntry("auth_payload_json");
+    if (auth_payload_json.empty()) {
+        auth_payload_json = getEntry("authpayloadjson");
+    }
+    if (!auth_payload_json.empty()) {
+        params_.auth_payload_json = auth_payload_json;
+    }
+
+    auto auth_payload_b64 = getEntry("auth_payload_b64");
+    if (auth_payload_b64.empty()) {
+        auth_payload_b64 = getEntry("authpayloadb64");
+    }
+    if (!auth_payload_b64.empty()) {
+        params_.auth_payload_b64 = auth_payload_b64;
+    }
+
+    auto auth_provider_profile = getEntry("auth_provider_profile");
+    if (auth_provider_profile.empty()) {
+        auth_provider_profile = getEntry("authproviderprofile");
+    }
+    if (!auth_provider_profile.empty()) {
+        params_.auth_provider_profile = auth_provider_profile;
+    }
+
+    auto auth_required_methods = getEntry("auth_required_methods");
+    if (auth_required_methods.empty()) {
+        auth_required_methods = getEntry("authrequiredmethods");
+    }
+    if (!auth_required_methods.empty()) {
+        params_.auth_required_methods = auth_required_methods;
+    }
+
+    auto auth_forbidden_methods = getEntry("auth_forbidden_methods");
+    if (auth_forbidden_methods.empty()) {
+        auth_forbidden_methods = getEntry("authforbiddenmethods");
+    }
+    if (!auth_forbidden_methods.empty()) {
+        params_.auth_forbidden_methods = auth_forbidden_methods;
+    }
+
+    auto auth_require_channel_binding = toLower(getEntry("auth_require_channel_binding"));
+    if (auth_require_channel_binding.empty()) {
+        auth_require_channel_binding = toLower(getEntry("authrequirechannelbinding"));
+    }
+    if (!auth_require_channel_binding.empty()) {
+        params_.auth_require_channel_binding =
+            (auth_require_channel_binding == "true" ||
+             auth_require_channel_binding == "1" ||
+             auth_require_channel_binding == "yes" ||
+             auth_require_channel_binding == "on");
+    }
+
+    auto workload_identity_token = getEntry("workload_identity_token");
+    if (workload_identity_token.empty()) {
+        workload_identity_token = getEntry("workloadidentitytoken");
+    }
+    if (!workload_identity_token.empty()) {
+        params_.workload_identity_token = workload_identity_token;
+    }
+
+    auto proxy_principal_assertion = getEntry("proxy_principal_assertion");
+    if (proxy_principal_assertion.empty()) {
+        proxy_principal_assertion = getEntry("proxyprincipalassertion");
+    }
+    if (proxy_principal_assertion.empty()) {
+        proxy_principal_assertion = getEntry("proxy_assertion");
+    }
+    if (!proxy_principal_assertion.empty()) {
+        params_.proxy_principal_assertion = proxy_principal_assertion;
     }
 
     auto timeout = getEntry("timeout");
