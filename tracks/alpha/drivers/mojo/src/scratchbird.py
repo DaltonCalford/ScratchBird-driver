@@ -1067,6 +1067,19 @@ def _static_savepoint_list(conn: Any) -> List[str]:
     return savepoints
 
 
+def _result_rowcount_or_len(result: Any) -> int:
+    rowcount = getattr(result, "rowcount", None)
+    if isinstance(rowcount, int):
+        return rowcount
+    rows = getattr(result, "rows", None)
+    if rows is None:
+        return 0
+    try:
+        return len(rows)
+    except TypeError:
+        return 0
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -1478,13 +1491,7 @@ class ScratchBirdConnection:
     @staticmethod
     def query_metadata_rows(conn: Any, collection_name: Optional[str] = None) -> int:
         result = ScratchBirdConnection.query_metadata(conn, collection_name)
-        rowcount = getattr(result, "rowcount", None)
-        if isinstance(rowcount, int):
-            return rowcount
-        rows = getattr(result, "rows", None)
-        if rows is None:
-            return 0
-        return len(rows)
+        return _result_rowcount_or_len(result)
 
     @staticmethod
     def query_metadata_restricted(
@@ -1513,13 +1520,7 @@ class ScratchBirdConnection:
             restriction_key,
             restriction_value,
         )
-        rowcount = getattr(result, "rowcount", None)
-        if isinstance(rowcount, int):
-            return rowcount
-        rows = getattr(result, "rows", None)
-        if rows is None:
-            return 0
-        return len(rows)
+        return _result_rowcount_or_len(result)
 
     @staticmethod
     def query_metadata_restricted_multi(
@@ -1544,13 +1545,7 @@ class ScratchBirdConnection:
             collection_name,
             restrictions,
         )
-        rowcount = getattr(result, "rowcount", None)
-        if isinstance(rowcount, int):
-            return rowcount
-        rows = getattr(result, "rows", None)
-        if rows is None:
-            return 0
-        return len(rows)
+        return _result_rowcount_or_len(result)
 
     @staticmethod
     def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 import struct
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -557,6 +558,45 @@ def test_static_closed_connection_guards() -> None:
     )
 
 
+def test_static_metadata_rowcount_fallbacks() -> None:
+    conn = QueryHarness()
+
+    conn.result = SimpleNamespace(rowcount="bad", rows=[[1], [2], [3]])
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 3,
+        "query_metadata_rows should fall back to len(rows) when rowcount is invalid",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows=[[1], [2]])
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
+            conn,
+            "tables",
+            "schema",
+            "public",
+        )
+        == 2,
+        "query_metadata_rows_restricted should fall back to len(rows) when rowcount missing",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows=(["a"], ["b"], ["c"], ["d"]))
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows_restricted_multi(
+            conn,
+            "tables",
+            {"schema": "public"},
+        )
+        == 4,
+        "query_metadata_rows_restricted_multi should support tuple row fallback",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None)
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 0,
+        "query_metadata_rows should return 0 when rows are missing",
+    )
+
+
 def main() -> None:
     test_begin_maps_kwargs_to_payload_flags()
     test_begin_rejects_nested_transaction()
@@ -578,6 +618,7 @@ def main() -> None:
     test_close_is_idempotent_for_connection_and_stream()
     test_shim_closed_connection_guards()
     test_static_closed_connection_guards()
+    test_static_metadata_rowcount_fallbacks()
     print("Mojo TXN/EXEC parity tests OK")
 
 
