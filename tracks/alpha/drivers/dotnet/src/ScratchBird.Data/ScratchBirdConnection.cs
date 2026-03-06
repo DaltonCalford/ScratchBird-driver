@@ -30,6 +30,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private ScratchBirdTransaction? _activeTransaction;
     private bool _disposed;
     private TelemetryCollector _telemetry = new();
+    private CircuitBreaker _circuitBreaker = new();
     private readonly object _notificationSync = new();
     private Queue<ScratchBirdNotification>? _notificationQueue;
     private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
@@ -55,6 +56,7 @@ public sealed class ScratchBirdConnection : DbConnection
             _connectionString = value;
             _config = ScratchBirdConfig.FromConnectionString(value);
             _telemetry = new TelemetryCollector(BuildTelemetryOptions(_config));
+            _circuitBreaker = new CircuitBreaker(BuildCircuitBreakerOptions(_config));
         }
     }
 
@@ -329,7 +331,8 @@ public sealed class ScratchBirdConnection : DbConnection
             _config.Pooling,
             GetPoolDiagnostics(),
             CreateQueryPlanSummary(client?.LastPlan),
-            CreateSblrSummary(client?.LastSblr));
+            CreateSblrSummary(client?.LastSblr),
+            MapCircuitBreakerSummary(_circuitBreaker.Snapshot()));
     }
 
     public ConnectionTelemetrySummary GetTelemetrySummary()
@@ -352,6 +355,11 @@ public sealed class ScratchBirdConnection : DbConnection
         return _telemetry.ExportPrometheusMetrics();
     }
 
+    public CircuitBreakerSummary GetCircuitBreakerSummary()
+    {
+        return MapCircuitBreakerSummary(_circuitBreaker.Snapshot());
+    }
+
     public PoolDiagnosticsSummary? GetPoolDiagnostics()
     {
         return MapPoolDiagnostics(ProtocolClientPool.GetStats(_config));
@@ -370,6 +378,12 @@ public sealed class ScratchBirdConnection : DbConnection
 
     private T TrackOperation<T>(string operation, Func<T> action)
     {
+        if (!_circuitBreaker.AllowRequest())
+        {
+            RecordTelemetry(operation, TimeSpan.Zero, success: false);
+            throw new ScratchBirdConnectionException("Circuit breaker is OPEN", "08006");
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var success = false;
         try
@@ -378,8 +392,18 @@ public sealed class ScratchBirdConnection : DbConnection
             success = true;
             return result;
         }
+        catch
+        {
+            _circuitBreaker.RecordFailure();
+            throw;
+        }
         finally
         {
+            if (success)
+            {
+                _circuitBreaker.RecordSuccess();
+            }
+
             RecordTelemetry(operation, stopwatch.Elapsed, success);
         }
     }
@@ -1246,6 +1270,21 @@ public sealed class ScratchBirdConnection : DbConnection
             CloneBytes(value.Bytecode));
     }
 
+    private static CircuitBreakerSummary MapCircuitBreakerSummary(CircuitBreakerSnapshot snapshot)
+    {
+        return new CircuitBreakerSummary(
+            snapshot.Enabled,
+            snapshot.State,
+            snapshot.FailureCount,
+            snapshot.SuccessCount,
+            snapshot.HalfOpenRequests,
+            snapshot.FailureThreshold,
+            snapshot.SuccessThreshold,
+            snapshot.HalfOpenMaxRequests,
+            snapshot.RecoveryTimeoutMs,
+            snapshot.LastFailureUtc);
+    }
+
     private ProtocolClient EnsureNotificationBridge()
     {
         lock (_notificationSync)
@@ -1454,6 +1493,15 @@ public sealed class ScratchBirdConnection : DbConnection
             SlowOperationMaxEntries: config.TelemetrySlowOperationMaxEntries,
             SampleRate: config.TelemetrySampleRate,
             SanitizeStatements: config.TelemetrySanitizeStatements);
+    }
+
+    private static CircuitBreakerOptions BuildCircuitBreakerOptions(ScratchBirdConfig config)
+    {
+        return new CircuitBreakerOptions(
+            FailureThreshold: config.CircuitBreakerFailureThreshold,
+            RecoveryTimeoutMs: config.CircuitBreakerRecoveryTimeoutMs,
+            SuccessThreshold: config.CircuitBreakerSuccessThreshold,
+            HalfOpenMaxRequests: config.CircuitBreakerHalfOpenMaxRequests);
     }
 
     private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)

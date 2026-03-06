@@ -114,6 +114,30 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["PoolAcquireTimeoutMs"] = value;
     }
 
+    public int CircuitBreakerFailureThreshold
+    {
+        get => GetInt("cb_failure_threshold", 0);
+        set => this["cb_failure_threshold"] = value;
+    }
+
+    public int CircuitBreakerRecoveryTimeoutMs
+    {
+        get => GetInt("cb_recovery_timeout_ms", 30000);
+        set => this["cb_recovery_timeout_ms"] = value;
+    }
+
+    public int CircuitBreakerSuccessThreshold
+    {
+        get => GetInt("cb_success_threshold", 2);
+        set => this["cb_success_threshold"] = value;
+    }
+
+    public int CircuitBreakerHalfOpenMaxRequests
+    {
+        get => GetInt("cb_half_open_max_requests", 1);
+        set => this["cb_half_open_max_requests"] = value;
+    }
+
     public bool Enlist
     {
         get => GetBool("Enlist", true);

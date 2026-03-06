@@ -55,8 +55,11 @@ owned by `ScratchBirdConnection`:
   - sanitized endpoint/mode fields (`FrontDoorMode`, `Protocol`, `Host`, `Port`, `Database`)
   - optional pooled counters (`PoolDiagnosticsSummary`) when pooling is enabled and a pool exists
   - latest server diagnostics payloads (`QueryPlanSummary`, `SblrSummary`) when available
+  - current circuit-breaker status (`CircuitBreakerSummary`)
 - `ScratchBirdConnection.GetPoolDiagnostics()` returns pooled counters for the current connection configuration.
 - `ScratchBirdConnection.GetPoolDiagnostics(connectionString)` provides static access to pool counters without opening a connection.
+- `ScratchBirdConnection.GetCircuitBreakerSummary()` returns the live circuit-breaker snapshot.
+- Circuit-breaker DSN controls: `cb_failure_threshold`, `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests` (disabled when failure threshold is `0`).
 
 ## Telemetry
 

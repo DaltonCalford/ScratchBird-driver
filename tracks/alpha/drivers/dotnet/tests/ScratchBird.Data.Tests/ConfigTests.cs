@@ -114,6 +114,28 @@ public class ConfigTests
     }
 
     [Fact]
+    public void ParseCircuitBreakerOptions()
+    {
+        var uriCfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/mydb" +
+            "?cb_failure_threshold=3&cb_recovery_timeout_ms=5000&cb_success_threshold=2&cb_half_open_max_requests=4");
+
+        Assert.Equal(3, uriCfg.CircuitBreakerFailureThreshold);
+        Assert.Equal(5000, uriCfg.CircuitBreakerRecoveryTimeoutMs);
+        Assert.Equal(2, uriCfg.CircuitBreakerSuccessThreshold);
+        Assert.Equal(4, uriCfg.CircuitBreakerHalfOpenMaxRequests);
+
+        var kvCfg = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=mydb;CircuitBreakerFailureThreshold=5;" +
+            "CircuitBreakerRecoveryTimeoutMs=7000;CircuitBreakerSuccessThreshold=3;CircuitBreakerHalfOpenMaxRequests=2");
+
+        Assert.Equal(5, kvCfg.CircuitBreakerFailureThreshold);
+        Assert.Equal(7000, kvCfg.CircuitBreakerRecoveryTimeoutMs);
+        Assert.Equal(3, kvCfg.CircuitBreakerSuccessThreshold);
+        Assert.Equal(2, kvCfg.CircuitBreakerHalfOpenMaxRequests);
+    }
+
+    [Fact]
     public void ParseMetadataExpandSchemaParentsAliases()
     {
         var aliases = new[]

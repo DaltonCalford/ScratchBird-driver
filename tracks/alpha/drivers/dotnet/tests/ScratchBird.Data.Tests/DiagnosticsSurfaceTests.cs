@@ -32,6 +32,9 @@ public class DiagnosticsSurfaceTests
         Assert.Null(diagnostics.Pool);
         Assert.Null(diagnostics.LastPlan);
         Assert.Null(diagnostics.LastSblr);
+        Assert.NotNull(diagnostics.CircuitBreaker);
+        Assert.False(diagnostics.CircuitBreaker.Enabled);
+        Assert.Equal(CircuitBreakerState.Closed, diagnostics.CircuitBreaker.State);
     }
 
     [Fact]

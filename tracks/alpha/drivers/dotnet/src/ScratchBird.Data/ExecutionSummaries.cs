@@ -52,6 +52,25 @@ public sealed record SblrSummary(
     uint Version,
     byte[] Bytecode);
 
+public enum CircuitBreakerState
+{
+    Closed,
+    Open,
+    HalfOpen
+}
+
+public sealed record CircuitBreakerSummary(
+    bool Enabled,
+    CircuitBreakerState State,
+    int FailureCount,
+    int SuccessCount,
+    int HalfOpenRequests,
+    int FailureThreshold,
+    int SuccessThreshold,
+    int HalfOpenMaxRequests,
+    int RecoveryTimeoutMs,
+    DateTimeOffset? LastFailureUtc);
+
 public sealed record ScratchBirdNotification(
     uint ProcessId,
     string Channel,
@@ -95,4 +114,5 @@ public sealed record ConnectionDiagnosticsSummary(
     bool Pooling,
     PoolDiagnosticsSummary? Pool,
     QueryPlanSummary? LastPlan,
-    SblrSummary? LastSblr);
+    SblrSummary? LastSblr,
+    CircuitBreakerSummary CircuitBreaker);

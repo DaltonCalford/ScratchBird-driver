@@ -49,6 +49,10 @@ public sealed class ScratchBirdConfig
     public int MaxPoolSize { get; set; } = 100;
     public int ConnectionLifetime { get; set; } = 0;
     public int PoolAcquireTimeoutMs { get; set; } = 250;
+    public int CircuitBreakerFailureThreshold { get; set; } = 0;
+    public int CircuitBreakerRecoveryTimeoutMs { get; set; } = 30000;
+    public int CircuitBreakerSuccessThreshold { get; set; } = 2;
+    public int CircuitBreakerHalfOpenMaxRequests { get; set; } = 1;
     public string ManagerAuthToken { get; set; } = string.Empty;
     public string ManagerUsername { get; set; } = string.Empty;
     public string ManagerDatabase { get; set; } = string.Empty;
@@ -366,6 +370,30 @@ internal static class DsnParser
             case "pooling_acquire_timeout_ms":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var acquireTimeoutMs))
                     cfg.PoolAcquireTimeoutMs = Math.Max(0, acquireTimeoutMs);
+                break;
+            case "cb_failure_threshold":
+            case "circuitbreakerfailurethreshold":
+            case "circuit_breaker_failure_threshold":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cbFailureThreshold))
+                    cfg.CircuitBreakerFailureThreshold = Math.Max(0, cbFailureThreshold);
+                break;
+            case "cb_recovery_timeout_ms":
+            case "circuitbreakerrecoverytimeoutms":
+            case "circuit_breaker_recovery_timeout_ms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cbRecoveryTimeoutMs))
+                    cfg.CircuitBreakerRecoveryTimeoutMs = Math.Max(1, cbRecoveryTimeoutMs);
+                break;
+            case "cb_success_threshold":
+            case "circuitbreakersuccessthreshold":
+            case "circuit_breaker_success_threshold":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cbSuccessThreshold))
+                    cfg.CircuitBreakerSuccessThreshold = Math.Max(1, cbSuccessThreshold);
+                break;
+            case "cb_half_open_max_requests":
+            case "circuitbreakerhalfopenmaxrequests":
+            case "circuit_breaker_half_open_max_requests":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cbHalfOpenMax))
+                    cfg.CircuitBreakerHalfOpenMaxRequests = Math.Max(1, cbHalfOpenMax);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":
