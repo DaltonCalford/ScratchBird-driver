@@ -121,6 +121,7 @@ Legend:
 - **Mojo lane:** Added shared metadata row extraction fallback semantics (`rows` list/tuple normalization, unsized rows -> `[]`) for static and instance `get_schema` helper parity.
 - **Mojo lane:** Aligned static and instance `ddl_editor_schema_payload` restriction routes with shared metadata rows fallback semantics (tuple normalization and unsized-row `[]` fallback).
 - **Mojo lane:** Hardened shared metadata rowcount fallback semantics to treat boolean `rowcount` values as invalid, falling back to `len(rows)`/`0` with deterministic static+instance parity assertions.
+- **Mojo lane:** Hardened shared metadata fallback semantics to reject mapping/text `rows` payloads across rowcount, `get_schema`, and `ddl_editor_schema_payload` paths (deterministic empty fallback).
 
 ---
 

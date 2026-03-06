@@ -1071,13 +1071,7 @@ def _result_rowcount_or_len(result: Any) -> int:
     rowcount = getattr(result, "rowcount", None)
     if isinstance(rowcount, int) and not isinstance(rowcount, bool):
         return rowcount
-    rows = getattr(result, "rows", None)
-    if rows is None:
-        return 0
-    try:
-        return len(rows)
-    except TypeError:
-        return 0
+    return len(_result_rows_or_empty(result))
 
 
 def _result_rows_or_empty(result: Any) -> List[Any]:
@@ -1086,6 +1080,10 @@ def _result_rows_or_empty(result: Any) -> List[Any]:
         return []
     if isinstance(rows, list):
         return rows
+    if isinstance(rows, (str, bytes, bytearray)):
+        return []
+    if isinstance(rows, Mapping):
+        return []
     try:
         return list(rows)
     except TypeError:

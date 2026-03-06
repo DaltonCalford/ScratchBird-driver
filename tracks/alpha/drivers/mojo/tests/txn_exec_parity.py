@@ -608,6 +608,18 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should return 0 when rows are unsized",
     )
 
+    conn.result = SimpleNamespace(rowcount=None, rows={"schema_name": "users"})
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 0,
+        "query_metadata_rows should return 0 when rows are mappings",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows="not rows")
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 0,
+        "query_metadata_rows should return 0 when rows are text",
+    )
+
     conn.result = SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
     _require(
         scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [["x"], ["y"]],
@@ -618,6 +630,18 @@ def test_static_metadata_rowcount_fallbacks() -> None:
     _require(
         scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [],
         "get_schema should return [] when rows are unsized",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows={"schema_name": "users"})
+    _require(
+        scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [],
+        "get_schema should return [] when rows are mappings",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows="not rows")
+    _require(
+        scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [],
+        "get_schema should return [] when rows are text",
     )
 
 
@@ -664,6 +688,18 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
             "instance query_metadata_rows should return 0 when rows are unsized",
         )
 
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows={"schema_name": "users"})
+        _require(
+            conn.query_metadata_rows("tables") == 0,
+            "instance query_metadata_rows should return 0 when rows are mappings",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows="not rows")
+        _require(
+            conn.query_metadata_rows("tables") == 0,
+            "instance query_metadata_rows should return 0 when rows are text",
+        )
+
         conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
         _require(
             conn.get_schema("schemas") == [["x"], ["y"]],
@@ -674,6 +710,18 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         _require(
             conn.get_schema("schemas") == [],
             "instance get_schema should return [] when rows are unsized",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows={"schema_name": "users"})
+        _require(
+            conn.get_schema("schemas") == [],
+            "instance get_schema should return [] when rows are mappings",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows="not rows")
+        _require(
+            conn.get_schema("schemas") == [],
+            "instance get_schema should return [] when rows are text",
         )
     finally:
         conn.close()
@@ -708,6 +756,22 @@ def test_ddl_editor_payload_rows_fallbacks() -> None:
     )
     _require(payload_unsized["schemaPaths"] == [], "static ddl payload should fallback to empty rows for unsized payload")
 
+    static_conn.result = SimpleNamespace(rowcount=None, rows={"schema_name": "users.alice.dev"})
+    payload_mapping = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        static_conn,
+        "users.%",
+        False,
+    )
+    _require(payload_mapping["schemaPaths"] == [], "static ddl payload should fallback to empty rows for mapping payload")
+
+    static_conn.result = SimpleNamespace(rowcount=None, rows="users.alice.dev")
+    payload_text = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        static_conn,
+        "users.%",
+        False,
+    )
+    _require(payload_text["schemaPaths"] == [], "static ddl payload should fallback to empty rows for text payload")
+
     instance_conn = scratchbird.connect(_shim_cfg())
     try:
         instance_conn.query_metadata_restricted_multi = (
@@ -736,6 +800,30 @@ def test_ddl_editor_payload_rows_fallbacks() -> None:
         _require(
             instance_payload_unsized["schemaPaths"] == [],
             "instance ddl payload should fallback to empty rows for unsized payload",
+        )
+
+        instance_conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows={"schema_name": "users.alice.dev"},
+            )
+        )
+        instance_payload_mapping = instance_conn.ddl_editor_schema_payload("users.%", False)
+        _require(
+            instance_payload_mapping["schemaPaths"] == [],
+            "instance ddl payload should fallback to empty rows for mapping payload",
+        )
+
+        instance_conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows="users.alice.dev",
+            )
+        )
+        instance_payload_text = instance_conn.ddl_editor_schema_payload("users.%", False)
+        _require(
+            instance_payload_text["schemaPaths"] == [],
+            "instance ddl payload should fallback to empty rows for text payload",
         )
     finally:
         instance_conn.close()
