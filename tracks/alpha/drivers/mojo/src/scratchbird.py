@@ -1069,7 +1069,7 @@ def _static_savepoint_list(conn: Any) -> List[str]:
 
 def _result_rowcount_or_len(result: Any) -> int:
     rowcount = getattr(result, "rowcount", None)
-    if isinstance(rowcount, int):
+    if isinstance(rowcount, int) and not isinstance(rowcount, bool):
         return rowcount
     rows = getattr(result, "rows", None)
     if rows is None:

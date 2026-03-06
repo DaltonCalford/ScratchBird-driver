@@ -567,6 +567,12 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should fall back to len(rows) when rowcount is invalid",
     )
 
+    conn.result = SimpleNamespace(rowcount=True, rows=[[1], [2]])
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 2,
+        "query_metadata_rows should treat boolean rowcount as invalid and fall back to len(rows)",
+    )
+
     conn.result = SimpleNamespace(rowcount=None, rows=[[1], [2]])
     _require(
         scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
@@ -622,6 +628,12 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         _require(
             conn.query_metadata_rows("tables") == 3,
             "instance query_metadata_rows should fall back to len(rows) when rowcount is invalid",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=False, rows=[[1], [2]])
+        _require(
+            conn.query_metadata_rows("tables") == 2,
+            "instance query_metadata_rows should treat boolean rowcount as invalid and fall back to len(rows)",
         )
 
         conn.query_metadata_restricted = (
