@@ -573,6 +573,12 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should treat boolean rowcount as invalid and fall back to len(rows)",
     )
 
+    conn.result = SimpleNamespace(rowcount=-1, rows=[[1], [2], [3], [4]])
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 4,
+        "query_metadata_rows should treat negative rowcount as invalid and fall back to len(rows)",
+    )
+
     conn.result = SimpleNamespace(rowcount=None, rows=[[1], [2]])
     _require(
         scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
@@ -620,6 +626,12 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should return 0 when rows are text",
     )
 
+    conn.result = SimpleNamespace(rowcount=None, rows={("users",), ("public",)})
+    _require(
+        scratchbird.ScratchBirdConnection.query_metadata_rows(conn, "tables") == 0,
+        "query_metadata_rows should return 0 when rows are unsupported iterables",
+    )
+
     conn.result = SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
     _require(
         scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [["x"], ["y"]],
@@ -644,6 +656,12 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "get_schema should return [] when rows are text",
     )
 
+    conn.result = SimpleNamespace(rowcount=None, rows=(row for row in [["x"], ["y"]]))
+    _require(
+        scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [],
+        "get_schema should return [] when rows are unsupported iterables",
+    )
+
 
 def test_instance_metadata_rowcount_fallbacks() -> None:
     conn = scratchbird.connect(_shim_cfg())
@@ -658,6 +676,12 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         _require(
             conn.query_metadata_rows("tables") == 2,
             "instance query_metadata_rows should treat boolean rowcount as invalid and fall back to len(rows)",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=-1, rows=[[1], [2], [3], [4]])
+        _require(
+            conn.query_metadata_rows("tables") == 4,
+            "instance query_metadata_rows should treat negative rowcount as invalid and fall back to len(rows)",
         )
 
         conn.query_metadata_restricted = (
@@ -700,6 +724,15 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
             "instance query_metadata_rows should return 0 when rows are text",
         )
 
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(
+            rowcount=None,
+            rows={("users",), ("public",)},
+        )
+        _require(
+            conn.query_metadata_rows("tables") == 0,
+            "instance query_metadata_rows should return 0 when rows are unsupported iterables",
+        )
+
         conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
         _require(
             conn.get_schema("schemas") == [["x"], ["y"]],
@@ -722,6 +755,15 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         _require(
             conn.get_schema("schemas") == [],
             "instance get_schema should return [] when rows are text",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(
+            rowcount=None,
+            rows=(row for row in [["x"], ["y"]]),
+        )
+        _require(
+            conn.get_schema("schemas") == [],
+            "instance get_schema should return [] when rows are unsupported iterables",
         )
     finally:
         conn.close()
@@ -771,6 +813,17 @@ def test_ddl_editor_payload_rows_fallbacks() -> None:
         False,
     )
     _require(payload_text["schemaPaths"] == [], "static ddl payload should fallback to empty rows for text payload")
+
+    static_conn.result = SimpleNamespace(rowcount=None, rows={("users.alice.dev",), ("users.bob.dev",)})
+    payload_iterable = scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+        static_conn,
+        "users.%",
+        False,
+    )
+    _require(
+        payload_iterable["schemaPaths"] == [],
+        "static ddl payload should fallback to empty rows for unsupported iterables",
+    )
 
     instance_conn = scratchbird.connect(_shim_cfg())
     try:
@@ -824,6 +877,18 @@ def test_ddl_editor_payload_rows_fallbacks() -> None:
         _require(
             instance_payload_text["schemaPaths"] == [],
             "instance ddl payload should fallback to empty rows for text payload",
+        )
+
+        instance_conn.query_metadata_restricted_multi = (
+            lambda collection_name=None, restrictions=None: SimpleNamespace(
+                rowcount=None,
+                rows=(row for row in [["users.alice.dev"], ["users.bob.dev"]]),
+            )
+        )
+        instance_payload_iterable = instance_conn.ddl_editor_schema_payload("users.%", False)
+        _require(
+            instance_payload_iterable["schemaPaths"] == [],
+            "instance ddl payload should fallback to empty rows for unsupported iterables",
         )
     finally:
         instance_conn.close()

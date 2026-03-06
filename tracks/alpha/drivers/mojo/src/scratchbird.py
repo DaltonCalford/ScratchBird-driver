@@ -1069,7 +1069,7 @@ def _static_savepoint_list(conn: Any) -> List[str]:
 
 def _result_rowcount_or_len(result: Any) -> int:
     rowcount = getattr(result, "rowcount", None)
-    if isinstance(rowcount, int) and not isinstance(rowcount, bool):
+    if isinstance(rowcount, int) and not isinstance(rowcount, bool) and rowcount >= 0:
         return rowcount
     return len(_result_rows_or_empty(result))
 
@@ -1080,14 +1080,13 @@ def _result_rows_or_empty(result: Any) -> List[Any]:
         return []
     if isinstance(rows, list):
         return rows
+    if isinstance(rows, tuple):
+        return list(rows)
     if isinstance(rows, (str, bytes, bytearray)):
         return []
     if isinstance(rows, Mapping):
         return []
-    try:
-        return list(rows)
-    except TypeError:
-        return []
+    return []
 
 
 class _ShimStatement:
