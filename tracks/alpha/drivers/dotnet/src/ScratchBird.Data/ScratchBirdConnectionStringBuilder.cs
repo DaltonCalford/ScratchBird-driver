@@ -138,6 +138,24 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["cb_half_open_max_requests"] = value;
     }
 
+    public int KeepaliveIntervalMs
+    {
+        get => GetInt("keepalive_interval_ms", 120000);
+        set => this["keepalive_interval_ms"] = value;
+    }
+
+    public int KeepaliveMaxIdleBeforeCheckMs
+    {
+        get => GetInt("keepalive_max_idle_before_check_ms", 600000);
+        set => this["keepalive_max_idle_before_check_ms"] = value;
+    }
+
+    public int KeepaliveValidationTimeoutMs
+    {
+        get => GetInt("keepalive_validation_timeout_ms", 5000);
+        set => this["keepalive_validation_timeout_ms"] = value;
+    }
+
     public bool Enlist
     {
         get => GetBool("Enlist", true);

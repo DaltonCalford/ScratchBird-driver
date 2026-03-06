@@ -136,6 +136,24 @@ public class ConfigTests
     }
 
     [Fact]
+    public void ParseKeepaliveOptions()
+    {
+        var uriCfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://app:secret@localhost:3092/mydb" +
+            "?keepalive_interval_ms=3000&keepalive_max_idle_before_check_ms=9000&keepalive_validation_timeout_ms=400");
+        Assert.Equal(3000, uriCfg.KeepaliveIntervalMs);
+        Assert.Equal(9000, uriCfg.KeepaliveMaxIdleBeforeCheckMs);
+        Assert.Equal(400, uriCfg.KeepaliveValidationTimeoutMs);
+
+        var kvCfg = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=mydb;keepalive=0;" +
+            "keepalive_max_idle_ms=7000;keepalivevalidationtimeoutms=250");
+        Assert.Equal(0, kvCfg.KeepaliveIntervalMs);
+        Assert.Equal(7000, kvCfg.KeepaliveMaxIdleBeforeCheckMs);
+        Assert.Equal(250, kvCfg.KeepaliveValidationTimeoutMs);
+    }
+
+    [Fact]
     public void ParseMetadataExpandSchemaParentsAliases()
     {
         var aliases = new[]

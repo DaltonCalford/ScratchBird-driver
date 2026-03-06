@@ -31,6 +31,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private bool _disposed;
     private TelemetryCollector _telemetry = new();
     private CircuitBreaker _circuitBreaker = new();
+    private KeepaliveMonitor _keepalive = new();
     private readonly object _notificationSync = new();
     private Queue<ScratchBirdNotification>? _notificationQueue;
     private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
@@ -57,6 +58,7 @@ public sealed class ScratchBirdConnection : DbConnection
             _config = ScratchBirdConfig.FromConnectionString(value);
             _telemetry = new TelemetryCollector(BuildTelemetryOptions(_config));
             _circuitBreaker = new CircuitBreaker(BuildCircuitBreakerOptions(_config));
+            _keepalive = new KeepaliveMonitor(BuildKeepaliveOptions(_config));
         }
     }
 
@@ -171,11 +173,14 @@ public sealed class ScratchBirdConnection : DbConnection
         if (_client == null)
         {
             OpenWithRetry();
-            return _client ?? throw new InvalidOperationException("Connection could not be restored");
+            var restored = _client ?? throw new InvalidOperationException("Connection could not be restored");
+            EnsureKeepaliveHealthy(restored);
+            return restored;
         }
 
         if (_client.IsHealthy)
         {
+            EnsureKeepaliveHealthy(_client);
             return _client;
         }
 
@@ -185,7 +190,50 @@ public sealed class ScratchBirdConnection : DbConnection
         _activeTransaction = null;
         OpenWithRetry();
 
-        return _client ?? throw new InvalidOperationException("Connection could not be restored");
+        var recovered = _client ?? throw new InvalidOperationException("Connection could not be restored");
+        EnsureKeepaliveHealthy(recovered);
+        return recovered;
+    }
+
+    private void EnsureKeepaliveHealthy(ProtocolClient client)
+    {
+        bool validated;
+        try
+        {
+            validated = _keepalive.ValidateIfNeeded(() => ValidateClientWithTimeout(client));
+        }
+        catch (ScratchBirdException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new ScratchBirdConnectionException("Keepalive validation failed", "08006", ex.Message, null);
+        }
+
+        if (!validated)
+        {
+            throw new ScratchBirdConnectionException("Keepalive validation timed out", "08006");
+        }
+    }
+
+    private bool ValidateClientWithTimeout(ProtocolClient client)
+    {
+        var timeoutMs = _config.KeepaliveValidationTimeoutMs;
+        if (timeoutMs <= 0)
+        {
+            client.Ping();
+            return true;
+        }
+
+        var pingTask = Task.Run(() => client.Ping());
+        if (!pingTask.Wait(timeoutMs))
+        {
+            return false;
+        }
+
+        pingTask.GetAwaiter().GetResult();
+        return true;
     }
 
     public override async Task OpenAsync(CancellationToken cancellationToken)
@@ -332,7 +380,8 @@ public sealed class ScratchBirdConnection : DbConnection
             GetPoolDiagnostics(),
             CreateQueryPlanSummary(client?.LastPlan),
             CreateSblrSummary(client?.LastSblr),
-            MapCircuitBreakerSummary(_circuitBreaker.Snapshot()));
+            MapCircuitBreakerSummary(_circuitBreaker.Snapshot()),
+            MapKeepaliveSummary(_keepalive.Snapshot()));
     }
 
     public ConnectionTelemetrySummary GetTelemetrySummary()
@@ -358,6 +407,11 @@ public sealed class ScratchBirdConnection : DbConnection
     public CircuitBreakerSummary GetCircuitBreakerSummary()
     {
         return MapCircuitBreakerSummary(_circuitBreaker.Snapshot());
+    }
+
+    public KeepaliveSummary GetKeepaliveSummary()
+    {
+        return MapKeepaliveSummary(_keepalive.Snapshot());
     }
 
     public PoolDiagnosticsSummary? GetPoolDiagnostics()
@@ -404,6 +458,7 @@ public sealed class ScratchBirdConnection : DbConnection
                 _circuitBreaker.RecordSuccess();
             }
 
+            _keepalive.MarkActivity();
             RecordTelemetry(operation, stopwatch.Elapsed, success);
         }
     }
@@ -1285,6 +1340,21 @@ public sealed class ScratchBirdConnection : DbConnection
             snapshot.LastFailureUtc);
     }
 
+    private static KeepaliveSummary MapKeepaliveSummary(KeepaliveSnapshot snapshot)
+    {
+        return new KeepaliveSummary(
+            snapshot.Enabled,
+            snapshot.IntervalMs,
+            snapshot.MaxIdleBeforeCheckMs,
+            snapshot.ValidationTimeoutMs,
+            snapshot.LastActivityUtc,
+            snapshot.LastValidationUtc,
+            snapshot.LastIdleDurationMs,
+            snapshot.ValidationAttempts,
+            snapshot.ValidationSuccesses,
+            snapshot.ValidationFailures);
+    }
+
     private ProtocolClient EnsureNotificationBridge()
     {
         lock (_notificationSync)
@@ -1502,6 +1572,14 @@ public sealed class ScratchBirdConnection : DbConnection
             RecoveryTimeoutMs: config.CircuitBreakerRecoveryTimeoutMs,
             SuccessThreshold: config.CircuitBreakerSuccessThreshold,
             HalfOpenMaxRequests: config.CircuitBreakerHalfOpenMaxRequests);
+    }
+
+    private static KeepaliveOptions BuildKeepaliveOptions(ScratchBirdConfig config)
+    {
+        return new KeepaliveOptions(
+            IntervalMs: config.KeepaliveIntervalMs,
+            MaxIdleBeforeCheckMs: config.KeepaliveMaxIdleBeforeCheckMs,
+            ValidationTimeoutMs: config.KeepaliveValidationTimeoutMs);
     }
 
     private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)

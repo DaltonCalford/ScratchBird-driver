@@ -35,6 +35,9 @@ public class DiagnosticsSurfaceTests
         Assert.NotNull(diagnostics.CircuitBreaker);
         Assert.False(diagnostics.CircuitBreaker.Enabled);
         Assert.Equal(CircuitBreakerState.Closed, diagnostics.CircuitBreaker.State);
+        Assert.NotNull(diagnostics.Keepalive);
+        Assert.True(diagnostics.Keepalive.Enabled);
+        Assert.Equal(120000, diagnostics.Keepalive.IntervalMs);
     }
 
     [Fact]

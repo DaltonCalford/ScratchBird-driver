@@ -71,6 +71,18 @@ public sealed record CircuitBreakerSummary(
     int RecoveryTimeoutMs,
     DateTimeOffset? LastFailureUtc);
 
+public sealed record KeepaliveSummary(
+    bool Enabled,
+    int IntervalMs,
+    int MaxIdleBeforeCheckMs,
+    int ValidationTimeoutMs,
+    DateTimeOffset LastActivityUtc,
+    DateTimeOffset? LastValidationUtc,
+    long LastIdleDurationMs,
+    long ValidationAttempts,
+    long ValidationSuccesses,
+    long ValidationFailures);
+
 public sealed record ScratchBirdNotification(
     uint ProcessId,
     string Channel,
@@ -115,4 +127,5 @@ public sealed record ConnectionDiagnosticsSummary(
     PoolDiagnosticsSummary? Pool,
     QueryPlanSummary? LastPlan,
     SblrSummary? LastSblr,
-    CircuitBreakerSummary CircuitBreaker);
+    CircuitBreakerSummary CircuitBreaker,
+    KeepaliveSummary Keepalive);

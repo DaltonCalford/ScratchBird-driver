@@ -53,6 +53,9 @@ public sealed class ScratchBirdConfig
     public int CircuitBreakerRecoveryTimeoutMs { get; set; } = 30000;
     public int CircuitBreakerSuccessThreshold { get; set; } = 2;
     public int CircuitBreakerHalfOpenMaxRequests { get; set; } = 1;
+    public int KeepaliveIntervalMs { get; set; } = 120000;
+    public int KeepaliveMaxIdleBeforeCheckMs { get; set; } = 600000;
+    public int KeepaliveValidationTimeoutMs { get; set; } = 5000;
     public string ManagerAuthToken { get; set; } = string.Empty;
     public string ManagerUsername { get; set; } = string.Empty;
     public string ManagerDatabase { get; set; } = string.Empty;
@@ -394,6 +397,34 @@ internal static class DsnParser
             case "circuit_breaker_half_open_max_requests":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cbHalfOpenMax))
                     cfg.CircuitBreakerHalfOpenMaxRequests = Math.Max(1, cbHalfOpenMax);
+                break;
+            case "keepalive":
+            case "keepalive_enabled":
+                var keepaliveEnabled = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                if (!keepaliveEnabled)
+                {
+                    cfg.KeepaliveIntervalMs = 0;
+                }
+                break;
+            case "keepalive_interval_ms":
+            case "keepaliveintervalms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepaliveIntervalMs))
+                    cfg.KeepaliveIntervalMs = Math.Max(0, keepaliveIntervalMs);
+                break;
+            case "keepalive_max_idle_before_check_ms":
+            case "keepalive_max_idle_ms":
+            case "keepalivemaxidlebeforecheckms":
+            case "keepalivemaxidlems":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepaliveIdleMs))
+                    cfg.KeepaliveMaxIdleBeforeCheckMs = Math.Max(0, keepaliveIdleMs);
+                break;
+            case "keepalive_validation_timeout_ms":
+            case "keepalivevalidationtimeoutms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var keepaliveValidationTimeoutMs))
+                    cfg.KeepaliveValidationTimeoutMs = Math.Max(0, keepaliveValidationTimeoutMs);
                 break;
             case "manager_auth_token":
             case "mcp_auth_token":
