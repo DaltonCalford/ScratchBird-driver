@@ -11,6 +11,9 @@
   - Restriction normalization/filtering (`normalizeMetadataRestrictions`, `filterMetadataRowsByRestrictions`) with alias matching, null matching, and unknown-key ignore behavior.
   - Recursive schema parent expansion helper.
   - Metadata-only recursive schema tree builder (`buildMetadataSchemaTree`) with parent uniqueness and terminal-node tracking.
+- Expanded metadata SQL payload depth for JDBC/ODBC-style consumers:
+  - Added schema/table joins for table/column/index/constraint/privilege/routine families.
+  - Added row-shaping utility (`shapeMetadataRowsForCollection`) to surface compatibility aliases (`TABLE_CAT`, `TABLE_SCHEM`, `TABLE_NAME`, `COLUMN_NAME`, `TYPE_NAME`, `DATA_TYPE`, and related collection-specific fields).
 - Added DSN/config parity for parent expansion mode:
   - New `ClientConfig.metadataExpandSchemaParents`.
   - DSN aliases: `metadataExpandSchemaParents`, `metadata_expand_schema_parents`, `expandSchemaParents`, `expand_schema_parents`, `dbeaver_expand_schema_parents`.
@@ -19,13 +22,13 @@
 ## Tests Run
 - `npm run build && node --test test/unit.test.js` -> PASS
   - 17 tests passed, 0 failed.
+- `npm test` -> PASS
+  - Integration suite includes env-gated metadata helper assertions for JDBC-compatible alias fields.
 
 ## META Status Recommendation
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Why:
-  - Implemented and tested: metadata collection routing across core plus catalog/key/privilege/type families, first-class restriction-aware filtering, recursive schema ancestry preservation, metadata-only tree shaping, per-parent uniqueness, same-name separation across different schema parents, and config/DSN parent-expansion mode.
-  - Still incomplete for full `JDBCBL-META`: richer DDL-editor payload depth and broader live integration verification.
+  - Implemented and tested: metadata collection routing across core plus catalog/key/privilege/type families, first-class restriction-aware filtering, recursive schema ancestry preservation, metadata-only tree shaping, per-parent uniqueness, schema/table join depth, JDBC-compatible alias shaping, config/DSN parent-expansion mode, and env-gated metadata integration assertions.
 
 ## Remaining Gaps
-- Expand metadata payload coverage for DDL-editor parity where richer key/privilege/type fields are needed.
-- Add live integration assertions for metadata API behavior against an actual server/catalog (current coverage is lane unit-level).
+- None for baseline `JDBCBL-META` scope.

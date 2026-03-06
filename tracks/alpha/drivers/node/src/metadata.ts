@@ -13,40 +13,40 @@ export const METADATA_CATALOGS_QUERY =
   "SELECT schema_id AS catalog_id, schema_name AS catalog_name FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name";
 
 export const METADATA_TABLES_QUERY =
-  "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name";
+  "SELECT t.table_id, t.schema_id, s.schema_name, t.table_name, t.table_type, t.owner_id FROM sys.tables t LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_valid = 1 ORDER BY s.schema_name, t.table_name";
 
 export const METADATA_COLUMNS_QUERY =
-  "SELECT column_id, table_id, column_name, data_type_id, data_type_name, ordinal_position, is_nullable, default_value, domain_id, collation_id, charset_id, is_identity, is_generated, generation_expression FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+  "SELECT c.column_id, c.table_id, t.table_name, t.schema_id, s.schema_name, c.column_name, c.data_type_id, c.data_type_name, c.ordinal_position, c.is_nullable, c.default_value, c.domain_id, c.collation_id, c.charset_id, c.is_identity, c.is_generated, c.generation_expression FROM sys.columns c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.ordinal_position";
 
 export const METADATA_INDEXES_QUERY =
-  "SELECT index_id, table_id, index_name, index_type, is_unique FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name";
+  "SELECT i.index_id, i.table_id, t.table_name, t.schema_id, s.schema_name, i.index_name, i.index_type, i.is_unique FROM sys.indexes i LEFT JOIN sys.tables t ON t.table_id = i.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE i.is_valid = 1 ORDER BY s.schema_name, t.table_name, i.index_name";
 
 export const METADATA_INDEX_COLUMNS_QUERY =
-  "SELECT index_id, column_id, column_name, ordinal_position, is_included FROM sys.index_columns ORDER BY index_id, ordinal_position";
+  "SELECT ic.index_id, i.index_name, ic.column_id, ic.column_name, ic.ordinal_position, ic.is_included, i.table_id, t.table_name, t.schema_id, s.schema_name FROM sys.index_columns ic LEFT JOIN sys.indexes i ON i.index_id = ic.index_id LEFT JOIN sys.tables t ON t.table_id = i.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id ORDER BY s.schema_name, t.table_name, i.index_name, ic.ordinal_position";
 
 export const METADATA_CONSTRAINTS_QUERY =
-  "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name";
+  "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.constraint_name";
 
 export const METADATA_PRIMARY_KEYS_QUERY =
-  "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('primary key', 'primary') ORDER BY table_id, constraint_name";
+  "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND lower(c.constraint_type) IN ('primary key', 'primary') ORDER BY s.schema_name, t.table_name, c.constraint_name";
 
 export const METADATA_FOREIGN_KEYS_QUERY =
-  "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND lower(constraint_type) IN ('foreign key', 'foreign') ORDER BY table_id, constraint_name";
+  "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, c.constraint_name, c.constraint_type FROM sys.constraints c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 AND lower(c.constraint_type) IN ('foreign key', 'foreign') ORDER BY s.schema_name, t.table_name, c.constraint_name";
 
 export const METADATA_TABLE_PRIVILEGES_QUERY =
-  "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, 'ALL' AS privilege_type FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name";
+  "SELECT t.table_id, t.table_name, t.schema_id, s.schema_name, t.owner_id AS grantor_id, t.owner_id AS grantee_id, 'ALL' AS privilege_type, 'YES' AS is_grantable FROM sys.tables t LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_valid = 1 ORDER BY s.schema_name, t.table_name";
 
 export const METADATA_COLUMN_PRIVILEGES_QUERY =
-  "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position";
+  "SELECT c.table_id, t.table_name, t.schema_id, s.schema_name, c.column_id, c.column_name, 'ALL' AS privilege_type, 'YES' AS is_grantable FROM sys.columns c LEFT JOIN sys.tables t ON t.table_id = c.table_id LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.ordinal_position";
 
 export const METADATA_PROCEDURES_QUERY =
-  "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name";
+  "SELECT p.procedure_id, p.schema_id, s.schema_name, p.procedure_name, p.routine_type FROM sys.procedures p LEFT JOIN sys.schemas s ON s.schema_id = p.schema_id WHERE p.is_valid = 1 ORDER BY s.schema_name, p.procedure_name";
 
 export const METADATA_FUNCTIONS_QUERY =
-  "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name";
+  "SELECT f.function_id, f.schema_id, s.schema_name, f.function_name FROM sys.functions f LEFT JOIN sys.schemas s ON s.schema_id = f.schema_id WHERE f.is_valid = 1 ORDER BY s.schema_name, f.function_name";
 
 export const METADATA_TYPE_INFO_QUERY =
-  "SELECT DISTINCT data_type_id, data_type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
+  "SELECT DISTINCT data_type_id, data_type_name, data_type_name AS type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 
 export type MetadataCollectionName =
   | "catalogs"
@@ -84,6 +84,9 @@ export interface MetadataSchemaTreeOptions {
 
 export type MetadataSchemaInput = string | Record<string, unknown>;
 export type MetadataRestrictions = Record<string, unknown>;
+export interface MetadataShapeOptions {
+  database?: string | null;
+}
 
 const METADATA_COLLECTION_QUERIES: Record<MetadataCollectionName, string> = {
   catalogs: METADATA_CATALOGS_QUERY,
@@ -317,6 +320,15 @@ export function expandSchemaMetadataRows<T extends Record<string, unknown>>(rows
   return out;
 }
 
+export function shapeMetadataRowsForCollection<T extends Record<string, unknown>>(
+  rows: readonly T[],
+  collectionName: MetadataCollectionName,
+  options?: MetadataShapeOptions,
+): T[] {
+  const catalogName = normalizeCatalogName(options?.database);
+  return rows.map((row) => shapeMetadataRow(row, collectionName, catalogName));
+}
+
 interface MetadataRestrictionBinding {
   aliases: string[];
   expectNull: boolean;
@@ -431,6 +443,186 @@ function normalizeMetadataIdentifier(value: string): string {
 
 function normalizeMetadataMatchText(value: unknown): string {
   return String(value).trim().toLowerCase();
+}
+
+function shapeMetadataRow<T extends Record<string, unknown>>(
+  source: T,
+  collectionName: MetadataCollectionName,
+  catalogName: string | null,
+): T {
+  const row: Record<string, unknown> = { ...source };
+  const schemaName = firstStringValue(row, ["schema_name", "table_schema", "table_schem", "TABLE_SCHEM", "TABLE_SCHEMA"]);
+  const tableName = firstStringValue(row, ["table_name", "TABLE_NAME"]);
+  const columnName = firstStringValue(row, ["column_name", "COLUMN_NAME"]);
+  const constraintName = firstStringValue(row, ["constraint_name", "CONSTRAINT_NAME"]);
+  const indexName = firstStringValue(row, ["index_name", "INDEX_NAME"]);
+  const typeName = firstStringValue(row, ["type_name", "TYPE_NAME", "data_type_name"]);
+  const tableType = firstStringValue(row, ["table_type", "TABLE_TYPE"]);
+  const privilegeType = firstStringValue(row, ["privilege_type", "PRIVILEGE"]);
+  const routineName = firstStringValue(row, ["procedure_name", "function_name"]);
+  const effectiveCatalog =
+    firstStringValue(row, ["catalog_name", "table_catalog", "table_cat", "TABLE_CAT", "TABLE_CATALOG"]) ?? catalogName;
+
+  if (effectiveCatalog) {
+    assignIfMissing(row, "catalog_name", effectiveCatalog);
+    assignIfMissing(row, "table_catalog", effectiveCatalog);
+    assignIfMissing(row, "table_cat", effectiveCatalog);
+    assignIfMissing(row, "TABLE_CAT", effectiveCatalog);
+    assignIfMissing(row, "TABLE_CATALOG", effectiveCatalog);
+  }
+
+  if (schemaName) {
+    assignIfMissing(row, "schema_name", schemaName);
+    assignIfMissing(row, "table_schema", schemaName);
+    assignIfMissing(row, "table_schem", schemaName);
+    assignIfMissing(row, "TABLE_SCHEM", schemaName);
+    assignIfMissing(row, "TABLE_SCHEMA", schemaName);
+  }
+
+  if (tableName) {
+    assignIfMissing(row, "table_name", tableName);
+    assignIfMissing(row, "TABLE_NAME", tableName);
+  }
+
+  if (columnName) {
+    assignIfMissing(row, "column_name", columnName);
+    assignIfMissing(row, "COLUMN_NAME", columnName);
+  }
+
+  if (typeName) {
+    assignIfMissing(row, "type_name", typeName);
+    assignIfMissing(row, "TYPE_NAME", typeName);
+  }
+
+  if (row.data_type_id !== undefined && row.data_type_id !== null) {
+    assignIfMissing(row, "data_type", row.data_type_id);
+    assignIfMissing(row, "DATA_TYPE", row.data_type_id);
+  }
+
+  if (collectionName === "tables") {
+    if (tableType) {
+      assignIfMissing(row, "TABLE_TYPE", tableType);
+    }
+  }
+
+  if (collectionName === "columns") {
+    if (row.ordinal_position !== undefined && row.ordinal_position !== null) {
+      assignIfMissing(row, "ORDINAL_POSITION", row.ordinal_position);
+    }
+    if (row.is_nullable !== undefined && row.is_nullable !== null) {
+      assignIfMissing(row, "IS_NULLABLE", normalizeNullableFlag(row.is_nullable));
+    }
+    if (row.default_value !== undefined) {
+      assignIfMissing(row, "COLUMN_DEF", row.default_value);
+    }
+  }
+
+  if (collectionName === "indexes") {
+    if (indexName) {
+      assignIfMissing(row, "INDEX_NAME", indexName);
+    }
+    if (row.is_unique !== undefined && row.is_unique !== null) {
+      assignIfMissing(row, "NON_UNIQUE", row.is_unique ? 0 : 1);
+    }
+  }
+
+  if (collectionName === "index_columns") {
+    if (indexName) {
+      assignIfMissing(row, "INDEX_NAME", indexName);
+    }
+    if (row.ordinal_position !== undefined && row.ordinal_position !== null) {
+      assignIfMissing(row, "ORDINAL_POSITION", row.ordinal_position);
+    }
+  }
+
+  if (collectionName === "constraints" || collectionName === "primary_keys" || collectionName === "foreign_keys") {
+    if (constraintName) {
+      assignIfMissing(row, "CONSTRAINT_NAME", constraintName);
+    }
+    if (collectionName === "primary_keys") {
+      assignIfMissing(row, "PK_NAME", constraintName);
+    }
+    if (collectionName === "foreign_keys") {
+      assignIfMissing(row, "FK_NAME", constraintName);
+    }
+  }
+
+  if (collectionName === "table_privileges" || collectionName === "column_privileges") {
+    if (privilegeType) {
+      assignIfMissing(row, "PRIVILEGE", privilegeType);
+      assignIfMissing(row, "PRIVILEGE_TYPE", privilegeType);
+    }
+    if (row.is_grantable !== undefined && row.is_grantable !== null) {
+      assignIfMissing(row, "IS_GRANTABLE", row.is_grantable);
+    }
+  }
+
+  if (collectionName === "procedures" || collectionName === "functions") {
+    if (routineName) {
+      assignIfMissing(row, "ROUTINE_NAME", routineName);
+    }
+  }
+
+  if (collectionName === "type_info") {
+    if (typeName) {
+      assignIfMissing(row, "TYPE_NAME", typeName);
+    }
+    if (row.data_type_id !== undefined && row.data_type_id !== null) {
+      assignIfMissing(row, "DATA_TYPE", row.data_type_id);
+    }
+  }
+
+  return row as T;
+}
+
+function assignIfMissing(row: Record<string, unknown>, key: string, value: unknown): void {
+  if (value === undefined || value === null || value === "") {
+    return;
+  }
+  if (!Object.prototype.hasOwnProperty.call(row, key) || row[key] === undefined || row[key] === null) {
+    row[key] = value;
+  }
+}
+
+function firstStringValue(row: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeCatalogName(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function normalizeNullableFlag(value: unknown): string {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "yes" || normalized === "true" || normalized === "1") {
+      return "YES";
+    }
+    if (normalized === "no" || normalized === "false" || normalized === "0") {
+      return "NO";
+    }
+    return value;
+  }
+  if (typeof value === "number") {
+    return value === 0 ? "NO" : "YES";
+  }
+  if (typeof value === "boolean") {
+    return value ? "YES" : "NO";
+  }
+  return String(value);
 }
 
 function splitSchemaPath(value: string): string[] {

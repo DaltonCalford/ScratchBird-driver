@@ -65,6 +65,7 @@ Supports positional arrays or named parameter objects (`:name` or `@name` in SQL
 - `ScratchbirdGeometry`
 - `ScratchbirdRange<T>`
 - `ScratchbirdRaw`
+- `ScratchbirdTypedValue` (explicit OID/value parameter encoding)
 - `ScratchbirdInterval`, `ScratchbirdDate`, `ScratchbirdTime`,
   `ScratchbirdTimestamp`, `ScratchbirdTimestampTZ`, `ScratchbirdDecimal`,
   `ScratchbirdMoney`

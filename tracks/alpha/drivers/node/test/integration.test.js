@@ -195,3 +195,78 @@ test("autocommit toggle drives implicit transaction lifecycle", async (t) => {
     await client.end();
   }
 });
+
+test("savepoint lifecycle works in explicit transaction mode", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    try {
+      await client.beginTransaction();
+      await client.savepoint("integration_sp");
+      await client.query("SELECT 1 as value");
+      await client.rollbackToSavepoint("integration_sp");
+      await client.releaseSavepoint("integration_sp");
+      await client.commitTransaction();
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`transaction savepoint flow not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+  } finally {
+    await client.end();
+  }
+});
+
+test("queryStream paginates with maxRows and yields complete stream", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    const values = [];
+    try {
+      const stream = await client.queryStream("SELECT 1 as value UNION ALL SELECT 2 as value ORDER BY value", [], {
+        maxRows: 1,
+      });
+      for await (const row of stream) {
+        values.push(Number(row.value));
+      }
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`queryStream paging not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    assert.deepEqual(values, [1, 2]);
+  } finally {
+    await client.end();
+  }
+});
+
+test("metadata helpers provide JDBC-compatible alias columns", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    let tables;
+    try {
+      tables = await client.queryMetadata("tables");
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`metadata helpers not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    if (!Array.isArray(tables.rows) || tables.rows.length === 0) {
+      t.skip("metadata tables collection returned no rows");
+      return;
+    }
+    const first = tables.rows[0];
+    assert.ok(Object.prototype.hasOwnProperty.call(first, "TABLE_CAT"));
+    assert.ok(Object.prototype.hasOwnProperty.call(first, "TABLE_SCHEM"));
+    assert.ok(Object.prototype.hasOwnProperty.call(first, "TABLE_NAME"));
+  } finally {
+    await client.end();
+  }
+});

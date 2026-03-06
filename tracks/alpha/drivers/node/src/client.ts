@@ -98,6 +98,7 @@ import {
   filterMetadataRowsByRestrictions,
   normalizeMetadataCollectionName,
   resolveMetadataCollectionQuery,
+  shapeMetadataRowsForCollection,
 } from "./metadata";
 
 const QUERY_FLAG_BINARY_RESULT = 0x04;
@@ -469,7 +470,10 @@ export class Client {
     if (normalizedCollection === "catalogs") {
       const catalogName = this.config.database?.trim() ?? "";
       const baseRows = catalogName ? [{ catalog_name: catalogName }] : [];
-      const rows = filterMetadataRowsByRestrictions(baseRows, restrictions, normalizedCollection);
+      const shapedRows = shapeMetadataRowsForCollection(baseRows, normalizedCollection, {
+        database: this.config.database ?? null,
+      });
+      const rows = filterMetadataRowsByRestrictions(shapedRows, restrictions, normalizedCollection);
       return {
         rows,
         rowCount: rows.length,
@@ -481,8 +485,11 @@ export class Client {
 
     const sql = resolveMetadataCollectionQuery(normalizedCollection);
     const result = await this.query(sql);
+    const shapedRows = shapeMetadataRowsForCollection(result.rows as Array<Record<string, unknown>>, normalizedCollection, {
+      database: this.config.database ?? null,
+    });
     const restrictedRows = filterMetadataRowsByRestrictions(
-      result.rows as Array<Record<string, unknown>>,
+      shapedRows,
       restrictions,
       normalizedCollection,
     );

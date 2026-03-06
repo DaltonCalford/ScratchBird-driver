@@ -46,7 +46,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 | **Java / JDBC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Most complete lane |
 | **ODBC 3.8** | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | Near-complete baseline, metadata family parity remains |
 | **.NET** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Enterprise lane complete; sustained soak/fault harnesses and cross-runtime contract gate are implemented |
-| **Node.js** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | CONN/ERR/RES implemented; TXN/EXEC/META/TYPE remain partial pending broader live-depth |
+| **Node.js** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across TXN/EXEC/META/TYPE with expanded lane tests and env-gated live-depth checks |
 | **Python** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Go** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented; CONN/TXN/EXEC/META/TYPE remain partial pending broader live-depth |
 | **Rust** | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | Strong core; EXEC parity implemented, remaining depth in CONN/TXN/META |
@@ -72,6 +72,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 
 - **.NET lane:** DOTNET-101/102/103 sustained runtime harnesses are now hardened with minimum-duration/threshold controls, summary assertions, and deterministic verifier guards for soak/failover/fault-matrix execution.
 - **.NET/JDBC contract lane:** JDBC-203 gate is now profile-aware (`direct`, `manager`, `listener`) with per-profile endpoint + cancel-SQL validation and structured profile-status summaries; latest direct profile run passes for both runtimes.
+- **Node lane:** Closed JDBC baseline parity on TXN/EXEC/META/TYPE by adding savepoint/stream env-gated integration checks, richer sys.* metadata row shaping (with JDBC-compatible aliases), and expanded typed OID encode/decode coverage.
 - **Dart lane:** Added connection-policy rejection parity tests (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`) and aligned checklist/mapping artifacts.
 - **Dart lane:** Expanded type decode and negative-path coverage (core scalar decode paths, text-vs-unknown behavior, range/composite guardrails, unsupported-type checks).
 - **Dart lane:** Added env-gated integration suite for direct and manager-proxy connection paths (`SCRATCHBIRD_TEST_DSN`, `SCRATCHBIRD_TEST_MANAGER_DSN`) covering query, transaction lifecycle, metadata wrappers, and JSON/JSONB roundtrips.

@@ -45,22 +45,19 @@
     - `queryBatch` and `executeBatch` summary surfaces,
     - callable execution (`call` with JDBC escape syntax),
     - `executeWithGeneratedKeys` key list surface,
-    - autocommit toggle with implicit transaction lifecycle.
+    - autocommit toggle with implicit transaction lifecycle,
+    - explicit savepoint lifecycle in transaction mode,
+    - stream paging/resume behavior (`queryStream` with `maxRows`).
 
 ## TXN Status
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Why:
-  - Implemented and tested: explicit begin/commit/rollback, savepoint create/release/rollback-to, deterministic invalid-operation guards, and first-class autocommit/session-schema controls.
-  - Remaining parity gaps: deeper live transaction parity beyond current env-gated integration depth.
+  - Implemented and tested: explicit begin/commit/rollback, savepoint create/release/rollback-to, deterministic invalid-operation guards, first-class autocommit/session-schema controls, and env-gated live transaction/savepoint assertions.
 
 ## EXEC Status
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 - Why:
-  - Implemented and tested: simple and prepared execution, positional/named bind normalization, streaming, cancellation, `nativeSQL`/`nativeCallableSQL`, batch execution summaries with empty-batch guards, multi-result traversal, generated-key propagation, explicit generated-key list API, and callable/routine API.
-  - Remaining parity gaps: broader live integration depth and additional advanced execution stress cases.
+  - Implemented and tested: simple and prepared execution, positional/named bind normalization, streaming, cancellation, `nativeSQL`/`nativeCallableSQL`, batch execution summaries with empty-batch guards, multi-result traversal, generated-key propagation, explicit generated-key list API, callable/routine API, and env-gated live stream pagination coverage.
 
 ## Remaining Gaps
-- TXN
-  - Expand live integration validation depth for autocommit and session schema semantics.
-- EXEC
-  - Add broader multi-statement/live-runtime assertions for mixed result shapes and cancellation races.
+- None for baseline `JDBCBL-TXN` / `JDBCBL-EXEC` scope.

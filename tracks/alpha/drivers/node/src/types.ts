@@ -252,6 +252,15 @@ export class ScratchbirdRaw {
   }
 }
 
+export class ScratchbirdTypedValue {
+  oid: number;
+  value: unknown;
+  constructor(oid: number, value: unknown) {
+    this.oid = oid;
+    this.value = value;
+  }
+}
+
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function oidToString(oid: number): string {
@@ -336,6 +345,9 @@ export function encodeParam(value: any): { param: ParamValue; oid: number } {
   }
   if (value instanceof ScratchbirdRaw) {
     return { param: { data: Buffer.from(value.data), format: FORMAT_BINARY }, oid: value.oid };
+  }
+  if (value instanceof ScratchbirdTypedValue) {
+    return encodeTypedValue(value);
   }
   if (value instanceof ScratchbirdJsonb) {
     let raw = value.raw;
@@ -534,6 +546,132 @@ function decodeBinaryValue(typeOid: number, data: Buffer): any {
   }
 }
 
+function encodeTypedValue(typed: ScratchbirdTypedValue): { param: ParamValue; oid: number } {
+  const oid = typed.oid;
+  const value = typed.value;
+  if (value === null || value === undefined) {
+    return { param: { isNull: true, format: FORMAT_BINARY }, oid };
+  }
+  switch (oid) {
+    case OID_BOOL:
+      if (typeof value !== "boolean") {
+        throw new Error("typed boolean requires boolean value");
+      }
+      return { param: { data: Buffer.from([value ? 1 : 0]), format: FORMAT_BINARY }, oid };
+    case OID_INT2: {
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        throw new Error("typed int2 requires integer value");
+      }
+      if (value < -32768 || value > 32767) {
+        throw new Error("typed int2 out of range");
+      }
+      return { param: { data: encodeInt16(value), format: FORMAT_BINARY }, oid };
+    }
+    case OID_INT4: {
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        throw new Error("typed int4 requires integer value");
+      }
+      if (value < -2147483648 || value > 2147483647) {
+        throw new Error("typed int4 out of range");
+      }
+      return { param: { data: encodeInt32(value), format: FORMAT_BINARY }, oid };
+    }
+    case OID_INT8:
+      return { param: { data: encodeInt64(toBigInt(value, "int8")), format: FORMAT_BINARY }, oid };
+    case OID_FLOAT4:
+      return { param: { data: encodeFloat32(toFiniteNumber(value, "float4")), format: FORMAT_BINARY }, oid };
+    case OID_FLOAT8:
+      return { param: { data: encodeFloat64(toFiniteNumber(value, "float8")), format: FORMAT_BINARY }, oid };
+    case OID_NUMERIC:
+      return { param: { data: encodeLengthPrefixed(Buffer.from(String(value), "utf8")), format: FORMAT_BINARY }, oid };
+    case OID_MONEY:
+      return { param: { data: encodeInt64(toBigInt(value, "money")), format: FORMAT_BINARY }, oid };
+    case OID_UUID:
+      return { param: { data: encodeUuid(value), format: FORMAT_BINARY }, oid };
+    case OID_JSON:
+      return { param: { data: encodeLengthPrefixed(encodeJsonPayload(value)), format: FORMAT_BINARY }, oid };
+    case OID_JSONB:
+      return { param: { data: encodeLengthPrefixed(encodeJsonPayload(value)), format: FORMAT_BINARY }, oid };
+    case OID_BYTEA:
+      return { param: { data: encodeLengthPrefixed(toBuffer(value, "bytea")), format: FORMAT_BINARY }, oid };
+    case OID_DATE:
+      return { param: { data: encodeDate(toDate(value, "date")), format: FORMAT_BINARY }, oid };
+    case OID_TIME: {
+      const micros =
+        value instanceof ScratchbirdTime
+          ? value.micros
+          : typeof value === "number"
+            ? value
+            : Number.NaN;
+      if (!Number.isFinite(micros)) {
+        throw new Error("typed time requires microsecond number or ScratchbirdTime");
+      }
+      return { param: { data: encodeTimeMicros(micros), format: FORMAT_BINARY }, oid };
+    }
+    case OID_TIMESTAMP:
+    case OID_TIMESTAMPTZ:
+      return { param: { data: encodeTimestamp(toDate(value, oid === OID_TIMESTAMP ? "timestamp" : "timestamptz")), format: FORMAT_BINARY }, oid };
+    case OID_INTERVAL:
+      if (value instanceof ScratchbirdInterval || isIntervalObject(value)) {
+        return { param: { data: encodeInterval(value), format: FORMAT_BINARY }, oid };
+      }
+      throw new Error("typed interval requires ScratchbirdInterval or interval object");
+    case OID_SB_VECTOR:
+      return { param: { data: encodeLengthPrefixed(Buffer.from(formatVectorLiteral(toNumericArray(value)), "utf8")), format: FORMAT_BINARY }, oid };
+    case OID_INT4RANGE:
+    case OID_INT8RANGE:
+    case OID_NUMRANGE:
+    case OID_TSRANGE:
+    case OID_TSTZRANGE:
+    case OID_DATERANGE: {
+      if (!(value instanceof ScratchbirdRange)) {
+        throw new Error("typed range requires ScratchbirdRange value");
+      }
+      const encoded = encodeRange(new ScratchbirdRange({ ...value, rangeOid: oid }));
+      return { param: { data: encoded.data, format: FORMAT_BINARY }, oid };
+    }
+    case OID_RECORD: {
+      if (!(value instanceof ScratchbirdComposite)) {
+        throw new Error("typed record requires ScratchbirdComposite value");
+      }
+      const encoded = encodeComposite(new ScratchbirdComposite(value.fields, OID_RECORD));
+      return { param: { data: encoded.data, format: FORMAT_BINARY }, oid: OID_RECORD };
+    }
+    case OID_POINT:
+    case OID_LSEG:
+    case OID_PATH:
+    case OID_BOX:
+    case OID_POLYGON:
+    case OID_LINE:
+    case OID_CIRCLE: {
+      if (!(value instanceof ScratchbirdGeometry)) {
+        throw new Error("typed geometry requires ScratchbirdGeometry value");
+      }
+      if (!value.wkb || value.wkb.length === 0) {
+        throw new Error("typed geometry requires WKB payload");
+      }
+      return { param: { data: encodeLengthPrefixed(value.wkb), format: FORMAT_BINARY }, oid };
+    }
+    case OID_TEXT:
+    case OID_CHAR:
+    case OID_BPCHAR:
+    case OID_VARCHAR:
+    case OID_XML:
+    case OID_INET:
+    case OID_CIDR:
+    case OID_MACADDR:
+    case OID_MACADDR8:
+    case OID_TSVECTOR:
+    case OID_TSQUERY:
+      if (typeof value !== "string") {
+        throw new Error(`typed ${oidToString(oid)} requires string value`);
+      }
+      return { param: { data: encodeLengthPrefixed(Buffer.from(value, "utf8")), format: FORMAT_BINARY }, oid };
+    default:
+      throw new Error(`typed OID ${oid} is not supported for parameter encoding`);
+  }
+}
+
 function encodeComposite(value: ScratchbirdComposite): { data: Buffer; oid: number } {
   const chunks: Buffer[] = [];
   const fields = value.fields ?? [];
@@ -723,6 +861,94 @@ function stripLengthPrefix(data: Buffer): Buffer {
   return data;
 }
 
+function toFiniteNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`typed ${label} requires finite numeric value`);
+  }
+  return value;
+}
+
+function toBigInt(value: unknown, label: string): bigint {
+  if (typeof value === "bigint") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(`typed ${label} requires safe integer value`);
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string" && /^[+-]?\d+$/.test(value.trim())) {
+    return BigInt(value.trim());
+  }
+  throw new Error(`typed ${label} requires integer-compatible value`);
+}
+
+function toDate(value: unknown, label: string): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+  if (value instanceof ScratchbirdDate) {
+    return value.value;
+  }
+  if (value instanceof ScratchbirdTimestamp) {
+    return value.value;
+  }
+  if (value instanceof ScratchbirdTimestampTZ) {
+    return value.value;
+  }
+  throw new Error(`typed ${label} requires Date-compatible value`);
+}
+
+function toBuffer(value: unknown, label: string): Buffer {
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value);
+  }
+  throw new Error(`typed ${label} requires Buffer or Uint8Array value`);
+}
+
+function toNumericArray(value: unknown): number[] {
+  if (value instanceof Float32Array || value instanceof Float64Array) {
+    return Array.from(value);
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "number" && Number.isFinite(item))) {
+    return value;
+  }
+  throw new Error("typed vector requires numeric array value");
+}
+
+function encodeUuid(value: unknown): Buffer {
+  if (Buffer.isBuffer(value)) {
+    if (value.length !== 16) {
+      throw new Error("typed uuid Buffer must be 16 bytes");
+    }
+    return Buffer.from(value);
+  }
+  if (typeof value === "string" && uuidRegex.test(value)) {
+    return Buffer.from(value.replace(/-/g, ""), "hex");
+  }
+  throw new Error("typed uuid requires UUID string or 16-byte Buffer");
+}
+
+function encodeJsonPayload(value: unknown): Buffer {
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return Buffer.from(value, "utf8");
+  }
+  return Buffer.from(JSON.stringify(value), "utf8");
+}
+
+function encodeInt16(value: number): Buffer {
+  const out = Buffer.alloc(2);
+  out.writeInt16LE(value, 0);
+  return out;
+}
+
 function encodeInt32(value: number): Buffer {
   const out = Buffer.alloc(4);
   out.writeInt32LE(value, 0);
@@ -738,6 +964,12 @@ function encodeInt64(value: bigint): Buffer {
 function encodeFloat64(value: number): Buffer {
   const out = Buffer.alloc(8);
   out.writeDoubleLE(value, 0);
+  return out;
+}
+
+function encodeFloat32(value: number): Buffer {
+  const out = Buffer.alloc(4);
+  out.writeFloatLE(value, 0);
   return out;
 }
 

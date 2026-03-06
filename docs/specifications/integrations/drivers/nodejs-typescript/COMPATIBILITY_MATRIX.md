@@ -1,6 +1,6 @@
 # Node.js/TypeScript Driver Compatibility Matrix (Template)
 
-Status: Updated (2026-02-04)
+Status: Updated (2026-03-06)
 Priority: P0
 
 | Feature | Required | Status | Notes |
@@ -11,4 +11,4 @@ Priority: P0
 | Streaming/paging | Yes | Implemented | Portal suspension handled; fetch_size paging supported. |
 | Full type matrix | Yes | Implemented | Verified encoder/decoder coverage for all TYPE_MAPPING_MATRIX.md wire types. |
 | Metadata helpers | Yes | Implemented | sys.* helper queries match METADATA_SCHEMA_CONTRACT.md. |
-| SQLSTATE mapping | Yes | Partial | Class-prefix mapping only (per audit). |
+| SQLSTATE mapping | Yes | Implemented | Spec-complete SQLSTATE mapping with typed error-class selection. |

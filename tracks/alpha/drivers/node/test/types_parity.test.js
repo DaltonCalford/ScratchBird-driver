@@ -13,17 +13,36 @@ const {
   FORMAT_TEXT,
   OID_BOOL,
   OID_BYTEA,
+  OID_CHAR,
+  OID_CIDR,
+  OID_DATE,
+  OID_FLOAT4,
+  OID_FLOAT8,
+  OID_INET,
+  OID_INT2,
   OID_INT4,
   OID_INT8,
+  OID_INT4RANGE,
+  OID_INTERVAL,
+  OID_LINE,
+  OID_MACADDR,
   OID_NUMERIC,
   OID_MONEY,
   OID_JSON,
   OID_JSONB,
+  OID_TSQUERY,
+  OID_TSVECTOR,
+  OID_TIMESTAMP,
+  OID_TIME,
   OID_UUID,
+  OID_VARCHAR,
+  OID_XML,
   OID_INT8RANGE,
   OID_SB_VECTOR,
+  ScratchbirdGeometry,
   ScratchbirdJsonb,
   ScratchbirdRange,
+  ScratchbirdTypedValue,
   encodeParam,
   decodeValue,
 } = require("../dist/index.js");
@@ -36,7 +55,7 @@ function lengthPrefixed(value) {
   return out;
 }
 
-test("encodeParam covers representative primitive and structured inputs", () => {
+test("encodeParam covers representative primitive, structured, and typed OID inputs", () => {
   {
     const encoded = encodeParam(true);
     assert.equal(encoded.oid, OID_BOOL);
@@ -63,11 +82,40 @@ test("encodeParam covers representative primitive and structured inputs", () => 
     assert.equal(encoded.oid, OID_SB_VECTOR);
     assert.equal(encoded.param.data.subarray(4).toString("utf8"), "[1,2,3]");
   }
+  {
+    const encoded = encodeParam(new ScratchbirdTypedValue(OID_INT2, 123));
+    assert.equal(encoded.oid, OID_INT2);
+    assert.equal(encoded.param.data.readInt16LE(0), 123);
+  }
+  {
+    const encoded = encodeParam(new ScratchbirdTypedValue(OID_FLOAT4, 12.5));
+    assert.equal(encoded.oid, OID_FLOAT4);
+    assert.equal(encoded.param.data.readFloatLE(0), 12.5);
+  }
+  {
+    const encoded = encodeParam(new ScratchbirdTypedValue(OID_XML, "<root/>"));
+    assert.equal(encoded.oid, OID_XML);
+    assert.equal(encoded.param.data.subarray(4).toString("utf8"), "<root/>");
+  }
+  {
+    const encoded = encodeParam(new ScratchbirdTypedValue(OID_UUID, "00112233-4455-6677-8899-aabbccddeeff"));
+    assert.equal(encoded.oid, OID_UUID);
+    assert.equal(encoded.param.data.length, 16);
+  }
+  {
+    const range = new ScratchbirdRange({ lower: 1, upper: 7, rangeOid: OID_INT4RANGE });
+    const encoded = encodeParam(new ScratchbirdTypedValue(OID_INT4RANGE, range));
+    assert.equal(encoded.oid, OID_INT4RANGE);
+    assert.ok(encoded.param.data.length >= 4);
+  }
 });
 
-test("encodeParam rejects unsupported numeric and range inputs", () => {
+test("encodeParam rejects unsupported numeric, range, and typed-value inputs", () => {
   assert.throws(() => encodeParam(Number.POSITIVE_INFINITY), /must be finite/);
   assert.throws(() => encodeParam(new ScratchbirdRange({ empty: true })), /cannot be inferred/);
+  assert.throws(() => encodeParam(new ScratchbirdTypedValue(OID_INT2, 40000)), /out of range/);
+  assert.throws(() => encodeParam(new ScratchbirdTypedValue(OID_FLOAT8, "12.5")), /requires finite numeric/);
+  assert.throws(() => encodeParam(new ScratchbirdTypedValue(OID_UUID, "not-a-uuid")), /requires UUID string/);
 });
 
 test("decodeValue decodes jsonb wrapper and bytea payload", () => {
@@ -95,6 +143,55 @@ test("decodeValue decodes numeric, money, uuid, and vector", () => {
 
   const vector = decodeValue(OID_SB_VECTOR, lengthPrefixed("[0.5, 1.5, 2.5]"), FORMAT_BINARY);
   assert.deepEqual(vector, [0.5, 1.5, 2.5]);
+});
+
+test("decodeValue decodes date/time/timestamp/interval and text-like wire families", () => {
+  const datePayload = Buffer.alloc(4);
+  datePayload.writeInt32LE(1, 0);
+  const dateValue = decodeValue(OID_DATE, datePayload, FORMAT_BINARY);
+  assert.equal(dateValue.toISOString().slice(0, 10), "2000-01-02");
+
+  const timePayload = Buffer.alloc(8);
+  timePayload.writeBigInt64LE(90_000_000n, 0);
+  const timeValue = decodeValue(OID_TIME, timePayload, FORMAT_BINARY);
+  assert.equal(timeValue.toISOString(), "2000-01-01T00:01:30.000Z");
+
+  const tsPayload = Buffer.alloc(8);
+  tsPayload.writeBigInt64LE(1_500_000n, 0);
+  const tsValue = decodeValue(OID_TIMESTAMP, tsPayload, FORMAT_BINARY);
+  assert.equal(tsValue.toISOString(), "2000-01-01T00:00:01.500Z");
+
+  const intervalPayload = Buffer.alloc(16);
+  intervalPayload.writeBigInt64LE(1_250_000n, 0);
+  intervalPayload.writeInt32LE(3, 8);
+  intervalPayload.writeInt32LE(2, 12);
+  const interval = decodeValue(OID_INTERVAL, intervalPayload, FORMAT_BINARY);
+  assert.deepEqual(interval, { months: 2, days: 3, micros: 1250000 });
+
+  assert.equal(decodeValue(OID_VARCHAR, lengthPrefixed("typed_text"), FORMAT_BINARY), "typed_text");
+  assert.equal(decodeValue(OID_CHAR, lengthPrefixed("c"), FORMAT_BINARY), "c");
+  assert.equal(decodeValue(OID_XML, lengthPrefixed("<x/>"), FORMAT_BINARY), "<x/>");
+  assert.equal(decodeValue(OID_INET, lengthPrefixed("127.0.0.1"), FORMAT_BINARY), "127.0.0.1");
+  assert.equal(decodeValue(OID_CIDR, lengthPrefixed("127.0.0.0/8"), FORMAT_BINARY), "127.0.0.0/8");
+  assert.equal(decodeValue(OID_MACADDR, lengthPrefixed("aa:bb:cc:dd:ee:ff"), FORMAT_BINARY), "aa:bb:cc:dd:ee:ff");
+  assert.equal(decodeValue(OID_TSVECTOR, lengthPrefixed("'cat':1"), FORMAT_BINARY), "'cat':1");
+  assert.equal(decodeValue(OID_TSQUERY, lengthPrefixed("'cat' & 'dog'"), FORMAT_BINARY), "'cat' & 'dog'");
+});
+
+test("decodeValue decodes geometry payloads as ScratchbirdGeometry wrappers", () => {
+  const geometry = decodeValue(OID_LINE, lengthPrefixed(Buffer.from([0xde, 0xad, 0xbe, 0xef])), FORMAT_BINARY);
+  assert.ok(geometry instanceof ScratchbirdGeometry);
+  assert.deepEqual(Array.from(geometry.wkb), [0xde, 0xad, 0xbe, 0xef]);
+});
+
+test("typed textual OIDs encode with explicit wire OID selection", () => {
+  const typedTextOids = [OID_CHAR, OID_VARCHAR, OID_XML, OID_INET, OID_CIDR, OID_MACADDR, OID_TSVECTOR, OID_TSQUERY];
+  for (const oid of typedTextOids) {
+    const encoded = encodeParam(new ScratchbirdTypedValue(oid, "value"));
+    assert.equal(encoded.oid, oid);
+    assert.equal(encoded.param.data.readUInt32LE(0), 5);
+    assert.equal(encoded.param.data.subarray(4).toString("utf8"), "value");
+  }
 });
 
 test("decodeValue decodes int8range boundaries", () => {

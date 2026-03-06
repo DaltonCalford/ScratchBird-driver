@@ -26,6 +26,7 @@ const {
   METADATA_TYPE_INFO_QUERY,
   filterMetadataRowsByRestrictions,
   resolveMetadataCollectionQuery,
+  shapeMetadataRowsForCollection,
   buildMetadataSchemaTree,
   mapSqlState,
   ScratchbirdSyntaxError,
@@ -294,6 +295,23 @@ test("prepared execute path sends bind/execute/sync and nativeSQL normalizes ali
   );
 });
 
+test("prepare supports statement name reuse and refreshes cached SQL", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol();
+  client.connected = true;
+  client.protocol = protocol;
+  client.describeStatement = async () => 0;
+
+  await client.prepare("reuse_stmt", "select 1 as value");
+  await client.prepare("reuse_stmt", "select 2 as value");
+
+  assert.equal(client.prepared.get("reuse_stmt").sql, "select 2 as value");
+  assert.deepEqual(
+    protocol.sent.map((entry) => entry.type),
+    [MessageType.PARSE, MessageType.PARSE],
+  );
+});
+
 test("nativeSQL and nativeCallableSQL wrap normalization failures as syntax errors", () => {
   const client = new Client({ user: "me", database: "db" });
 
@@ -434,6 +452,55 @@ test("getSchema routes metadata collections and rejects unsupported collections"
   assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY, METADATA_FOREIGN_KEYS_QUERY, METADATA_TABLE_PRIVILEGES_QUERY]);
 });
 
+test("queryMetadata shapes JDBC-style aliases and applies catalog/schema restrictions", async () => {
+  const client = new Client({ user: "me", database: "main_catalog" });
+  client.connected = true;
+  client.query = async () => ({
+    rows: [
+      { table_id: 1, schema_name: "sys", table_name: "sessions", table_type: "SYSTEM VIEW", owner_id: 10 },
+      { table_id: 2, schema_name: "users", table_name: "events", table_type: "TABLE", owner_id: 10 },
+    ],
+    rowCount: 2,
+    fields: [],
+    command: "SELECT",
+    lastId: null,
+  });
+
+  const rows = await client.queryMetadata("tables", { catalog: "main_catalog", schema: "users" });
+  assert.equal(rows.rowCount, 1);
+  assert.equal(rows.rows[0].TABLE_CAT, "main_catalog");
+  assert.equal(rows.rows[0].TABLE_SCHEM, "users");
+  assert.equal(rows.rows[0].TABLE_NAME, "events");
+  assert.equal(rows.rows[0].TABLE_TYPE, "TABLE");
+});
+
+test("shapeMetadataRowsForCollection enriches rows for DDL/editor compatibility fields", () => {
+  const columns = shapeMetadataRowsForCollection(
+    [
+      {
+        schema_name: "users",
+        table_name: "events",
+        column_name: "event_id",
+        data_type_id: 23,
+        data_type_name: "int4",
+        ordinal_position: 1,
+        is_nullable: false,
+        default_value: null,
+      },
+    ],
+    "columns",
+    { database: "main_catalog" },
+  );
+  assert.equal(columns[0].TABLE_CAT, "main_catalog");
+  assert.equal(columns[0].TABLE_SCHEM, "users");
+  assert.equal(columns[0].TABLE_NAME, "events");
+  assert.equal(columns[0].COLUMN_NAME, "event_id");
+  assert.equal(columns[0].DATA_TYPE, 23);
+  assert.equal(columns[0].TYPE_NAME, "int4");
+  assert.equal(columns[0].ORDINAL_POSITION, 1);
+  assert.equal(columns[0].IS_NULLABLE, "NO");
+});
+
 test("filterMetadataRowsByRestrictions supports aliases, null matching, and unknown-key ignore", () => {
   const rows = [
     { schema_name: "sys", table_name: "events", owner_id: null },
@@ -462,7 +529,9 @@ test("getSchema returns synthetic catalogs without issuing SQL", async () => {
   const catalogs = await client.getSchema("catalogs");
   assert.equal(queryInvoked, false);
   assert.equal(catalogs.rowCount, 1);
-  assert.deepEqual(catalogs.rows, [{ catalog_name: "main" }]);
+  assert.equal(catalogs.rows[0].catalog_name, "main");
+  assert.equal(catalogs.rows[0].TABLE_CAT, "main");
+  assert.equal(catalogs.rows[0].table_catalog, "main");
 });
 
 test("getSchema applies restrictions before schema parent expansion", async () => {
