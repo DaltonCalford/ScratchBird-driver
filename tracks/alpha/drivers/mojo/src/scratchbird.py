@@ -1080,6 +1080,18 @@ def _result_rowcount_or_len(result: Any) -> int:
         return 0
 
 
+def _result_rows_or_empty(result: Any) -> List[Any]:
+    rows = getattr(result, "rows", None)
+    if rows is None:
+        return []
+    if isinstance(rows, list):
+        return rows
+    try:
+        return list(rows)
+    except TypeError:
+        return []
+
+
 class _ShimStatement:
     def __init__(self, conn: "_ShimConnection", sql: str):
         self._conn = conn
@@ -1198,7 +1210,7 @@ class _ShimConnection:
         return _result_rowcount_or_len(self.query_metadata_restricted_multi(collection_name, restrictions))
 
     def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
-        return self.query_metadata(collection_name).rows
+        return _result_rows_or_empty(self.query_metadata(collection_name))
 
     def ddl_editor_schema_payload(
         self,
@@ -1552,8 +1564,7 @@ class ScratchBirdConnection:
     @staticmethod
     def get_schema(conn: Any, collection_name: Optional[str] = None) -> List[Any]:
         result = ScratchBirdConnection.query_metadata(conn, collection_name)
-        rows = getattr(result, "rows", None)
-        return rows if rows is not None else []
+        return _result_rows_or_empty(result)
 
     @staticmethod
     def ddl_editor_schema_payload(

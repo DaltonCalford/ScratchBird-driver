@@ -602,6 +602,18 @@ def test_static_metadata_rowcount_fallbacks() -> None:
         "query_metadata_rows should return 0 when rows are unsized",
     )
 
+    conn.result = SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
+    _require(
+        scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [["x"], ["y"]],
+        "get_schema should convert tuple rows to list",
+    )
+
+    conn.result = SimpleNamespace(rowcount=None, rows=object())
+    _require(
+        scratchbird.ScratchBirdConnection.get_schema(conn, "schemas") == [],
+        "get_schema should return [] when rows are unsized",
+    )
+
 
 def test_instance_metadata_rowcount_fallbacks() -> None:
     conn = scratchbird.connect(_shim_cfg())
@@ -638,6 +650,18 @@ def test_instance_metadata_rowcount_fallbacks() -> None:
         _require(
             conn.query_metadata_rows("tables") == 0,
             "instance query_metadata_rows should return 0 when rows are unsized",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows=(["x"], ["y"]))
+        _require(
+            conn.get_schema("schemas") == [["x"], ["y"]],
+            "instance get_schema should convert tuple rows to list",
+        )
+
+        conn.query_metadata = lambda collection_name=None: SimpleNamespace(rowcount=None, rows=object())
+        _require(
+            conn.get_schema("schemas") == [],
+            "instance get_schema should return [] when rows are unsized",
         )
     finally:
         conn.close()
