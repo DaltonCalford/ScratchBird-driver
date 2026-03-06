@@ -119,4 +119,36 @@ public class TelemetrySurfaceTests
         Assert.Empty(summary.Operations);
         Assert.Empty(connection.GetSlowOperations());
     }
+
+    [Fact]
+    public void SlowOperationStatements_AreSanitizedByDefault()
+    {
+        using var connection = new ScratchBirdConnection(
+            "Host=localhost;TelemetrySlowOperationThresholdMs=1");
+
+        connection.RecordTelemetry(
+            "Command.ExecuteNonQuery",
+            TimeSpan.FromMilliseconds(10),
+            success: false,
+            statement: "SELECT * FROM users WHERE token='secret-token' AND role='admin'");
+
+        var slow = Assert.Single(connection.GetSlowOperations());
+        Assert.Equal("SELECT * FROM users WHERE token='?' AND role='?'", slow.Statement);
+    }
+
+    [Fact]
+    public void SlowOperationStatements_SanitizeCanBeDisabled()
+    {
+        using var connection = new ScratchBirdConnection(
+            "Host=localhost;TelemetrySlowOperationThresholdMs=1;TelemetrySanitizeStatements=false");
+
+        connection.RecordTelemetry(
+            "Command.ExecuteScalar",
+            TimeSpan.FromMilliseconds(10),
+            success: true,
+            statement: "SELECT * FROM users WHERE token='secret-token'");
+
+        var slow = Assert.Single(connection.GetSlowOperations());
+        Assert.Equal("SELECT * FROM users WHERE token='secret-token'", slow.Statement);
+    }
 }

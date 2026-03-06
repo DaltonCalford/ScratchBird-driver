@@ -80,7 +80,8 @@ public sealed record SlowOperationSummary(
     string Operation,
     long DurationMs,
     bool Success,
-    DateTimeOffset CapturedUtc);
+    DateTimeOffset CapturedUtc,
+    string? Statement);
 
 public sealed record ConnectionDiagnosticsSummary(
     DateTimeOffset CapturedUtc,

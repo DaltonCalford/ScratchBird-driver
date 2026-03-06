@@ -65,9 +65,10 @@ owned by `ScratchBirdConnection`:
 - `ScratchBirdConnection.GetSlowOperations()` returns the retained slow-operation ring buffer (`SlowOperationSummary`).
 - `ScratchBirdConnection.ExportTelemetryPrometheus()` exports counters/histogram metrics in Prometheus text format.
 - `ConnectionTelemetrySummary` includes total invocation/success/failure counts plus `OperationTelemetrySummary` entries.
-- `SlowOperationSummary` includes `Operation`, `DurationMs`, `Success`, and `CapturedUtc`.
+- `SlowOperationSummary` includes `Operation`, `DurationMs`, `Success`, `CapturedUtc`, and optional `Statement` text.
 - Command paths report operation names such as `Command.ExecuteReader`, `Command.ExecuteNonQuery`, and `Command.ExecuteScalar`.
-- DSN/connection-string telemetry controls: `TelemetryEnableTracing`, `TelemetryEnableMetrics`, `TelemetryEnableSlowOperationLog`, `TelemetrySlowOperationThresholdMs`, `TelemetrySlowOperationMaxEntries`, `TelemetrySampleRate`.
+- Slow-operation statement text is SQL-literal sanitized by default (`'...'` => `'?'`); set `TelemetrySanitizeStatements=false` to preserve raw SQL text.
+- DSN/connection-string telemetry controls: `TelemetryEnableTracing`, `TelemetryEnableMetrics`, `TelemetryEnableSlowOperationLog`, `TelemetrySlowOperationThresholdMs`, `TelemetrySlowOperationMaxEntries`, `TelemetrySampleRate`, `TelemetrySanitizeStatements`.
 
 ## Notifications
 

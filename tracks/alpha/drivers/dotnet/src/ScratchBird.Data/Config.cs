@@ -62,6 +62,7 @@ public sealed class ScratchBirdConfig
     public int TelemetrySlowOperationThresholdMs { get; set; } = 1000;
     public int TelemetrySlowOperationMaxEntries { get; set; } = 100;
     public double TelemetrySampleRate { get; set; } = 1d;
+    public bool TelemetrySanitizeStatements { get; set; } = true;
 
     public static ScratchBirdConfig FromConnectionString(string connectionString)
     {
@@ -440,6 +441,14 @@ internal static class DsnParser
             case "telemetry_sample_rate":
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var sampleRate))
                     cfg.TelemetrySampleRate = Math.Clamp(sampleRate, 0d, 1d);
+                break;
+            case "telemetrysanitizestatements":
+            case "telemetry_sanitize_statements":
+            case "telemetry_sanitize_queries":
+                cfg.TelemetrySanitizeStatements = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
                 break;
         }
     }

@@ -363,9 +363,9 @@ public sealed class ScratchBirdConnection : DbConnection
         return MapPoolDiagnostics(ProtocolClientPool.GetStats(config));
     }
 
-    internal void RecordTelemetry(string operation, TimeSpan duration, bool success)
+    internal void RecordTelemetry(string operation, TimeSpan duration, bool success, string? statement = null)
     {
-        _telemetry.Record(operation, duration, success);
+        _telemetry.Record(operation, duration, success, statement);
     }
 
     private T TrackOperation<T>(string operation, Func<T> action)
@@ -1452,7 +1452,8 @@ public sealed class ScratchBirdConnection : DbConnection
             EnableSlowOperationLog: config.TelemetryEnableSlowOperationLog,
             SlowOperationThresholdMs: config.TelemetrySlowOperationThresholdMs,
             SlowOperationMaxEntries: config.TelemetrySlowOperationMaxEntries,
-            SampleRate: config.TelemetrySampleRate);
+            SampleRate: config.TelemetrySampleRate,
+            SanitizeStatements: config.TelemetrySanitizeStatements);
     }
 
     private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)

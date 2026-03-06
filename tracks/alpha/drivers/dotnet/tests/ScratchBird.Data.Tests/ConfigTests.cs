@@ -146,7 +146,8 @@ public class ConfigTests
             "&telemetry_enable_slow_operation_log=true" +
             "&telemetry_slow_operation_threshold_ms=7" +
             "&telemetry_slow_operation_max_entries=3" +
-            "&telemetry_sample_rate=0.25");
+            "&telemetry_sample_rate=0.25" +
+            "&telemetry_sanitize_statements=false");
 
         Assert.False(uriCfg.TelemetryEnableTracing);
         Assert.False(uriCfg.TelemetryEnableMetrics);
@@ -154,11 +155,13 @@ public class ConfigTests
         Assert.Equal(7, uriCfg.TelemetrySlowOperationThresholdMs);
         Assert.Equal(3, uriCfg.TelemetrySlowOperationMaxEntries);
         Assert.Equal(0.25d, uriCfg.TelemetrySampleRate);
+        Assert.False(uriCfg.TelemetrySanitizeStatements);
 
         var kvCfg = ScratchBirdConfig.FromConnectionString(
             "Host=localhost;Port=3092;Database=mydb;telemetry=true;" +
             "telemetry_metrics=0;telemetry_slow_query_log=1;" +
-            "telemetry_slow_query_threshold_ms=9;telemetry_slow_query_max_entries=2;telemetry_sample_rate=9");
+            "telemetry_slow_query_threshold_ms=9;telemetry_slow_query_max_entries=2;telemetry_sample_rate=9;" +
+            "telemetry_sanitize_queries=0");
 
         Assert.True(kvCfg.TelemetryEnableTracing);
         Assert.False(kvCfg.TelemetryEnableMetrics);
@@ -166,5 +169,6 @@ public class ConfigTests
         Assert.Equal(9, kvCfg.TelemetrySlowOperationThresholdMs);
         Assert.Equal(2, kvCfg.TelemetrySlowOperationMaxEntries);
         Assert.Equal(1d, kvCfg.TelemetrySampleRate);
+        Assert.False(kvCfg.TelemetrySanitizeStatements);
     }
 }

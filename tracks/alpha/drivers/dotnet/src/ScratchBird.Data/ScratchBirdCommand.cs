@@ -390,7 +390,7 @@ public sealed class ScratchBirdCommand : DbCommand
         }
         finally
         {
-            _connection?.RecordTelemetry(operation, stopwatch.Elapsed, success);
+            _connection?.RecordTelemetry(operation, stopwatch.Elapsed, success, _commandText);
         }
     }
 

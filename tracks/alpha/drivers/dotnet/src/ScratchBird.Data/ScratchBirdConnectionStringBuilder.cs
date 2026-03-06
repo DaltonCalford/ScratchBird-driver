@@ -156,6 +156,12 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["TelemetrySampleRate"] = value;
     }
 
+    public bool TelemetrySanitizeStatements
+    {
+        get => GetBool("TelemetrySanitizeStatements", true);
+        set => this["TelemetrySanitizeStatements"] = value;
+    }
+
     public override string ToString()
     {
         return ConnectionString;

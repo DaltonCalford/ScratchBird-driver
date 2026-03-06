@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ScratchBird.Data;
 
@@ -18,7 +19,8 @@ internal readonly record struct TelemetryOptions(
     bool EnableSlowOperationLog,
     int SlowOperationThresholdMs,
     int SlowOperationMaxEntries,
-    double SampleRate)
+    double SampleRate,
+    bool SanitizeStatements)
 {
     public static TelemetryOptions Default { get; } = new(
         EnableTracing: true,
@@ -26,7 +28,8 @@ internal readonly record struct TelemetryOptions(
         EnableSlowOperationLog: true,
         SlowOperationThresholdMs: 1000,
         SlowOperationMaxEntries: 100,
-        SampleRate: 1d);
+        SampleRate: 1d,
+        SanitizeStatements: true);
 
     public TelemetryOptions Normalize()
     {
@@ -36,7 +39,8 @@ internal readonly record struct TelemetryOptions(
             EnableSlowOperationLog,
             Math.Max(0, SlowOperationThresholdMs),
             Math.Max(0, SlowOperationMaxEntries),
-            Math.Clamp(SampleRate, 0d, 1d));
+            Math.Clamp(SampleRate, 0d, 1d),
+            SanitizeStatements);
     }
 }
 
@@ -71,7 +75,7 @@ internal sealed class TelemetryCollector
         _options = options.Normalize();
     }
 
-    public void Record(string operation, TimeSpan duration, bool success)
+    public void Record(string operation, TimeSpan duration, bool success, string? statement = null)
     {
         if (string.IsNullOrWhiteSpace(operation) || !_options.EnableTracing)
         {
@@ -104,7 +108,7 @@ internal sealed class TelemetryCollector
 
         if (_options.EnableSlowOperationLog && durationMs > _options.SlowOperationThresholdMs)
         {
-            RecordSlowOperation(operation, durationMs, success);
+            RecordSlowOperation(operation, durationMs, success, statement);
         }
     }
 
@@ -287,14 +291,19 @@ internal sealed class TelemetryCollector
         }
     }
 
-    private void RecordSlowOperation(string operation, long durationMs, bool success)
+    private void RecordSlowOperation(string operation, long durationMs, bool success, string? statement)
     {
         if (_options.SlowOperationMaxEntries <= 0)
         {
             return;
         }
 
-        var summary = new SlowOperationSummary(operation, durationMs, success, DateTimeOffset.UtcNow);
+        var summary = new SlowOperationSummary(
+            operation,
+            durationMs,
+            success,
+            DateTimeOffset.UtcNow,
+            NormalizeStatement(statement));
         lock (_slowOperationsSync)
         {
             _slowOperations.Enqueue(summary);
@@ -315,5 +324,37 @@ internal sealed class TelemetryCollector
         return value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
+    }
+
+    private string? NormalizeStatement(string? statement)
+    {
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return null;
+        }
+
+        var normalized = statement.Trim();
+        if (_options.SanitizeStatements)
+        {
+            normalized = SanitizeStatement(normalized);
+        }
+
+        const int maxStatementChars = 512;
+        if (normalized.Length > maxStatementChars)
+        {
+            normalized = normalized[..maxStatementChars];
+        }
+
+        return normalized;
+    }
+
+    internal static string SanitizeStatement(string statement)
+    {
+        if (string.IsNullOrEmpty(statement))
+        {
+            return statement;
+        }
+
+        return Regex.Replace(statement, "'(?:''|[^'])*'", "'?'", RegexOptions.CultureInvariant);
     }
 }
