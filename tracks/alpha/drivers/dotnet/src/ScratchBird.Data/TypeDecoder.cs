@@ -99,6 +99,25 @@ public sealed class ScratchBirdTime
     }
 }
 
+public sealed class ScratchBirdTimeTz
+{
+    public long Micros { get; }
+    public int UtcOffsetSeconds { get; }
+
+    public ScratchBirdTimeTz(long micros, int utcOffsetSeconds)
+    {
+        Micros = micros;
+        UtcOffsetSeconds = utcOffsetSeconds;
+    }
+
+    public DateTimeOffset ToDateTimeOffset()
+    {
+        var time = TimeSpan.FromTicks(Micros * 10);
+        var offset = TimeSpan.FromSeconds(UtcOffsetSeconds);
+        return new DateTimeOffset(DateOnly.MinValue.ToDateTime(TimeOnly.MinValue) + time, offset);
+    }
+}
+
 public sealed class ScratchBirdTimestamp
 {
     public DateTime Value { get; }
@@ -358,6 +377,11 @@ internal static class TypeDecoder
             return (new ParamValue { Data = EncodeTimeMicros(time.Micros), Format = FormatBinary }, OidTime);
         }
 
+        if (value is ScratchBirdTimeTz timetz)
+        {
+            return (new ParamValue { Data = EncodeTimeTzMicros(timetz.Micros, timetz.UtcOffsetSeconds), Format = FormatBinary }, OidTimetz);
+        }
+
         if (value is TimeOnly timeOnly)
         {
             var micros = (long)timeOnly.ToTimeSpan().Ticks / 10;
@@ -559,6 +583,7 @@ internal static class TypeDecoder
             OidBytea => "bytea",
             OidDate => "date",
             OidTime => "time",
+            OidTimetz => "timetz",
             OidTimestamp => "timestamp",
             OidTimestamptz => "timestamptz",
             OidInterval => "interval",
@@ -602,6 +627,7 @@ internal static class TypeDecoder
             OidBytea => typeof(byte[]),
             OidDate => typeof(DateOnly),
             OidTime => typeof(TimeOnly),
+            OidTimetz => typeof(ScratchBirdTimeTz),
             OidTimestamp => typeof(DateTime),
             OidTimestamptz => typeof(DateTimeOffset),
             OidInterval => typeof(ScratchBirdInterval),
@@ -729,6 +755,8 @@ internal static class TypeDecoder
                 return DecodeDate(data);
             case OidTime:
                 return DecodeTime(data);
+            case OidTimetz:
+                return DecodeTimeTz(data);
             case OidTimestamp:
                 return DecodeTimestamp(data).DateTime;
             case OidTimestamptz:
@@ -1005,6 +1033,20 @@ internal static class TypeDecoder
         return EncodeInt64(micros);
     }
 
+    private static byte[] EncodeTimeTzMicros(long micros, int utcOffsetSeconds)
+    {
+        if (utcOffsetSeconds < -86400 || utcOffsetSeconds > 86400)
+        {
+            throw new InvalidOperationException("time with time zone offset must be between -86400 and 86400 seconds");
+        }
+
+        var payload = new byte[12];
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(0, 8), micros);
+        // Wire payload stores offset as seconds west of UTC.
+        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(8, 4), -utcOffsetSeconds);
+        return payload;
+    }
+
     private static byte[] EncodeTimestamp(DateTime value)
     {
         var utc = value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
@@ -1040,6 +1082,20 @@ internal static class TypeDecoder
         var micros = ReadInt64(data);
         var ticks = micros * 10;
         return TimeOnly.FromTimeSpan(TimeSpan.FromTicks(ticks));
+    }
+
+    private static ScratchBirdTimeTz DecodeTimeTz(byte[] data)
+    {
+        var payload = StripLengthPrefix(data);
+        if (payload.Length < 12)
+        {
+            return new ScratchBirdTimeTz(0, 0);
+        }
+
+        var micros = BinaryPrimitives.ReadInt64LittleEndian(payload.AsSpan(0, 8));
+        var secondsWestOfUtc = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(8, 4));
+        var utcOffsetSeconds = -secondsWestOfUtc;
+        return new ScratchBirdTimeTz(micros, utcOffsetSeconds);
     }
 
     private static DateTimeOffset DecodeTimestamp(byte[] data)

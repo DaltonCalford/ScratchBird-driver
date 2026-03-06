@@ -326,6 +326,27 @@ public sealed class ScratchBirdConnection : DbConnection
         });
     }
 
+    public ScratchBirdTransaction BeginTransaction(ScratchBirdTransactionOptions options)
+    {
+        return TrackOperation("Connection.BeginTransactionWithOptions", () =>
+        {
+            ArgumentNullException.ThrowIfNull(options);
+            if (_state != ConnectionState.Open)
+            {
+                throw new InvalidOperationException("Connection is not open");
+            }
+            if (HasActiveTransaction)
+            {
+                throw new InvalidOperationException("Connection already has an active transaction");
+            }
+
+            GetConnectedClient().Begin(options);
+            var transaction = new ScratchBirdTransaction(this, options.IsolationLevel);
+            _activeTransaction = transaction;
+            return transaction;
+        });
+    }
+
     internal bool HasActiveTransaction
     {
         get
@@ -851,54 +872,78 @@ public sealed class ScratchBirdConnection : DbConnection
             }
 
             var collectionKey = NormalizeCollectionName(collectionName);
-            if (string.Equals(collectionKey, "catalogs", StringComparison.Ordinal))
-            {
-                return BuildCatalogsMetadataTable(collectionName, restrictionValues);
-            }
-
-            var query = collectionKey switch
-            {
-                "catalogs" => ScratchBirdMetadata.CatalogsQuery,
-                "tables" => ScratchBirdMetadata.TablesQuery,
-                "columns" => ScratchBirdMetadata.ColumnsQuery,
-                "schemas" => ScratchBirdMetadata.SchemasQuery,
-                "indexes" => ScratchBirdMetadata.IndexesQuery,
-                "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
-                "constraints" => ScratchBirdMetadata.ConstraintsQuery,
-                "primarykeys" => ScratchBirdMetadata.PrimaryKeysQuery,
-                "foreignkeys" => ScratchBirdMetadata.ForeignKeysQuery,
-                "tableprivileges" => ScratchBirdMetadata.TablePrivilegesQuery,
-                "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
-                "procedures" => ScratchBirdMetadata.ProceduresQuery,
-                "functions" => ScratchBirdMetadata.FunctionsQuery,
-                "routines" => ScratchBirdMetadata.RoutinesQuery,
-                "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
-                _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
-            };
-
-            using var cmd = CreateDbCommand();
-            cmd.CommandText = query;
-            using var reader = cmd.ExecuteReader();
-            _ = reader.HasRows; // Prime row-description metadata before FieldCount/column enumeration.
-
-            var table = new System.Data.DataTable(collectionName);
-            for (var i = 0; i < reader.FieldCount; i++)
-            {
-                table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
-            }
-
-            while (reader.Read())
-            {
-                var row = table.NewRow();
-                for (var i = 0; i < reader.FieldCount; i++)
-                {
-                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
-                }
-                table.Rows.Add(row);
-            }
-
+            var table = QueryMetadataCollection(collectionKey, collectionName);
             return ShapeMetadataTable(table, collectionKey, restrictionValues, _config.MetadataExpandSchemaParents);
         });
+    }
+
+    public DdlEditorSchemaPayload GetDdlEditorSchemaPayload(string? schemaPattern = null, bool? expandSchemaParents = null)
+    {
+        return TrackOperation("Connection.GetDdlEditorSchemaPayload", () =>
+        {
+            if (_state != ConnectionState.Open)
+            {
+                throw new InvalidOperationException("Connection is not open");
+            }
+
+            var schemaTable = QueryMetadataCollection("schemas", "Schemas");
+            var expand = expandSchemaParents ?? _config.MetadataExpandSchemaParents;
+            return BuildDdlEditorSchemaPayload(schemaTable, schemaPattern, expand);
+        });
+    }
+
+    private DataTable QueryMetadataCollection(string collectionKey, string collectionName)
+    {
+        if (string.Equals(collectionKey, "catalogs", StringComparison.Ordinal))
+        {
+            return BuildCatalogsMetadataTable(collectionName, null);
+        }
+
+        var query = ResolveMetadataQuery(collectionKey, collectionName);
+        using var cmd = CreateDbCommand();
+        cmd.CommandText = query;
+        using var reader = cmd.ExecuteReader();
+        _ = reader.HasRows; // Prime row-description metadata before FieldCount/column enumeration.
+
+        var table = new System.Data.DataTable(collectionName);
+        for (var i = 0; i < reader.FieldCount; i++)
+        {
+            table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+        }
+
+        while (reader.Read())
+        {
+            var row = table.NewRow();
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+            }
+            table.Rows.Add(row);
+        }
+
+        return table;
+    }
+
+    private static string ResolveMetadataQuery(string collectionKey, string collectionName)
+    {
+        return collectionKey switch
+        {
+            "tables" => ScratchBirdMetadata.TablesQuery,
+            "columns" => ScratchBirdMetadata.ColumnsQuery,
+            "schemas" => ScratchBirdMetadata.SchemasQuery,
+            "indexes" => ScratchBirdMetadata.IndexesQuery,
+            "indexcolumns" => ScratchBirdMetadata.IndexColumnsQuery,
+            "constraints" => ScratchBirdMetadata.ConstraintsQuery,
+            "primarykeys" => ScratchBirdMetadata.PrimaryKeysQuery,
+            "foreignkeys" => ScratchBirdMetadata.ForeignKeysQuery,
+            "tableprivileges" => ScratchBirdMetadata.TablePrivilegesQuery,
+            "columnprivileges" => ScratchBirdMetadata.ColumnPrivilegesQuery,
+            "procedures" => ScratchBirdMetadata.ProceduresQuery,
+            "functions" => ScratchBirdMetadata.FunctionsQuery,
+            "routines" => ScratchBirdMetadata.RoutinesQuery,
+            "typeinfo" => ScratchBirdMetadata.TypeInfoQuery,
+            _ => throw new NotSupportedException($"Schema collection '{collectionName}' is not supported")
+        };
     }
 
     private static string NormalizeCollectionName(string? collectionName)
@@ -951,6 +996,118 @@ public sealed class ScratchBirdConnection : DbConnection
         }
 
         return ApplyRestrictionValuesForMetadata(shaped, collectionKey, restrictionValues);
+    }
+
+    internal static DdlEditorSchemaPayload BuildDdlEditorSchemaPayload(
+        DataTable schemaTable,
+        string? schemaPattern,
+        bool expandSchemaParents)
+    {
+        ArgumentNullException.ThrowIfNull(schemaTable);
+
+        var schemaColumn = ResolveColumnName(schemaTable, "schema_name", "table_schema", "table_schem");
+        if (schemaColumn == null)
+        {
+            return new DdlEditorSchemaPayload(
+                schemaPattern,
+                expandSchemaParents,
+                Array.Empty<string>(),
+                Array.Empty<DdlEditorSchemaNode>());
+        }
+
+        var normalizedPattern = string.IsNullOrWhiteSpace(schemaPattern) ? null : schemaPattern.Trim();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DataRow row in schemaTable.Rows)
+        {
+            if (row[schemaColumn] == DBNull.Value || row[schemaColumn] == null)
+            {
+                continue;
+            }
+
+            var normalized = NormalizeSchemaPath(row[schemaColumn]!.ToString());
+            if (normalized == null)
+            {
+                continue;
+            }
+
+            if (expandSchemaParents)
+            {
+                AppendSchemaParents(paths, normalized);
+            }
+            else
+            {
+                paths.Add(normalized);
+            }
+        }
+
+        var schemaPaths = paths
+            .Where(path => normalizedPattern == null || MatchesRestriction(path, normalizedPattern))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var schemaTree = BuildSchemaTree(schemaPaths);
+        return new DdlEditorSchemaPayload(normalizedPattern, expandSchemaParents, schemaPaths, schemaTree);
+    }
+
+    private static IReadOnlyList<DdlEditorSchemaNode> BuildSchemaTree(IEnumerable<string> schemaPaths)
+    {
+        var roots = new List<MutableSchemaNode>();
+        var index = new Dictionary<string, MutableSchemaNode>(StringComparer.OrdinalIgnoreCase);
+        foreach (var schemaPath in schemaPaths)
+        {
+            var parts = SplitSchemaPath(schemaPath);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+
+            MutableSchemaNode? parent = null;
+            var currentPath = new StringBuilder();
+            foreach (var part in parts)
+            {
+                if (currentPath.Length > 0)
+                {
+                    currentPath.Append('.');
+                }
+                currentPath.Append(part);
+
+                var fullPath = currentPath.ToString();
+                if (!index.TryGetValue(fullPath, out var node))
+                {
+                    node = new MutableSchemaNode(part, fullPath);
+                    index[fullPath] = node;
+                    if (parent == null)
+                    {
+                        roots.Add(node);
+                    }
+                    else
+                    {
+                        parent.Children.Add(node);
+                    }
+                }
+
+                parent = node;
+            }
+
+            if (parent != null)
+            {
+                parent.IsTerminal = true;
+            }
+        }
+
+        return roots
+            .OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(ToImmutableSchemaNode)
+            .ToArray();
+    }
+
+    private static DdlEditorSchemaNode ToImmutableSchemaNode(MutableSchemaNode node)
+    {
+        var children = node.Children
+            .OrderBy(child => child.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(ToImmutableSchemaNode)
+            .ToArray();
+        return new DdlEditorSchemaNode(node.Name, node.FullPath, node.IsTerminal, children);
     }
 
     internal static DataTable ExpandSchemaParentsForMetadata(DataTable table)
@@ -1181,14 +1338,23 @@ public sealed class ScratchBirdConnection : DbConnection
 
     private static bool MatchesRestriction(string value, string pattern)
     {
-        if (pattern.IndexOf('%') < 0 && pattern.IndexOf('_') < 0)
-        {
-            return string.Equals(value, pattern, StringComparison.OrdinalIgnoreCase);
-        }
-
         var regexBuilder = new StringBuilder("^");
+        var escaped = false;
         foreach (var ch in pattern)
         {
+            if (escaped)
+            {
+                regexBuilder.Append(Regex.Escape(ch.ToString()));
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
             if (ch == '%')
             {
                 regexBuilder.Append(".*");
@@ -1201,6 +1367,12 @@ public sealed class ScratchBirdConnection : DbConnection
             }
             regexBuilder.Append(Regex.Escape(ch.ToString()));
         }
+
+        if (escaped)
+        {
+            regexBuilder.Append(Regex.Escape("\\"));
+        }
+
         regexBuilder.Append('$');
 
         var regexPattern = regexBuilder.ToString();
@@ -1209,21 +1381,15 @@ public sealed class ScratchBirdConnection : DbConnection
 
     private static void AppendSchemaParents(ISet<string> output, string schemaName)
     {
-        if (string.IsNullOrWhiteSpace(schemaName))
+        var segments = SplitSchemaPath(schemaName);
+        if (segments.Length == 0)
         {
             return;
         }
 
-        var segments = schemaName.Split('.', StringSplitOptions.None);
         var current = new StringBuilder();
-        foreach (var segmentRaw in segments)
+        foreach (var segment in segments)
         {
-            var segment = segmentRaw.Trim();
-            if (segment.Length == 0)
-            {
-                continue;
-            }
-
             if (current.Length > 0)
             {
                 current.Append('.');
@@ -1231,6 +1397,26 @@ public sealed class ScratchBirdConnection : DbConnection
             current.Append(segment);
             output.Add(current.ToString());
         }
+    }
+
+    private static string? NormalizeSchemaPath(string? schemaName)
+    {
+        var segments = SplitSchemaPath(schemaName);
+        return segments.Length == 0 ? null : string.Join(".", segments);
+    }
+
+    private static string[] SplitSchemaPath(string? schemaName)
+    {
+        if (string.IsNullOrWhiteSpace(schemaName))
+        {
+            return Array.Empty<string>();
+        }
+
+        return schemaName
+            .Split('.', StringSplitOptions.None)
+            .Select(segment => segment.Trim())
+            .Where(segment => segment.Length > 0)
+            .ToArray();
     }
 
     private static string? ResolveColumnName(DataTable table, params string[] aliases)
@@ -1247,6 +1433,21 @@ public sealed class ScratchBirdConnection : DbConnection
         }
 
         return null;
+    }
+
+    private sealed class MutableSchemaNode
+    {
+        public MutableSchemaNode(string name, string fullPath)
+        {
+            Name = name;
+            FullPath = fullPath;
+            Children = new List<MutableSchemaNode>();
+        }
+
+        public string Name { get; }
+        public string FullPath { get; }
+        public bool IsTerminal { get; set; }
+        public List<MutableSchemaNode> Children { get; }
     }
 
     private void ApplySchema()

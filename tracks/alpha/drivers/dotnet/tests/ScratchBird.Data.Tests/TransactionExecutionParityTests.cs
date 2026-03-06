@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
@@ -25,6 +26,13 @@ public class TransactionExecutionParityTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => connection.BeginTransaction());
         Assert.Contains("active transaction", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BeginTransactionWithOptions_ThrowsWhenOptionsNull()
+    {
+        using var connection = CreateOpenConnection();
+        Assert.Throws<ArgumentNullException>(() => connection.BeginTransaction(options: null!));
     }
 
     [Fact]
@@ -244,6 +252,59 @@ public class TransactionExecutionParityTests
         Assert.NotNull(method);
         var mapped = (byte)method!.Invoke(null, new object[] { input })!;
         Assert.Equal(ProtocolConstants.IsolationSerializable, mapped);
+    }
+
+    [Fact]
+    public void CreateTxnBeginPayload_DefaultOptionsSetsReadCommittedIsolationOnly()
+    {
+        var payload = ProtocolClient.CreateTxnBeginPayload(new ScratchBirdTransactionOptions());
+
+        Assert.Equal(12, payload.Length);
+        Assert.Equal(ProtocolConstants.TxnFlagHasIsolation, BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(0, 2)));
+        Assert.Equal(0, payload[3]); // autocommit
+        Assert.Equal(ProtocolConstants.IsolationReadCommitted, payload[4]);
+        Assert.Equal(0, payload[5]); // access
+        Assert.Equal(0, payload[6]); // deferrable
+        Assert.Equal(0, payload[7]); // wait
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4)));
+    }
+
+    [Fact]
+    public void CreateTxnBeginPayload_WithOptionalsSetsFlagsAndFields()
+    {
+        var payload = ProtocolClient.CreateTxnBeginPayload(new ScratchBirdTransactionOptions
+        {
+            IsolationLevel = IsolationLevel.Serializable,
+            AccessMode = ScratchBirdTransactionAccessMode.ReadOnly,
+            Deferrable = true,
+            Wait = false,
+            TimeoutMs = 1500,
+            AutoCommit = true
+        });
+
+        var expectedFlags =
+            ProtocolConstants.TxnFlagHasIsolation |
+            ProtocolConstants.TxnFlagHasAccess |
+            ProtocolConstants.TxnFlagHasDeferrable |
+            ProtocolConstants.TxnFlagHasWait |
+            ProtocolConstants.TxnFlagHasTimeout |
+            ProtocolConstants.TxnFlagHasAutocommit;
+
+        Assert.Equal(expectedFlags, BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(0, 2)));
+        Assert.Equal(1, payload[3]); // autocommit true
+        Assert.Equal(ProtocolConstants.IsolationSerializable, payload[4]);
+        Assert.Equal((byte)ScratchBirdTransactionAccessMode.ReadOnly, payload[5]);
+        Assert.Equal(1, payload[6]); // deferrable true
+        Assert.Equal(0, payload[7]); // wait false
+        Assert.Equal(1500u, BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4)));
+    }
+
+    [Fact]
+    public void CreateTxnBeginPayload_ThrowsWhenTimeoutIsNegative()
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ProtocolClient.CreateTxnBeginPayload(new ScratchBirdTransactionOptions { TimeoutMs = -1 }));
+        Assert.Contains("TimeoutMs", ex.Message, StringComparison.Ordinal);
     }
 
     private static ScratchBirdConnection CreateOpenConnection()

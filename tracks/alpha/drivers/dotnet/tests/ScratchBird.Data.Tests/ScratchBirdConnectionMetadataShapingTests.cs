@@ -17,6 +17,66 @@ namespace ScratchBird.Data.Tests;
 public class ScratchBirdConnectionMetadataShapingTests
 {
     [Fact]
+    public void BuildDdlEditorSchemaPayload_ExpandsParentsAndBuildsTree()
+    {
+        var table = CreateSchemasTable(
+            "users.alice.dev",
+            "users.bob",
+            "analytics.prod",
+            "sys");
+
+        var payload = ScratchBirdConnection.BuildDdlEditorSchemaPayload(
+            table,
+            schemaPattern: null,
+            expandSchemaParents: true);
+
+        Assert.True(payload.ExpandSchemaParents);
+        Assert.Equal(
+            new[]
+            {
+                "analytics",
+                "analytics.prod",
+                "sys",
+                "users",
+                "users.alice",
+                "users.alice.dev",
+                "users.bob"
+            },
+            payload.SchemaPaths);
+
+        var usersRoot = Assert.Single(payload.SchemaTree.Where(node => node.Name == "users"));
+        Assert.True(usersRoot.IsTerminal);
+
+        var usersAlice = Assert.Single(usersRoot.Children.Where(node => node.Name == "alice"));
+        Assert.True(usersAlice.IsTerminal);
+        Assert.Single(usersAlice.Children);
+        Assert.Equal("users.alice.dev", usersAlice.Children[0].FullPath);
+        Assert.True(usersAlice.Children[0].IsTerminal);
+    }
+
+    [Fact]
+    public void ApplyRestrictionValuesForMetadata_TreatsEscapedWildcardCharactersAsLiterals()
+    {
+        var table = CreateSchemasTable(
+            "users_qa",
+            "usersxqa",
+            "acct%prod",
+            "acctXprod");
+
+        var underscoreFiltered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "schemas",
+            new[] { null, @"users\_qa" });
+        Assert.Equal(new[] { "users_qa" }, ReadSchemaNames(underscoreFiltered));
+
+        var percentFiltered = ScratchBirdConnection.ApplyRestrictionValuesForMetadata(
+            table,
+            "schemas",
+            new[] { null, @"acct\%prod" });
+        Assert.Equal(new[] { "acct%prod" }, ReadSchemaNames(percentFiltered));
+    }
+
+    [Fact]
     public void ExpandSchemaParentsForMetadataAddsMissingParentsAndPreservesDistinctBranches()
     {
         var table = CreateSchemasTable(

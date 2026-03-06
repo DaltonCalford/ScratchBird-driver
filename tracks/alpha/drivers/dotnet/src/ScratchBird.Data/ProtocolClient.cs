@@ -291,17 +291,78 @@ internal sealed class ProtocolClient
 
     public void Begin()
     {
-        Begin(IsolationLevel.ReadCommitted);
+        Begin(new ScratchBirdTransactionOptions());
     }
 
     public void Begin(IsolationLevel isolationLevel)
     {
+        Begin(new ScratchBirdTransactionOptions { IsolationLevel = isolationLevel });
+    }
+
+    public void Begin(ScratchBirdTransactionOptions options)
+    {
         EnsureConnected();
-        var mappedIsolation = MapIsolationLevel(isolationLevel);
-        var payload = ProtocolCodec.BuildTxnBeginPayload(0, 0, 0, ProtocolConstants.IsolationReadCommitted, 0, 0, 0, 0);
-        payload[4] = mappedIsolation;
+        var payload = CreateTxnBeginPayload(options);
         SendMessage(MessageType.TXN_BEGIN, payload, 0, false);
         DrainUntilReady();
+    }
+
+    internal static byte[] CreateTxnBeginPayload(ScratchBirdTransactionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var mappedIsolation = MapIsolationLevel(options.IsolationLevel);
+
+        var flags = ProtocolConstants.TxnFlagHasIsolation;
+        byte accessMode = 0;
+        if (options.AccessMode.HasValue)
+        {
+            flags |= ProtocolConstants.TxnFlagHasAccess;
+            accessMode = (byte)options.AccessMode.Value;
+        }
+
+        byte deferrable = 0;
+        if (options.Deferrable.HasValue)
+        {
+            flags |= ProtocolConstants.TxnFlagHasDeferrable;
+            deferrable = options.Deferrable.Value ? (byte)1 : (byte)0;
+        }
+
+        byte waitMode = 0;
+        if (options.Wait.HasValue)
+        {
+            flags |= ProtocolConstants.TxnFlagHasWait;
+            waitMode = options.Wait.Value ? (byte)1 : (byte)0;
+        }
+
+        uint timeoutMs = 0;
+        if (options.TimeoutMs.HasValue)
+        {
+            if (options.TimeoutMs.Value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options.TimeoutMs), "TimeoutMs must be non-negative");
+            }
+
+            flags |= ProtocolConstants.TxnFlagHasTimeout;
+            timeoutMs = (uint)options.TimeoutMs.Value;
+        }
+
+        byte autocommitMode = 0;
+        if (options.AutoCommit.HasValue)
+        {
+            flags |= ProtocolConstants.TxnFlagHasAutocommit;
+            autocommitMode = options.AutoCommit.Value ? (byte)1 : (byte)0;
+        }
+
+        return ProtocolCodec.BuildTxnBeginPayload(
+            flags,
+            conflictAction: 0,
+            autocommitMode,
+            mappedIsolation,
+            accessMode,
+            deferrable,
+            waitMode,
+            timeoutMs);
     }
 
     private static byte MapIsolationLevel(IsolationLevel isolationLevel)

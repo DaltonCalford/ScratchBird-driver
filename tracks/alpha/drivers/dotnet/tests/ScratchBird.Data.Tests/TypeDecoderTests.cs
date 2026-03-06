@@ -118,6 +118,43 @@ public class TypeDecoderTests
     }
 
     [Fact]
+    public void EncodeParam_TimeTz_UsesTimetzOidAndWireLayout()
+    {
+        var encoded = TypeDecoder.EncodeParam(new ScratchBirdTimeTz(micros: 3_600_000_000, utcOffsetSeconds: 19800));
+
+        Assert.Equal(TypeDecoder.OidTimetz, encoded.Oid);
+        Assert.NotNull(encoded.Param.Data);
+        Assert.Equal(12, encoded.Param.Data!.Length);
+        Assert.Equal(3_600_000_000, BinaryPrimitives.ReadInt64LittleEndian(encoded.Param.Data.AsSpan(0, 8)));
+        Assert.Equal(-19800, BinaryPrimitives.ReadInt32LittleEndian(encoded.Param.Data.AsSpan(8, 4)));
+    }
+
+    [Fact]
+    public void DecodeTimeTzBinary_ReturnsScratchBirdTimeTz()
+    {
+        var payload = new byte[12];
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(0, 8), 123_000_000);
+        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(8, 4), 25_200); // west-of-UTC, so UTC offset should become -25200
+
+        var decoded = TypeDecoder.Decode(TypeDecoder.OidTimetz, WithLengthPrefix(payload), (byte)TypeDecoder.FormatBinary);
+        var value = Assert.IsType<ScratchBirdTimeTz>(decoded);
+
+        Assert.Equal(123_000_000, value.Micros);
+        Assert.Equal(-25_200, value.UtcOffsetSeconds);
+    }
+
+    [Theory]
+    [InlineData(TypeDecoder.OidInet, "10.0.0.1/32")]
+    [InlineData(TypeDecoder.OidCidr, "10.0.0.0/24")]
+    [InlineData(TypeDecoder.OidMacaddr, "08:00:2b:01:02:03")]
+    [InlineData(TypeDecoder.OidMacaddr8, "08:00:2b:ff:fe:01:02:03")]
+    public void DecodeNetworkAddressBinary_ReturnsString(uint oid, string textValue)
+    {
+        var decoded = TypeDecoder.Decode(oid, WithLengthPrefix(Encoding.UTF8.GetBytes(textValue)), (byte)TypeDecoder.FormatBinary);
+        Assert.Equal(textValue, Assert.IsType<string>(decoded));
+    }
+
+    [Fact]
     public void DecodeInt8RangeBinary_ReturnsExpectedBounds()
     {
         var encoded = new byte[4 + 4 + 8 + 4 + 8];
@@ -168,9 +205,19 @@ public class TypeDecoderTests
     public void OidAndClrTypeMappings_ResolveKnownAndUnknownTypes()
     {
         Assert.Equal("vector", TypeDecoder.OidToString(TypeDecoder.OidSbVector));
+        Assert.Equal("timetz", TypeDecoder.OidToString(TypeDecoder.OidTimetz));
+        Assert.Equal("inet", TypeDecoder.OidToString(TypeDecoder.OidInet));
+        Assert.Equal("cidr", TypeDecoder.OidToString(TypeDecoder.OidCidr));
+        Assert.Equal("macaddr", TypeDecoder.OidToString(TypeDecoder.OidMacaddr));
+        Assert.Equal("macaddr8", TypeDecoder.OidToString(TypeDecoder.OidMacaddr8));
         Assert.Equal("unknown", TypeDecoder.OidToString(999999));
 
         Assert.Equal(typeof(ScratchBirdRange<long>), TypeDecoder.GetClrType(TypeDecoder.OidInt8Range));
+        Assert.Equal(typeof(ScratchBirdTimeTz), TypeDecoder.GetClrType(TypeDecoder.OidTimetz));
+        Assert.Equal(typeof(string), TypeDecoder.GetClrType(TypeDecoder.OidInet));
+        Assert.Equal(typeof(string), TypeDecoder.GetClrType(TypeDecoder.OidCidr));
+        Assert.Equal(typeof(string), TypeDecoder.GetClrType(TypeDecoder.OidMacaddr));
+        Assert.Equal(typeof(string), TypeDecoder.GetClrType(TypeDecoder.OidMacaddr8));
         Assert.Equal(typeof(object), TypeDecoder.GetClrType(999999));
     }
 

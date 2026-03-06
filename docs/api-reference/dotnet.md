@@ -17,6 +17,8 @@
 - `ScratchBirdQueryPipelineConfig`
 - `ScratchBirdQueryPipelineBatch`
 - `ScratchBirdPipelineBatchItem`
+- `ScratchBirdTransactionOptions`
+- `DdlEditorSchemaPayload`, `DdlEditorSchemaNode`
 - `ScratchBirdFactory`
 
 ## Wrapper Types
@@ -26,7 +28,7 @@
 - `ScratchBirdGeometry`
 - `ScratchBirdRange<T>`
 - `ScratchBirdInterval`, `ScratchBirdDate`, `ScratchBirdTime`,
-  `ScratchBirdTimestamp`, `ScratchBirdTimestampTz`, `ScratchBirdDecimal`,
+  `ScratchBirdTimeTz`, `ScratchBirdTimestamp`, `ScratchBirdTimestampTz`, `ScratchBirdDecimal`,
   `ScratchBirdMoney`
 - `ScratchBirdRaw`
 
@@ -36,6 +38,7 @@ Advanced protocol operations are exposed on the internal `ProtocolClient`
 owned by `ScratchBirdConnection`:
 
 - `Begin()`, `Commit()`, `Rollback()`
+- `Begin(ScratchBirdTransactionOptions)` with optional access/deferrable/wait/timeout/autocommit txn flags
 - `Savepoint(name)`, `ReleaseSavepoint(name)`, `RollbackToSavepoint(name)`
 - `SetOption(name, value)`
 - `Ping()`
@@ -51,6 +54,8 @@ owned by `ScratchBirdConnection`:
 
 - `GetSchema(collectionName, restrictionValues)` supports extended metadata families (including unified `Routines`) and collection-scoped restriction filtering.
 - Metadata restriction values support explicit `"null"` literal matching for nullable metadata columns.
+- Metadata restrictions treat escaped wildcards as literals (`\%`, `\_`).
+- `GetDdlEditorSchemaPayload(schemaPattern, expandSchemaParents)` returns schema paths plus hierarchical tree nodes for DDL/editor UX.
 
 ## Diagnostics
 
