@@ -13,6 +13,8 @@
 - `ScratchBirdDataReader` (DbDataReader)
 - `ScratchBirdTransaction` (DbTransaction)
 - `ScratchBirdConnectionStringBuilder`
+- `ScratchBirdQueryPipeline`
+- `ScratchBirdQueryPipelineConfig`
 - `ScratchBirdFactory`
 
 ## Wrapper Types
@@ -69,6 +71,18 @@ owned by `ScratchBirdConnection`:
 - Pipeline DSN control: `pipeline_max_in_flight` (disabled when set to `0`).
 - `ScratchBirdConnection.GetLeakSummary()` returns the leak monitor snapshot.
 - Leak DSN controls: `leak_threshold_ms`, `leak_capture_stack` (alias `leak_capture_stack_trace`).
+
+## Query Pipeline
+
+- `ScratchBirdConnection.CreateQueryPipeline(config)` creates a single-worker query pipeline similar to JDBC `QueryPipeline`.
+- `ScratchBirdQueryPipeline.QueueAsync(...)` enqueues SQL for asynchronous execution and returns `Task<IReadOnlyList<ResultSetSummary>>`.
+- `ScratchBirdQueryPipeline.Flush()` triggers immediate processing of queued requests.
+- `ScratchBirdQueryPipeline.PendingCount`, `InFlightCount`, and `HasCapacity` expose runtime queue/capacity state.
+- `ScratchBirdQueryPipelineConfig` controls queue behavior:
+  - `MaxInFlight`
+  - `AutoFlush`
+  - `AutoFlushThreshold`
+  - `FlushTimeoutMs`
 
 ## Telemetry
 

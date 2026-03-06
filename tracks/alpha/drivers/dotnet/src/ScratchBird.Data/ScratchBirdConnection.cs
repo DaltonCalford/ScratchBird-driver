@@ -427,6 +427,11 @@ public sealed class ScratchBirdConnection : DbConnection
         return MapPipelineSummary(_pipelineMonitor.Snapshot());
     }
 
+    public ScratchBirdQueryPipeline CreateQueryPipeline(ScratchBirdQueryPipelineConfig? config = null)
+    {
+        return new ScratchBirdQueryPipeline(this, config);
+    }
+
     public LeakSummary GetLeakSummary()
     {
         return MapLeakSummary(_leakMonitor.Snapshot());
