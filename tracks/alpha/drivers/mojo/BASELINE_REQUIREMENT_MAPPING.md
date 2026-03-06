@@ -106,7 +106,7 @@
 - `tests/txn_exec_parity.py:269` (shim begin invalid-option SQLSTATE assertions plus prepare-on-closed-connection guard `08003`)
 - `tests/txn_exec_parity.py:250` (shim savepoint lifecycle + rollback-trim assertions)
 - `tests/txn_exec_parity.py:355` (shim closed-connection `begin`/`commit`/`rollback` guards expose SQLSTATE `08003`)
-- `tests/txn_exec_parity.py:442` (wire/static closed-connection guard assertions for begin/commit/rollback/savepoint/query/metadata (including rowcount/restriction metadata helpers) expose SQLSTATE `08003`)
+- `tests/txn_exec_parity.py:488` (wire/static closed-connection guard assertions for begin/commit/rollback/savepoint/query/metadata (including rowcount/restriction helpers, `get_schema`, and `ddl_editor_schema_payload`) expose SQLSTATE `08003`)
 - `tests/integration.py:207` (integration smoke begin/savepoint/rollback/commit lifecycle assertions)
 - Gaps/next actions:
 - Expand transaction/savepoint integration assertions to managed/listener runtime matrices once live environments are available.
@@ -166,7 +166,7 @@
 - `tests/txn_exec_parity.py:283` (shim stream fetch-boundary assertions, including closed-stream SQLSTATE `HY010`)
 - `tests/txn_exec_parity.py:299` (shim cancel stream SQLSTATE `57014` assertion)
 - `tests/txn_exec_parity.py:355` (shim closed-connection query/cancel/stream guards expose SQLSTATE `08003`)
-- `tests/txn_exec_parity.py:442` (wire/static closed-connection query + metadata helper guards, including rowcount/restriction variants, expose SQLSTATE `08003`)
+- `tests/txn_exec_parity.py:488` (wire/static closed-connection query + metadata helper guards, including rowcount/restriction variants plus `get_schema`/`ddl_editor_schema_payload`, expose SQLSTATE `08003`)
 - `tests/sbdriver_conformance.py:204` (manifest `requires` gating for prepare/cancel capabilities)
 - `tests/integration.py:225` (integration smoke prepare/mismatch and stream/cancel-recovery assertions)
 - Gaps/next actions:
@@ -311,7 +311,7 @@
 - `tests/txn_exec_parity.py:198` (bridge-shim static savepoint missing-state tracking assertions include deterministic `3B001` emission for missing release/rollback-to)
 - `tests/txn_exec_parity.py:283` (bridge-shim SQLSTATE assertion for closed-stream read guard `HY010`)
 - `tests/txn_exec_parity.py:355` (bridge-shim SQLSTATE assertions for closed-connection query/begin/commit/rollback/cancel/stream/metadata guards `08003`)
-- `tests/txn_exec_parity.py:442` (bridge-shim wire/static SQLSTATE assertions for closed-connection begin/commit/rollback/savepoint/query/metadata guards (including rowcount/restriction metadata helper variants) `08003`)
+- `tests/txn_exec_parity.py:488` (bridge-shim wire/static SQLSTATE assertions for closed-connection begin/commit/rollback/savepoint/query/metadata guards (including rowcount/restriction metadata helper variants plus `get_schema`/`ddl_editor_schema_payload`) `08003`)
 - `tests/connection_guards.py:79` (bridge-shim SQLSTATE assertions for invalid protocol/TLS-disable/front-door/compression `0A000`, malformed query-escape/bracketed-IPv6 `22023`, user/database + explicit empty-host `28000`, port/timeouts `22023`, `08001` manager-proxy token guard with alias precedence, and extended integer guard failures including statement/lifecycle knobs (`22023`))
 - `tests/errors.py:74` (bridge-shim simple-path SQLSTATE propagation)
 - `tests/errors.py:86` (bridge-shim extended-path SQLSTATE propagation)

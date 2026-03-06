@@ -526,10 +526,33 @@ def test_static_closed_connection_guards() -> None:
         )
     )
     _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.query_metadata_rows_restricted(
+            closed_query,
+            "tables",
+            "schema",
+            "public",
+        )
+    )
+    _expect_08003(
         lambda: scratchbird.ScratchBirdConnection.query_metadata_rows_restricted_multi(
             closed_query,
             "tables",
             {"schema": "public"},
+        )
+    )
+    _expect_08003(lambda: scratchbird.ScratchBirdConnection.get_schema(closed_query, "schemas"))
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+            closed_query,
+            "%",
+            False,
+        )
+    )
+    _expect_08003(
+        lambda: scratchbird.ScratchBirdConnection.ddl_editor_schema_payload(
+            closed_query,
+            "public",
+            False,
         )
     )
 
