@@ -540,6 +540,18 @@ fn main() raises:
         scratchbird.normalize_metadata_restriction_key("table_schem") == "schema_name",
         "metadata restriction alias mismatch for table_schem",
     )
+    _require(
+        scratchbird.normalize_metadata_restriction_key("tableSchem") == "schema_name",
+        "metadata restriction alias mismatch for tableSchem",
+    )
+    _require(
+        scratchbird.normalize_metadata_restriction_key("tableCatalog") == "catalog_name",
+        "metadata restriction alias mismatch for tableCatalog",
+    )
+    _require(
+        scratchbird.normalize_metadata_restriction_key("dataTypeName") == "type_name",
+        "metadata restriction alias mismatch for dataTypeName",
+    )
     _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
     _assert_metadata_restriction_guard("tables", "column", "0A000", "not supported for 'tables'")
     _assert_metadata_restriction_count_guard("tables")

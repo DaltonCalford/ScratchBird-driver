@@ -1315,23 +1315,23 @@ fn normalize_metadata_restriction_key(restriction_key: String) raises -> String:
     var normalized = restriction_key.strip().lower().replace("-", "_").replace(" ", "_")
     if normalized == "" or normalized == "none":
         return ""
-    if normalized == "name" or normalized == "object_name" or normalized == "entity_name":
+    if normalized == "name" or normalized == "object_name" or normalized == "objectname" or normalized == "entity_name" or normalized == "entityname":
         return "name"
-    if normalized == "catalog" or normalized == "catalog_name" or normalized == "table_catalog" or normalized == "table_cat":
+    if normalized == "catalog" or normalized == "catalog_name" or normalized == "catalogname" or normalized == "table_catalog" or normalized == "tablecatalog" or normalized == "table_cat" or normalized == "tablecat":
         return "catalog_name"
-    if normalized == "schema" or normalized == "schema_name" or normalized == "table_schema" or normalized == "table_schem":
+    if normalized == "schema" or normalized == "schema_name" or normalized == "schemaname" or normalized == "table_schema" or normalized == "tableschema" or normalized == "table_schem" or normalized == "tableschem":
         return "schema_name"
-    if normalized == "table" or normalized == "table_name":
+    if normalized == "table" or normalized == "table_name" or normalized == "tablename":
         return "table_name"
-    if normalized == "column" or normalized == "column_name":
+    if normalized == "column" or normalized == "column_name" or normalized == "columnname":
         return "column_name"
-    if normalized == "index" or normalized == "index_name":
+    if normalized == "index" or normalized == "index_name" or normalized == "indexname":
         return "index_name"
-    if normalized == "constraint" or normalized == "constraint_name":
+    if normalized == "constraint" or normalized == "constraint_name" or normalized == "constraintname":
         return "constraint_name"
-    if normalized == "routine" or normalized == "routine_name" or normalized == "procedure" or normalized == "procedure_name" or normalized == "function" or normalized == "function_name":
+    if normalized == "routine" or normalized == "routine_name" or normalized == "routinename" or normalized == "procedure" or normalized == "procedure_name" or normalized == "procedurename" or normalized == "function" or normalized == "function_name" or normalized == "functionname":
         return "routine_name"
-    if normalized == "type" or normalized == "type_name" or normalized == "data_type" or normalized == "data_type_name" or normalized == "udt_name":
+    if normalized == "type" or normalized == "type_name" or normalized == "typename" or normalized == "data_type" or normalized == "datatype" or normalized == "data_type_name" or normalized == "datatypename" or normalized == "udt_name" or normalized == "udtname":
         return "type_name"
     raise Error("0A000 metadata restriction '" + raw + "' is not supported")
 

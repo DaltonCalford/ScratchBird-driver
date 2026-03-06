@@ -124,6 +124,7 @@ Legend:
 - **Mojo lane:** Hardened shared metadata fallback semantics to reject mapping/text and unsupported iterable `rows` payloads across rowcount, `get_schema`, and `ddl_editor_schema_payload` paths (deterministic empty fallback).
 - **Mojo lane:** Tightened shared metadata rowcount fallback semantics to accept only non-negative integer rowcount values (negative values now fall back to row-derived counts).
 - **Mojo lane:** Aligned bridge-shim metadata helper guard precedence so closed connections return SQLSTATE `08003` before unsupported collection/restriction validation (static and instance paths).
+- **Mojo lane:** Expanded metadata restriction alias normalization to accept collapsed/camel forms (for example `tableSchem`, `tableCatalog`, `dataTypeName`) across shim/native surfaces and deterministic metadata tests.
 
 ---
 

@@ -83,15 +83,43 @@ def test_resolve_metadata_collection_query_extended_families() -> None:
 
 def test_normalize_metadata_restriction_aliases() -> None:
     _require(scratchbird.normalize_metadata_restriction_key("TABLE_CAT") == "catalog_name", "catalog alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("tableCatalog") == "catalog_name",
+        "tableCatalog alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("TABLE_SCHEM") == "schema_name", "schema alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("tableSchem") == "schema_name",
+        "tableSchem alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("column") == "column_name", "column alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("columnName") == "column_name",
+        "columnName alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("index") == "index_name", "index alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("indexName") == "index_name",
+        "indexName alias mismatch",
+    )
     _require(
         scratchbird.normalize_metadata_restriction_key("constraint") == "constraint_name",
         "constraint alias mismatch",
     )
+    _require(
+        scratchbird.normalize_metadata_restriction_key("constraintName") == "constraint_name",
+        "constraintName alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("routine") == "routine_name", "routine alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("functionName") == "routine_name",
+        "functionName alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("udt_name") == "type_name", "type alias mismatch")
+    _require(
+        scratchbird.normalize_metadata_restriction_key("dataTypeName") == "type_name",
+        "dataTypeName alias mismatch",
+    )
     _require(scratchbird.normalize_metadata_restriction_key("none") == "", "none restriction should normalize empty")
     try:
         scratchbird.normalize_metadata_restriction_key("unsupported_restriction")
@@ -224,6 +252,22 @@ def test_resolve_metadata_collection_query_restricted_multi() -> None:
             {"catalog": "public", "table": "orders", "type_name": "INTEGER"},
         ),
         "multi restriction SQL should support type-name predicates",
+    )
+    _require(
+        "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')"
+        in scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "tables",
+            {"tableSchem": "public", "tableName": "orders"},
+        ),
+        "multi restriction SQL should support camel/collapsed schema aliases",
+    )
+    _require(
+        "table_name = 'orders'"
+        in scratchbird.resolve_metadata_collection_query_restricted_multi(
+            "tables",
+            {"tableSchem": "public", "tableName": "orders"},
+        ),
+        "multi restriction SQL should support camel/collapsed table aliases",
     )
     try:
         scratchbird.resolve_metadata_collection_query_restricted_multi(
