@@ -56,6 +56,12 @@ public sealed class ScratchBirdConfig
     public string ManagerClientIntent { get; set; } = "native_v3";
     public ushort ManagerClientFlags { get; set; } = 0;
     public bool ManagerAuthFastPath { get; set; } = true;
+    public bool TelemetryEnableTracing { get; set; } = true;
+    public bool TelemetryEnableMetrics { get; set; } = true;
+    public bool TelemetryEnableSlowOperationLog { get; set; } = true;
+    public int TelemetrySlowOperationThresholdMs { get; set; } = 1000;
+    public int TelemetrySlowOperationMaxEntries { get; set; } = 100;
+    public double TelemetrySampleRate { get; set; } = 1d;
 
     public static ScratchBirdConfig FromConnectionString(string connectionString)
     {
@@ -391,6 +397,49 @@ internal static class DsnParser
                     || value.Equals("1", StringComparison.Ordinal)
                     || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
                     || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "telemetry":
+            case "telemetry_enabled":
+            case "telemetryenabletracing":
+            case "telemetry_enable_tracing":
+                cfg.TelemetryEnableTracing = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "telemetryenablemetrics":
+            case "telemetry_enable_metrics":
+            case "telemetry_metrics":
+                cfg.TelemetryEnableMetrics = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "telemetryenableslowoperationlog":
+            case "telemetry_enable_slow_operation_log":
+            case "telemetry_enable_slow_query_log":
+            case "telemetry_slow_query_log":
+                cfg.TelemetryEnableSlowOperationLog = value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("1", StringComparison.Ordinal)
+                    || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "telemetryslowoperationthresholdms":
+            case "telemetry_slow_operation_threshold_ms":
+            case "telemetry_slow_query_threshold_ms":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var slowThresholdMs))
+                    cfg.TelemetrySlowOperationThresholdMs = Math.Max(0, slowThresholdMs);
+                break;
+            case "telemetryslowoperationmaxentries":
+            case "telemetry_slow_operation_max_entries":
+            case "telemetry_slow_query_max_entries":
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var slowMaxEntries))
+                    cfg.TelemetrySlowOperationMaxEntries = Math.Max(0, slowMaxEntries);
+                break;
+            case "telemetrysamplerate":
+            case "telemetry_sample_rate":
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var sampleRate))
+                    cfg.TelemetrySampleRate = Math.Clamp(sampleRate, 0d, 1d);
                 break;
         }
     }

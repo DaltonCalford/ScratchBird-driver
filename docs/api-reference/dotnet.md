@@ -62,8 +62,12 @@ owned by `ScratchBirdConnection`:
 
 - `ScratchBirdConnection.GetTelemetrySummary()` returns aggregated per-operation metrics for this connection.
 - `ScratchBirdConnection.ResetTelemetry()` clears recorded telemetry counters.
+- `ScratchBirdConnection.GetSlowOperations()` returns the retained slow-operation ring buffer (`SlowOperationSummary`).
+- `ScratchBirdConnection.ExportTelemetryPrometheus()` exports counters/histogram metrics in Prometheus text format.
 - `ConnectionTelemetrySummary` includes total invocation/success/failure counts plus `OperationTelemetrySummary` entries.
+- `SlowOperationSummary` includes `Operation`, `DurationMs`, `Success`, and `CapturedUtc`.
 - Command paths report operation names such as `Command.ExecuteReader`, `Command.ExecuteNonQuery`, and `Command.ExecuteScalar`.
+- DSN/connection-string telemetry controls: `TelemetryEnableTracing`, `TelemetryEnableMetrics`, `TelemetryEnableSlowOperationLog`, `TelemetrySlowOperationThresholdMs`, `TelemetrySlowOperationMaxEntries`, `TelemetrySampleRate`.
 
 ## Notifications
 

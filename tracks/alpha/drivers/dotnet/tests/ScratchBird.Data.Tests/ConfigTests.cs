@@ -135,4 +135,36 @@ public class ConfigTests
             Assert.True(kvCfg.MetadataExpandSchemaParents);
         }
     }
+
+    [Fact]
+    public void ParseTelemetryOptions()
+    {
+        var uriCfg = ScratchBirdConfig.FromConnectionString(
+            "scratchbird://user:pass@localhost:3092/mydb" +
+            "?telemetry_enable_tracing=false" +
+            "&telemetry_enable_metrics=false" +
+            "&telemetry_enable_slow_operation_log=true" +
+            "&telemetry_slow_operation_threshold_ms=7" +
+            "&telemetry_slow_operation_max_entries=3" +
+            "&telemetry_sample_rate=0.25");
+
+        Assert.False(uriCfg.TelemetryEnableTracing);
+        Assert.False(uriCfg.TelemetryEnableMetrics);
+        Assert.True(uriCfg.TelemetryEnableSlowOperationLog);
+        Assert.Equal(7, uriCfg.TelemetrySlowOperationThresholdMs);
+        Assert.Equal(3, uriCfg.TelemetrySlowOperationMaxEntries);
+        Assert.Equal(0.25d, uriCfg.TelemetrySampleRate);
+
+        var kvCfg = ScratchBirdConfig.FromConnectionString(
+            "Host=localhost;Port=3092;Database=mydb;telemetry=true;" +
+            "telemetry_metrics=0;telemetry_slow_query_log=1;" +
+            "telemetry_slow_query_threshold_ms=9;telemetry_slow_query_max_entries=2;telemetry_sample_rate=9");
+
+        Assert.True(kvCfg.TelemetryEnableTracing);
+        Assert.False(kvCfg.TelemetryEnableMetrics);
+        Assert.True(kvCfg.TelemetryEnableSlowOperationLog);
+        Assert.Equal(9, kvCfg.TelemetrySlowOperationThresholdMs);
+        Assert.Equal(2, kvCfg.TelemetrySlowOperationMaxEntries);
+        Assert.Equal(1d, kvCfg.TelemetrySampleRate);
+    }
 }

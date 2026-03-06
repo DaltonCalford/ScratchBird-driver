@@ -29,7 +29,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private ProtocolClientPool.Lease? _clientLease;
     private ScratchBirdTransaction? _activeTransaction;
     private bool _disposed;
-    private readonly TelemetryCollector _telemetry = new();
+    private TelemetryCollector _telemetry = new();
     private readonly object _notificationSync = new();
     private Queue<ScratchBirdNotification>? _notificationQueue;
     private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
@@ -54,6 +54,7 @@ public sealed class ScratchBirdConnection : DbConnection
             }
             _connectionString = value;
             _config = ScratchBirdConfig.FromConnectionString(value);
+            _telemetry = new TelemetryCollector(BuildTelemetryOptions(_config));
         }
     }
 
@@ -339,6 +340,16 @@ public sealed class ScratchBirdConnection : DbConnection
     public void ResetTelemetry()
     {
         _telemetry.Reset();
+    }
+
+    public IReadOnlyList<SlowOperationSummary> GetSlowOperations()
+    {
+        return _telemetry.GetSlowOperations();
+    }
+
+    public string ExportTelemetryPrometheus()
+    {
+        return _telemetry.ExportPrometheusMetrics();
     }
 
     public PoolDiagnosticsSummary? GetPoolDiagnostics()
@@ -1431,6 +1442,17 @@ public sealed class ScratchBirdConnection : DbConnection
         var timeoutMs = commandTimeoutSeconds > 0 ? checked(commandTimeoutSeconds * 1000) : 0;
         var maxRows = fetchSize > 0 ? fetchSize : _config.DefaultFetchSize;
         return client.ExecuteQueryMulti(sql, parameters, timeoutMs, maxRows);
+    }
+
+    private static TelemetryOptions BuildTelemetryOptions(ScratchBirdConfig config)
+    {
+        return new TelemetryOptions(
+            EnableTracing: config.TelemetryEnableTracing,
+            EnableMetrics: config.TelemetryEnableMetrics,
+            EnableSlowOperationLog: config.TelemetryEnableSlowOperationLog,
+            SlowOperationThresholdMs: config.TelemetrySlowOperationThresholdMs,
+            SlowOperationMaxEntries: config.TelemetrySlowOperationMaxEntries,
+            SampleRate: config.TelemetrySampleRate);
     }
 
     private static IReadOnlyList<ScratchBirdParameter> NormalizeParameterList(IReadOnlyList<ScratchBirdParameter>? parameters)

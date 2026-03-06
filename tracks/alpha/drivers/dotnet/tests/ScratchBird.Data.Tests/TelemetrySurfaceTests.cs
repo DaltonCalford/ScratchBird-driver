@@ -70,13 +70,53 @@ public class TelemetrySurfaceTests
     public void ResetTelemetry_ClearsAllCounters()
     {
         using var connection = new ScratchBirdConnection();
+        connection.ConnectionString = "Host=localhost;TelemetrySlowOperationThresholdMs=1";
         connection.RecordTelemetry("Connection.QueryMulti", TimeSpan.FromMilliseconds(10), success: true);
         Assert.NotEmpty(connection.GetTelemetrySummary().Operations);
+        Assert.NotEmpty(connection.GetSlowOperations());
 
         connection.ResetTelemetry();
         var summary = connection.GetTelemetrySummary();
 
         Assert.Equal(0, summary.TotalInvocations);
         Assert.Empty(summary.Operations);
+        Assert.Empty(connection.GetSlowOperations());
+    }
+
+    [Fact]
+    public void SlowOperationsAndPrometheusExport_AreAvailable()
+    {
+        using var connection = new ScratchBirdConnection();
+        connection.ConnectionString =
+            "Host=localhost;TelemetrySlowOperationThresholdMs=5;TelemetrySlowOperationMaxEntries=2";
+
+        connection.RecordTelemetry("Command.ExecuteNonQuery", TimeSpan.FromMilliseconds(3), success: true);
+        connection.RecordTelemetry("Connection.Query", TimeSpan.FromMilliseconds(6), success: true);
+        connection.RecordTelemetry("Connection.Query", TimeSpan.FromMilliseconds(9), success: false);
+        connection.RecordTelemetry("Connection.Query", TimeSpan.FromMilliseconds(12), success: true);
+
+        var slowOperations = connection.GetSlowOperations();
+        Assert.Equal(2, slowOperations.Count);
+        Assert.Equal(9, slowOperations[0].DurationMs);
+        Assert.Equal(12, slowOperations[1].DurationMs);
+
+        var metrics = connection.ExportTelemetryPrometheus();
+        Assert.Contains("scratchbird_operations_total 4", metrics);
+        Assert.Contains("scratchbird_operation_invocations_total{operation=\"Connection.Query\"} 3", metrics);
+        Assert.Contains("scratchbird_slow_operations_queued 2", metrics);
+    }
+
+    [Fact]
+    public void TelemetryTracingDisabled_SkipsCountersAndSlowOperationLog()
+    {
+        using var connection = new ScratchBirdConnection(
+            "Host=localhost;TelemetryEnableTracing=false;TelemetrySlowOperationThresholdMs=1");
+
+        connection.RecordTelemetry("Command.ExecuteScalar", TimeSpan.FromMilliseconds(15), success: true);
+
+        var summary = connection.GetTelemetrySummary();
+        Assert.Equal(0, summary.TotalInvocations);
+        Assert.Empty(summary.Operations);
+        Assert.Empty(connection.GetSlowOperations());
     }
 }

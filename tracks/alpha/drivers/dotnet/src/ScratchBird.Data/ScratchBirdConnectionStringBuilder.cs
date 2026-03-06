@@ -6,6 +6,7 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 using System.Data.Common;
+using System.Globalization;
 
 namespace ScratchBird.Data;
 
@@ -119,6 +120,42 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
         set => this["Enlist"] = value;
     }
 
+    public bool TelemetryEnableTracing
+    {
+        get => GetBool("TelemetryEnableTracing", true);
+        set => this["TelemetryEnableTracing"] = value;
+    }
+
+    public bool TelemetryEnableMetrics
+    {
+        get => GetBool("TelemetryEnableMetrics", true);
+        set => this["TelemetryEnableMetrics"] = value;
+    }
+
+    public bool TelemetryEnableSlowOperationLog
+    {
+        get => GetBool("TelemetryEnableSlowOperationLog", true);
+        set => this["TelemetryEnableSlowOperationLog"] = value;
+    }
+
+    public int TelemetrySlowOperationThresholdMs
+    {
+        get => GetInt("TelemetrySlowOperationThresholdMs", 1000);
+        set => this["TelemetrySlowOperationThresholdMs"] = value;
+    }
+
+    public int TelemetrySlowOperationMaxEntries
+    {
+        get => GetInt("TelemetrySlowOperationMaxEntries", 100);
+        set => this["TelemetrySlowOperationMaxEntries"] = value;
+    }
+
+    public double TelemetrySampleRate
+    {
+        get => GetDouble("TelemetrySampleRate", 1d);
+        set => this["TelemetrySampleRate"] = value;
+    }
+
     public override string ToString()
     {
         return ConnectionString;
@@ -154,6 +191,26 @@ public sealed class ScratchBirdConnectionStringBuilder : DbConnectionStringBuild
                 return b;
             }
             if (bool.TryParse(Convert.ToString(value), out var parsed))
+            {
+                return parsed;
+            }
+        }
+        return fallback;
+    }
+
+    private double GetDouble(string key, double fallback)
+    {
+        if (TryGetValue(key, out var value))
+        {
+            if (value is double d)
+            {
+                return d;
+            }
+            if (double.TryParse(
+                Convert.ToString(value),
+                NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture,
+                out var parsed))
             {
                 return parsed;
             }
