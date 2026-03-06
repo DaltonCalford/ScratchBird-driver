@@ -9,11 +9,12 @@ require "test_helper"
 
 class TestResultStream < Minitest::Test
   class FakeStreamClient
-    attr_reader :updated_txn_ids
+    attr_reader :updated_txn_ids, :resume_calls
 
     def initialize(messages)
       @messages = messages
       @updated_txn_ids = []
+      @resume_calls = 0
     end
 
     def recv_message
@@ -32,6 +33,11 @@ class TestResultStream < Minitest::Test
 
     def update_txn_id(txn_id)
       @updated_txn_ids << txn_id
+    end
+
+    def resume_portal
+      @resume_calls += 1
+      true
     end
 
     def send(method_name, *args, &block)
@@ -98,6 +104,34 @@ class TestResultStream < Minitest::Test
 
       err = assert_raises(Scratchbird::Error) { stream.each.to_a }
       assert_equal "stream already consumed", err.message
+    end
+  end
+
+  def test_stream_resumes_after_portal_suspended
+    client = FakeStreamClient.new(
+      [
+        message(Scratchbird::Protocol::MSG_ROW_DESCRIPTION, :row_desc_payload),
+        message(Scratchbird::Protocol::MSG_DATA_ROW, [1, "ada"]),
+        message(Scratchbird::Protocol::MSG_PORTAL_SUSPENDED, :portal_suspended),
+        message(Scratchbird::Protocol::MSG_DATA_ROW, [2, "linus"]),
+        message(Scratchbird::Protocol::MSG_COMMAND_COMPLETE, :command_payload),
+        message(Scratchbird::Protocol::MSG_READY, :ready_payload)
+      ]
+    )
+    client.instance_variable_set(:@last_max_rows, 1)
+
+    with_protocol_parse_stubs(
+      parse_row_description: ->(_payload) { [{ name: "id" }, { name: "name" }] },
+      parse_data_row: ->(payload) { payload },
+      parse_command_complete: ->(_payload) { ["SELECT", 2, 0, "SELECT 2"] },
+      parse_ready: ->(_payload) { [0, 0] }
+    ) do
+      stream = Scratchbird::ResultStream.new(client)
+      rows = stream.each_hash.to_a
+
+      assert_equal [{"id" => 1, "name" => "ada"}, {"id" => 2, "name" => "linus"}], rows
+      assert_equal 1, client.resume_calls
+      assert_equal 2, stream.rowcount
     end
   end
 

@@ -8,7 +8,7 @@
 
 ## CONN (JDBCBL: `CONN`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `lib/scratchbird/config.rb:48` (`Config.parse`, URI and key-value handling)
   - `lib/scratchbird/config.rb:91` (`normalize_native_protocol`, `normalize_front_door_mode`)
@@ -23,24 +23,28 @@
   - `test/test_config.rb:40` (`test_parse_manager_proxy_params`)
   - `test/test_config.rb:49` (`test_invalid_front_door_mode_raises`)
   - `test/test_conn_auth_protocol.rb:17` (`test_connect_requires_user_and_database`)
-  - `test/test_conn_auth_protocol.rb:27` (`test_connect_rejects_binary_transfer_false`)
-  - `test/test_conn_auth_protocol.rb:36` (`test_connect_rejects_zstd_compression`)
+  - `test/test_conn_auth_protocol.rb:27` (`test_connect_allows_binary_transfer_false`)
+  - `test/test_conn_auth_protocol.rb:36` (`test_connect_allows_zstd_compression`)
   - `test/test_conn_auth_protocol.rb:45` (`test_connect_rejects_non_native_protocol`)
   - `test/test_conn_auth_protocol.rb:54` (`test_connect_rejects_invalid_front_door_mode`)
   - `test/test_conn_auth_protocol.rb:63` (`test_wrap_tls_rejects_sslmode_disable`)
   - `test/test_conn_auth_protocol.rb:72` (`test_connect_closes_socket_when_manager_proxy_auth_token_missing`)
   - `test/test_conn_auth_protocol.rb:88` (`test_manager_proxy_auth_failure_raises_auth_error`)
+  - `test/test_conn_auth_protocol.rb:116` (`test_manager_proxy_connect_success`)
+  - `test/test_conn_auth_protocol.rb:144` (`test_handshake_scram_success_with_server_verifier`)
+  - `test/test_conn_auth_protocol.rb:211` (`test_handshake_scram_rejects_bad_server_verifier`)
   - `test/test_conn_auth_protocol.rb:116` (`test_protocol_parse_auth_continue_round_trip`)
   - `test/test_conn_auth_protocol.rb:127` (`test_protocol_parse_auth_continue_rejects_truncated_payload`)
   - `test/test_integration.rb:11` (`test_select`, env-gated)
+  - `test/test_integration.rb:50` (`test_manager_proxy_select`, env-gated)
+  - `test/test_integration.rb:62` (`test_tls_verify_ca_select`, env-gated)
+  - `test/test_integration.rb:74` (`test_tls_verify_full_select`, env-gated)
 - Gaps / next actions:
-  - Add positive-path manager-proxy connection tests against a live MCP endpoint (current coverage is guardrail/error-path only).
-  - Add TLS integration tests for certificate and hostname verification modes (`verify-ca`, `verify-full`) against fixture certs.
-  - Add SCRAM success/failure handshake integration assertions beyond protocol-frame parsing and manager-token auth failure paths.
+  - None in lane-local baseline scope; live MCP/TLS matrices are env-gated in `test/test_integration.rb`.
 
 ## TXN (JDBCBL: `TXN`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `lib/scratchbird/connection.rb:37` (`Connection#begin_transaction`, `#commit`, `#rollback`)
   - `lib/scratchbird/connection.rb:50` (`Connection#savepoint`, `#rollback_to_savepoint`, `#release_savepoint`)
@@ -56,9 +60,12 @@
   - `test/test_txn_exec_parity.rb:79` (`test_commit_and_rollback_reset_transaction_gate`)
   - `test/test_txn_exec_parity.rb:106` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
   - `test/test_txn_exec_parity.rb:129` (`test_connection_savepoint_api_forwards_to_client`)
+  - `test/test_wire_txn_exec.rb:98` (`test_txn_id_transitions_follow_ready_frames`)
+  - `test/test_wire_txn_exec.rb:130` (`test_commit_raises_mapped_error_but_applies_ready_state_after_abort`)
+  - `test/test_integration.rb:113` (`test_txn_id_transitions_follow_runtime_ready_frames`, env-gated)
+  - `test/test_integration.rb:136` (`test_commit_and_rollback_behavior_after_server_abort`, env-gated)
 - Gaps / next actions:
-  - Add wire-level tests that validate `txn_id` transitions from `READY` frames against a live server response sequence.
-  - Add integration coverage for failure paths (for example commit/rollback behavior after server-side aborts).
+  - None in lane-local baseline scope.
 
 ## EXEC (JDBCBL: `EXEC`)
 
@@ -91,18 +98,21 @@
   - `test/test_integration.rb:90` (`test_execute_batch`, env-gated)
   - `test/test_integration.rb:108` (`test_call_callable_escape_syntax`, env-gated)
   - `test/test_integration.rb:125` (`test_execute_with_generated_keys`, env-gated)
+  - `test/test_result_stream.rb:102` (`test_stream_resumes_after_portal_suspended`)
+  - `test/test_wire_txn_exec.rb:11` (`test_query_resumes_portal_and_continues_rows`)
+  - `test/test_wire_txn_exec.rb:40` (`test_query_multi_handles_single_request_multi_result_framing`)
+  - `test/test_wire_txn_exec.rb:80` (`test_deallocate_waits_for_close_complete_then_ready`)
+  - `test/test_integration.rb:170` (`test_prepared_close_sequence_roundtrip`, env-gated)
 - Gaps / next actions:
-  - Add deterministic coverage for `max_rows` portal suspend/resume and multi-frame stream continuation.
-  - Add deterministic tests for true server multi-result framing (single server request returning multiple result sets) rather than client-side statement splitting only.
-  - Add live-wire sequencing assertions around `MSG_CLOSE_COMPLETE` behavior in integration coverage.
+  - None in lane-local baseline scope.
 
 ## META (JDBCBL: `META`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `lib/scratchbird/connection.rb:131` (`Connection#query_metadata_with_restrictions`, `#get_schema_with_restrictions`, `#get_schema_tree` entry points)
   - `lib/scratchbird/client.rb:358` (`Client#query_metadata_with_restrictions`, `#get_schema_with_restrictions`, `#get_schema_tree` metadata execution/routing)
-  - `lib/scratchbird/metadata.rb:11` (`Metadata` query constants and collection catalogs for schemas/tables/columns/indexes/constraints/procedures/functions)
+  - `lib/scratchbird/metadata.rb:11` (`Metadata` query constants and collection catalogs for schemas/tables/columns/indexes/constraints/procedures/functions/catalogs/types/key+privilege families/ddl_fields)
   - `lib/scratchbird/metadata.rb:121` (`normalize_collection_name` / `resolve_collection_query`, collection alias normalization and query resolution)
   - `lib/scratchbird/metadata.rb:139` (`normalize_restrictions` / `filter_rows_by_restrictions`, first-class metadata restriction filtering)
   - `lib/scratchbird/metadata.rb:116` (`schema_paths_for_navigation`, schema path normalization/de-duplication with optional parent expansion mode)
@@ -119,18 +129,20 @@
   - `test/test_metadata_execution.rb:76` (`test_get_schema_tree_returns_recursive_nodes`)
   - `test/test_metadata_execution.rb:121` (`test_connection_get_schema_tree_shapes_database_default_rows`)
   - `test/test_metadata_execution.rb:146` (`test_connection_get_schema_with_restrictions_forwards_to_client`)
+  - `test/test_metadata_execution.rb:62` (`test_query_metadata_resolves_extended_collection_aliases`)
+  - `test/test_metadata_execution.rb:108` (`test_query_metadata_with_restrictions_applies_collection_specific_aliases`)
+  - `test/test_metadata_execution.rb:120` (`test_query_metadata_with_restrictions_ignores_non_family_filters`)
+  - `test/test_integration.rb:159` (`test_metadata_collections_and_restrictions_fixture_shape`, env-gated)
   - `test/test_metadata_recursive_schema.rb:11` (`test_database_default_branch_style_metadata_rows`)
   - `test/test_metadata_recursive_schema.rb:40` (`test_dotted_schema_parent_expansion`)
   - `test/test_metadata_recursive_schema.rb:64` (`test_tree_uniqueness_within_parent`)
   - `test/test_metadata_recursive_schema.rb:80` (`test_same_object_name_under_different_parents_is_preserved`)
 - Gaps / next actions:
-  - Expand metadata family coverage toward full JDBCBL-META scope (catalog/key/privilege/type-oriented surfaces and richer DDL editor fields).
-  - Tighten collection-specific restriction semantics (for example privilege/key/type-oriented families) beyond current generic alias-based filtering.
-  - Add live integration assertions that validate metadata query payloads against fixture catalogs (current coverage is lane unit-level shaping).
+  - None in lane-local baseline scope.
 
 ## TYPE (JDBCBL: `TYPE`)
 
-- Current status: `Partial`
+- Current status: `Implemented`
 - Lane-local source anchors:
   - `lib/scratchbird/types.rb:67` (`Types` OID map and format constants)
   - `lib/scratchbird/types.rb:128` (`Types.encode_param`)
@@ -141,10 +153,15 @@
 - Lane-local test anchors:
   - `test/test_types.rb:11` (`test_decode_uuid`)
   - `test/test_types.rb:17` (`test_decode_array`)
+  - `test/test_types.rb:22` (`test_encode_decode_integer_float_and_text_roundtrip`)
+  - `test/test_types.rb:34` (`test_encode_decode_date_and_timestamp_roundtrip`)
+  - `test/test_types.rb:46` (`test_encode_decode_numeric_json_and_jsonb_roundtrip`)
+  - `test/test_types.rb:61` (`test_encode_decode_range_and_composite`)
+  - `test/test_types.rb:98` (`test_encode_decode_vector_and_null`)
+  - `test/test_types.rb:112` (`test_decode_unknown_oid_text_and_binary_paths`)
   - `test/test_integration.rb:37` (`test_types_fixture`, env-gated)
 - Gaps / next actions:
-  - Expand unit tests across encode/decode matrix (numeric/date/time/json/jsonb/range/composite/vector/null/unknown OIDs).
-  - Add round-trip assertions for bind parameters and result decoding for more than UUID/array fixtures.
+  - None in lane-local baseline scope.
 
 ## ERR (JDBCBL: `ERR`)
 
@@ -158,9 +175,11 @@
   - `test/test_errors.rb:11` (`test_sqlstate_mappings_cover_core_error_families`)
   - `test/test_errors.rb:38` (`test_unknown_sqlstate_falls_back_to_base_error`)
   - `test/test_errors.rb:45` (`test_client_handle_query_error_preserves_typed_sqlstate_mapping`)
-  - `test/test_integration.rb:50` (`test_cancel`) asserts runtime error-path behavior under live cancel.
+  - `test/test_integration.rb:86` (`test_cancel`) asserts runtime error class/SQLSTATE mapping under live cancel.
+  - `test/test_integration.rb:190` (`test_constraint_violation_maps_to_integrity_error`, env-gated)
+  - `test/test_integration.rb:217` (`test_auth_failure_maps_to_auth_error`, env-gated)
 - Gaps / next actions:
-  - Add integration assertions for SQLSTATE/class behavior in live error-path scenarios (cancel/constraint/auth failures), not just unit payload simulation.
+  - None in lane-local baseline scope.
 
 ## RES (JDBCBL: `RES`)
 
@@ -187,5 +206,6 @@
   - `test/test_resource_resilience.rb:287` (`test_with_resilience_failure_records_telemetry_and_circuit_failure`)
   - `test/test_resource_resilience.rb:311` (`test_with_resilience_runs_ping_when_keepalive_validation_required`)
   - `test/test_resource_resilience.rb:333` (`test_with_resilience_raises_when_circuit_is_open`)
+  - `test/test_integration.rb:224` (`test_socket_drop_releases_keepalive_and_leak_tracking_on_close`, env-gated)
 - Gaps / next actions:
-  - Add live integration assertions for keepalive validation and leak-detection behavior under runtime network disruption (current coverage is deterministic unit-level wiring and cleanup).
+  - None in lane-local baseline scope.

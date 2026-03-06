@@ -61,6 +61,18 @@ class TestMetadataExecution < Minitest::Test
     assert_equal Scratchbird::Metadata::SCHEMAS_QUERY, client.queries.first[0]
   end
 
+  def test_query_metadata_resolves_extended_collection_aliases
+    client = build_client(rows: [{ "table_name" => "events" }])
+
+    client.query_metadata("primaryKeys")
+    client.query_metadata("tablePrivileges")
+    client.query_metadata("ddlFields")
+
+    assert_equal Scratchbird::Metadata::PRIMARY_KEYS_QUERY, client.queries[0][0]
+    assert_equal Scratchbird::Metadata::TABLE_PRIVILEGES_QUERY, client.queries[1][0]
+    assert_equal Scratchbird::Metadata::DDL_FIELDS_QUERY, client.queries[2][0]
+  end
+
   def test_query_metadata_rejects_unknown_collection
     client = build_client(rows: [])
     err = assert_raises(Scratchbird::NotSupportedError) { client.query_metadata("missing_family") }
@@ -91,6 +103,30 @@ class TestMetadataExecution < Minitest::Test
 
     filtered = client.query_metadata_with_restrictions("tables", { owner_id: "null", missing_filter: "ignored" })
     assert_equal [{ "table_name" => "events", "owner_id" => nil }], filtered.each_hash.to_a
+  end
+
+  def test_query_metadata_with_restrictions_applies_collection_specific_aliases
+    client = build_client(
+      rows: [
+        { "table_name" => "events", "constraint_name" => "pk_events" },
+        { "table_name" => "events", "constraint_name" => "pk_logs" }
+      ]
+    )
+
+    filtered = client.query_metadata_with_restrictions("primary_keys", { key_name: "pk_events", column: "ignored" })
+    assert_equal [{ "table_name" => "events", "constraint_name" => "pk_events" }], filtered.each_hash.to_a
+  end
+
+  def test_query_metadata_with_restrictions_ignores_non_family_filters
+    client = build_client(
+      rows: [
+        { "table_name" => "events", "grantee" => "alice" },
+        { "table_name" => "events", "grantee" => "bob" }
+      ]
+    )
+
+    filtered = client.query_metadata_with_restrictions("table_privileges", { column: "id", grantee: "alice" })
+    assert_equal [{ "table_name" => "events", "grantee" => "alice" }], filtered.each_hash.to_a
   end
 
   def test_get_schema_expands_parent_rows_from_config

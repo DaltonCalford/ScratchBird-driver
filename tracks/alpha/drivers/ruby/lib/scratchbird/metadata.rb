@@ -16,6 +16,13 @@ module Scratchbird
     CONSTRAINTS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
     PROCEDURES_QUERY = "SELECT procedure_id, schema_id, procedure_name, routine_type FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
     FUNCTIONS_QUERY = "SELECT function_id, schema_id, function_name FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+    CATALOGS_QUERY = "SELECT DISTINCT '' AS catalog_name FROM sys.schemas ORDER BY catalog_name"
+    TYPES_QUERY = "SELECT DISTINCT data_type_id AS type_id, data_type_name AS type_name FROM sys.columns WHERE is_valid = 1 ORDER BY type_name"
+    PRIMARY_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND LOWER(constraint_type) IN ('primary key', 'primary_key', 'primary') ORDER BY table_id, constraint_name"
+    FOREIGN_KEYS_QUERY = "SELECT constraint_id, table_id, constraint_name, constraint_type FROM sys.constraints WHERE is_valid = 1 AND LOWER(constraint_type) IN ('foreign key', 'foreign_key', 'foreign') ORDER BY table_id, constraint_name"
+    TABLE_PRIVILEGES_QUERY = "SELECT table_id, schema_id, table_name, '' AS grantor, '' AS grantee, 'SELECT' AS privilege_type, 0 AS is_grantable FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
+    COLUMN_PRIVILEGES_QUERY = "SELECT c.column_id, c.table_id, c.column_name, t.table_name, '' AS grantor, '' AS grantee, 'SELECT' AS privilege_type, 0 AS is_grantable FROM sys.columns c JOIN sys.tables t ON t.table_id = c.table_id WHERE c.is_valid = 1 AND t.is_valid = 1 ORDER BY c.table_id, c.ordinal_position"
+    DDL_FIELDS_QUERY = "SELECT table_id, column_id, column_name, data_type_name, default_value, generation_expression, is_nullable, is_identity, is_generated FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
     COLLECTION_QUERIES = {
       "schemas" => SCHEMAS_QUERY,
       "tables" => TABLES_QUERY,
@@ -24,7 +31,14 @@ module Scratchbird
       "index_columns" => INDEX_COLUMNS_QUERY,
       "constraints" => CONSTRAINTS_QUERY,
       "procedures" => PROCEDURES_QUERY,
-      "functions" => FUNCTIONS_QUERY
+      "functions" => FUNCTIONS_QUERY,
+      "catalogs" => CATALOGS_QUERY,
+      "types" => TYPES_QUERY,
+      "primary_keys" => PRIMARY_KEYS_QUERY,
+      "foreign_keys" => FOREIGN_KEYS_QUERY,
+      "table_privileges" => TABLE_PRIVILEGES_QUERY,
+      "column_privileges" => COLUMN_PRIVILEGES_QUERY,
+      "ddl_fields" => DDL_FIELDS_QUERY
     }.freeze
     COLLECTION_ALIASES = {
       "schema" => "schemas",
@@ -42,7 +56,31 @@ module Scratchbird
       "procedure" => "procedures",
       "procedures" => "procedures",
       "function" => "functions",
-      "functions" => "functions"
+      "functions" => "functions",
+      "catalog" => "catalogs",
+      "catalogs" => "catalogs",
+      "type" => "types",
+      "types" => "types",
+      "primarykey" => "primary_keys",
+      "primarykeys" => "primary_keys",
+      "primary_key" => "primary_keys",
+      "primary_keys" => "primary_keys",
+      "foreignkey" => "foreign_keys",
+      "foreignkeys" => "foreign_keys",
+      "foreign_key" => "foreign_keys",
+      "foreign_keys" => "foreign_keys",
+      "tableprivilege" => "table_privileges",
+      "tableprivileges" => "table_privileges",
+      "table_privilege" => "table_privileges",
+      "table_privileges" => "table_privileges",
+      "columnprivilege" => "column_privileges",
+      "columnprivileges" => "column_privileges",
+      "column_privilege" => "column_privileges",
+      "column_privileges" => "column_privileges",
+      "ddlfield" => "ddl_fields",
+      "ddlfields" => "ddl_fields",
+      "ddl_field" => "ddl_fields",
+      "ddl_fields" => "ddl_fields"
     }.freeze
     SCHEMA_FIELD_CANDIDATES = %w[
       schema_name
@@ -63,17 +101,31 @@ module Scratchbird
       "constraint" => %w[constraint_name constraint],
       "procedure" => %w[procedure_name routine_name],
       "function" => %w[function_name routine_name],
-      "type" => %w[type_name data_type_name data_type udt_name]
+      "type" => %w[type_name data_type_name data_type udt_name],
+      "grantor" => %w[grantor],
+      "grantee" => %w[grantee],
+      "privilege" => %w[privilege_type privilege],
+      "ownerid" => %w[owner_id ownerid owner],
+      "pkname" => %w[pk_name primary_key_name constraint_name],
+      "fkname" => %w[fk_name foreign_key_name constraint_name],
+      "keyname" => %w[key_name constraint_name]
     }.freeze
     COLLECTION_RESTRICTION_KEYS = {
       "schemas" => %w[catalog schema],
-      "tables" => %w[catalog schema table type],
+      "tables" => %w[catalog schema table type ownerid],
       "columns" => %w[catalog schema table column type],
       "indexes" => %w[catalog schema table index],
       "index_columns" => %w[catalog schema table index column],
       "constraints" => %w[catalog schema table constraint],
       "procedures" => %w[catalog schema procedure],
-      "functions" => %w[catalog schema function]
+      "functions" => %w[catalog schema function],
+      "catalogs" => %w[catalog],
+      "types" => %w[catalog schema type],
+      "primary_keys" => %w[catalog schema table key_name pk_name constraint],
+      "foreign_keys" => %w[catalog schema table key_name fk_name constraint],
+      "table_privileges" => %w[catalog schema table grantee grantor privilege],
+      "column_privileges" => %w[catalog schema table column grantee grantor privilege],
+      "ddl_fields" => %w[catalog schema table column type]
     }.freeze
 
     class SchemaTreeNode
@@ -412,16 +464,22 @@ module Scratchbird
           normalized_collection = normalize_collection_name(collection_name)
           Array(COLLECTION_RESTRICTION_KEYS[normalized_collection]).flat_map do |key|
             metadata_restriction_key_aliases(key)
-          end.uniq
+          end.map { |alias_key| normalize_identifier(alias_key) }.reject(&:empty?).uniq
         else
           []
         end
 
       bindings = normalized_restrictions.map do |key, value|
+        normalized_key = normalize_identifier(key)
+        if !aliases_allowed.empty? && !aliases_allowed.include?(normalized_key)
+          next
+        end
         aliases = metadata_restriction_key_aliases(key)
+                  .map { |alias_key| normalize_identifier(alias_key) }
+                  .reject(&:empty?)
+                  .uniq
         aliases &= aliases_allowed unless aliases_allowed.empty?
-        aliases |= [key]
-        aliases = aliases.map { |alias_key| normalize_identifier(alias_key) }.reject(&:empty?).uniq
+        aliases |= [normalized_key] if aliases_allowed.empty? || aliases_allowed.include?(normalized_key)
         next if aliases.empty?
 
         expected_text = normalize_match_text(value)

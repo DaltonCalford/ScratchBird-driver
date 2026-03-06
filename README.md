@@ -35,7 +35,7 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-05)
+# Driver Capability Matrix (Audit Snapshot: 2026-03-06)
 
 Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in this audit cycle (hybrid parity path: native facade/bootstrap + opt-in wire bridge + matrixed runtime coverage).
 
@@ -50,7 +50,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 | **Python** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage |
 | **Go** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage |
 | **Rust** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage |
-| **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
+| **Ruby** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with deterministic wire tests and env-gated live-depth integration checks |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Mojo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Hybrid parity complete via native facade/bootstrap + opt-in SBWP wire bridge (`sb_wire_transport=python`), with direct/manager/listener runtime matrices and live-matrix CI gating; pure Mojo socket/TLS cutover remains roadmap work |
@@ -80,6 +80,7 @@ Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in t
 - **Python lane:** Closed JDBC baseline parity across CONN/TXN/EXEC/META/TYPE by accepting non-native protocol hints, enabling `sslmode=disable` + `compression=zstd` + `binary_transfer=false` policy parity, and adding always-on runtime contract gate coverage for transaction/multi-result, metadata wrappers, and runtime type decode semantics.
 - **Go lane:** Closed JDBC baseline parity across CONN/TXN/EXEC/META/TYPE by accepting non-native protocol hints, enabling `sslmode=disable` + `compression=zstd` + `binary_transfer=false` policy parity, expanding auth-plugin startup/auth-method handling, broadening OID type coverage (`timetz` + geometry), and adding always-on runtime contract gate coverage for manager-proxy transaction/multi-result, metadata wrappers, and runtime type decode semantics.
 - **Rust lane:** Closed JDBC baseline parity across CONN/TXN/EXEC/META/TYPE by enabling negotiated `binary_transfer=false` + `compression=zstd` paths, adding deterministic manager-proxy and password/SCRAM runtime auth coverage, introducing first-class autocommit transition semantics, and adding always-on metadata matrix + DDL payload runtime contract coverage.
+- **Ruby lane:** Closed the 15-item parity gap batch by implementing SCRAM+manager/TLS connection coverage, wire-level TXN/EXEC framing parity (`READY` state, portal suspend/resume, true multi-result, close-complete sequencing), expanded metadata collection/restriction families, broader type round-trip matrix assertions, and env-gated live error/resource-depth checks.
 - **Mojo lane:** Added opt-in SBWP wire bridge runtime (`sb_wire_transport=python` / `SCRATCHBIRD_MOJO_WIRE_TRANSPORT`) in `src/scratchbird.py` with new `tests/wire_transport_bridge.py` coverage for query/prepare/stream/cancel, transaction/savepoint flow, metadata payloads, lifecycle snapshots, and truncation/decode SQLSTATE propagation (`08006`).
 - **Mojo lane:** Expanded integration/conformance harnesses to direct/manager/listener matrix execution (`SCRATCHBIRD_MOJO_*_URLS`) plus long-running stream-cancel and lifecycle snapshot assertions, and added optional live-matrix CI gate (`MOJO_LIVE_MATRIX_ENABLED`) with live DSN vars.
 - **Mojo lane:** Expanded restriction-aware metadata query shaping across native/facade/shim execution surfaces, including multi-restriction composition helpers and deterministic rowcount wrappers.

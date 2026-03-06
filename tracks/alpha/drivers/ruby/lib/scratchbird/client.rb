@@ -87,8 +87,6 @@ module Scratchbird
       end
       begin
         raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
-        raise NotSupportedError, "binary_transfer=false is not supported" unless @config.binary_transfer
-        raise NotSupportedError, "compression=zstd is not supported" if @config.compression.to_s.downcase == "zstd"
         raw_socket = connect_tcp
         @socket = wrap_tls(raw_socket)
         perform_manager_connect if @config.front_door_mode == "manager_proxy"
@@ -321,17 +319,18 @@ module Scratchbird
     def query_multi(sql, params = nil, options = nil)
       ensure_connected
       normalized = Sql.normalize(sql, params)
-      if normalized.params.empty?
+      results = execute_query_multi(normalized.sql, normalized.params, options)
+      if results.length <= 1 && normalized.params.empty?
         statements = split_sql_statements(normalized.sql)
         if statements.length > 1
-          return statements.filter_map do |statement|
+          results = statements.filter_map do |statement|
             stripped = statement.to_s.strip
             next if stripped.empty?
-            summarize_result(execute_query(stripped, [], options))
+            execute_query(stripped, [], options)
           end
         end
       end
-      [summarize_result(execute_query(normalized.sql, normalized.params, options))]
+      results.map { |result| summarize_result(result) }
     end
 
     def execute_multi(sql, params = nil, options = nil)
@@ -492,6 +491,10 @@ module Scratchbird
     end
 
     def handle_query_error(payload)
+      raise build_query_error(payload)
+    end
+
+    def build_query_error(payload)
       _severity, sqlstate, message, detail, hint = Protocol.parse_error_message(payload)
       parts = []
       parts << message if message && !message.empty?
@@ -499,25 +502,28 @@ module Scratchbird
       parts << "HINT: #{hint}" if hint && !hint.empty?
       text = parts.empty? ? "query failed" : parts.join("\n")
       text = "[#{sqlstate}] #{text}" if sqlstate && !sqlstate.empty?
-      raise ErrorMapper.from_sqlstate(sqlstate, text, detail, hint)
-    rescue Error
-      raise
+      ErrorMapper.from_sqlstate(sqlstate, text, detail, hint)
+    rescue Error => e
+      e
     rescue StandardError
-      raise Error, "query failed"
+      Error.new("query failed")
     end
 
     def drain_until_ready
+      pending_error = nil
       loop do
         type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
         if handle_async_message(type, payload)
           next
         end
         if type == Protocol::MSG_ERROR
-          handle_query_error(payload)
+          pending_error ||= build_query_error(payload)
+          next
         end
         if type == Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
           @txn_id = txn_id
+          raise pending_error if pending_error
           return
         end
       end
@@ -903,6 +909,17 @@ module Scratchbird
       end
     end
 
+    def execute_query_multi(sql, params, options)
+      with_resilience("query_multi", sql) do
+        if params.empty?
+          send_simple_query(sql, options)
+        else
+          send_extended_query(sql, params, options)
+        end
+        execute_query_multi_loop
+      end
+    end
+
     def execute_prepared(name, params, options)
       with_resilience("execute_prepared", nil) do
         send_bind_execute(name, params, options)
@@ -966,6 +983,65 @@ module Scratchbird
 
       rowcount = rows.length if rowcount < 0
       Result.new(columns, rows, rowcount, command_tag, last_insert_id)
+    end
+
+    def execute_query_multi_loop
+      results = []
+      columns = []
+      rows = []
+      rowcount = -1
+      command_tag = ""
+      last_insert_id = 0
+      result_open = false
+
+      loop do
+        type, _flags, payload, _sequence, _attachment_id, _txn_id = recv_message
+        if handle_async_message(type, payload)
+          next
+        end
+        case type
+        when Protocol::MSG_ERROR
+          handle_query_error(payload)
+        when Protocol::MSG_ROW_DESCRIPTION
+          if result_open && (!columns.empty? || !rows.empty? || rowcount >= 0 || !command_tag.empty?)
+            results << Result.new(columns, rows, rowcount >= 0 ? rowcount : rows.length, command_tag, last_insert_id)
+            rows = []
+            rowcount = -1
+            command_tag = ""
+            last_insert_id = 0
+          end
+          columns = Protocol.parse_row_description(payload)
+          result_open = true
+        when Protocol::MSG_DATA_ROW
+          values = Protocol.parse_data_row(payload)
+          rows << decode_row(columns, values)
+          result_open = true
+        when Protocol::MSG_COMMAND_COMPLETE
+          _command_type, rows_count, parsed_last_id, tag = Protocol.parse_command_complete(payload)
+          command_tag = tag
+          rowcount = rows_count
+          last_insert_id = parsed_last_id.to_i
+          results << Result.new(columns, rows, rowcount >= 0 ? rowcount : rows.length, command_tag, last_insert_id)
+          columns = []
+          rows = []
+          rowcount = -1
+          command_tag = ""
+          last_insert_id = 0
+          result_open = false
+        when Protocol::MSG_PORTAL_SUSPENDED
+          resume_portal if @last_max_rows.to_i > 0
+        when Protocol::MSG_READY
+          _status, txn_id = Protocol.parse_ready(payload)
+          @txn_id = txn_id
+          if result_open && (!columns.empty? || !rows.empty? || rowcount >= 0 || !command_tag.empty?)
+            results << Result.new(columns, rows, rowcount >= 0 ? rowcount : rows.length, command_tag, last_insert_id)
+          end
+          break
+        end
+      end
+
+      results = [Result.new([], [], 0, "", 0)] if results.empty?
+      results
     end
 
     def send_simple_query(sql, options)

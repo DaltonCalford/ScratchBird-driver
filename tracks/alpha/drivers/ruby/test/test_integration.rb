@@ -47,6 +47,45 @@ class TestIntegration < Minitest::Test
     end
   end
 
+  def test_manager_proxy_select
+    dsn = integration_manager_proxy_dsn
+    skip "SCRATCHBIRD_RUBY_MANAGER_PROXY_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      result = conn.query("SELECT 1")
+      assert_equal 1, result.first[0]
+    ensure
+      conn.close
+    end
+  end
+
+  def test_tls_verify_ca_select
+    dsn = integration_tls_verify_ca_dsn
+    skip "SCRATCHBIRD_RUBY_TLS_VERIFY_CA_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      result = conn.query("SELECT 1")
+      assert_equal 1, result.first[0]
+    ensure
+      conn.close
+    end
+  end
+
+  def test_tls_verify_full_select
+    dsn = integration_tls_verify_full_dsn
+    skip "SCRATCHBIRD_RUBY_TLS_VERIFY_FULL_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      result = conn.query("SELECT 1")
+      assert_equal 1, result.first[0]
+    ensure
+      conn.close
+    end
+  end
+
   def test_cancel
     dsn = integration_dsn
     skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
@@ -67,6 +106,154 @@ class TestIntegration < Minitest::Test
     thread.join(5)
     conn.close
     refute_nil error
+    assert_instance_of Scratchbird::OperatorInterventionError, error
+    assert_equal "57", error.sqlstate.to_s[0, 2]
+  end
+
+  def test_txn_id_transitions_follow_runtime_ready_frames
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      conn.autocommit = false
+      assert_equal false, conn.in_transaction?
+      conn.query("SELECT 1")
+      assert_equal true, conn.in_transaction?
+      assert_operator conn.client.txn_id, :>, 0
+      conn.commit
+      assert_equal false, conn.in_transaction?
+      assert_equal 0, conn.client.txn_id
+      conn.query("SELECT 1")
+      assert_equal true, conn.in_transaction?
+      conn.rollback
+      assert_equal false, conn.in_transaction?
+      assert_equal 0, conn.client.txn_id
+    ensure
+      conn.close
+    end
+  end
+
+  def test_commit_and_rollback_behavior_after_server_abort
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      conn.autocommit = false
+      conn.query("SELECT 1")
+      assert_equal true, conn.in_transaction?
+
+      assert_raises(Scratchbird::Error) do
+        conn.query("SELECT * FROM __ruby_abort_fixture_missing__")
+      end
+
+      begin
+        conn.commit
+      rescue Scratchbird::Error
+        nil
+      end
+      assert_equal 0, conn.client.txn_id
+      conn.rollback
+      assert_equal 0, conn.client.txn_id
+    ensure
+      conn.close
+    end
+  end
+
+  def test_metadata_collections_and_restrictions_fixture_shape
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      tables = conn.query_metadata("tables")
+      types = conn.query_metadata("types")
+      ddl_fields = conn.query_metadata("ddl_fields")
+      restricted = conn.query_metadata_with_restrictions("tables", { table: "sys.tables" })
+
+      assert tables.respond_to?(:each_hash)
+      assert types.respond_to?(:each_hash)
+      assert ddl_fields.respond_to?(:each_hash)
+      assert restricted.respond_to?(:each_hash)
+      sample_row = tables.each_hash.first
+      assert sample_row.is_a?(Hash) unless sample_row.nil?
+    rescue Scratchbird::NotSupportedError, Scratchbird::SyntaxError => e
+      skip("metadata collection not supported by runtime: #{e.message}") if feature_not_supported?(e)
+      raise
+    ensure
+      conn.close
+    end
+  end
+
+  def test_prepared_close_sequence_roundtrip
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      stmt = conn.prepare("SELECT ?::INTEGER")
+      result = stmt.execute([9])
+      assert_equal 9, result.first[0]
+      assert_equal true, stmt.close
+      assert_equal true, stmt.closed?
+    rescue Scratchbird::NotSupportedError, Scratchbird::SyntaxError => e
+      skip("prepared close sequence not supported by runtime: #{e.message}") if feature_not_supported?(e)
+      raise
+    ensure
+      conn.close
+    end
+  end
+
+  def test_constraint_violation_maps_to_integrity_error
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    table_name = "ruby_err_#{Time.now.to_i}"
+    conn = Scratchbird.connect(dsn)
+    begin
+      conn.query("CREATE TABLE #{table_name} (id INTEGER PRIMARY KEY)")
+      conn.query("INSERT INTO #{table_name} (id) VALUES (1)")
+      err = assert_raises(Scratchbird::IntegrityError) do
+        conn.query("INSERT INTO #{table_name} (id) VALUES (1)")
+      end
+      assert_equal "23", err.sqlstate.to_s[0, 2]
+    rescue Scratchbird::NotSupportedError, Scratchbird::SyntaxError => e
+      skip("constraint fixture not supported by runtime: #{e.message}") if feature_not_supported?(e)
+      raise
+    ensure
+      begin
+        conn.query("DROP TABLE #{table_name}")
+      rescue StandardError
+        nil
+      end
+      conn.close
+    end
+  end
+
+  def test_auth_failure_maps_to_auth_error
+    bad_dsn = integration_bad_auth_dsn
+    skip "SCRATCHBIRD_RUBY_BAD_AUTH_DSN not set" unless bad_dsn
+
+    err = assert_raises(Scratchbird::AuthError) { Scratchbird.connect(bad_dsn) }
+    assert_equal "28", err.sqlstate.to_s[0, 2]
+  end
+
+  def test_socket_drop_releases_keepalive_and_leak_tracking_on_close
+    dsn = integration_dsn
+    skip "SCRATCHBIRD_RUBY_URL/SCRATCHBIRD_TEST_DSN not set" unless dsn
+
+    conn = Scratchbird.connect(dsn)
+    begin
+      socket = conn.client.instance_variable_get(:@socket)
+      socket.close if socket
+      assert_raises(Scratchbird::ConnectionError) { conn.query("SELECT 1") }
+    ensure
+      conn.close
+    end
+
+    assert_nil conn.client.instance_variable_get(:@keepalive_tracker)
+    assert_nil conn.client.instance_variable_get(:@leak_guard)
   end
 
   def test_query_multi
@@ -147,6 +334,22 @@ class TestIntegration < Minitest::Test
 
   def integration_cancel_sql
     ENV["SCRATCHBIRD_RUBY_CANCEL_SQL"] || ENV["SCRATCHBIRD_TEST_CANCEL_SQL"]
+  end
+
+  def integration_manager_proxy_dsn
+    ENV["SCRATCHBIRD_RUBY_MANAGER_PROXY_DSN"]
+  end
+
+  def integration_tls_verify_ca_dsn
+    ENV["SCRATCHBIRD_RUBY_TLS_VERIFY_CA_DSN"]
+  end
+
+  def integration_tls_verify_full_dsn
+    ENV["SCRATCHBIRD_RUBY_TLS_VERIFY_FULL_DSN"]
+  end
+
+  def integration_bad_auth_dsn
+    ENV["SCRATCHBIRD_RUBY_BAD_AUTH_DSN"]
   end
 
   def feature_not_supported?(error)
