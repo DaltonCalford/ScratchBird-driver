@@ -84,7 +84,7 @@ owned by `ScratchBirdConnection`:
 - `ScratchBirdQueryPipeline.Flush()` triggers immediate processing of queued requests.
 - `ScratchBirdQueryPipeline.PendingCount`, `InFlightCount`, and `HasCapacity` expose runtime queue/capacity state.
 - `ScratchBirdQueryPipelineBatch.Add(...)` appends queued statements and returns the same builder for chaining.
-- `ScratchBirdQueryPipelineBatch.ExecuteAsync()` enqueues the full batch, flushes once, and returns ordered per-statement results.
+- `ScratchBirdQueryPipelineBatch.ExecuteAsync()` enqueues the full batch atomically, flushes once, and returns ordered per-statement results.
 - `ScratchBirdQueryPipelineConfig` controls queue behavior:
   - `MaxInFlight`
   - `AutoFlush`

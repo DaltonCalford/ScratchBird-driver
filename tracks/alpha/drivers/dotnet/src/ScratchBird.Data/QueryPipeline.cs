@@ -120,7 +120,7 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
             return Task.FromCanceled<IReadOnlyList<ResultSetSummary>>(cancellationToken);
         }
 
-        if (!TryReserveCapacity(out var limitError))
+        if (!TryReserveCapacity(1, out var limitError))
         {
             return Task.FromException<IReadOnlyList<ResultSetSummary>>(limitError!);
         }
@@ -162,20 +162,7 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
-
-        var batch = CreateBatch();
-        for (var i = 0; i < items.Count; i++)
-        {
-            var item = items[i];
-            ArgumentNullException.ThrowIfNull(item);
-            batch.Add(
-                item.Sql,
-                item.Parameters,
-                item.CommandTimeoutSeconds,
-                item.FetchSize);
-        }
-
-        return batch.ExecuteAsync(cancellationToken);
+        return QueueBatchInternalAsync(items, cancellationToken);
     }
 
     public void Dispose()
@@ -275,14 +262,67 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
         }
     }
 
-    private bool TryReserveCapacity(out ScratchBirdLimitException? limitError)
+    private Task<IReadOnlyList<IReadOnlyList<ResultSetSummary>>> QueueBatchInternalAsync(
+        IReadOnlyList<ScratchBirdPipelineBatchItem> items,
+        CancellationToken cancellationToken)
     {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (items.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyList<IReadOnlyList<ResultSetSummary>>>(Array.Empty<IReadOnlyList<ResultSetSummary>>());
+        }
+
+        var normalized = new NormalizedBatchItem[items.Count];
+        for (var i = 0; i < items.Count; i++)
+        {
+            normalized[i] = NormalizeBatchItem(items[i]);
+        }
+
+        if (!TryReserveCapacity(normalized.Length, out var limitError))
+        {
+            return Task.FromException<IReadOnlyList<IReadOnlyList<ResultSetSummary>>>(limitError!);
+        }
+
+        var tasks = new Task<IReadOnlyList<ResultSetSummary>>[normalized.Length];
+        for (var i = 0; i < normalized.Length; i++)
+        {
+            var item = normalized[i];
+            var request = new PipelineRequest(
+                item.Sql,
+                item.Parameters,
+                item.CommandTimeoutSeconds,
+                item.FetchSize,
+                cancellationToken);
+            tasks[i] = request.Task;
+            _queue.Enqueue(request);
+        }
+
+        Flush();
+        return AwaitBatchAsync(tasks, cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<IReadOnlyList<ResultSetSummary>>> AwaitBatchAsync(
+        Task<IReadOnlyList<ResultSetSummary>>[] tasks,
+        CancellationToken cancellationToken)
+    {
+        var results = await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return results;
+    }
+
+    private bool TryReserveCapacity(int requestedSlots, out ScratchBirdLimitException? limitError)
+    {
+        if (requestedSlots <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedSlots), "requestedSlots must be positive");
+        }
+
         var max = _config.MaxInFlight;
         while (true)
         {
             var pending = Volatile.Read(ref _pendingCount);
             var inFlight = Volatile.Read(ref _inFlightCount);
-            if (max > 0 && pending + inFlight >= max)
+            if (max > 0 && pending + inFlight + requestedSlots > max)
             {
                 limitError = new ScratchBirdLimitException(
                     "Pipeline queue at capacity",
@@ -291,7 +331,7 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
                 return false;
             }
 
-            if (Interlocked.CompareExchange(ref _pendingCount, pending + 1, pending) == pending)
+            if (Interlocked.CompareExchange(ref _pendingCount, pending + requestedSlots, pending) == pending)
             {
                 limitError = null;
                 return true;
@@ -320,6 +360,32 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
             AutoFlushThreshold = connection.Config.PipelineAutoFlushThreshold,
             FlushTimeoutMs = connection.Config.PipelineFlushTimeoutMs
         };
+    }
+
+    private static NormalizedBatchItem NormalizeBatchItem(ScratchBirdPipelineBatchItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        if (string.IsNullOrWhiteSpace(item.Sql))
+        {
+            throw new ArgumentException("SQL is required", nameof(item.Sql));
+        }
+
+        if (item.CommandTimeoutSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(item.CommandTimeoutSeconds), "commandTimeoutSeconds must be non-negative");
+        }
+
+        if (item.FetchSize < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(item.FetchSize), "fetchSize must be non-negative");
+        }
+
+        return new NormalizedBatchItem(
+            item.Sql,
+            item.Parameters ?? Array.Empty<ScratchBirdParameter>(),
+            item.CommandTimeoutSeconds,
+            item.FetchSize);
     }
 
     private void ThrowIfDisposed()
@@ -372,6 +438,12 @@ public sealed class ScratchBirdQueryPipeline : IDisposable, IAsyncDisposable
             _completion.TrySetCanceled(cancellationToken);
         }
     }
+
+    private readonly record struct NormalizedBatchItem(
+        string Sql,
+        IReadOnlyList<ScratchBirdParameter> Parameters,
+        int CommandTimeoutSeconds,
+        int FetchSize);
 }
 
 public sealed class ScratchBirdQueryPipelineBatch
@@ -423,21 +495,18 @@ public sealed class ScratchBirdQueryPipelineBatch
             return Array.Empty<IReadOnlyList<ResultSetSummary>>();
         }
 
-        var tasks = new Task<IReadOnlyList<ResultSetSummary>>[_items.Count];
+        var items = new ScratchBirdPipelineBatchItem[_items.Count];
         for (var i = 0; i < _items.Count; i++)
         {
             var item = _items[i];
-            tasks[i] = _pipeline.QueueAsync(
+            items[i] = new ScratchBirdPipelineBatchItem(
                 item.Sql,
                 item.Parameters,
                 item.CommandTimeoutSeconds,
-                item.FetchSize,
-                cancellationToken);
+                item.FetchSize);
         }
 
-        _pipeline.Flush();
-        var results = await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
-        return results;
+        return await _pipeline.ExecuteBatchAsync(items, cancellationToken).ConfigureAwait(false);
     }
 
     private readonly record struct BatchItem(

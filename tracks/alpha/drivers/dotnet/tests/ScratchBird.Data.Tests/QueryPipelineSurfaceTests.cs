@@ -170,6 +170,7 @@ public class QueryPipelineSurfaceTests
     [Fact]
     public async Task Batch_ExecuteAsync_PropagatesCapacityErrors()
     {
+        var executed = new List<string>();
         using var connection = new ScratchBirdConnection("Host=localhost;Port=3092;Database=main");
         await using var pipeline = new ScratchBirdQueryPipeline(
             connection,
@@ -181,6 +182,10 @@ public class QueryPipelineSurfaceTests
             },
             async (sql, _, _, _, cancellationToken) =>
             {
+                lock (executed)
+                {
+                    executed.Add(sql);
+                }
                 await Task.Delay(50, cancellationToken);
                 return CreateResult(sql);
             });
@@ -191,6 +196,9 @@ public class QueryPipelineSurfaceTests
 
         var ex = await Assert.ThrowsAsync<ScratchBirdLimitException>(async () => await batch.ExecuteAsync());
         Assert.Equal("54000", ex.SqlState);
+        Assert.Empty(executed);
+        Assert.Equal(0, pipeline.PendingCount);
+        Assert.Equal(0, pipeline.InFlightCount);
     }
 
     [Fact]
