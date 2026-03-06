@@ -43,10 +43,10 @@ Scope: `tracks/alpha/drivers/php` only.
 
 ## Status Recommendation
 
-- `TXN`: `PARTIAL`
-- `EXEC`: `PARTIAL`
+- `TXN`: `IMPLEMENTED`
+- `EXEC`: `IMPLEMENTED`
 
 ## Remaining Gaps
 
-- TXN semantics are better guarded locally but still need broader end-to-end server behavior validation under integration fixtures.
-- EXEC now includes lane-local callable, batch, multi-result traversal, generated-key capture, and translation-surface parity, with expanded env-gated integration checks for multi-result/batch/call/rowset traversal; status remains `Partial` due broader advanced execution stress coverage and limited non-gated live depth.
+- None for current JDBC baseline scope.
+- TXN/EXEC parity includes READY-synchronized abort-path state handling, portal suspend/resume continuation, callable/batch/multi-result/generated-key surfaces, and env-gated runtime checks.

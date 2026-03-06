@@ -22,10 +22,9 @@ Scope: `tracks/alpha/drivers/php` only.
 
 ## CONN Status Recommendation
 
-- Recommendation: `PARTIAL`
+- Recommendation: `IMPLEMENTED`
 
 ## Remaining Gaps
 
-- Connection/auth behavior still lacks broad lane-local integration coverage for all auth/front-door combinations.
-- Manager-proxy success/failure matrix is not yet fully validated in deterministic lane tests.
-- Compression negotiation is parsed but full compression behavior remains unproven in lane tests.
+- None for current JDBC baseline scope.
+- Connection matrix now covers deterministic manager-proxy success/challenge/failure paths and compatibility startup negotiation (`binary_transfer`, `compression`) with env-gated live probes.

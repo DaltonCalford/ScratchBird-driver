@@ -81,4 +81,17 @@ final class ConfigTest extends TestCase
         $cfg = Config::fromDsn('metadataexpandschemaparents=off');
         $this->assertFalse($cfg->metadataExpandSchemaParents);
     }
+
+    public function testCompressionNormalizationAcceptsNoneAlias(): void
+    {
+        $cfg = Config::fromDsn('compression=none');
+        $this->assertSame('off', $cfg->compression);
+    }
+
+    public function testCompressionNormalizationRejectsUnknownValue(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('compression must be off or zstd');
+        Config::fromDsn('compression=gzip');
+    }
 }

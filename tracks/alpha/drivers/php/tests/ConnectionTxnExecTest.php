@@ -16,9 +16,36 @@ use ScratchBird\PDO\Config;
 use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\Protocol;
 use ScratchBird\PDO\ScratchBirdTransactionException;
+use ScratchBird\PDO\TypeDecoder;
 
 final class ConnectionTxnExecTest extends TestCase
 {
+    public function testCommitAfterServerAbortResetsTxnStateAfterReady(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+        $this->setPrivate($conn, 'inTransaction', true);
+        $this->setPrivate($conn, 'txnId', 91);
+
+        try {
+            $this->queueError($server, '40001', 'serialization failure');
+            $this->queueReady($server, 0);
+
+            try {
+                $conn->commit();
+                $this->fail('Expected commit() to surface server abort');
+            } catch (ScratchBirdTransactionException $ex) {
+                $this->assertSame('40001', $ex->sqlState);
+            }
+
+            $this->assertFalse($this->getPrivate($conn, 'inTransaction'));
+            $this->assertSame(0, $this->getPrivate($conn, 'txnId'));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
     public function testCommitWithoutActiveTransactionThrows(): void
     {
         [$client, $server] = $this->newSocketPair();
@@ -187,6 +214,54 @@ final class ConnectionTxnExecTest extends TestCase
         }
     }
 
+    public function testExecuteQueryResumesPortalAfterSuspensionAndContinuesRows(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueRowDescription($server, ['value']);
+            $this->queueDataRow($server, ['1']);
+            $this->sendServerMessage($server, Protocol::MSG_PORTAL_SUSPENDED, '');
+            $this->queueDataRow($server, ['2']);
+            $this->queueCommandComplete($server, 2, 'SELECT 2');
+            $this->queueReady($server, 0);
+
+            $stream = $conn->executeQuery('SELECT 1', [], 1);
+            $rows = [];
+            while (($row = $stream->readRow()) !== null) {
+                $rows[] = $row;
+            }
+
+            $this->assertSame([['1'], ['2']], $rows);
+            $this->assertSame(2, $stream->rowsAffected());
+            $this->assertSame(Protocol::MSG_QUERY, $this->readSentMessageType($server));
+            $this->assertSame(Protocol::MSG_EXECUTE, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testExecuteQueryAppliesReadyTxnStateAtStreamEnd(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 0, 'SELECT 0');
+            $this->queueReady($server, 77);
+
+            $stream = $conn->executeQuery('SELECT 1');
+            $this->assertNull($stream->readRow());
+            $this->assertTrue($conn->inTransaction());
+            $this->assertSame(77, $this->getPrivate($conn, 'txnId'));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
     public function testCallTranslatesJdbcCallableEscapeForSimpleCall(): void
     {
         [$client, $server] = $this->newSocketPair();
@@ -259,6 +334,14 @@ final class ConnectionTxnExecTest extends TestCase
         $prop->setValue($object, $value);
     }
 
+    private function getPrivate(object $object, string $property): mixed
+    {
+        $class = new ReflectionClass($object);
+        $prop = $class->getProperty($property);
+        $prop->setAccessible(true);
+        return $prop->getValue($object);
+    }
+
     private function newSocketPair(): array
     {
         $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
@@ -314,6 +397,52 @@ final class ConnectionTxnExecTest extends TestCase
     {
         $payload = chr(0) . "\0\0\0" . $this->uint64Le($rows) . $this->uint64Le($lastId) . $tag . "\0";
         $this->sendServerMessage($server, Protocol::MSG_COMMAND_COMPLETE, $payload);
+    }
+
+    /**
+     * @param array<int, string> $columnNames
+     */
+    private function queueRowDescription($server, array $columnNames): void
+    {
+        $payload = pack('v', count($columnNames)) . "\0\0";
+        foreach ($columnNames as $index => $columnName) {
+            $name = (string) $columnName;
+            $payload .= pack('V', strlen($name));
+            $payload .= $name;
+            $payload .= pack('V', 0);
+            $payload .= pack('v', $index + 1);
+            $payload .= pack('V', TypeDecoder::OID_TEXT);
+            $payload .= pack('v', 0);
+            $payload .= pack('V', 0);
+            $payload .= chr(TypeDecoder::FORMAT_TEXT);
+            $payload .= chr(1);
+            $payload .= "\0\0";
+        }
+        $this->sendServerMessage($server, Protocol::MSG_ROW_DESCRIPTION, $payload);
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     */
+    private function queueDataRow($server, array $values): void
+    {
+        $count = count($values);
+        $nullBytes = intdiv($count + 7, 8);
+        $nullBitmap = str_repeat("\0", $nullBytes);
+        $encoded = '';
+        foreach ($values as $index => $value) {
+            if ($value === null) {
+                $byteIndex = intdiv($index, 8);
+                $bitIndex = $index % 8;
+                $byte = ord($nullBitmap[$byteIndex]);
+                $nullBitmap[$byteIndex] = chr($byte | (1 << $bitIndex));
+                continue;
+            }
+            $raw = (string) $value;
+            $encoded .= pack('V', strlen($raw)) . $raw;
+        }
+        $payload = pack('v', $count) . pack('v', $nullBytes) . $nullBitmap . $encoded;
+        $this->sendServerMessage($server, Protocol::MSG_DATA_ROW, $payload);
     }
 
     private function queueError($server, string $sqlState, string $message): void

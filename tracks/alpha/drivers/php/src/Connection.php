@@ -81,16 +81,21 @@ final class Connection
         $this->leakDetector = new LeakDetector();
         $this->keepaliveManager->start();
         $this->leakDetector->start();
-        $this->connect();
-        $this->keepaliveTracker = $this->keepaliveManager->register(
-            $this->connectionId,
-            $this,
-            function (): bool {
-                $this->ping();
-                return true;
-            }
-        );
-        $this->leakGuard = $this->leakDetector->checkout($this->connectionId, ['driver' => 'php']);
+        try {
+            $this->connect();
+            $this->keepaliveTracker = $this->keepaliveManager->register(
+                $this->connectionId,
+                $this,
+                function (): bool {
+                    $this->ping();
+                    return true;
+                }
+            );
+            $this->leakGuard = $this->leakDetector->checkout($this->connectionId, ['driver' => 'php']);
+        } catch (\Throwable $ex) {
+            $this->close();
+            throw $ex;
+        }
     }
 
     public function prepare(string $statement, array $options = []): Statement
@@ -482,11 +487,10 @@ final class Connection
 
     public function close(): void
     {
-        if ($this->socket === null) {
-            return;
+        if ($this->socket !== null) {
+            fclose($this->socket);
+            $this->socket = null;
         }
-        fclose($this->socket);
-        $this->socket = null;
         $this->connected = false;
         $this->applyTxnState(0);
         $this->hasLastInsertId = false;
@@ -501,6 +505,11 @@ final class Connection
         }
         $this->keepaliveManager->stop();
         $this->leakDetector->stop();
+    }
+
+    public function updateTxnId(int $txnId): void
+    {
+        $this->applyTxnState($txnId);
     }
 
     private function withResilience(string $operation, ?string $sql, callable $fn): mixed
@@ -643,17 +652,24 @@ final class Connection
 
     public function drainUntilReady(): void
     {
+        $pendingError = null;
         while (true) {
             [$type, , $payload] = $this->receive();
             if ($this->handleAsyncMessage($type, $payload)) {
                 continue;
             }
             if ($type === Protocol::MSG_ERROR) {
-                throw $this->buildQueryException($payload);
+                if ($pendingError === null) {
+                    $pendingError = $this->buildQueryException($payload);
+                }
+                continue;
             }
             if ($type === Protocol::MSG_READY) {
                 [, $txnId] = Protocol::parseReady($payload);
                 $this->applyTxnState($txnId);
+                if ($pendingError !== null) {
+                    throw $pendingError;
+                }
                 return;
             }
         }
@@ -715,7 +731,7 @@ final class Connection
     {
         $mode = strtolower($this->config->sslMode ?: 'require');
         if ($mode === 'disable') {
-            throw new ScratchBirdConnectionException('TLS is required for ScratchBird connections', '08001');
+            return;
         }
         $options = [
             'ssl' => [
@@ -898,6 +914,9 @@ final class Connection
     private function buildStartupFeatures(): int
     {
         $features = 0;
+        if (strtolower($this->config->compression) === 'zstd') {
+            $features |= Protocol::FEATURE_COMPRESSION;
+        }
         if ($this->config->binaryTransfer) {
             $features |= Protocol::FEATURE_STREAMING;
         }

@@ -96,17 +96,17 @@ final class ScratchBirdPDO
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function getSchema(string $collectionName = 'tables'): array
+    public function getSchema(string $collectionName = 'tables', array $restrictions = []): array
     {
-        return $this->connection->getSchema($collectionName);
+        return $this->connection->getSchema($collectionName, $restrictions);
     }
 
     /**
      * @return array{database: ?string, schemas: array<int, array{name: string, path: string, terminal: bool, children: array}>}
      */
-    public function getSchemaTree(?bool $expandParents = null, ?string $database = null): array
+    public function getSchemaTree(?bool $expandParents = null, ?string $database = null, array $restrictions = []): array
     {
-        return $this->connection->getSchemaTree($expandParents, $database);
+        return $this->connection->getSchemaTree($expandParents, $database, $restrictions);
     }
 
     public function exec(string $statement): int|false
@@ -132,6 +132,21 @@ final class ScratchBirdPDO
     public function rollBack(): bool
     {
         return $this->connection->rollBack();
+    }
+
+    public function savepoint(string $name): void
+    {
+        $this->connection->savepoint($name);
+    }
+
+    public function releaseSavepoint(string $name): void
+    {
+        $this->connection->releaseSavepoint($name);
+    }
+
+    public function rollbackToSavepoint(string $name): void
+    {
+        $this->connection->rollbackToSavepoint($name);
     }
 
     public function lastInsertId(?string $name = null): string|false

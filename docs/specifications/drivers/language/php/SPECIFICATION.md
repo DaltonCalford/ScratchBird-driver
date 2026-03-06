@@ -23,8 +23,8 @@ Priority: P0
 
 ## 4. Required Features
 
-- TLS required; reject plaintext or sslmode=disable.
-- Binary-only parameter binding enforced; reject binary_transfer=false.
+- TLS posture follows `sslmode`; `disable` is supported for JDBC-parity compatibility paths while non-`disable` modes negotiate TLS.
+- `binary_transfer=false` is accepted for JDBC-parity compatibility paths; wire execution remains protocol-compatible.
 - Full SBWP v1.1 message coverage for parse/bind/execute, ready/paging.
 - SQLSTATE mapping must be spec-complete and surfaced in errors.
 - Metadata helpers must use sys.* contract and return stable schemas.

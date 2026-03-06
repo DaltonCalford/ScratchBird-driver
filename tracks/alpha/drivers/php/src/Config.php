@@ -190,7 +190,7 @@ final class Config
                 $cfg->binaryTransfer = self::parseBool($value, $cfg->binaryTransfer);
                 break;
             case 'compression':
-                $cfg->compression = strtolower($value) === 'zstd' ? 'zstd' : 'off';
+                $cfg->compression = self::normalizeCompression($value);
                 break;
             case 'fetch_size':
             case 'fetchsize':
@@ -263,5 +263,17 @@ final class Config
             return 'manager_proxy';
         }
         throw new \InvalidArgumentException('front_door_mode must be direct or manager_proxy.');
+    }
+
+    private static function normalizeCompression(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '' || $normalized === 'off' || $normalized === 'none') {
+            return 'off';
+        }
+        if ($normalized === 'zstd') {
+            return 'zstd';
+        }
+        throw new \InvalidArgumentException('compression must be off or zstd.');
     }
 }

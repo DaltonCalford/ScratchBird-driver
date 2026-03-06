@@ -125,8 +125,116 @@ final class TypeDecoderTest extends TestCase
         $this->assertSame(321, TypeDecoder::decode(0, $binaryInt, TypeDecoder::FORMAT_BINARY));
     }
 
+    public function testDecodeBinaryScalarOidMatrix(): void
+    {
+        $this->assertTrue(TypeDecoder::decode(TypeDecoder::OID_BOOL, "\1", TypeDecoder::FORMAT_BINARY));
+        $this->assertSame(123, TypeDecoder::decode(TypeDecoder::OID_INT2, pack('v', 123), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame(12345, TypeDecoder::decode(TypeDecoder::OID_INT4, pack('V', 12345), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame(9876543210, TypeDecoder::decode(TypeDecoder::OID_INT8, $this->uint64Le(9876543210), TypeDecoder::FORMAT_BINARY));
+        $this->assertEqualsWithDelta(1.25, TypeDecoder::decode(TypeDecoder::OID_FLOAT4, pack('g', 1.25), TypeDecoder::FORMAT_BINARY), 0.000001);
+        $this->assertEqualsWithDelta(2.5, TypeDecoder::decode(TypeDecoder::OID_FLOAT8, pack('e', 2.5), TypeDecoder::FORMAT_BINARY), 0.000001);
+        $this->assertSame('hello', TypeDecoder::decode(TypeDecoder::OID_TEXT, $this->lenPrefixed('hello'), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame('{"a":1}', TypeDecoder::decode(TypeDecoder::OID_JSON, $this->lenPrefixed('{"a":1}'), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame('127.0.0.1', TypeDecoder::decode(TypeDecoder::OID_INET, $this->lenPrefixed('127.0.0.1'), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame('00:11:22:33:44:55', TypeDecoder::decode(TypeDecoder::OID_MACADDR, $this->lenPrefixed('00:11:22:33:44:55'), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame('12:34:56+00', TypeDecoder::decode(TypeDecoder::OID_TIMETZ, $this->lenPrefixed('12:34:56+00'), TypeDecoder::FORMAT_BINARY));
+        $this->assertSame('0.99', TypeDecoder::decode(TypeDecoder::OID_MONEY, $this->uint64Le(99), TypeDecoder::FORMAT_BINARY));
+    }
+
+    public function testDecodeTemporalAndIntervalFamilies(): void
+    {
+        $date = TypeDecoder::decode(TypeDecoder::OID_DATE, pack('V', 0), TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $date);
+        $this->assertSame('2000-01-01', $date->format('Y-m-d'));
+
+        $time = TypeDecoder::decode(TypeDecoder::OID_TIME, $this->uint64Le(3723000000), TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $time);
+        $this->assertSame('01:02:03', $time->format('H:i:s'));
+
+        $timestamp = TypeDecoder::decode(TypeDecoder::OID_TIMESTAMP, $this->uint64Le(0), TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $timestamp);
+        $this->assertSame('2000-01-01 00:00:00', $timestamp->format('Y-m-d H:i:s'));
+
+        $intervalPayload = $this->uint64Le(15_000_000) . pack('V', 2) . pack('V', 1);
+        $interval = TypeDecoder::decode(TypeDecoder::OID_INTERVAL, $intervalPayload, TypeDecoder::FORMAT_BINARY);
+        $this->assertSame(['micros' => 15_000_000, 'days' => 2, 'months' => 1], $interval);
+    }
+
+    public function testEncodeDecodeExtendedRangeFamilies(): void
+    {
+        $intRange = new Range([
+            'lower' => 5,
+            'upper' => 15,
+            'lowerInclusive' => true,
+            'upperInclusive' => false,
+        ]);
+        $encodedIntRange = TypeDecoder::encodeParam($intRange);
+        $decodedIntRange = TypeDecoder::decode($encodedIntRange['oid'], $encodedIntRange['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(Range::class, $decodedIntRange);
+        $this->assertSame(5, $decodedIntRange->lower);
+        $this->assertSame(15, $decodedIntRange->upper);
+
+        $dateRange = new Range([
+            'lower' => new \DateTimeImmutable('2026-03-06 00:00:00', new \DateTimeZone('UTC')),
+            'upper' => new \DateTimeImmutable('2026-03-08 00:00:00', new \DateTimeZone('UTC')),
+            'rangeOid' => TypeDecoder::OID_DATERANGE,
+        ]);
+        $encodedDateRange = TypeDecoder::encodeParam($dateRange);
+        $decodedDateRange = TypeDecoder::decode($encodedDateRange['oid'], $encodedDateRange['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(Range::class, $decodedDateRange);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $decodedDateRange->lower);
+        $this->assertSame('2026-03-06', $decodedDateRange->lower->format('Y-m-d'));
+        $this->assertSame('2026-03-08', $decodedDateRange->upper->format('Y-m-d'));
+    }
+
+    public function testEncodeDecodeJsonbGeometryCompositeAndDateTimeRoundTrip(): void
+    {
+        $jsonb = TypeDecoder::encodeParam(new Jsonb('', ['name' => 'scratchbird']));
+        $decodedJsonb = TypeDecoder::decode($jsonb['oid'], $jsonb['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(Jsonb::class, $decodedJsonb);
+        $this->assertSame('{"name":"scratchbird"}', $decodedJsonb->raw);
+
+        $geometry = TypeDecoder::encodeParam(new Geometry('0101000000000000000000F03F0000000000000040'));
+        $decodedGeometry = TypeDecoder::decode($geometry['oid'], $geometry['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(Geometry::class, $decodedGeometry);
+        $this->assertSame('0101000000000000000000F03F0000000000000040', $decodedGeometry->wkb);
+
+        $composite = new Composite(
+            [
+                new CompositeField(TypeDecoder::OID_INT4, 7),
+                new CompositeField(TypeDecoder::OID_TEXT, 'bird'),
+            ],
+            TypeDecoder::OID_RECORD
+        );
+        $encodedComposite = TypeDecoder::encodeParam($composite);
+        $decodedComposite = TypeDecoder::decode($encodedComposite['oid'], $encodedComposite['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(Composite::class, $decodedComposite);
+        $this->assertCount(2, $decodedComposite->fields);
+        $this->assertSame(7, $decodedComposite->fields[0]->value);
+        $this->assertSame('bird', $decodedComposite->fields[1]->value);
+
+        $encodedDateTime = TypeDecoder::encodeParam(new \DateTimeImmutable('2026-03-06T12:34:56+00:00'));
+        $decodedDateTime = TypeDecoder::decode($encodedDateTime['oid'], $encodedDateTime['param']['data'], TypeDecoder::FORMAT_BINARY);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $decodedDateTime);
+        $this->assertSame('2026-03-06 12:34:56', $decodedDateTime->format('Y-m-d H:i:s'));
+    }
+
+    public function testOidNamesCoverExtendedFamilies(): void
+    {
+        $this->assertSame('timetz', TypeDecoder::oidName(TypeDecoder::OID_TIMETZ));
+        $this->assertSame('vector', TypeDecoder::oidName(TypeDecoder::OID_SB_VECTOR));
+        $this->assertSame('unknown', TypeDecoder::oidName(999999));
+    }
+
     private function lenPrefixed(string $value): string
     {
         return pack('V', strlen($value)) . $value;
+    }
+
+    private function uint64Le(int $value): string
+    {
+        $lo = $value & 0xFFFFFFFF;
+        $hi = ($value >> 32) & 0xFFFFFFFF;
+        return pack('V2', $lo, $hi);
     }
 }

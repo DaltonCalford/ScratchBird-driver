@@ -111,6 +111,8 @@ final class ResultStream
                     $this->connection->resumePortal();
                     break;
                 case Protocol::MSG_READY:
+                    [, $txnId] = Protocol::parseReady($payload);
+                    $this->connection->updateTxnId($txnId);
                     $this->done = true;
                     return null;
                 case Protocol::MSG_EMPTY_QUERY:
@@ -137,6 +139,8 @@ final class ResultStream
                 continue;
             }
             if ($type === Protocol::MSG_READY) {
+                [, $txnId] = Protocol::parseReady($payload);
+                $this->connection->updateTxnId($txnId);
                 $this->done = true;
                 $this->hasNextResultSet = false;
                 $this->resultSetBoundary = false;

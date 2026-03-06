@@ -19,8 +19,8 @@ Checklist: `docs/planning/driver-checklists/php.md` (see Integration Appendix Ta
 
 ## 3. Required Features
 
-- TLS required; reject plaintext or sslmode=disable.
-- Binary-only parameter binding enforced; reject binary_transfer=false.
+- TLS posture follows `sslmode`; `disable` is supported for JDBC-parity compatibility paths while non-`disable` modes negotiate TLS.
+- `binary_transfer=false` is accepted for JDBC-parity compatibility paths; wire execution remains protocol-compatible.
 - Full SBWP v1.1 message coverage for parse/bind/execute, ready/paging.
 - SQLSTATE mapping must be spec-complete and surfaced in errors.
 - Metadata helpers must use sys.* contract and return stable schemas.
@@ -79,10 +79,10 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC);
 ## 13. Implementation Checklist Appendix
 
 - Driver checklist: `docs/planning/driver-checklists/php.md`
-- [ ] Constraint: PDO errorInfo arrays include SQLSTATE as element 0. (Driver task: `docs/planning/driver-checklists/php.md`)
-- [ ] Constraint: Statement errorInfo is separate from connection errorInfo. (Driver task: `docs/planning/driver-checklists/php.md`)
-- [ ] Test: Validate PDO::errorInfo and PDOStatement::errorInfo SQLSTATE values. (Driver task: `docs/planning/driver-checklists/php.md`)
-- [ ] Test: Verify fetch modes and error mode behavior. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [x] Constraint: PDO errorInfo arrays include SQLSTATE as element 0. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [x] Constraint: Statement errorInfo is separate from connection errorInfo. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [x] Test: Validate PDO::errorInfo and PDOStatement::errorInfo SQLSTATE values. (Driver task: `docs/planning/driver-checklists/php.md`)
+- [x] Test: Verify fetch modes and error mode behavior. (Driver task: `docs/planning/driver-checklists/php.md`)
 
 ## 14. References
 

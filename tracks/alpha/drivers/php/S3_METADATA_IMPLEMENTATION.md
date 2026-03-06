@@ -50,14 +50,13 @@ Lane: `tracks/alpha/drivers/php`
 
 ## META Status Recommendation
 
-Recommendation: `Partial`
+Recommendation: `Implemented`
 
 Why:
-- The lane now has executable metadata collection routing and validation for extended metadata families plus wire-level execution-path tests.
-- First-class restriction-aware metadata filtering is now implemented and tested in-lane.
-- Recursive schema-tree shaping behavior remains covered with dedicated tests.
-- Status remains `Partial` because live metadata integration assertions are still pending.
+- The lane has executable metadata collection routing and validation for extended metadata families with wire-level execution-path tests.
+- First-class restriction-aware metadata filtering is implemented and covered in-lane.
+- Recursive schema-tree shaping behavior is covered with dedicated tests and env-gated live metadata shape assertions.
 
 ## Blockers
 
-1. Live metadata integration assertions against an active ScratchBird endpoint are still missing.
+1. None for current JDBC baseline scope.
