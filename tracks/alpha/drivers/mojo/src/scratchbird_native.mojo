@@ -1502,10 +1502,25 @@ fn resolve_metadata_collection_query_restricted_multi(
         raise Error("07001 metadata restriction count mismatch")
     var resolved_collection = normalize_metadata_collection_name(collection_name)
     var sql = resolve_metadata_collection_query(resolved_collection)
+    var normalized_keys = List[String]()
+    var normalized_values = List[String]()
     for i in range(len(restriction_keys)):
-        var resolved_key = normalize_metadata_restriction_key(restriction_keys[i])
-        var value = String(restriction_values[i].strip())
-        if resolved_key == "" or value == "":
+        normalized_keys.append(normalize_metadata_restriction_key(restriction_keys[i]))
+        normalized_values.append(String(restriction_values[i].strip()))
+
+    for i in range(len(normalized_keys)):
+        var resolved_key = normalized_keys[i]
+        if resolved_key == "":
+            continue
+        var has_later = False
+        for j in range(i + 1, len(normalized_keys)):
+            if normalized_keys[j] == resolved_key:
+                has_later = True
+                break
+        if has_later:
+            continue
+        var value = normalized_values[i]
+        if value == "":
             continue
         var predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
         sql = _append_metadata_filter(sql, predicate)

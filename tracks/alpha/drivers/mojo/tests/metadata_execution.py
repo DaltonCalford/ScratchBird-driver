@@ -253,6 +253,30 @@ def test_resolve_metadata_collection_query_restricted_multi() -> None:
         ),
         "multi restriction SQL should support type-name predicates",
     )
+    sql_duplicate_aliases = scratchbird.resolve_metadata_collection_query_restricted_multi(
+        "tables",
+        {"table": "orders", "tableName": "customers"},
+    )
+    _require(
+        "table_name = 'customers'" in sql_duplicate_aliases,
+        "multi restriction SQL should keep last duplicate-alias table predicate",
+    )
+    _require(
+        "table_name = 'orders'" not in sql_duplicate_aliases,
+        "multi restriction SQL should drop overridden duplicate-alias table predicate",
+    )
+    sql_duplicate_empty = scratchbird.resolve_metadata_collection_query_restricted_multi(
+        "tables",
+        {"table": "orders", "table_name": ""},
+    )
+    _require(
+        "table_name = 'orders'" not in sql_duplicate_empty,
+        "multi restriction SQL should drop table predicate when last duplicate-alias value is empty",
+    )
+    _require(
+        sql_duplicate_empty == scratchbird.METADATA_TABLES_QUERY,
+        "multi restriction SQL should remain base query when last duplicate-alias value is empty",
+    )
     _require(
         "schema_id IN (SELECT schema_id FROM sys.schemas WHERE schema_name = 'public')"
         in scratchbird.resolve_metadata_collection_query_restricted_multi(

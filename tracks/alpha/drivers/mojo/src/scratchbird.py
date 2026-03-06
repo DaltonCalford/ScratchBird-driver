@@ -1989,10 +1989,18 @@ def resolve_metadata_collection_query_restricted_multi(
 ) -> str:
     resolved_collection = normalize_metadata_collection_name(collection_name)
     sql = resolve_metadata_collection_query(resolved_collection)
+    normalized_restrictions: Dict[str, str] = {}
     for raw_key, raw_value in _coerce_metadata_restrictions(restrictions):
         resolved_key = normalize_metadata_restriction_key(raw_key)
+        if resolved_key == "":
+            continue
         value = raw_value.strip()
-        if resolved_key == "" or value == "":
+        if resolved_key in normalized_restrictions:
+            del normalized_restrictions[resolved_key]
+        normalized_restrictions[resolved_key] = value
+
+    for resolved_key, value in normalized_restrictions.items():
+        if value == "":
             continue
         predicate = _metadata_restriction_predicate(resolved_collection, resolved_key, value)
         sql = _append_metadata_filter(sql, predicate)

@@ -626,6 +626,40 @@ fn main() raises:
         scratchbird_native.normalize_metadata_restriction_key("dataTypeName") == "type_name",
         "metadata restriction alias mismatch for dataTypeName",
     )
+    var duplicate_keys = List[String]()
+    duplicate_keys.append("table")
+    duplicate_keys.append("tableName")
+    var duplicate_values = List[String]()
+    duplicate_values.append("orders")
+    duplicate_values.append("customers")
+    var duplicate_sql = scratchbird_native.resolve_metadata_collection_query_restricted_multi(
+        "tables",
+        duplicate_keys,
+        duplicate_values,
+    )
+    _require(
+        "table_name = 'customers'" in duplicate_sql,
+        "metadata duplicate-alias restriction should keep last table predicate",
+    )
+    _require(
+        "table_name = 'orders'" not in duplicate_sql,
+        "metadata duplicate-alias restriction should drop overridden table predicate",
+    )
+    var duplicate_empty_keys = List[String]()
+    duplicate_empty_keys.append("table")
+    duplicate_empty_keys.append("table_name")
+    var duplicate_empty_values = List[String]()
+    duplicate_empty_values.append("orders")
+    duplicate_empty_values.append("")
+    var duplicate_empty_sql = scratchbird_native.resolve_metadata_collection_query_restricted_multi(
+        "tables",
+        duplicate_empty_keys,
+        duplicate_empty_values,
+    )
+    _require(
+        duplicate_empty_sql == scratchbird_native.METADATA_TABLES_QUERY,
+        "metadata duplicate-alias restriction should drop predicate when last value is empty",
+    )
     _assert_metadata_guard("unsupported_collection", "0A000", "not supported")
     _assert_metadata_restriction_guard("tables", "unsupported_restriction", "0A000", "not supported")
     _assert_metadata_restriction_guard("tables", "column", "0A000", "not supported for 'tables'")
