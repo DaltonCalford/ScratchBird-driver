@@ -67,6 +67,10 @@ owned by `ScratchBirdConnection`:
 
 ## Notifications
 
+- `ScratchBirdConnection.Listen(channel, filterExpr)` subscribes to channel notifications (`ScratchBirdSubscriptionType.Channel`).
+- `ScratchBirdConnection.Unlisten(channel)` unsubscribes from a channel.
+- `ScratchBirdConnection.Subscribe(subscriptionType, channel, filterExpr)` subscribes using `ScratchBirdSubscriptionType` (`Channel`, `Table`, `Query`, `Event`).
+- `ScratchBirdConnection.Unsubscribe(channel)` unsubscribes by channel key.
 - `ScratchBirdConnection.AddNotificationListener(Action<ScratchBirdNotification>)` registers a callback for asynchronous server notifications.
 - `ScratchBirdConnection.RemoveNotificationListener(Action<ScratchBirdNotification>)` removes a callback and returns whether removal occurred.
 - `ScratchBirdConnection.GetNotification()` dequeues one pending notification (or `null` when none are queued).

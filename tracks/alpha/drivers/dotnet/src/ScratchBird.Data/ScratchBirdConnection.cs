@@ -382,6 +382,37 @@ public sealed class ScratchBirdConnection : DbConnection
         });
     }
 
+    public void Listen(string channel, string filterExpr = "")
+    {
+        Subscribe(ScratchBirdSubscriptionType.Channel, channel, filterExpr);
+    }
+
+    public void Unlisten(string channel)
+    {
+        Unsubscribe(channel);
+    }
+
+    public void Subscribe(ScratchBirdSubscriptionType subscriptionType, string channel, string filterExpr = "")
+    {
+        var normalizedChannel = NormalizeNotificationChannel(channel);
+        var normalizedFilter = filterExpr ?? string.Empty;
+        TrackOperation("Connection.Subscribe", () =>
+        {
+            var client = EnsureNotificationBridge();
+            client.Subscribe((byte)subscriptionType, normalizedChannel, normalizedFilter);
+        });
+    }
+
+    public void Unsubscribe(string channel)
+    {
+        var normalizedChannel = NormalizeNotificationChannel(channel);
+        TrackOperation("Connection.Unsubscribe", () =>
+        {
+            var client = EnsureConnectedClient();
+            client.Unsubscribe(normalizedChannel);
+        });
+    }
+
     public void AddNotificationListener(Action<ScratchBirdNotification> listener)
     {
         ArgumentNullException.ThrowIfNull(listener);
@@ -1206,6 +1237,27 @@ public sealed class ScratchBirdConnection : DbConnection
     private static ScratchBirdNotification CloneNotification(ScratchBirdNotification notification)
     {
         return notification with { Payload = CloneBytes(notification.Payload) };
+    }
+
+    internal static string NormalizeNotificationChannel(string? channel)
+    {
+        if (channel == null)
+        {
+            throw new ArgumentException("Notification channel cannot be null", nameof(channel));
+        }
+
+        var normalized = channel.Trim();
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("Notification channel cannot be empty", nameof(channel));
+        }
+
+        if (normalized.IndexOf('\0') >= 0)
+        {
+            throw new ArgumentException("Notification channel cannot contain NUL bytes", nameof(channel));
+        }
+
+        return normalized;
     }
 
     private static byte[] CloneBytes(byte[]? value)
