@@ -6,9 +6,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import datetime
+import importlib.util
 import json
+import os
+import pathlib
 import re
 import struct
+import sys
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
 import urllib.parse
 
@@ -199,6 +203,8 @@ _SCHEMA_KEYS = (
 
 
 _BASE_DATE = datetime.datetime(2000, 1, 1, 0, 0, 0)
+_SQLSTATE_MESSAGE_RE = re.compile(r"\[([0-9A-Z]{5})\]")
+_PYTHON_DRIVER_MODULE: Any = None
 
 
 @dataclass
@@ -292,6 +298,79 @@ class ScratchBirdError(Exception):
         self.sqlstate = sqlstate
         self.detail = detail
         self.hint = hint
+
+
+def _extract_sqlstate(value: Any) -> str:
+    if value is None:
+        return ""
+    sqlstate = str(getattr(value, "sqlstate", "") or "").strip().upper()
+    if len(sqlstate) == 5:
+        return sqlstate
+    match = _SQLSTATE_MESSAGE_RE.search(str(value))
+    if match is None:
+        return ""
+    return match.group(1).upper()
+
+
+def _to_scratchbird_error(exc: Exception, default_sqlstate: str = "") -> ScratchBirdError:
+    if isinstance(exc, ScratchBirdError):
+        return exc
+    sqlstate = _extract_sqlstate(exc)
+    if sqlstate == "":
+        sqlstate = default_sqlstate
+    message = str(exc) or exc.__class__.__name__
+    return ScratchBirdError(message, sqlstate)
+
+
+def _python_driver_package_dir() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[1].parent / "python" / "src" / "scratchbird"
+
+
+def _load_python_driver_module():
+    global _PYTHON_DRIVER_MODULE
+    if _PYTHON_DRIVER_MODULE is not None:
+        return _PYTHON_DRIVER_MODULE
+
+    package_dir = _python_driver_package_dir()
+    init_path = package_dir / "__init__.py"
+    if not init_path.is_file():
+        raise ScratchBirdError("Mojo wire transport bridge could not find Python driver package", "0A000")
+
+    module_name = "_scratchbird_python_driver"
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        _PYTHON_DRIVER_MODULE = cached
+        return cached
+
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        str(init_path),
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ScratchBirdError("Mojo wire transport bridge failed to load Python driver package", "0A000")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    _PYTHON_DRIVER_MODULE = module
+    return module
+
+
+def _resolve_transport_mode(dsn: str) -> str:
+    mode = _dsn_last_query_value(
+        dsn,
+        ("sb_wire_transport", "sb_transport", "wire_transport"),
+        None,
+    )
+    if mode is None:
+        mode = os.environ.get("SCRATCHBIRD_MOJO_WIRE_TRANSPORT", "")
+    normalized = str(mode or "").strip().lower().replace("-", "_")
+    if normalized in ("", "deterministic", "shim", "native_bootstrap"):
+        return "deterministic"
+    if normalized in ("python", "python_wire", "wire", "sbwp"):
+        return "python_wire"
+    raise ScratchBirdError("sb_wire_transport must be deterministic or python", "0A000")
 
 
 def _as_bool(value: Any) -> bool:
@@ -1346,6 +1425,17 @@ class _ShimConnection:
         self._ensure_open()
         self._cancel_requested = True
 
+    def lifecycle_snapshot(self) -> Dict[str, Any]:
+        return {
+            "wire_mode": False,
+            "closed": self._closed,
+            "query_count": 0,
+            "stream_count": 0,
+            "cancel_count": 1 if self._cancel_requested else 0,
+            "savepoint_depth": len(self._savepoints),
+            "txn_active": self._txn_id != 0,
+        }
+
 
 class _ShimStream:
     def __init__(self, conn: _ShimConnection, rows: List[List[Any]]):
@@ -1375,6 +1465,426 @@ class _ShimStream:
 
     def close(self) -> None:
         self._closed = True
+
+
+def _rows_to_list(rows: Any) -> List[List[Any]]:
+    if rows is None:
+        return []
+    if isinstance(rows, list):
+        out: List[List[Any]] = []
+        for row in rows:
+            if isinstance(row, list):
+                out.append(row)
+            elif isinstance(row, tuple):
+                out.append(list(row))
+            else:
+                out.append([row])
+        return out
+    if isinstance(rows, tuple):
+        return _rows_to_list(list(rows))
+    return []
+
+
+def _cursor_to_result(cursor: Any) -> ScratchBirdResult:
+    rows = _rows_to_list(getattr(cursor, "fetchall", lambda: [])())
+    columns = list(getattr(cursor, "description", []) or [])
+    rowcount_raw = getattr(cursor, "rowcount", None)
+    if isinstance(rowcount_raw, int) and not isinstance(rowcount_raw, bool) and rowcount_raw >= 0:
+        rowcount = rowcount_raw
+    else:
+        rowcount = len(rows)
+    return ScratchBirdResult(rows, columns, rowcount)
+
+
+class _WireStatement:
+    def __init__(self, conn: "_PythonWireConnection", sql: str):
+        self._conn = conn
+        self._sql = sql
+        self._closed = False
+
+    def execute(self, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        if self._closed:
+            raise ScratchBirdError("statement is closed", "HY010")
+        return self._conn.query(self._sql, params)
+
+    def close(self) -> None:
+        self._closed = True
+
+
+class _WireStream:
+    def __init__(self, conn: "_PythonWireConnection", cursor: Any):
+        self._conn = conn
+        self._cursor = cursor
+        self._closed = False
+
+    def __iter__(self) -> "_WireStream":
+        return self
+
+    def __next__(self) -> List[Any]:
+        if self._closed:
+            raise ScratchBirdError("stream is closed", "HY010")
+        if self._conn._closed:
+            self._closed = True
+            raise ScratchBirdError("connection is closed", "08003")
+        if self._conn._cancel_requested:
+            self._closed = True
+            self._conn._cancel_requested = False
+            raise ScratchBirdError("query canceled", "57014")
+        try:
+            row = self._cursor.fetchone()
+        except Exception as exc:
+            self._closed = True
+            raise _to_scratchbird_error(exc) from exc
+        if row is None:
+            self._closed = True
+            raise ScratchBirdError("stream is closed", "HY010")
+        if isinstance(row, list):
+            return row
+        if isinstance(row, tuple):
+            return list(row)
+        return [row]
+
+    def close(self) -> None:
+        self._closed = True
+        close_method = getattr(self._cursor, "close", None)
+        if callable(close_method):
+            close_method()
+
+
+class _PythonWireConnection:
+    def __init__(self, config: ScratchBirdConfig):
+        self.config = config
+        self._closed = False
+        self._cancel_requested = False
+        self._txn_id = 0
+        self._savepoint_counter = 0
+        self._savepoints: List[str] = []
+        self._txn_begin_options: Dict[str, int] = {}
+        self._wire_mode = True
+        self._query_count = 0
+        self._stream_count = 0
+        self._cancel_count = 0
+        try:
+            module = _load_python_driver_module()
+            self._wire = module.connect(dsn=config.dsn)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise ScratchBirdError("connection is closed", "08003")
+
+    def _run_cursor(self, sql: str, params: Optional[Iterable[Any]] = None) -> Any:
+        try:
+            execute = getattr(self._wire, "execute", None)
+            if callable(execute):
+                if params is None:
+                    return execute(sql)
+                return execute(sql, list(params))
+            query = getattr(self._wire, "query", None)
+            if callable(query):
+                if params is None:
+                    return query(sql)
+                return query(sql, list(params))
+            raise ScratchBirdError("wire transport does not expose query execution", "0A000")
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+
+    def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
+        self._ensure_open()
+        self._cancel_requested = False
+        cursor = self._run_cursor(sql, params)
+        self._query_count += 1
+        return _cursor_to_result(cursor)
+
+    def prepare(self, sql: str) -> _WireStatement:
+        self._ensure_open()
+        return _WireStatement(self, sql)
+
+    def stream(
+        self,
+        sql: str,
+        params: Optional[Iterable[Any]] = None,
+        fetch_size: int = 0,
+    ) -> _WireStream:
+        self._ensure_open()
+        _ = fetch_size
+        self._cancel_requested = False
+        cursor = self._run_cursor(sql, params)
+        self._stream_count += 1
+        return _WireStream(self, cursor)
+
+    def cancel(self) -> None:
+        self._ensure_open()
+        self._cancel_requested = True
+        self._cancel_count += 1
+        cancel_method = getattr(self._wire, "cancel", None)
+        if callable(cancel_method):
+            try:
+                cancel_method()
+            except Exception:
+                # Mirror deterministic shim semantics where cancel only requests interruption.
+                pass
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._cancel_requested = False
+        self._txn_id = 0
+        self._savepoints = []
+        self._txn_begin_options = {}
+        close_method = getattr(self._wire, "close", None)
+        if callable(close_method):
+            try:
+                close_method()
+            except Exception:
+                pass
+
+    def ping(self) -> bool:
+        if self._closed:
+            return False
+        ping_method = getattr(self._wire, "ping", None)
+        if callable(ping_method):
+            try:
+                ping_method()
+                return True
+            except Exception:
+                return False
+        return True
+
+    def begin(self, **kwargs: Any) -> None:
+        self._ensure_open()
+        if self._txn_id != 0:
+            raise ScratchBirdError("transaction already active", "25001")
+        normalized = _normalize_begin_options(kwargs)
+        try:
+            begin_method = getattr(self._wire, "begin", None)
+            if callable(begin_method):
+                begin_method(**kwargs)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        self._txn_id = 1
+        self._savepoints = []
+        self._txn_begin_options = normalized
+
+    def commit(self) -> None:
+        self._ensure_open()
+        if self._txn_id == 0:
+            return
+        try:
+            commit_method = getattr(self._wire, "commit", None)
+            if callable(commit_method):
+                commit_method()
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        self._txn_id = 0
+        self._savepoints = []
+        self._txn_begin_options = {}
+
+    def rollback(self) -> None:
+        self._ensure_open()
+        if self._txn_id == 0:
+            return
+        try:
+            rollback_method = getattr(self._wire, "rollback", None)
+            if callable(rollback_method):
+                rollback_method()
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        self._txn_id = 0
+        self._savepoints = []
+        self._txn_begin_options = {}
+
+    def set_savepoint(self, name: Optional[str] = None) -> str:
+        self._ensure_open()
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            self._savepoint_counter += 1
+            resolved = f"sp_{self._savepoint_counter}"
+        try:
+            savepoint_method = getattr(self._wire, "savepoint", None)
+            if callable(savepoint_method):
+                savepoint_method(resolved)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        self._savepoints.append(resolved)
+        return resolved
+
+    def release_savepoint(self, name: str) -> None:
+        self._ensure_open()
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        found = False
+        for idx in range(len(self._savepoints) - 1, -1, -1):
+            if self._savepoints[idx] == resolved:
+                del self._savepoints[idx]
+                found = True
+                break
+        if not found:
+            raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+        try:
+            release_method = getattr(self._wire, "release_savepoint", None)
+            if callable(release_method):
+                release_method(resolved)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+
+    def rollback_to_savepoint(self, name: str) -> None:
+        self._ensure_open()
+        if self._txn_id == 0:
+            raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
+        resolved = _coerce_savepoint_name(name)
+        if resolved == "":
+            raise ScratchBirdError("savepoint name cannot be empty", "HY000")
+        found = -1
+        for idx in range(len(self._savepoints) - 1, -1, -1):
+            if self._savepoints[idx] == resolved:
+                found = idx
+                break
+        if found < 0:
+            raise ScratchBirdError(f"savepoint '{resolved}' does not exist", "3B001")
+        del self._savepoints[found + 1 :]
+        try:
+            rollback_to_method = getattr(self._wire, "rollback_to_savepoint", None)
+            if callable(rollback_to_method):
+                rollback_to_method(resolved)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+
+    def query_metadata(self, collection_name: Optional[str] = None) -> ScratchBirdResult:
+        self._ensure_open()
+        normalized = normalize_metadata_collection_name(collection_name)
+        try:
+            method = getattr(self._wire, "query_metadata", None)
+            if callable(method):
+                cursor = method(normalized)
+                return _cursor_to_result(cursor)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        metadata_sql = resolve_metadata_collection_query(normalized)
+        return self.query(metadata_sql)
+
+    def query_metadata_rows(self, collection_name: Optional[str] = None) -> int:
+        return _result_rowcount_or_len(self.query_metadata(collection_name))
+
+    def query_metadata_restricted(
+        self,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> ScratchBirdResult:
+        self._ensure_open()
+        resolved_collection = normalize_metadata_collection_name(collection_name)
+        normalized_key = normalize_metadata_restriction_key(restriction_key)
+        restrictions: Optional[Dict[str, Any]] = None
+        if normalized_key != "":
+            restrictions = {normalized_key: "" if restriction_value is None else str(restriction_value)}
+        try:
+            method = getattr(self._wire, "query_metadata", None)
+            if callable(method):
+                cursor = method(resolved_collection, restrictions=restrictions)
+                return _cursor_to_result(cursor)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        metadata_sql = resolve_metadata_collection_query_restricted(
+            resolved_collection,
+            restriction_key,
+            restriction_value,
+        )
+        return self.query(metadata_sql)
+
+    def query_metadata_rows_restricted(
+        self,
+        collection_name: Optional[str] = None,
+        restriction_key: Optional[str] = None,
+        restriction_value: Optional[str] = None,
+    ) -> int:
+        return _result_rowcount_or_len(
+            self.query_metadata_restricted(
+                collection_name,
+                restriction_key,
+                restriction_value,
+            )
+        )
+
+    def query_metadata_restricted_multi(
+        self,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> ScratchBirdResult:
+        self._ensure_open()
+        resolved_collection = normalize_metadata_collection_name(collection_name)
+        try:
+            method = getattr(self._wire, "query_metadata", None)
+            if callable(method):
+                cursor = method(resolved_collection, restrictions=restrictions)
+                return _cursor_to_result(cursor)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        metadata_sql = resolve_metadata_collection_query_restricted_multi(
+            resolved_collection,
+            restrictions,
+        )
+        return self.query(metadata_sql)
+
+    def query_metadata_rows_restricted_multi(
+        self,
+        collection_name: Optional[str] = None,
+        restrictions: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        return _result_rowcount_or_len(self.query_metadata_restricted_multi(collection_name, restrictions))
+
+    def get_schema(self, collection_name: Optional[str] = None) -> List[List[Any]]:
+        return _result_rows_or_empty(self.query_metadata(collection_name))
+
+    def ddl_editor_schema_payload(
+        self,
+        schema_pattern: Optional[str] = "%",
+        expand_schema_parents: bool = False,
+    ) -> Dict[str, Any]:
+        self._ensure_open()
+        try:
+            method = getattr(self._wire, "ddl_editor_schema_payload", None)
+            if callable(method):
+                payload = method(
+                    schema_pattern=schema_pattern,
+                    expand_schema_parents=expand_schema_parents,
+                )
+                if isinstance(payload, Mapping):
+                    return dict(payload)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        pattern = "%" if schema_pattern is None else str(schema_pattern).strip()
+        if pattern == "":
+            pattern = "%"
+        restrictions: Optional[Dict[str, Any]] = None
+        if pattern != "%":
+            restrictions = {"schema": pattern}
+        rows = self.get_schema("schemas") if restrictions is None else _result_rows_or_empty(
+            self.query_metadata_restricted_multi("schemas", restrictions)
+        )
+        return build_ddl_editor_schema_payload(
+            rows,
+            schema_pattern=pattern,
+            expand_schema_parents=expand_schema_parents,
+        )
+
+    def lifecycle_snapshot(self) -> Dict[str, Any]:
+        return {
+            "wire_mode": True,
+            "closed": self._closed,
+            "query_count": self._query_count,
+            "stream_count": self._stream_count,
+            "cancel_count": self._cancel_count,
+            "savepoint_depth": len(self._savepoints),
+            "txn_active": self._txn_id != 0,
+        }
 
 
 class ScratchBirdConnection:
@@ -1616,8 +2126,11 @@ class ScratchBirdConnection:
         )
 
 
-def connect(config: ScratchBirdConfig) -> _ShimConnection:
+def connect(config: ScratchBirdConfig) -> Any:
     _validate_connect_guards(config)
+    transport_mode = _resolve_transport_mode(config.dsn)
+    if transport_mode == "python_wire":
+        return _PythonWireConnection(config)
     return _ShimConnection(config)
 
 

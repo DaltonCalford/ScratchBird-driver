@@ -37,6 +37,8 @@ Legend:
 
 # Driver Capability Matrix (Audit Snapshot: 2026-03-06)
 
+Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in this audit cycle (hybrid parity path: native facade/bootstrap + opt-in wire bridge + matrixed runtime coverage).
+
 ## Alpha Drivers
 
 | Driver | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State |
@@ -51,7 +53,7 @@ Legend:
 | **Ruby** | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | ✅ | ✅ | EXEC/ERR/RES are implemented with deterministic lane tests; CONN/TXN/META/TYPE integration depth remains |
 | **PHP** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with expanded lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
 | **Pascal** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ERR/RES implemented with deterministic lane tests; CONN/TXN/EXEC/META/TYPE remain partial |
-| **Mojo** | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | Mojo-native SBWP lane with expanded JDBC-style connection/property parity (protocol/ssl/compression/query-decoding aliases, prepare-threshold/rewrite-batch/logger knobs, TLS material knobs), query-order last-key precedence across credential/endpoint/manager alias families (`user|username|pguser`, `password|passwd|pgpassword`, `host|hostname|servername|pghost`, `database|dbname|databaseName|pgdatabase`, `port|portNumber|pgport`, `manager_auth_token|mcp_auth_token`), trailing malformed-alias guard rejection for `port` and `default_row_fetch_size` families (`22023`), plus metadata restriction scaffolding (multi-restriction, wildcard escape/null handling, alias-family restriction mapping), closed lifecycle guards (`08003`/`HY010`), and deterministic integer/pool-bound guard parity (`22023`); TXN/EXEC/META/TYPE/ERR/RES remain partial pending full native transport cutover |
+| **Mojo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Hybrid parity complete via native facade/bootstrap + opt-in SBWP wire bridge (`sb_wire_transport=python`), with direct/manager/listener runtime matrices and live-matrix CI gating; pure Mojo socket/TLS cutover remains roadmap work |
 
 ---
 
@@ -73,6 +75,8 @@ Legend:
 - **Dart lane:** Added env-gated integration suite for direct and manager-proxy connection paths (`SCRATCHBIRD_TEST_DSN`, `SCRATCHBIRD_TEST_MANAGER_DSN`) covering query, transaction lifecycle, metadata wrappers, and JSON/JSONB roundtrips.
 - **Dart lane:** Introduced typed driver exception hierarchy and structured server error parsing with SQLSTATE/code propagation + SQLSTATE class-based mapping.
 - **Python lane:** Continued JDBC parity hardening for type decode semantics (temporal/unknown/binary edge cases) with expanded deterministic tests and updated lane baseline artifacts.
+- **Mojo lane:** Added opt-in SBWP wire bridge runtime (`sb_wire_transport=python` / `SCRATCHBIRD_MOJO_WIRE_TRANSPORT`) in `src/scratchbird.py` with new `tests/wire_transport_bridge.py` coverage for query/prepare/stream/cancel, transaction/savepoint flow, metadata payloads, lifecycle snapshots, and truncation/decode SQLSTATE propagation (`08006`).
+- **Mojo lane:** Expanded integration/conformance harnesses to direct/manager/listener matrix execution (`SCRATCHBIRD_MOJO_*_URLS`) plus long-running stream-cancel and lifecycle snapshot assertions, and added optional live-matrix CI gate (`MOJO_LIVE_MATRIX_ENABLED`) with live DSN vars.
 - **Mojo lane:** Expanded restriction-aware metadata query shaping across native/facade/shim execution surfaces, including multi-restriction composition helpers and deterministic rowcount wrappers.
 - **Mojo lane:** Added wildcard/escape and null-aware metadata restriction semantics (`LIKE ... ESCAPE '\\'`, `IS NULL`) with deterministic smoke coverage in native bootstrap and facade tests.
 - **Mojo lane:** Added broader metadata restriction alias-family support (`catalog`, `index`, `constraint`, `routine`, `type`) with expanded predicate coverage for schema/table/index/constraint/routine/type query families.
@@ -128,6 +132,7 @@ Legend:
 - **Mojo lane:** Added metadata multi-restriction duplicate-alias precedence (`last matching key wins`, including empty-value clear semantics) across shim/native query shaping paths.
 - **Mojo lane:** Aligned native timeout alias parsing/guards with shim query-order precedence (`connect/socket/login/acquire` timeout aliases now evaluate by last matching key and reject malformed trailing aliases deterministically).
 - **Mojo lane:** Aligned native DSN alias precedence with shim for credential/endpoint/manager families (`user|username|pguser`, `password|passwd|pgpassword`, `host|hostname|servername|pghost`, `database|dbname|databaseName|pgdatabase`, `port|portNumber|pgport`, `manager_auth_token|mcp_auth_token`) and added deterministic trailing-alias malformed-value guard parity for `port` and `default_row_fetch_size` alias families (`22023`).
+- **Mojo lane:** Extended native query-order alias precedence parity for `autocommit|auto_commit`, `readonly|read_only`, and TLS material aliases (`ssl_root_cert|sslrootcert`, `ssl_cert|sslcert`, `ssl_key|sslkey`, `ssl_password|sslpassword`), aligned repeated-key `compression` parsing to last-key wins, and added deterministic trailing-alias malformed-value guard coverage for `prepare_threshold`, `connection_lifetime`, and `manager_client_flags` alias families (`22023`).
 
 ---
 

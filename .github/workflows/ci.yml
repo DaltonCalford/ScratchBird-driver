@@ -301,6 +301,11 @@ jobs:
         if: matrix.language == 'mojo'
         env:
           MOJO_ENABLED: ${{ vars.MOJO_ENABLED }}
+          MOJO_LIVE_MATRIX_ENABLED: ${{ vars.MOJO_LIVE_MATRIX_ENABLED }}
+          SCRATCHBIRD_MOJO_DIRECT_URLS: ${{ vars.SCRATCHBIRD_MOJO_DIRECT_URLS }}
+          SCRATCHBIRD_MOJO_MANAGER_URLS: ${{ vars.SCRATCHBIRD_MOJO_MANAGER_URLS }}
+          SCRATCHBIRD_MOJO_LISTENER_URLS: ${{ vars.SCRATCHBIRD_MOJO_LISTENER_URLS }}
+          SCRATCHBIRD_MOJO_BAD_AUTH_URLS: ${{ vars.SCRATCHBIRD_MOJO_BAD_AUTH_URLS }}
         run: |
           if [ "${MOJO_ENABLED}" != "true" ]; then
             echo "Skipping Mojo: set MOJO_ENABLED=true to run Mojo tests."
@@ -316,8 +321,20 @@ jobs:
           pixi run -m /tmp/mojo-env --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
           pixi run -m /tmp/mojo-env --executable mojo run tests/metadata_execution.mojo
           pixi run -m /tmp/mojo-env --executable mojo run tests/metadata_recursive_schema.mojo
+          python3 tests/wire_transport_bridge.py
           python3 tests/integration.py
           tests/sbdriver-conformance --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
+          if [ "${MOJO_LIVE_MATRIX_ENABLED}" = "true" ]; then
+            if [ -n "${SCRATCHBIRD_MOJO_DIRECT_URLS}${SCRATCHBIRD_MOJO_MANAGER_URLS}${SCRATCHBIRD_MOJO_LISTENER_URLS}" ]; then
+              export SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN=1
+              export SCRATCHBIRD_MOJO_WIRE_TRANSPORT=1
+              python3 tests/integration.py
+              python3 tests/sbdriver_conformance.py --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json >/tmp/mojo_conformance_live.json
+              cat /tmp/mojo_conformance_live.json
+            else
+              echo "Mojo live matrix enabled but no live DSN vars are configured; skipping live matrix run."
+            fi
+          fi
 
       - name: Ruby tests
         if: matrix.language == 'ruby'

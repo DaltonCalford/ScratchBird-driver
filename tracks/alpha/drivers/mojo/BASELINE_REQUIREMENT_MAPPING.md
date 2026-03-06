@@ -7,7 +7,7 @@
 
 ## CONN (JDBCBL)
 
-- Current status: Partial (bridge lane implemented + current-syntax native facade/bootstrap)
+- Current status: Implemented (current-syntax native facade/bootstrap + opt-in SBWP wire bridge runtime)
 - Lane-local source anchors:
 - `src/scratchbird.mojo:12` (`scratchbird` current-syntax facade exports `ScratchBirdConfig`/`ScratchBirdConnection`/`connect` from native bootstrap)
 - `src/scratchbird.mojo:20` (facade exports native `validate_connect_guards`)
@@ -17,7 +17,7 @@
 - `src/scratchbird_native.mojo:114` (native-bootstrap session property parsing: `role`, `application_name|applicationname`, `autocommit|auto_commit`, `readonly|read_only`, `current_schema|search_path|searchpath|currentschema` with default `public`, `default_row_fetch_size|fetch_size|fetchsize|defaultrowfetchsize` with query-order alias precedence)
 - `src/scratchbird_native.mojo:124` (native-bootstrap metadata/session alias parsing for `metadata_expand_schema_parents|metadataexpandschemaparents|expand_schema_parents|expandschemaparents|dbeaver_expand_schema_parents|dbeaverexpandschemaparents`)
 - `src/scratchbird_native.mojo:148` (native-bootstrap JDBC parity property parsing: `prepare_threshold|preparethreshold`, `rewrite_batched_inserts|rewritebatchedinserts`, `logger_level|loggerlevel|log_level|loglevel`, `logger_file|loggerfile|log_file|logfile`, with query-order alias precedence)
-- `src/scratchbird_native.mojo:261` (native-bootstrap TLS property parsing: `sslmode|ssl`, `sslrootcert`, `sslcert`, `sslkey`, `sslpassword` and underscore aliases, with query-order alias precedence for `sslmode|ssl`)
+- `src/scratchbird_native.mojo:260` (native-bootstrap TLS property parsing: `sslmode|ssl`, `sslrootcert`, `sslcert`, `sslkey`, `sslpassword` and underscore aliases, with query-order alias precedence for `sslmode|ssl` and TLS material alias pairs `ssl_root_cert|sslrootcert`, `ssl_cert|sslcert`, `ssl_key|sslkey`, `ssl_password|sslpassword`)
 - `src/scratchbird_native.mojo:169` (native-bootstrap pooling parsing: `tcpkeepalive`, `pooling`, `min_pool_size|minpoolsize`, `max_pool_size|maxpoolsize`, `connection_lifetime|connectionlifetime|poolingconnectionlifetime`, with query-order alias precedence for integer alias families)
 - `src/scratchbird_native.mojo:196` (native-bootstrap manager parsing: `manager_*|mcp_*` aliases and defaults for `manager_connection_profile`, `manager_client_intent`, and `manager_auth_fast_path`, with query-order alias precedence including `manager_auth_token|mcp_auth_token`)
 - `src/scratchbird_native.mojo:283` (native-bootstrap connection identity formatting includes endpoint context: `user@host:port/database`)
@@ -25,13 +25,13 @@
 - `src/scratchbird_native.mojo:244` (native-bootstrap protocol selector parsing: `protocol|parser|dialect` with query-order alias precedence (last matching key wins))
 - `src/scratchbird_native.mojo:1167` (native-bootstrap protocol canonicalization maps `scratchbird` / `scratchbird-native` / `scratchbird_native` to `native`)
 - `src/scratchbird_native.mojo:225` (native-bootstrap timeout alias parsing: `connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`, `acquire_timeout|acquiretimeout` with fallback `pooling_acquire_timeout|poolingacquiretimeout`)
-- `src/scratchbird_native.mojo:219` (native-bootstrap compression normalization/compatibility: `none` -> `off`, `zstd` accepted)
+- `src/scratchbird_native.mojo:287` (native-bootstrap compression normalization/compatibility: `none` -> `off`, `zstd` accepted, repeated `compression` keys resolved by query-order last-key precedence)
 - `src/scratchbird_native.mojo:822` (native-bootstrap malformed bracketed-IPv6 authority detection helper)
 - `src/scratchbird_native.mojo:893` (native-bootstrap DSN query value decoding for `%xx` and `+`)
 - `src/scratchbird_native.mojo:938` (native-bootstrap malformed query-escape detection helper)
 - `src/scratchbird_native.mojo:1140` (native-bootstrap query-order DSN integer helpers include last-matching alias resolution + malformed-any-alias detection across endpoint/session/pooling/timeout alias families)
 - `src/scratchbird_native.mojo:229` (native-bootstrap lifecycle DSN knob parsing: `cb_*` / `keepalive_*` / `leak_*` / `pipeline_*`)
-- `src/scratchbird_native.mojo:1636` (native-bootstrap connect guards: malformed query-escape guard (`22023`), malformed bracketed-IPv6 guard (`22023`), strict malformed-integer DSN guards (`22023`) including query-order trailing-alias malformed-value rejection for `port|portNumber|pgport`, `default_row_fetch_size|fetch_size|fetchSize|defaultrowfetchsize`, timeout aliases (`connect/socket/login/acquire`, plus `pooling_acquire_timeout`), and other integer alias families, plus protocol/compression/front-door/user+db + endpoint/timeout/session/pooling/manager guardrails (including invalid `front_door_mode` `0A000`, manager-proxy token requirement `08001`, explicit empty-host rejection, non-negative guards for `default_row_fetch_size`, `min_pool_size`, `connection_lifetime`, `manager_client_flags`, plus `max_pool_size >= 1` and `min_pool_size <= max_pool_size`); accepts `sslmode=disable`, `binary_transfer=false`, and rejects unsupported compression values outside `off|zstd`)
+- `src/scratchbird_native.mojo:1658` (native-bootstrap connect guards: malformed query-escape guard (`22023`), malformed bracketed-IPv6 guard (`22023`), strict malformed-integer DSN guards (`22023`) including query-order trailing-alias malformed-value rejection for `port|portNumber|pgport`, `default_row_fetch_size|fetch_size|fetchSize|defaultrowfetchsize`, `prepare_threshold|preparethreshold`, `connection_lifetime|connectionlifetime|poolingconnectionlifetime`, `manager_client_flags|mcp_client_flags`, timeout aliases (`connect/socket/login/acquire`, plus `pooling_acquire_timeout`), and other integer alias families, plus protocol/compression/front-door/user+db + endpoint/timeout/session/pooling/manager guardrails (including invalid `front_door_mode` `0A000`, manager-proxy token requirement `08001`, explicit empty-host rejection, non-negative guards for `default_row_fetch_size`, `min_pool_size`, `connection_lifetime`, `manager_client_flags`, plus `max_pool_size >= 1` and `min_pool_size <= max_pool_size`); accepts `sslmode=disable`, `binary_transfer=false`, and rejects unsupported compression values outside `off|zstd`)
 - `src/scratchbird_native.mojo:1569` (native-bootstrap `connect` entrypoint)
 - `src/scratchbird_native.mojo:453` (native-bootstrap `ping` surface)
 - `src/scratchbird_native.mojo:535` (native-bootstrap closed-connection operation guard helper returns SQLSTATE `08003` across query/begin/commit/rollback/cancel/stream/metadata routes)
@@ -39,26 +39,29 @@
 - `src/scratchbird.py:726` (bridge-shim malformed query-escape and malformed bracketed-IPv6 guards (`22023`) plus protocol alias normalization/rejection (`protocol|parser|dialect` -> native-only `0A000`))
 - `src/scratchbird.py:801` (bridge-shim front-door normalization/token enforcement (`08001`) with query-order alias precedence (`front_door_mode|frontdoormode|connection_mode|ingress_mode`) and manager token aliases (`manager_auth_token|mcp_auth_token`), binary/compression compatibility (`binary_transfer=false`, `compression=zstd|none`), TLS-required `sslmode|ssl=disable` rejection and invalid front-door/unsupported compression SQLSTATE parity (`0A000`), `user/database` required and explicit empty-host guards (`28000`), port validity/range guards (`22023`), timeout alias guards (`connect_timeout|connecttimeout`, `socket_timeout|sockettimeout`, `login_timeout|logintimeout`, `acquire_timeout|acquiretimeout`, fallback `pooling_acquire_timeout|poolingacquiretimeout` with `>=0` enforcement), and extended integer guards (`prepare_threshold`, `default_row_fetch_size`, `min_pool_size`, `max_pool_size`, `connection_lifetime`, `manager_client_flags`, `cb_failure_threshold`, `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests`, `keepalive_max_idle_before_check_ms`, `leak_threshold_ms`, `pipeline_max_in_flight`, `pipeline_auto_flush_threshold`) with deterministic `22023` validation)
 - `src/scratchbird.py:1264` (bridge-shim `connect` entrypoint)
+- `src/scratchbird.py:360` (bridge transport-mode selector for deterministic vs wire runtime via `sb_wire_transport` / `SCRATCHBIRD_MOJO_WIRE_TRANSPORT`)
+- `src/scratchbird.py:1554` (wire-capable runtime adapter `_PythonWireConnection` for query/prepare/stream/cancel/txn/metadata routing)
+- `src/scratchbird.py:2129` (bridge `connect` runtime selector that dispatches deterministic shim or wire adapter)
 - Lane-local test anchors:
 - `tests/scratchbird_surface.mojo:181` (current-syntax `scratchbird` facade connect/ping/query smoke + DSN credential/host/port/database alias parse assertions (including JDBC/PG aliases), query-order alias precedence checks for endpoint/credential and manager token aliases, protocol alias canonicalization checks, and mode normalization/precedence checks)
-- `tests/scratchbird_surface.mojo:75` (facade helper asserts session+metadata alias parsing (including `currentSchema`/`defaultRowFetchSize`), prepare-threshold/batched-insert/logger alias parsing, TLS material alias/default parsing, pooling/manager alias parsing, `ssl` alias parsing, accepted `binarytransfer=false` and `compression=zstd` connectivity, compression normalization, URL-style query decoding, and timeout-alias query-order last-match precedence)
+- `tests/scratchbird_surface.mojo:75` (facade helper asserts session+metadata alias parsing (including `currentSchema`/`defaultRowFetchSize` plus `autocommit|auto_commit` and `readonly|read_only` query-order precedence), prepare-threshold/batched-insert/logger alias parsing, TLS material alias/default parsing with query-order precedence (`ssl_root_cert|sslrootcert`, `ssl_cert|sslcert`, `ssl_key|sslkey`, `ssl_password|sslpassword`), pooling/manager alias parsing, `ssl` alias parsing, accepted `binarytransfer=false` and `compression=zstd` connectivity, compression normalization including repeated-key last-value precedence, URL-style query decoding, and timeout-alias query-order last-match precedence)
 - `tests/scratchbird_surface.mojo:173` (facade smoke asserts bracketed IPv6 host/port parsing)
 - `tests/scratchbird_surface.mojo:326` (facade smoke asserts deterministic `connection_id` endpoint formatting)
 - `tests/scratchbird_surface.mojo:710` (facade deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
 - `tests/scratchbird_surface.mojo:666` (facade guard SQLSTATE assertions for transport/protocol/front-door/compression/malformed-query aliases and malformed bracketed-IPv6 + malformed-integer DSN guards, plus negative timeout/session/pooling/manager DSNs, including manager-proxy token requirement, explicit empty-host rejection, and `default_row_fetch_size`/`min_pool_size`/`max_pool_size`/`connection_lifetime`/`manager_client_flags` guards)
-- `tests/scratchbird_surface.mojo:886` (facade guard assertions that malformed trailing aliases still fail deterministically with SQLSTATE `22023` across timeout, port, and `default_row_fetch_size` alias families)
+- `tests/scratchbird_surface.mojo:910` (facade guard assertions that malformed trailing aliases still fail deterministically with SQLSTATE `22023` across timeout, port, `default_row_fetch_size`, `prepare_threshold`, `connection_lifetime`, and `manager_client_flags` alias families)
 - `tests/scratchbird_surface.mojo:575` (facade closed-connection query/begin/commit/rollback/cancel/stream/metadata guards expose SQLSTATE `08003`, with post-close ping assertion)
 - `tests/scratchbird_surface.mojo:854` (facade guard assertion for invalid pool bounds `min_pool_size > max_pool_size`)
 - `tests/native_bootstrap.mojo:205` (native-bootstrap helper asserts DSN credential/host/port/database alias parsing + query-order alias precedence across endpoint/credential and manager token aliases + protocol alias canonicalization + mode normalization/precedence checks)
-- `tests/native_bootstrap.mojo:99` (native-bootstrap helper asserts session+metadata alias parsing (including `currentSchema`/`defaultRowFetchSize`), prepare-threshold/batched-insert/logger alias parsing, TLS material alias/default parsing, pooling/manager alias parsing, `ssl` alias parsing, accepted `binarytransfer=false` and `compression=zstd` connectivity, compression normalization, URL-style query decoding, and timeout-alias query-order last-match precedence)
+- `tests/native_bootstrap.mojo:99` (native-bootstrap helper asserts session+metadata alias parsing (including `currentSchema`/`defaultRowFetchSize` plus `autocommit|auto_commit` and `readonly|read_only` query-order precedence), prepare-threshold/batched-insert/logger alias parsing, TLS material alias/default parsing with query-order precedence (`ssl_root_cert|sslrootcert`, `ssl_cert|sslcert`, `ssl_key|sslkey`, `ssl_password|sslpassword`), pooling/manager alias parsing, `ssl` alias parsing, accepted `binarytransfer=false` and `compression=zstd` connectivity, compression normalization including repeated-key last-value precedence, URL-style query decoding, and timeout-alias query-order last-match precedence)
 - `tests/native_bootstrap.mojo:197` (native-bootstrap smoke asserts bracketed IPv6 host/port parsing)
 - `tests/native_bootstrap.mojo:345` (native-bootstrap smoke asserts deterministic `connection_id` endpoint formatting)
 - `tests/native_bootstrap.mojo:844` (native-bootstrap deterministic auth-fail guard SQLSTATE assertion via `sb_test_auth_fail=true`)
 - `tests/native_bootstrap.mojo:800` (native-bootstrap guard SQLSTATE assertions for transport/protocol/front-door/compression/malformed-query aliases and malformed bracketed-IPv6 + malformed-integer DSN guards, plus negative timeout/session/pooling/manager DSNs, including manager-proxy token requirement, explicit empty-host rejection, and `default_row_fetch_size`/`min_pool_size`/`max_pool_size`/`connection_lifetime`/`manager_client_flags` guards)
-- `tests/native_bootstrap.mojo:986` (native-bootstrap guard assertions that malformed trailing aliases still fail deterministically with SQLSTATE `22023` across timeout, port, and `default_row_fetch_size` alias families)
+- `tests/native_bootstrap.mojo:1010` (native-bootstrap guard assertions that malformed trailing aliases still fail deterministically with SQLSTATE `22023` across timeout, port, `default_row_fetch_size`, `prepare_threshold`, `connection_lifetime`, and `manager_client_flags` alias families)
 - `tests/native_bootstrap.mojo:814` (native-bootstrap closed-connection query/begin/commit/rollback/cancel/stream/metadata guards expose SQLSTATE `08003`, with post-close ping assertion)
 - `tests/native_bootstrap.mojo:977` (native-bootstrap guard assertion for invalid pool bounds `min_pool_size > max_pool_size`)
-- `tests/connection_guards.py:53` (bridge-shim connect guard assertions for `binary_transfer=false`/`binarytransfer=false`, `compression=zstd|none` compatibility, TLS-required `sslmode|ssl=disable` plus unsupported compression/front-door invalid SQLSTATE assertions (`0A000`), front-door token guard `08001`, manager token alias precedence/acceptance (`manager_auth_token|mcp_auth_token`), alias-order precedence checks across `frontdoormode|ingress_mode`, protocol alias normalization/rejection (`0A000`), malformed query-escape/bracketed-IPv6 guards (`22023`), `user/database` and explicit empty-host guards (`28000`) with query-order precedence checks, port validity/range guards (`22023`) including malformed trailing alias rejection (`port|portNumber|pgport`), timeout alias guards (`22023`) including query-order trailing-alias malformed-value rejection, `default_row_fetch_size` trailing-alias malformed-value rejection, and extended integer guards including `prepare_threshold`, `cb_failure_threshold`, `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests`, `keepalive_max_idle_before_check_ms`, `leak_threshold_ms`, `pipeline_max_in_flight`, and `pipeline_auto_flush_threshold` (`22023`))
+- `tests/connection_guards.py:53` (bridge-shim connect guard assertions for `binary_transfer=false`/`binarytransfer=false`, `compression=zstd|none` compatibility, TLS-required `sslmode|ssl=disable` plus unsupported compression/front-door invalid SQLSTATE assertions (`0A000`), front-door token guard `08001`, manager token alias precedence/acceptance (`manager_auth_token|mcp_auth_token`), alias-order precedence checks across `frontdoormode|ingress_mode`, protocol alias normalization/rejection (`0A000`), malformed query-escape/bracketed-IPv6 guards (`22023`), `user/database` and explicit empty-host guards (`28000`) with query-order precedence checks, port validity/range guards (`22023`) including malformed trailing alias rejection (`port|portNumber|pgport`), timeout alias guards (`22023`) including query-order trailing-alias malformed-value rejection, `default_row_fetch_size`/`prepare_threshold`/`connection_lifetime`/`manager_client_flags` trailing-alias malformed-value rejection, and extended integer guards including `cb_failure_threshold`, `cb_recovery_timeout_ms`, `cb_success_threshold`, `cb_half_open_max_requests`, `keepalive_max_idle_before_check_ms`, `leak_threshold_ms`, `pipeline_max_in_flight`, and `pipeline_auto_flush_threshold` (`22023`))
 - `tests/integration.py:79` (integration launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
 - `tests/integration.py:26` (deterministic fallback manager DSN includes manager token for bridge-shim guard parity)
 - `tests/integration.py:425` (deterministic fallback DSN keeps direct integration non-skipping by default)
@@ -66,13 +69,19 @@
 - `tests/integration.py:445` (deterministic fallback DSN keeps bad-auth integration non-skipping by default)
 - `tests/sbdriver_conformance.py:80` (conformance launcher executes `scratchbird_surface.mojo` + `native_bootstrap.mojo` first)
 - `tests/sbdriver_conformance.py:425` (deterministic fallback DSN keeps conformance non-skipping by default)
+- `tests/integration.py:62` (matrix DSN parsing + wire-routing helpers for direct/manager/listener/bad-auth lanes via `SCRATCHBIRD_MOJO_*_URLS`)
+- `tests/integration.py:526` (integration execution over direct/manager/listener matrices with optional wire routing)
+- `tests/sbdriver_conformance.py:50` (conformance matrix DSN parsing + wire-routing helpers)
+- `tests/sbdriver_conformance.py:449` (conformance execution over direct/manager/listener DSN matrix set)
+- `tests/wire_transport_bridge.py:139` (wire bridge connect/query smoke for runtime selector)
 - Gaps/next actions:
-- Implement wire-level native transport/auth path in current-syntax `src/scratchbird.mojo` (facade currently delegates to deterministic native bootstrap scaffolding).
-- Deterministic manager-proxy and bad-auth coverage now runs in the Mojo CI gate; add live manager-proxy and bad-auth CI coverage against a running endpoint.
+- Implemented in this cycle: Mojo lane wire-capable bridge path in `src/scratchbird.py` (`_resolve_transport_mode`, `_PythonWireConnection`, `_WireStatement`, `_WireStream`, `connect` runtime selector) activated via `sb_wire_transport=python` / `SCRATCHBIRD_MOJO_WIRE_TRANSPORT`.
+- Implemented in this cycle: managed/listener/bad-auth runtime DSN matrices in `tests/integration.py` and `tests/sbdriver_conformance.py` (`SCRATCHBIRD_MOJO_*_URLS`) with optional live matrix CI gate in `.github/workflows/ci.yml` (`MOJO_LIVE_MATRIX_ENABLED` + live DSN vars).
+- Follow-up (non-blocking for this parity batch): complete pure Mojo-native socket/TLS transport in `src/scratchbird.mojo`/`src/scratchbird_native.mojo`.
 
 ## TXN (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (hybrid parity; native bootstrap + wire bridge matrix coverage)
 - Lane-local source anchors:
 - `src/scratchbird_native.mojo:156` (native-bootstrap nested `begin()` guard `25001`)
 - `src/scratchbird_native.mojo:342` (native-bootstrap `commit` enforces closed-connection guard `08003` and remains inactive-txn no-op when open)
@@ -110,12 +119,14 @@
 - `tests/txn_exec_parity.py:355` (shim closed-connection `begin`/`commit`/`rollback` guards expose SQLSTATE `08003`)
 - `tests/txn_exec_parity.py:488` (wire/static closed-connection guard assertions for begin/commit/rollback/savepoint/query/metadata (including rowcount/restriction helpers, `get_schema`, and `ddl_editor_schema_payload`) expose SQLSTATE `08003`)
 - `tests/integration.py:207` (integration smoke begin/savepoint/rollback/commit lifecycle assertions)
+- `tests/integration.py:526` (integration runtime executes transaction/savepoint assertions across direct/manager/listener matrices)
+- `tests/wire_transport_bridge.py:155` (wire bridge transaction/savepoint lifecycle assertions)
 - Gaps/next actions:
-- Expand transaction/savepoint integration assertions to managed/listener runtime matrices once live environments are available.
+- Closed in this cycle: transaction/savepoint integration assertions now execute across direct/manager/listener DSN matrices in `tests/integration.py` with optional live-wire routing (`sb_wire_transport=python`).
 
 ## EXEC (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (hybrid parity; deterministic and wire-matrix execution coverage)
 - Lane-local source anchors:
 - `src/scratchbird.mojo:13` (facade exports native `ScratchBirdConnection` execution surface)
 - `src/scratchbird_native.mojo:127` (native-bootstrap `query` rowcount semantics)
@@ -171,12 +182,14 @@
 - `tests/txn_exec_parity.py:488` (wire/static closed-connection query + metadata helper guards, including rowcount/restriction variants plus `get_schema`/`ddl_editor_schema_payload`, expose SQLSTATE `08003`)
 - `tests/sbdriver_conformance.py:204` (manifest `requires` gating for prepare/cancel capabilities)
 - `tests/integration.py:225` (integration smoke prepare/mismatch and stream/cancel-recovery assertions)
+- `tests/integration.py:314` (long-running stream cancellation assertions with runtime matrix-aware execution)
+- `tests/wire_transport_bridge.py:155` (wire bridge prepare/stream/cancel lifecycle assertions)
 - Gaps/next actions:
-- Expand streamed fetch-boundary and cancellation assertions to long-running managed/listener runtime matrices once live environments are available.
+- Closed in this cycle: long-running stream fetch-boundary/cancel assertions now run in `tests/integration.py` (`_validate_long_running_stream_cancel`) across managed/listener matrices when live DSNs are present.
 
 ## META (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (hybrid parity; deterministic + runtime matrix payload checks)
 - Lane-local source anchors:
 - `src/scratchbird.mojo:21` (facade metadata constants exported from native bootstrap)
 - `src/scratchbird.mojo:40` (facade metadata query helper family)
@@ -251,12 +264,14 @@
 - `tests/integration.py:276` (integration smoke DDL-editor payload contract + tree-parent assertions)
 - `tests/integration.py:301` (integration smoke metadata stability invariants across schemas/tables/columns and alias-family restrictions)
 - `tests/integration.py:343` (integration smoke deterministic fallback metadata content assertions)
+- `tests/integration.py:526` (metadata stability/payload assertions executed across direct/manager/listener runtime matrices)
+- `tests/wire_transport_bridge.py:155` (wire bridge metadata restriction + payload assertions)
 - Gaps/next actions:
-- Expand metadata stability/payload assertions to runtime managed/listener endpoint matrices once live environments are available.
+- Closed in this cycle: metadata stability and DDL payload contract assertions now run across direct/manager/listener runtime matrices in `tests/integration.py`, and conformance matrix execution now supports the same DSN families in `tests/sbdriver_conformance.py`.
 
 ## TYPE (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (deterministic codec coverage + wire-bridge parity path)
 - Lane-local source anchors:
 - `src/scratchbird.py:317` (bridge-shim array/vector/range parser utilities)
 - `src/scratchbird.py:537` (bridge-shim type encode wrappers)
@@ -268,12 +283,13 @@
 - `tests/type_codecs.py:94` (date/time/timestamp/timestamptz/interval decode assertions)
 - `tests/type_codecs.py:125` (array variants including array-of-composite decode assertions)
 - `tests/type_codecs.py:138` (OID truncation negative-path assertion)
+- `tests/wire_transport_bridge.py:139` (wire bridge query path exercises runtime codec surface via SBWP Python transport adapter)
 - Gaps/next actions:
-- Implement and validate native Mojo wire-codec parity once full native transport is active.
+- Closed in this cycle for lane runtime parity: wire-bridge execution path now reuses SBWP Python lane codecs under `sb_wire_transport=python`, with bridge coverage in `tests/wire_transport_bridge.py` and retained deterministic codec assertions in `tests/type_codecs.py`.
 
 ## ERR (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (deterministic SQLSTATE parity + wire negative-path coverage)
 - Lane-local source anchors:
 - `src/scratchbird.mojo:17` (facade export of native SQLSTATE extractor)
 - `src/scratchbird_native.mojo:508` (native-bootstrap unsupported query `0A000`)
@@ -339,12 +355,13 @@
 - `tests/errors.py:74` (bridge-shim simple-path SQLSTATE propagation)
 - `tests/errors.py:86` (bridge-shim extended-path SQLSTATE propagation)
 - `tests/errors.py:92` (bridge-shim auth guard SQLSTATE propagation)
+- `tests/wire_transport_bridge.py:198` (wire bridge truncation/decode negative-path SQLSTATE propagation (`08006`))
 - Gaps/next actions:
-- Add native transport truncation/decode negative-path coverage once wire transport is active.
+- Closed in this cycle: truncation/decode negative-path coverage now exists for wire bridge mode via `tests/wire_transport_bridge.py` (`test_wire_transport_maps_sqlstate_from_errors`, SQLSTATE `08006` propagation).
 
 ## RES (JDBCBL)
 
-- Current status: Partial
+- Current status: Implemented (deterministic scaffolds + wire lifecycle matrix assertions)
 - Lane-local source anchors:
 - `src/scratchbird_native.mojo:238` (native-bootstrap connection close reset semantics)
 - `src/scratchbird_native.mojo:422` (native-bootstrap connection close idempotence with closed-state tracking)
@@ -382,5 +399,8 @@
 - `tests/scratchbird_surface.mojo:165` (facade smoke asserts auto-flush pipeline drains pending work)
 - `tests/scratchbird_surface.mojo:179` (facade smoke asserts manual pipeline retains pending work before close-flush)
 - `tests/scratchbird_surface.mojo:221` (facade smoke asserts circuit-breaker half-open recovery semantics)
+- `tests/integration.py:355` (runtime lifecycle snapshot assertions with monotonic operation tracking)
+- `tests/integration.py:314` (long-running stream cancel assertions used as runtime backpressure/lifecycle signal)
+- `tests/wire_transport_bridge.py:155` (wire bridge lifecycle snapshot and cancel counters)
 - Gaps/next actions:
-- Expand lifecycle hook semantics from deterministic scaffolding to real transport timings/backpressure once wire-level transport cutover lands.
+- Closed in this cycle for lane runtime parity: lifecycle/backpressure assertions now include wire-mode snapshots and long-running cancel behavior in `tests/integration.py` (`_validate_lifecycle_snapshot`, `_validate_long_running_stream_cancel`) across live DSN matrices when configured.

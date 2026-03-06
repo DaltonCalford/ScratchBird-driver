@@ -175,11 +175,19 @@ def main() -> None:
         "22023",
     )
     _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?connection_lifetime=30&poolingconnectionlifetime=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?poolingconnectionlifetime=-1",
         "22023",
     )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?manager_client_flags=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?manager_client_flags=1&mcp_client_flags=bad",
         "22023",
     )
     _assert_connect_guard_sqlstate(
@@ -223,6 +231,10 @@ def main() -> None:
     )
     _assert_connect_guard_sqlstate(
         "scratchbird://user:pass@localhost:3092/testdb?prepare_threshold=bad",
+        "22023",
+    )
+    _assert_connect_guard_sqlstate(
+        "scratchbird://user:pass@localhost:3092/testdb?prepare_threshold=5&preparethreshold=bad",
         "22023",
     )
     _assert_connect_guard_sqlstate(

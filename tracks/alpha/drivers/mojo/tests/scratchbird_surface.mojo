@@ -103,6 +103,11 @@ fn _assert_config_session_pooling_manager_extensions() raises:
     _require(cfg_session_aliases.read_only, "read_only alias mismatch")
     _require(cfg_session_aliases.current_schema == "ops", "searchPath alias mismatch")
     _require(cfg_session_aliases.default_row_fetch_size == 64, "fetchSize alias mismatch")
+    var cfg_session_bool_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&autocommit=false&auto_commit=true&readonly=true&read_only=false"
+    )
+    _require(cfg_session_bool_precedence.auto_commit, "autocommit alias last-key precedence mismatch")
+    _require(not cfg_session_bool_precedence.read_only, "readonly alias last-key precedence mismatch")
     var cfg_session_jdbc_aliases = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&currentSchema=finance&defaultRowFetchSize=96"
     )
@@ -151,6 +156,25 @@ fn _assert_config_session_pooling_manager_extensions() raises:
     _require(cfg_ssl_materials.ssl_cert == "/tmp/client.crt", "sslcert alias mismatch")
     _require(cfg_ssl_materials.ssl_key == "/tmp/client.key", "sslkey alias mismatch")
     _require(cfg_ssl_materials.ssl_password == "secret", "sslpassword alias mismatch")
+    var cfg_ssl_materials_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&ssl_root_cert=/tmp/ca_a.pem&sslrootcert=/tmp/ca_b.pem&ssl_cert=/tmp/client_a.crt&sslcert=/tmp/client_b.crt&ssl_key=/tmp/client_a.key&sslkey=/tmp/client_b.key&ssl_password=first&sslpassword=second"
+    )
+    _require(
+        cfg_ssl_materials_precedence.ssl_root_cert == "/tmp/ca_b.pem",
+        "ssl_root_cert alias last-key precedence mismatch",
+    )
+    _require(
+        cfg_ssl_materials_precedence.ssl_cert == "/tmp/client_b.crt",
+        "ssl_cert alias last-key precedence mismatch",
+    )
+    _require(
+        cfg_ssl_materials_precedence.ssl_key == "/tmp/client_b.key",
+        "ssl_key alias last-key precedence mismatch",
+    )
+    _require(
+        cfg_ssl_materials_precedence.ssl_password == "second",
+        "ssl_password alias last-key precedence mismatch",
+    )
     var cfg_compression_none = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=none"
     )
@@ -159,6 +183,10 @@ fn _assert_config_session_pooling_manager_extensions() raises:
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=zstd"
     )
     _require(cfg_compression_zstd.compression == "zstd", "compression=zstd parse mismatch")
+    var cfg_compression_precedence = scratchbird.ScratchBirdConfig(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&compression=off&compression=zstd"
+    )
+    _require(cfg_compression_precedence.compression == "zstd", "compression last-key precedence mismatch")
     var cfg_query_decode = scratchbird.ScratchBirdConfig(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&application_name=app%20client&role=ops+admin&manager_auth_token=a%2Bb"
     )
@@ -904,6 +932,21 @@ fn main() raises:
     )
     _assert_connect_guard(
         "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&manager_client_flags=abc",
+        "22023",
+        "manager_client_flags must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&prepare_threshold=5&preparethreshold=abc",
+        "22023",
+        "prepare_threshold must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&connection_lifetime=30&poolingconnectionlifetime=abc",
+        "22023",
+        "connection_lifetime must be a valid integer",
+    )
+    _assert_connect_guard(
+        "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&manager_client_flags=1&mcp_client_flags=abc",
         "22023",
         "manager_client_flags must be a valid integer",
     )

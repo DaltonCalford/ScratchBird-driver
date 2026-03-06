@@ -43,6 +43,30 @@ def _deterministic_fallback_dsn() -> str:
     return "scratchbird://user:pass@localhost:3092/testdb?sslmode=require"
 
 
+def _is_deterministic_lane_dsn(dsn: str) -> bool:
+    return dsn == _deterministic_fallback_dsn()
+
+
+def _split_dsn_matrix(raw: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for chunk in (raw or "").replace(",", "\n").splitlines():
+        dsn = chunk.strip()
+        if not dsn or dsn in seen:
+            continue
+        seen.add(dsn)
+        out.append(dsn)
+    return out
+
+
+def _wire_transport_dsn(dsn: str) -> str:
+    if _is_deterministic_lane_dsn(dsn):
+        return dsn
+    if not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_WIRE_TRANSPORT", "1")):
+        return dsn
+    return _dsn_with_append(dsn, "sb_wire_transport=python")
+
+
 def _native_bootstrap_command(script_path: str) -> list[str] | None:
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
@@ -421,10 +445,36 @@ def main() -> None:
         return
 
     tests = _parse_tests(text)
-    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
-    if not dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
-        dsn = _deterministic_fallback_dsn()
-    results = _run_query_tests(tests, dsn)
+    fallback_disabled = _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", ""))
+    dsn_matrix = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_DIRECT_URLS", ""))
+    if len(dsn_matrix) == 0:
+        dsn_single = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
+        if dsn_single:
+            dsn_matrix = [dsn_single]
+    manager_matrix = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URLS", ""))
+    if len(manager_matrix) == 0:
+        manager_single = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
+        if manager_single:
+            manager_matrix = [manager_single]
+    listener_matrix = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URLS", ""))
+    if len(listener_matrix) == 0:
+        listener_single = os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URL", "").strip()
+        if listener_single:
+            listener_matrix = [listener_single]
+
+    for dsn in manager_matrix + listener_matrix:
+        if dsn not in dsn_matrix:
+            dsn_matrix.append(dsn)
+
+    if len(dsn_matrix) == 0 and not fallback_disabled:
+        dsn_matrix = [_deterministic_fallback_dsn()]
+
+    if len(dsn_matrix) == 0:
+        results = [_render_result(spec.test_id, "skipped", ["SCRATCHBIRD_MOJO_URL not set"]) for spec in tests]
+    else:
+        results = []
+        for dsn in dsn_matrix:
+            results.extend(_run_query_tests(tests, _wire_transport_dsn(dsn)))
     summary = "[" + ",".join(results) + "]"
     sys.stdout.write("{\"suite\":\"mojo-harness\",\"results\":" + summary + ",\"status\":\"ok\"}\n")
 

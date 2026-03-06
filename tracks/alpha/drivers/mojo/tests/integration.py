@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from typing import Any, Mapping
+import urllib.parse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -39,6 +40,43 @@ def _deterministic_fallback_bad_auth_dsn() -> str:
 
 def _is_deterministic_lane_dsn(dsn: str) -> bool:
     return dsn in (_deterministic_fallback_dsn(), _deterministic_fallback_manager_dsn())
+
+
+def _dsn_with_append(base_dsn: str, query_append: str) -> str:
+    fragment = (query_append or "").strip()
+    if not fragment:
+        return base_dsn
+    if fragment.startswith("?"):
+        fragment = fragment[1:]
+    appended_pairs = urllib.parse.parse_qsl(fragment, keep_blank_values=True)
+    if not appended_pairs:
+        return base_dsn
+    parsed = urllib.parse.urlparse(base_dsn)
+    existing_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    merged_query = urllib.parse.urlencode(existing_pairs + appended_pairs)
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, merged_query, parsed.fragment)
+    )
+
+
+def _split_dsn_matrix(raw: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for chunk in (raw or "").replace(",", "\n").splitlines():
+        dsn = chunk.strip()
+        if not dsn or dsn in seen:
+            continue
+        seen.add(dsn)
+        out.append(dsn)
+    return out
+
+
+def _wire_transport_dsn(dsn: str, deterministic_lane: bool) -> str:
+    if deterministic_lane:
+        return dsn
+    if not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_WIRE_TRANSPORT", "1")):
+        return dsn
+    return _dsn_with_append(dsn, "sb_wire_transport=python")
 
 
 def _native_bootstrap_command(script_path: str) -> list[str] | None:
@@ -273,6 +311,66 @@ def _validate_prepare_and_stream_smoke(conn: Any, deterministic_lane: bool) -> N
         _close_stream(recovery_stream)
 
 
+def _validate_long_running_stream_cancel(conn: Any, deterministic_lane: bool) -> None:
+    sql = os.environ.get("SCRATCHBIRD_MOJO_LONG_STREAM_SQL", "").strip()
+    if sql == "":
+        if deterministic_lane:
+            sql = "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e"
+        else:
+            # Live matrix keeps long-running assertions opt-in to avoid assuming fixture tables.
+            return
+
+    row_budget_text = os.environ.get("SCRATCHBIRD_MOJO_LONG_STREAM_CANCEL_AFTER_ROWS", "").strip()
+    try:
+        row_budget = max(1, int(row_budget_text)) if row_budget_text else 4
+    except ValueError:
+        row_budget = 4
+
+    stream = _open_stream(conn, sql, 1)
+    consumed = 0
+    try:
+        while consumed < row_budget:
+            _ = _stream_next(stream, conn)
+            consumed += 1
+    except StopIteration:
+        pass
+    finally:
+        conn.cancel()
+    cancelled = False
+    try:
+        _ = _stream_next(stream, conn)
+    except StopIteration:
+        cancelled = True
+    except Exception as exc:
+        cancelled = True
+        sqlstate = str(getattr(exc, "sqlstate", "") or "")
+        if sqlstate not in ("", "57014"):
+            raise RuntimeError(f"unexpected long-running cancel sqlstate '{sqlstate}'") from exc
+    finally:
+        _close_stream(stream)
+    if deterministic_lane and not cancelled:
+        raise RuntimeError("deterministic long-running stream cancel should interrupt iteration")
+
+
+def _validate_lifecycle_snapshot(conn: Any) -> None:
+    snapshot_method = getattr(conn, "lifecycle_snapshot", None)
+    if not callable(snapshot_method):
+        return
+    before = snapshot_method()
+    if not isinstance(before, Mapping):
+        return
+    _ = conn.query("SELECT 1")
+    after = snapshot_method()
+    if not isinstance(after, Mapping):
+        return
+    before_queries = int(before.get("query_count", 0))
+    after_queries = int(after.get("query_count", 0))
+    if after_queries < before_queries:
+        raise RuntimeError("lifecycle snapshot query_count should be monotonic")
+    if bool(after.get("closed", False)):
+        raise RuntimeError("lifecycle snapshot should report open connection during integration checks")
+
+
 def _validate_payload_contract(payload: Mapping[str, Any]) -> None:
     if set(payload.keys()) != {"schemaPattern", "expandSchemaParents", "schemaPaths", "schemaTree"}:
         raise RuntimeError("ddl_editor_schema_payload keys mismatch")
@@ -389,7 +487,9 @@ def _run_smoke_for_dsn(dsn: str, label: str, deterministic_lane: bool = False) -
 
         _validate_transaction_smoke(conn)
         _validate_prepare_and_stream_smoke(conn, deterministic_lane)
+        _validate_long_running_stream_cancel(conn, deterministic_lane)
         _validate_metadata_stability(conn)
+        _validate_lifecycle_snapshot(conn)
         payload = conn.ddl_editor_schema_payload(schema_pattern="users.%", expand_schema_parents=True)
         _validate_payload_contract(payload)
         if deterministic_lane:
@@ -421,33 +521,68 @@ def main() -> None:
     lane_root = pathlib.Path(__file__).resolve().parents[1]
     _run_native_bootstrap_smoke(lane_root)
 
-    dsn = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
-    if not dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
-        dsn = _deterministic_fallback_dsn()
-    if dsn:
-        _run_smoke_for_dsn(dsn, "direct integration", deterministic_lane=_is_deterministic_lane_dsn(dsn))
-    else:
+    fallback_disabled = _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", ""))
+
+    direct_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_DIRECT_URLS", ""))
+    if len(direct_dsns) == 0:
+        direct_single = os.environ.get("SCRATCHBIRD_MOJO_URL", "").strip()
+        if direct_single:
+            direct_dsns = [direct_single]
+    if len(direct_dsns) == 0 and not fallback_disabled:
+        direct_dsns = [_deterministic_fallback_dsn()]
+    if len(direct_dsns) == 0:
         print("SCRATCHBIRD_MOJO_URL not set; skipping Mojo direct integration smoke.")
-
-    manager_dsn = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
-    if not manager_dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
-        manager_dsn = _deterministic_fallback_manager_dsn()
-    if manager_dsn:
+    for idx, dsn in enumerate(direct_dsns):
+        deterministic_lane = _is_deterministic_lane_dsn(dsn)
         _run_smoke_for_dsn(
-            manager_dsn,
-            "manager-proxy integration",
-            deterministic_lane=_is_deterministic_lane_dsn(manager_dsn),
+            _wire_transport_dsn(dsn, deterministic_lane),
+            f"direct integration [{idx + 1}/{len(direct_dsns)}]",
+            deterministic_lane=deterministic_lane,
         )
-    else:
-        print("SCRATCHBIRD_MOJO_MANAGER_URL not set; skipping Mojo manager-proxy smoke.")
 
-    bad_auth_dsn = os.environ.get("SCRATCHBIRD_MOJO_BAD_AUTH_URL", "").strip()
-    if not bad_auth_dsn and not _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN", "")):
-        bad_auth_dsn = _deterministic_fallback_bad_auth_dsn()
-    if bad_auth_dsn:
-        _expect_auth_failure(bad_auth_dsn)
-    else:
+    manager_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URLS", ""))
+    if len(manager_dsns) == 0:
+        manager_single = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
+        if manager_single:
+            manager_dsns = [manager_single]
+    if len(manager_dsns) == 0 and not fallback_disabled:
+        manager_dsns = [_deterministic_fallback_manager_dsn()]
+    if len(manager_dsns) == 0:
+        print("SCRATCHBIRD_MOJO_MANAGER_URL not set; skipping Mojo manager-proxy smoke.")
+    for idx, dsn in enumerate(manager_dsns):
+        deterministic_lane = _is_deterministic_lane_dsn(dsn)
+        _run_smoke_for_dsn(
+            _wire_transport_dsn(dsn, deterministic_lane),
+            f"manager-proxy integration [{idx + 1}/{len(manager_dsns)}]",
+            deterministic_lane=deterministic_lane,
+        )
+
+    listener_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URLS", ""))
+    if len(listener_dsns) == 0:
+        listener_single = os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URL", "").strip()
+        if listener_single:
+            listener_dsns = [listener_single]
+    if len(listener_dsns) == 0:
+        print("SCRATCHBIRD_MOJO_LISTENER_URL not set; skipping Mojo listener matrix smoke.")
+    for idx, dsn in enumerate(listener_dsns):
+        deterministic_lane = _is_deterministic_lane_dsn(dsn)
+        _run_smoke_for_dsn(
+            _wire_transport_dsn(dsn, deterministic_lane),
+            f"listener integration [{idx + 1}/{len(listener_dsns)}]",
+            deterministic_lane=deterministic_lane,
+        )
+
+    bad_auth_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_BAD_AUTH_URLS", ""))
+    if len(bad_auth_dsns) == 0:
+        bad_auth_single = os.environ.get("SCRATCHBIRD_MOJO_BAD_AUTH_URL", "").strip()
+        if bad_auth_single:
+            bad_auth_dsns = [bad_auth_single]
+    if len(bad_auth_dsns) == 0 and not fallback_disabled:
+        bad_auth_dsns = [_deterministic_fallback_bad_auth_dsn()]
+    if len(bad_auth_dsns) == 0:
         print("SCRATCHBIRD_MOJO_BAD_AUTH_URL not set; skipping Mojo bad-auth smoke.")
+    for dsn in bad_auth_dsns:
+        _expect_auth_failure(_wire_transport_dsn(dsn, _is_deterministic_lane_dsn(dsn)))
 
 
 if __name__ == "__main__":
