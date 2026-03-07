@@ -4,9 +4,9 @@ ScratchBird DB-API 2.0 driver using the ScratchBird native wire protocol.
 
 ## Documentation
 
-- Getting started: `docs/getting-started/python.md`
-- API reference: `docs/api-reference/python.md`
-- Baseline requirement mapping: `BASELINE_REQUIREMENT_MAPPING.md`
+- [Getting started](../../../../docs/getting-started/python.md)
+- [API reference](../../../../docs/api-reference/python.md)
+- [Baseline requirement mapping](BASELINE_REQUIREMENT_MAPPING.md)
 
 ## Build/Test (Windows/Linux)
 

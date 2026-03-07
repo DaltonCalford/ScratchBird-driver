@@ -1,6 +1,18 @@
 # ScratchBird Driver Documentation
 
-This directory contains documentation for the ScratchBird database drivers.
+This directory contains the user-facing and implementation-facing
+documentation for the ScratchBird drivers.
+
+For day-to-day driver use, start with:
+
+- [Getting Started](getting-started/README.md)
+- [API Reference](api-reference/README.md)
+- [User Documentation](user-documentation/README.md)
+- [Connection Modes and Auth](user-documentation/connectivity/connection-modes-and-auth.md)
+
+Planning and specification documents remain in this tree for engineering work,
+but the driver guides in `getting-started/`, `api-reference/`, and the lane
+READMEs are the primary sources for install and usage guidance.
 
 ## Structure
 

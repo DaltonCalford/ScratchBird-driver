@@ -2,22 +2,10 @@
 
 ## Install
 
-Add the `tracks/alpha/drivers/pascal/src` directory to your project search path.
+Add `tracks/alpha/drivers/pascal/src` to your project search path.
 
-Default builds use first-party native transport/TLS units and require OpenSSL
-runtime libraries (`libssl`/`libcrypto`).
-
-Native TLS status for `0.1.0`: runtime TLS is implemented in the native
-transport (connect/handshake/read/write/close) using OpenSSL, with
-`sslmode` policy support and hostname checking in `verify-full`.
-
-If you need temporary legacy connectivity during migration, define
-`SCRATCHBIRD_USE_INDY` and add vendored Indy unit paths:
-
-- `tracks/alpha/drivers/pascal/third_party/indy/Lib/Core`
-- `tracks/alpha/drivers/pascal/third_party/indy/Lib/Protocols`
-- `tracks/alpha/drivers/pascal/third_party/indy/Lib/System`
-- `tracks/alpha/drivers/pascal/third_party/indy/Lib/Security`
+Default builds use the first-party native transport/TLS units and require
+OpenSSL runtime libraries (`libssl`/`libcrypto`).
 
 ## Quick Start
 
@@ -47,23 +35,29 @@ end;
 
 ## Connection Strings
 
-URI:
+Direct/native:
 
 ```
-scratchbird://user:password@host:3092/database?sslmode=require
+scratchbird://user:password@host:3092/database?sslmode=prefer
 ```
 
-Key-value:
+Manager-proxy:
 
 ```
-host=localhost port=3092 dbname=mydb user=myuser password=mypass
+scratchbird://user:password@host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
 ```
 
-See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+Current lane behavior:
 
-## TLS
+- Direct DSNs accept the standard `sslmode` values, including `disable`.
+- Compatibility startup keys include `binary_transfer=false` and
+  `compression=zstd|none|off`.
+- Manager-proxy and auth-plugin startup keys are supported.
 
-TLS 1.3 is required. `sslmode=disable` is rejected.
+## Enterprise Extensions
+
+The Pascal lane now includes diagnostics/telemetry JSON exports and notification
+queue/listener helpers. See [API reference](../api-reference/pascal.md).
 
 ## Tests
 

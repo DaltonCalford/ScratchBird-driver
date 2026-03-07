@@ -3,6 +3,11 @@
 Native ScratchBird driver with an Ecto adapter. Uses SBWP v1.1 and binary-only
 transfer.
 
+## Documentation
+
+- [Getting started](../../../../docs/getting-started/elixir.md)
+- [API reference](../../../../docs/api-reference/elixir.md)
+
 ## Platform Support
 
 | Platform | Status | Notes |

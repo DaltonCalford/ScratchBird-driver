@@ -7,6 +7,8 @@ Native CLI tools for ScratchBird operations and conformance workflows:
 ## Top-Level Lane Docs
 
 - [`BASELINE_REQUIREMENT_MAPPING.md`](BASELINE_REQUIREMENT_MAPPING.md) - Lane-local S0 mapping of CLI capabilities to JDBCBL requirement groups.
+- [CLI user docs](../../../../docs/user-documentation/tools/README.md)
+- [Documentation index](../../../../docs/README.md)
 
 ## Connection Modes
 

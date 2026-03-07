@@ -2,8 +2,13 @@
 
 ## Install
 
+The module path is `github.com/scratchbird/scratchbird-go`.
+
+For repo-local development:
+
 ```bash
-go get github.com/scratchbird/scratchbird-go
+cd tracks/alpha/drivers/go
+go test ./...
 ```
 
 ## Quick Start
@@ -30,27 +35,32 @@ func main() {
 
 ## Connection Strings
 
-URI:
+Direct/native:
 
 ```
-scratchbird://user:password@host:3092/database?sslmode=require
+scratchbird://user:password@host:3092/database?sslmode=prefer
 ```
 
-Key-value:
+Manager-proxy:
 
 ```
-host=localhost port=3092 dbname=mydb user=myuser password=mypass
+scratchbird://user:password@host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
 ```
 
-See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+Current lane behavior:
 
-## TLS
-
-TLS 1.3 is required. `sslmode=disable` is rejected.
+- Direct DSNs accept the standard `sslmode` values, including `disable`.
+- Compatibility startup keys include `binary_transfer=false` and
+  `compression=zstd|none|off`.
+- Manager-proxy and auth-plugin startup keys are supported:
+  `client_flags|connect_client_flags`, `auth_method_payload`,
+  `auth_required_methods`, `auth_forbidden_methods`,
+  `auth_require_channel_binding`, `workload_identity_token`, and
+  `proxy_principal_assertion`.
 
 ## Prepare/Bind
 
-Use database/sql prepared statements so parameters are bound server-side:
+Use `database/sql` prepared statements so parameters are bound server-side:
 
 ```go
 stmt, err := db.Prepare("SELECT ?::INTEGER")
@@ -58,6 +68,7 @@ if err != nil {
     panic(err)
 }
 row := stmt.QueryRow(42)
+_ = row
 ```
 
 ## Tests

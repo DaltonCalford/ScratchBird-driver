@@ -10,6 +10,8 @@
 - `query(sql, params = nil)` / `execute(sql, params = nil)`
 - `stream(sql, params = nil)`
 - `prepare(sql)` -> `Statement`
+- `execute_prepared(name, params = nil)`, `stream_prepared(name, params = nil)`
+- `close_prepared(name)`
 - `begin_transaction`, `commit`, `rollback`
 - `savepoint(name)`, `rollback_to_savepoint(name)`, `release_savepoint(name)`
 - `native_sql(sql, params = nil)`, `native_callable_sql(sql, params = nil)`
@@ -51,6 +53,14 @@ Advanced protocol operations are exposed on `Scratchbird::Client` (via
 - `attach_create(emulation_mode, db_name)`, `attach_detach`, `attach_list`
 - `on_notification { |notice| ... }`
 - `last_plan`, `last_sblr`
+
+## Supporting Modules
+
+- `Scratchbird::Config`
+- `Scratchbird::TelemetryCollector`
+- `Scratchbird::CircuitBreaker`
+- `Scratchbird::KeepaliveManager`
+- `Scratchbird::LeakDetector`
 
 ## Parameters
 

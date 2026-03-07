@@ -26,5 +26,6 @@ sb_verify -H host -p 3092 -U admin -d scratchbird <command>
 
 ## Notes
 
-- Uses SBWP v1.1 and TLS 1.3.
+- Connection behavior follows the current ScratchBird CLI lane build. Prefer
+  TLS-enabled modes in production deployments.
 - See the ScratchBird engine docs for verification modes and coverage.

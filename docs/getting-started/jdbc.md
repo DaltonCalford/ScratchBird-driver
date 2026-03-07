@@ -8,9 +8,6 @@ cd tracks/alpha/drivers/jdbc
 ```
 
 Requires JDK 17. The Gradle wrapper is pinned to 8.5+ for JDK 21 compatibility.
-If you see `Unsupported class file major version 65`, ensure Gradle is 8.5+
-or run with JDK 17. If Gradle reports missing toolchains, install `openjdk-17-jdk`
-and set `JAVA_HOME` to the JDK 17 path.
 
 ## Quick Start
 
@@ -30,23 +27,24 @@ Connection conn = DriverManager.getConnection(
 JDBC URL:
 
 ```
-jdbc:scratchbird://host:3092/database?sslmode=require
+jdbc:scratchbird://host:3092/database?sslmode=prefer
 ```
 
-Property-based:
+Manager-proxy:
 
 ```
-Properties props = new Properties();
-props.setProperty("user", "myuser");
-props.setProperty("password", "mypass");
-props.setProperty("sslmode", "require");
+jdbc:scratchbird://host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
 ```
 
-See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+Current lane behavior:
 
-## TLS
-
-TLS 1.3 is required. `sslmode=disable` is rejected.
+- Direct DSNs accept the standard `sslmode` values, including `disable`.
+- Compatibility startup keys include `binaryTransfer=false` and
+  `compression=zstd|none|off`.
+- Manager-proxy and auth-plugin startup keys are supported, including
+  `client_flags`, `auth_method_payload`, `auth_required_methods`,
+  `auth_forbidden_methods`, `auth_require_channel_binding`,
+  `workload_identity_token`, and `proxy_principal_assertion`.
 
 ## Tests
 

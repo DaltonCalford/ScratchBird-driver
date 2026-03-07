@@ -4,6 +4,8 @@
 
 - NPM package: `scratchbird`
 - Main exports: `Client`, `Pool`
+- Supporting exports: `parseDsn`, `normalizeQuery`, `normalizeCallableQuery`,
+  `normalizeCallableSql`, metadata helpers, typed errors, and resilience/telemetry modules
 
 ## Client
 
@@ -27,6 +29,7 @@
 - `getSchema(collectionName?, restrictions?)`, `getSchemaTree(options?)`
 - `end()`
 - `terminate()`
+- `beginTransaction()`, `commitTransaction()`, `rollbackTransaction()`
 - `savepoint(name)`, `releaseSavepoint(name)`, `rollbackToSavepoint(name)`
 - `setOption(name, value)`
 - `ping()`
@@ -53,6 +56,13 @@
 - `connect()`
 - `query(sql, params?, options?)`
 - `end()`
+
+## Supporting Modules
+
+- `TelemetryCollector` plus telemetry summary/Prometheus export helpers
+- `CircuitBreaker` / `CircuitBreakerConfig`
+- `KeepaliveManager`
+- `LeakDetector`
 
 ## Parameters
 

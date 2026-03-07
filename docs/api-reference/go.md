@@ -9,34 +9,72 @@
 
 - `sql.Open("scratchbird", dsn)`
 - `scratchbird.ParseConfig(dsn)` -> `scratchbird.Config`
+- Exported connection helpers: `Conn`, `Stmt`, `Tx`, `Rows`, `Result`
 
 ## Config
 
-`Config` fields map to the canonical DSN keys:
+`Config` normalizes canonical DSN keys and lane-specific parity options,
+including:
 
-- `Host`, `Port`, `Database`, `User`, `Password`
-- `SSLMode`, `SSLRootCert`, `SSLCert`, `SSLKey`
-- `ConnectTimeout`, `SocketTimeout`
-- `Application`, `BinaryTransfer`, `Compression`
+- endpoint/session: `Host`, `Port`, `Database`, `User`, `Password`,
+  `ApplicationName`, `FetchSize`
+- security/transport: `SSLMode`, `SSLRootCert`, `SSLCert`, `SSLKey`,
+  `BinaryTransfer`, `Compression`
+- managed/auth plugin: `FrontDoorMode`, `ManagerAuthToken`,
+  `ManagerConnectionProfile`, `ManagerClientIntent`, `ManagerClientFlags`,
+  `ConnectClientFlags`, `AuthMethodPayload`, `AuthRequiredMethods`,
+  `AuthForbiddenMethods`, `AuthRequireChannelBinding`,
+  `WorkloadIdentityToken`, `ProxyPrincipalAssertion`
 
-## Parameters
+## `*Conn`
 
-Supports positional `?` and named `:name` or `@name` placeholders. Parameters
-are bound server-side.
+Database/sql and extended query surfaces:
 
-## SBWP v1.1 Extensions
+- `PrepareContext`, `ExecContext`, `QueryContext`, `Ping`
+- `NativeSQL`, `NativeCallableSQL`, `CallContext`
+- `QueryMultiContext`, `ExecuteMultiContext`
+- `ExecuteBatchContext`, `QueryBatchContext`
+- `ExecuteWithGeneratedKeysContext`
+- `BatchInsert`
 
-Advanced protocol operations are available on `*scratchbird.Conn` (driver.Conn):
+Transactions and session:
 
-- `SetOption(ctx, name, value)`
-- `Ping(ctx)`
-- `Subscribe(ctx, subType, channel, filter)`, `Unsubscribe(ctx, channel)`
-- `OnNotification(handler)`
-- `LastPlan()`, `LastSblr()`
-- `QuerySblr(ctx, hash, bytecode, params)`, `ExecSblr(ctx, hash, bytecode, params)`
-- `StreamControl(ctx, controlType, windowSize, timeoutMs)`
-- `AttachCreate(ctx, emulationMode, dbName)`, `AttachDetach(ctx)`, `AttachList(ctx)`
-- `QueryMetadata(ctx, collection)`, `QueryMetadataWithRestrictions(ctx, collection, restrictions)`
+- `Begin`, `BeginTx`
+- `Savepoint`, `ReleaseSavepoint`, `RollbackToSavepoint`
+- `SetOption`, `ResetSession`
+
+Metadata:
+
+- `QueryMetadata`
+- `QueryMetadataWithRestrictions`
+
+Notifications and protocol extensions:
+
+- `Subscribe`, `Unsubscribe`
+- `OnNotification`
+- `LastPlan`, `LastSblr`
+- `QuerySblr`, `ExecSblr`
+- `StreamControl`
+- `AttachCreate`, `AttachDetach`, `AttachList`
+- `CopyIn`, `CopyOut`
+- `IsHealthy`, `Close`
+
+## Query Pipeline
+
+- `PipelineConfig`
+- `DefaultPipelineConfig()`
+- `NewQueryPipeline(config)`
+- `QueryPipeline.Start`, `Stop`, `Queue`, `PendingCount`, `InFlightCount`,
+  `HasCapacity`, `Flush`
+- `PipelineBuilder`
+
+## Telemetry And Resilience
+
+- `TelemetryCollector`, `TelemetryConfig`, `MetricsSnapshot`,
+  `SlowQueryLog`, `ExportPrometheusMetrics`
+- `CircuitBreaker`, `CircuitBreakerConfig`, `CircuitBreakerStats`
+- `KeepaliveManager`, `KeepaliveTracker`
+- `LeakDetector`, `LeakStats`
 
 ## Wrapper Types
 
@@ -45,9 +83,9 @@ Use these types for complex values:
 - `JSON`, `JSONB`
 - `Geometry`
 - `Range[T]`
-- `Interval`, `Date`, `Time`, `Timestamp`, `TimestampTZ`
+- `Interval`, `Date`, `Time`, `TimeTZ`, `Timestamp`, `TimestampTZ`
 - `Decimal`, `Money`
-- `RawValue`
+- `RawValue`, `Composite`
 
 ## Errors
 

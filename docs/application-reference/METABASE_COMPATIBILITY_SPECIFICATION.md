@@ -416,8 +416,10 @@ jdbc:scratchbird://{host}:{port}/{db}?sslmode={sslmode}&application_name={applic
 - `socketTimeout` -> JDBC property `socketTimeout`
 - `binaryTransfer` -> JDBC property `binaryTransfer`
 
-**TLS requirement:** ScratchBird requires TLS. Metabase should reject
-`sslmode=disable` at validation time.
+**TLS requirement:** TLS-enabled modes should be the default for production.
+The current JDBC lane also supports explicit `sslmode=disable` for
+local-development or compatibility paths, so Metabase validation should accept
+the full JDBC `sslmode` set rather than rejecting plaintext unconditionally.
 
 ---
 
@@ -1043,7 +1045,8 @@ SELECT * FROM "schema"."table" LIMIT 10000;
 1. ScratchBird JDBC driver is available on Metabase classpath
 2. Driver plugin implements connection schema and feature flags
 3. Catalog metadata is available via JDBC metadata or SQL queries
-4. Query execution honors prepared statements and binary-only params
+4. Query execution honors prepared statements and the current JDBC transfer
+   compatibility surface
 
 ### 10.3 Alternative Strategy: PostgreSQL Compatibility
 
@@ -1293,8 +1296,9 @@ For a Metabase-compatible JDBC driver:
 
 **ScratchBird JDBC specifics:**
 - Driver class: `com.scratchbird.jdbc.SBDriver`
-- Protocol: SBWP v1.1 (binary-only parameter binding)
-- TLS required (reject `sslmode=disable`)
+- Protocol: SBWP v1.1 (prepared statements with configurable result-transfer parity)
+- TLS-enabled modes are recommended; `sslmode=disable` is also supported by the
+  current JDBC lane
 - Prepared statements must map to PARSE/BIND/EXECUTE on the wire
 
 ### 12.2 DatabaseMetaData Methods
@@ -1372,7 +1376,7 @@ public class ScratchBirdResultSetMetaData implements ResultSetMetaData {
 | Build plugin skeleton (manifest, deps, namespace) | P0 | Pending |
 | Implement connection properties schema | P0 | Pending |
 | Implement `connection-details->spec` (JDBC URL + props) | P0 | Pending |
-| Validate TLS requirement (reject sslmode=disable) | P0 | Pending |
+| Validate SSL configuration and parity JDBC URL options | P0 | Pending |
 | Basic `can-connect?` + `display-name` | P0 | Pending |
 | Basic metadata via JDBC `DatabaseMetaData` | P1 | Pending |
 

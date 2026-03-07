@@ -23,8 +23,9 @@ sb_admin [OPTIONS] <command> [command options]
 Use standard SBWP v1.1 connection flags and mode selectors:
 
 ```
-sb_admin -H host -p 3092 -U admin -d scratchbird <command>
-sb_admin --mode=managed --manager-auth-token=... <database> <command>
+sb_admin -H host -p 3092 -U admin --sslmode=require -d scratchbird <command>
+sb_admin --mode=managed --manager-auth-token=... --front-door-mode=manager_proxy <command>
+sb_admin --mode=inet --auth-method-id=scratchbird.auth.scram_sha_256 --auth-method-payload=opaque-token <command>
 sb_admin --mode=local-ipc --ipc-method=unix --ipc-path=build/ipc/scratchbird-main.sock <database> <command>
 ```
 
@@ -37,5 +38,11 @@ Supported connection modes:
 
 ## Notes
 
-- Uses SBWP v1.1 and TLS 1.3.
+- The current CLI lane accepts the same broad `sslmode` values used by the
+  JDBC-parity drivers (`disable|allow|prefer|require|verify-ca|verify-full`).
+- Auth-plugin-aware admin flows can use `--client-flags`,
+  `--auth-method-id`, `--auth-method-payload`,
+  `--auth-required-methods`, `--auth-forbidden-methods`,
+  `--auth-require-channel-binding`, `--workload-identity-token`, and
+  `--proxy-principal-assertion`.
 - See the ScratchBird engine docs for server-side command availability.

@@ -10,6 +10,8 @@ Current implementation is a Mojo-Python interop lane:
 ## Lane Docs
 
 - [Baseline Requirement Mapping (S0)](BASELINE_REQUIREMENT_MAPPING.md)
+- [Getting started](../../../../docs/getting-started/mojo.md)
+- [API reference](../../../../docs/api-reference/mojo.md)
 - [S2 TXN/EXEC Implementation](S2_TXN_EXEC_IMPLEMENTATION.md)
 - [S3 Metadata Implementation](S3_METADATA_IMPLEMENTATION.md)
 - [Tests](tests/README.md)

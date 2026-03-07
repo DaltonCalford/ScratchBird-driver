@@ -39,6 +39,15 @@ sb_isql [OPTIONS] [DATABASE]
 | `--ipc-path PATH` | Local IPC endpoint override |
 | `--front-door-mode MODE` | `direct` or `manager_proxy` |
 | `--manager-auth-token TOKEN` | Managed front-door token |
+| `--sslmode MODE` | `disable`, `allow`, `prefer`, `require`, `verify-ca`, or `verify-full` |
+| `--client-flags N` | Startup client flags sent during connection |
+| `--auth-method-id ID` | Requested auth plugin method id |
+| `--auth-method-payload VALUE` | Opaque auth plugin payload |
+| `--auth-required-methods CSV` | Comma-separated required auth methods |
+| `--auth-forbidden-methods CSV` | Comma-separated forbidden auth methods |
+| `--auth-require-channel-binding BOOL` | Require channel binding in auth negotiation |
+| `--workload-identity-token TOKEN` | Workload identity token for plugin auth |
+| `--proxy-principal-assertion TOKEN` | Proxy principal assertion for managed ingress |
 | `--conn-opt KEY=VALUE` | Extra driver connection option (repeatable) |
 
 Mode notes:
@@ -46,6 +55,8 @@ Mode notes:
 - `inet` and `managed` are fully network-backed.
 - `local-ipc` supports Unix socket/TCP-local IPC routing through the beta C++ client.
 - `embedded` is currently routed through local IPC transport in the beta C++ client.
+- `--conn-opt KEY=VALUE` can be used for additional connection settings such as
+  `compression=off|zstd` or explicit manager/profile values.
 
 ---
 
@@ -107,6 +118,23 @@ sb_isql -H localhost -U admin mydb
 
 ```bash
 sb_isql -H localhost -c "SELECT * FROM users"
+```
+
+### Managed Front Door
+
+```bash
+sb_isql mydb --mode=managed --front-door-mode=manager_proxy \
+  --manager-auth-token=token123 --sslmode=require
+```
+
+### Auth Plugin Handshake
+
+```bash
+sb_isql mydb --mode=inet --client-flags=256 \
+  --auth-method-id=scratchbird.auth.scram_sha_256 \
+  --auth-method-payload=opaque-token \
+  --auth-required-methods=scratchbird.auth.scram_sha_256 \
+  --workload-identity-token=jwt-token
 ```
 
 ### Execute File

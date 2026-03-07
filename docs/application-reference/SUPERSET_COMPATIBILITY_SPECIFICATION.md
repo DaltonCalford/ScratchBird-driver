@@ -80,7 +80,7 @@ Minimum required behaviors:
 
 - Connection test and validation
 - Query execution + streaming result sets
-- Prepared statements + bind parameters (binary-only)
+- Prepared statements + bind parameters via the ScratchBird Python driver
 - Result metadata (column names/types)
 - Schema discovery (schemas, tables, columns)
 - Cancel support (ScratchBird `Connection.cancel()`)
@@ -97,7 +97,7 @@ scratchbird://{user}:{password}@{host}:{port}/{database}
 ```
 
 **Supported query params:**
-- sslmode (require | verify-ca | verify-full)
+- sslmode (disable | allow | prefer | require | verify-ca | verify-full)
 - sslrootcert
 - sslcert
 - sslkey
@@ -106,10 +106,12 @@ scratchbird://{user}:{password}@{host}:{port}/{database}
 - socket_timeout
 - binary_transfer (true/false)
 - compression (off | zstd)
+- front_door_mode
+- manager_auth_token
 
 **Example:**
 ```
-scratchbird://admin:secret@db01:3092/analytics?sslmode=verify-full&binary_transfer=true
+scratchbird://admin:secret@db01:3092/analytics?sslmode=prefer&compression=zstd
 ```
 
 ---
@@ -195,9 +197,12 @@ Optional flags once supported:
 
 ## 10. Authentication & Security
 
-- TLS 1.3 is required for all connections.
-- `sslmode=disable` must be rejected by the driver.
+- TLS-enabled modes should be the default for production deployments.
+- `sslmode=disable` is available for explicit local-development/plaintext paths
+  in the current Python driver lane.
 - Support SCRAM (SBWP v1.1) authentication via ScratchBird Python driver.
+- Support manager-proxy and auth-plugin-aware startup parameters when the
+  Superset connection URI includes them.
 
 ---
 

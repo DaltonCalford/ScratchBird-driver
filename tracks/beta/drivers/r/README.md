@@ -5,8 +5,8 @@ R DBI-compatible driver for ScratchBird using the ScratchBird wire protocol.
 ## Documentation
 
 - Lane baseline requirement mapping (S0): [BASELINE_REQUIREMENT_MAPPING.md](BASELINE_REQUIREMENT_MAPPING.md)
-- Getting started: `docs/getting-started/r.md`
-- API reference: `docs/api-reference/r.md`
+- [Getting started](../../../../docs/getting-started/r.md)
+- [API reference](../../../../docs/api-reference/r.md)
 
 ## Build/Test (Windows/Linux)
 

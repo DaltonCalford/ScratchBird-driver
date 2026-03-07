@@ -20,5 +20,9 @@ clj -T:build jar
 
 - The plugin bundles `metabase-plugin.yaml` and the driver namespace.
 - JDBC URL format: `jdbc:scratchbird://host:3092/database`.
+- Manager-proxy ingress is available through JDBC URL parameters such as
+  `front_door_mode=manager_proxy&manager_auth_token=token`.
+- The plugin inherits current JDBC connection properties, including the
+  standard `sslmode` values and auth-plugin startup keys.
 
 See `tracks/alpha/integrations/scratchbird-metabase-driver/README.md` for the scaffold details.

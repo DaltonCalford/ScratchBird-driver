@@ -6,6 +6,8 @@ binary-only transport.
 ## Lane Docs
 
 - [Baseline Requirement Mapping (S0)](./BASELINE_REQUIREMENT_MAPPING.md)
+- [Getting started](../../../../docs/getting-started/swift.md)
+- [API reference](../../../../docs/api-reference/swift.md)
 
 ## Platform Support
 

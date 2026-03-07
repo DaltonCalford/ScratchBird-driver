@@ -21,8 +21,8 @@ sb_security [OPTIONS] <command>
 ## Connection Options
 
 ```
-sb_security -H host -p 3092 -U admin -d scratchbird <command>
-sb_security --mode=managed --manager-auth-token=... <command> <database>
+sb_security -H host -p 3092 -U admin --sslmode=require -d scratchbird <command>
+sb_security --mode=managed --manager-auth-token=... --front-door-mode=manager_proxy <command> <database>
 sb_security --mode=local-ipc --ipc-method=unix --ipc-path=build/ipc/scratchbird-main.sock <command> <database>
 ```
 
@@ -35,5 +35,7 @@ Supported connection modes:
 
 ## Notes
 
-- Uses SBWP v1.1 and TLS 1.3.
+- The current CLI lane accepts the standard `sslmode` values
+  (`disable|allow|prefer|require|verify-ca|verify-full`) and manager-proxy
+  routing controls such as `--front-door-mode` and `--manager-auth-token`.
 - See the ScratchBird engine docs for supported commands and privileges.

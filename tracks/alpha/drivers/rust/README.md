@@ -4,9 +4,9 @@ Async Rust driver for ScratchBird using the native wire protocol.
 
 ## Documentation
 
-- Getting started: `docs/getting-started/rust.md`
-- API reference: `docs/api-reference/rust.md`
-- Baseline requirement mapping: `BASELINE_REQUIREMENT_MAPPING.md`
+- [Getting started](../../../../docs/getting-started/rust.md)
+- [API reference](../../../../docs/api-reference/rust.md)
+- [Baseline requirement mapping](BASELINE_REQUIREMENT_MAPPING.md)
 
 ## Build/Test (Windows/Linux)
 

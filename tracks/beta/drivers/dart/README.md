@@ -5,6 +5,8 @@ Native Dart/Flutter driver for ScratchBird (SBWP v1.1).
 ## Lane Docs
 
 - [Baseline Requirement Mapping (S0)](./BASELINE_REQUIREMENT_MAPPING.md)
+- [Getting started](../../../../docs/getting-started/dart.md)
+- [API reference](../../../../docs/api-reference/dart.md)
 
 ## Platform Support
 

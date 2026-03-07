@@ -1,0 +1,80 @@
+# ODBC Driver
+
+## Build
+
+From the repo root:
+
+```bash
+cmake -S tracks/alpha/drivers/odbc -B tracks/alpha/drivers/odbc/build
+cmake --build tracks/alpha/drivers/odbc/build --config Release
+```
+
+See `tracks/alpha/drivers/odbc/docs/BUILD_MATRIX.md` for ODBC manager and
+OpenSSL prerequisites.
+
+## Register The Driver
+
+On unixODBC/iODBC, register the built shared library in `odbcinst.ini`:
+
+```ini
+[ScratchBird]
+Description = ScratchBird ODBC Driver
+Driver = /path/to/libscratchbird_odbc.so
+Setup = /path/to/libscratchbird_odbc.so
+UsageCount = 1
+```
+
+## Quick Start
+
+DSN-less example:
+
+```ini
+Driver={ScratchBird};
+Server=127.0.0.1;
+Port=3092;
+Database=mydb;
+UID=user;
+PWD=pass;
+SSLMode=prefer;
+```
+
+Manager-proxy example:
+
+```ini
+Driver={ScratchBird};
+Server=127.0.0.1;
+Port=3090;
+Database=mydb;
+UID=user;
+PWD=pass;
+FrontDoorMode=manager_proxy;
+ManagerAuthToken=token;
+```
+
+## Supported Connection Keys
+
+Common ODBC keys include:
+
+- `Driver`, `Server`/`Host`, `Port`, `Database`, `UID`/`User`, `PWD`/`Password`
+- `SSL`/`SSLMode`, `SSLCert`, `SSLKey`, `SSLRootCert`, `SSLPassword`
+- `Timeout`, `QueryTimeout`, `ApplicationName`/`App`, `Schema`/`CurrentSchema`
+- `FrontDoorMode`, `ManagerAuthToken`, `ManagerConnectionProfile`,
+  `ManagerClientIntent`, `ManagerClientFlags`, `ManagerAuthFastPath`
+- `ClientFlags`/`ConnectClientFlags`, `AuthMethodId`, `AuthMethodPayload`,
+  `AuthPayloadJson`, `AuthPayloadB64`, `AuthProviderProfile`,
+  `AuthRequiredMethods`, `AuthForbiddenMethods`,
+  `AuthRequireChannelBinding`, `WorkloadIdentityToken`,
+  `ProxyPrincipalAssertion`
+
+## Programming Examples
+
+- [ODBC connectivity guide](../user-documentation/connectivity/odbc.md)
+- [ODBC API reference](../api-reference/odbc.md)
+
+## Tests
+
+After configuring the build:
+
+```bash
+ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure
+```

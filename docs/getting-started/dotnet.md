@@ -2,52 +2,57 @@
 
 ## Install
 
-From the repo:
+Build the provider from the repo:
 
 ```bash
 dotnet build tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj
 ```
+
+For application development, add a project or package reference to
+`ScratchBird.Data`.
 
 ## Quick Start
 
 ```csharp
 using ScratchBird.Data;
 
-var conn = new ScratchBirdConnection("scratchbird://user:pass@localhost:3092/mydb");
+using var conn = new ScratchBirdConnection(
+    "Host=localhost;Port=3092;Database=mydb;Username=user;Password=pass;SSLMode=require");
 conn.Open();
 
 using var cmd = conn.CreateCommand();
 cmd.CommandText = "SELECT 1";
 var result = cmd.ExecuteScalar();
-
-conn.Close();
 ```
 
 ## Connection Strings
 
-URI:
+Direct/native:
 
 ```
-scratchbird://user:password@host:3092/database?sslmode=require
+Host=localhost;Port=3092;Database=mydb;Username=user;Password=pass;SSLMode=require
 ```
 
-Key-value:
+Manager-proxy:
 
 ```
-host=localhost port=3092 dbname=mydb user=myuser password=mypass
+Host=localhost;Port=3090;Database=mydb;Username=user;Password=pass;FrontDoorMode=manager_proxy;ManagerAuthToken=token
 ```
 
-See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+Current lane behavior:
 
-Pooling tuning options:
+- TLS is the default posture.
+- `SSLMode=disable` is only allowed when `AllowInsecure=true` (or
+  `allow_insecure_disable=true` in DSN form).
+- Pooling, `FetchSize`, manager-proxy keys, and auth-plugin startup keys are
+  supported.
+- `binary_transfer=false` and `compression=zstd` are not currently supported by
+  the .NET lane.
 
-- `Pooling=true|false`
-- `MinPoolSize`, `MaxPoolSize`, `ConnectionLifetime`
-- `PoolingAcquireTimeout` (seconds) or `PoolAcquireTimeoutMs` (milliseconds)
+## Enterprise Extensions
 
-## TLS
-
-TLS 1.3 is required. `sslmode=disable` is rejected.
+The .NET lane also exposes diagnostics, telemetry, notifications, and query
+pipeline surfaces. See [API reference](../api-reference/dotnet.md).
 
 ## Tests
 

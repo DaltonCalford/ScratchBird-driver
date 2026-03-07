@@ -1,11 +1,11 @@
 # PHP Driver API Reference
 
-## Namespace
+## Namespaces
 
-- Namespace: `ScratchBird\PDO`
-- Entry point: `ScratchBirdPDO`
+- PDO-style surface: `ScratchBird\PDO`
+- Low-level/supporting classes: `ScratchBird`
 
-## ScratchBirdPDO
+## `ScratchBird\PDO\ScratchBirdPDO`
 
 - `__construct(dsn, username = null, password = null, options = [])`
 - `prepare(sql)` -> `Statement`
@@ -17,34 +17,53 @@
 - `errorInfo()`, `errorCode()`
 - `close()`
 
-## Statement
+## `ScratchBird\PDO\Statement`
 
+- `bindParam(...)`, `bindValue(...)`
 - `execute(params = null)`
-- `fetch()`, `fetchAll()`, `rowCount()`
+- `fetch()`, `fetchAll()`, `fetchColumn()`
+- `rowCount()`, `columnCount()`, `getColumnMeta()`
+- `closeCursor()`, `setFetchMode(...)`
+- `nextRowset()` / `nextset()`
+- `statusMessage()`, `lastInsertId()`, `getGeneratedKeys()`, `fields()`
 
-## SBWP v1.1 Extensions
+## `ScratchBird\Connection`
 
-Advanced protocol operations are available on `ScratchBird\Connection`:
+Extended execution and protocol helpers:
 
+- `nativeSql(sql, params = [])`, `nativeCallableSql(sql, params = [])`
+- `call(sql, params = [])`
+- `executeBatch(sql, batchParams)`, `queryBatch(sql, batchParams)`
+- `queryMulti(sql, params = [])`, `executeMulti(sql, params = [])`
+- `executeWithGeneratedKeys(sql, params = [])`
+- `queryMetadata(collectionName = "tables")`
+- `getSchema(collectionName = "tables", restrictions = [])`
+- `getSchemaTree(expandParents = null, database = null, restrictions = [])`
+- `beginTransaction()`, `inTransaction()`, `commit()`, `rollBack()`
 - `savepoint(name)`, `releaseSavepoint(name)`, `rollbackToSavepoint(name)`
-- `setOption(name, value)`
-- `ping()`
+- `setOption(name, value)`, `ping()`, `cancel()`
 - `subscribe(channel, subType = ..., filterExpr = "")`, `unsubscribe(channel)`
 - `executeSblr(hash, bytecode = null, params = [])`
 - `streamControl(controlType, windowSize, timeoutMs)`
 - `attachCreate(emulationMode, dbName)`, `attachDetach()`, `attachList()`
 - `onNotification(callable)`
 - `lastPlan()`, `lastSblr()`
-- `cancel()`
-- `queryMetadata(collectionName = "tables")`
-- `getSchema(collectionName = "tables", restrictions = [])`
-- `getSchemaTree(expandParents = null, database = null, restrictions = [])`
+
+## Supporting Classes
+
+- `ScratchBird\Config`
+- `ScratchBird\TelemetryCollector`, `ScratchBird\TelemetryConfig`
+- `ScratchBird\CircuitBreaker`, `ScratchBird\CircuitBreakerConfig`
+- `ScratchBird\KeepaliveManager`, `ScratchBird\KeepaliveConfig`
+- `ScratchBird\LeakDetector`, `ScratchBird\LeakDetectionConfig`
+- `ScratchBird\Metadata`
 
 ## Wrapper Types
 
 - `ScratchBird\PDO\Jsonb`
 - `ScratchBird\PDO\Geometry`
 - `ScratchBird\PDO\Range`
+- `ScratchBird\PDO\Composite`
 
 ## Errors
 

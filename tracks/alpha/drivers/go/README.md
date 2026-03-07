@@ -4,9 +4,9 @@ ScratchBird native wire protocol driver for Go (`database/sql`).
 
 ## Documentation
 
-- Getting started: `docs/getting-started/go.md`
-- API reference: `docs/api-reference/go.md`
-- Baseline requirement mapping (S0): `BASELINE_REQUIREMENT_MAPPING.md`
+- [Getting started](../../../../docs/getting-started/go.md)
+- [API reference](../../../../docs/api-reference/go.md)
+- [Baseline requirement mapping (S0)](BASELINE_REQUIREMENT_MAPPING.md)
 
 ## Build/Test (Windows/Linux)
 

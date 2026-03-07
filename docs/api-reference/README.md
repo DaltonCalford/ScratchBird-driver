@@ -3,8 +3,12 @@
 This section captures the public API surface for each driver. The canonical
 protocol behavior is defined by the specs in `docs/specifications/`.
 
+Where an older specification or planning note differs from an API page here,
+the driver API page reflects the currently implemented public surface.
+
 ## Driver API References
 
+- [C/C++](cpp.md)
 - [Go](go.md)
 - [Python](python.md)
 - [Node.js](node.md)
@@ -15,6 +19,7 @@ protocol behavior is defined by the specs in `docs/specifications/`.
 - [Pascal/Delphi](pascal.md)
 - [.NET](dotnet.md)
 - [JDBC (Java)](jdbc.md)
+- [ODBC](odbc.md)
 - [Elixir (Ecto)](elixir.md)
 - [Swift](swift.md)
 - [Dart](dart.md)

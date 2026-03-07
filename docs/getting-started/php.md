@@ -2,7 +2,10 @@
 
 ## Install
 
+For repo-local development:
+
 ```bash
+cd tracks/alpha/drivers/php
 composer install
 ```
 
@@ -18,23 +21,24 @@ $row = $stmt->fetch();
 
 ## Connection Strings
 
-URI:
+Direct/native:
 
 ```
-scratchbird://user:password@host:3092/database?sslmode=require
+scratchbird://user:password@host:3092/database?sslmode=prefer
 ```
 
-Key-value:
+Manager-proxy:
 
 ```
-host=localhost port=3092 dbname=mydb user=myuser password=mypass
+scratchbird://user:password@host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
 ```
 
-See [DSN and config standard](../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md).
+Current lane behavior:
 
-## TLS
-
-TLS 1.3 is required. `sslmode=disable` is rejected.
+- Direct DSNs accept the standard `sslmode` values, including `disable`.
+- Compatibility startup keys include `binary_transfer=false` and
+  `compression=zstd|none|off`.
+- Manager-proxy and auth-plugin startup keys are supported.
 
 ## Tests
 

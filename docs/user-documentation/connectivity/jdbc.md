@@ -30,6 +30,12 @@ Jar output: `tracks/alpha/drivers/jdbc/build/libs/scratchbird-jdbc.jar`
 jdbc:scratchbird://host[:port]/database
 ```
 
+Manager-proxy example:
+
+```
+jdbc:scratchbird://host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
+```
+
 ---
 
 ## SSL/TLS Options
@@ -41,6 +47,20 @@ sslmode=disable|allow|prefer|require|verify-ca|verify-full
 sslrootcert=/path/to/ca.pem
 sslcert=/path/to/client-keystore.p12
 sslpassword=keystore_password
+```
+
+Compatibility and startup options commonly used with the current JDBC lane:
+
+```
+binaryTransfer=false
+compression=zstd|none|off
+client_flags=256
+auth_method_payload=opaque-token
+auth_required_methods=scratchbird.auth.scram_sha_256
+auth_forbidden_methods=scratchbird.auth.password_compat
+auth_require_channel_binding=true
+workload_identity_token=jwt
+proxy_principal_assertion=signed-assertion
 ```
 
 ---
@@ -71,4 +91,3 @@ Connection conn = DriverManager.getConnection(
 - [API reference](../../api-reference/jdbc.md)
 - [DSN and config standard](../../specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md)
 - [JDBC driver specification](../../specifications/drivers/JDBC_DRIVER_SPECIFICATION.md)
-
