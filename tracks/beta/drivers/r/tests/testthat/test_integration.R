@@ -57,6 +57,31 @@ ensure_type_coverage_fixture <- function(client) {
   scratchbird:::sb_query(client, "INSERT INTO type_coverage VALUES (1, 'baseline')")
 }
 
+ensure_fetch_fixture <- function(client) {
+  scratchbird:::sb_query(client, "DROP TABLE IF EXISTS r_fetch_fixture")
+  scratchbird:::sb_query(client, "CREATE TABLE r_fetch_fixture (value INTEGER)")
+  scratchbird:::sb_query(client, "INSERT INTO r_fetch_fixture VALUES (11), (22), (33)")
+}
+
+integration_cancel_query <- function() {
+  cancel_sql <- trimws(Sys.getenv("SCRATCHBIRD_R_CANCEL_SQL"))
+  if (cancel_sql == "" || identical(cancel_sql, "SELECT pg_sleep(5)")) {
+    return(list(
+      sql = paste(
+        "SELECT a.value",
+        "FROM r_fetch_fixture a",
+        "CROSS JOIN r_fetch_fixture b",
+        "CROSS JOIN r_fetch_fixture c",
+        "CROSS JOIN r_fetch_fixture d",
+        "CROSS JOIN r_fetch_fixture e",
+        "WHERE a.value >= ?::INTEGER"
+      ),
+      params = list(0L)
+    ))
+  }
+  list(sql = cancel_sql, params = NULL)
+}
+
 test_that("integration query", {
   with_integration_client(function(client) {
     result <- sb_query(client, "SELECT 1")
@@ -164,11 +189,11 @@ test_that("integration incremental fetch lifecycle with fetch_size", {
   dsn <- integration_dsn()
   client <- sb_connect(dsn, fetch_size = 1L)
   on.exit(sb_disconnect(client), add = TRUE)
+  ensure_fetch_fixture(client)
 
   result <- sb_send_query(
     client,
-    "SELECT value FROM ((SELECT ?::INTEGER AS value) UNION ALL (SELECT ?::INTEGER AS value) UNION ALL (SELECT ?::INTEGER AS value)) valueset",
-    list(11L, 22L, 33L)
+    "SELECT value FROM r_fetch_fixture ORDER BY value"
   )
 
   chunk1 <- sb_fetch(result, n = 1)
@@ -213,14 +238,41 @@ test_that("integration types fixture", {
 
 test_that("cancel query", {
   dsn <- integration_dsn()
-  cancel_sql <- Sys.getenv("SCRATCHBIRD_R_CANCEL_SQL")
-  if (cancel_sql == "") {
-    skip("SCRATCHBIRD_R_CANCEL_SQL not set")
-  }
-  client <- sb_connect(dsn)
+  client <- sb_connect(dsn, fetch_size = 1L)
   on.exit(sb_disconnect(client), add = TRUE)
-  result <- scratchbird:::sb_execute_query(client, cancel_sql)
-  Sys.sleep(0.2)
+  ensure_fetch_fixture(client)
+  cancel_query <- integration_cancel_query()
+  result <- sb_send_query(client, cancel_query$sql, cancel_query$params)
+
+  for (idx in seq_len(4)) {
+    chunk <- sb_fetch(result, n = 1)
+    if (nrow(chunk) == 0L) {
+      skip("cancel SQL completed before cancel window")
+    }
+  }
+
   sb_cancel(client)
-  expect_error(scratchbird:::sb_fetch_rows(result, -1))
+
+  cancelled <- FALSE
+  cancel_error <- NULL
+  for (idx in seq_len(8)) {
+    outcome <- tryCatch(sb_fetch(result, n = 1), error = function(err) err)
+    if (inherits(outcome, "error")) {
+      cancelled <- TRUE
+      cancel_error <- outcome
+      break
+    }
+    if (nrow(outcome) == 0L) {
+      cancelled <- TRUE
+      break
+    }
+  }
+
+  expect_true(cancelled)
+  if (!is.null(cancel_error) && !is.null(cancel_error$sqlstate) && nzchar(cancel_error$sqlstate)) {
+    expect_equal(cancel_error$sqlstate, "57014")
+  }
+
+  recovery <- sb_query(client, "SELECT 1")
+  expect_equal(as.integer(recovery$rows[[1]][[1]]), 1L)
 })

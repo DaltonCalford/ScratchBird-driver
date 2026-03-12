@@ -34,6 +34,8 @@ sb_connect <- function(dsn = "", ...) {
   client$autocommit <- TRUE
   client$txn_active <- FALSE
   client$explicit_txn <- FALSE
+  client$cancel_requested <- FALSE
+  client$needs_reconnect <- FALSE
   if (identical(cfg$front_door_mode, "manager_proxy")) {
     sb_perform_manager_connect(client)
   }
@@ -49,6 +51,8 @@ sb_disconnect <- function(client) {
   client$txn_id <- 0
   client$txn_active <- FALSE
   client$explicit_txn <- FALSE
+  client$cancel_requested <- FALSE
+  client$needs_reconnect <- FALSE
 }
 
 sb_set_autocommit <- function(client, value) {
@@ -57,6 +61,39 @@ sb_set_autocommit <- function(client, value) {
 
 sb_is_valid <- function(client) {
   !is.null(client$con)
+}
+
+sb_prepare_connection <- function(client) {
+  if (!isTRUE(client$needs_reconnect) && !is.null(client$con)) {
+    return(invisible(NULL))
+  }
+
+  if (!is.null(client$con)) {
+    try(sb_socket_close(client$con), silent = TRUE)
+  }
+
+  client$con <- sb_open_socket(client$cfg)
+  client$attachment_id <- raw(16)
+  client$txn_id <- 0
+  client$sequence <- 0
+  client$last_query_sequence <- 0
+  client$parameters <- list()
+  client$last_plan <- NULL
+  client$last_sblr <- NULL
+  client$prepared <- new.env(parent = emptyenv())
+  client$autocommit <- TRUE
+  client$txn_active <- FALSE
+  client$explicit_txn <- FALSE
+  client$cancel_requested <- FALSE
+
+  if (identical(client$cfg$front_door_mode, "manager_proxy")) {
+    sb_perform_manager_connect(client)
+  }
+  sb_startup_and_auth(client)
+  sb_ensure_implicit_transaction(client)
+  sb_apply_schema(client)
+  client$needs_reconnect <- FALSE
+  invisible(NULL)
 }
 
 sb_query <- function(client, sql, params = NULL) {
@@ -88,8 +125,17 @@ sb_clear_result <- function(result) {
 }
 
 sb_cancel <- function(client) {
+  client$cancel_requested <- TRUE
   payload <- build_cancel_payload(0L, client$last_query_sequence)
-  sb_send_message(client, SB_MSG_CANCEL, payload, SB_MSG_FLAG_URGENT, FALSE)
+  if (!is.null(client$con)) {
+    try(sb_send_message(client, SB_MSG_CANCEL, payload, SB_MSG_FLAG_URGENT, FALSE), silent = TRUE)
+    try(sb_socket_close(client$con), silent = TRUE)
+  }
+  client$con <- NULL
+  client$txn_active <- FALSE
+  client$explicit_txn <- FALSE
+  client$needs_reconnect <- TRUE
+  invisible(NULL)
 }
 
 sb_begin <- function(client, ...) {
@@ -171,6 +217,7 @@ sb_set_option <- function(client, name, value) {
 }
 
 sb_ping <- function(client) {
+  sb_prepare_connection(client)
   sb_send_message(client, SB_MSG_PING, raw(), 0L, FALSE)
   repeat {
     response <- sb_recv_message(client)
@@ -204,6 +251,7 @@ sb_unsubscribe <- function(client, channel) {
 }
 
 sb_execute_sblr <- function(client, sblr_hash, sblr_bytecode, params = list()) {
+  sb_prepare_connection(client)
   encoded <- lapply(params, function(param) encode_param(param)$param)
   payload <- build_sblr_execute_payload(sblr_hash, sblr_bytecode, encoded)
   client$last_plan <- NULL
@@ -515,6 +563,7 @@ quote_identifier <- function(name) {
 }
 
 sb_execute_query <- function(client, sql, params = list()) {
+  sb_prepare_connection(client)
   sb_ensure_implicit_transaction(client)
   page_size <- if (!is.null(client$cfg$fetch_size) && client$cfg$fetch_size > 0) client$cfg$fetch_size else 0L
   if (length(params) == 0) {
@@ -580,6 +629,21 @@ sb_prime_result_metadata <- function(result) {
 }
 
 sb_result_next_row <- function(result) {
+  if (isTRUE(result$client$cancel_requested)) {
+    result$client$cancel_requested <- FALSE
+    result$done <- TRUE
+    stop(structure(
+      list(
+        message = "[57014] query canceled",
+        call = NULL,
+        sqlstate = "57014",
+        detail = "",
+        hint = "",
+        severity = "ERROR"
+      ),
+      class = sb_error_condition_classes("57014")
+    ))
+  }
   if (isTRUE(result$done)) return(NULL)
   if (is.null(result$pending_rows)) result$pending_rows <- list()
   if (length(result$pending_rows) > 0) {
