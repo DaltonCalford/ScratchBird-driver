@@ -23,7 +23,9 @@ Core drivers (Go, Node, Python, Ruby, Rust, PHP, R, Pascal, .NET, JDBC, ODBC) im
 
 Common gaps (where applicable):
 - Error mapping is class-prefix based in most drivers (SQLSTATE class only), not full SQLSTATE-by-code mapping.
-- Type mapping coverage varies by driver; C++/Dart/Swift/Elixir/Mojo are missing large portions of the type matrix.
+- Type mapping coverage varies by driver; Dart/Swift/Elixir/Mojo are still
+  missing large portions of the type matrix, while the C/C++ lane now exposes
+  the required PH5 public type/metadata surface.
 - Metadata helper queries are present for most language drivers, but Superset/Metabase require further alignment with sys.columns/sys.index_columns now that the server schema is finalized.
 
 ## Driver Audit
@@ -31,10 +33,17 @@ Common gaps (where applicable):
 ### C/C++ (libscratchbird_client) `tracks/beta/drivers/cpp/`
 Implemented:
 - SBWP v1.1 framing, SCRAM, PARSE/BIND/EXECUTE, portal paging, notifications.
+- C API `SET_OPTION`/`PING`, metadata helpers, typed/public result metadata,
+  and binary-backed complex-type access.
+- C++ wrapper metadata helpers for `schemas`, `tables`, `columns`, `indexes`,
+  and DDL-editor schema payload shaping.
+- C++ wrapper transaction state tracking aligned to ScratchBird's
+  always-in-transaction session model.
 Outstanding:
-- Type mapping coverage is limited to a small subset of SBWP types in the public C API.
-- No sys.* metadata helpers or higher-level metadata API.
-- No direct SET_OPTION/PING helpers exposed at C API level.
+- Listener-mediated/IP transport is the intended boundary; broader
+  embedded/named-pipe expansion is outside the currently supported lane.
+- Full SQLSTATE-by-code remapping remains part of the broader cross-driver
+  portfolio work, not a unique C/C++ blocker.
 
 ### ODBC `tracks/alpha/drivers/odbc/`
 Implemented:

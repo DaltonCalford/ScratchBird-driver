@@ -213,7 +213,7 @@ module Scratchbird
         return parse_unknown_text(decode_text_value(data)) if format == FORMAT_TEXT
         return decode_unknown_binary(data)
       end
-      return decode_text_value(data) if format == FORMAT_TEXT
+      return decode_text_typed_value(type_oid, data) if format == FORMAT_TEXT
       decode_binary_value(type_oid, data)
     end
 
@@ -258,6 +258,9 @@ module Scratchbird
     end
 
     def self.decode_binary_value(type_oid, data)
+      text_fallback = maybe_decode_binary_text_value(type_oid, data)
+      return text_fallback unless text_fallback.nil?
+
       case type_oid
       when OID_BOOL
         data.getbyte(0) == 1
@@ -307,12 +310,60 @@ module Scratchbird
       end
     end
 
+    def self.maybe_decode_binary_text_value(type_oid, data)
+      candidates = []
+      trimmed = strip_trailing_nulls(data)
+      if trimmed.bytesize.positive? && looks_like_text(trimmed)
+        candidates << trimmed
+      end
+      if data.bytesize >= 4
+        stripped = strip_length_prefixed(data)
+        if stripped != data && stripped.bytesize.positive? && looks_like_text(stripped)
+          candidates << stripped
+        end
+      end
+      candidates.each do |candidate|
+        begin
+          return decode_text_typed_value(type_oid, candidate)
+        rescue StandardError
+          next
+        end
+      end
+      nil
+    end
+
     def self.decode_text_value(data)
       if data.bytesize >= 4
         length = data.byteslice(0, 4).unpack1("V")
         return data.byteslice(4, length).to_s if length <= data.bytesize - 4
       end
       data
+    end
+
+    def self.decode_text_typed_value(type_oid, data)
+      text = decode_text_value(data).to_s
+      stripped = text.strip
+      case type_oid
+      when OID_BOOL
+        lowered = stripped.downcase
+        return true if lowered == "true" || lowered == "t" || stripped == "1"
+        return false if lowered == "false" || lowered == "f" || stripped == "0"
+        text
+      when OID_INT2, OID_INT4, OID_INT8
+        Integer(stripped, 10)
+      when OID_FLOAT4, OID_FLOAT8
+        Float(stripped)
+      when OID_NUMERIC, OID_MONEY
+        BigDecimal(stripped)
+      when OID_JSONB
+        JSONB.new(stripped)
+      when OID_BYTEA
+        stripped
+      when OID_SB_VECTOR
+        parse_vector_literal(stripped)
+      else
+        text
+      end
     end
 
     def self.decode_unknown_binary(data)

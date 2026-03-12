@@ -53,9 +53,9 @@ Driver-specific blockers:
 
 ### Phase 3 - C/C++ Client Coverage
 
-- [ ] Expand C API type coverage to full SBWP matrix
-- [ ] Expose SET_OPTION and PING helpers in C API
-- [ ] Add sys.* metadata helper queries or bindings
+- [x] Expand C API type coverage to the required PH5 public SBWP matrix
+- [x] Expose SET_OPTION and PING helpers in C API
+- [x] Add sys.* metadata helper queries/bindings and C++ object-surface helpers
 
 ### Phase 4 - BI Drivers (Superset/Metabase)
 

@@ -1278,11 +1278,29 @@ const char* sb_get_string(sb_row* row, int column, size_t* length) {
         }
         return nullptr;
     }
-    if (value.type == SB_TYPE_BLOB) {
+    switch (value.type) {
+        case SB_TYPE_BLOB:
+        case SB_TYPE_GEOMETRY:
+        case SB_TYPE_ARRAY:
+        case SB_TYPE_COMPOSITE:
+        case SB_TYPE_RANGE:
+        case SB_TYPE_VECTOR:
+        case SB_TYPE_INET:
+        case SB_TYPE_CIDR:
+        case SB_TYPE_MACADDR:
+        case SB_TYPE_UNKNOWN:
+            if (length) {
+                *length = value.data.binary_val.length;
+            }
+            return reinterpret_cast<const char*>(value.data.binary_val.data);
+        default:
+            break;
+    }
+    if (value.data.string_val.data == nullptr) {
         if (length) {
-            *length = value.data.binary_val.length;
+            *length = 0;
         }
-        return reinterpret_cast<const char*>(value.data.binary_val.data);
+        return nullptr;
     }
     if (length) {
         *length = value.data.string_val.length;

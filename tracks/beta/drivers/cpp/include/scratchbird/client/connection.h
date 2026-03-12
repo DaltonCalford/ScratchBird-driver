@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "scratchbird/client/scratchbird_client.h"
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
 
@@ -61,9 +62,12 @@ struct ConnectionConfig {
 
 struct ColumnMeta {
     std::string name;
+    sb_type type{SB_TYPE_UNKNOWN};
     uint32_t type_oid{0};
     int32_t type_modifier{0};
     size_t index{0};
+    uint8_t format{0};
+    bool nullable{true};
 };
 
 class ResultSetImpl;
@@ -81,6 +85,10 @@ public:
     size_t getColumnCount() const;
     std::string getColumnName(size_t index) const;
     int getColumnIndex(const std::string& name) const;
+    sb_type getColumnType(size_t index) const;
+    uint32_t getColumnTypeOid(size_t index) const;
+    uint8_t getColumnFormat(size_t index) const;
+    bool isColumnNullable(size_t index) const;
     const std::vector<ColumnMeta>& getColumns() const;
     int64_t getRowCount() const;
     int64_t getRowsAffected() const;
@@ -166,6 +174,28 @@ public:
     core::Status execute(const std::string& sql,
                          int64_t* rows_affected = nullptr,
                          core::ErrorContext* ctx = nullptr);
+    core::Status metadataQuery(const std::string& collection_name,
+                               ResultSet* results,
+                               core::ErrorContext* ctx = nullptr);
+    core::Status schemas(ResultSet* results,
+                         const std::string& schema_pattern = "",
+                         core::ErrorContext* ctx = nullptr);
+    core::Status tables(ResultSet* results,
+                        const std::string& schema_pattern = "",
+                        const std::string& table_pattern = "",
+                        core::ErrorContext* ctx = nullptr);
+    core::Status columns(ResultSet* results,
+                         const std::string& schema_pattern = "",
+                         const std::string& table_pattern = "",
+                         core::ErrorContext* ctx = nullptr);
+    core::Status indexes(ResultSet* results,
+                         const std::string& schema_pattern = "",
+                         const std::string& table_pattern = "",
+                         core::ErrorContext* ctx = nullptr);
+    core::Status metadataSchemaPayload(const std::string* schema_pattern,
+                                       bool expand_schema_parents,
+                                       std::string* payload_json,
+                                       core::ErrorContext* ctx = nullptr);
 
     core::Status beginTransaction(core::ErrorContext* ctx = nullptr);
     core::Status commit(core::ErrorContext* ctx = nullptr);

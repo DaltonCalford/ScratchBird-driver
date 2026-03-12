@@ -23,6 +23,13 @@ module Scratchbird
       rewrite_named(sql, params)
     end
 
+    def self.normalize_prepared_sql(sql)
+      return rewrite_placeholder_sql(sql) if sql.include?("?")
+      return rewrite_named_placeholder_sql(sql) if has_named_params?(sql)
+
+      sql
+    end
+
     def self.normalize_callable(sql, params = nil)
       callable_sql = normalize_callable_sql(sql)
       normalize(callable_sql, params)
@@ -138,6 +145,60 @@ module Scratchbird
       end
       raise ArgumentError, "too many parameters" if idx < params.length
       NormalizedQuery.new(sql: out, params: ordered)
+    end
+
+    def self.rewrite_placeholder_sql(sql)
+      out = +""
+      index = 0
+      in_string = false
+      i = 0
+      while i < sql.length
+        ch = sql[i]
+        if ch == "'"
+          in_string = !in_string
+          out << ch
+          i += 1
+          next
+        end
+        if !in_string && ch == "?"
+          index += 1
+          out << "$#{index}"
+          i += 1
+          next
+        end
+        out << ch
+        i += 1
+      end
+      out
+    end
+
+    def self.rewrite_named_placeholder_sql(sql)
+      out = +""
+      in_string = false
+      index = 0
+      i = 0
+      while i < sql.length
+        ch = sql[i]
+        if ch == "'"
+          in_string = !in_string
+          out << ch
+          i += 1
+          next
+        end
+        unless in_string
+          if (ch == ":" || ch == "@") && i + 1 < sql.length && ident_start?(sql[i + 1])
+            j = i + 1
+            j += 1 while j < sql.length && ident_part?(sql[j])
+            index += 1
+            out << "$#{index}"
+            i = j
+            next
+          end
+        end
+        out << ch
+        i += 1
+      end
+      out
     end
 
     def self.ident_start?(ch)

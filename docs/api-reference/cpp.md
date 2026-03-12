@@ -70,6 +70,8 @@ Namespace: `scratchbird::client`
 
 - `connect(...)`, `disconnect()`, `isConnected()`, `getState()`
 - `executeQuery(...)`, `execute(...)`
+- `metadataQuery(...)`, `schemas(...)`, `tables(...)`, `columns(...)`,
+  `indexes(...)`, `metadataSchemaPayload(...)`
 - `beginTransaction()`, `commit()`, `rollback()`
 - `savepoint()`, `releaseSavepoint()`, `rollbackTo()`
 - `setAutoCommit()`, `getAutoCommit()`, `inTransaction()`
@@ -99,6 +101,8 @@ Core value containers:
 - `sb_error`, `sb_value`, `sb_column_meta`, `sb_txn_options`
 - `sb_type` includes scalar, temporal, JSON/JSONB, geometry, range, array,
   composite, vector, and network types.
+- `ResultSet` column metadata now carries mapped `sb_type`, `type_oid`,
+  binary/text format, and nullability.
 
 ## Errors
 

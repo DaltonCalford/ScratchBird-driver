@@ -41,6 +41,7 @@ type
     FHasLastInsertId: Boolean;
   public
     constructor Create(Client: TObject);
+    destructor Destroy; override;
     function ReadRow: TArray<Variant>;
     property Columns: TArray<TColumnInfo> read FColumns;
     property RowsAffected: Int64 read FRowsAffected;
@@ -106,6 +107,7 @@ type
     FConnected: Boolean;
     FAttachmentId: TBytes;
     FTxnId: UInt64;
+    FTransactionActive: Boolean;
     FSequence: Cardinal;
     FLastQuerySequence: Cardinal;
     FLastMaxRows: Cardinal;
@@ -147,6 +149,8 @@ type
     function ParseUuidBytes(const Value: string): TBytes;
     procedure EnsureConnected;
     procedure EnsureTransactionActive(const Operation: string);
+    procedure ApplyRuntimeTxnId(TxnId: UInt64);
+    procedure ClearTransactionState;
     function NormalizeSavepointName(const Name: string): string;
     function NormalizeSqlText(const Sql: string): string;
     procedure EnqueueNotification(const Notice: TNotification);
@@ -396,6 +400,20 @@ begin
   FHasLastInsertId := False;
 end;
 
+destructor TScratchBirdResultStream.Destroy;
+begin
+  if not FDone then
+  begin
+    try
+      while ReadRow <> nil do
+      begin
+      end;
+    except
+    end;
+  end;
+  inherited Destroy;
+end;
+
 function TScratchBirdResultStream.ReadRow: TArray<Variant>;
 var
   Client: TScratchBirdClient;
@@ -467,6 +485,7 @@ begin
   FillChar(FAttachmentId[0], 16, 0);
   FSequence := 0;
   FTxnId := 0;
+  FTransactionActive := False;
   FLastMaxRows := 0;
   FParameters := TStringList.Create;
   FHasLastPlan := False;
@@ -501,7 +520,10 @@ begin
   inherited Create;
   InitializeClient(Transport);
   if StartConnected then
+  begin
     FConnected := True;
+    FTransactionActive := True;
+  end;
 end;
 
 destructor TScratchBirdClient.Destroy;
@@ -551,8 +573,9 @@ begin
   if FConfig.FrontDoorMode = 'manager_proxy' then
     PerformManagerConnect;
   HandshakeAndAuth;
-  ApplySchema;
   FConnected := True;
+  FTransactionActive := True;
+  ApplySchema;
   if Assigned(FLeakDetector) then
     FLeakDetector.Checkout(FConnectionId, []);
 end;
@@ -563,7 +586,7 @@ begin
     Exit;
   FTransport.Disconnect;
   FConnected := False;
-  FTxnId := 0;
+  ClearTransactionState;
   SetLength(FNotificationQueue, 0);
   if Length(FAttachmentId) = 16 then
     FillChar(FAttachmentId[0], 16, 0);
@@ -597,8 +620,6 @@ var
   Payload: TBytes;
 begin
   EnsureConnected;
-  if FTxnId <> 0 then
-    raise EScratchbirdTransactionError.CreateWithInfo('transaction already active', '25000', '', '');
   Flags := TXN_FLAG_HAS_ISOLATION;
   if AccessMode <> 0 then
     Flags := Flags or TXN_FLAG_HAS_ACCESS;
@@ -614,30 +635,33 @@ begin
     Ord(Deferrable), Ord(WaitMode), TimeoutMs);
   SendMessage(MSG_TXN_BEGIN, Payload, 0, False);
   DrainUntilReady;
+  FTransactionActive := True;
 end;
 
 procedure TScratchBirdClient.Commit(Flags: Byte = 0);
 var
   Payload: TBytes;
 begin
-  if FTxnId = 0 then
+  if not FConnected then
     Exit;
   EnsureConnected;
   Payload := BuildTxnCommitPayload(Flags);
   SendMessage(MSG_TXN_COMMIT, Payload, 0, False);
   DrainUntilReady;
+  FTransactionActive := True;
 end;
 
 procedure TScratchBirdClient.Rollback(Flags: Byte = 0);
 var
   Payload: TBytes;
 begin
-  if FTxnId = 0 then
+  if not FConnected then
     Exit;
   EnsureConnected;
   Payload := BuildTxnRollbackPayload(Flags);
   SendMessage(MSG_TXN_ROLLBACK, Payload, 0, False);
   DrainUntilReady;
+  FTransactionActive := True;
 end;
 
 procedure TScratchBirdClient.Savepoint(const Name: string);
@@ -694,12 +718,12 @@ begin
     case Msg.MsgType of
       MSG_PONG:
         Exit;
-      MSG_READY:
-        begin
-          ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          FTxnId := TxnId;
-          Exit;
-        end;
+        MSG_READY:
+          begin
+            ParseReady(Msg.Payload, Status, TxnId, Visibility);
+          ApplyRuntimeTxnId(TxnId);
+            Exit;
+          end;
       MSG_ERROR:
         raise BuildQueryError(Msg.Payload);
     end;
@@ -881,6 +905,7 @@ procedure TScratchBirdClient.ExecSQLParams(const Sql: string; const Params: arra
 var
   Span: TSpanContext;
   SqlText: string;
+  OrderedParams: TArray<TScratchBirdParamInput>;
 begin
   SqlText := NormalizeSqlText(Sql);
   EnsureConnected;
@@ -892,7 +917,8 @@ begin
     end
     else
     begin
-      SendExtendedQuery(SqlText, Params, 0);
+      SqlText := NormalizePositionalSql(SqlText, Params, OrderedParams);
+      SendExtendedQuery(SqlText, OrderedParams, 0);
     end;
     DrainUntilReady;
     EndOperation(Span, True);
@@ -914,6 +940,7 @@ function TScratchBirdClient.ExecuteQueryParams(const Sql: string; const Params: 
 var
   Span: TSpanContext;
   SqlText: string;
+  OrderedParams: TArray<TScratchBirdParamInput>;
 begin
   SqlText := NormalizeSqlText(Sql);
   EnsureConnected;
@@ -922,7 +949,10 @@ begin
     if Length(Params) = 0 then
       SendSimpleQuery(SqlText, Cardinal(FConfig.FetchSize))
     else
-      SendExtendedQuery(SqlText, Params, Cardinal(FConfig.FetchSize));
+    begin
+      SqlText := NormalizePositionalSql(SqlText, Params, OrderedParams);
+      SendExtendedQuery(SqlText, OrderedParams, Cardinal(FConfig.FetchSize));
+    end;
     Result := TScratchBirdResultStream.Create(Self);
     EndOperation(Span, True);
   except
@@ -1565,7 +1595,7 @@ begin
           begin
             ParseAuthOk(Msg.Payload, SessionId, ServerInfo);
             FAttachmentId := Msg.AttachmentId;
-            FTxnId := Msg.TxnId;
+            ApplyRuntimeTxnId(Msg.TxnId);
             if (Scram <> nil) and (Length(ServerInfo) > 0) then
               Scram.VerifyServerFinal(TEncoding.UTF8.GetString(ServerInfo));
             Continue;
@@ -1579,7 +1609,7 @@ begin
         MSG_READY:
           begin
             ParseReady(Msg.Payload, Status, TxnId, Visibility);
-            FTxnId := TxnId;
+            ApplyRuntimeTxnId(TxnId);
             Exit;
           end;
         MSG_ERROR:
@@ -1614,7 +1644,7 @@ begin
   if SameText(Name, 'current_txn_id') then
   begin
     if TryStrToUInt64(Value, Parsed) then
-      FTxnId := Parsed;
+      ApplyRuntimeTxnId(Parsed);
   end;
 end;
 
@@ -1830,8 +1860,23 @@ end;
 
 procedure TScratchBirdClient.EnsureTransactionActive(const Operation: string);
 begin
-  if FTxnId = 0 then
+  if (not FConnected) or (not FTransactionActive) then
     raise EScratchbirdTransactionError.CreateWithInfo(Operation + ' requires an active transaction', '25000', '', '');
+end;
+
+procedure TScratchBirdClient.ApplyRuntimeTxnId(TxnId: UInt64);
+begin
+  FTxnId := TxnId;
+  if FConnected then
+    FTransactionActive := True
+  else
+    FTransactionActive := TxnId <> 0;
+end;
+
+procedure TScratchBirdClient.ClearTransactionState;
+begin
+  FTransactionActive := False;
+  FTxnId := 0;
 end;
 
 function TScratchBirdClient.NormalizeSavepointName(const Name: string): string;
@@ -1897,7 +1942,7 @@ begin
       MSG_READY:
         begin
           ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          FTxnId := TxnId;
+          ApplyRuntimeTxnId(TxnId);
           Exit;
         end;
     end;
@@ -1932,7 +1977,7 @@ begin
       MSG_READY:
         begin
           ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          FTxnId := TxnId;
+          ApplyRuntimeTxnId(TxnId);
           Exit;
         end;
     end;

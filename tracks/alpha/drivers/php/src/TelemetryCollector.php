@@ -161,15 +161,16 @@ class TelemetryCollector {
     public function exportPrometheusMetrics(): string {
         $m = $this->getMetrics();
         $h = $m['latencyHistogram'];
-        return <<<METRICS
-# HELP scratchbird_queries_total Total number of queries
-# TYPE scratchbird_queries_total counter
-scratchbird_queries_total {$m['totalQueries']}
-# HELP scratchbird_query_duration_ms Query duration histogram
-# TYPE scratchbird_query_duration_ms histogram
-scratchbird_query_duration_ms_bucket{le="10"} {$h->ms0_10}
-scratchbird_query_duration_ms_bucket{le="100"} {$h->ms0_10 + $h->ms10_100}
-scratchbird_query_duration_ms_bucket{le="1000"} {$h->ms0_10 + $h->ms10_100 + $h->ms100_1000}
-METRICS;
+        $bucket10 = $h->ms0_10;
+        $bucket100 = $h->ms0_10 + $h->ms10_100;
+        $bucket1000 = $h->ms0_10 + $h->ms10_100 + $h->ms100_1000;
+        return "# HELP scratchbird_queries_total Total number of queries\n"
+            . "# TYPE scratchbird_queries_total counter\n"
+            . "scratchbird_queries_total {$m['totalQueries']}\n"
+            . "# HELP scratchbird_query_duration_ms Query duration histogram\n"
+            . "# TYPE scratchbird_query_duration_ms histogram\n"
+            . "scratchbird_query_duration_ms_bucket{le=\"10\"} {$bucket10}\n"
+            . "scratchbird_query_duration_ms_bucket{le=\"100\"} {$bucket100}\n"
+            . "scratchbird_query_duration_ms_bucket{le=\"1000\"} {$bucket1000}\n";
     }
 }

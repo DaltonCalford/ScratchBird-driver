@@ -372,6 +372,108 @@ bool resolveMetadataCollectionQuery(
     return true;
 }
 
+namespace {
+
+bool hasPatternText(const std::string* pattern) {
+    return pattern != nullptr && !trim(*pattern).empty();
+}
+
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+        out.push_back(ch);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+} // namespace
+
+std::string buildMetadataSchemasQuerySql(const std::string* schema_pattern) {
+    if (!hasPatternText(schema_pattern)) {
+        return kMetadataSchemasQuery;
+    }
+
+    return "SELECT schema_id, schema_name, owner_id, default_tablespace_id "
+           "FROM sys.schemas "
+           "WHERE is_valid = 1 AND schema_name LIKE " +
+           quoteSqlLiteral(trim(*schema_pattern)) +
+           " ORDER BY schema_name";
+}
+
+std::string buildMetadataTablesQuerySql(const std::string* schema_pattern,
+                                        const std::string* table_pattern) {
+    if (!hasPatternText(schema_pattern) && !hasPatternText(table_pattern)) {
+        return kMetadataTablesQuery;
+    }
+
+    std::string sql =
+        "SELECT t.table_id, t.schema_id, t.table_name, t.table_type, t.owner_id "
+        "FROM sys.tables t "
+        "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE t.is_valid = 1 AND s.is_valid = 1";
+    if (hasPatternText(schema_pattern)) {
+        sql += " AND s.schema_name LIKE " + quoteSqlLiteral(trim(*schema_pattern));
+    }
+    if (hasPatternText(table_pattern)) {
+        sql += " AND t.table_name LIKE " + quoteSqlLiteral(trim(*table_pattern));
+    }
+    sql += " ORDER BY s.schema_name, t.table_name";
+    return sql;
+}
+
+std::string buildMetadataColumnsQuerySql(const std::string* schema_pattern,
+                                         const std::string* table_pattern) {
+    if (!hasPatternText(schema_pattern) && !hasPatternText(table_pattern)) {
+        return kMetadataColumnsQuery;
+    }
+
+    std::string sql =
+        "SELECT c.column_id, c.table_id, c.column_name, c.data_type_id, c.data_type_name, "
+        "c.ordinal_position, c.is_nullable, c.default_value, c.domain_id, "
+        "c.collation_id, c.charset_id, c.is_identity, c.is_generated, "
+        "c.generation_expression "
+        "FROM sys.columns c "
+        "JOIN sys.tables t ON t.table_id = c.table_id "
+        "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE c.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1";
+    if (hasPatternText(schema_pattern)) {
+        sql += " AND s.schema_name LIKE " + quoteSqlLiteral(trim(*schema_pattern));
+    }
+    if (hasPatternText(table_pattern)) {
+        sql += " AND t.table_name LIKE " + quoteSqlLiteral(trim(*table_pattern));
+    }
+    sql += " ORDER BY t.table_id, c.ordinal_position";
+    return sql;
+}
+
+std::string buildMetadataIndexesQuerySql(const std::string* schema_pattern,
+                                         const std::string* table_pattern) {
+    if (!hasPatternText(schema_pattern) && !hasPatternText(table_pattern)) {
+        return kMetadataIndexesQuery;
+    }
+
+    std::string sql =
+        "SELECT i.index_id, i.table_id, i.index_name, i.index_type, i.is_unique "
+        "FROM sys.indexes i "
+        "JOIN sys.tables t ON t.table_id = i.table_id "
+        "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+        "WHERE i.is_valid = 1 AND t.is_valid = 1 AND s.is_valid = 1";
+    if (hasPatternText(schema_pattern)) {
+        sql += " AND s.schema_name LIKE " + quoteSqlLiteral(trim(*schema_pattern));
+    }
+    if (hasPatternText(table_pattern)) {
+        sql += " AND t.table_name LIKE " + quoteSqlLiteral(trim(*table_pattern));
+    }
+    sql += " ORDER BY s.schema_name, t.table_name, i.index_name";
+    return sql;
+}
+
 std::string metadataCollectionNotSupportedMessage(const std::string& collection_name) {
     const std::string candidate = collection_name.empty()
         ? std::string(kDefaultMetadataCollection)

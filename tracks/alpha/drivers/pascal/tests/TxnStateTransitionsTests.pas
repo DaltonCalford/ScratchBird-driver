@@ -168,15 +168,10 @@ begin
     Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 5, nil, 0));
     Client.Commit;
 
-    try
-      Client.Savepoint('sp_after_commit');
-      Fail('savepoint after commit should fail without active txn');
-    except
-      on E: EScratchbirdTransactionError do
-        AssertEqualString('25000', E.SQLState, 'savepoint after commit SQLSTATE');
-    end;
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 6, nil, 0));
+    Client.Savepoint('sp_after_commit');
 
-    AssertEqualInt(5, Transport.WriteCount, 'commit lifecycle write count');
+    AssertEqualInt(6, Transport.WriteCount, 'commit lifecycle write count');
     DecodeOutboundType(Transport.WriteAt(0), MsgType);
     AssertTrue(MsgType = MSG_TXN_BEGIN, 'first write should be txn begin');
     DecodeOutboundType(Transport.WriteAt(1), MsgType);
@@ -187,12 +182,14 @@ begin
     AssertTrue(MsgType = MSG_TXN_ROLLBACK_TO, 'fourth write should be rollback to savepoint');
     DecodeOutboundType(Transport.WriteAt(4), MsgType);
     AssertTrue(MsgType = MSG_TXN_COMMIT, 'fifth write should be txn commit');
+    DecodeOutboundType(Transport.WriteAt(5), MsgType);
+    AssertTrue(MsgType = MSG_TXN_SAVEPOINT, 'sixth write should be savepoint in auto-started txn');
   finally
     Client.Free;
   end;
 end;
 
-procedure TestBeginRollbackClearsActiveTxnState;
+procedure TestBeginRollbackStartsNextTxnState;
 var
   Transport: TFakeTransport;
   Client: TScratchBirdClient;
@@ -207,19 +204,16 @@ begin
     Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
     Client.Rollback;
 
-    try
-      Client.ReleaseSavepoint('sp_after_rollback');
-      Fail('release savepoint after rollback should fail without active txn');
-    except
-      on E: EScratchbirdTransactionError do
-        AssertEqualString('25000', E.SQLState, 'release savepoint after rollback SQLSTATE');
-    end;
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 3, nil, 0));
+    Client.Savepoint('sp_after_rollback');
 
-    AssertEqualInt(2, Transport.WriteCount, 'rollback lifecycle write count');
+    AssertEqualInt(3, Transport.WriteCount, 'rollback lifecycle write count');
     DecodeOutboundType(Transport.WriteAt(0), MsgType);
     AssertTrue(MsgType = MSG_TXN_BEGIN, 'first write should be txn begin');
     DecodeOutboundType(Transport.WriteAt(1), MsgType);
     AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'second write should be txn rollback');
+    DecodeOutboundType(Transport.WriteAt(2), MsgType);
+    AssertTrue(MsgType = MSG_TXN_SAVEPOINT, 'third write should be savepoint in auto-started txn');
   finally
     Client.Free;
   end;
@@ -272,7 +266,7 @@ begin
   end;
 end;
 
-procedure TestBeginTransactionExConflictPathLeavesTxnInactive;
+procedure TestBeginTransactionExConflictPathRetainsTxnAvailability;
 var
   Transport: TFakeTransport;
   Client: TScratchBirdClient;
@@ -308,29 +302,27 @@ begin
     AssertTrue(MsgType = MSG_TXN_BEGIN, 'conflict path first write should be txn begin');
     AssertEqualBytes(ExpectedPayload, Payload, 'conflict path begin payload');
 
-    try
-      Client.Savepoint('sp_after_conflict');
-      Fail('savepoint after failed begin should fail without active txn');
-    except
-      on E: EScratchbirdTransactionError do
-        AssertEqualString('25000', E.SQLState, 'savepoint after failed begin SQLSTATE');
-    end;
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
+    Client.Savepoint('sp_after_conflict');
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9010, 0), 0, 2, nil, 9010));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9010, 0), 0, 3, nil, 9010));
     Client.BeginTransactionEx(ISOLATION_READ_COMMITTED, 0, False, False, 0, 0, 0);
 
     Flags := TXN_FLAG_HAS_ISOLATION;
     ExpectedPayload := BuildTxnBeginPayload(Flags, 0, 0, ISOLATION_READ_COMMITTED, 0, 0, 0, 0);
-    DecodeOutboundFrame(Transport.WriteAt(1), MsgType, Payload);
-    AssertTrue(MsgType = MSG_TXN_BEGIN, 'retry begin should emit txn begin');
+    DecodeOutboundType(Transport.WriteAt(1), MsgType);
+    AssertTrue(MsgType = MSG_TXN_SAVEPOINT, 'second write should be savepoint after failed begin');
+
+    DecodeOutboundFrame(Transport.WriteAt(2), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'third write should be retry begin');
     AssertEqualBytes(ExpectedPayload, Payload, 'retry begin payload');
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 3, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 4, nil, 0));
     Client.Rollback;
 
-    AssertEqualInt(3, Transport.WriteCount, 'conflict path lifecycle write count');
-    DecodeOutboundType(Transport.WriteAt(2), MsgType);
-    AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'third write should be rollback after retry begin');
+    AssertEqualInt(4, Transport.WriteCount, 'conflict path lifecycle write count');
+    DecodeOutboundType(Transport.WriteAt(3), MsgType);
+    AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'fourth write should be rollback after retry begin');
   finally
     Client.Free;
   end;
@@ -402,9 +394,9 @@ end;
 begin
   try
     TestBeginSavepointCommitLifecycleTransitions;
-    TestBeginRollbackClearsActiveTxnState;
+    TestBeginRollbackStartsNextTxnState;
     TestBeginTransactionExOptionMatrixEncodesPayload;
-    TestBeginTransactionExConflictPathLeavesTxnInactive;
+    TestBeginTransactionExConflictPathRetainsTxnAvailability;
     Writeln('TxnStateTransitionsTests: OK');
   except
     on E: Exception do

@@ -275,6 +275,9 @@ def decode_value(type_oid: int, data: Optional[bytes], format_code: int) -> Any:
 
 
 def _decode_binary_value(type_oid: int, data: bytes) -> Any:
+    text_fallback = _maybe_decode_binary_text_value(type_oid, data)
+    if text_fallback is not _NO_TEXT_FALLBACK:
+        return text_fallback
     if type_oid == OID_BOOL:
         return data[:1] == b"\x01"
     if type_oid == OID_INT2:
@@ -337,6 +340,26 @@ def _decode_binary_value(type_oid: int, data: bytes) -> Any:
     return data
 
 
+_NO_TEXT_FALLBACK = object()
+
+
+def _maybe_decode_binary_text_value(type_oid: int, data: bytes) -> Any:
+    candidates: list[bytes] = []
+    trimmed = data.rstrip(b"\x00")
+    if trimmed and _looks_like_text(trimmed):
+        candidates.append(trimmed)
+    if len(data) >= 4:
+        stripped = _strip_length_prefix(data)
+        if stripped != data and stripped and _looks_like_text(stripped):
+            candidates.append(stripped)
+    for candidate in candidates:
+        try:
+            return _decode_text_typed_value(type_oid, candidate)
+        except (ValueError, TypeError, struct.error, _decimal.InvalidOperation):
+            continue
+    return _NO_TEXT_FALLBACK
+
+
 def _decode_text_value(data: bytes) -> str:
     if len(data) >= 4:
         length = struct.unpack_from("<I", data, 0)[0]
@@ -361,6 +384,8 @@ def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
     if type_oid == OID_FLOAT8:
         return float(stripped)
     if type_oid == OID_NUMERIC:
+        return _decimal.Decimal(stripped)
+    if type_oid == OID_MONEY:
         return _decimal.Decimal(stripped)
     if type_oid == OID_DATE:
         return _dt.date.fromisoformat(stripped)
@@ -388,6 +413,10 @@ def _decode_text_typed_value(type_oid: int, data: bytes) -> Any:
         return uuid.UUID(stripped)
     if type_oid == OID_BYTEA:
         return _decode_bytea_text(stripped)
+    if type_oid == OID_JSONB:
+        return Jsonb(stripped.encode("utf-8"), None)
+    if type_oid == OID_SB_VECTOR:
+        return _parse_vector_literal(stripped)
     return text
 
 

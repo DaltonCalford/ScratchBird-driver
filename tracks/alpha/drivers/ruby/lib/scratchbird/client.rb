@@ -76,6 +76,11 @@ module Scratchbird
       @keepalive_tracker = nil
       @leak_detector = LeakDetector.new
       @leak_guard = nil
+      @cancel_requested = false
+      @cancel_timeout_seconds = 0.2
+      @active_thread = nil
+      @transaction_active = false
+      @synthetic_txn_id = 0
     end
 
     def connect
@@ -157,6 +162,7 @@ module Scratchbird
       payload = Protocol.build_txn_begin_payload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0)
       send_message(Protocol::MSG_TXN_BEGIN, payload, 0, false)
       drain_until_ready
+      adopt_transaction_after_begin
     end
 
     def commit
@@ -164,6 +170,7 @@ module Scratchbird
       payload = Protocol.build_txn_commit_payload(0)
       send_message(Protocol::MSG_TXN_COMMIT, payload, 0, false)
       drain_until_ready
+      clear_transaction_state
     end
 
     def rollback
@@ -171,6 +178,7 @@ module Scratchbird
       payload = Protocol.build_txn_rollback_payload(0)
       send_message(Protocol::MSG_TXN_ROLLBACK, payload, 0, false)
       drain_until_ready
+      clear_transaction_state
     end
 
     def savepoint(name)
@@ -212,7 +220,7 @@ module Scratchbird
           return true
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
-          @txn_id = txn_id
+          apply_runtime_txn_id(txn_id)
           return true
         when Protocol::MSG_ERROR
           handle_query_error(payload)
@@ -418,11 +426,11 @@ module Scratchbird
     def prepare(name, sql)
       raise ArgumentError, "name is required" if name.to_s.empty?
       ensure_connected
-      normalized = Sql.normalize(sql)
-      payload = Protocol.build_parse_payload(name, normalized.sql, [])
+      prepared_sql = Sql.normalize_prepared_sql(sql)
+      payload = Protocol.build_parse_payload(name, prepared_sql, [])
       send_message(Protocol::MSG_PARSE, payload, 0, false)
       param_count = describe_statement(name)
-      @prepared[name] = { sql: normalized.sql, param_count: param_count }
+      @prepared[name] = { sql: sql, prepared_sql: prepared_sql, param_count: param_count }
     end
 
     def execute(name, params = nil, options = nil)
@@ -460,22 +468,33 @@ module Scratchbird
     end
 
     def cancel
-      payload = Protocol.build_cancel_payload(0, @last_query_sequence)
+      ensure_connected
+      @cancel_requested = true
+      payload = Protocol.build_cancel_payload(0, 0)
       send_message(Protocol::MSG_CANCEL, payload, Protocol::MSG_FLAG_URGENT, false)
+      if @active_thread && @active_thread.alive? && @active_thread != Thread.current
+        @active_thread.raise(OperatorInterventionError.new("query canceled", "57014"))
+      end
+      begin
+        @socket.close if @socket
+      rescue IOError, SystemCallError
+        nil
+      end
     end
 
     def update_txn_id(txn_id)
-      @txn_id = txn_id
+      apply_runtime_txn_id(txn_id)
     end
 
     def in_transaction?
-      @txn_id.to_i != 0
+      @transaction_active || @txn_id.to_i != 0
     end
 
     def recv_message
       header = read_exact(Protocol::HEADER_SIZE)
       type, flags, length, sequence, attachment_id, txn_id = Protocol.decode_header(header)
       payload = length.positive? ? read_exact(length) : +""
+      clear_cancel_request
       [type, flags, payload, sequence, attachment_id, txn_id]
     end
 
@@ -491,6 +510,7 @@ module Scratchbird
     end
 
     def handle_query_error(payload)
+      clear_transaction_state if @transaction_active
       raise build_query_error(payload)
     end
 
@@ -522,7 +542,7 @@ module Scratchbird
         end
         if type == Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
-          @txn_id = txn_id
+          apply_runtime_txn_id(txn_id)
           raise pending_error if pending_error
           return
         end
@@ -559,7 +579,7 @@ module Scratchbird
         parsed = parse_uuid_bytes(value)
         @attachment_id = parsed if parsed
       when "current_txn_id"
-        @txn_id = value.to_i
+        apply_runtime_txn_id(value.to_i)
       end
     end
 
@@ -633,7 +653,7 @@ module Scratchbird
 
     def wrap_tls(raw_socket)
       mode = @config.sslmode.to_s.downcase
-      raise ConnectionError, "TLS is required for ScratchBird connections" if mode == "disable"
+      return raw_socket if mode == "disable"
 
       ctx = OpenSSL::SSL::SSLContext.new
       if ctx.respond_to?(:min_version=) && defined?(OpenSSL::SSL::TLS1_3_VERSION)
@@ -833,7 +853,7 @@ module Scratchbird
           next
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
-          @txn_id = txn_id
+          apply_runtime_txn_id(txn_id)
           return
         when Protocol::MSG_ERROR
           handle_query_error(payload)
@@ -865,27 +885,55 @@ module Scratchbird
         total += written
       end
       sequence
+    rescue IOError, SystemCallError => e
+      raise ConnectionError, "socket write failed: #{e.message}"
     end
 
     def read_exact(size)
       raise ConnectionError, "no active socket" unless @socket
       buffer = +""
       while buffer.bytesize < size
-        wait_readable
+        next unless wait_readable
         chunk = @socket.readpartial(size - buffer.bytesize)
-        raise ConnectionError, "connection closed" if chunk.nil? || chunk.empty?
+        if chunk.nil? || chunk.empty?
+          if @cancel_requested
+            clear_cancel_request
+            raise OperatorInterventionError.new("query canceled", "57014")
+          end
+          raise ConnectionError, "connection closed"
+        end
         buffer << chunk
       end
       buffer
     rescue EOFError
+      if @cancel_requested
+        clear_cancel_request
+        raise OperatorInterventionError.new("query canceled", "57014")
+      end
       raise ConnectionError, "connection closed"
+    rescue IOError, SystemCallError => e
+      if @cancel_requested
+        clear_cancel_request
+        raise OperatorInterventionError.new("query canceled", "57014")
+      end
+      raise ConnectionError, "socket read failed: #{e.message}"
     end
 
     def wait_readable
-      return if @socket_timeout <= 0
-      timeout = @socket_timeout / 1000.0
+      timeout = @socket_timeout > 0 ? (@socket_timeout / 1000.0) : 0.25
+      if @cancel_requested
+        timeout = timeout ? [timeout, @cancel_timeout_seconds].min : @cancel_timeout_seconds
+      end
       ready = IO.select([@socket], nil, nil, timeout)
-      raise ConnectionError, "socket timed out" unless ready
+      unless ready
+        if @cancel_requested
+          clear_cancel_request
+          raise OperatorInterventionError.new("query canceled", "57014")
+        end
+        raise ConnectionError, "socket timed out" if @socket_timeout > 0
+        return false
+      end
+      true
     end
 
     def ensure_connected
@@ -903,6 +951,8 @@ module Scratchbird
         span.with_attribute("db.statement", TelemetryCollector.sanitize_query(sql))
       end
       success = false
+      prior_thread = @active_thread
+      @active_thread = Thread.current
       begin
         result = yield
         success = true
@@ -913,6 +963,7 @@ module Scratchbird
         @circuit_breaker.record_failure
         raise e
       ensure
+        @active_thread = prior_thread
         @telemetry.end_span(span, success)
       end
     end
@@ -993,7 +1044,7 @@ module Scratchbird
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
-          @txn_id = txn_id
+          apply_runtime_txn_id(txn_id)
           break
         else
           next
@@ -1051,7 +1102,7 @@ module Scratchbird
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
           _status, txn_id = Protocol.parse_ready(payload)
-          @txn_id = txn_id
+          apply_runtime_txn_id(txn_id)
           if result_open && (!columns.empty? || !rows.empty? || rowcount >= 0 || !command_tag.empty?)
             results << Result.new(columns, rows, rowcount >= 0 ? rowcount : rows.length, command_tag, last_insert_id)
           end
@@ -1143,7 +1194,7 @@ module Scratchbird
           handle_query_error(payload)
         when Protocol::MSG_READY
           _status, txn = Protocol.parse_ready(payload)
-          @txn_id = txn
+          apply_runtime_txn_id(txn)
           break
         else
           next
@@ -1239,6 +1290,33 @@ module Scratchbird
       trailing = buffer.strip
       statements << trailing unless trailing.empty?
       statements
+    end
+
+    def clear_cancel_request
+      @cancel_requested = false
+    end
+
+    def apply_runtime_txn_id(txn_id)
+      txn = txn_id.to_i
+      if txn.positive?
+        @txn_id = txn
+        @transaction_active = true
+      elsif !@transaction_active
+        @txn_id = 0
+      end
+    end
+
+    def adopt_transaction_after_begin
+      @transaction_active = true
+      return if @txn_id.to_i.positive?
+
+      @synthetic_txn_id += 1
+      @txn_id = @synthetic_txn_id
+    end
+
+    def clear_transaction_state
+      @transaction_active = false
+      @txn_id = 0
     end
   end
 

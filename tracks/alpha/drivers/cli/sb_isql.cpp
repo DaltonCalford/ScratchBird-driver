@@ -87,6 +87,8 @@
 using namespace scratchbird;
 using namespace scratchbird::client;
 
+std::string normalizeConnectionMode(std::string value);
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -210,6 +212,107 @@ static std::unique_ptr<std::ofstream> g_error_file;
 static std::streambuf* g_original_cerr = nullptr;  // To restore stderr
 
 std::string buildConnectionTarget(const std::string& database_override = "");
+
+bool commitNonInteractiveWork() {
+    if (!g_connection || !g_connection->isConnected()) {
+        return false;
+    }
+
+    if (g_connection->getState() != ConnectionState::IN_TRANSACTION) {
+        return true;
+    }
+
+    core::ErrorContext ctx;
+    core::Status status = g_connection->commit(&ctx);
+
+    if (status != core::Status::OK) {
+        std::cerr << "Error: Auto-commit failed: " << ctx.message << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::string normalizeStatementForMatch(const std::string& sql) {
+    std::string upper = sql;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+
+    size_t start = 0;
+    while (start < upper.size() && std::isspace(static_cast<unsigned char>(upper[start]))) {
+        ++start;
+    }
+
+    size_t end = upper.size();
+    while (end > start &&
+           (upper[end - 1] == ';' || std::isspace(static_cast<unsigned char>(upper[end - 1])))) {
+        --end;
+    }
+
+    return upper.substr(start, end - start);
+}
+
+bool statementLikelyNeedsCommit(const std::string& sql) {
+    const std::string normalized = normalizeStatementForMatch(sql);
+    if (normalized.empty()) {
+        return false;
+    }
+
+    static const std::vector<std::string> write_prefixes = {
+        "INSERT", "UPDATE", "DELETE", "MERGE", "CREATE", "ALTER", "DROP",
+        "TRUNCATE", "GRANT", "REVOKE", "COMMENT", "RECREATE"
+    };
+    for (const auto& prefix : write_prefixes) {
+        if (normalized.rfind(prefix, 0) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool statementIsDdlLike(const std::string& sql) {
+    const std::string normalized = normalizeStatementForMatch(sql);
+    if (normalized.empty()) {
+        return false;
+    }
+
+    static const std::vector<std::string> ddl_prefixes = {
+        "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT", "REVOKE",
+        "COMMENT", "RECREATE"
+    };
+    for (const auto& prefix : ddl_prefixes) {
+        if (normalized.rfind(prefix, 0) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool statementControlsTransaction(const std::string& sql) {
+    const std::string normalized = normalizeStatementForMatch(sql);
+    if (normalized.empty()) {
+        return false;
+    }
+
+    if (normalized == "COMMIT" ||
+        normalized == "COMMIT WORK" ||
+        normalized == "COMMIT RETAIN" ||
+        normalized == "COMMIT WORK RETAIN") {
+        return true;
+    }
+
+    if (normalized.rfind("ROLLBACK", 0) == 0 ||
+        normalized.rfind("SAVEPOINT", 0) == 0 ||
+        normalized.rfind("RELEASE SAVEPOINT", 0) == 0 ||
+        normalized.rfind("SET TRANSACTION", 0) == 0 ||
+        normalized.rfind("START TRANSACTION", 0) == 0 ||
+        normalized.rfind("BEGIN", 0) == 0) {
+        return true;
+    }
+
+    return false;
+}
 
 // =============================================================================
 // Signal handling
@@ -1205,8 +1308,14 @@ bool executeSQL(const std::string& sql) {
         }
     }
 
-    // Handle transaction commands (Firebird compatible)
-    {
+    // In listener/parser modes, transaction SQL must stay on the SQL path so
+    // BEGIN/COMMIT/ROLLBACK/SAVEPOINT are interpreted by the parser layer
+    // instead of mixing parser SQL with direct protocol transaction messages.
+    auto shouldHandleTransactionCommandsLocally = []() {
+        return normalizeConnectionMode(g_config.mode) == "embedded";
+    };
+
+    if (shouldHandleTransactionCommandsLocally()) {
         std::string upper = sql;
         std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
         // Trim leading whitespace
@@ -1861,6 +1970,7 @@ bool handleMetaCommand(const std::string& cmd) {
         std::string line;
         std::string sql;
         bool had_error = false;
+        bool needs_commit = false;
         while (std::getline(file, line)) {
             // Skip comments
             if (line.empty() || line[0] == '#' || line.substr(0, 2) == "--") {
@@ -1876,12 +1986,28 @@ bool handleMetaCommand(const std::string& cmd) {
                 while (!sql_to_exec.empty() && (sql_to_exec.back() == ' ' || sql_to_exec.back() == '\t')) {
                     sql_to_exec.pop_back();
                 }
+                const bool statement_needs_commit = statementLikelyNeedsCommit(sql_to_exec);
+                const bool statement_is_ddl = statementIsDdlLike(sql_to_exec);
+                const bool statement_controls_txn = statementControlsTransaction(sql_to_exec);
+                needs_commit = needs_commit || statement_needs_commit;
                 bool success = executeSQL(sql_to_exec);
                 if (!success) {
                     had_error = true;
                     if (g_config.bail) {
                         std::cerr << "Stopping due to error (SET BAIL is ON)\n";
                         break;
+                    }
+                } else if (statement_controls_txn) {
+                    needs_commit = false;
+                } else if (g_config.autoddl && statement_is_ddl && statement_needs_commit) {
+                    if (!commitNonInteractiveWork()) {
+                        had_error = true;
+                        if (g_config.bail) {
+                            std::cerr << "Stopping due to auto-DDL commit failure (SET BAIL is ON)\n";
+                            break;
+                        }
+                    } else {
+                        needs_commit = false;
                     }
                 }
                 sql.clear();
@@ -1891,7 +2017,25 @@ bool handleMetaCommand(const std::string& cmd) {
         }
 
         if (!sql.empty() && !(had_error && g_config.bail)) {
-            executeSQL(sql);
+            const bool statement_needs_commit = statementLikelyNeedsCommit(sql);
+            const bool statement_is_ddl = statementIsDdlLike(sql);
+            const bool statement_controls_txn = statementControlsTransaction(sql);
+            needs_commit = needs_commit || statement_needs_commit;
+            bool success = executeSQL(sql);
+            if (!success) {
+                had_error = true;
+            } else if (statement_controls_txn) {
+                needs_commit = false;
+            } else if (g_config.autoddl && statement_is_ddl && statement_needs_commit) {
+                if (!commitNonInteractiveWork()) {
+                    had_error = true;
+                } else {
+                    needs_commit = false;
+                }
+            }
+        }
+        if (!had_error && needs_commit && !commitNonInteractiveWork()) {
+            return false;
         }
         return true;
     }
@@ -3153,30 +3297,29 @@ std::string buildConnectionTarget(const std::string& database_override) {
         mode = "inet_listener";
     }
 
+    std::string ipc_method = g_config.ipc_method.empty() ? "auto" : g_config.ipc_method;
+    std::string ipc_method_lower = ipc_method;
+    std::transform(ipc_method_lower.begin(), ipc_method_lower.end(), ipc_method_lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    const bool tcp_listener_mode = (mode == "local_ipc" && ipc_method_lower == "tcp");
+    const std::string transport_mode = tcp_listener_mode ? "inet_listener" : mode;
+
     std::vector<std::pair<std::string, std::string>> params;
     appendConnParam(params, "database", database_override.empty() ? g_config.database_path : database_override);
     appendConnParam(params, "protocol", "native");
-    appendConnParam(params, "transport_mode", mode);
+    appendConnParam(params, "transport_mode", transport_mode);
 
-    if (mode == "local_ipc") {
-        std::string ipc_method = g_config.ipc_method.empty() ? "auto" : g_config.ipc_method;
+    if (transport_mode == "local_ipc") {
         appendConnParam(params, "ipc_method", ipc_method);
         appendConnParam(params, "ipc_path", g_config.ipc_path);
-        // local_ipc over TCP still needs an explicit port override when non-default.
-        std::string ipc_method_lower = ipc_method;
-        std::transform(ipc_method_lower.begin(), ipc_method_lower.end(), ipc_method_lower.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        if (ipc_method_lower == "tcp") {
-            appendConnParam(params, "port", std::to_string(g_config.port));
-        }
     } else {
         appendConnParam(params, "host", g_config.host.empty() ? "127.0.0.1" : g_config.host);
         appendConnParam(params, "port", std::to_string(g_config.port));
     }
 
     std::string front_door = g_config.front_door_mode;
-    if (mode == "managed") {
+    if (transport_mode == "managed") {
         front_door = "manager_proxy";
     }
     appendConnParam(params, "front_door_mode", front_door);
@@ -3688,6 +3831,8 @@ int main(int argc, char* argv[]) {
     // Execute single command if given
     else if (!g_config.command.empty()) {
         if (!executeSQL(g_config.command)) {
+            result = 1;
+        } else if (statementLikelyNeedsCommit(g_config.command) && !commitNonInteractiveWork()) {
             result = 1;
         }
     }

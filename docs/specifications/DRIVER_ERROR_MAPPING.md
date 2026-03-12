@@ -8,6 +8,10 @@ Last Updated: 2026-01-09
 Define a consistent error model across drivers, including SQLSTATE
 classification and retriable vs fatal errors.
 
+The machine-readable required SQLSTATE registry lives in
+`docs/fixtures/sqlstate_required_set.json` and is the authoritative input for
+cross-driver closure tooling.
+
 ## Binary-Only Requirement
 
 SBWP error payloads are binary. Drivers must parse structured error fields
@@ -124,4 +128,3 @@ Drivers must surface:
 ### JDBC
 
 - java.sql.SQLException with SQLState set
-

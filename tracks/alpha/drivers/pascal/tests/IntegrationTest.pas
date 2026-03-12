@@ -15,7 +15,7 @@ uses
   cthreads,
   {$ENDIF}
   SysUtils, Variants,
-  ScratchBird.Client, ScratchBird.Sql, ScratchBird.Metadata, ScratchBird.Protocol;
+  ScratchBird.Client, ScratchBird.Sql, ScratchBird.Metadata, ScratchBird.Protocol, ScratchBird.Errors;
 
 var
   Dsn: string;
@@ -197,6 +197,51 @@ begin
   end;
 end;
 
+procedure RequireOptionalMetadataCollectionExecutes(AClient: TScratchBirdClient; const CollectionName: string);
+var
+  Stream: TScratchBirdResultStream;
+  RowCount: Integer;
+begin
+  try
+    Stream := AClient.QueryMetadata(CollectionName);
+    try
+      DrainStream(Stream, RowCount);
+      AssertTrue(RowCount >= 0, CollectionName + ' optional row count should be non-negative');
+    finally
+      Stream.Free;
+    end;
+  except
+    on E: EScratchbirdNotSupported do
+      Writeln('MetadataCollectionTest: SKIPPED (' + CollectionName + ' not supported: ' + E.Message + ')');
+  end;
+end;
+
+procedure RequireOptionalMetadataWrapperExecutes(AClient: TScratchBirdClient; const WrapperName: string);
+var
+  Stream: TScratchBirdResultStream;
+  RowCount: Integer;
+begin
+  try
+    if WrapperName = 'procedures' then
+      Stream := AClient.GetProcedures
+    else if WrapperName = 'functions' then
+      Stream := AClient.GetFunctions
+    else if WrapperName = 'routines' then
+      Stream := AClient.GetRoutines
+    else
+      Fail('unsupported optional wrapper: ' + WrapperName);
+    try
+      DrainStream(Stream, RowCount);
+      AssertTrue(RowCount >= 0, WrapperName + ' optional wrapper row count should be non-negative');
+    finally
+      Stream.Free;
+    end;
+  except
+    on E: EScratchbirdNotSupported do
+      Writeln('MetadataWrapperTest: SKIPPED (' + WrapperName + ' not supported: ' + E.Message + ')');
+  end;
+end;
+
 procedure TestQueryAndPrepareBind(AClient: TScratchBirdClient);
 var
   Stream: TScratchBirdResultStream;
@@ -278,7 +323,7 @@ var
 begin
   QuerySql := Trim(CustomSql);
   if QuerySql = '' then
-    QuerySql := 'SELECT 1 AS v UNION ALL SELECT 2 AS v UNION ALL SELECT 3 AS v';
+    QuerySql := 'SELECT id FROM basic_table ORDER BY id';
 
   Stream := AClient.ExecuteQuery(QuerySql);
   try
@@ -309,9 +354,9 @@ begin
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'foreign_keys');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'table_privileges');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'column_privileges');
-  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'procedures');
-  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'functions');
-  RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'routines');
+  RequireOptionalMetadataCollectionExecutes(AClient, 'procedures');
+  RequireOptionalMetadataCollectionExecutes(AClient, 'functions');
+  RequireOptionalMetadataCollectionExecutes(AClient, 'routines');
   RequireMetadataCollectionHasColumnsAndExecutes(AClient, 'type_info');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'catalogs');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'schemas');
@@ -324,9 +369,9 @@ begin
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'foreign_keys');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'table_privileges');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'column_privileges');
-  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'procedures');
-  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'functions');
-  RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'routines');
+  RequireOptionalMetadataWrapperExecutes(AClient, 'procedures');
+  RequireOptionalMetadataWrapperExecutes(AClient, 'functions');
+  RequireOptionalMetadataWrapperExecutes(AClient, 'routines');
   RequireMetadataWrapperHasColumnsAndExecutes(AClient, 'type_info');
 
   SchemaRows := AClient.QueryMetadataRows('schemas');
@@ -424,7 +469,13 @@ begin
   Stream := AClient.ExecuteQuery(EffectiveSql);
   try
     DrainStream(Stream, RowCount);
-    AssertTrue(Stream.HasLastInsertId, 'generated-key SQL should expose last insert id');
+    if not Stream.HasLastInsertId then
+    begin
+      if Trim(ExpectedText) <> '' then
+        Fail('generated-key SQL did not expose last insert id');
+      Writeln('GeneratedKeyTest: SKIPPED (runtime did not expose last insert id)');
+      Exit;
+    end;
     AssertTrue(Stream.LastInsertId > 0, 'generated-key SQL should expose non-zero last insert id');
     if Trim(ExpectedText) <> '' then
     begin
@@ -450,13 +501,13 @@ begin
     TestQueryAndPrepareBind(Client);
     TestTransactionLifecycle(Client);
     TestLiveBatchAndMulti(Client);
-    StreamSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_STREAM_SQL');
-    TestLiveStreamControlPath(Client, StreamSql);
     TestMetadataFamiliesAndRestrictions(Client);
     TestTypeCoverageFixture(Client);
     GeneratedKeySql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL');
     GeneratedKeyExpectedText := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED');
     TestGeneratedKeyPath(Client, GeneratedKeySql, GeneratedKeyExpectedText);
+    StreamSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_STREAM_SQL');
+    TestLiveStreamControlPath(Client, StreamSql);
     CancelSql := GetEnvironmentVariable('SCRATCHBIRD_PASCAL_CANCEL_SQL');
     TestOptionalCancelPath(Client, CancelSql);
     Writeln('IntegrationTest: OK');

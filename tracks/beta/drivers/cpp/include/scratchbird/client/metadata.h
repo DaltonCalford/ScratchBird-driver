@@ -58,6 +58,21 @@ bool resolveMetadataCollectionQuery(
     std::string* query_sql,
     std::string* normalized_collection = nullptr);
 
+std::string buildMetadataSchemasQuerySql(
+    const std::string* schema_pattern = nullptr);
+
+std::string buildMetadataTablesQuerySql(
+    const std::string* schema_pattern = nullptr,
+    const std::string* table_pattern = nullptr);
+
+std::string buildMetadataColumnsQuerySql(
+    const std::string* schema_pattern = nullptr,
+    const std::string* table_pattern = nullptr);
+
+std::string buildMetadataIndexesQuerySql(
+    const std::string* schema_pattern = nullptr,
+    const std::string* table_pattern = nullptr);
+
 std::string metadataCollectionNotSupportedMessage(const std::string& collection_name);
 
 // Build deterministic DDL-editor metadata payload JSON:

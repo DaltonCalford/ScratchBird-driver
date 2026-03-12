@@ -15,6 +15,7 @@ interface
 
 uses
   SysUtils,
+  sockets, netdb,
   ScratchBird.Config, ScratchBird.Errors, ScratchBird.Transport,
   ScratchBird.Tls.Types, ScratchBird.Tls.Context;
 
@@ -25,8 +26,12 @@ type
     FTlsConfig: TTlsConfig;
     FTlsContext: TTlsContext;
     FConnected: Boolean;
+    FPlainSocket: TSocketHandle;
     function ParseTlsMode(const SSLMode: string): TTlsMode;
     procedure RaiseTlsFailure(const Stage: string; const Status: TTlsStatus);
+    function UsePlainSocket: Boolean;
+    procedure ConnectPlain;
+    procedure DisconnectPlain;
   public
     constructor Create;
     destructor Destroy; override;
@@ -46,6 +51,7 @@ begin
   FTlsContext := TTlsContext.Create;
   FTlsConfig := DefaultTlsConfig;
   FConnected := False;
+  FPlainSocket := INVALID_TLS_SOCKET_HANDLE;
 end;
 
 function TNativeScratchBirdTransport.ParseTlsMode(const SSLMode: string): TTlsMode;
@@ -107,11 +113,79 @@ begin
   raise EScratchbirdConnectionError.CreateWithInfo(MessageText, '08001', '', '');
 end;
 
+function TNativeScratchBirdTransport.UsePlainSocket: Boolean;
+begin
+  Result := FTlsConfig.Mode = tmDisable;
+end;
+
+procedure TNativeScratchBirdTransport.ConnectPlain;
+var
+  HostAddr: THostAddr;
+  HostEntry: THostEntry;
+  Address: TInetSockAddr;
+begin
+  if FPlainSocket <> INVALID_TLS_SOCKET_HANDLE then
+  begin
+    CloseSocket(FPlainSocket);
+    FPlainSocket := INVALID_TLS_SOCKET_HANDLE;
+  end;
+
+  FPlainSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
+  if FPlainSocket < 0 then
+    raise EScratchbirdConnectionError.CreateWithInfo(
+      'native socket create failed: ' + IntToStr(SocketError),
+      '08001', '', '');
+
+  HostAddr := StrToHostAddr(FConfig.Host);
+  if HostAddr.s_bytes[1] = 0 then
+  begin
+    if not ResolveHostByName(FConfig.Host, HostEntry) then
+    begin
+      CloseSocket(FPlainSocket);
+      FPlainSocket := INVALID_TLS_SOCKET_HANDLE;
+      raise EScratchbirdConnectionError.CreateWithInfo(
+        'native socket resolve failed: ' + FConfig.Host,
+        '08001', '', '');
+    end;
+    HostAddr := HostEntry.Addr;
+  end;
+
+  FillChar(Address, SizeOf(Address), 0);
+  Address.sin_family := AF_INET;
+  Address.sin_port := ShortHostToNet(FTlsConfig.Port);
+  Address.sin_addr.s_addr := HostToNet(HostAddr.s_addr);
+
+  if fpConnect(FPlainSocket, @Address, SizeOf(Address)) <> 0 then
+  begin
+    CloseSocket(FPlainSocket);
+    FPlainSocket := INVALID_TLS_SOCKET_HANDLE;
+    raise EScratchbirdConnectionError.CreateWithInfo(
+      'native socket connect failed: ' + IntToStr(SocketError),
+      '08001', '', '');
+  end;
+end;
+
+procedure TNativeScratchBirdTransport.DisconnectPlain;
+begin
+  if FPlainSocket <> INVALID_TLS_SOCKET_HANDLE then
+  begin
+    CloseSocket(FPlainSocket);
+    FPlainSocket := INVALID_TLS_SOCKET_HANDLE;
+  end;
+end;
+
 procedure TNativeScratchBirdTransport.Connect;
 var
   Status: TTlsStatus;
   SocketHandle: TSocketHandle;
 begin
+  if UsePlainSocket then
+  begin
+    ConnectPlain;
+    FConnected := True;
+    Exit;
+  end;
+
   Status := FTlsContext.Initialize(FTlsConfig);
   if not Status.Success then
     RaiseTlsFailure('native TLS initialize failed', Status);
@@ -124,6 +198,7 @@ end;
 
 procedure TNativeScratchBirdTransport.Disconnect;
 begin
+  DisconnectPlain;
   FTlsContext.Shutdown;
   FConnected := False;
 end;
@@ -135,6 +210,33 @@ var
   BytesRead: Integer;
 begin
   Result := nil;
+  if UsePlainSocket then
+  begin
+    if (FPlainSocket = INVALID_TLS_SOCKET_HANDLE) or (not FConnected) then
+      raise EScratchbirdConnectionError.CreateWithInfo('native socket is not connected', '08003', '', '');
+    if Length <= 0 then
+    begin
+      SetLength(Result, 0);
+      Exit;
+    end;
+    SetLength(Result, Length);
+    Offset := 0;
+    while Offset < Length do
+    begin
+      BytesRead := fpRecv(FPlainSocket, @Result[Offset], Length - Offset, 0);
+      if BytesRead <= 0 then
+      begin
+        DisconnectPlain;
+        FConnected := False;
+        raise EScratchbirdConnectionError.CreateWithInfo(
+          'native socket read failed: ' + IntToStr(SocketError),
+          '08006', '', '');
+      end;
+      Inc(Offset, BytesRead);
+    end;
+    Exit;
+  end;
+
   if Length <= 0 then
   begin
     SetLength(Result, 0);
@@ -162,6 +264,29 @@ var
   Offset: Integer;
   BytesWritten: Integer;
 begin
+  if UsePlainSocket then
+  begin
+    if (FPlainSocket = INVALID_TLS_SOCKET_HANDLE) or (not FConnected) then
+      raise EScratchbirdConnectionError.CreateWithInfo('native socket is not connected', '08003', '', '');
+    if Length(Data) = 0 then
+      Exit;
+    Offset := 0;
+    while Offset < Length(Data) do
+    begin
+      BytesWritten := fpSend(FPlainSocket, @Data[Offset], Length(Data) - Offset, 0);
+      if BytesWritten <= 0 then
+      begin
+        DisconnectPlain;
+        FConnected := False;
+        raise EScratchbirdConnectionError.CreateWithInfo(
+          'native socket write failed: ' + IntToStr(SocketError),
+          '08006', '', '');
+      end;
+      Inc(Offset, BytesWritten);
+    end;
+    Exit;
+  end;
+
   if Length(Data) = 0 then
     Exit;
   Offset := 0;

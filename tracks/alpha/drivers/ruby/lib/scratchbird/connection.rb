@@ -15,7 +15,7 @@ require "scratchbird/statement"
 module Scratchbird
   class Connection
     attr_reader :config
-    attr_accessor :autocommit
+    attr_reader :autocommit
 
     def initialize(options = nil)
       @config = build_config(options)
@@ -36,6 +36,18 @@ module Scratchbird
 
     def closed?
       @closed
+    end
+
+    def autocommit=(value)
+      ensure_open
+      next_value = !!value
+      return if @autocommit == next_value
+
+      if next_value && in_transaction?
+        commit
+      end
+
+      @autocommit = next_value
     end
 
     def begin_transaction

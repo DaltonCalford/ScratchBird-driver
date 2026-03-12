@@ -127,3 +127,6 @@ Fixtures live under `docs/fixtures/` (e.g., `core_fixture.sql`,
 - JSON summary with pass/fail per test
 - Per-driver report artifacts
 - Failures include expected vs actual payloads
+- Cross-driver closure summaries normalize raw manifest output plus SQLSTATE
+  coverage through `docs/fixtures/driver_closure_substrate.json` and
+  `scripts/driver_closure_substrate.py`

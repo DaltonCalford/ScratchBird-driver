@@ -17,7 +17,9 @@
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#include "scratchbird/client/connection.h"
 #include "scratchbird/client/driver_config.h"
+#include "scratchbird/client/metadata.h"
 #include "scratchbird/client/network_client.h"
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
@@ -1321,6 +1323,20 @@ TEST(DriverConnectivitySmokeTest, RejectsIpcTransportBeforeDial) {
     auto status = client.connect(cfg, &ctx);
     EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
     EXPECT_NE(ctx.message.find("IP-only"), std::string::npos);
+}
+
+TEST(DriverConnectivitySmokeTest, ConnectionStringParseErrorsAreNotSilentlyRetriedAsDatabaseNames) {
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext ctx;
+
+    const auto status = conn.connect(
+        "database=main;transport_mode=local_ipc;ipc_method=unix;ipc_path=build/ipc/scratchbird-main.sock",
+        "alice",
+        "pw",
+        &ctx);
+
+    EXPECT_EQ(status, scratchbird::core::Status::INVALID_ARGUMENT);
+    EXPECT_NE(ctx.message.find("not supported"), std::string::npos);
 }
 
 TEST(DriverConnectivitySmokeTest, RejectsInvalidAuthMethodIdBeforeDial) {
@@ -2749,6 +2765,384 @@ TEST(DriverTxnExecParityTest, CApiMetadataSchemaPayloadIncludesDdlEditorFields) 
     EXPECT_EQ(payload["schemaTree"][0]["path"], "users");
     sb_memory_free(payload_raw);
 
+    sb_disconnect(conn);
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, ConnectionTracksAlwaysActiveTransactionLifecycle) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::TxnCommit,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "COMMIT")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 201, 1)}}},
+        {scratchbird::protocol::MessageType::TxnRollback,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "ROLLBACK")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 202, 2)}}}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext ctx;
+    ASSERT_EQ(conn.connect(conn_str, "", "", &ctx), scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_TRUE(conn.isConnected());
+    EXPECT_TRUE(conn.inTransaction());
+    EXPECT_EQ(conn.getState(), scratchbird::client::ConnectionState::IN_TRANSACTION);
+
+    ASSERT_EQ(conn.commit(&ctx), scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_TRUE(conn.inTransaction());
+    EXPECT_EQ(conn.getState(), scratchbird::client::ConnectionState::IN_TRANSACTION);
+
+    ASSERT_EQ(conn.rollback(&ctx), scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_TRUE(conn.inTransaction());
+    EXPECT_EQ(conn.getState(), scratchbird::client::ConnectionState::IN_TRANSACTION);
+
+    conn.disconnect();
+    EXPECT_FALSE(conn.isConnected());
+    EXPECT_FALSE(conn.inTransaction());
+    EXPECT_EQ(conn.getState(), scratchbird::client::ConnectionState::DISCONNECTED);
+
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, MetadataHelpersExecuteStableFilteredQueries) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    const std::string schema_pattern = "users.%";
+    const std::string table_pattern = "orders%";
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [schema_pattern](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != scratchbird::client::buildMetadataSchemasQuerySql(&schema_pattern)) {
+                 error = "unexpected schemas metadata SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload(
+               {{"schema_id", scratchbird::protocol::kOidInt8},
+                {"schema_name", scratchbird::protocol::kOidText},
+                {"owner_id", scratchbird::protocol::kOidInt8},
+                {"default_tablespace_id", scratchbird::protocol::kOidInt8}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload(
+               {encodeI64Le(7),
+                std::vector<uint8_t>{'u','s','e','r','s','.','a','l','i','c','e'},
+                encodeI64Le(5),
+                encodeI64Le(9)})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "SELECT 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 10)}}},
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [schema_pattern, table_pattern](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != scratchbird::client::buildMetadataTablesQuerySql(&schema_pattern, &table_pattern)) {
+                 error = "unexpected tables metadata SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload(
+               {{"table_id", scratchbird::protocol::kOidInt8},
+                {"schema_id", scratchbird::protocol::kOidInt8},
+                {"table_name", scratchbird::protocol::kOidText},
+                {"table_type", scratchbird::protocol::kOidText},
+                {"owner_id", scratchbird::protocol::kOidInt8}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload(
+               {encodeI64Le(41),
+                encodeI64Le(7),
+                std::vector<uint8_t>{'o','r','d','e','r','s'},
+                std::vector<uint8_t>{'B','A','S','E'},
+                encodeI64Le(5)})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "SELECT 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 11)}}},
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [schema_pattern, table_pattern](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != scratchbird::client::buildMetadataColumnsQuerySql(&schema_pattern, &table_pattern)) {
+                 error = "unexpected columns metadata SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload(
+               {{"column_id", scratchbird::protocol::kOidInt8},
+                {"table_id", scratchbird::protocol::kOidInt8},
+                {"column_name", scratchbird::protocol::kOidText},
+                {"data_type_id", scratchbird::protocol::kOidInt4},
+                {"data_type_name", scratchbird::protocol::kOidText},
+                {"ordinal_position", scratchbird::protocol::kOidInt4},
+                {"is_nullable", scratchbird::protocol::kOidBool},
+                {"default_value", scratchbird::protocol::kOidText},
+                {"domain_id", scratchbird::protocol::kOidInt8},
+                {"collation_id", scratchbird::protocol::kOidInt8},
+                {"charset_id", scratchbird::protocol::kOidInt8},
+                {"is_identity", scratchbird::protocol::kOidBool},
+                {"is_generated", scratchbird::protocol::kOidBool},
+                {"generation_expression", scratchbird::protocol::kOidText}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload(
+               {encodeI64Le(90),
+                encodeI64Le(41),
+                std::vector<uint8_t>{'i','d'},
+                encodeI32Le(23),
+                std::vector<uint8_t>{'i','n','t','4'},
+                encodeI32Le(1),
+                std::vector<uint8_t>{1},
+                std::vector<uint8_t>{},
+                encodeI64Le(0),
+                encodeI64Le(0),
+                encodeI64Le(0),
+                std::vector<uint8_t>{0},
+                std::vector<uint8_t>{0},
+                std::vector<uint8_t>{}})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "SELECT 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 12)}}},
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [schema_pattern, table_pattern](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != scratchbird::client::buildMetadataIndexesQuerySql(&schema_pattern, &table_pattern)) {
+                 error = "unexpected indexes metadata SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload(
+               {{"index_id", scratchbird::protocol::kOidInt8},
+                {"table_id", scratchbird::protocol::kOidInt8},
+                {"index_name", scratchbird::protocol::kOidText},
+                {"index_type", scratchbird::protocol::kOidText},
+                {"is_unique", scratchbird::protocol::kOidBool}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload(
+               {encodeI64Le(301),
+                encodeI64Le(41),
+                std::vector<uint8_t>{'o','r','d','e','r','s','_','p','k'},
+                std::vector<uint8_t>{'b','t','r','e','e'},
+                std::vector<uint8_t>{1}})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "SELECT 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 13)}}}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext ctx;
+    ASSERT_EQ(conn.connect(conn_str, "", "", &ctx), scratchbird::core::Status::OK) << ctx.message;
+
+    scratchbird::client::ResultSet schemas;
+    ASSERT_EQ(conn.schemas(&schemas, schema_pattern, &ctx), scratchbird::core::Status::OK) << ctx.message;
+    ASSERT_EQ(schemas.getColumnCount(), 4u);
+    EXPECT_EQ(schemas.getColumnType(0), SB_TYPE_BIGINT);
+    EXPECT_EQ(schemas.getColumnTypeOid(1), scratchbird::protocol::kOidText);
+    EXPECT_EQ(schemas.getColumnFormat(1), scratchbird::protocol::kFormatBinary);
+    EXPECT_TRUE(schemas.isColumnNullable(1));
+    ASSERT_TRUE(schemas.next());
+    EXPECT_EQ(schemas.getString("schema_name"), "users.alice");
+
+    scratchbird::client::ResultSet tables;
+    ASSERT_EQ(conn.tables(&tables, schema_pattern, table_pattern, &ctx), scratchbird::core::Status::OK)
+        << ctx.message;
+    ASSERT_TRUE(tables.next());
+    EXPECT_EQ(tables.getString("table_name"), "orders");
+
+    scratchbird::client::ResultSet columns;
+    ASSERT_EQ(conn.columns(&columns, schema_pattern, table_pattern, &ctx), scratchbird::core::Status::OK)
+        << ctx.message;
+    ASSERT_TRUE(columns.next());
+    EXPECT_EQ(columns.getString("column_name"), "id");
+    EXPECT_EQ(columns.getString("data_type_name"), "int4");
+
+    scratchbird::client::ResultSet indexes;
+    ASSERT_EQ(conn.indexes(&indexes, schema_pattern, table_pattern, &ctx), scratchbird::core::Status::OK)
+        << ctx.message;
+    ASSERT_TRUE(indexes.next());
+    EXPECT_EQ(indexes.getString("index_name"), "orders_pk");
+
+    conn.disconnect();
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, MetadataSchemaPayloadBuildsEditorJson) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != scratchbird::client::buildMetadataSchemasQuerySql(nullptr)) {
+                 error = "unexpected schema payload metadata SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload({{"schema_name", scratchbird::protocol::kOidText}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload({std::vector<uint8_t>{'u','s','e','r','s','.','a','l','i','c','e','.','d','e','v'}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload({std::vector<uint8_t>{'u','s','e','r','s','.','b','o','b','.','d','e','v'}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload({std::vector<uint8_t>{'s','y','s'}})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 3, 0, "SELECT 3")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 20)}}}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext ctx;
+    ASSERT_EQ(conn.connect(conn_str, "", "", &ctx), scratchbird::core::Status::OK) << ctx.message;
+
+    const std::string pattern = "users.%";
+    std::string payload_json;
+    ASSERT_EQ(
+        conn.metadataSchemaPayload(&pattern, true, &payload_json, &ctx),
+        scratchbird::core::Status::OK) << ctx.message;
+
+    const auto payload = nlohmann::json::parse(payload_json);
+    EXPECT_EQ(payload["schemaPattern"], "users.%");
+    EXPECT_TRUE(payload["expandSchemaParents"].get<bool>());
+    EXPECT_EQ(
+        payload["schemaPaths"].get<std::vector<std::string>>(),
+        (std::vector<std::string>{"users", "users.alice", "users.alice.dev", "users.bob", "users.bob.dev"}));
+
+    conn.disconnect();
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, CApiComplexTypeStringAccessReturnsBinaryBackedPayloads) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Query,
+         {},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             return parseQueryPayloadSql(msg.body, sql, error) && sql == "SELECT complex_types()";
+         }},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::RowDescription,
+           buildRowDescriptionPayload(
+               {{"array_value", scratchbird::protocol::kOidTextArray},
+                {"vector_value", scratchbird::protocol::kOidSbVector},
+                {"macaddr_value", scratchbird::protocol::kOidMacaddr},
+                {"range_value", scratchbird::protocol::kOidInt4Range}})},
+          {scratchbird::protocol::MessageType::DataRow,
+           buildDataRowPayload(
+               {std::vector<uint8_t>{'{','1',',','2',',','3','}'},
+                std::vector<uint8_t>{'[','1',',','2',',','3',']'},
+                std::vector<uint8_t>{'a','a',':','b','b',':','c','c',':','d','d',':','e','e',':','f','f'},
+                std::vector<uint8_t>{'[','1',',','9',']'}})},
+          {scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "SELECT 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(1, 0, 30)}}}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+    sb_error err{};
+    sb_connection* conn = sb_connect(conn_str.c_str(), &err);
+    ASSERT_NE(conn, nullptr) << err.message;
+
+    sb_result* result = sb_query(conn, "SELECT complex_types()", &err);
+    ASSERT_NE(result, nullptr) << err.message;
+
+    sb_column_meta array_meta{};
+    ASSERT_EQ(sb_get_column_meta(result, 0, &array_meta), SB_OK);
+    EXPECT_EQ(array_meta.type, SB_TYPE_ARRAY);
+
+    sb_row row{};
+    ASSERT_EQ(sb_fetch(result, &row, &err), SB_OK);
+
+    size_t len = 0;
+    const char* raw = sb_get_string(&row, 0, &len);
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(std::string(raw, len), "{1,2,3}");
+
+    raw = sb_get_string(&row, 1, &len);
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(std::string(raw, len), "[1,2,3]");
+
+    raw = sb_get_string(&row, 2, &len);
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(std::string(raw, len), "aa:bb:cc:dd:ee:ff");
+
+    raw = sb_get_string(&row, 3, &len);
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(std::string(raw, len), "[1,9]");
+
+    sb_result_free(result);
     sb_disconnect(conn);
     harness.stop();
     EXPECT_TRUE(harness.error.empty()) << harness.error;

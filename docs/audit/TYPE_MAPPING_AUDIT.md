@@ -33,7 +33,9 @@ explicit mappings but does not validate binary encoding correctness.
 - Core drivers (Go/Node/Python/Ruby/Rust/PHP/R/Pascal/.NET/JDBC) implement
   explicit mappings for complex types (JSON/JSONB, UUID, RANGE, COMPOSITE,
   GEOMETRY, VECTOR, TSVECTOR/TSQUERY, INET/CIDR, MONEY, XML, MACADDR) and arrays.
-- C/C++ public C API exposes only a limited subset of the type matrix.
+- C/C++ now exposes the required PH5 public type surface through `sb_type`,
+  mapped C++ column metadata, and stable binary-backed payload access for the
+  remaining complex families.
 - Dart/Swift/Elixir/Mojo are missing large portions of the type matrix, notably
   arrays, composites, vectors, and inet/cidr/macaddr handling.
 
@@ -41,9 +43,11 @@ explicit mappings but does not validate binary encoding correctness.
 
 ### C/C++
 
-- `sb_type` in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h` only
-  covers primitives plus JSON/UUID/ARRAY/INET/CIDR/MACADDR. Missing RANGE,
-  COMPOSITE, GEOMETRY, VECTOR, TSVECTOR/TSQUERY, XML, MONEY wrappers.
+- `sb_type` in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+  covers the required SBWP families, and the C++ wrapper now carries mapped
+  `sb_type` metadata plus deterministic access to binary-backed complex values.
+- Remaining enhancement work, if needed later, is about richer language-level
+  wrappers, not the PH5 closure contract.
 
 ### Dart
 

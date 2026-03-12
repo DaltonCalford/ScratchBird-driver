@@ -480,12 +480,16 @@ export function decodeValue(typeOid: number, data: Buffer | null, format: number
     return decodeUnknownBinary(data);
   }
   if (format === FORMAT_TEXT) {
-    return decodeTextValue(data);
+    return decodeTextTypedValue(typeOid, data);
   }
   return decodeBinaryValue(typeOid, data);
 }
 
 function decodeBinaryValue(typeOid: number, data: Buffer): any {
+  const textFallback = maybeDecodeBinaryTextValue(typeOid, data);
+  if (textFallback !== undefined) {
+    return textFallback;
+  }
   switch (typeOid) {
     case OID_BOOL:
       return data.length > 0 && data[0] === 1;
@@ -493,8 +497,13 @@ function decodeBinaryValue(typeOid: number, data: Buffer): any {
       return data.readInt16LE(0);
     case OID_INT4:
       return data.readInt32LE(0);
-    case OID_INT8:
-      return data.readBigInt64LE(0);
+    case OID_INT8: {
+      const value = data.readBigInt64LE(0);
+      if (value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+        return Number(value);
+      }
+      return value;
+    }
     case OID_FLOAT4:
       return data.readFloatLE(0);
     case OID_FLOAT8:
@@ -555,6 +564,109 @@ function decodeBinaryValue(typeOid: number, data: Buffer): any {
     default:
       return Buffer.from(data);
   }
+}
+
+function decodeTextTypedValue(typeOid: number, data: Buffer): any {
+  const text = decodeTextValue(data);
+  const stripped = text.trim();
+  switch (typeOid) {
+    case OID_BOOL:
+      if (!/^(t|true|1|f|false|0)$/i.test(stripped)) {
+        throw new Error("invalid boolean text payload");
+      }
+      return /^(t|true|1)$/i.test(stripped);
+    case OID_INT2:
+    case OID_INT4: {
+      if (!/^[+-]?\d+$/.test(stripped)) {
+        throw new Error("invalid integer text payload");
+      }
+      const parsed = Number.parseInt(stripped, 10);
+      if (Number.isNaN(parsed)) {
+        throw new Error("invalid integer text payload");
+      }
+      return parsed;
+    }
+    case OID_INT8: {
+      if (!/^[+-]?\d+$/.test(stripped)) {
+        throw new Error("invalid bigint text payload");
+      }
+      try {
+        const parsed = BigInt(stripped);
+        if (parsed >= BigInt(Number.MIN_SAFE_INTEGER) && parsed <= BigInt(Number.MAX_SAFE_INTEGER)) {
+          return Number(parsed);
+        }
+        return parsed;
+      } catch {
+        throw new Error("invalid bigint text payload");
+      }
+    }
+    case OID_FLOAT4:
+    case OID_FLOAT8: {
+      if (!/^[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?$/.test(stripped)) {
+        throw new Error("invalid floating text payload");
+      }
+      const parsed = Number(stripped);
+      if (Number.isNaN(parsed)) {
+        throw new Error("invalid floating text payload");
+      }
+      return parsed;
+    }
+    case OID_NUMERIC:
+    case OID_MONEY:
+    case OID_TEXT:
+    case OID_VARCHAR:
+    case OID_CHAR:
+    case OID_BPCHAR:
+    case OID_JSON:
+    case OID_XML:
+    case OID_TSVECTOR:
+    case OID_TSQUERY:
+    case OID_INET:
+    case OID_CIDR:
+    case OID_MACADDR:
+    case OID_MACADDR8:
+      return text;
+    case OID_JSONB:
+      return new ScratchbirdJsonb(Buffer.from(text, "utf8"));
+    case OID_BYTEA:
+      return decodeTextByteaValue(stripped);
+    case OID_DATE:
+      return new Date(`${stripped}T00:00:00.000Z`);
+    case OID_TIME:
+      return decodeTimeText(stripped);
+    case OID_TIMESTAMP:
+      return decodeTimestampText(stripped, false);
+    case OID_TIMESTAMPTZ:
+      return decodeTimestampText(stripped, true);
+    case OID_UUID:
+      return stripped;
+    case OID_SB_VECTOR:
+      return parseVectorLiteral(stripped);
+    default:
+      return parseUnknownText(text);
+  }
+}
+
+function maybeDecodeBinaryTextValue(typeOid: number, data: Buffer): any {
+  const candidates: Buffer[] = [];
+  const stripped = stripTrailingNulls(data);
+  if (stripped.length > 0 && looksLikeText(stripped)) {
+    candidates.push(stripped);
+  }
+  if (data.length >= 4) {
+    const maybePrefixed = stripLengthPrefix(data);
+    if (maybePrefixed.length > 0 && maybePrefixed.length !== data.length && looksLikeText(maybePrefixed)) {
+      candidates.push(maybePrefixed);
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      return decodeTextTypedValue(typeOid, candidate);
+    } catch {
+      // Fall through to the regular binary decoder on malformed text fallbacks.
+    }
+  }
+  return undefined;
 }
 
 function encodeTypedValue(typed: ScratchbirdTypedValue): { param: ParamValue; oid: number } {
@@ -836,6 +948,43 @@ function stripTrailingNulls(data: Buffer): Buffer {
     end -= 1;
   }
   return data.subarray(0, end);
+}
+
+function decodeTextByteaValue(text: string): Buffer {
+  if (/^(\\x|0x)/i.test(text)) {
+    const hex = text.slice(2);
+    return /^[0-9a-f]*$/i.test(hex) ? Buffer.from(hex, "hex") : Buffer.from(text, "utf8");
+  }
+  if (/^[0-9a-f]+$/i.test(text) && text.length % 2 === 0) {
+    return Buffer.from(text, "hex");
+  }
+  return Buffer.from(text, "utf8");
+}
+
+function decodeTimeText(text: string): Date {
+  return new Date(`2000-01-01T${normalizeTemporalText(text)}`);
+}
+
+function decodeTimestampText(text: string, forceUtc: boolean): Date {
+  const normalized = normalizeTemporalText(text);
+  if (forceUtc) {
+    return new Date(normalized.includes("+") || /z$/i.test(normalized) ? normalized : `${normalized}Z`);
+  }
+  return new Date(normalized.replace(" ", "T"));
+}
+
+function normalizeTemporalText(text: string): string {
+  let normalized = text.trim();
+  if (normalized.includes(" ") && !normalized.includes("T")) {
+    normalized = normalized.replace(" ", "T");
+  }
+  if (/z$/i.test(normalized)) {
+    normalized = `${normalized.slice(0, -1)}+00:00`;
+  }
+  if (/[+-]\d{2}$/.test(normalized)) {
+    normalized = `${normalized}:00`;
+  }
+  return normalized;
 }
 
 function looksLikeText(data: Buffer): boolean {

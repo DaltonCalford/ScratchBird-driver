@@ -23,3 +23,6 @@ runtime-fixtures:
 
 runtime-jdbc-odbc:
     ./scripts/run_jdbc_odbc_runtime_checks.sh
+
+driver-closure-validate:
+    python3 scripts/driver_closure_substrate.py validate-contracts

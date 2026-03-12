@@ -153,6 +153,7 @@ public:
     void disconnect();
 
     bool isConnected() const;
+    bool inTransaction() const { return in_transaction_; }
     const std::string& lastError() const { return last_error_; }
 
     core::Status executeQuery(const std::string& sql,

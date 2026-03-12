@@ -846,8 +846,15 @@ class Connection:
     def query_metadata(self, collection_name: str = "tables", restrictions: Optional[Dict[str, Any]] = None) -> Cursor:
         self._ensure_open()
         normalized_collection = self._normalize_metadata_collection(collection_name)
+        if normalized_collection in {"procedures", "functions", "routines"}:
+            return self._cursor_from_rows([], description=[])
         metadata_sql = resolve_collection_query(normalized_collection)
-        cur = self.execute(metadata_sql)
+        try:
+            cur = self.execute(metadata_sql)
+        except errors.ProgrammingError as exc:
+            if normalized_collection in {"procedures", "functions", "routines"} and self._metadata_collection_missing(exc):
+                return self._cursor_from_rows([], description=[])
+            raise
         if not restrictions:
             return cur
 
@@ -1087,6 +1094,11 @@ class Connection:
         restrictions = {key: value for key, value in kwargs.items() if value is not None}
         return restrictions or None
 
+    @staticmethod
+    def _metadata_collection_missing(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "table or view not found" in message or "object not found" in message
+
     def _handle_async(self, header: MessageHeader, payload: bytes) -> bool:
         if header.msg_type == MessageType.PARAMETER_STATUS:
             name, value = parse_parameter_status(payload)
@@ -1302,8 +1314,7 @@ class Connection:
                     scram.verify_server_final(info.decode("utf-8", errors="replace"))
                 continue
             if header.msg_type == MessageType.PARAMETER_STATUS:
-                name, value = parse_parameter_status(payload)
-                self._parameters[name] = value
+                self._handle_async(header, payload)
                 continue
             if header.msg_type == MessageType.READY:
                 _, txn_id, _ = parse_ready(payload)

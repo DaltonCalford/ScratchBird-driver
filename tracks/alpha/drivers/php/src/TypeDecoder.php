@@ -223,7 +223,7 @@ final class TypeDecoder
             return self::decodeUnknownBinary($data);
         }
         if ($format === self::FORMAT_TEXT) {
-            return self::decodeTextValue($data);
+            return self::decodeTextTypedValue($typeOid, $data);
         }
         return self::decodeBinaryValue($typeOid, $data);
     }
@@ -272,6 +272,10 @@ final class TypeDecoder
 
     private static function decodeBinaryValue(int $typeOid, string $data): mixed
     {
+        $textFallback = self::maybeDecodeBinaryTextValue($typeOid, $data);
+        if ($textFallback !== null) {
+            return $textFallback;
+        }
         return match ($typeOid) {
             self::OID_BOOL => ord($data[0]) === 1,
             self::OID_INT2 => self::readInt16($data),
@@ -321,6 +325,29 @@ final class TypeDecoder
         };
     }
 
+    private static function maybeDecodeBinaryTextValue(int $typeOid, string $data): mixed
+    {
+        $candidates = [];
+        $trimmed = self::stripTrailingNulls($data);
+        if ($trimmed !== '' && self::looksLikeText($trimmed)) {
+            $candidates[] = $trimmed;
+        }
+        if (strlen($data) >= 4) {
+            $stripped = self::stripLengthPrefixed($data);
+            if ($stripped !== $data && $stripped !== '' && self::looksLikeText($stripped)) {
+                $candidates[] = $stripped;
+            }
+        }
+        foreach ($candidates as $candidate) {
+            try {
+                return self::decodeTextTypedValue($typeOid, $candidate);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+        return null;
+    }
+
     private static function decodeTextValue(string $data): string
     {
         if (strlen($data) >= 4) {
@@ -330,6 +357,22 @@ final class TypeDecoder
             }
         }
         return $data;
+    }
+
+    private static function decodeTextTypedValue(int $typeOid, string $data): mixed
+    {
+        $text = self::decodeTextValue($data);
+        $stripped = trim($text);
+        return match ($typeOid) {
+            self::OID_BOOL => self::parseBoolText($stripped),
+            self::OID_INT2, self::OID_INT4, self::OID_INT8 => self::parseIntegerText($stripped),
+            self::OID_FLOAT4, self::OID_FLOAT8 => self::parseFloatText($stripped),
+            self::OID_NUMERIC, self::OID_MONEY => $stripped,
+            self::OID_JSONB => new Jsonb($stripped),
+            self::OID_BYTEA => self::decodeByteaText($stripped),
+            self::OID_SB_VECTOR => self::parseVectorLiteral($stripped),
+            default => $text,
+        };
     }
 
     private static function decodeUnknownBinary(string $data): mixed
@@ -393,6 +436,52 @@ final class TypeDecoder
             }
         }
         return true;
+    }
+
+    private static function decodeByteaText(string $text): string
+    {
+        if (preg_match('/^(\\\\x|0x)/i', $text) === 1) {
+            $hex = substr($text, 2);
+            if ($hex !== '' && preg_match('/^[0-9a-f]+$/i', $hex) === 1) {
+                $decoded = hex2bin($hex);
+                if ($decoded !== false) {
+                    return $decoded;
+                }
+            }
+        }
+        if ($text !== '' && (strlen($text) % 2) === 0 && preg_match('/^[0-9a-f]+$/i', $text) === 1) {
+            $decoded = hex2bin($text);
+            if ($decoded !== false) {
+                return $decoded;
+            }
+        }
+        return $text;
+    }
+
+    private static function parseBoolText(string $text): bool
+    {
+        $normalized = strtolower($text);
+        return match ($normalized) {
+            't', 'true', '1' => true,
+            'f', 'false', '0' => false,
+            default => throw new \InvalidArgumentException('invalid boolean text payload'),
+        };
+    }
+
+    private static function parseIntegerText(string $text): int
+    {
+        if (preg_match('/^[+-]?\d+$/', $text) !== 1) {
+            throw new \InvalidArgumentException('invalid integer text payload');
+        }
+        return (int)$text;
+    }
+
+    private static function parseFloatText(string $text): float
+    {
+        if (preg_match('/^[+-]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][+-]?\d+)?$/', $text) !== 1) {
+            throw new \InvalidArgumentException('invalid floating text payload');
+        }
+        return (float)$text;
     }
 
     private static function encodeLengthPrefixed(string $data): string

@@ -303,7 +303,7 @@ final class Protocol
     public static function buildDescribePayload(int $describeType, string $name): string
     {
         $nameBytes = $name;
-        return chr($describeType) . self::writeUInt32LE(strlen($nameBytes)) . $nameBytes;
+        return chr($describeType) . "\0\0\0" . self::writeUInt32LE(strlen($nameBytes)) . $nameBytes;
     }
 
     public static function buildExecutePayload(string $portalName, int $maxRows): string
@@ -315,7 +315,7 @@ final class Protocol
     public static function buildClosePayload(int $closeType, string $name): string
     {
         $nameBytes = $name;
-        return chr($closeType) . self::writeUInt32LE(strlen($nameBytes)) . $nameBytes;
+        return chr($closeType) . "\0\0\0" . self::writeUInt32LE(strlen($nameBytes)) . $nameBytes;
     }
 
     public static function buildCancelPayload(int $cancelType, int $targetSequence): string

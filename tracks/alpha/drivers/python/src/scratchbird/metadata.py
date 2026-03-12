@@ -11,26 +11,45 @@ SCHEMAS_QUERY = (
     "FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 )
 TABLES_QUERY = (
-    "SELECT table_id, schema_id, table_name, table_type, owner_id "
-    "FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
+    "SELECT t.table_id, t.schema_id, s.schema_name, t.table_name, t.table_type, t.owner_id "
+    "FROM sys.tables t "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE t.is_valid = 1 ORDER BY s.schema_name, t.table_name"
 )
 COLUMNS_QUERY = (
-    "SELECT column_id, table_id, column_name, data_type_id, data_type_name, "
-    "ordinal_position, is_nullable, default_value, domain_id, collation_id, "
-    "charset_id, is_identity, is_generated, generation_expression "
-    "FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+    "SELECT c.column_id, c.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "c.column_name, c.data_type_id, c.data_type_name, c.ordinal_position, "
+    "c.is_nullable, c.default_value, c.domain_id, c.collation_id, c.charset_id, "
+    "c.is_identity, c.is_generated, c.generation_expression "
+    "FROM sys.columns c "
+    "LEFT JOIN sys.tables t ON t.table_id = c.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.ordinal_position"
 )
 INDEXES_QUERY = (
-    "SELECT index_id, table_id, index_name, index_type, is_unique "
-    "FROM sys.indexes WHERE is_valid = 1 ORDER BY table_id, index_name"
+    "SELECT i.index_id, i.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "i.index_name, i.index_type, i.is_unique "
+    "FROM sys.indexes i "
+    "LEFT JOIN sys.tables t ON t.table_id = i.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE i.is_valid = 1 ORDER BY s.schema_name, t.table_name, i.index_name"
 )
 INDEX_COLUMNS_QUERY = (
-    "SELECT index_id, column_id, column_name, ordinal_position, is_included "
-    "FROM sys.index_columns ORDER BY index_id, ordinal_position"
+    "SELECT ic.index_id, i.index_name, ic.column_id, ic.column_name, ic.ordinal_position, "
+    "ic.is_included, i.table_id, t.table_name, t.schema_id, s.schema_name "
+    "FROM sys.index_columns ic "
+    "LEFT JOIN sys.indexes i ON i.index_id = ic.index_id "
+    "LEFT JOIN sys.tables t ON t.table_id = i.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "ORDER BY s.schema_name, t.table_name, i.index_name, ic.ordinal_position"
 )
 CONSTRAINTS_QUERY = (
-    "SELECT constraint_id, table_id, constraint_name, constraint_type "
-    "FROM sys.constraints WHERE is_valid = 1 ORDER BY table_id, constraint_name"
+    "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "c.constraint_name, c.constraint_type "
+    "FROM sys.constraints c "
+    "LEFT JOIN sys.tables t ON t.table_id = c.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.constraint_name"
 )
 PROCEDURES_QUERY = (
     "SELECT procedure_id, schema_id, procedure_name, routine_type "
@@ -53,28 +72,43 @@ CATALOGS_QUERY = (
     "FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 )
 PRIMARY_KEYS_QUERY = (
-    "SELECT constraint_id, table_id, constraint_name, constraint_type "
-    "FROM sys.constraints WHERE is_valid = 1 "
-    "AND lower(constraint_type) IN ('primary key', 'primary') "
-    "ORDER BY table_id, constraint_name"
+    "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "c.constraint_name, c.constraint_type "
+    "FROM sys.constraints c "
+    "LEFT JOIN sys.tables t ON t.table_id = c.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE c.is_valid = 1 "
+    "AND lower(c.constraint_type) IN ('primary key', 'primary') "
+    "ORDER BY s.schema_name, t.table_name, c.constraint_name"
 )
 FOREIGN_KEYS_QUERY = (
-    "SELECT constraint_id, table_id, constraint_name, constraint_type "
-    "FROM sys.constraints WHERE is_valid = 1 "
-    "AND lower(constraint_type) IN ('foreign key', 'foreign') "
-    "ORDER BY table_id, constraint_name"
+    "SELECT c.constraint_id, c.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "c.constraint_name, c.constraint_type "
+    "FROM sys.constraints c "
+    "LEFT JOIN sys.tables t ON t.table_id = c.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE c.is_valid = 1 "
+    "AND lower(c.constraint_type) IN ('foreign key', 'foreign') "
+    "ORDER BY s.schema_name, t.table_name, c.constraint_name"
 )
 TABLE_PRIVILEGES_QUERY = (
-    "SELECT table_id, table_name, owner_id AS grantor_id, owner_id AS grantee_id, "
+    "SELECT t.table_id, t.table_name, t.schema_id, s.schema_name, "
+    "t.owner_id AS grantor_id, t.owner_id AS grantee_id, "
     "'ALL' AS privilege_type "
-    "FROM sys.tables WHERE is_valid = 1 ORDER BY table_id, table_name"
+    "FROM sys.tables t "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE t.is_valid = 1 ORDER BY s.schema_name, t.table_name"
 )
 COLUMN_PRIVILEGES_QUERY = (
-    "SELECT table_id, column_id, column_name, 'ALL' AS privilege_type "
-    "FROM sys.columns WHERE is_valid = 1 ORDER BY table_id, ordinal_position"
+    "SELECT c.table_id, t.table_name, t.schema_id, s.schema_name, c.column_id, "
+    "c.column_name, 'ALL' AS privilege_type "
+    "FROM sys.columns c "
+    "LEFT JOIN sys.tables t ON t.table_id = c.table_id "
+    "LEFT JOIN sys.schemas s ON s.schema_id = t.schema_id "
+    "WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.ordinal_position"
 )
 TYPE_INFO_QUERY = (
-    "SELECT DISTINCT data_type_id, data_type_name "
+    "SELECT DISTINCT data_type_id, data_type_name, data_type_name AS type_name "
     "FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name"
 )
 

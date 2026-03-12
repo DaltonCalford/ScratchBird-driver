@@ -232,13 +232,21 @@ std::string buildConnectionTarget() {
         mode = "inet_listener";
     }
 
+    std::string ipc_method = g_config.ipc_method.empty() ? "auto" : g_config.ipc_method;
+    std::string ipc_method_lower = ipc_method;
+    std::transform(ipc_method_lower.begin(), ipc_method_lower.end(), ipc_method_lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    const bool tcp_listener_mode = (mode == "local_ipc" && ipc_method_lower == "tcp");
+    const std::string transport_mode = tcp_listener_mode ? "inet_listener" : mode;
+
     std::vector<std::pair<std::string, std::string>> params;
     appendConnParam(params, "database", g_config.database_path);
     appendConnParam(params, "protocol", "native");
-    appendConnParam(params, "transport_mode", mode);
+    appendConnParam(params, "transport_mode", transport_mode);
 
-    if (mode == "local_ipc") {
-        appendConnParam(params, "ipc_method", g_config.ipc_method.empty() ? "auto" : g_config.ipc_method);
+    if (transport_mode == "local_ipc") {
+        appendConnParam(params, "ipc_method", ipc_method);
         appendConnParam(params, "ipc_path", g_config.ipc_path);
     } else {
         appendConnParam(params, "host", g_config.host.empty() ? "127.0.0.1" : g_config.host);
@@ -246,7 +254,7 @@ std::string buildConnectionTarget() {
     }
 
     std::string front_door = g_config.front_door_mode;
-    if (mode == "managed") {
+    if (transport_mode == "managed") {
         front_door = "manager_proxy";
     }
     appendConnParam(params, "front_door_mode", front_door);

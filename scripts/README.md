@@ -23,6 +23,21 @@ Runs JDBC and ODBC validation against a live runtime stack:
 scripts/run_jdbc_odbc_runtime_checks.sh
 ```
 
+## `driver_closure_substrate.py`
+
+Normalizes raw driver conformance output plus SQLSTATE coverage into a shared
+PH5 closure summary and cross-driver matrix:
+
+```bash
+python3 scripts/driver_closure_substrate.py validate-contracts
+python3 scripts/driver_closure_substrate.py summarize --driver-id go --lane alpha-primary \
+  --conformance-results /tmp/go_conformance.json \
+  --sqlstate-codes /tmp/go_sqlstates.json
+python3 scripts/driver_closure_substrate.py matrix \
+  --driver-summary /tmp/go_summary.json \
+  --driver-summary /tmp/node_summary.json
+```
+
 ## `artifacts/enterprise-readiness/JDBC-203/run_cross_runtime_pool_contract.sh`
 
 Runs the JDBC-203 cross-runtime pooling/recovery gate for .NET + JDBC.

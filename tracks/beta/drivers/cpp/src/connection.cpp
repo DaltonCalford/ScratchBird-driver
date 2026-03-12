@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "scratchbird/client/driver_config.h"
+#include "scratchbird/client/metadata.h"
 #include "scratchbird/client/network_client.h"
 #include "scratchbird/core/type_extractor.h"
 #include "scratchbird/protocol/sbwp_protocol.h"
@@ -18,6 +19,11 @@ namespace {
 constexpr int32_t kDaysFrom1970To2000 = 10957;
 constexpr int64_t kMicrosPerSecond = 1000000LL;
 constexpr int64_t kMicrosPerDay = 86400LL * kMicrosPerSecond;
+
+bool looksLikeDriverConnectionString(const std::string& value) {
+    return value.rfind("scratchbird://", 0) == 0 ||
+           (value.find('=') != std::string::npos && value.find(';') != std::string::npos);
+}
 
 template <typename T>
 bool decodeScalar(const std::vector<uint8_t>& data, T& out) {
@@ -302,6 +308,131 @@ bool lookupColumnIndex(const std::vector<ColumnMeta>& columns,
     }
     return false;
 }
+
+sb_type mapTypeOidToPublicType(uint32_t type_oid) {
+    using namespace protocol;
+    switch (type_oid) {
+        case kOidBool:
+            return SB_TYPE_BOOLEAN;
+        case kOidInt2:
+            return SB_TYPE_SMALLINT;
+        case kOidInt4:
+            return SB_TYPE_INTEGER;
+        case kOidInt8:
+            return SB_TYPE_BIGINT;
+        case kOidFloat4:
+            return SB_TYPE_REAL;
+        case kOidFloat8:
+            return SB_TYPE_DOUBLE;
+        case kOidNumeric:
+            return SB_TYPE_DECIMAL;
+        case kOidJsonb:
+            return SB_TYPE_JSONB;
+        case kOidChar:
+        case kOidBpChar:
+            return SB_TYPE_CHAR;
+        case kOidVarchar:
+            return SB_TYPE_VARCHAR;
+        case kOidText:
+            return SB_TYPE_TEXT;
+        case kOidXml:
+            return SB_TYPE_XML;
+        case kOidTsVector:
+            return SB_TYPE_TSVECTOR;
+        case kOidTsQuery:
+            return SB_TYPE_TSQUERY;
+        case kOidBytea:
+            return SB_TYPE_BLOB;
+        case kOidMoney:
+            return SB_TYPE_MONEY;
+        case kOidDate:
+            return SB_TYPE_DATE;
+        case kOidTime:
+            return SB_TYPE_TIME;
+        case kOidTimetz:
+            return SB_TYPE_TIME_TZ;
+        case kOidTimestamp:
+            return SB_TYPE_TIMESTAMP;
+        case kOidTimestamptz:
+            return SB_TYPE_TIMESTAMP_TZ;
+        case kOidInterval:
+            return SB_TYPE_INTERVAL;
+        case kOidUuid:
+            return SB_TYPE_UUID;
+        case kOidJson:
+            return SB_TYPE_JSON;
+        case kOidPoint:
+        case kOidLseg:
+        case kOidPath:
+        case kOidBox:
+        case kOidPolygon:
+        case kOidLine:
+        case kOidCircle:
+            return SB_TYPE_GEOMETRY;
+        case kOidInet:
+            return SB_TYPE_INET;
+        case kOidCidr:
+            return SB_TYPE_CIDR;
+        case kOidMacaddr:
+        case kOidMacaddr8:
+            return SB_TYPE_MACADDR;
+        case kOidSbVector:
+            return SB_TYPE_VECTOR;
+        case kOidRecord:
+            return SB_TYPE_COMPOSITE;
+        case kOidInt4Array:
+        case kOidTextArray:
+            return SB_TYPE_ARRAY;
+        case kOidInt4Range:
+        case kOidInt8Range:
+        case kOidNumRange:
+        case kOidTsRange:
+        case kOidTstzRange:
+        case kOidDateRange:
+            return SB_TYPE_RANGE;
+        default:
+            return SB_TYPE_UNKNOWN;
+    }
+}
+
+void populatePublicConfigFromNetwork(const NetworkClientConfig& net_cfg,
+                                     ConnectionConfig* config) {
+    if (!config) {
+        return;
+    }
+    config->database_name = net_cfg.database;
+    config->username = net_cfg.username;
+    config->password = net_cfg.password;
+    config->protocol = net_cfg.protocol;
+    config->transport_mode = net_cfg.transport_mode;
+    config->host = net_cfg.host;
+    config->tcp_port = net_cfg.port;
+    config->front_door_mode = net_cfg.front_door_mode;
+    config->manager_auth_token = net_cfg.manager_auth_token;
+    config->manager_username = net_cfg.manager_username;
+    config->manager_database = net_cfg.manager_database;
+    config->manager_connection_profile = net_cfg.manager_connection_profile;
+    config->manager_client_intent = net_cfg.manager_client_intent;
+    config->manager_client_flags = net_cfg.manager_client_flags;
+    config->manager_auth_fast_path = net_cfg.manager_auth_fast_path;
+    config->connect_client_flags = net_cfg.connect_client_flags;
+    config->auth_method_id = net_cfg.auth_method_id;
+    config->auth_method_payload = net_cfg.auth_method_payload;
+    config->auth_payload_json = net_cfg.auth_payload_json;
+    config->auth_payload_b64 = net_cfg.auth_payload_b64;
+    config->auth_provider_profile = net_cfg.auth_provider_profile;
+    config->auth_required_methods = net_cfg.auth_required_methods;
+    config->auth_forbidden_methods = net_cfg.auth_forbidden_methods;
+    config->auth_require_channel_binding = net_cfg.auth_require_channel_binding;
+    config->workload_identity_token = net_cfg.workload_identity_token;
+    config->proxy_principal_assertion = net_cfg.proxy_principal_assertion;
+    config->connect_timeout_ms = net_cfg.connect_timeout_ms;
+    config->read_timeout_ms = net_cfg.read_timeout_ms;
+    config->write_timeout_ms = net_cfg.write_timeout_ms;
+    config->copy_window_bytes = net_cfg.copy_window_bytes;
+    config->copy_chunk_bytes = net_cfg.copy_chunk_bytes;
+}
+
 } // namespace
 
 struct ResultSetImpl {
@@ -317,6 +448,19 @@ struct ConnectionImpl {
     bool in_transaction{false};
     std::string last_error;
 };
+
+void markConnectedTransactionState(ConnectionImpl* impl) {
+    if (!impl) {
+        return;
+    }
+    if (!impl->client.isConnected()) {
+        impl->in_transaction = false;
+        impl->state = ConnectionState::DISCONNECTED;
+        return;
+    }
+    impl->in_transaction = true;
+    impl->state = ConnectionState::IN_TRANSACTION;
+}
 
 ResultSet::ResultSet() : impl_(std::make_unique<ResultSetImpl>()) {}
 ResultSet::~ResultSet() = default;
@@ -340,6 +484,34 @@ int ResultSet::getColumnIndex(const std::string& name) const {
     }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, name, &idx) ? static_cast<int>(idx) : -1;
+}
+
+sb_type ResultSet::getColumnType(size_t index) const {
+    if (!impl_ || index >= impl_->columns.size()) {
+        return SB_TYPE_UNKNOWN;
+    }
+    return impl_->columns[index].type;
+}
+
+uint32_t ResultSet::getColumnTypeOid(size_t index) const {
+    if (!impl_ || index >= impl_->columns.size()) {
+        return 0;
+    }
+    return impl_->columns[index].type_oid;
+}
+
+uint8_t ResultSet::getColumnFormat(size_t index) const {
+    if (!impl_ || index >= impl_->columns.size()) {
+        return 0;
+    }
+    return impl_->columns[index].format;
+}
+
+bool ResultSet::isColumnNullable(size_t index) const {
+    if (!impl_ || index >= impl_->columns.size()) {
+        return true;
+    }
+    return impl_->columns[index].nullable;
 }
 
 const std::vector<ColumnMeta>& ResultSet::getColumns() const {
@@ -560,66 +732,105 @@ const uint8_t* ResultSet::getRaw(size_t column, size_t* length) const {
 }
 
 bool ResultSet::isNull(const std::string& column) const {
+    if (!impl_) {
+        return true;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? isNull(idx) : true;
 }
 
 bool ResultSet::getBool(const std::string& column) const {
+    if (!impl_) {
+        return false;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getBool(idx) : false;
 }
 
 int16_t ResultSet::getInt16(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getInt16(idx) : 0;
 }
 
 int32_t ResultSet::getInt32(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getInt32(idx) : 0;
 }
 
 int64_t ResultSet::getInt64(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getInt64(idx) : 0;
 }
 
 float ResultSet::getFloat(const std::string& column) const {
+    if (!impl_) {
+        return 0.0f;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getFloat(idx) : 0.0f;
 }
 
 double ResultSet::getDouble(const std::string& column) const {
+    if (!impl_) {
+        return 0.0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getDouble(idx) : 0.0;
 }
 
 std::string ResultSet::getString(const std::string& column) const {
+    if (!impl_) {
+        return "";
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getString(idx) : "";
 }
 
 std::vector<uint8_t> ResultSet::getBytes(const std::string& column) const {
+    if (!impl_) {
+        return {};
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getBytes(idx) : std::vector<uint8_t>{};
 }
 
 int64_t ResultSet::getTimestamp(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getTimestamp(idx) : 0;
 }
 
 int32_t ResultSet::getDate(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getDate(idx) : 0;
 }
 
 int64_t ResultSet::getTime(const std::string& column) const {
+    if (!impl_) {
+        return 0;
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getTime(idx) : 0;
 }
 
 std::string ResultSet::getUUID(const std::string& column) const {
+    if (!impl_) {
+        return "";
+    }
     size_t idx = 0;
     return lookupColumnIndex(impl_->columns, column, &idx) ? getUUID(idx) : "";
 }
@@ -636,6 +847,11 @@ core::Status Connection::connect(const std::string& database,
     NetworkClientConfig net_cfg;
     core::Status status = parseDriverConnectionString(database, net_cfg, ctx);
     if (status != core::Status::OK) {
+        if (looksLikeDriverConnectionString(database)) {
+            impl_->last_error = ctx ? ctx->message : std::string();
+            impl_->state = ConnectionState::ERROR_STATE;
+            return status;
+        }
         applyDriverDefaults(net_cfg);
         net_cfg.database = database;
     }
@@ -645,10 +861,16 @@ core::Status Connection::connect(const std::string& database,
     if (!password.empty()) {
         net_cfg.password = password;
     }
+    populatePublicConfigFromNetwork(net_cfg, &impl_->config);
     impl_->state = ConnectionState::CONNECTING;
     status = impl_->client.connect(net_cfg, ctx);
     impl_->last_error = impl_->client.lastError();
-    impl_->state = (status == core::Status::OK) ? ConnectionState::CONNECTED : ConnectionState::ERROR_STATE;
+    if (status == core::Status::OK) {
+        markConnectedTransactionState(impl_.get());
+    } else {
+        impl_->in_transaction = false;
+        impl_->state = ConnectionState::ERROR_STATE;
+    }
     return status;
 }
 
@@ -692,7 +914,12 @@ core::Status Connection::connect(const ConnectionConfig& config,
     impl_->state = ConnectionState::CONNECTING;
     core::Status status = impl_->client.connect(net_cfg, ctx);
     impl_->last_error = impl_->client.lastError();
-    impl_->state = (status == core::Status::OK) ? ConnectionState::CONNECTED : ConnectionState::ERROR_STATE;
+    if (status == core::Status::OK) {
+        markConnectedTransactionState(impl_.get());
+    } else {
+        impl_->in_transaction = false;
+        impl_->state = ConnectionState::ERROR_STATE;
+    }
     return status;
 }
 
@@ -736,8 +963,18 @@ core::Status Connection::executeQuery(const std::string& sql,
         results->impl_->columns.clear();
         for (size_t i = 0; i < shared->columns.size(); ++i) {
             const auto& col = shared->columns[i];
-            results->impl_->columns.push_back(ColumnMeta{col.name, col.type_oid, col.type_modifier, i});
+            results->impl_->columns.push_back(
+                ColumnMeta{col.name,
+                           mapTypeOidToPublicType(col.type_oid),
+                           col.type_oid,
+                           col.type_modifier,
+                           i,
+                           col.format,
+                           col.nullable});
         }
+    }
+    if (status == core::Status::OK) {
+        markConnectedTransactionState(impl_.get());
     }
     return status;
 }
@@ -751,15 +988,105 @@ core::Status Connection::execute(const std::string& sql,
     if (rows_affected) {
         *rows_affected = results.rows_affected;
     }
+    if (status == core::Status::OK) {
+        markConnectedTransactionState(impl_.get());
+    }
     return status;
+}
+
+core::Status Connection::metadataQuery(const std::string& collection_name,
+                                       ResultSet* results,
+                                       core::ErrorContext* ctx) {
+    std::string query_sql;
+    if (!resolveMetadataCollectionQuery(collection_name, &query_sql, nullptr)) {
+        if (ctx) {
+            ctx->message = metadataCollectionNotSupportedMessage(collection_name);
+        }
+        impl_->last_error = metadataCollectionNotSupportedMessage(collection_name);
+        return core::Status::NOT_SUPPORTED;
+    }
+    return executeQuery(query_sql, results, ctx);
+}
+
+core::Status Connection::schemas(ResultSet* results,
+                                 const std::string& schema_pattern,
+                                 core::ErrorContext* ctx) {
+    const std::string* pattern = schema_pattern.empty() ? nullptr : &schema_pattern;
+    return executeQuery(buildMetadataSchemasQuerySql(pattern), results, ctx);
+}
+
+core::Status Connection::tables(ResultSet* results,
+                                const std::string& schema_pattern,
+                                const std::string& table_pattern,
+                                core::ErrorContext* ctx) {
+    const std::string* schema = schema_pattern.empty() ? nullptr : &schema_pattern;
+    const std::string* table = table_pattern.empty() ? nullptr : &table_pattern;
+    return executeQuery(buildMetadataTablesQuerySql(schema, table), results, ctx);
+}
+
+core::Status Connection::columns(ResultSet* results,
+                                 const std::string& schema_pattern,
+                                 const std::string& table_pattern,
+                                 core::ErrorContext* ctx) {
+    const std::string* schema = schema_pattern.empty() ? nullptr : &schema_pattern;
+    const std::string* table = table_pattern.empty() ? nullptr : &table_pattern;
+    return executeQuery(buildMetadataColumnsQuerySql(schema, table), results, ctx);
+}
+
+core::Status Connection::indexes(ResultSet* results,
+                                 const std::string& schema_pattern,
+                                 const std::string& table_pattern,
+                                 core::ErrorContext* ctx) {
+    const std::string* schema = schema_pattern.empty() ? nullptr : &schema_pattern;
+    const std::string* table = table_pattern.empty() ? nullptr : &table_pattern;
+    return executeQuery(buildMetadataIndexesQuerySql(schema, table), results, ctx);
+}
+
+core::Status Connection::metadataSchemaPayload(const std::string* schema_pattern,
+                                               bool expand_schema_parents,
+                                               std::string* payload_json,
+                                               core::ErrorContext* ctx) {
+    if (!payload_json) {
+        if (ctx) {
+            ctx->message = "payload_json is required";
+        }
+        impl_->last_error = "payload_json is required";
+        return core::Status::INVALID_ARGUMENT;
+    }
+
+    ResultSet schemas_result;
+    core::Status status = schemas(&schemas_result, "", ctx);
+    if (status != core::Status::OK) {
+        payload_json->clear();
+        return status;
+    }
+
+    const int schema_name_index = schemas_result.getColumnIndex("schema_name");
+    if (schema_name_index < 0) {
+        if (ctx) {
+            ctx->message = "schemas metadata result is missing schema-name column";
+        }
+        impl_->last_error = "schemas metadata result is missing schema-name column";
+        payload_json->clear();
+        return core::Status::PROTOCOL_VIOLATION;
+    }
+
+    std::vector<std::string> schema_names;
+    while (schemas_result.next()) {
+        schema_names.push_back(schemas_result.getString(static_cast<size_t>(schema_name_index)));
+    }
+    *payload_json = buildMetadataDdlEditorSchemaPayloadJson(
+        schema_names,
+        schema_pattern,
+        expand_schema_parents);
+    return core::Status::OK;
 }
 
 core::Status Connection::beginTransaction(core::ErrorContext* ctx) {
     core::Status status = impl_->client.beginTransaction(ctx);
     impl_->last_error = impl_->client.lastError();
     if (status == core::Status::OK) {
-        impl_->in_transaction = true;
-        impl_->state = ConnectionState::IN_TRANSACTION;
+        markConnectedTransactionState(impl_.get());
     }
     return status;
 }
@@ -768,8 +1095,7 @@ core::Status Connection::commit(core::ErrorContext* ctx) {
     core::Status status = impl_->client.commit(ctx);
     impl_->last_error = impl_->client.lastError();
     if (status == core::Status::OK) {
-        impl_->in_transaction = false;
-        impl_->state = ConnectionState::CONNECTED;
+        markConnectedTransactionState(impl_.get());
     }
     return status;
 }
@@ -778,8 +1104,7 @@ core::Status Connection::rollback(core::ErrorContext* ctx) {
     core::Status status = impl_->client.rollback(ctx);
     impl_->last_error = impl_->client.lastError();
     if (status == core::Status::OK) {
-        impl_->in_transaction = false;
-        impl_->state = ConnectionState::CONNECTED;
+        markConnectedTransactionState(impl_.get());
     }
     return status;
 }

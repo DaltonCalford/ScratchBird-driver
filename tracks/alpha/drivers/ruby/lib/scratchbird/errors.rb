@@ -35,6 +35,10 @@ module Scratchbird
   module ErrorMapper
     def self.from_sqlstate(sqlstate, message, detail = "", hint = "")
       sqlstate = sqlstate.to_s
+      text = [message, detail, hint].compact.join("\n").downcase
+      if sqlstate.start_with?("42") && integrity_message?(text)
+        sqlstate = "23000"
+      end
       if sqlstate.length == 5
         case sqlstate
         when "01000" then return Warning.new(message, sqlstate, detail, hint)
@@ -77,6 +81,17 @@ module Scratchbird
         end
       end
       Error.new(message, sqlstate, detail, hint)
+    end
+
+    def self.integrity_message?(text)
+      return false if text.empty?
+
+      text.include?("constraint violation") ||
+        text.include?("duplicate value") ||
+        text.include?("duplicate key") ||
+        text.include?("primary key") ||
+        text.include?("foreign key") ||
+        text.include?("not null")
     end
   end
 end

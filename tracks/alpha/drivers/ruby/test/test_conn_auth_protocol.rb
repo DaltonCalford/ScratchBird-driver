@@ -64,13 +64,13 @@ class TestConnAuthProtocol < Minitest::Test
     assert_equal "front_door_mode must be direct or manager_proxy.", err.message
   end
 
-  def test_wrap_tls_rejects_sslmode_disable
+  def test_wrap_tls_passthroughs_sslmode_disable
     cfg = base_config
     cfg.sslmode = "disable"
     client = Scratchbird::Client.new(cfg)
+    socket = FakeSocket.new(0)
 
-    err = assert_raises(Scratchbird::ConnectionError) { client.send(:wrap_tls, FakeSocket.new(0)) }
-    assert_equal "TLS is required for ScratchBird connections", err.message
+    assert_same socket, client.send(:wrap_tls, socket)
   end
 
   def test_connect_closes_socket_when_manager_proxy_auth_token_missing

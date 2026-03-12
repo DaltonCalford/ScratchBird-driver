@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "driver-cross-lane-closure-substrate",
+  "conformance_manifest": "docs/fixtures/sbwp_conformance_manifest.json",
+  "sqlstate_contract": "docs/fixtures/sqlstate_required_set.json",
+  "required_conformance_tests": [
+    {"id": "handshake", "allowed_statuses": ["ok"]},
+    {"id": "auth", "allowed_statuses": ["ok"]},
+    {"id": "prepare_bind", "allowed_statuses": ["ok"]},
+    {"id": "describe_param_mismatch", "allowed_statuses": ["ok"]},
+    {"id": "types_one_way", "allowed_statuses": ["ok"]},
+    {"id": "paging_basic_table", "allowed_statuses": ["ok"]},
+    {"id": "cancel_stream", "allowed_statuses": ["ok", "skipped"]}
+  ],
+  "matrix_columns": [
+    "driver_id",
+    "lane",
+    "status",
+    "conformance_status",
+    "sqlstate_status",
+    "missing_tests",
+    "failing_tests",
+    "missing_sqlstates"
+  ]
+}

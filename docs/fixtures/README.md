@@ -9,3 +9,5 @@ Planned files:
 - `core_fixture.sql` - baseline schema + seed data for harness tests
 - `types_fixture.sql` - per-type test data for one-way decode coverage
 - `sbwp_conformance_manifest.json` - starter harness manifest
+- `sqlstate_required_set.json` - machine-readable required SQLSTATE contract
+- `driver_closure_substrate.json` - shared PH5 closure contract for conformance + SQLSTATE gates

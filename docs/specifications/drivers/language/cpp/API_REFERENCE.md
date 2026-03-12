@@ -13,10 +13,12 @@ Priority: P2
 - `begin()`
 - `commit()`
 - `rollback()`
+- `metadataQuery(collection)`
 - `schemas()`
 - `tables(schema)`
 - `columns(schema, table)`
 - `indexes(schema, table)`
+- `metadataSchemaPayload(schema_pattern, expand_parents)`
 
 ## Connection Options
 
@@ -27,7 +29,7 @@ Priority: P2
 
 ## Result Handling
 
-- Column metadata (name, type_oid, format).
+- Column metadata (`name`, mapped `sb_type`, `type_oid`, `format`, `nullable`).
 - Row decoding per DRIVER_RESULT_DECODING.md.
 
 ## Errors
