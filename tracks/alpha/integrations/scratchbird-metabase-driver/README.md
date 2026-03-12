@@ -1,7 +1,9 @@
-# ScratchBird Metabase Driver (Scaffold)
+# ScratchBird Metabase Driver
 
-This is a starter scaffold for a Metabase driver that targets ScratchBird
-using the ScratchBird JDBC driver (SBWP v1.1).
+This adapter targets ScratchBird through the ScratchBird JDBC driver. The
+Metabase layer stays intentionally thin and now aligns its connection-property
+surface with the supported JDBC runtime behavior instead of carrying a reduced
+or adapter-specific subset.
 
 ## Documentation
 
@@ -12,13 +14,18 @@ using the ScratchBird JDBC driver (SBWP v1.1).
 
 - `metabase-plugin.yaml` plugin manifest
 - `deps.edn` Clojure deps (includes the ScratchBird JDBC driver)
-- `src/metabase/driver/scratchbird.clj` driver skeleton
+- `src/metabase/driver/scratchbird.clj` adapter namespace
+- `src/metabase/driver/scratchbird_support.clj` pure helper/config namespace
 
 ## Notes
 
 - Update the JDBC dependency version to match your release.
 - Metabase expects the driver to be packaged as a single JAR and placed in
   `MB_PLUGINS_DIR`.
+- Connection properties now expose the full JDBC `sslmode` set, optional
+  `currentSchema`, and manager-proxy ingress fields.
+- If no `currentSchema` is supplied, the adapter preserves the server-side
+  default schema policy, which falls back to `users.public`.
 - The `can-connect?` implementation assumes Metabase's current
   `sql-jdbc.conn/can-connect-with-details?` helper. Adjust if the API changes.
 

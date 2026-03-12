@@ -17,7 +17,8 @@ Audited metadata behavior against:
 - ODBC metadata mappings are aligned to sys.* and information_schema.
 - JDBC now has explicit closure evidence for resolved-current-schema metadata
   anchoring, metadata family coverage, and pooled-session reset safety.
-- Superset/Metabase still need alignment with the finalized sys.columns/sys.index_columns schemas.
+- Superset and Metabase are now aligned to the finalized sys.columns and
+  sys.index_columns surfaces on their supported adapter paths.
 - Dart/Swift/Elixir/Mojo do not provide metadata helper APIs yet.
 
 ## Evidence (Selected)
@@ -42,5 +43,3 @@ Audited metadata behavior against:
 2. Swift: add sys.* metadata helpers.
 3. Elixir: add sys.* metadata helpers.
 4. Mojo: add sys.* metadata helpers (native).
-5. Superset: use `sys.columns.data_type_name` directly in `get_columns`.
-6. Metabase: revalidate feature flags vs JDBC metadata coverage.

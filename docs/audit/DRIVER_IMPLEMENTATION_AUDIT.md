@@ -27,7 +27,10 @@ Common gaps (where applicable):
 - Type mapping coverage varies by driver; Dart/Swift/Elixir/Mojo are still
   missing large portions of the type matrix, while the C/C++ lane now exposes
   the required PH5 public type/metadata surface.
-- Metadata helper queries are present for most language drivers, but Superset/Metabase require further alignment with sys.columns/sys.index_columns now that the server schema is finalized.
+- Metadata helper queries are present for most language drivers. Superset and
+  Metabase are now aligned to the finalized sys.columns/sys.index_columns
+  schema and current JDBC metadata surface; the remaining metadata-helper gaps
+  are in Dart/Swift/Elixir/Mojo.
 
 ## Driver Audit
 
@@ -187,17 +190,29 @@ Outstanding:
 ### Superset `tracks/beta/integrations/scratchbird-superset-driver/`
 Implemented:
 - SQLAlchemy dialect with sys.* metadata queries and information_schema PK/FK.
-- Enforces binary transfer and TLS requirement.
+- DB-API/JDBC-style DSN aliases now normalize to the Python driver contract
+  (`currentSchema`/`searchPath`, application/TLS material, manager token).
+- Default schema resolution now follows the live session via `SHOW current_schema`
+  with `users.public` fallback.
+- Index reflection now consumes sys.index_columns/sys.columns instead of
+  returning empty column lists.
 Outstanding:
-- `get_columns` still falls back to using numeric `data_type_id`; should use `data_type_name` from sys.columns without fallback now that server schema is fixed.
-- Type mapping for non-core types is minimal (arrays, ranges, geometry are mapped to generic types).
+- Non-core types still map to the nearest stable SQLAlchemy primitives where
+  Superset does not expose richer native types; this is now the supported
+  adapter contract rather than a PH5 blocker.
 
 ### Metabase `tracks/alpha/integrations/scratchbird-metabase-driver/`
 Implemented:
-- JDBC-based driver with type mapping table and TLS/binary transfer enforcement.
+- JDBC-based driver with type mapping table and adapter-side connection
+  property shaping on top of the ScratchBird JDBC lane.
+- Adapter connection properties now surface current schema override,
+  manager-proxy ingress, and the full JDBC `sslmode` set rather than
+  hard-restricting the UI to the earlier subset.
+- Metadata capability declarations are now explicitly tied to the supported
+  JDBC metadata/index surface.
 Outstanding:
-- Feature flags need to be revalidated against current JDBC metadata coverage.
-- Type mapping for complex SBWP types is generic.
+- Complex SBWP types still map to Metabase base types conservatively; this is
+  acceptable adapter behavior and not a remaining PH5 blocker.
 
 ### CLI `tracks/alpha/drivers/cli/`
 Implemented:

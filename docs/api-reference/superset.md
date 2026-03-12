@@ -8,8 +8,11 @@ The Superset driver consists of:
 ## SQLAlchemy Dialect
 
 The dialect registers the `scratchbird://` scheme and delegates DB-API calls
-to the ScratchBird Python driver. It implements schema/table/column reflection
-using `sys.*` catalog views.
+to the ScratchBird Python driver. It implements schema/table/column/index
+reflection using `sys.*` catalog views, normalizes JDBC-style DSN aliases such
+as `currentSchema` and `searchPath` to the Python driver contract, and resolves
+the default schema from the live session via `SHOW current_schema` with
+`users.public` fallback.
 
 ## Engine Spec
 

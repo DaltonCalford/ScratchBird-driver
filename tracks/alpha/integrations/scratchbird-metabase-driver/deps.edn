@@ -1,3 +1,4 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
-        com.scratchbird/scratchbird-jdbc {:mvn/version "0.1.0"}}}
+        com.scratchbird/scratchbird-jdbc {:mvn/version "0.1.0"}}
+ :aliases {:test {:extra-paths ["test"]}}}

@@ -29,6 +29,12 @@ Because the Superset adapter rides on the Python driver, the same parity DSN
 features are available here, including `sslmode=disable` for explicit plaintext
 development paths and `compression=zstd|none|off`.
 
+JDBC-style session aliases are normalized for convenience as well, so
+`currentSchema` and `searchPath` work in the URI query string even though the
+underlying Python driver expects the normalized schema keys. If no explicit
+schema override is supplied, reflection follows the live session schema and
+ultimately the server default chain that falls back to `users.public`.
+
 Use TLS-enabled modes in production.
 
 ## Debugging

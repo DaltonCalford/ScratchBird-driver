@@ -15,6 +15,17 @@ from sqlalchemy import text, types
 from sqlalchemy.engine.default import DefaultDialect
 
 
+_CONNECT_ARG_ALIASES = {
+    "applicationName": "application_name",
+    "currentSchema": "schema",
+    "searchPath": "search_path",
+    "sslRootCert": "sslrootcert",
+    "sslCert": "sslcert",
+    "sslKey": "sslkey",
+    "managerAuthToken": "manager_auth_token",
+}
+
+
 _TYPE_MAP = {
     "BOOLEAN": types.Boolean(),
     "SMALLINT": types.SmallInteger(),
@@ -82,7 +93,7 @@ def _normalize_type(type_name: Optional[str]) -> str:
 def _map_type(type_name: Optional[str]) -> types.TypeEngine:
     normalized = _normalize_type(type_name)
     if normalized.endswith("[]"):
-        return types.ARRAY(types.String())
+        return types.ARRAY(_map_type(normalized[:-2]))
     mapped = _TYPE_MAP.get(normalized)
     if mapped is not None:
         return mapped
@@ -106,6 +117,18 @@ class ScratchBirdDialect(DefaultDialect):
 
         return scratchbird
 
+    def get_default_schema_name(self, connection):
+        try:
+            result = connection.exec_driver_sql("SHOW current_schema")
+            row = result.fetchone()
+            if row:
+                for value in row:
+                    if value:
+                        return str(value)
+        except Exception:
+            pass
+        return "users.public"
+
     def create_connect_args(self, url):
         connect_args: Dict[str, Any] = {}
         connect_args["host"] = url.host or "localhost"
@@ -127,7 +150,10 @@ class ScratchBirdDialect(DefaultDialect):
                     raise ValueError("binary_transfer=false is not supported")
                 connect_args["binary_transfer"] = value
             else:
-                connect_args[key] = value
+                mapped_key = _CONNECT_ARG_ALIASES.get(key, key)
+                if mapped_key == "schema" and "schema" in connect_args:
+                    continue
+                connect_args[mapped_key] = value
 
         return [], connect_args
 
@@ -281,28 +307,33 @@ class ScratchBirdDialect(DefaultDialect):
 
     def get_indexes(self, connection, table_name: str, schema: Optional[str] = None, **kw):
         sql = (
-            "SELECT i.index_name, i.is_unique "
+            "SELECT i.index_name, i.is_unique, c.column_name, ic.ordinal_position "
             "FROM sys.indexes i "
             "JOIN sys.tables t ON t.table_id = i.table_id "
             "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+            "LEFT JOIN sys.index_columns ic ON ic.index_id = i.index_id "
+            "LEFT JOIN sys.columns c ON c.column_id = ic.column_id "
             "WHERE t.table_name = :table AND i.is_valid = 1"
         )
         params: Dict[str, Any] = {"table": table_name}
         if schema:
             sql += " AND s.schema_name = :schema"
             params["schema"] = schema
-        sql += " ORDER BY i.index_name"
+        sql += " ORDER BY i.index_name, ic.ordinal_position"
         try:
             rows = connection.execute(text(sql), params).fetchall()
         except Exception:
             return []
-        indexes = []
+        indexes_by_name: Dict[str, Dict[str, Any]] = {}
         for row in rows:
-            indexes.append(
+            entry = indexes_by_name.setdefault(
+                row[0],
                 {
                     "name": row[0],
                     "column_names": [],
                     "unique": bool(row[1]),
-                }
+                },
             )
-        return indexes
+            if row[2] is not None:
+                entry["column_names"].append(row[2])
+        return list(indexes_by_name.values())

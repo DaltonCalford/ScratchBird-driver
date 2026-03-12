@@ -29,9 +29,16 @@ scratchbird://user:password@host:3092/database?sslmode=require
 ```
 
 Notes:
-- TLS is required; do not use `sslmode=disable`.
+- TLS-enabled modes are recommended; `sslmode=disable` remains available for
+  explicit local-development/plaintext paths because the adapter rides on the
+  Python driver parity surface.
 - Default port is 3092.
 - `binary_transfer=true` is recommended (binary-only protocol).
+- JDBC-style query aliases such as `currentSchema`, `searchPath`,
+  `applicationName`, and `managerAuthToken` are normalized to the Python
+  driver contract.
+- If no explicit schema override is supplied, the dialect resolves the live
+  session schema via `SHOW current_schema`, with `users.public` fallback.
 
 ## Development
 

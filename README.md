@@ -14,13 +14,13 @@ lane.
 
 Current PH5 closure progress:
 
-- `NCW-050..054C` are complete.
-- `NCW-054D` remains as the immediate full-surface uplift ticket for the
-  remaining previously residual driver work.
+- `NCW-050..054D` are complete.
+- `NCW-054D` closed the downstream JDBC consumer uplift for Metabase and
+  Superset, including current-schema/default-schema alignment, downstream
+  adapter option surfacing, and finalized metadata/index reflection behavior.
 - Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
   Rust, Ruby, Pascal, .NET, and C/C++.
-- Remaining driver implementation work is concentrated in `NCW-054D`
-  (residual/full-surface uplift for already-closed lanes), `NCW-055`
+- Remaining driver implementation work is concentrated in `NCW-055`
   (R/Dart/Swift), `NCW-056` (Elixir/Mojo), and `NCW-057` (cross-driver
   promotion/conformance regeneration).
 
@@ -53,19 +53,19 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Work Snapshot: 2026-03-12)
+# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-054D`)
 
-This matrix reflects the current PH5 closure state after `NCW-054C`. A `✅`
+This matrix reflects the current PH5 closure state after `NCW-054D`. A `✅`
 entry means the required closure slice is complete for the lane's actively
-supported surface. `NCW-054A..054C` have absorbed the primary alpha, secondary
-alpha, and C/C++ residuals; `NCW-054D` now carries the remaining full-surface
-uplift work before PH5 can claim final closure.
+supported surface. `NCW-054A..054D` have absorbed the primary alpha,
+secondary alpha, C/C++, and downstream JDBC consumer residuals; PH5 now
+hands off directly to the remaining beta and specialty lanes.
 
 ## Alpha Drivers
 
 | Driver          | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                        |
 | --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Baseline reference lane; `NCW-054` closed the remaining schema-resolution, metadata anchoring, always-in-transaction, and pool-reset ambiguity.                                                  |
+| **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Baseline reference lane; `NCW-054` closed schema-resolution, metadata anchoring, always-in-transaction, and pool-reset ambiguity, and `NCW-054D` aligned the downstream Metabase/Superset consumer surfaces on top of that JDBC baseline. |
 | **ODBC 3.8**    | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green on the packaged runtime/catalog/type surface; broader promotion regeneration remains in `NCW-057`.                                                              |
 | **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes deterministic `DataReader.NextResult()` multi-result traversal on the supported protocol surface.                                     |
 | **Node.js**     | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed the former residuals for routine metadata, metadata convenience wrappers, wire-level autocommit handling, and `users.public` schema fallback alignment.                            |
@@ -102,6 +102,8 @@ uplift work before PH5 can claim final closure.
 
 | Adapter                | Current State                                                                                                                                                                     |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Metabase plugin**    | JDBC-backed adapter is now aligned with the current JDBC surface: full JDBC `sslmode` set, optional `currentSchema`, manager-proxy property surfacing, and metadata capability declarations now match the supported JDBC metadata/index surface. |
+| **Superset adapter**   | SQLAlchemy dialect + EngineSpec are now aligned to the finalized catalog shape: JDBC-style DSN aliases normalize to the Python driver, default schema resolves from the live session with `users.public` fallback, and index reflection uses `sys.index_columns`. |
 | **Prisma adapter**     | Deterministic adapter and contract suite implemented; runtime remains blocked by Prisma provider registration (`provider="scratchbird"` unsupported by stock Prisma CLI).         |
 | **SQLAlchemy dialect** | Deterministic dialect and ORM/reflection contract suite implemented; live runtime matrix is blocked in this shell by endpoint TLS posture mismatch.                               |
 | **Hibernate dialect**  | Deterministic dialect and contract suite implemented; runtime JDBC probe now passes with local JDBC jar auto-detected, while full JPA lifecycle/migration matrix remains pending. |
