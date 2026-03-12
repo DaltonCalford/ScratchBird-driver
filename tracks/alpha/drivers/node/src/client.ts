@@ -215,12 +215,11 @@ class ProtocolConnection {
     const host = config.host ?? "localhost";
     const port = config.port ?? 3092;
     const sslMode = resolveSslMode(config);
-    if (sslMode === "disable") {
-      throw new Error("TLS is required for ScratchBird connections");
-    }
 
     let rawSocket = await connectTcp(host, port, config.connectTimeoutMs ?? 30000);
-    rawSocket = await upgradeTls(rawSocket, host, sslMode, config);
+    if (sslMode !== "disable") {
+      rawSocket = await upgradeTls(rawSocket, host, sslMode, config);
+    }
 
     if (config.socketTimeoutMs && config.socketTimeoutMs > 0) {
       rawSocket.setTimeout(config.socketTimeoutMs);

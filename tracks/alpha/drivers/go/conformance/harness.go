@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -110,6 +111,9 @@ func applyFixtures(ctx context.Context, db *sql.DB, fixtureDir string, fixtures 
 		}
 		statements := splitSQLStatements(string(data))
 		for _, statement := range statements {
+			if tableName, ok := createdTableName(statement); ok && tableExists(ctx, db, tableName) {
+				continue
+			}
 			if _, err := db.ExecContext(ctx, statement); err != nil {
 				if isAlreadyExistsError(err) {
 					continue
@@ -339,6 +343,16 @@ func splitSQLStatements(input string) []string {
 		statements = append(statements, trimmed)
 	}
 	return statements
+}
+
+var createTablePattern = regexp.MustCompile(`(?is)^\s*create\s+table\s+(?:if\s+not\s+exists\s+)?("?[\w.]+"?)`)
+
+func createdTableName(statement string) (string, bool) {
+	matches := createTablePattern.FindStringSubmatch(statement)
+	if len(matches) < 2 {
+		return "", false
+	}
+	return strings.TrimSpace(matches[1]), true
 }
 
 func normalizeParams(params []any) []any {
