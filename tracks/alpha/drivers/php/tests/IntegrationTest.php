@@ -226,7 +226,7 @@ final class IntegrationTest extends TestCase
         $pdo->rollbackToSavepoint('php_sp1');
         $pdo->releaseSavepoint('php_sp1');
         $this->assertTrue($pdo->commit());
-        $this->assertFalse($pdo->inTransaction());
+        $this->assertTrue($pdo->inTransaction());
     }
 
     public function testMetadataCollectionsAndRestrictionsLiveShape(): void
@@ -241,6 +241,9 @@ final class IntegrationTest extends TestCase
             $types = $pdo->getSchema('type_info');
             $catalogs = $pdo->getSchema('catalogs');
             $restricted = $pdo->getSchema('tables', ['schema' => 'sys']);
+            $procedures = $pdo->procedures(null, 'users');
+            $functions = $pdo->functions(null, 'users');
+            $routines = $pdo->routines(null, 'users');
             $tree = $pdo->getSchemaTree(true);
         } catch (\Throwable $ex) {
             $this->skipIfFeatureUnsupported($ex, 'metadata');
@@ -251,6 +254,9 @@ final class IntegrationTest extends TestCase
         $this->assertIsArray($types);
         $this->assertIsArray($catalogs);
         $this->assertIsArray($restricted);
+        $this->assertIsArray($procedures);
+        $this->assertIsArray($functions);
+        $this->assertIsArray($routines);
         $this->assertIsArray($tree);
         $this->assertArrayHasKey('schemas', $tree);
         $this->assertIsArray($tree['schemas']);

@@ -15,7 +15,10 @@ from scratchbird.metadata import (
     CATALOGS_QUERY,
     COLUMN_PRIVILEGES_QUERY,
     FOREIGN_KEYS_QUERY,
+    FUNCTIONS_QUERY,
     PRIMARY_KEYS_QUERY,
+    PROCEDURES_QUERY,
+    ROUTINES_QUERY,
     TABLE_PRIVILEGES_QUERY,
     TYPE_INFO_QUERY,
     filter_rows_by_restrictions,
@@ -47,6 +50,9 @@ def test_normalize_collection_name_aliases(alias: str, expected: str):
         ("catalogs", CATALOGS_QUERY),
         ("primary_keys", PRIMARY_KEYS_QUERY),
         ("foreignkey", FOREIGN_KEYS_QUERY),
+        ("procedures", PROCEDURES_QUERY),
+        ("functions", FUNCTIONS_QUERY),
+        ("routines", ROUTINES_QUERY),
         ("tableprivileges", TABLE_PRIVILEGES_QUERY),
         ("column_privileges", COLUMN_PRIVILEGES_QUERY),
         ("typeinfo", TYPE_INFO_QUERY),
@@ -82,6 +88,72 @@ def test_connection_query_metadata_executes_resolved_sql():
     assert actual is expected_cursor
     assert captured["sql"] == PRIMARY_KEYS_QUERY
     assert captured["params"] is None
+
+
+@pytest.mark.parametrize(
+    ("collection_name", "restrictions", "expected_sql", "rows", "expected_row"),
+    [
+        (
+            "procedures",
+            {"schema": "users", "procedure": "upsert_event"},
+            PROCEDURES_QUERY,
+            [
+                {"schema_name": "users", "procedure_name": "upsert_event"},
+                {"schema_name": "sys", "procedure_name": "other_proc"},
+            ],
+            [{"schema_name": "users", "procedure_name": "upsert_event"}],
+        ),
+        (
+            "functions",
+            {"schema": "users", "function": "event_count"},
+            FUNCTIONS_QUERY,
+            [
+                {"schema_name": "users", "function_name": "event_count"},
+                {"schema_name": "sys", "function_name": "other_fn"},
+            ],
+            [{"schema_name": "users", "function_name": "event_count"}],
+        ),
+        (
+            "routines",
+            {"schema": "users", "routine": "event_count"},
+            ROUTINES_QUERY,
+            [
+                {"schema_name": "users", "routine_name": "event_count"},
+                {"schema_name": "sys", "routine_name": "other_routine"},
+            ],
+            [{"schema_name": "users", "routine_name": "event_count"}],
+        ),
+    ],
+)
+def test_connection_query_metadata_executes_routine_queries_with_restrictions(
+    collection_name: str,
+    restrictions: dict,
+    expected_sql: str,
+    rows: list,
+    expected_row: list,
+):
+    conn = Connection.__new__(Connection)
+    conn._closed = False
+    captured = {}
+
+    class DummyCursor:
+        description = []
+        statusmessage = "SELECT"
+        lastrowid = None
+
+        def fetchall(self):
+            return list(rows)
+
+    def fake_execute(sql: str, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return DummyCursor()
+
+    conn.execute = fake_execute
+
+    actual = Connection.query_metadata(conn, collection_name, restrictions=restrictions)
+    assert captured == {"sql": expected_sql, "params": None}
+    assert actual.fetchall() == expected_row
 
 
 def test_connection_get_schema_drains_cursor_rows():

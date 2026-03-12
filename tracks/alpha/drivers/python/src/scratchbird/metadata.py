@@ -52,20 +52,30 @@ CONSTRAINTS_QUERY = (
     "WHERE c.is_valid = 1 ORDER BY s.schema_name, t.table_name, c.constraint_name"
 )
 PROCEDURES_QUERY = (
-    "SELECT procedure_id, schema_id, procedure_name, routine_type "
-    "FROM sys.procedures WHERE is_valid = 1 ORDER BY schema_id, procedure_name"
+    "SELECT p.procedure_id, p.schema_id, s.schema_name, p.procedure_name, p.routine_type "
+    "FROM sys.procedures p "
+    "LEFT JOIN sys.schemas s ON s.schema_id = p.schema_id "
+    "WHERE p.is_valid = 1 ORDER BY s.schema_name, p.procedure_name"
 )
 FUNCTIONS_QUERY = (
-    "SELECT function_id, schema_id, function_name "
-    "FROM sys.functions WHERE is_valid = 1 ORDER BY schema_id, function_name"
+    "SELECT f.function_id, f.schema_id, s.schema_name, f.function_name "
+    "FROM sys.functions f "
+    "LEFT JOIN sys.schemas s ON s.schema_id = f.schema_id "
+    "WHERE f.is_valid = 1 ORDER BY s.schema_name, f.function_name"
 )
 ROUTINES_QUERY = (
-    "SELECT procedure_id AS routine_id, schema_id, procedure_name AS routine_name, routine_type "
-    "FROM sys.procedures WHERE is_valid = 1 "
+    "SELECT p.procedure_id AS routine_id, p.schema_id, s.schema_name, "
+    "p.procedure_name AS routine_name, p.routine_type "
+    "FROM sys.procedures p "
+    "LEFT JOIN sys.schemas s ON s.schema_id = p.schema_id "
+    "WHERE p.is_valid = 1 "
     "UNION ALL "
-    "SELECT function_id AS routine_id, schema_id, function_name AS routine_name, 'FUNCTION' AS routine_type "
-    "FROM sys.functions WHERE is_valid = 1 "
-    "ORDER BY schema_id, routine_name"
+    "SELECT f.function_id AS routine_id, f.schema_id, s.schema_name, "
+    "f.function_name AS routine_name, 'FUNCTION' AS routine_type "
+    "FROM sys.functions f "
+    "LEFT JOIN sys.schemas s ON s.schema_id = f.schema_id "
+    "WHERE f.is_valid = 1 "
+    "ORDER BY schema_name, routine_name"
 )
 CATALOGS_QUERY = (
     "SELECT schema_id AS catalog_id, schema_name AS catalog_name "

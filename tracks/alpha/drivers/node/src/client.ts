@@ -119,6 +119,7 @@ const MCP_MSG_AUTH_START = 0x66;
 const MCP_MSG_AUTH_CONTINUE = 0x67;
 const MCP_MSG_DB_CONNECT = 0x69;
 const MCP_AUTH_METHOD_TOKEN = 4;
+const DEFAULT_SESSION_SCHEMA = "users.public";
 
 interface Message {
   header: MessageHeader;
@@ -523,6 +524,66 @@ export class Client {
     });
   }
 
+  async schemas(catalog?: string): Promise<QueryResult> {
+    return this.getSchema("schemas", metadataRestrictions({ catalog }));
+  }
+
+  async tables(schema?: string, table?: string, type?: string): Promise<QueryResult> {
+    return this.getSchema("tables", metadataRestrictions({ schema, table, type }));
+  }
+
+  async columns(schema?: string, table?: string, column?: string, type?: string): Promise<QueryResult> {
+    return this.getSchema("columns", metadataRestrictions({ schema, table, column, type }));
+  }
+
+  async indexes(schema?: string, table?: string, index?: string): Promise<QueryResult> {
+    return this.getSchema("indexes", metadataRestrictions({ schema, table, index }));
+  }
+
+  async indexColumns(schema?: string, table?: string, index?: string, column?: string): Promise<QueryResult> {
+    return this.getSchema("index_columns", metadataRestrictions({ schema, table, index, column }));
+  }
+
+  async constraints(schema?: string, table?: string, constraint?: string): Promise<QueryResult> {
+    return this.getSchema("constraints", metadataRestrictions({ schema, table, constraint }));
+  }
+
+  async catalogs(catalog?: string): Promise<QueryResult> {
+    return this.getSchema("catalogs", metadataRestrictions({ catalog }));
+  }
+
+  async primaryKeys(catalog?: string, schema?: string, table?: string, constraint?: string): Promise<QueryResult> {
+    return this.getSchema("primary_keys", metadataRestrictions({ catalog, schema, table, constraint }));
+  }
+
+  async foreignKeys(catalog?: string, schema?: string, table?: string, constraint?: string): Promise<QueryResult> {
+    return this.getSchema("foreign_keys", metadataRestrictions({ catalog, schema, table, constraint }));
+  }
+
+  async procedures(catalog?: string, schema?: string, procedure?: string): Promise<QueryResult> {
+    return this.getSchema("procedures", metadataRestrictions({ catalog, schema, procedure }));
+  }
+
+  async functions(catalog?: string, schema?: string, fn?: string): Promise<QueryResult> {
+    return this.getSchema("functions", metadataRestrictions({ catalog, schema, function: fn }));
+  }
+
+  async routines(catalog?: string, schema?: string, routine?: string): Promise<QueryResult> {
+    return this.getSchema("routines", metadataRestrictions({ catalog, schema, routine }));
+  }
+
+  async tablePrivileges(catalog?: string, schema?: string, table?: string): Promise<QueryResult> {
+    return this.getSchema("table_privileges", metadataRestrictions({ catalog, schema, table }));
+  }
+
+  async columnPrivileges(catalog?: string, schema?: string, table?: string, column?: string): Promise<QueryResult> {
+    return this.getSchema("column_privileges", metadataRestrictions({ catalog, schema, table, column }));
+  }
+
+  async typeInfo(type?: string): Promise<QueryResult> {
+    return this.getSchema("type_info", metadataRestrictions({ type }));
+  }
+
   getAutoCommit(): boolean {
     return this.autoCommit;
   }
@@ -535,7 +596,11 @@ export class Client {
     if (enabled && this.transactionActive) {
       await this.commitTransaction();
     }
+    await this.setOption("autocommit", enabled ? "on" : "off");
     this.autoCommit = enabled;
+    if (!enabled && !this.transactionActive) {
+      await this.beginTransaction();
+    }
   }
 
   getSessionSchema(): string | null {
@@ -550,7 +615,7 @@ export class Client {
       return;
     }
 
-    const statement = buildSchemaStatement(normalized ?? "public");
+    const statement = buildSchemaStatement(normalized ?? DEFAULT_SESSION_SCHEMA);
     if (!statement) {
       return;
     }
@@ -653,7 +718,6 @@ export class Client {
       );
       await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
       await this.drainUntilReady();
-      this.transactionActive = true;
     });
   }
 
@@ -664,7 +728,6 @@ export class Client {
       const payload = buildTxnCommitPayload(options?.flags ?? 0);
       await this.protocol.sendMessage(MessageType.TXN_COMMIT, payload, 0, false);
       await this.drainUntilReady();
-      this.transactionActive = false;
     });
   }
 
@@ -675,7 +738,6 @@ export class Client {
       const payload = buildTxnRollbackPayload(options?.flags ?? 0);
       await this.protocol.sendMessage(MessageType.TXN_ROLLBACK, payload, 0, false);
       await this.drainUntilReady();
-      this.transactionActive = false;
     });
   }
 
@@ -1104,7 +1166,7 @@ export class Client {
 
   private async applySchema(): Promise<void> {
     const schema = this.config.schema?.trim();
-    if (!schema || schema.toLowerCase() === "public") {
+    if (!schema) {
       return;
     }
     const statement = buildSchemaStatement(schema);
@@ -1705,11 +1767,24 @@ function normalizeSessionSchema(schema: string | null | undefined): string | nul
     return null;
   }
   const trimmed = schema.trim();
-  return trimmed.length ? trimmed : null;
+  if (!trimmed.length) {
+    return null;
+  }
+  if (trimmed.toLowerCase() === "public") {
+    return DEFAULT_SESSION_SCHEMA;
+  }
+  return trimmed;
 }
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, "\"\"")}"`;
+}
+
+function metadataRestrictions(restrictions: MetadataRestrictions): MetadataRestrictions | undefined {
+  const filtered = Object.fromEntries(
+    Object.entries(restrictions).filter(([, value]) => value !== undefined && value !== null),
+  );
+  return Object.keys(filtered).length ? filtered : undefined;
 }
 
 function resolveSslMode(config: ClientConfig): string {

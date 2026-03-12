@@ -575,6 +575,14 @@ public class SBConnectionPool {
             closeConnection(conn);
             return;
         }
+
+        try {
+            conn.resetForPoolReuse(properties);
+        } catch (SQLException ex) {
+            LOGGER.log(Level.FINE, "Discarding pooled connection after reset failure", ex);
+            closeConnection(conn);
+            return;
+        }
         
         // Check if connection is still valid
         long age = System.currentTimeMillis() - state.createdAt;

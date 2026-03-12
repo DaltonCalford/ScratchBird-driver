@@ -14,11 +14,17 @@ connection surface, including:
 - TLS / `sslmode` controls
 - compatibility startup settings such as `binary_transfer` and `compression`
 - pooling and fetch-size controls
+- optional `currentSchema`
 - metadata expansion (`metadataExpandSchemaParents`)
 - auth-plugin handshake inputs such as `connect_client_flags`,
   `auth_method_payload`, `auth_required_methods`,
   `auth_forbidden_methods`, `auth_require_channel_binding`,
   `workload_identity_token`, and `proxy_principal_assertion`
+
+If `currentSchema` is omitted, the driver does not force a client-side default.
+The resolved current schema comes from the server-side user/role/group schema
+policy, and if that chain does not set a schema the server fallback is
+`users.public`.
 
 ## Core Types
 
@@ -60,6 +66,15 @@ helpers beyond the `java.sql.Connection` contract:
   - `getConnectionProperties()`
   - `getConnectionId()`
 
+`getSchema()` returns the resolved live schema for the session. If
+`currentSchema` was supplied explicitly, the driver applies it. Otherwise it
+discovers the server-selected schema after connect.
+
+ScratchBird sessions are always on a transaction boundary. `connect()`,
+`commit()`, and `rollback()` leave the session immediately usable in the next
+transaction context; toggling `autoCommit=false` does not inject an extra
+`BEGIN` when the server already has an active transaction.
+
 `SBConnection.Notification` exposes:
 
 - `getProcessId()`
@@ -97,6 +112,10 @@ hierarchical parent paths during `getSchemas(...)`.
   `PoolStats` snapshot for a matching active pool.
 - `PoolStats` exposes `available`, `total`, `max`, `hits`, `misses`, and
   `getHitRate()`.
+
+Pooled connections are reset to baseline driver state before reuse, including
+schema, `autoCommit`, isolation level, read-only flag, and pending manual
+transaction rollback.
 
 ## Query Pipeline
 

@@ -1,7 +1,7 @@
 # ScratchBird Driver Implementation Audit (SBWP v1.1)
 
 Status: In Progress
-Last Updated: 2026-02-23
+Last Updated: 2026-03-12
 Scope: All drivers and adapters in this repository (core language drivers, JDBC/ODBC, Superset, Metabase, Mojo/Dart/Swift/Elixir, C++ client, CLI tools).
 
 ## Method
@@ -22,7 +22,8 @@ Reviewed driver implementations against:
 Core drivers (Go, Node, Python, Ruby, Rust, PHP, R, Pascal, .NET, JDBC, ODBC) implement SBWP v1.1 messaging, SCRAM auth, server-side prepare/bind, binary-only enforcement, and zstd rejection. Most also implement notifications, ping, and set_option. Dart/Swift/Elixir/Mojo are partial and do not meet the full SBWP conformance requirements.
 
 Common gaps (where applicable):
-- Error mapping is class-prefix based in most drivers (SQLSTATE class only), not full SQLSTATE-by-code mapping.
+- Several lanes still retain class-prefix-only SQLSTATE mapping or incomplete
+  per-code coverage, but JDBC is no longer in that bucket.
 - Type mapping coverage varies by driver; Dart/Swift/Elixir/Mojo are still
   missing large portions of the type matrix, while the C/C++ lane now exposes
   the required PH5 public type/metadata surface.
@@ -128,8 +129,16 @@ Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - JDBC DatabaseMetaData for PK/FK/indexes using information_schema and sys.*.
 - Type mapping for arrays, JSONB, ranges, structs.
+- Current schema now resolves from explicit client override or the server-side
+  user/role/group schema policy, with server fallback preserved instead of
+  forcing plain `public`.
+- Connection and pooling behavior now reflect ScratchBird's
+  always-in-a-transaction model, including post-commit/post-rollback immediate
+  usability and schema/autocommit reset on pool reuse.
+- SQLSTATE mapping is covered by the JDBC lane's per-code mapping tests.
 Outstanding:
-- Error mapping is SQLSTATE class-prefix based.
+- No unique PH5 blocker remains for the baseline JDBC lane; residual work is
+  downstream consumer alignment on top of the closed JDBC surface.
 
 ### Dart `tracks/beta/drivers/dart/`
 Implemented:

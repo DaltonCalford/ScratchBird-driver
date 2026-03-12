@@ -11,6 +11,9 @@ Close all non-JDBC driver lanes from `PARTIAL` to baseline-complete (`MET`) agai
 
 ## Audit conclusion
 - JDBC is the baseline-complete reference lane.
+- JDBC now also has explicit closure evidence for resolved current-schema
+  behavior, metadata-family anchoring, always-in-a-transaction semantics, and
+  pooled-session reset on reuse.
 - ODBC is near-complete but still `Partial` for `META` breadth.
 - All other lanes retain multi-group `Partial` status and cannot be treated as spec-complete.
 

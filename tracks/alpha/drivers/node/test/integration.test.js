@@ -270,3 +270,29 @@ test("metadata helpers provide JDBC-compatible alias columns", async (t) => {
     await client.end();
   }
 });
+
+test("metadata convenience wrappers execute routine families", async (t) => {
+  const client = await connectClient(t);
+  if (!client) return;
+  try {
+    let procedures;
+    let functions;
+    let routines;
+    try {
+      procedures = await client.procedures(undefined, "users");
+      functions = await client.functions(undefined, "users");
+      routines = await client.routines(undefined, "users");
+    } catch (err) {
+      if (isNotSupported(err)) {
+        t.skip(`routine metadata helpers not supported by runtime: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+    assert.ok(Array.isArray(procedures.rows));
+    assert.ok(Array.isArray(functions.rows));
+    assert.ok(Array.isArray(routines.rows));
+  } finally {
+    await client.end();
+  }
+});

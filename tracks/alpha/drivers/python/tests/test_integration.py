@@ -292,7 +292,7 @@ def test_session_schema_runtime_integration():
     conn = scratchbird.connect(dsn)
     try:
         conn.set_session_schema("public")
-        assert conn.get_session_schema() == "public"
+        assert conn.get_session_schema() == "users.public"
         conn.set_session_schema(None)
         assert conn.get_session_schema() is None
     finally:

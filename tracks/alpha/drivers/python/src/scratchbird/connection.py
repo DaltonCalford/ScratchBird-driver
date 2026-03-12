@@ -846,13 +846,11 @@ class Connection:
     def query_metadata(self, collection_name: str = "tables", restrictions: Optional[Dict[str, Any]] = None) -> Cursor:
         self._ensure_open()
         normalized_collection = self._normalize_metadata_collection(collection_name)
-        if normalized_collection in {"procedures", "functions", "routines"}:
-            return self._cursor_from_rows([], description=[])
         metadata_sql = resolve_collection_query(normalized_collection)
         try:
             cur = self.execute(metadata_sql)
         except errors.ProgrammingError as exc:
-            if normalized_collection in {"procedures", "functions", "routines"} and self._metadata_collection_missing(exc):
+            if self._metadata_collection_missing(exc):
                 return self._cursor_from_rows([], description=[])
             raise
         if not restrictions:
@@ -1028,7 +1026,7 @@ class Connection:
             return
         self._session_schema = normalized
         self._config.schema = normalized
-        statement = _build_schema_statement(normalized or "public")
+        statement = _build_schema_statement(normalized or "users.public")
         if statement:
             self._execute_command(statement)
 
@@ -1710,6 +1708,8 @@ def _normalize_session_schema(schema: Optional[Any]) -> Optional[str]:
     trimmed = str(schema).strip()
     if not trimmed:
         return None
+    if trimmed.lower() == "public":
+        return "users.public"
     return trimmed
 
 

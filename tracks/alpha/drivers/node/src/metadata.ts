@@ -45,6 +45,9 @@ export const METADATA_PROCEDURES_QUERY =
 export const METADATA_FUNCTIONS_QUERY =
   "SELECT f.function_id, f.schema_id, s.schema_name, f.function_name FROM sys.functions f LEFT JOIN sys.schemas s ON s.schema_id = f.schema_id WHERE f.is_valid = 1 ORDER BY s.schema_name, f.function_name";
 
+export const METADATA_ROUTINES_QUERY =
+  "SELECT p.procedure_id AS routine_id, p.schema_id, s.schema_name, p.procedure_name AS routine_name, p.routine_type FROM sys.procedures p LEFT JOIN sys.schemas s ON s.schema_id = p.schema_id WHERE p.is_valid = 1 UNION ALL SELECT f.function_id AS routine_id, f.schema_id, s.schema_name, f.function_name AS routine_name, 'FUNCTION' AS routine_type FROM sys.functions f LEFT JOIN sys.schemas s ON s.schema_id = f.schema_id WHERE f.is_valid = 1 ORDER BY schema_name, routine_name";
+
 export const METADATA_TYPE_INFO_QUERY =
   "SELECT DISTINCT data_type_id, data_type_name, data_type_name AS type_name FROM sys.columns WHERE is_valid = 1 ORDER BY data_type_name";
 
@@ -62,6 +65,7 @@ export type MetadataCollectionName =
   | "column_privileges"
   | "procedures"
   | "functions"
+  | "routines"
   | "type_info";
 
 export interface MetadataSchemaTreeNode {
@@ -102,6 +106,7 @@ const METADATA_COLLECTION_QUERIES: Record<MetadataCollectionName, string> = {
   column_privileges: METADATA_COLUMN_PRIVILEGES_QUERY,
   procedures: METADATA_PROCEDURES_QUERY,
   functions: METADATA_FUNCTIONS_QUERY,
+  routines: METADATA_ROUTINES_QUERY,
   type_info: METADATA_TYPE_INFO_QUERY,
 };
 
@@ -136,6 +141,8 @@ const METADATA_COLLECTION_ALIASES: Record<string, MetadataCollectionName> = {
   procedure: "procedures",
   functions: "functions",
   function: "functions",
+  routines: "routines",
+  routine: "routines",
   typeinfo: "type_info",
   type_info: "type_info",
   types: "type_info",
@@ -159,6 +166,7 @@ const METADATA_RESTRICTION_KEY_ALIASES: Record<string, readonly string[]> = {
   constraint: ["constraint_name", "constraint"],
   procedure: ["procedure_name", "routine_name", "procedure"],
   function: ["function_name", "routine_name", "function"],
+  routine: ["routine_name", "procedure_name", "function_name", "routine"],
   type: ["type_name", "data_type_name", "data_type", "udt_name"],
 };
 
@@ -176,6 +184,7 @@ const METADATA_COLLECTION_RESTRICTION_KEYS: Record<MetadataCollectionName, reado
   column_privileges: ["catalog", "schema", "table", "column"],
   procedures: ["catalog", "schema", "procedure"],
   functions: ["catalog", "schema", "function"],
+  routines: ["catalog", "schema", "routine"],
   type_info: ["type"],
 };
 
@@ -459,7 +468,7 @@ function shapeMetadataRow<T extends Record<string, unknown>>(
   const typeName = firstStringValue(row, ["type_name", "TYPE_NAME", "data_type_name"]);
   const tableType = firstStringValue(row, ["table_type", "TABLE_TYPE"]);
   const privilegeType = firstStringValue(row, ["privilege_type", "PRIVILEGE"]);
-  const routineName = firstStringValue(row, ["procedure_name", "function_name"]);
+  const routineName = firstStringValue(row, ["routine_name", "procedure_name", "function_name"]);
   const effectiveCatalog =
     firstStringValue(row, ["catalog_name", "table_catalog", "table_cat", "TABLE_CAT", "TABLE_CATALOG"]) ?? catalogName;
 
@@ -557,7 +566,7 @@ function shapeMetadataRow<T extends Record<string, unknown>>(
     }
   }
 
-  if (collectionName === "procedures" || collectionName === "functions") {
+  if (collectionName === "procedures" || collectionName === "functions" || collectionName === "routines") {
     if (routineName) {
       assignIfMissing(row, "ROUTINE_NAME", routineName);
     }

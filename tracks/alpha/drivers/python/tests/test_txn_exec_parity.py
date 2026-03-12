@@ -320,6 +320,18 @@ def test_set_session_schema_executes_schema_statement(monkeypatch):
     assert sent["sql"] == 'SET SCHEMA "analytics"'
 
 
+def test_set_session_schema_public_alias_maps_to_users_public(monkeypatch):
+    conn = _new_connection()
+    sent = {}
+    monkeypatch.setattr(conn, "_execute_command", lambda sql: sent.setdefault("sql", sql))
+
+    conn.set_session_schema(" public ")
+
+    assert conn.get_session_schema() == "users.public"
+    assert conn._config.schema == "users.public"
+    assert sent["sql"] == 'SET SCHEMA "users.public"'
+
+
 def test_send_simple_query_respects_binary_transfer_toggle():
     conn = _new_connection()
     sent = []
@@ -354,7 +366,7 @@ def test_send_extended_query_uses_text_result_format_when_binary_transfer_disabl
     assert bind_payload.endswith(b"\x01\x00\x01\x00")
 
 
-def test_set_session_schema_none_resets_to_public(monkeypatch):
+def test_set_session_schema_none_resets_to_users_public(monkeypatch):
     conn = _new_connection()
     conn._session_schema = "analytics"
     conn._config.schema = "analytics"
@@ -365,7 +377,7 @@ def test_set_session_schema_none_resets_to_public(monkeypatch):
 
     assert conn.get_session_schema() is None
     assert conn._config.schema is None
-    assert sent["sql"] == 'SET SCHEMA "public"'
+    assert sent["sql"] == 'SET SCHEMA "users.public"'
 
 
 def test_set_session_schema_noops_when_unchanged(monkeypatch):

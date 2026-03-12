@@ -23,6 +23,7 @@ const {
   METADATA_PRIMARY_KEYS_QUERY,
   METADATA_FOREIGN_KEYS_QUERY,
   METADATA_TABLE_PRIVILEGES_QUERY,
+  METADATA_ROUTINES_QUERY,
   METADATA_TYPE_INFO_QUERY,
   filterMetadataRowsByRestrictions,
   resolveMetadataCollectionQuery,
@@ -285,7 +286,7 @@ test("savepoint flows require an active transaction and a non-empty name", async
 
 test("autocommit toggle drives implicit begin and commit", async () => {
   const client = new Client({ user: "me", database: "db" });
-  const protocol = createMockProtocol([77n, 0n]);
+  const protocol = createMockProtocol([0n, 77n, 88n, 88n]);
   client.connected = true;
   client.protocol = protocol;
   client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null });
@@ -298,11 +299,25 @@ test("autocommit toggle drives implicit begin and commit", async () => {
 
   await client.setAutoCommit(true);
   assert.equal(client.getAutoCommit(), true);
-  assert.equal(client.transactionActive, false);
+  assert.equal(client.transactionActive, true);
   assert.deepEqual(
     protocol.sent.map((entry) => entry.type),
-    [MessageType.TXN_BEGIN, MessageType.QUERY, MessageType.TXN_COMMIT],
+    [MessageType.SET_OPTION, MessageType.TXN_BEGIN, MessageType.QUERY, MessageType.TXN_COMMIT, MessageType.SET_OPTION],
   );
+});
+
+test("setSessionSchema null resets to users.public", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol([0n]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  await client.setSessionSchema(null);
+  assert.equal(client.getSessionSchema(), null);
+  assert.equal(client.config.schema, undefined);
+  assert.equal(protocol.sent.length, 1);
+  assert.equal(protocol.sent[0].type, MessageType.QUERY);
+  assert.equal(parseSqlFromQueryPayload(protocol.sent[0].payload), 'SET SCHEMA "users.public"');
 });
 
 test("setSessionSchema applies schema statement on connected clients", async () => {
@@ -490,6 +505,7 @@ test("metadata query resolver supports collection aliases", () => {
   assert.equal(resolveMetadataCollectionQuery("pk"), METADATA_PRIMARY_KEYS_QUERY);
   assert.equal(resolveMetadataCollectionQuery("foreign_keys"), METADATA_FOREIGN_KEYS_QUERY);
   assert.equal(resolveMetadataCollectionQuery("table_privileges"), METADATA_TABLE_PRIVILEGES_QUERY);
+  assert.equal(resolveMetadataCollectionQuery("routines"), METADATA_ROUTINES_QUERY);
   assert.equal(resolveMetadataCollectionQuery("types"), METADATA_TYPE_INFO_QUERY);
   assert.throws(() => resolveMetadataCollectionQuery("no_such_metadata"), /not supported/);
 });
@@ -506,9 +522,36 @@ test("getSchema routes metadata collections and rejects unsupported collections"
   await client.getSchema("index_columns");
   await client.getSchema("foreign_keys");
   await client.getSchema("table_privileges");
+  await client.getSchema("routines");
   await assert.rejects(() => client.getSchema("privileges_not_supported"), (err) => err && err.code === "0A000");
 
-  assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY, METADATA_FOREIGN_KEYS_QUERY, METADATA_TABLE_PRIVILEGES_QUERY]);
+  assert.deepEqual(issuedSql, [METADATA_INDEX_COLUMNS_QUERY, METADATA_FOREIGN_KEYS_QUERY, METADATA_TABLE_PRIVILEGES_QUERY, METADATA_ROUTINES_QUERY]);
+});
+
+test("metadata convenience wrappers forward collection-specific restrictions", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  const captured = [];
+  client.getSchema = async (collection, restrictions) => {
+    captured.push({ collection, restrictions });
+    return { rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null };
+  };
+
+  await client.procedures("main", "users", "upsert_event");
+  await client.functions("main", "users", "event_count");
+  await client.routines("main", "users", "event_count");
+  await client.tablePrivileges("main", "users", "events");
+  await client.columnPrivileges("main", "users", "events", "event_id");
+  await client.typeInfo("INTEGER");
+
+  assert.deepEqual(captured, [
+    { collection: "procedures", restrictions: { catalog: "main", schema: "users", procedure: "upsert_event" } },
+    { collection: "functions", restrictions: { catalog: "main", schema: "users", function: "event_count" } },
+    { collection: "routines", restrictions: { catalog: "main", schema: "users", routine: "event_count" } },
+    { collection: "table_privileges", restrictions: { catalog: "main", schema: "users", table: "events" } },
+    { collection: "column_privileges", restrictions: { catalog: "main", schema: "users", table: "events", column: "event_id" } },
+    { collection: "type_info", restrictions: { type: "INTEGER" } },
+  ]);
 });
 
 test("queryMetadata shapes JDBC-style aliases and applies catalog/schema restrictions", async () => {

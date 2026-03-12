@@ -225,6 +225,30 @@ public class JDBC203PoolingAndRecoveryContractTest {
         }
     }
 
+    @Test
+    public void scenarioF_poolReuseRestoresSchemaAndAutocommitDefaults() throws Exception {
+        String dsn = pooledDsn("MaxPoolSize=1&MinPoolSize=0&ConnectionLifetime=30");
+        String defaultSchema;
+
+        try (Connection conn = openConnection(dsn)) {
+            defaultSchema = conn.getSchema();
+            assertNotNull(defaultSchema);
+
+            String alternateSchema = findAlternateSchema(conn, defaultSchema);
+            conn.setSchema(alternateSchema);
+            conn.setAutoCommit(false);
+        }
+
+        try (Connection verify = openConnection(dsn);
+             Statement stmt = verify.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT 1")) {
+            assertTrue(verify.getAutoCommit());
+            assertEquals(defaultSchema, verify.getSchema());
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+        }
+    }
+
     private static String pooledDsn(String extraQuery) throws Exception {
         String url = runtime().baseUrl();
         if (url.contains("?")) {
@@ -236,6 +260,19 @@ public class JDBC203PoolingAndRecoveryContractTest {
 
     private static Connection openConnection(String dsn) throws Exception {
         return runtime().openConnection(dsn);
+    }
+
+    private static String findAlternateSchema(Connection conn, String currentSchema) throws Exception {
+        try (ResultSet schemas = conn.getMetaData().getSchemas()) {
+            while (schemas.next()) {
+                String candidate = schemas.getString("TABLE_SCHEM");
+                if (candidate != null && !candidate.isBlank()
+                    && !candidate.equalsIgnoreCase(currentSchema)) {
+                    return candidate;
+                }
+            }
+        }
+        throw new SQLException("No alternate schema available for pooled state-reset test");
     }
 
     private static SBConnectionProperties parseProperties(String dsn) throws Exception {

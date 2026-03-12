@@ -21,6 +21,7 @@ use ScratchBird\LeakDetectionGuard;
 final class Connection
 {
     private const QUERY_FLAG_BINARY_RESULT = 0x04;
+    private const DEFAULT_SESSION_SCHEMA = 'users.public';
     private const MANAGER_PROTOCOL_MAGIC = 0x42444253; // SBDB
     private const MANAGER_PROTOCOL_VERSION = 0x0101;
     private const MANAGER_HEADER_SIZE = 12;
@@ -273,6 +274,150 @@ final class Connection
             $expandParents ?? ($this->config->metadataExpandSchemaParents === true),
             $database ?? $this->config->database
         );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function schemas(?string $catalog = null): array
+    {
+        return $this->getSchema('schemas', $this->metadataRestrictions(['catalog' => $catalog]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function tables(?string $schema = null, ?string $table = null, ?string $type = null): array
+    {
+        return $this->getSchema('tables', $this->metadataRestrictions(['schema' => $schema, 'table' => $table, 'type' => $type]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function columns(?string $schema = null, ?string $table = null, ?string $column = null, ?string $type = null): array
+    {
+        return $this->getSchema('columns', $this->metadataRestrictions(['schema' => $schema, 'table' => $table, 'column' => $column, 'type' => $type]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function indexes(?string $schema = null, ?string $table = null, ?string $index = null): array
+    {
+        return $this->getSchema('indexes', $this->metadataRestrictions(['schema' => $schema, 'table' => $table, 'index' => $index]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function indexColumns(?string $schema = null, ?string $table = null, ?string $index = null, ?string $column = null): array
+    {
+        return $this->getSchema('index_columns', $this->metadataRestrictions(['schema' => $schema, 'table' => $table, 'index' => $index, 'column' => $column]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function constraints(?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->getSchema('constraints', $this->metadataRestrictions(['schema' => $schema, 'table' => $table, 'constraint' => $constraint]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function catalogs(?string $catalog = null): array
+    {
+        return $this->getSchema('catalogs', $this->metadataRestrictions(['catalog' => $catalog]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function primaryKeys(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->getSchema('primary_keys', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'table' => $table, 'constraint' => $constraint]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function foreignKeys(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->getSchema('foreign_keys', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'table' => $table, 'constraint' => $constraint]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function procedures(?string $catalog = null, ?string $schema = null, ?string $procedure = null): array
+    {
+        return $this->getSchema('procedures', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'procedure' => $procedure]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function functions(?string $catalog = null, ?string $schema = null, ?string $function = null): array
+    {
+        return $this->getSchema('functions', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'function' => $function]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function routines(?string $catalog = null, ?string $schema = null, ?string $routine = null): array
+    {
+        return $this->getSchema('routines', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'routine' => $routine]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function tablePrivileges(?string $catalog = null, ?string $schema = null, ?string $table = null): array
+    {
+        return $this->getSchema('table_privileges', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'table' => $table]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function columnPrivileges(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $column = null): array
+    {
+        return $this->getSchema('column_privileges', $this->metadataRestrictions(['catalog' => $catalog, 'schema' => $schema, 'table' => $table, 'column' => $column]));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function typeInfo(?string $type = null): array
+    {
+        return $this->getSchema('type_info', $this->metadataRestrictions(['type' => $type]));
+    }
+
+    public function getSessionSchema(): ?string
+    {
+        $normalized = $this->normalizeSessionSchema($this->config->schema);
+        return $normalized === '' ? null : $normalized;
+    }
+
+    public function setSessionSchema(?string $schema): void
+    {
+        $normalized = $this->normalizeSessionSchema($schema);
+        $current = $this->normalizeSessionSchema($this->config->schema);
+        if ($normalized === $current) {
+            return;
+        }
+        $this->config->schema = $normalized ?? '';
+        if (!$this->connected) {
+            return;
+        }
+        $statement = $this->buildSchemaStatement($normalized ?? self::DEFAULT_SESSION_SCHEMA);
+        if ($statement === '') {
+            return;
+        }
+        $this->executeSimple($statement);
     }
 
     public function exec(string $statement): int|false
@@ -878,8 +1023,8 @@ final class Connection
 
     private function applySchema(): void
     {
-        $schema = trim($this->config->schema);
-        if ($schema === '' || strtolower($schema) === 'public') {
+        $schema = $this->normalizeSessionSchema($this->config->schema);
+        if ($schema === null) {
             return;
         }
         $statement = $this->buildSchemaStatement($schema);
@@ -1160,6 +1305,33 @@ final class Connection
         } catch (\InvalidArgumentException $ex) {
             throw new ScratchBirdNotSupportedException($ex->getMessage(), '0A000');
         }
+    }
+
+    /**
+     * @param array<string, mixed> $restrictions
+     * @return array<string, mixed>
+     */
+    private function metadataRestrictions(array $restrictions): array
+    {
+        return array_filter(
+            $restrictions,
+            static fn (mixed $value): bool => $value !== null
+        );
+    }
+
+    private function normalizeSessionSchema(?string $schema): ?string
+    {
+        if ($schema === null) {
+            return null;
+        }
+        $normalized = trim($schema);
+        if ($normalized === '') {
+            return null;
+        }
+        if (strtolower($normalized) === 'public') {
+            return self::DEFAULT_SESSION_SCHEMA;
+        }
+        return $normalized;
     }
 
     private function readExact(int $length): string

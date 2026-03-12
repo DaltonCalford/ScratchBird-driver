@@ -39,6 +39,7 @@ use ScratchBird\PDO\Config;
 use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\Metadata;
 use ScratchBird\PDO\Protocol;
+use ScratchBird\PDO\ScratchBirdPDO;
 use ScratchBird\PDO\ScratchBirdNotSupportedException;
 use ScratchBird\PDO\TypeDecoder;
 
@@ -59,6 +60,9 @@ final class MetadataExecutionTest extends TestCase
         $this->assertSame(Metadata::CATALOGS_QUERY, Metadata::resolveCollectionQuery('catalog'));
         $this->assertSame(Metadata::PRIMARY_KEYS_QUERY, Metadata::resolveCollectionQuery('primarykeys'));
         $this->assertSame(Metadata::FOREIGN_KEYS_QUERY, Metadata::resolveCollectionQuery('foreign_keys'));
+        $this->assertSame(Metadata::PROCEDURES_QUERY, Metadata::resolveCollectionQuery('procedure'));
+        $this->assertSame(Metadata::FUNCTIONS_QUERY, Metadata::resolveCollectionQuery('functions'));
+        $this->assertSame(Metadata::ROUTINES_QUERY, Metadata::resolveCollectionQuery('routine'));
         $this->assertSame(Metadata::TABLE_PRIVILEGES_QUERY, Metadata::resolveCollectionQuery('tableprivileges'));
         $this->assertSame(Metadata::COLUMN_PRIVILEGES_QUERY, Metadata::resolveCollectionQuery('column_privileges'));
         $this->assertSame(Metadata::TYPE_INFO_QUERY, Metadata::resolveCollectionQuery('type_info'));
@@ -124,6 +128,67 @@ final class MetadataExecutionTest extends TestCase
             $this->assertSame('users', $rows[0]['schema_name']);
             $this->assertSame('events', $rows[0]['table_name']);
             $this->assertNull($rows[0]['owner_id']);
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testProcedureAndRoutineConvenienceWrappersApplyRestrictions(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueRowDescription($server, ['schema_name', 'procedure_name', 'routine_type']);
+            $this->queueDataRow($server, ['users', 'upsert_event', 'PROCEDURE']);
+            $this->queueDataRow($server, ['sys', 'other_proc', 'PROCEDURE']);
+            $this->queueCommandComplete($server, 2, 'SELECT 2');
+            $this->queueReady($server, 0);
+
+            $rows = $conn->procedures(null, 'users', 'upsert_event');
+            $this->assertSame([['schema_name' => 'users', 'procedure_name' => 'upsert_event', 'routine_type' => 'PROCEDURE']], $rows);
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame(Metadata::PROCEDURES_QUERY, $this->extractQuerySql($payload));
+
+            $this->queueRowDescription($server, ['schema_name', 'routine_name', 'routine_type']);
+            $this->queueDataRow($server, ['users', 'event_count', 'FUNCTION']);
+            $this->queueDataRow($server, ['sys', 'other_routine', 'PROCEDURE']);
+            $this->queueCommandComplete($server, 2, 'SELECT 2');
+            $this->queueReady($server, 0);
+
+            $routineRows = $conn->routines(null, 'users', 'event_count');
+            $this->assertSame([['schema_name' => 'users', 'routine_name' => 'event_count', 'routine_type' => 'FUNCTION']], $routineRows);
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame(Metadata::ROUTINES_QUERY, $this->extractQuerySql($payload));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testScratchBirdPdoMetadataConvenienceWrapperForwardsToConnection(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+        $pdoClass = new ReflectionClass(ScratchBirdPDO::class);
+        /** @var ScratchBirdPDO $pdo */
+        $pdo = $pdoClass->newInstanceWithoutConstructor();
+        $this->setPrivate($pdo, 'connection', $conn);
+
+        try {
+            $this->queueRowDescription($server, ['schema_name', 'function_name']);
+            $this->queueDataRow($server, ['users', 'event_count']);
+            $this->queueCommandComplete($server, 1, 'SELECT 1');
+            $this->queueReady($server, 0);
+
+            $rows = $pdo->functions(null, 'users', 'event_count');
+            $this->assertSame([['schema_name' => 'users', 'function_name' => 'event_count']], $rows);
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame(Metadata::FUNCTIONS_QUERY, $this->extractQuerySql($payload));
         } finally {
             fclose($client);
             fclose($server);

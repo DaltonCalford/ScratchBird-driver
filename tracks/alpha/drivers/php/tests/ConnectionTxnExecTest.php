@@ -299,6 +299,33 @@ final class ConnectionTxnExecTest extends TestCase
         }
     }
 
+    public function testSetSessionSchemaNormalizesPublicAliasAndResetFallback(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueCommandComplete($server, 0, 'SET');
+            $this->queueReady($server, 0);
+            $conn->setSessionSchema('public');
+            $this->assertSame('users.public', $conn->getSessionSchema());
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame('SET SCHEMA "users.public"', $this->parseSimpleQuerySql($payload));
+
+            $this->queueCommandComplete($server, 0, 'SET');
+            $this->queueReady($server, 0);
+            $conn->setSessionSchema(null);
+            $this->assertNull($conn->getSessionSchema());
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame('SET SCHEMA "users.public"', $this->parseSimpleQuerySql($payload));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
     private function newConnectionWithSocket($socket): Connection
     {
         $class = new ReflectionClass(Connection::class);

@@ -49,7 +49,7 @@ public class SBConnectionProperties {
 
     // Connection options
     private boolean tcpKeepAlive = true;
-    private String currentSchema = "public";
+    private String currentSchema;
     private boolean metadataExpandSchemaParents = false;
     private String role;
     private String applicationName;
@@ -195,7 +195,7 @@ public class SBConnectionProperties {
                 break;
             case "currentschema":
             case "searchpath":
-                this.currentSchema = value;
+                this.currentSchema = normalizeOptionalText(value);
                 break;
             case "metadataexpandschemaparents":
             case "metadata_expand_schema_parents":
@@ -661,7 +661,7 @@ public class SBConnectionProperties {
     }
 
     public void setCurrentSchema(String currentSchema) {
-        this.currentSchema = currentSchema;
+        this.currentSchema = normalizeOptionalText(currentSchema);
     }
 
     public boolean isMetadataExpandSchemaParents() {
@@ -999,7 +999,9 @@ public class SBConnectionProperties {
         props.setProperty("socketTimeout", String.valueOf(socketTimeout));
         props.setProperty("loginTimeout", String.valueOf(loginTimeout));
         props.setProperty("tcpKeepAlive", String.valueOf(tcpKeepAlive));
-        props.setProperty("currentSchema", currentSchema);
+        if (currentSchema != null) {
+            props.setProperty("currentSchema", currentSchema);
+        }
         props.setProperty("metadataExpandSchemaParents", String.valueOf(metadataExpandSchemaParents));
         props.setProperty("pooling", String.valueOf(pooling));
         props.setProperty("maxPoolSize", String.valueOf(maxPoolSize));
@@ -1093,5 +1095,13 @@ public class SBConnectionProperties {
             default:
                 throw new IllegalArgumentException("compression must be off or zstd.");
         }
+    }
+
+    private static String normalizeOptionalText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

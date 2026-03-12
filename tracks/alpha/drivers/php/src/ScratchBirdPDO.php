@@ -109,6 +109,136 @@ final class ScratchBirdPDO
         return $this->connection->getSchemaTree($expandParents, $database, $restrictions);
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function schemas(?string $catalog = null): array
+    {
+        return $this->connection->schemas($catalog);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function tables(?string $schema = null, ?string $table = null, ?string $type = null): array
+    {
+        return $this->connection->tables($schema, $table, $type);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function columns(?string $schema = null, ?string $table = null, ?string $column = null, ?string $type = null): array
+    {
+        return $this->connection->columns($schema, $table, $column, $type);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function indexes(?string $schema = null, ?string $table = null, ?string $index = null): array
+    {
+        return $this->connection->indexes($schema, $table, $index);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function indexColumns(?string $schema = null, ?string $table = null, ?string $index = null, ?string $column = null): array
+    {
+        return $this->connection->indexColumns($schema, $table, $index, $column);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function constraints(?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->connection->constraints($schema, $table, $constraint);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function catalogs(?string $catalog = null): array
+    {
+        return $this->connection->catalogs($catalog);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function primaryKeys(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->connection->primaryKeys($catalog, $schema, $table, $constraint);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function foreignKeys(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $constraint = null): array
+    {
+        return $this->connection->foreignKeys($catalog, $schema, $table, $constraint);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function procedures(?string $catalog = null, ?string $schema = null, ?string $procedure = null): array
+    {
+        return $this->connection->procedures($catalog, $schema, $procedure);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function functions(?string $catalog = null, ?string $schema = null, ?string $function = null): array
+    {
+        return $this->connection->functions($catalog, $schema, $function);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function routines(?string $catalog = null, ?string $schema = null, ?string $routine = null): array
+    {
+        return $this->connection->routines($catalog, $schema, $routine);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function tablePrivileges(?string $catalog = null, ?string $schema = null, ?string $table = null): array
+    {
+        return $this->connection->tablePrivileges($catalog, $schema, $table);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function columnPrivileges(?string $catalog = null, ?string $schema = null, ?string $table = null, ?string $column = null): array
+    {
+        return $this->connection->columnPrivileges($catalog, $schema, $table, $column);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function typeInfo(?string $type = null): array
+    {
+        return $this->connection->typeInfo($type);
+    }
+
+    public function getSessionSchema(): ?string
+    {
+        return $this->connection->getSessionSchema();
+    }
+
+    public function setSessionSchema(?string $schema): void
+    {
+        $this->connection->setSessionSchema($schema);
+    }
+
     public function exec(string $statement): int|false
     {
         return $this->connection->exec($statement);

@@ -8,11 +8,25 @@ Official database drivers for the [ScratchBird Database Engine](https://github.c
 
 ScratchBird-driver is in **Initial Early Beta (`1.0`)**.
 
-All released drivers implement the **ScratchBird Wire Protocol (SBWP v1.1)** baseline handshake and core execution path. However, feature completeness varies significantly by language lane. This README reflects the current audited capability state across drivers.
-All but one of the Alpha plan drivers are implemented, one Beta plan driver has been implemented
+All released drivers implement the **ScratchBird Wire Protocol (SBWP v1.1)**
+baseline handshake and core execution path, but closure status still varies by
+lane.
 
-Implementation means full JDBC functionality/support in place.
-Some drivers (.NET, PASCAL and C/C++) have extended enterprise level implementation - to meet the full .NET specification.
+Current PH5 closure progress:
+
+- `NCW-050..054` are complete.
+- `NCW-054A` is now complete, and `NCW-054B..054D` remain as the immediate
+  full-surface uplift block for previously residual driver work.
+- Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
+  Rust, Ruby, Pascal, .NET, and C/C++.
+- Remaining driver implementation work is concentrated in `NCW-054B..054D`
+  (residual/full-surface uplift for already-closed lanes), `NCW-055`
+  (R/Dart/Swift), `NCW-056` (Elixir/Mojo), and `NCW-057` (cross-driver
+  promotion/conformance regeneration).
+
+This README reflects the current implementation-closure state, not the final
+cross-driver promotion decision. PH5 no longer treats convenience, downstream
+consumer, or other previously residual driver surfaces as optional.
 
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)  
 **Release Targets:** `docs/planning/RELEASE_TARGETS.md`
@@ -33,50 +47,54 @@ Each driver is evaluated across the following capability groups:
 
 Legend:
 
-- ✅ Implemented (baseline-complete for 0.1.0 scope)
-- 🟡 Partial (usable but missing parity elements or integration depth)
-- 🔴 Gap (explicitly incomplete or missing surface)
+- ✅ Required PH5 closure slice complete on the currently supported surface
+- 🟡 Partial (usable but still has active closure work)
+- 🔴 Gap (explicitly incomplete or scaffold-only)
 
 ---
 
-# Driver Capability Matrix (Audit Snapshot: 2026-03-06)
+# Driver Capability Matrix (Work Snapshot: 2026-03-12)
 
-Mojo lane note: the prior 8-item JDBC-parity gap batch has been implemented in this audit cycle (hybrid parity path: native facade/bootstrap + opt-in wire bridge + matrixed runtime coverage).
+This matrix reflects the current PH5 closure state after `NCW-054A`. A `✅`
+entry means the required closure slice is complete for the lane's actively
+supported surface. `NCW-054A` has already absorbed the primary-alpha residuals;
+`NCW-054B..054D` now carry the remaining full-surface uplift work before PH5
+can claim final closure.
 
 ## Alpha Drivers
 
-| Driver          | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                         |
-| --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Most complete lane                                                                                                                                                                                                                    |
-| **ODBC 3.8**    | ✅    | ✅   | ✅    | 🟡   | ✅    | ✅   | ✅   | Near-complete baseline, metadata family parity remains                                                                                                                                                                                |
-| **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Enterprise lane complete; sustained soak/fault harnesses and cross-runtime contract gate are implemented                                                                                                                              |
-| **Node.js**     | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across TXN/EXEC/META/TYPE with expanded lane tests and env-gated live-depth checks                                                                                                                   |
-| **Python**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage                                                                                                                         |
-| **Go**          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage                                                                                                                         |
-| **Rust**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with always-on runtime contract gate coverage                                                                                                                         |
-| **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with deterministic wire tests and env-gated live-depth integration checks                                                                                             |
-| **PHP**         | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with deterministic wire tests and env-gated live-depth integration checks                                                                                             |
-| **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE with deterministic wire matrix coverage, env-gated live-depth checks, and enterprise diagnostics/telemetry/notification lifecycle APIs aligned to the .NET lane       |
-| **Mojo**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Hybrid parity complete via native facade/bootstrap + opt-in SBWP wire bridge (`sb_wire_transport=python`), with direct/manager/listener runtime matrices and live-matrix CI gating; pure Mojo socket/TLS cutover remains roadmap work |
+| Driver          | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                        |
+| --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Baseline reference lane; `NCW-054` closed the remaining schema-resolution, metadata anchoring, always-in-transaction, and pool-reset ambiguity.                                                  |
+| **ODBC 3.8**    | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green on the packaged runtime/catalog/type surface; broader promotion regeneration remains in `NCW-057`.                                                              |
+| **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green; the previously residual `DataReader.NextResult()` and related advanced result-workflow parity now move into the PH5 uplift block.                            |
+| **Node.js**     | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed the former residuals for routine metadata, metadata convenience wrappers, wire-level autocommit handling, and `users.public` schema fallback alignment.                            |
+| **Python**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed executable procedure/function/routine metadata plus `users.public` session-schema fallback alignment on the live wrapper surface.                                                 |
+| **Go**          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green across the primary live select/prepare/type/cancel and metadata helper surface.                                                                                  |
+| **Rust**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green; the previously residual multi-result and callable-path parity now move into the PH5 uplift block.                                                              |
+| **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green with live `sslmode=disable`, prepare/bind normalization, metadata restriction shaping, and resource cleanup.                                                    |
+| **PHP**         | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed schema-aware routine metadata, first-class metadata convenience wrappers, and session-schema convenience handling aligned to `users.public`.                                       |
+| **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green with direct plain-socket `sslmode=disable`, result-stream auto-drain, and always-in-a-transaction session semantics.                                           |
+| **Mojo**        | 🟡   | 🔴  | 🔴   | 🔴   | 🔴   | 🔴  | 🔴  | Still in specialty-lane implementation (`NCW-056`); current surface remains a Python-bridge-backed scaffold rather than a closed native SBWP client lane.                                          |
 
 ---
 
 ## Beta Drivers
 
-| Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | JDBC-parity baseline implemented across CONN/TXN/EXEC/META/TYPE/ERR/RES with deterministic wire/C API coverage, enterprise diagnostics/telemetry/notification lifecycle surfaces, and begin-option transaction payload parity; transport remains intentionally IP-only (`inet_listener`/`managed`) with driver-side IPC/embedded delegated to ScratchBird server/engine layers |
-| **R (DBI)**                       | 🟡   | 🟡  | ✅    | 🟡   | ✅    | ✅   | 🟡  | Execution/type/error parity is strongest; CONN/TXN/META/RES depth remains in progress                                                                                                                                                                                                                                                                                          |
-| **Swift (Async/Await)**           | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | CONN implemented with expanding deterministic parity tests; broader live integration remains pending                                                                                                                                                                                                                                                                           |
-| **Dart**                          | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | CONN implemented; TYPE/ERR parity significantly expanded (typed exceptions + SQLSTATE parsing/mapping), with direct + manager-proxy integration scaffolding now in place; broader live runtime depth remains pending                                                                                                                                                           |
+| Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                               |
+| --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green across public API, metadata helpers, type fidelity, resource lifecycle, and always-in-transaction wrapper state; transport remains intentionally listener/IP-bound.                                                                                                  |
+| **R (DBI)**                       | 🟡   | 🟡  | ✅    | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); execution is strongest, but live connection, transaction, metadata, type, error, and resource depth remain open.                                                                                                                                             |
+| **Swift (Async/Await)**           | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); base connection path exists, but broader live TXN/EXEC/META/TYPE/ERR/RES coverage remains open.                                                                                                                                                           |
+| **Dart**                          | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); connection path is present, but live transaction, metadata, type, error, and resilience closure is still pending.                                                                                                                                          |
 
 ---
 
-## ## In Development
+## Specialty / In Development
 
 | Driver                    | Notes                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Elixir (Ecto Adapter)** | Functional adapter, SCRAM + type layer present, but no full baseline mapping artifact yet. Considered in-development and not baseline-certified. |
+| **Elixir (Ecto Adapter)** | Functional adapter, SCRAM + type layer present, but the specialty lane is still open in `NCW-056`; it is not baseline-certified yet.            |
 
 ---
 
@@ -198,4 +216,4 @@ Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for 
 
 ---
 
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-12

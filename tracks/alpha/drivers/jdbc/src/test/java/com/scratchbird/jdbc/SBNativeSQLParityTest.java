@@ -25,7 +25,9 @@ class SBNativeSQLParityTest {
     }
 
     private Connection openConnection() throws Exception {
-        return runtime().openConnection();
+        String base = runtime().baseUrl();
+        String dsn = base.contains("?") ? base + "&pooling=false" : base + "?pooling=false";
+        return runtime().openConnection(dsn);
     }
 
     @Test

@@ -1,7 +1,7 @@
 # Metadata Contract Audit (sys.* / JDBC / ODBC)
 
-Status: Draft
-Last Updated: 2026-02-04
+Status: Updated
+Last Updated: 2026-03-12
 
 ## Scope
 
@@ -12,8 +12,11 @@ Audited metadata behavior against:
 
 ## Summary
 
-- Core language drivers now expose sys.* metadata helpers (schemas/tables/columns).
+- Core language drivers now expose sys.* metadata helpers
+  (schemas/tables/columns).
 - ODBC metadata mappings are aligned to sys.* and information_schema.
+- JDBC now has explicit closure evidence for resolved-current-schema metadata
+  anchoring, metadata family coverage, and pooled-session reset safety.
 - Superset/Metabase still need alignment with the finalized sys.columns/sys.index_columns schemas.
 - Dart/Swift/Elixir/Mojo do not provide metadata helper APIs yet.
 
@@ -29,6 +32,8 @@ Audited metadata behavior against:
 - Pascal: `tracks/alpha/drivers/pascal/src/ScratchBird.Metadata.pas`
 - .NET: `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Metadata.cs`
 - JDBC: `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBDatabaseMetaData.java`
+- JDBC closure tests: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/SBJdbcClosureParityTest.java`
+- JDBC pooling reset: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/JDBC203PoolingAndRecoveryContractTest.java`
 - ODBC: `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
 
 ## Open Gaps

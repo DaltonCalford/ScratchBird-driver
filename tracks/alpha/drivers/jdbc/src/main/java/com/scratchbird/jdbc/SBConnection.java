@@ -143,7 +143,7 @@ public class SBConnection implements Connection {
         // Initialize from properties
         this.autoCommit = props.isAutoCommit();
         this.readOnly = props.isReadOnly();
-        this.schema = props.getCurrentSchema();
+        this.schema = normalizeSchemaValue(props.getCurrentSchema());
 
         if (props.getApplicationName() != null) {
             clientInfo.setProperty("ApplicationName", props.getApplicationName());
@@ -177,11 +177,14 @@ public class SBConnection implements Connection {
                 }
             }
 
-            // Set initial connection parameters
+            // Preserve the server-derived current schema unless the caller explicitly overrides it.
             applySchemaSetting(schema);
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
-            if (!autoCommit) {
+            if (!autoCommit && !protocol.hasActiveTransaction()) {
                 protocol.beginTransaction();
+            }
+            if (schema == null || schema.isBlank()) {
+                schema = discoverCurrentSchema();
             }
 
             catalog = properties.getDatabase();
@@ -514,7 +517,7 @@ public class SBConnection implements Connection {
             }
             this.autoCommit = autoCommit;
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
-            if (!autoCommit) {
+            if (!autoCommit && !protocol.hasActiveTransaction()) {
                 protocol.beginTransaction();
             }
         }
@@ -1236,12 +1239,8 @@ public class SBConnection implements Connection {
     }
 
     private void applySchemaSetting(String schemaValue) throws SQLException {
-        if (schemaValue == null || schemaValue.isBlank()) {
-            return;
-        }
-        String normalized = schemaValue.trim();
-        if ("public".equalsIgnoreCase(normalized)) {
-            this.schema = normalized;
+        String normalized = normalizeSchemaValue(schemaValue);
+        if (normalized == null) {
             return;
         }
         String statement = buildSchemaStatement(normalized);
@@ -1250,6 +1249,71 @@ public class SBConnection implements Connection {
         }
         protocol.execute(statement);
         this.schema = normalized;
+    }
+
+    private String discoverCurrentSchema() {
+        try {
+            SBQueryResult result = protocol.execute("SHOW current_schema");
+            return extractTrailingTextCell(result);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    private static String extractTrailingTextCell(SBQueryResult result) {
+        if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+            return null;
+        }
+        Object[] row = result.getRows().get(0);
+        if (row == null) {
+            return null;
+        }
+        for (int index = row.length - 1; index >= 0; index--) {
+            String value = normalizeSchemaValue(row[index] == null ? null : row[index].toString());
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeSchemaValue(String schemaValue) {
+        if (schemaValue == null) {
+            return null;
+        }
+        String normalized = schemaValue.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    void resetForPoolReuse(SBConnectionProperties baseline) throws SQLException {
+        checkClosed();
+        clearWarnings();
+
+        if (!autoCommit && protocol.hasActiveTransaction()) {
+            rollback();
+        }
+
+        if (autoCommit != baseline.isAutoCommit()) {
+            setAutoCommit(baseline.isAutoCommit());
+        } else if (!autoCommit && !protocol.hasActiveTransaction()) {
+            protocol.beginTransaction();
+        }
+
+        if (transactionIsolation != TRANSACTION_READ_COMMITTED) {
+            setTransactionIsolation(TRANSACTION_READ_COMMITTED);
+        }
+
+        if (readOnly != baseline.isReadOnly()) {
+            setReadOnly(baseline.isReadOnly());
+        }
+
+        String desiredSchema = normalizeSchemaValue(baseline.getCurrentSchema());
+        if (desiredSchema == null) {
+            protocol.execute("RESET search_path");
+            schema = discoverCurrentSchema();
+        } else if (schema == null || !desiredSchema.equalsIgnoreCase(schema)) {
+            applySchemaSetting(desiredSchema);
+        }
     }
 
     static String buildSchemaStatement(String schemaValue) {

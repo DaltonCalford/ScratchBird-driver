@@ -50,6 +50,18 @@ class SBConnectionTransactionModeTest {
     }
 
     @Test
+    void setAutoCommitFalseDoesNotBeginWhenServerAlreadyHasTransaction() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        protocol.activeTransaction = true;
+        SBConnection connection = newConnectionForTest(protocol, true);
+
+        connection.setAutoCommit(false);
+
+        assertEquals(0, protocol.beginCalls);
+        assertFalse(connection.getAutoCommit());
+    }
+
+    @Test
     void commitAndRollbackAreNoOpsWhenNoActiveTransaction() throws Exception {
         TrackingProtocol protocol = new TrackingProtocol();
         protocol.activeTransaction = false;
@@ -89,6 +101,7 @@ class SBConnectionTransactionModeTest {
 
     private static final class TrackingProtocol extends SBProtocolHandler {
         private final List<String> executedSql = new ArrayList<>();
+        private int beginCalls;
         private int commitCalls;
         private int rollbackCalls;
         private boolean activeTransaction;
@@ -115,6 +128,7 @@ class SBConnectionTransactionModeTest {
 
         @Override
         public synchronized void beginTransaction() throws SQLException {
+            beginCalls++;
             activeTransaction = true;
         }
 

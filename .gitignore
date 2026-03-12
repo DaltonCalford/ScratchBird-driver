@@ -86,6 +86,7 @@ node/.npm
 node/.eslintcache
 node/*.tsbuildinfo
 node/coverage/
+tracks/**/node_modules/
 
 # ===================
 # Rust
@@ -93,6 +94,7 @@ node/coverage/
 rust/target/
 rust/Cargo.lock
 rust/**/*.rs.bk
+tracks/**/target/
 
 # ===================
 # .NET
@@ -131,6 +133,7 @@ jdbc/hs_err_pid*
 php/vendor/
 php/composer.lock
 php/.phpunit.result.cache
+tracks/**/vendor/
 
 # ===================
 # Ruby
@@ -161,6 +164,10 @@ pascal/*.exe
 pascal/*.dll
 pascal/*.so
 pascal/lib/
+tracks/alpha/drivers/pascal/tests/*.o
+tracks/alpha/drivers/pascal/tests/*.ppu
+tracks/alpha/drivers/pascal/tests/IntegrationTest
+tracks/alpha/drivers/pascal/tests/*Tests
 
 # ===================
 # Elixir
@@ -199,6 +206,7 @@ mojo/.build/
 tracks/**/.build/
 tracks/**/.gradle/
 tracks/**/jdbc/.gradle/
+tracks/**/build/
 build/
 dist/
 out/

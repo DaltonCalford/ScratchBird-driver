@@ -14,6 +14,7 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.sql.SQLException;
@@ -29,6 +30,8 @@ public class SBDriverTest {
         assertEquals("localhost", props.getHost());
         assertEquals(3092, props.getPort());
         assertEquals("demo", props.getDatabase());
+        assertNull(props.getCurrentSchema());
+        assertNull(props.toProperties().getProperty("currentSchema"));
     }
 
     @Test
@@ -76,6 +79,14 @@ public class SBDriverTest {
         SBConnectionProperties props = SBDriver.parseURL(
             "jdbc:scratchbird://localhost:3092/demo?dbeaver_expand_schema_parents=true", null);
         assertEquals("true", props.getProperty("metadataExpandSchemaParents"));
+    }
+
+    @Test
+    public void preservesExplicitCurrentSchemaOverride() throws SQLException {
+        SBConnectionProperties props = SBDriver.parseURL(
+            "jdbc:scratchbird://localhost:3092/demo?currentSchema=users.public", null);
+        assertEquals("users.public", props.getCurrentSchema());
+        assertEquals("users.public", props.toProperties().getProperty("currentSchema"));
     }
 
     @Test

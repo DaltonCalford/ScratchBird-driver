@@ -205,8 +205,9 @@ public class SBDriver implements Driver {
 
         // Current schema
         DriverPropertyInfo schemaProp = new DriverPropertyInfo("currentSchema",
-            props.getProperty("currentSchema", "public"));
-        schemaProp.description = "Default schema";
+            props.getProperty("currentSchema", ""));
+        schemaProp.description =
+            "Optional initial schema/search path. When omitted, the server default derived from user/role/group settings applies.";
         propList.add(schemaProp);
 
         DriverPropertyInfo expandSchemaParentsProp = new DriverPropertyInfo(
