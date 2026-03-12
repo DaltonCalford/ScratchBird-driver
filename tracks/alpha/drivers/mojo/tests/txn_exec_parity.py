@@ -163,7 +163,7 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
     _require(len(commit_conn.sent) == 1, "active txn should send commit")
     _require(commit_conn.sent[0][0] == scratchbird.MessageType.TXN_COMMIT, "commit should send TXN_COMMIT")
     _require(commit_conn.drained == 1, "active commit should drain once")
-    _require(commit_conn._txn_id == 0, "commit should mark transaction inactive")
+    _require(commit_conn._txn_id == 1, "commit should auto-start the next transaction")
     _require(commit_conn._savepoints == [], "commit should clear savepoints")
     _require(getattr(commit_conn, "_txn_begin_options", None) == {}, "commit should clear begin options")
 
@@ -177,7 +177,7 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
         "rollback should send TXN_ROLLBACK",
     )
     _require(rollback_conn.drained == 1, "active rollback should drain once")
-    _require(rollback_conn._txn_id == 0, "rollback should mark transaction inactive")
+    _require(rollback_conn._txn_id == 1, "rollback should auto-start the next transaction")
     _require(rollback_conn._savepoints == [], "rollback should clear savepoints")
     _require(getattr(rollback_conn, "_txn_begin_options", None) == {}, "rollback should clear begin options")
 
@@ -317,13 +317,23 @@ def test_shim_ping_and_txn_lifecycle() -> None:
         conn.commit()
         conn.rollback()
         conn.begin()
+        raise RuntimeError("expected begin on always-active shim connection to raise")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "25001", "begin on always-active shim connection should raise 25001")
+    finally:
+        conn.close()
+
+
+def test_shim_ping_and_txn_lifecycle_repeated_control() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        conn.commit()
+        conn.rollback()
         try:
             conn.begin()
-            raise RuntimeError("expected nested begin to raise")
+            raise RuntimeError("expected repeated begin to raise")
         except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "25001", "nested begin should raise 25001")
-        conn.rollback()
-        conn.begin()
+            _require(exc.sqlstate == "25001", "repeated begin should raise 25001")
         conn.commit()
     finally:
         conn.close()
@@ -334,14 +344,13 @@ def test_shim_begin_validates_kwargs_and_prepare_guard() -> None:
     try:
         try:
             conn.begin(isolation_level="bad")
-            raise RuntimeError("expected invalid shim begin option rejection")
+            raise RuntimeError("expected active shim begin rejection")
         except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "22023", "invalid shim begin option should raise 22023")
-        _require(getattr(conn, "_txn_id", 0) == 0, "invalid begin should not activate txn")
+            _require(exc.sqlstate == "25001", "active shim begin should raise 25001")
+        _require(getattr(conn, "_txn_id", 0) == 1, "active shim begin should preserve active transaction")
 
-        conn.begin(isolation_level=2, access_mode=1, deferrable=True, wait=False, timeout_ms=12, autocommit_mode=1)
-        _require(getattr(conn, "_txn_id", 0) == 1, "valid begin should activate txn")
         conn.commit()
+        _require(getattr(conn, "_txn_id", 0) == 1, "commit should auto-start the next transaction")
 
         conn.close()
         try:
@@ -356,13 +365,6 @@ def test_shim_begin_validates_kwargs_and_prepare_guard() -> None:
 def test_shim_savepoint_lifecycle() -> None:
     conn = scratchbird.connect(_shim_cfg())
     try:
-        try:
-            conn.set_savepoint()
-            raise RuntimeError("expected savepoint guard when txn inactive")
-        except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "25000", "inactive savepoint should raise 25000")
-
-        conn.begin()
         sp_auto = conn.set_savepoint()
         _require(sp_auto == "sp_1", "generated savepoint name mismatch")
         _require(conn.set_savepoint("named_sp") == "named_sp", "named savepoint mismatch")
@@ -379,9 +381,9 @@ def test_shim_savepoint_lifecycle() -> None:
         conn.commit()
         try:
             conn.release_savepoint("named_sp")
-            raise RuntimeError("expected release guard when txn inactive")
+            raise RuntimeError("expected release of cleared savepoint to raise")
         except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "25000", "inactive release should raise 25000")
+            _require(exc.sqlstate == "3B001", "cleared savepoint should raise 3B001")
     finally:
         conn.close()
 

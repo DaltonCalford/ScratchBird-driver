@@ -42,7 +42,7 @@
       "id": "paging_basic_table",
       "kind": "native_query",
       "sql": "SELECT id FROM basic_table ORDER BY id",
-      "expect_rows": 6,
+      "expect_rows": 2,
       "dsn_append": "fetch_size=1"
     },
     {

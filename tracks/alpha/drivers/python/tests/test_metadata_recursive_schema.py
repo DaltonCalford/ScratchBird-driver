@@ -57,7 +57,7 @@ def test_schema_paths_for_navigation_with_parent_expansion_preserves_pattern_fil
         schema_names,
         expand_schema_parents=True,
         schema_pattern="users.alice.%",
-    ) == ["users.alice.dev", "users.alice.prod"]
+    ) == ["users", "users.alice", "users.alice.dev", "users.alice.prod"]
 
 
 def test_build_schema_tree_enforces_per_parent_uniqueness_and_cross_path_identity():

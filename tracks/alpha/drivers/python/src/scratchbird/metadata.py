@@ -408,15 +408,18 @@ def expand_schema_parent_paths(
     out: List[str] = []
     seen: Set[str] = set()
     for schema_name in schema_names:
-        parts = _split_schema_path(schema_name)
+        normalized = _normalize_schema_name(schema_name)
+        if normalized is None:
+            continue
+        if not schema_name_matches_pattern(normalized, schema_pattern):
+            continue
+        parts = _split_schema_path(normalized)
         if not parts:
             continue
         current: List[str] = []
         for part in parts:
             current.append(part)
             candidate = ".".join(current)
-            if not schema_name_matches_pattern(candidate, schema_pattern):
-                continue
             if candidate in seen:
                 continue
             seen.add(candidate)

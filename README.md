@@ -14,7 +14,7 @@ lane.
 
 Current PH5 closure progress:
 
-- `NCW-050..055` are complete.
+- `NCW-050..056` are complete.
 - `NCW-054D` closed the downstream JDBC consumer uplift for Metabase and
   Superset, including current-schema/default-schema alignment, downstream
   adapter option surfacing, and finalized metadata/index reflection behavior.
@@ -22,11 +22,16 @@ Current PH5 closure progress:
   manager-proxy parity, always-in-transaction behavior, full-surface metadata
   helpers, and the remaining cancel/resilience gaps on their supported
   surfaces.
+- `NCW-056` closed the specialty lanes for Mojo and Elixir on their claimed
+  PH5 surfaces: Mojo now validates live direct and manager-proxy parity with
+  corrected wire-transport transaction control, prepared execution, stream
+  recovery, and expanded schema-parent payload shaping; Elixir now passes its
+  lane suite against the shared runtime stack.
 - Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
-  Rust, Ruby, Pascal, .NET, C/C++, R, Dart, and Swift.
-- Remaining driver implementation work is concentrated in `NCW-056`
-  (Elixir/Mojo) and `NCW-057` (cross-driver promotion/conformance
-  regeneration).
+  Rust, Ruby, Pascal, .NET, C/C++, R, Dart, Swift, Mojo, and Elixir.
+- PH5 driver implementation and promotion-regeneration work is complete through
+  `NCW-057`; subsequent remaining work is in later shared readiness/release
+  phases, not open driver-lane closure tickets.
 
 This README reflects the current implementation-closure state, not the final
 cross-driver promotion decision. PH5 no longer treats convenience, downstream
@@ -57,14 +62,14 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-055`)
+# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-056`)
 
-This matrix reflects the current PH5 closure state after `NCW-055`. A `✅`
+This matrix reflects the current PH5 closure state after `NCW-056`. A `✅`
 entry means the required closure slice is complete for the lane's actively
 supported surface. `NCW-054A..054D` absorbed the primary alpha,
 secondary alpha, C/C++, and downstream JDBC consumer residuals, and
-`NCW-055` closes the beta full-surface parity lane. PH5 now hands off to the
-remaining specialty lanes.
+`NCW-055` and `NCW-056` closed the remaining beta and specialty full-surface
+parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
 
 ## Alpha Drivers
 
@@ -80,7 +85,7 @@ remaining specialty lanes.
 | **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes cancel-path sequence targeting and interruption behavior with explicit deterministic tests.                                           |
 | **PHP**         | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed schema-aware routine metadata, first-class metadata convenience wrappers, and session-schema convenience handling aligned to `users.public`.                                       |
 | **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes routine-wrapper, generated-key, and stream-control residuals on the supported live and source-built surface.                         |
-| **Mojo**        | 🟡   | 🔴  | 🔴   | 🔴   | 🔴   | 🔴  | 🔴  | Still in specialty-lane implementation (`NCW-056`); current surface remains a Python-bridge-backed scaffold rather than a closed native SBWP client lane.                                          |
+| **Mojo**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-056` is closed on the claimed PH5 surface: the Mojo lane now validates live direct and manager-proxy parity through the supported listener-mediated Python wire bridge, including corrected prepared execution, transaction control, stream recovery, and expanded schema-parent payload shaping. |
 
 ---
 
@@ -95,11 +100,11 @@ remaining specialty lanes.
 
 ---
 
-## Specialty / In Development
+## Specialty Drivers
 
-| Driver                    | Notes                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Elixir (Ecto Adapter)** | Functional adapter, SCRAM + type layer present, but the specialty lane is still open in `NCW-056`; it is not baseline-certified yet.            |
+| Driver                    | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                     |
+| ------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Elixir (Ecto Adapter)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-056` is closed on the supported listener-mediated surface; the lane now passes its connection, metadata, type, Ecto-adapter, and live integration suite. |
 
 ---
 

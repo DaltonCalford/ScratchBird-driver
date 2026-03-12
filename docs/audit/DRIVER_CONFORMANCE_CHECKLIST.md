@@ -1,7 +1,7 @@
 # Driver Conformance Checklist (SBWP v1.1)
 
-Status: Draft
-Last Updated: 2026-01-09
+Status: Current
+Last Updated: 2026-03-12
 Scope: All drivers in this repo (native ScratchBird only)
 
 ## Manifest Reference
@@ -23,6 +23,8 @@ Notes:
 - Each integration test assumes the fixtures are loaded into the target database.
 - cancel_stream requires `SCRATCHBIRD_CONFORMANCE_CANCEL=1` when using the
   manifest harness.
+- The current shared static fixture set yields `2` rows for
+  `paging_basic_table` (`SELECT id FROM basic_table ORDER BY id`).
 
 ## Per-Driver Checklist
 
@@ -86,3 +88,17 @@ JDBC
 - auth: implicit via connection
 - prepare_bind: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/SBIntegrationTest.java`
 - types_one_way: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/SBIntegrationTest.java`
+
+Mojo
+- handshake: `tracks/alpha/drivers/mojo/tests/integration.py`
+- auth: implicit via connection
+- prepare_bind: `tracks/alpha/drivers/mojo/tests/integration.py`
+- types_one_way: `tracks/alpha/drivers/mojo/tests/sbdriver_conformance.py`
+- paging_basic_table: `tracks/alpha/drivers/mojo/tests/sbdriver_conformance.py`
+- cancel_stream: `tracks/alpha/drivers/mojo/tests/sbdriver_conformance.py`
+
+Elixir
+- handshake: `tracks/p3/drivers/elixir/test/integration_test.exs`
+- auth: implicit via connection
+- prepare_bind: `tracks/p3/drivers/elixir/test/integration_test.exs`
+- types_one_way: `tracks/p3/drivers/elixir/test/types_test.exs`

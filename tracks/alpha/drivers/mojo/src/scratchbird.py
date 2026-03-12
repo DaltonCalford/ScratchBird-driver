@@ -1548,6 +1548,7 @@ class _WireStream:
         self._conn = conn
         self._cursor = cursor
         self._closed = False
+        self._exhausted = False
 
     def __iter__(self) -> "_WireStream":
         return self
@@ -1557,19 +1558,24 @@ class _WireStream:
             raise ScratchBirdError("stream is closed", "HY010")
         if self._conn._closed:
             self._closed = True
+            self._exhausted = True
             raise ScratchBirdError("connection is closed", "08003")
         if self._conn._cancel_requested:
             self._closed = True
+            self._exhausted = True
             self._conn._cancel_requested = False
+            self._conn._mark_reconnect_required()
             raise ScratchBirdError("query canceled", "57014")
         try:
             row = self._cursor.fetchone()
         except Exception as exc:
             self._closed = True
+            self._exhausted = True
             self._conn._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
         if row is None:
             self._closed = True
+            self._exhausted = True
             raise ScratchBirdError("stream is closed", "HY010")
         if isinstance(row, list):
             return row
@@ -1578,6 +1584,8 @@ class _WireStream:
         return [row]
 
     def close(self) -> None:
+        if not self._closed and not self._exhausted:
+            self._conn._mark_reconnect_required()
         self._closed = True
         close_method = getattr(self._cursor, "close", None)
         if callable(close_method):

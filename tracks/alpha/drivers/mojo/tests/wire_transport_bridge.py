@@ -163,7 +163,11 @@ def test_wire_prepare_stream_and_lifecycle() -> None:
         prepared = stmt.execute(["5", "7"])
         _require(prepared.rows == [[5, 7]], "wire prepared execute payload mismatch")
 
-        conn.begin()
+        try:
+            conn.begin()
+            raise RuntimeError("expected wire begin on active transaction to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "25001", "wire begin should reject already-active transaction")
         savepoint = conn.set_savepoint()
         _require(savepoint == "sp_1", "wire savepoint auto-name mismatch")
         conn.release_savepoint(savepoint)

@@ -303,7 +303,7 @@ def test_connection_ddl_editor_schema_payload_uses_config_parent_expansion_and_f
     payload = Connection.ddl_editor_schema_payload(conn, schema_pattern="users.%")
     assert captured == {"collection_name": "schemas", "restrictions": {"schema": "users.%"}}
     assert payload["expandSchemaParents"] is True
-    assert payload["schemaPaths"] == ["users.alice", "users.alice.dev"]
+    assert payload["schemaPaths"] == ["users", "users.alice", "users.alice.dev"]
 
 
 def test_connection_ddl_editor_schema_payload_allows_expansion_override():
