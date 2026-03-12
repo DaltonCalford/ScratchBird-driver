@@ -8,6 +8,7 @@
 }
 program MetadataExecutionFlowTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

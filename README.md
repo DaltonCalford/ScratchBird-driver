@@ -14,12 +14,12 @@ lane.
 
 Current PH5 closure progress:
 
-- `NCW-050..054` are complete.
-- `NCW-054A` is now complete, and `NCW-054B..054D` remain as the immediate
-  full-surface uplift block for previously residual driver work.
+- `NCW-050..054B` are complete.
+- `NCW-054C..054D` remain as the immediate full-surface uplift block for the
+  remaining previously residual driver work.
 - Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
   Rust, Ruby, Pascal, .NET, and C/C++.
-- Remaining driver implementation work is concentrated in `NCW-054B..054D`
+- Remaining driver implementation work is concentrated in `NCW-054C..054D`
   (residual/full-surface uplift for already-closed lanes), `NCW-055`
   (R/Dart/Swift), `NCW-056` (Elixir/Mojo), and `NCW-057` (cross-driver
   promotion/conformance regeneration).
@@ -55,11 +55,11 @@ Legend:
 
 # Driver Capability Matrix (Work Snapshot: 2026-03-12)
 
-This matrix reflects the current PH5 closure state after `NCW-054A`. A `✅`
+This matrix reflects the current PH5 closure state after `NCW-054B`. A `✅`
 entry means the required closure slice is complete for the lane's actively
-supported surface. `NCW-054A` has already absorbed the primary-alpha residuals;
-`NCW-054B..054D` now carry the remaining full-surface uplift work before PH5
-can claim final closure.
+supported surface. `NCW-054A..054B` have absorbed the primary and secondary
+alpha residuals; `NCW-054C..054D` now carry the remaining full-surface uplift
+work before PH5 can claim final closure.
 
 ## Alpha Drivers
 
@@ -67,14 +67,14 @@ can claim final closure.
 | --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Baseline reference lane; `NCW-054` closed the remaining schema-resolution, metadata anchoring, always-in-transaction, and pool-reset ambiguity.                                                  |
 | **ODBC 3.8**    | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green on the packaged runtime/catalog/type surface; broader promotion regeneration remains in `NCW-057`.                                                              |
-| **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green; the previously residual `DataReader.NextResult()` and related advanced result-workflow parity now move into the PH5 uplift block.                            |
+| **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes deterministic `DataReader.NextResult()` multi-result traversal on the supported protocol surface.                                     |
 | **Node.js**     | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed the former residuals for routine metadata, metadata convenience wrappers, wire-level autocommit handling, and `users.public` schema fallback alignment.                            |
 | **Python**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed executable procedure/function/routine metadata plus `users.public` session-schema fallback alignment on the live wrapper surface.                                                 |
 | **Go**          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green across the primary live select/prepare/type/cancel and metadata helper surface.                                                                                  |
-| **Rust**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green; the previously residual multi-result and callable-path parity now move into the PH5 uplift block.                                                              |
-| **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green with live `sslmode=disable`, prepare/bind normalization, metadata restriction shaping, and resource cleanup.                                                    |
+| **Rust**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes deterministic callable, batch-helper, and generated-key helper parity on the supported runtime-gate surface.                         |
+| **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes cancel-path sequence targeting and interruption behavior with explicit deterministic tests.                                           |
 | **PHP**         | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed schema-aware routine metadata, first-class metadata convenience wrappers, and session-schema convenience handling aligned to `users.public`.                                       |
-| **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green with direct plain-socket `sslmode=disable`, result-stream auto-drain, and always-in-a-transaction session semantics.                                           |
+| **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes routine-wrapper, generated-key, and stream-control residuals on the supported live and source-built surface.                         |
 | **Mojo**        | 🟡   | 🔴  | 🔴   | 🔴   | 🔴   | 🔴  | 🔴  | Still in specialty-lane implementation (`NCW-056`); current surface remains a Python-bridge-backed scaffold rather than a closed native SBWP client lane.                                          |
 
 ---

@@ -8,6 +8,7 @@
 }
 program ResourceResilienceTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

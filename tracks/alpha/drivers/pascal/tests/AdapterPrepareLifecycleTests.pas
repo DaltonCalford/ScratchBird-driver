@@ -8,6 +8,7 @@
 }
 program AdapterPrepareLifecycleTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

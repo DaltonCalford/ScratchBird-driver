@@ -8,6 +8,7 @@
 }
 program SqlTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

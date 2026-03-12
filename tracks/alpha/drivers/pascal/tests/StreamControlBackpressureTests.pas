@@ -8,6 +8,7 @@
 }
 program StreamControlBackpressureTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

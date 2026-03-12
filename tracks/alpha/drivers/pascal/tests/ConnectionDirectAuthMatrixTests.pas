@@ -8,6 +8,7 @@
 }
 program ConnectionDirectAuthMatrixTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

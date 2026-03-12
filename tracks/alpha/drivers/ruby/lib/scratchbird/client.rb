@@ -470,7 +470,7 @@ module Scratchbird
     def cancel
       ensure_connected
       @cancel_requested = true
-      payload = Protocol.build_cancel_payload(0, 0)
+      payload = Protocol.build_cancel_payload(0, @last_query_sequence.to_i)
       send_message(Protocol::MSG_CANCEL, payload, Protocol::MSG_FLAG_URGENT, false)
       if @active_thread && @active_thread.alive? && @active_thread != Thread.current
         @active_thread.raise(OperatorInterventionError.new("query canceled", "57014"))

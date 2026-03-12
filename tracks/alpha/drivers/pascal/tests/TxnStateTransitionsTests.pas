@@ -8,6 +8,7 @@
 }
 program TxnStateTransitionsTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

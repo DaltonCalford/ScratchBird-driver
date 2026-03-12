@@ -8,6 +8,7 @@
 }
 program BatchExecutionTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

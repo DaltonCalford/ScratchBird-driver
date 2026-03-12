@@ -8,6 +8,7 @@
 }
 program AdapterTransactionOptionsTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

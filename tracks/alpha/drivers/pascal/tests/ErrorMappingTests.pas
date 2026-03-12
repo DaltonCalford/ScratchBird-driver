@@ -8,6 +8,7 @@
 }
 program ErrorMappingTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

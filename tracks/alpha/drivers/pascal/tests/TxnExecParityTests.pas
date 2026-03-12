@@ -8,6 +8,7 @@
 }
 program TxnExecParityTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

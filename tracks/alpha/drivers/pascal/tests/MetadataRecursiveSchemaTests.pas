@@ -8,6 +8,7 @@
 }
 program MetadataRecursiveSchemaTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

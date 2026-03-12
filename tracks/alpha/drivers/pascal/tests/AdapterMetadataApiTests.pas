@@ -8,6 +8,7 @@
 }
 program AdapterMetadataApiTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

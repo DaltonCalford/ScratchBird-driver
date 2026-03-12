@@ -168,6 +168,8 @@ tracks/alpha/drivers/pascal/tests/*.o
 tracks/alpha/drivers/pascal/tests/*.ppu
 tracks/alpha/drivers/pascal/tests/IntegrationTest
 tracks/alpha/drivers/pascal/tests/*Tests
+tracks/alpha/drivers/pascal/src/*.o
+tracks/alpha/drivers/pascal/src/*.ppu
 
 # ===================
 # Elixir

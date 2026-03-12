@@ -8,6 +8,7 @@
 }
 program ConfigTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

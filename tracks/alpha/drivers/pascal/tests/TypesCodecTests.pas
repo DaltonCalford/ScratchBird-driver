@@ -8,6 +8,7 @@
 }
 program TypesCodecTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

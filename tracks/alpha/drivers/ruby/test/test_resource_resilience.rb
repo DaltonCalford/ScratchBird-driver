@@ -24,16 +24,40 @@ class TestResourceResilience < Minitest::Test
   end
 
   class FakeSocket
-    attr_reader :close_calls
+    attr_reader :close_calls, :writes
 
     def initialize(error = nil)
       @error = error
       @close_calls = 0
+      @writes = []
+    end
+
+    def write(data)
+      @writes << data
+      data.bytesize
     end
 
     def close
       @close_calls += 1
       raise @error if @error
+      true
+    end
+  end
+
+  class FakeThread
+    attr_reader :raised
+
+    def initialize(alive: true)
+      @alive = alive
+      @raised = []
+    end
+
+    def alive?
+      @alive
+    end
+
+    def raise(error)
+      @raised << error
       true
     end
   end
@@ -348,5 +372,53 @@ class TestResourceResilience < Minitest::Test
     assert_equal 1, breaker.allow_request_calls
     assert_equal 0, telemetry.started_spans.length
     assert_equal 0, tracker.mark_active_calls
+  end
+
+  def test_cancel_targets_last_query_sequence_and_interrupts_active_thread
+    client = Scratchbird::Client.new(Scratchbird::Config.new)
+    socket = FakeSocket.new
+    active_thread = FakeThread.new
+
+    client.instance_variable_set(:@socket, socket)
+    client.instance_variable_set(:@connected, true)
+    client.instance_variable_set(:@last_query_sequence, 77)
+    client.instance_variable_set(:@active_thread, active_thread)
+
+    assert_equal true, client.cancel
+    assert_equal 1, socket.close_calls
+    assert_equal 1, socket.writes.length
+
+    header = socket.writes.first.byteslice(0, Scratchbird::Protocol::HEADER_SIZE)
+    type, flags, length, _sequence, _attachment_id, _txn_id = Scratchbird::Protocol.decode_header(header)
+    payload = socket.writes.first.byteslice(Scratchbird::Protocol::HEADER_SIZE, length)
+
+    assert_equal Scratchbird::Protocol::MSG_CANCEL, type
+    assert_equal Scratchbird::Protocol::MSG_FLAG_URGENT, flags
+    assert_equal Scratchbird::Protocol.build_cancel_payload(0, 77), payload
+    assert_equal 1, active_thread.raised.length
+    assert_kind_of Scratchbird::OperatorInterventionError, active_thread.raised.first
+    assert_equal "57014", active_thread.raised.first.sqlstate
+  end
+
+  def test_cancel_skips_current_or_inactive_thread_raise
+    client = Scratchbird::Client.new(Scratchbird::Config.new)
+
+    current_socket = FakeSocket.new
+    client.instance_variable_set(:@socket, current_socket)
+    client.instance_variable_set(:@connected, true)
+    client.instance_variable_set(:@last_query_sequence, 12)
+    client.instance_variable_set(:@active_thread, Thread.current)
+    assert_equal true, client.cancel
+    assert_equal 1, current_socket.writes.length
+
+    inactive_socket = FakeSocket.new
+    inactive_thread = FakeThread.new(alive: false)
+    client.instance_variable_set(:@socket, inactive_socket)
+    client.instance_variable_set(:@connected, true)
+    client.instance_variable_set(:@last_query_sequence, 13)
+    client.instance_variable_set(:@active_thread, inactive_thread)
+    assert_equal true, client.cancel
+    assert_equal 1, inactive_socket.writes.length
+    assert_empty inactive_thread.raised
   end
 end

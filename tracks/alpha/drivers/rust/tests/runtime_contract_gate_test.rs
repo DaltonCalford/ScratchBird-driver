@@ -452,6 +452,35 @@ async fn handle_query(
     sql: &str,
 ) -> std::result::Result<(), String> {
     let normalized = sql.trim().to_ascii_lowercase();
+    if normalized == "select abs(-3) as return_value" || normalized == "select abs(-3)" {
+        return write_result_set(
+            stream,
+            sequence,
+            attachment_id,
+            txn_id,
+            &[RuntimeColumn {
+                name: "abs",
+                oid: types::OID_INT4,
+            }],
+            &[&["3"]],
+            "SELECT 1",
+        )
+        .await;
+    }
+
+    if normalized.starts_with("insert into generated_key_fixture") {
+        write_protocol_message(
+            stream,
+            sequence,
+            protocol::MSG_COMMAND_COMPLETE,
+            &command_complete_payload(1, 41, "INSERT 0 1"),
+            attachment_id,
+            txn_id,
+        )
+        .await?;
+        return Ok(());
+    }
+
     if normalized == "select 1; select 2" {
         write_result_set(
             stream,
@@ -1365,6 +1394,56 @@ async fn runtime_gate_manager_proxy_and_capability_parity() {
     );
     assert_eq!(snapshot.auth_responses.len(), 1);
     assert_eq!(snapshot.auth_responses[0], b"{\"token\":\"abc\"}");
+}
+
+#[tokio::test]
+async fn runtime_gate_callable_and_batch_helpers_are_deterministic() {
+    let server = RuntimeGateServer::start(RuntimeGateOptions::direct(protocol::AUTH_OK)).await;
+    let mut client = build_client_for_server(&server);
+    client.connect().await.expect("connect");
+
+    let result = client
+        .call("{ ? = call abs(-3) }", Params::from(()))
+        .await
+        .expect("call");
+    assert!(!result.rows.is_empty());
+    match &result.rows[0][0] {
+        Value::Int32(v) => assert_eq!(*v, 3),
+        Value::Int64(v) => assert_eq!(*v, 3),
+        Value::String(v) => assert_eq!(v, "3"),
+        other => panic!("unexpected callable result type: {other:?}"),
+    }
+
+    let batch = client
+        .execute_batch("SELECT 1", vec![Params::from(()), Params::from(())])
+        .await
+        .expect("execute batch");
+    client.terminate().await.expect("terminate");
+    server.finish().await;
+
+    assert_eq!(batch.items.len(), 2);
+    assert_eq!(batch.items[0].row_count, 1);
+    assert_eq!(batch.items[1].row_count, 1);
+    assert_eq!(batch.total_row_count, 2);
+}
+
+#[tokio::test]
+async fn runtime_gate_generated_key_helper_surfaces_last_insert_id() {
+    let server = RuntimeGateServer::start(RuntimeGateOptions::direct(protocol::AUTH_OK)).await;
+    let mut client = build_client_for_server(&server);
+    client.connect().await.expect("connect");
+
+    let keys = client
+        .execute_with_generated_keys(
+            "INSERT INTO generated_key_fixture (note) VALUES ('runtime-gate')",
+            Params::from(()),
+        )
+        .await
+        .expect("generated keys");
+    client.terminate().await.expect("terminate");
+    server.finish().await;
+
+    assert_eq!(keys, vec![41]);
 }
 
 #[tokio::test]

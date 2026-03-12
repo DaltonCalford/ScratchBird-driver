@@ -8,6 +8,7 @@
 }
 program TlsCryptoAndPolicyTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

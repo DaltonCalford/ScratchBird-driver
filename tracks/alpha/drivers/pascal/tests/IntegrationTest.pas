@@ -8,6 +8,7 @@
 }
 program IntegrationTest;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses
@@ -202,17 +203,12 @@ var
   Stream: TScratchBirdResultStream;
   RowCount: Integer;
 begin
+  Stream := AClient.QueryMetadata(CollectionName);
   try
-    Stream := AClient.QueryMetadata(CollectionName);
-    try
-      DrainStream(Stream, RowCount);
-      AssertTrue(RowCount >= 0, CollectionName + ' optional row count should be non-negative');
-    finally
-      Stream.Free;
-    end;
-  except
-    on E: EScratchbirdNotSupported do
-      Writeln('MetadataCollectionTest: SKIPPED (' + CollectionName + ' not supported: ' + E.Message + ')');
+    DrainStream(Stream, RowCount);
+    AssertTrue(RowCount >= 0, CollectionName + ' row count should be non-negative');
+  finally
+    Stream.Free;
   end;
 end;
 
@@ -221,24 +217,19 @@ var
   Stream: TScratchBirdResultStream;
   RowCount: Integer;
 begin
+  if WrapperName = 'procedures' then
+    Stream := AClient.GetProcedures
+  else if WrapperName = 'functions' then
+    Stream := AClient.GetFunctions
+  else if WrapperName = 'routines' then
+    Stream := AClient.GetRoutines
+  else
+    Fail('unsupported optional wrapper: ' + WrapperName);
   try
-    if WrapperName = 'procedures' then
-      Stream := AClient.GetProcedures
-    else if WrapperName = 'functions' then
-      Stream := AClient.GetFunctions
-    else if WrapperName = 'routines' then
-      Stream := AClient.GetRoutines
-    else
-      Fail('unsupported optional wrapper: ' + WrapperName);
-    try
-      DrainStream(Stream, RowCount);
-      AssertTrue(RowCount >= 0, WrapperName + ' optional wrapper row count should be non-negative');
-    finally
-      Stream.Free;
-    end;
-  except
-    on E: EScratchbirdNotSupported do
-      Writeln('MetadataWrapperTest: SKIPPED (' + WrapperName + ' not supported: ' + E.Message + ')');
+    DrainStream(Stream, RowCount);
+    AssertTrue(RowCount >= 0, WrapperName + ' wrapper row count should be non-negative');
+  finally
+    Stream.Free;
   end;
 end;
 
@@ -470,12 +461,7 @@ begin
   try
     DrainStream(Stream, RowCount);
     if not Stream.HasLastInsertId then
-    begin
-      if Trim(ExpectedText) <> '' then
-        Fail('generated-key SQL did not expose last insert id');
-      Writeln('GeneratedKeyTest: SKIPPED (runtime did not expose last insert id)');
-      Exit;
-    end;
+      Fail('generated-key SQL did not expose last insert id');
     AssertTrue(Stream.LastInsertId > 0, 'generated-key SQL should expose non-zero last insert id');
     if Trim(ExpectedText) <> '' then
     begin

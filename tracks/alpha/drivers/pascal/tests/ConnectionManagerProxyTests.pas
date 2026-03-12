@@ -8,6 +8,7 @@
 }
 program ConnectionManagerProxyTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

@@ -8,6 +8,7 @@
 }
 program QueryMultiTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses

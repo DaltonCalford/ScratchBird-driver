@@ -8,6 +8,7 @@
 }
 program ConnectionAuthProtocolTests;
 
+{$mode delphi}
 {$APPTYPE CONSOLE}
 
 uses
