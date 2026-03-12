@@ -889,8 +889,12 @@ sb_rows_to_column <- function(rows, index) {
 }
 
 sb_rows_to_df <- function(rows, columns) {
-  if (length(rows) == 0) return(data.frame())
   names <- vapply(columns, function(col) col$name, character(1))
+  if (length(rows) == 0) {
+    empty_cols <- lapply(columns, function(...) logical(0))
+    names(empty_cols) <- names
+    return(as.data.frame(empty_cols, stringsAsFactors = FALSE))
+  }
   cols <- vector("list", length(columns))
   for (i in seq_along(columns)) {
     cols[[i]] <- sb_rows_to_column(rows, i)

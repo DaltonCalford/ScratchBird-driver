@@ -136,10 +136,12 @@ final class IntegrationTests: XCTestCase {
             }
 
             do {
-                _ = try await conn.query("SELECT ?::INTEGER", ["not-an-int"])
-                XCTFail("Expected data conversion failure")
+                try await conn.subscribe("")
+                XCTFail("Expected invalid parameter failure")
             } catch let error as ScratchBirdDataException {
                 XCTAssertEqual(error.sqlState?.prefix(2), "22")
+            } catch let error as ScratchBirdDriverException {
+                XCTFail("Expected ScratchBirdDataException, got \(type(of: error)) sqlState=\(error.sqlState ?? "nil") message=\(error.message)")
             } catch {
                 XCTFail("Expected ScratchBirdDataException, got \(error)")
             }

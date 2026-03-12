@@ -181,6 +181,17 @@ decode_value <- function(type_oid, data, format) {
   decode_binary_value(type_oid, data)
 }
 
+read_i64_numeric <- function(data) {
+  if (length(data) < 8) return(NA_real_)
+  low <- read_u32(data, 1)
+  high <- read_u32(data, 5)
+  value <- low + high * 4294967296
+  if (high >= 2147483648) {
+    value <- value - 18446744073709551616
+  }
+  as.numeric(value)
+}
+
 decode_binary_value <- function(type_oid, data) {
   if (type_oid == SB_OID_BOOL) {
     return(as.logical(as.integer(data[1]) == 1))
@@ -192,7 +203,7 @@ decode_binary_value <- function(type_oid, data) {
     return(readBin(data, integer(), size = 4, endian = "little"))
   }
   if (type_oid == SB_OID_INT8) {
-    return(readBin(data, numeric(), size = 8, endian = "little"))
+    return(read_i64_numeric(data))
   }
   if (type_oid == SB_OID_FLOAT4) {
     return(readBin(data, numeric(), size = 4, endian = "little"))
@@ -206,7 +217,7 @@ decode_binary_value <- function(type_oid, data) {
     return(ifelse(is.na(num), text, num))
   }
   if (type_oid == SB_OID_MONEY) {
-    cents <- readBin(data, numeric(), size = 8, endian = "little")
+    cents <- read_i64_numeric(data)
     return(cents / 100)
   }
   if (type_oid %in% c(SB_OID_TEXT, SB_OID_VARCHAR, SB_OID_CHAR, SB_OID_BPCHAR, SB_OID_JSON, SB_OID_XML, SB_OID_TSVECTOR, SB_OID_TSQUERY, SB_OID_INET, SB_OID_CIDR, SB_OID_MACADDR, SB_OID_MACADDR8)) {
@@ -223,17 +234,17 @@ decode_binary_value <- function(type_oid, data) {
     return(as.Date("2000-01-01") + days)
   }
   if (type_oid == SB_OID_TIME) {
-    micros <- readBin(data, numeric(), size = 8, endian = "little")
+    micros <- read_i64_numeric(data)
     seconds <- micros / 1e6
     return(as.POSIXct(seconds, origin = "1970-01-01", tz = "UTC"))
   }
   if (type_oid %in% c(SB_OID_TIMESTAMP, SB_OID_TIMESTAMPTZ)) {
-    micros <- readBin(data, numeric(), size = 8, endian = "little")
+    micros <- read_i64_numeric(data)
     base <- as.POSIXct("2000-01-01", tz = "UTC")
     return(base + micros / 1e6)
   }
   if (type_oid == SB_OID_INTERVAL) {
-    micros <- readBin(data[1:8], numeric(), size = 8, endian = "little")
+    micros <- read_i64_numeric(data[1:8])
     days <- readBin(data[9:12], integer(), size = 4, endian = "little")
     months <- readBin(data[13:16], integer(), size = 4, endian = "little")
     return(list(months = months, days = days, micros = micros))
@@ -276,7 +287,7 @@ decode_unknown_binary <- function(data) {
   if (len == 1) return(as.integer(data[1]))
   if (len == 2) return(readBin(data, integer(), size = 2, endian = "little"))
   if (len == 4) return(readBin(data, integer(), size = 4, endian = "little"))
-  if (len == 8) return(readBin(data, numeric(), size = 8, endian = "little"))
+  if (len == 8) return(read_i64_numeric(data))
   data
 }
 
@@ -336,7 +347,7 @@ encode_timestamp <- function(value) {
   t <- as.POSIXct(value, tz = "UTC")
   base <- as.POSIXct("2000-01-01", tz = "UTC")
   micros <- as.numeric(difftime(t, base, units = "secs")) * 1e6
-  writeBin(as.numeric(micros), raw(), size = 8, endian = "little")
+  pack_i64(round(micros))
 }
 
 encode_range <- function(range) {
@@ -376,7 +387,7 @@ encode_range_bound <- function(range_oid, value) {
     return(writeBin(as.integer(value), raw(), size = 4, endian = "little"))
   }
   if (range_oid == SB_OID_INT8RANGE) {
-    return(writeBin(as.numeric(value), raw(), size = 8, endian = "little"))
+    return(pack_i64(as.numeric(value)))
   }
   if (range_oid == SB_OID_NUMRANGE) {
     return(encode_length_prefixed(charToRaw(as.character(value))))
@@ -429,7 +440,7 @@ decode_range_bound <- function(range_oid, data) {
     return(readBin(data, integer(), size = 4, endian = "little"))
   }
   if (range_oid == SB_OID_INT8RANGE) {
-    return(readBin(data, numeric(), size = 8, endian = "little"))
+    return(read_i64_numeric(data))
   }
   if (range_oid == SB_OID_NUMRANGE) {
     text <- rawToChar(strip_length_prefixed(data))

@@ -111,6 +111,7 @@ public final class ScratchBirdConnection {
     private var keepaliveTracker: KeepaliveTracker?
     private let leakDetector: LeakDetector
     private var leakGuard: LeakDetector.Guard?
+    private let operationQueue = DispatchQueue(label: "scratchbird.connection.operation")
 
     private init(config: ScratchBirdConfig, socket: ScratchBirdSocket) {
         self.config = config
@@ -411,25 +412,27 @@ public final class ScratchBirdConnection {
 
     public func ping() async throws {
         try await Task.detached {
-            _ = try self.sendMessage(type: .ping, payload: Data())
-            while true {
-                let msg = try self.recvMessage()
-                if self.handleAsyncMessage(msg) {
-                    continue
-                }
-                if msg.header.type == .pong {
-                    return
-                }
-                if msg.header.type == .ready {
-                    self.applyTxnState(self.readTxnId(msg.payload, fallback: msg.header.txnId))
-                    return
-                }
-                if msg.header.type == .error {
-                    throw buildScratchBirdError(
-                        from: msg.payload,
-                        fallbackMessage: "Ping failed",
-                        defaultSqlState: "08006"
-                    )
+            try self.operationQueue.sync {
+                _ = try self.sendMessage(type: .ping, payload: Data())
+                while true {
+                    let msg = try self.recvMessage()
+                    if self.handleAsyncMessage(msg) {
+                        continue
+                    }
+                    if msg.header.type == .pong {
+                        return
+                    }
+                    if msg.header.type == .ready {
+                        self.applyTxnState(self.readTxnId(msg.payload, fallback: msg.header.txnId))
+                        return
+                    }
+                    if msg.header.type == .error {
+                        throw buildScratchBirdError(
+                            from: msg.payload,
+                            fallbackMessage: "Ping failed",
+                            defaultSqlState: "08006"
+                        )
+                    }
                 }
             }
         }.value
@@ -693,7 +696,7 @@ public final class ScratchBirdConnection {
         }
     }
 
-    private func withResilience<T>(operation: String, sql: String? = nil, _ body: () async throws -> T) async throws -> T {
+    private func withResilience<T>(operation: String, sql: String? = nil, _ body: () throws -> T) async throws -> T {
         if !circuitBreaker.allowRequest() {
             throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Circuit breaker is OPEN"])
         }
@@ -703,7 +706,9 @@ public final class ScratchBirdConnection {
             _ = span.withAttribute("db.statement", TelemetryCollector.sanitizeQuery(sql))
         }
         do {
-            let result = try await body()
+            let result = try operationQueue.sync {
+                try body()
+            }
             finishOperation(span: span, success: true)
             return result
         } catch {

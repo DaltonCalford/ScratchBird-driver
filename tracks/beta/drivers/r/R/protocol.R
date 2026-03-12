@@ -142,7 +142,22 @@ SB_SUB_TYPE_TABLE <- 1L
 SB_SUB_TYPE_QUERY <- 2L
 SB_SUB_TYPE_EVENT <- 3L
 
-pack_u64 <- function(x) writeBin(as.numeric(x), raw(), size = 8, endian = "little")
+pack_u64 <- function(x) {
+  value <- as.numeric(x)
+  if (!is.finite(value) || value < 0) stop("u64 value must be a finite non-negative number")
+  low <- value %% 4294967296
+  high <- floor(value / 4294967296)
+  c(pack_u32(low), pack_u32(high))
+}
+
+pack_i64 <- function(x) {
+  value <- as.numeric(x)
+  if (!is.finite(value)) stop("i64 value must be finite")
+  if (value < 0) {
+    value <- value + 18446744073709551616
+  }
+  pack_u64(value)
+}
 pack_u32 <- function(x) writeBin(as.integer(x), raw(), size = 4, endian = "little")
 pack_u16 <- function(x) writeBin(as.integer(x), raw(), size = 2, endian = "little")
 pack_u8 <- function(x) writeBin(as.integer(x), raw(), size = 1, endian = "little")

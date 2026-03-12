@@ -51,6 +51,12 @@ expected_integration_database_name <- function(client) {
   database
 }
 
+ensure_type_coverage_fixture <- function(client) {
+  scratchbird:::sb_query(client, "DROP TABLE IF EXISTS type_coverage")
+  scratchbird:::sb_query(client, "CREATE TABLE type_coverage (id INTEGER, note VARCHAR(32))")
+  scratchbird:::sb_query(client, "INSERT INTO type_coverage VALUES (1, 'baseline')")
+}
+
 test_that("integration query", {
   with_integration_client(function(client) {
     result <- sb_query(client, "SELECT 1")
@@ -161,7 +167,7 @@ test_that("integration incremental fetch lifecycle with fetch_size", {
 
   result <- sb_send_query(
     client,
-    "SELECT value FROM (SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER AS value) valueset",
+    "SELECT value FROM ((SELECT ?::INTEGER AS value) UNION ALL (SELECT ?::INTEGER AS value) UNION ALL (SELECT ?::INTEGER AS value)) valueset",
     list(11L, 22L, 33L)
   )
 
@@ -199,6 +205,7 @@ test_that("integration connection remains usable after server error", {
 
 test_that("integration types fixture", {
   with_integration_client(function(client) {
+    ensure_type_coverage_fixture(client)
     result <- sb_query(client, "SELECT * FROM type_coverage")
     expect_true(length(result$rows) > 0)
   })
