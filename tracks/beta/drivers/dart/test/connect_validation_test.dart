@@ -6,6 +6,8 @@
 // You may obtain a copy of the License at:
 // https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
+import 'dart:io';
+
 import 'package:scratchbird/scratchbird.dart';
 import 'package:test/test.dart';
 
@@ -26,15 +28,19 @@ ScratchBirdConfig _baseConfig({
 }
 
 void main() {
-  test('connect rejects sslmode=disable', () async {
-    final cfg = _baseConfig(sslmode: 'disable');
+  test('connect allows sslmode=disable and reaches the socket layer', () async {
+    final cfg =
+        _baseConfig(sslmode: 'disable').copyWith(host: '127.0.0.1', port: 1);
     await expectLater(
       ScratchBirdClient.connect(cfg),
       throwsA(
-        isA<ScratchBirdConnectionException>().having(
-          (e) => e.toString(),
-          'message',
-          contains('TLS is required'),
+        anyOf(
+          isA<SocketException>(),
+          isA<ScratchBirdConnectionException>().having(
+            (e) => e.toString(),
+            'message',
+            isNot(contains('TLS is required')),
+          ),
         ),
       ),
     );

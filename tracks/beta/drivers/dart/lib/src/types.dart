@@ -387,6 +387,7 @@ Uint8List _lengthPrefixed(Uint8List data) {
 Uint8List _stripLength(Uint8List data) {
   if (data.length < 4) return data;
   final len = ByteData.sublistView(data).getUint32(0, Endian.little);
+  if (len > data.length - 4) return data;
   return data.sublist(4, 4 + len);
 }
 

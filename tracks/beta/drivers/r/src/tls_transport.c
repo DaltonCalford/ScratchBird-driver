@@ -89,7 +89,7 @@ static sb_tls_conn* sb_get_conn(SEXP extptr) {
         Rf_error("Invalid transport handle type");
     }
     sb_tls_conn* conn = (sb_tls_conn*) R_ExternalPtrAddr(extptr);
-    if (conn == NULL || conn->closed || conn->ssl == NULL) {
+    if (conn == NULL || conn->closed || conn->sock == SB_INVALID_SOCKET) {
         Rf_error("Transport handle is closed");
     }
     return conn;
@@ -308,10 +308,6 @@ SEXP C_sb_tls_connect(SEXP hostSEXP,
     const char* key_file = sb_scalar_string(keySEXP);
     const char* key_password = sb_scalar_string(passwordSEXP);
 
-    if (strcmp(sslmode, "disable") == 0) {
-        Rf_error("TLS is required for ScratchBird connections");
-    }
-
     int port = asInteger(portSEXP);
     if (port <= 0 || port > 65535) {
         Rf_error("Invalid TCP port");
@@ -323,6 +319,19 @@ SEXP C_sb_tls_connect(SEXP hostSEXP,
     snprintf(port_str, sizeof(port_str), "%d", port);
 
     sb_socket_t sock = sb_connect_tcp(host, port_str, connect_timeout_ms, socket_timeout_ms);
+
+    if (strcmp(sslmode, "disable") == 0) {
+        sb_tls_conn* conn = (sb_tls_conn*) Calloc(1, sb_tls_conn);
+        conn->sock = sock;
+        conn->ctx = NULL;
+        conn->ssl = NULL;
+        conn->closed = 0;
+
+        SEXP extptr = PROTECT(R_MakeExternalPtr(conn, R_NilValue, R_NilValue));
+        R_RegisterCFinalizerEx(extptr, sb_conn_finalizer, TRUE);
+        UNPROTECT(1);
+        return extptr;
+    }
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
     if (ctx == NULL) {
@@ -441,6 +450,20 @@ SEXP C_sb_tls_write(SEXP extptr, SEXP payloadSEXP) {
     R_xlen_t len = XLENGTH(payloadSEXP);
     const unsigned char* data = RAW(payloadSEXP);
     R_xlen_t offset = 0;
+
+    if (conn->ssl == NULL) {
+        while (offset < len) {
+            int chunk = (len - offset > INT_MAX) ? INT_MAX : (int) (len - offset);
+            int rc = (int) send(conn->sock, (const char*) data + offset, (size_t) chunk, 0);
+            if (rc > 0) {
+                offset += (R_xlen_t) rc;
+                continue;
+            }
+            Rf_error("Socket write failed");
+        }
+        return ScalarInteger((int) len);
+    }
+
     while (offset < len) {
         int chunk = (len - offset > INT_MAX) ? INT_MAX : (int) (len - offset);
         int rc = SSL_write(conn->ssl, data + offset, chunk);
@@ -466,6 +489,25 @@ SEXP C_sb_tls_read_exact(SEXP extptr, SEXP nSEXP) {
     SEXP out = PROTECT(Rf_allocVector(RAWSXP, n));
     unsigned char* buffer = RAW(out);
     int offset = 0;
+
+    if (conn->ssl == NULL) {
+        while (offset < n) {
+            int rc = (int) recv(conn->sock, (char*) buffer + offset, (size_t) (n - offset), 0);
+            if (rc > 0) {
+                offset += rc;
+                continue;
+            }
+            if (rc == 0) {
+                UNPROTECT(1);
+                Rf_error("Socket closed");
+            }
+            UNPROTECT(1);
+            Rf_error("Socket read failed");
+        }
+        UNPROTECT(1);
+        return out;
+    }
+
     while (offset < n) {
         int rc = SSL_read(conn->ssl, buffer + offset, n - offset);
         if (rc > 0) {

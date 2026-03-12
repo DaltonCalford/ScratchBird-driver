@@ -97,14 +97,20 @@ test_that("integration DBI transaction lifecycle tracks autocommit across failur
 
 test_that("integration savepoint lifecycle", {
   with_integration_client(function(client) {
+    scratchbird:::sb_savepoint(client, "sp_r_bootstrap")
+    scratchbird:::sb_release_savepoint(client, "sp_r_bootstrap")
     scratchbird:::sb_begin(client)
     scratchbird:::sb_savepoint(client, "sp_r_live")
     scratchbird:::sb_rollback_to_savepoint(client, "sp_r_live")
     scratchbird:::sb_release_savepoint(client, "sp_r_live")
     scratchbird:::sb_commit(client)
+    scratchbird:::sb_savepoint(client, "sp_r_after_commit")
+    scratchbird:::sb_release_savepoint(client, "sp_r_after_commit")
 
     scratchbird:::sb_begin(client)
     scratchbird:::sb_rollback(client)
+    scratchbird:::sb_savepoint(client, "sp_r_after_rollback")
+    scratchbird:::sb_release_savepoint(client, "sp_r_after_rollback")
   })
 })
 
@@ -155,7 +161,7 @@ test_that("integration incremental fetch lifecycle with fetch_size", {
 
   result <- sb_send_query(
     client,
-    "SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER UNION ALL SELECT ?::INTEGER",
+    "SELECT value FROM (SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER AS value UNION ALL SELECT ?::INTEGER AS value) valueset",
     list(11L, 22L, 33L)
   )
 

@@ -149,7 +149,9 @@ pack_u8 <- function(x) writeBin(as.integer(x), raw(), size = 1, endian = "little
 pack_i32 <- function(x) writeBin(as.integer(x), raw(), size = 4, endian = "little")
 
 read_u64 <- function(data, offset) {
-  readBin(data[offset:(offset + 7)], numeric(), size = 8, endian = "little", signed = FALSE)
+  low <- read_u32(data, offset)
+  high <- read_u32(data, offset + 4)
+  low + high * 4294967296
 }
 
 read_u32 <- function(data, offset) {

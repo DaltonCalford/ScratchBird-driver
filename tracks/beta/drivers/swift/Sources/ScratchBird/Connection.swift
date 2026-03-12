@@ -10,8 +10,33 @@ import Foundation
 
 public struct ScratchBirdColumn {
     public let name: String
+    public let tableOid: UInt32
+    public let columnIndex: UInt16
     public let typeOid: UInt32
+    public let typeSize: Int16
+    public let typeModifier: Int32
     public let format: UInt16
+    public let nullable: Bool
+
+    public init(
+        name: String,
+        tableOid: UInt32 = 0,
+        columnIndex: UInt16 = 0,
+        typeOid: UInt32,
+        typeSize: Int16 = 0,
+        typeModifier: Int32 = 0,
+        format: UInt16,
+        nullable: Bool = false
+    ) {
+        self.name = name
+        self.tableOid = tableOid
+        self.columnIndex = columnIndex
+        self.typeOid = typeOid
+        self.typeSize = typeSize
+        self.typeModifier = typeModifier
+        self.format = format
+        self.nullable = nullable
+    }
 }
 
 public struct ScratchBirdResult {
@@ -73,6 +98,8 @@ public final class ScratchBirdConnection {
     private var lastQuerySequence: UInt32 = 0
     private var attachmentId = Data(repeating: 0, count: 16)
     private var txnId: UInt64 = 0
+    private var transactionActive = false
+    private var explicitTransaction = false
     private var parameters: [String: String] = [:]
     private var notificationHandlers: [(NotificationMessage) -> Void] = []
     private var lastPlan: QueryPlanMessage?
@@ -107,9 +134,6 @@ public final class ScratchBirdConnection {
             normalizedConfig.frontDoorMode = try normalizeFrontDoorMode(config.frontDoorMode)
             let sslmode = try normalizeSslMode(normalizedConfig.sslmode)
             normalizedConfig.sslmode = sslmode
-            if sslmode == "disable" {
-                throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "TLS is required for ScratchBird connections"])
-            }
             if !normalizedConfig.binaryTransfer {
                 throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "binary_transfer=false is not supported"])
             }
@@ -120,7 +144,7 @@ public final class ScratchBirdConnection {
             try socket.connect(
                 host: normalizedConfig.host,
                 port: normalizedConfig.port,
-                tlsConfig: ScratchBirdTlsConfig(
+                tlsConfig: sslmode == "disable" ? nil : ScratchBirdTlsConfig(
                     sslmode: sslmode,
                     sslrootcert: normalizedConfig.sslrootcert,
                     sslcert: normalizedConfig.sslcert,
@@ -133,12 +157,16 @@ public final class ScratchBirdConnection {
                 try conn.performManagerConnect()
             }
             try conn.handshake()
+            try conn.ensureImplicitTransaction()
             conn.startResilience()
             return conn
         }.value
     }
 
     public func close() async throws {
+        txnId = 0
+        transactionActive = false
+        explicitTransaction = false
         socket.close()
         stopResilience()
     }
@@ -278,6 +306,16 @@ public final class ScratchBirdConnection {
                 accessMode: accessMode,
                 autocommitMode: autocommitMode
             )
+            if self.hasActiveTransaction() {
+                if self.explicitTransaction {
+                    throw ScratchBirdTransactionException(
+                        message: "Transaction already active",
+                        sqlState: "25001"
+                    )
+                }
+                self.explicitTransaction = true
+                return
+            }
             try await self.withResilience(operation: "txn_begin") {
                 var flags: UInt16 = 0
                 let isolation = isolationLevel ?? isolationReadCommitted
@@ -300,33 +338,42 @@ public final class ScratchBirdConnection {
                 _ = try self.sendMessage(type: .txnBegin, payload: payload)
                 _ = try self.drainUntilReady()
             }
+            self.transactionActive = true
+            self.explicitTransaction = true
         }.value
     }
 
     public func commit(flags: UInt8 = 0) async throws {
         try await Task.detached {
+            try self.requireActiveTransaction("commit")
             try await self.withResilience(operation: "txn_commit") {
-                _ = try self.sendMessage(type: .txnCommit, payload: buildTxnCommitPayload(flags: flags))
-                _ = try self.drainUntilReady()
+                try self.sendSimpleQuery("COMMIT", maxRows: 0, timeoutMs: 0)
+                _ = try self.collectResults()
             }
+            self.transactionActive = true
+            self.explicitTransaction = false
         }.value
     }
 
     public func rollback(flags: UInt8 = 0) async throws {
         try await Task.detached {
+            try self.requireActiveTransaction("rollback")
             try await self.withResilience(operation: "txn_rollback") {
-                _ = try self.sendMessage(type: .txnRollback, payload: buildTxnRollbackPayload(flags: flags))
-                _ = try self.drainUntilReady()
+                try self.sendSimpleQuery("ROLLBACK", maxRows: 0, timeoutMs: 0)
+                _ = try self.collectResults()
             }
+            self.transactionActive = true
+            self.explicitTransaction = false
         }.value
     }
 
     public func savepoint(_ name: String) async throws {
         let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
+            try self.requireActiveTransaction("savepoint")
             try await self.withResilience(operation: "txn_savepoint") {
-                _ = try self.sendMessage(type: .txnSavepoint, payload: buildTxnSavepointPayload(name: normalizedName))
-                _ = try self.drainUntilReady()
+                try self.sendSimpleQuery("SAVEPOINT \(self.quoteIdentifier(normalizedName))", maxRows: 0, timeoutMs: 0)
+                _ = try self.collectResults()
             }
         }.value
     }
@@ -334,9 +381,10 @@ public final class ScratchBirdConnection {
     public func releaseSavepoint(_ name: String) async throws {
         let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
+            try self.requireActiveTransaction("release savepoint")
             try await self.withResilience(operation: "txn_release") {
-                _ = try self.sendMessage(type: .txnRelease, payload: buildTxnReleasePayload(name: normalizedName))
-                _ = try self.drainUntilReady()
+                try self.sendSimpleQuery("RELEASE SAVEPOINT \(self.quoteIdentifier(normalizedName))", maxRows: 0, timeoutMs: 0)
+                _ = try self.collectResults()
             }
         }.value
     }
@@ -344,9 +392,10 @@ public final class ScratchBirdConnection {
     public func rollbackToSavepoint(_ name: String) async throws {
         let normalizedName = try normalizeSavepointName(name)
         try await Task.detached {
+            try self.requireActiveTransaction("rollback to savepoint")
             try await self.withResilience(operation: "txn_rollback_to") {
-                _ = try self.sendMessage(type: .txnRollbackTo, payload: buildTxnRollbackToPayload(name: normalizedName))
-                _ = try self.drainUntilReady()
+                try self.sendSimpleQuery("ROLLBACK TO SAVEPOINT \(self.quoteIdentifier(normalizedName))", maxRows: 0, timeoutMs: 0)
+                _ = try self.collectResults()
             }
         }.value
     }
@@ -372,7 +421,7 @@ public final class ScratchBirdConnection {
                     return
                 }
                 if msg.header.type == .ready {
-                    self.txnId = self.readUInt64LE(msg.payload, 4)
+                    self.applyTxnState(self.readTxnId(msg.payload, fallback: msg.header.txnId))
                     return
                 }
                 if msg.header.type == .error {
@@ -494,10 +543,11 @@ public final class ScratchBirdConnection {
                 }
             case .authOk:
                 attachmentId = msg.header.attachmentId
-                txnId = msg.header.txnId
+                applyTxnState(msg.header.txnId)
             case .parameterStatus:
                 handleParameterStatus(msg.payload)
             case .ready:
+                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
                 return
             case .error:
                 throw buildScratchBirdError(
@@ -530,15 +580,18 @@ public final class ScratchBirdConnection {
                 }
                 rows.append(decoded)
             case .ready:
+                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
                 lastQuerySequence = 0
                 return ScratchBirdResult(rows: rows, columns: columns)
             case .error:
-                lastQuerySequence = 0
-                throw buildScratchBirdError(
+                let error = buildScratchBirdError(
                     from: msg.payload,
                     fallbackMessage: "Query failed",
                     defaultSqlState: "42000"
                 )
+                try drainReadyAfterError()
+                lastQuerySequence = 0
+                throw error
             case .portalSuspended:
                 let resumeMaxRows = normalizePortalResumeMaxRows(fetchSize: config.fetchSize)
                 lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: resumeMaxRows))
@@ -560,10 +613,11 @@ public final class ScratchBirdConnection {
     }
 
     private func sendExtendedQuery(_ sql: String, params: [Any?], maxRows: UInt32) throws {
-        let encoded = try params.map { try encodeParam($0) }
+        let normalized = try normalizeQuery(sql, params: params)
+        let encoded = try normalized.params.map { try encodeParam($0) }
         let paramValues = encoded.map { $0.param }
         let paramTypes = encoded.map { $0.oid }
-        _ = try sendMessage(type: .parse, payload: buildParsePayload(statement: "", sql: sql, paramTypes: paramTypes))
+        _ = try sendMessage(type: .parse, payload: buildParsePayload(statement: "", sql: normalized.sql, paramTypes: paramTypes))
         _ = try sendMessage(type: .describe, payload: buildDescribePayload(kind: "S".utf8.first ?? 83, name: ""))
         _ = try sendMessage(type: .sync, payload: Data())
         _ = try drainUntilReady()
@@ -595,6 +649,9 @@ public final class ScratchBirdConnection {
             if let compiled = parseSblrCompiled(msg.payload) {
                 lastSblr = compiled
             }
+            return true
+        case .txnStatus:
+            applyTxnState(msg.payload.count >= 12 ? readUInt64LE(msg.payload, 4) : msg.header.txnId)
             return true
         default:
             return false
@@ -679,7 +736,7 @@ public final class ScratchBirdConnection {
             attachmentId = parsed
         }
         if name == "current_txn_id", let parsed = UInt64(value.trimmingCharacters(in: .whitespaces)) {
-            txnId = parsed
+            applyTxnState(parsed)
         }
     }
 
@@ -757,6 +814,44 @@ public final class ScratchBirdConnection {
             index = next
         }
         return data
+    }
+
+    private func hasActiveTransaction() -> Bool {
+        return transactionActive
+    }
+
+    private func applyTxnState(_ txnId: UInt64) {
+        self.txnId = txnId
+        if txnId != 0 {
+            transactionActive = true
+        }
+    }
+
+    private func requireActiveTransaction(_ operation: String) throws {
+        if hasActiveTransaction() {
+            return
+        }
+        throw ScratchBirdTransactionException(
+            message: "\(operation) requires an active transaction",
+            sqlState: "25000"
+        )
+    }
+
+    private func ensureImplicitTransaction() throws {
+        transactionActive = true
+        explicitTransaction = false
+    }
+
+    private func readTxnId(_ payload: Data, fallback: UInt64) -> UInt64 {
+        if payload.count >= 12 {
+            return readUInt64LE(payload, 4)
+        }
+        return fallback
+    }
+
+    private func quoteIdentifier(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
     }
 
     private func readUInt32LE(_ data: Data, _ offset: Int) -> UInt32 {
@@ -909,7 +1004,7 @@ public final class ScratchBirdConnection {
                 continue
             }
             if msg.header.type == .ready {
-                txnId = readUInt64LE(msg.payload, 4)
+                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
                 return true
             }
             if msg.header.type == .error {
@@ -918,6 +1013,22 @@ public final class ScratchBirdConnection {
                     fallbackMessage: "Request failed",
                     defaultSqlState: "42000"
                 )
+            }
+        }
+    }
+
+    private func drainReadyAfterError() throws {
+        while true {
+            let msg = try recvMessage()
+            if handleAsyncMessage(msg) {
+                continue
+            }
+            if msg.header.type == .ready {
+                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
+                return
+            }
+            if msg.header.type == .error {
+                continue
             }
         }
     }
@@ -942,37 +1053,80 @@ public final class ScratchBirdConnection {
     }
 
     private func parseRowDescription(_ payload: Data) -> [ScratchBirdColumn] {
-        if payload.count < 2 { return [] }
+        if payload.count < 4 { return [] }
         let count = UInt16(littleEndian: payload.withUnsafeBytes { $0.load(as: UInt16.self) })
-        var offset = 2
+        var offset = 4
         var columns: [ScratchBirdColumn] = []
         for _ in 0..<count {
-            let (name, next) = readCString(payload, offset)
-            offset = next
-            offset += 4 // table oid
-            offset += 2 // column index
+            if offset + 4 > payload.count { return [] }
+            let nameLen = Int(readUInt32LE(payload, offset))
+            offset += 4
+            if offset + nameLen + 14 > payload.count { return [] }
+            let name = String(data: payload.subdata(in: offset..<(offset + nameLen)), encoding: .utf8) ?? ""
+            offset += nameLen
+            let tableOid = readUInt32LE(payload, offset)
+            offset += 4
+            let columnIndex = UInt16(littleEndian: payload.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self) })
+            offset += 2
             let typeOid = UInt32(littleEndian: payload.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self) })
             offset += 4
-            offset += 2 // type size
-            offset += 4 // modifier
-            let format = UInt16(payload[offset])
+            let typeSize = Int16(littleEndian: payload.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: Int16.self) })
             offset += 2
-            columns.append(ScratchBirdColumn(name: name, typeOid: typeOid, format: format))
+            let typeModifier = Int32(littleEndian: payload.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: Int32.self) })
+            offset += 4
+            let format = UInt16(payload[offset])
+            offset += 1
+            let nullable = payload[offset] == 1
+            offset += 1
+            offset += 2
+            columns.append(
+                ScratchBirdColumn(
+                    name: name,
+                    tableOid: tableOid,
+                    columnIndex: columnIndex,
+                    typeOid: typeOid,
+                    typeSize: typeSize,
+                    typeModifier: typeModifier,
+                    format: format,
+                    nullable: nullable
+                )
+            )
         }
         return columns
     }
 
     private func parseDataRow(_ payload: Data) -> [Data?] {
-        if payload.count < 2 { return [] }
-        let count = UInt16(littleEndian: payload.withUnsafeBytes { $0.load(as: UInt16.self) })
-        var offset = 2
+        if payload.count < 4 {
+            return []
+        }
+        let count = UInt16(littleEndian: payload.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt16.self) })
+        let nullBytes = Int(UInt16(littleEndian: payload.withUnsafeBytes { $0.load(fromByteOffset: 2, as: UInt16.self) }))
+        var offset = 4
+        if offset + nullBytes > payload.count {
+            return []
+        }
+        let nullBitmap = payload.subdata(in: offset..<(offset + nullBytes))
+        offset += nullBytes
         var out: [Data?] = []
-        for _ in 0..<count {
+        for index in 0..<Int(count) {
+            let byteIndex = index / 8
+            let bitIndex = UInt8(index % 8)
+            let isNull = byteIndex < nullBitmap.count && (nullBitmap[nullBitmap.startIndex + byteIndex] & (1 << bitIndex)) != 0
+            if isNull {
+                out.append(nil)
+                continue
+            }
+            if offset + 4 > payload.count {
+                return []
+            }
             let len = Int32(littleEndian: payload.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: Int32.self) })
             offset += 4
             if len < 0 {
                 out.append(nil)
             } else {
+                if offset + Int(len) > payload.count {
+                    return []
+                }
                 out.append(payload.subdata(in: offset..<(offset + Int(len))))
                 offset += Int(len)
             }
@@ -985,5 +1139,36 @@ public final class ScratchBirdConnection {
         while idx < data.count && data[idx] != 0 { idx += 1 }
         let name = String(data: data.subdata(in: offset..<idx), encoding: .utf8) ?? ""
         return (name, idx + 1)
+    }
+
+    private func normalizeQuery(_ sql: String, params: [Any?]) throws -> (sql: String, params: [Any?]) {
+        if params.isEmpty || !sql.contains("?") {
+            return (sql, params)
+        }
+        var result = ""
+        var ordered: [Any?] = []
+        var inString = false
+        var index = 0
+        for ch in sql {
+            if ch == "'" {
+                inString.toggle()
+                result.append(ch)
+                continue
+            }
+            if !inString && ch == "?" {
+                if index >= params.count {
+                    throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not enough parameters"])
+                }
+                ordered.append(params[index])
+                index += 1
+                result.append("$\(ordered.count)")
+                continue
+            }
+            result.append(ch)
+        }
+        if index < params.count {
+            throw NSError(domain: "ScratchBird", code: -1, userInfo: [NSLocalizedDescriptionKey: "Too many parameters"])
+        }
+        return (result, ordered)
     }
 }

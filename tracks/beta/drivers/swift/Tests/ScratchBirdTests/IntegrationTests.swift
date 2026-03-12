@@ -92,14 +92,18 @@ final class IntegrationTests: XCTestCase {
     func testIntegrationTransactionAndSavepointLifecycle() async throws {
         let config = try integrationConfig()
         try await withConnection(config) { conn in
+            try await conn.savepoint("sp_swift_bootstrap")
+            try await conn.releaseSavepoint("sp_swift_bootstrap")
+
             try await conn.begin()
-            try await conn.savepoint("sp_swift_live")
-            try await conn.rollbackToSavepoint("sp_swift_live")
-            try await conn.releaseSavepoint("sp_swift_live")
             try await conn.commit()
+            try await conn.savepoint("sp_swift_after_commit")
+            try await conn.releaseSavepoint("sp_swift_after_commit")
 
             try await conn.begin()
             try await conn.rollback()
+            try await conn.savepoint("sp_swift_after_rollback")
+            try await conn.releaseSavepoint("sp_swift_after_rollback")
         }
     }
 

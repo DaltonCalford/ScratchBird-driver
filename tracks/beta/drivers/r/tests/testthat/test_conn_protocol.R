@@ -121,7 +121,17 @@ test_that("auth/protocol parsers reject truncated payloads", {
   expect_error(parse_auth_ok(raw(19)), "Auth ok truncated")
 })
 
-test_that("sb_open_socket rejects sslmode=disable", {
+test_that("sb_open_socket allows sslmode=disable and delegates to native transport", {
   cfg <- sb_config("scratchbird://user:pass@localhost:3092/mydb?sslmode=disable")
-  expect_error(sb_open_socket(cfg), "TLS is required for ScratchBird connections")
+  seen_sslmode <- NULL
+  local_mocked_bindings(
+    sb_tls_connect_native = function(inner_cfg) {
+      seen_sslmode <<- tolower(inner_cfg$sslmode)
+      structure(list(socket = "mock"), class = "scratchbird_socket")
+    },
+    .package = "scratchbird"
+  )
+
+  expect_silent(sb_open_socket(cfg))
+  expect_identical(seen_sslmode, "disable")
 })

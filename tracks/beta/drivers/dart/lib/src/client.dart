@@ -41,10 +41,24 @@ const MCP_AUTH_METHOD_TOKEN = 4;
 
 class ScratchBirdColumn {
   final String name;
+  final int tableOid;
+  final int columnIndex;
   final int typeOid;
+  final int typeSize;
+  final int typeModifier;
   final int format;
+  final bool nullable;
 
-  ScratchBirdColumn(this.name, this.typeOid, this.format);
+  ScratchBirdColumn(
+    this.name,
+    this.typeOid,
+    this.format, {
+    this.tableOid = 0,
+    this.columnIndex = 0,
+    this.typeSize = 0,
+    this.typeModifier = 0,
+    this.nullable = false,
+  });
 }
 
 class ScratchBirdResult {
@@ -93,6 +107,8 @@ class ScratchBirdClient {
   int? _lastQuerySequence;
   Uint8List _attachmentId = Uint8List(16);
   int _txnId = 0;
+  bool _transactionActive = false;
+  bool _explicitTransaction = false;
   final Map<String, String> _parameters = {};
   final List<void Function(NotificationMessage)> _notificationHandlers = [];
   QueryPlanMessage? _lastPlan;
@@ -120,11 +136,6 @@ class ScratchBirdClient {
     final host = config.host;
     final port = config.port;
     final sslmode = _normalizeSslMode(config.sslmode);
-    if (sslmode == 'disable') {
-      throw const ScratchBirdConnectionException(
-        'TLS is required for ScratchBird connections',
-      );
-    }
     if (!config.binaryTransfer) {
       throw const ScratchBirdConnectionException(
         'binary_transfer=false is not supported',
@@ -136,36 +147,43 @@ class ScratchBirdClient {
       );
     }
 
-    final strictVerify = sslmode == 'verify-ca' ||
-        sslmode == 'verify-full' ||
-        sslmode == 'require';
-    final context = SecurityContext(withTrustedRoots: true);
-    if (config.sslrootcert != null && config.sslrootcert!.isNotEmpty) {
-      context.setTrustedCertificates(config.sslrootcert!);
-    }
-    if (config.sslcert != null &&
-        config.sslcert!.isNotEmpty &&
-        config.sslkey != null &&
-        config.sslkey!.isNotEmpty) {
-      context.useCertificateChain(config.sslcert!);
-      context.usePrivateKey(
-        config.sslkey!,
-        password:
-            config.sslpassword?.isNotEmpty == true ? config.sslpassword : null,
-      );
-    }
+    if (sslmode == 'disable') {
+      _socket = await Socket.connect(host, port,
+          timeout: Duration(milliseconds: config.connectTimeoutMs));
+    } else {
+      final strictVerify = sslmode == 'verify-ca' ||
+          sslmode == 'verify-full' ||
+          sslmode == 'require';
+      final context = SecurityContext(withTrustedRoots: true);
+      if (config.sslrootcert != null && config.sslrootcert!.isNotEmpty) {
+        context.setTrustedCertificates(config.sslrootcert!);
+      }
+      if (config.sslcert != null &&
+          config.sslcert!.isNotEmpty &&
+          config.sslkey != null &&
+          config.sslkey!.isNotEmpty) {
+        context.useCertificateChain(config.sslcert!);
+        context.usePrivateKey(
+          config.sslkey!,
+          password: config.sslpassword?.isNotEmpty == true
+              ? config.sslpassword
+              : null,
+        );
+      }
 
-    _socket = await SecureSocket.connect(host, port,
-        context: context,
-        onBadCertificate: strictVerify ? null : (_) => true,
-        supportedProtocols: ['tlsv1.3'],
-        timeout: Duration(milliseconds: config.connectTimeoutMs));
+      _socket = await SecureSocket.connect(host, port,
+          context: context,
+          onBadCertificate: strictVerify ? null : (_) => true,
+          supportedProtocols: ['tlsv1.3'],
+          timeout: Duration(milliseconds: config.connectTimeoutMs));
+    }
     _iter = StreamIterator(_socket!);
     _reader = _SocketReader(_iter);
     if (frontDoorMode == 'manager_proxy') {
       await _performManagerConnect();
     }
     await _handshake();
+    await _ensureImplicitTransaction();
     _startResilience();
   }
 
@@ -319,6 +337,9 @@ class ScratchBirdClient {
 
   Future<void> close() async {
     _lastQuerySequence = null;
+    _txnId = 0;
+    _transactionActive = false;
+    _explicitTransaction = false;
     await _socket?.close();
     _stopResilience();
   }
@@ -391,7 +412,15 @@ class ScratchBirdClient {
     int? autocommitMode,
     int conflictAction = 0,
   }) async {
-    _ensureNoActiveTransaction();
+    if (_hasActiveTransaction()) {
+      if (_explicitTransaction) {
+        throw const ScratchBirdTransactionException(
+          'Transaction already active',
+        );
+      }
+      _explicitTransaction = true;
+      return;
+    }
     await _withResilience("txn_begin", null, () async {
       var flags = 0;
       final isolation = isolationLevel ?? isolationReadCommitted;
@@ -414,32 +443,36 @@ class ScratchBirdClient {
       await _sendMessage(MessageType.txnBegin, payload);
       await _drainUntilReady();
     });
+    _transactionActive = true;
+    _explicitTransaction = true;
   }
 
   Future<void> commit([int flags = 0]) async {
     _ensureActiveTransaction('commit');
     await _withResilience("txn_commit", null, () async {
-      await _sendMessage(MessageType.txnCommit, buildTxnCommitPayload(flags));
-      await _drainUntilReady();
+      await _sendSimpleQuery('COMMIT', 0, 0);
+      await _collectResults();
     });
+    _transactionActive = true;
+    _explicitTransaction = false;
   }
 
   Future<void> rollback([int flags = 0]) async {
     _ensureActiveTransaction('rollback');
     await _withResilience("txn_rollback", null, () async {
-      await _sendMessage(
-          MessageType.txnRollback, buildTxnRollbackPayload(flags));
-      await _drainUntilReady();
+      await _sendSimpleQuery('ROLLBACK', 0, 0);
+      await _collectResults();
     });
+    _transactionActive = true;
+    _explicitTransaction = false;
   }
 
   Future<void> savepoint(String name) async {
     _ensureActiveTransaction('savepoint');
     _validateSavepointName(name);
     await _withResilience("txn_savepoint", null, () async {
-      await _sendMessage(
-          MessageType.txnSavepoint, buildTxnSavepointPayload(name));
-      await _drainUntilReady();
+      await _sendSimpleQuery('SAVEPOINT ${_quoteIdentifier(name)}', 0, 0);
+      await _collectResults();
     });
   }
 
@@ -447,8 +480,12 @@ class ScratchBirdClient {
     _ensureActiveTransaction('release savepoint');
     _validateSavepointName(name);
     await _withResilience("txn_release", null, () async {
-      await _sendMessage(MessageType.txnRelease, buildTxnReleasePayload(name));
-      await _drainUntilReady();
+      await _sendSimpleQuery(
+        'RELEASE SAVEPOINT ${_quoteIdentifier(name)}',
+        0,
+        0,
+      );
+      await _collectResults();
     });
   }
 
@@ -456,9 +493,12 @@ class ScratchBirdClient {
     _ensureActiveTransaction('rollback to savepoint');
     _validateSavepointName(name);
     await _withResilience("txn_rollback_to", null, () async {
-      await _sendMessage(
-          MessageType.txnRollbackTo, buildTxnRollbackToPayload(name));
-      await _drainUntilReady();
+      await _sendSimpleQuery(
+        'ROLLBACK TO SAVEPOINT ${_quoteIdentifier(name)}',
+        0,
+        0,
+      );
+      await _collectResults();
     });
   }
 
@@ -481,7 +521,9 @@ class ScratchBirdClient {
         return;
       }
       if (msg.header.type == MessageType.ready) {
-        _txnId = _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
+        _applyTxnState(
+          _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
+        );
         return;
       }
       if (msg.header.type == MessageType.error) {
@@ -613,14 +655,15 @@ class ScratchBirdClient {
           break;
         case MessageType.authOk:
           _attachmentId = msg.header.attachmentId;
-          _txnId = msg.header.txnId;
+          _applyTxnState(msg.header.txnId);
           break;
         case MessageType.parameterStatus:
           _handleParameterStatus(msg.payload);
           continue;
         case MessageType.ready:
-          _txnId =
-              _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
+          _applyTxnState(
+            _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
+          );
           return;
         case MessageType.error:
           throw _authExceptionFromPayload(
@@ -665,16 +708,19 @@ class ScratchBirdClient {
           await _sendMessage(MessageType.sync, Uint8List(0));
           break;
         case MessageType.ready:
-          _txnId =
-              _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
+          _applyTxnState(
+            _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
+          );
           _lastQuerySequence = null;
           return ScratchBirdResult(rows, columns);
         case MessageType.error:
-          _lastQuerySequence = null;
-          throw _executionExceptionFromPayload(
+          final error = _executionExceptionFromPayload(
             msg.payload,
             fallbackMessage: 'Query failed',
           );
+          await _drainReadyAfterError();
+          _lastQuerySequence = null;
+          throw error;
       }
     }
   }
@@ -689,11 +735,12 @@ class ScratchBirdClient {
 
   Future<void> _sendExtendedQuery(
       String sql, List<dynamic> params, int maxRows) async {
-    final enc = params.map(encodeParam).toList();
+    final normalized = _normalizeQuery(sql, params);
+    final enc = normalized.params.map(encodeParam).toList();
     final paramValues = enc.map((e) => e.param).toList();
     final paramTypes = enc.map((e) => e.oid).toList();
     await _sendMessage(
-        MessageType.parse, buildParsePayload('', sql, paramTypes));
+        MessageType.parse, buildParsePayload('', normalized.sql, paramTypes));
     await _sendMessage(
         MessageType.describe, buildDescribePayload('S'.codeUnitAt(0), ''));
     await _sendMessage(MessageType.sync, Uint8List(0));
@@ -725,10 +772,12 @@ class ScratchBirdClient {
         _lastSblr = _parseSblrCompiled(msg.payload);
         return true;
       case MessageType.txnStatus:
-        _txnId = _readTxnId(
-          msg.payload,
-          fallback: msg.header.txnId,
-          offset: msg.payload.length >= 12 ? 4 : 0,
+        _applyTxnState(
+          _readTxnId(
+            msg.payload,
+            fallback: msg.header.txnId,
+            offset: msg.payload.length >= 12 ? 4 : 0,
+          ),
         );
         return true;
       default:
@@ -754,7 +803,7 @@ class ScratchBirdClient {
     }
     if (name == 'current_txn_id') {
       final parsed = int.tryParse(value.trim());
-      if (parsed != null) _txnId = parsed;
+      if (parsed != null) _applyTxnState(parsed);
     }
   }
 
@@ -861,7 +910,9 @@ class ScratchBirdClient {
         continue;
       }
       if (msg.header.type == MessageType.ready) {
-        _txnId = _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4);
+        _applyTxnState(
+          _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
+        );
         return;
       }
       if (msg.header.type == MessageType.error) {
@@ -869,6 +920,24 @@ class ScratchBirdClient {
           msg.payload,
           fallbackMessage: 'Describe failed',
         );
+      }
+    }
+  }
+
+  Future<void> _drainReadyAfterError() async {
+    while (true) {
+      final msg = await _recvMessage();
+      if (_handleAsyncMessage(msg)) {
+        continue;
+      }
+      if (msg.header.type == MessageType.ready) {
+        _applyTxnState(
+          _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
+        );
+        return;
+      }
+      if (msg.header.type == MessageType.error) {
+        continue;
       }
     }
   }
@@ -909,13 +978,19 @@ class ScratchBirdClient {
   }
 
   bool _hasActiveTransaction() {
-    return _txnId != 0;
+    return _transactionActive;
   }
 
-  void _ensureNoActiveTransaction() {
-    if (_hasActiveTransaction()) {
-      throw const ScratchBirdTransactionException('Transaction already active');
+  void _applyTxnState(int txnId) {
+    _txnId = txnId;
+    if (txnId != 0) {
+      _transactionActive = true;
     }
+  }
+
+  Future<void> _ensureImplicitTransaction() async {
+    _transactionActive = true;
+    _explicitTransaction = false;
   }
 
   void _ensureActiveTransaction(String operation) {
@@ -931,6 +1006,10 @@ class ScratchBirdClient {
       throw ArgumentError.value(
           name, 'name', 'Savepoint name must not be empty');
     }
+  }
+
+  String _quoteIdentifier(String value) {
+    return '"${value.replaceAll('"', '""')}"';
   }
 
   Future<int> _sendMessage(int type, Uint8List payload,
@@ -997,43 +1076,90 @@ class ScratchBirdClient {
   }
 
   List<ScratchBirdColumn> _parseRowDescription(Uint8List payload) {
+    if (payload.length < 4) {
+      throw const ScratchBirdProtocolException('Row description truncated');
+    }
     final count =
         ByteData.sublistView(payload, 0, 2).getUint16(0, Endian.little);
-    var offset = 2;
+    var offset = 4;
     final cols = <ScratchBirdColumn>[];
     for (var i = 0; i < count; i++) {
-      final nameResult = _readCString(payload, offset);
-      final name = nameResult.item1;
-      offset = nameResult.item2;
+      if (offset + 4 > payload.length) {
+        throw const ScratchBirdProtocolException('Row description truncated');
+      }
+      final nameLen = ByteData.sublistView(payload, offset, offset + 4)
+          .getUint32(0, Endian.little);
+      offset += 4;
+      if (offset + nameLen + 14 > payload.length) {
+        throw const ScratchBirdProtocolException('Row description truncated');
+      }
+      final name = utf8.decode(payload.sublist(offset, offset + nameLen));
+      offset += nameLen;
       final tableOid = ByteData.sublistView(payload, offset, offset + 4)
           .getUint32(0, Endian.little);
       offset += 4;
+      final columnIndex = ByteData.sublistView(payload, offset, offset + 2)
+          .getUint16(0, Endian.little);
       offset += 2; // column index
       final typeOid = ByteData.sublistView(payload, offset, offset + 4)
           .getUint32(0, Endian.little);
       offset += 4;
+      final typeSize = ByteData.sublistView(payload, offset, offset + 2)
+          .getInt16(0, Endian.little);
       offset += 2; // type size
+      final typeModifier = ByteData.sublistView(payload, offset, offset + 4)
+          .getInt32(0, Endian.little);
       offset += 4; // type modifier
       final format = payload[offset];
-      offset += 2; // format + nullable
-      cols.add(ScratchBirdColumn(name, typeOid, format));
-      // tableOid unused in client metadata
+      offset += 1;
+      final nullable = payload[offset] != 0;
+      offset += 1;
+      offset += 2; // reserved
+      cols.add(ScratchBirdColumn(name, typeOid, format,
+          tableOid: tableOid,
+          columnIndex: columnIndex,
+          typeSize: typeSize,
+          typeModifier: typeModifier,
+          nullable: nullable));
     }
     return cols;
   }
 
   List<Uint8List?> _parseDataRow(Uint8List payload) {
-    final count =
-        ByteData.sublistView(payload, 0, 2).getUint16(0, Endian.little);
-    var offset = 2;
+    if (payload.length < 4) {
+      throw const ScratchBirdProtocolException('Row data truncated');
+    }
+    final header = ByteData.sublistView(payload, 0, 4);
+    final count = header.getUint16(0, Endian.little);
+    final nullBytes = header.getUint16(2, Endian.little);
+    var offset = 4;
+    if (offset + nullBytes > payload.length) {
+      throw const ScratchBirdProtocolException('Row data truncated');
+    }
+    final nullBitmap = payload.sublist(offset, offset + nullBytes);
+    offset += nullBytes;
     final out = <Uint8List?>[];
     for (var i = 0; i < count; i++) {
+      final byteIndex = i ~/ 8;
+      final bitIndex = i % 8;
+      final isNull = byteIndex < nullBitmap.length &&
+          (nullBitmap[byteIndex] & (1 << bitIndex)) != 0;
+      if (isNull) {
+        out.add(null);
+        continue;
+      }
+      if (offset + 4 > payload.length) {
+        throw const ScratchBirdProtocolException('Row data truncated');
+      }
       final len = ByteData.sublistView(payload, offset, offset + 4)
           .getInt32(0, Endian.little);
       offset += 4;
       if (len < 0) {
         out.add(null);
       } else {
+        if (offset + len > payload.length) {
+          throw const ScratchBirdProtocolException('Row data truncated');
+        }
         out.add(payload.sublist(offset, offset + len));
         offset += len;
       }
@@ -1048,6 +1174,38 @@ class ScratchBirdClient {
     }
     final name = utf8.decode(buffer.sublist(offset, idx));
     return _CStringResult(name, idx + 1);
+  }
+
+  _NormalizedQuery _normalizeQuery(String sql, List<dynamic> params) {
+    if (params.isEmpty || !sql.contains('?')) {
+      return _NormalizedQuery(sql, List<dynamic>.from(params));
+    }
+    final out = StringBuffer();
+    final ordered = <dynamic>[];
+    var inString = false;
+    var index = 0;
+    for (var i = 0; i < sql.length; i++) {
+      final ch = sql[i];
+      if (ch == "'") {
+        inString = !inString;
+        out.write(ch);
+        continue;
+      }
+      if (!inString && ch == '?') {
+        if (index >= params.length) {
+          throw const ScratchBirdProtocolException('Not enough parameters');
+        }
+        ordered.add(params[index]);
+        index += 1;
+        out.write('\$${ordered.length}');
+        continue;
+      }
+      out.write(ch);
+    }
+    if (index < params.length) {
+      throw const ScratchBirdProtocolException('Too many parameters');
+    }
+    return _NormalizedQuery(out.toString(), ordered);
   }
 
   void _startResilience() {
@@ -1118,6 +1276,12 @@ class _CStringResult {
   final String item1;
   final int item2;
   _CStringResult(this.item1, this.item2);
+}
+
+class _NormalizedQuery {
+  final String sql;
+  final List<dynamic> params;
+  _NormalizedQuery(this.sql, this.params);
 }
 
 class _SocketReader {

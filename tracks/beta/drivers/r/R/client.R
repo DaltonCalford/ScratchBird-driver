@@ -32,10 +32,13 @@ sb_connect <- function(dsn = "", ...) {
   client$last_sblr <- NULL
   client$prepared <- new.env(parent = emptyenv())
   client$autocommit <- TRUE
+  client$txn_active <- FALSE
+  client$explicit_txn <- FALSE
   if (identical(cfg$front_door_mode, "manager_proxy")) {
     sb_perform_manager_connect(client)
   }
   sb_startup_and_auth(client)
+  sb_ensure_implicit_transaction(client)
   sb_apply_schema(client)
   client
 }
@@ -43,6 +46,9 @@ sb_connect <- function(dsn = "", ...) {
 sb_disconnect <- function(client) {
   try(sb_socket_close(client$con), silent = TRUE)
   client$con <- NULL
+  client$txn_id <- 0
+  client$txn_active <- FALSE
+  client$explicit_txn <- FALSE
 }
 
 sb_set_autocommit <- function(client, value) {
@@ -55,7 +61,9 @@ sb_is_valid <- function(client) {
 
 sb_query <- function(client, sql, params = NULL) {
   normalized <- sb_normalize(sql, params)
-  sb_execute_query(client, normalized$sql, normalized$params)
+  result <- sb_execute_query(client, normalized$sql, normalized$params)
+  result$rows <- sb_fetch_rows(result, -1)
+  result
 }
 
 sb_get_query <- function(client, sql, params = NULL) {
@@ -85,6 +93,13 @@ sb_cancel <- function(client) {
 }
 
 sb_begin <- function(client, ...) {
+  if (isTRUE(client$txn_active)) {
+    if (isTRUE(client$explicit_txn)) {
+      stop("Transaction already active")
+    }
+    client$explicit_txn <- TRUE
+    return(invisible(NULL))
+  }
   args <- list(...)
   flags <- 0L
   isolation <- SB_ISOLATION_READ_COMMITTED
@@ -109,36 +124,44 @@ sb_begin <- function(client, ...) {
   )
   sb_send_message(client, SB_MSG_TXN_BEGIN, payload, 0L, FALSE)
   sb_drain_until_ready(client)
+  client$txn_active <- TRUE
+  client$explicit_txn <- TRUE
 }
 
 sb_commit <- function(client, flags = 0L) {
-  payload <- build_txn_commit_payload(flags)
-  sb_send_message(client, SB_MSG_TXN_COMMIT, payload, 0L, FALSE)
-  sb_drain_until_ready(client)
+  if (!isTRUE(client$txn_active)) stop("commit requires an active transaction")
+  result <- sb_execute_query(client, "COMMIT")
+  sb_fetch_rows(result, -1)
+  client$txn_active <- TRUE
+  client$explicit_txn <- FALSE
+  sb_ensure_implicit_transaction(client)
 }
 
 sb_rollback <- function(client, flags = 0L) {
-  payload <- build_txn_rollback_payload(flags)
-  sb_send_message(client, SB_MSG_TXN_ROLLBACK, payload, 0L, FALSE)
-  sb_drain_until_ready(client)
+  if (!isTRUE(client$txn_active)) stop("rollback requires an active transaction")
+  result <- sb_execute_query(client, "ROLLBACK")
+  sb_fetch_rows(result, -1)
+  client$txn_active <- TRUE
+  client$explicit_txn <- FALSE
+  sb_ensure_implicit_transaction(client)
 }
 
 sb_savepoint <- function(client, name) {
-  payload <- build_txn_savepoint_payload(name)
-  sb_send_message(client, SB_MSG_TXN_SAVEPOINT, payload, 0L, FALSE)
-  sb_drain_until_ready(client)
+  if (!isTRUE(client$txn_active)) stop("savepoint requires an active transaction")
+  result <- sb_execute_query(client, paste("SAVEPOINT", quote_identifier(name)))
+  sb_fetch_rows(result, -1)
 }
 
 sb_release_savepoint <- function(client, name) {
-  payload <- build_txn_release_payload(name)
-  sb_send_message(client, SB_MSG_TXN_RELEASE, payload, 0L, FALSE)
-  sb_drain_until_ready(client)
+  if (!isTRUE(client$txn_active)) stop("release savepoint requires an active transaction")
+  result <- sb_execute_query(client, paste("RELEASE SAVEPOINT", quote_identifier(name)))
+  sb_fetch_rows(result, -1)
 }
 
 sb_rollback_to_savepoint <- function(client, name) {
-  payload <- build_txn_rollback_to_payload(name)
-  sb_send_message(client, SB_MSG_TXN_ROLLBACK_TO, payload, 0L, FALSE)
-  sb_drain_until_ready(client)
+  if (!isTRUE(client$txn_active)) stop("rollback to savepoint requires an active transaction")
+  result <- sb_execute_query(client, paste("ROLLBACK TO SAVEPOINT", quote_identifier(name)))
+  sb_fetch_rows(result, -1)
 }
 
 sb_set_option <- function(client, name, value) {
@@ -242,8 +265,6 @@ sb_get_last_sblr <- function(client) {
 }
 
 sb_open_socket <- function(cfg) {
-  sslmode <- tolower(cfg$sslmode)
-  if (sslmode == "disable") stop("TLS is required for ScratchBird connections")
   sb_tls_connect_native(cfg)
 }
 
@@ -494,6 +515,7 @@ quote_identifier <- function(name) {
 }
 
 sb_execute_query <- function(client, sql, params = list()) {
+  sb_ensure_implicit_transaction(client)
   page_size <- if (!is.null(client$cfg$fetch_size) && client$cfg$fetch_size > 0) client$cfg$fetch_size else 0L
   if (length(params) == 0) {
     sb_send_simple_query(client, sql, page_size)
@@ -511,6 +533,12 @@ sb_execute_query <- function(client, sql, params = list()) {
   result
 }
 
+sb_ensure_implicit_transaction <- function(client) {
+  client$txn_active <- TRUE
+  client$explicit_txn <- FALSE
+  invisible(NULL)
+}
+
 sb_prime_result_metadata <- function(result) {
   if (isTRUE(result$done) || length(result$columns) > 0) return(invisible(result))
   if (is.null(result$pending_rows)) result$pending_rows <- list()
@@ -521,6 +549,7 @@ sb_prime_result_metadata <- function(result) {
     payload <- response$payload
     if (sb_handle_async(client, type, payload)) next
     if (type == SB_MSG_ERROR) {
+      sb_drain_ready_after_error(client)
       sb_raise_query_error(payload)
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
       result$columns <- parse_row_description(payload)
@@ -569,6 +598,7 @@ sb_result_next_row <- function(result) {
     payload <- response$payload
     if (sb_handle_async(client, type, payload)) next
     if (type == SB_MSG_ERROR) {
+      sb_drain_ready_after_error(client)
       sb_raise_query_error(payload)
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
       result$columns <- parse_row_description(payload)
@@ -740,6 +770,20 @@ sb_drain_until_ready <- function(client) {
   }
 }
 
+sb_drain_ready_after_error <- function(client) {
+  repeat {
+    response <- sb_recv_message(client)
+    if (sb_handle_async(client, response$type, response$payload)) next
+    if (response$type == SB_MSG_READY) {
+      parsed <- parse_ready(response$payload)
+      client$txn_id <- parsed$txn_id
+      break
+    }
+    if (response$type == SB_MSG_ERROR) next
+  }
+  invisible(NULL)
+}
+
 sb_send_simple_query <- function(client, sql, max_rows = 0L) {
   flags <- if (isTRUE(client$cfg$binary_transfer)) 0x04L else 0L
   payload <- build_query_payload(sql, flags, max_rows, 0L)
@@ -856,6 +900,9 @@ sb_rows_to_df <- function(rows, columns) {
 }
 
 sb_result_to_df <- function(result) {
-  rows <- sb_fetch_rows(result, -1)
+  rows <- result$rows
+  if (is.null(rows)) {
+    rows <- sb_fetch_rows(result, -1)
+  }
   sb_rows_to_df(rows, result$columns)
 }

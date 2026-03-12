@@ -116,14 +116,20 @@ void main() {
   );
 
   test(
-    'integration transaction begin/commit/rollback cycle',
+    'integration transaction stays active across connect commit and rollback',
     () async {
       final client = await _connectClient();
       try {
+        await client.savepoint('sp_dart_bootstrap');
+        await client.releaseSavepoint('sp_dart_bootstrap');
         await client.begin();
         await client.commit();
+        await client.savepoint('sp_dart_after_commit');
+        await client.releaseSavepoint('sp_dart_after_commit');
         await client.begin();
         await client.rollback();
+        await client.savepoint('sp_dart_after_rollback');
+        await client.releaseSavepoint('sp_dart_after_rollback');
       } finally {
         await client.close();
       }
@@ -136,7 +142,6 @@ void main() {
     () async {
       final client = await _connectClient();
       try {
-        await client.begin();
         await client.savepoint('sp_dart_live');
         await client.rollbackToSavepoint('sp_dart_live');
         await client.releaseSavepoint('sp_dart_live');
@@ -158,7 +163,6 @@ void main() {
           client.begin(),
           throwsA(isA<ScratchBirdTransactionException>()),
         );
-        await client.rollback();
       } finally {
         await client.close();
       }

@@ -60,8 +60,10 @@ final class ConfigTests: XCTestCase {
         XCTAssertThrowsError(try normalizeSslMode("invalid"))
     }
 
-    func testConnectRejectsDisableSslMode() async {
+    func testConnectAllowsDisableSslModeAndReachesSocketConnect() async {
         let config = ScratchBirdConfig(
+            host: "127.0.0.1",
+            port: 1,
             database: "mydb",
             user: "user",
             sslmode: "disable"
@@ -69,11 +71,10 @@ final class ConfigTests: XCTestCase {
 
         do {
             _ = try await ScratchBirdConnection.connect(config)
-            XCTFail("Expected connect to reject sslmode=disable")
+            XCTFail("Expected connect attempt to fail on socket reachability")
         } catch {
             let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "ScratchBird")
-            XCTAssertTrue(nsError.localizedDescription.contains("TLS is required"))
+            XCTAssertFalse(nsError.localizedDescription.contains("TLS is required"))
         }
     }
 
