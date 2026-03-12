@@ -1566,6 +1566,7 @@ class _WireStream:
             row = self._cursor.fetchone()
         except Exception as exc:
             self._closed = True
+            self._conn._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
         if row is None:
             self._closed = True
@@ -1611,13 +1612,6 @@ class _PythonWireConnection:
             self._wire = self._wire_module.connect(dsn=self._wire_dsn)
         except Exception as exc:
             raise _to_scratchbird_error(exc) from exc
-        begin_method = getattr(self._wire, "begin", None)
-        wire_txn_id = int(getattr(self._wire, "_txn_id", 0) or 0)
-        if wire_txn_id == 0 and callable(begin_method):
-            try:
-                begin_method()
-            except Exception as exc:
-                raise _to_scratchbird_error(exc) from exc
         self._needs_reconnect = False
         self._cancel_requested = False
         self._txn_id = 1
@@ -1665,8 +1659,13 @@ class _PythonWireConnection:
         self._ensure_open()
         self._cancel_requested = False
         cursor = self._run_cursor(sql, params)
+        try:
+            result = _cursor_to_result(cursor)
+        except Exception as exc:
+            self._mark_reconnect_required()
+            raise _to_scratchbird_error(exc) from exc
         self._query_count += 1
-        return _cursor_to_result(cursor)
+        return result
 
     def prepare(self, sql: str) -> _WireStatement:
         self._ensure_open()
@@ -1750,9 +1749,6 @@ class _PythonWireConnection:
             commit_method = getattr(self._wire, "commit", None)
             if callable(commit_method):
                 commit_method()
-            begin_method = getattr(self._wire, "begin", None)
-            if callable(begin_method):
-                begin_method()
         except Exception as exc:
             self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
@@ -1768,9 +1764,6 @@ class _PythonWireConnection:
             rollback_method = getattr(self._wire, "rollback", None)
             if callable(rollback_method):
                 rollback_method()
-            begin_method = getattr(self._wire, "begin", None)
-            if callable(begin_method):
-                begin_method()
         except Exception as exc:
             self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
@@ -1850,8 +1843,13 @@ class _PythonWireConnection:
             method = getattr(self._wire, "query_metadata", None)
             if callable(method):
                 cursor = method(normalized)
-                return _cursor_to_result(cursor)
+                try:
+                    return _cursor_to_result(cursor)
+                except Exception as exc:
+                    self._mark_reconnect_required()
+                    raise _to_scratchbird_error(exc) from exc
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
         metadata_sql = resolve_metadata_collection_query(normalized)
         return self.query(metadata_sql)
@@ -2021,7 +2019,7 @@ class ScratchBirdConnection:
             return
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
-        setattr(conn, "_txn_id", 0)
+        setattr(conn, "_txn_id", 1)
         setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 
@@ -2032,7 +2030,7 @@ class ScratchBirdConnection:
             return
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
         conn._drain_until_ready()
-        setattr(conn, "_txn_id", 0)
+        setattr(conn, "_txn_id", 1)
         setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 

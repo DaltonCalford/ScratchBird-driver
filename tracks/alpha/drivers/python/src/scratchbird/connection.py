@@ -210,7 +210,19 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
     cfg.database = params.get("database", params.get("dbname", cfg.database))
     cfg.user = params.get("user", params.get("username", cfg.user))
     cfg.password = params.get("password", cfg.password)
-    cfg.schema = params.get("schema", params.get("search_path", params.get("searchpath", params.get("currentschema", cfg.schema))))
+    cfg.schema = params.get(
+        "schema",
+        params.get(
+            "current_schema",
+            params.get(
+                "currentSchema",
+                params.get(
+                    "search_path",
+                    params.get("searchpath", params.get("currentschema", cfg.schema)),
+                ),
+            ),
+        ),
+    )
     raw_expand_schema_parents = params.get(
         "metadata_expand_schema_parents",
         params.get(
@@ -1041,7 +1053,7 @@ class Connection:
             raise errors.InterfaceError("connection is closed")
 
     def _transaction_active(self) -> bool:
-        return self._txn_id != 0
+        return self._txn_id != 0 or (self._connected and self._authed and not self._closed)
 
     def _normalize_savepoint_name(self, name: str) -> str:
         if not isinstance(name, str):

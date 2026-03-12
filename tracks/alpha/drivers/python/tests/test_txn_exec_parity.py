@@ -25,6 +25,7 @@ def _new_connection(txn_id: int = 0) -> Connection:
     conn = Connection.__new__(Connection)
     conn._closed = False
     conn._txn_id = txn_id
+    conn._authed = False
     conn._autocommit = True
     conn._connected = True
     conn._session_schema = None
@@ -118,6 +119,12 @@ def test_begin_rejects_nested_transaction():
     conn = _new_connection(txn_id=9)
     with pytest.raises(errors.ProgrammingError, match="transaction already active"):
         conn.begin()
+
+
+def test_transaction_active_treats_authenticated_connected_session_as_active():
+    conn = _new_connection(txn_id=0)
+    conn._authed = True
+    assert conn._transaction_active() is True
 
 
 def test_cancel_sends_urgent_cancel_message(monkeypatch):

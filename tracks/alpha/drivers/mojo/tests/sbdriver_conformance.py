@@ -147,6 +147,26 @@ def _run_native_bootstrap_smoke(lane_root: pathlib.Path) -> None:
         return
 
 
+def _seed_live_fixtures_if_available(lane_root: pathlib.Path, dsns: list[str]) -> None:
+    if _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_SKIP_FIXTURE_SEED", "")):
+        return
+    if not any(not _is_deterministic_lane_dsn(dsn) for dsn in dsns):
+        return
+    repo_root = lane_root.parents[3]
+    script = repo_root / "scripts" / "driver_runtime_stack.sh"
+    completed = subprocess.run(
+        [str(script), "fixtures"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        error_text = (completed.stderr or completed.stdout or "").strip()
+        first_line = error_text.splitlines()[0] if error_text else "no details"
+        raise RuntimeError(f"fixture seed failed: {first_line}")
+
+
 def _normalize_kind(kind: str) -> str:
     # Conformance manifests use native_* kinds while lane harness uses logical kinds.
     if kind == "native_query":
@@ -483,6 +503,7 @@ def main() -> None:
     if len(dsn_matrix) == 0:
         results = [_render_result(spec.test_id, "skipped", ["SCRATCHBIRD_MOJO_URL not set"]) for spec in tests]
     else:
+        _seed_live_fixtures_if_available(lane_root, dsn_matrix)
         results = []
         for dsn in dsn_matrix:
             results.extend(_run_query_tests(tests, _wire_transport_dsn(dsn)))

@@ -86,6 +86,21 @@ def test_connect_maps_metadata_expand_schema_parents_aliases(monkeypatch):
     assert cfg.metadata_expand_schema_parents is True
 
 
+def test_connect_maps_current_schema_aliases(monkeypatch):
+    captured = {}
+
+    class FakeConnection:
+        def __init__(self, config):
+            captured["cfg"] = config
+
+    monkeypatch.setattr(connection_mod, "Connection", FakeConnection)
+    connect(
+        "host=server;port=4000;dbname=mydb;username=me;current_schema=public",
+    )
+    cfg = captured["cfg"]
+    assert cfg.schema == "public"
+
+
 def test_connect_accepts_disable_tls_and_zstd_compression(monkeypatch):
     captured = {}
 

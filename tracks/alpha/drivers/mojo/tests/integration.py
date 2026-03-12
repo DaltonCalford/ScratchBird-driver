@@ -171,6 +171,26 @@ def _run_native_bootstrap_smoke(lane_root: pathlib.Path) -> None:
         return
 
 
+def _seed_live_fixtures_if_available(lane_root: pathlib.Path, dsns: list[str]) -> None:
+    if _is_truthy(os.environ.get("SCRATCHBIRD_MOJO_SKIP_FIXTURE_SEED", "")):
+        return
+    if not any(not _is_deterministic_lane_dsn(dsn) for dsn in dsns):
+        return
+    repo_root = lane_root.parents[3]
+    script = repo_root / "scripts" / "driver_runtime_stack.sh"
+    completed = subprocess.run(
+        [str(script), "fixtures"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        error_text = (completed.stderr or completed.stdout or "").strip()
+        first_line = error_text.splitlines()[0] if error_text else "no details"
+        raise RuntimeError(f"fixture seed failed: {first_line}")
+
+
 def _normalize_identifier(value: Any) -> str:
     return str(value).strip().lower().replace("-", "_").replace(" ", "_")
 
@@ -553,6 +573,23 @@ def main() -> None:
             direct_dsns = [direct_single]
     if len(direct_dsns) == 0 and not fallback_disabled:
         direct_dsns = [_deterministic_fallback_dsn()]
+
+    manager_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URLS", ""))
+    if len(manager_dsns) == 0:
+        manager_single = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
+        if manager_single:
+            manager_dsns = [manager_single]
+    if len(manager_dsns) == 0 and not fallback_disabled:
+        manager_dsns = [_deterministic_fallback_manager_dsn()]
+
+    listener_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URLS", ""))
+    if len(listener_dsns) == 0:
+        listener_single = os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URL", "").strip()
+        if listener_single:
+            listener_dsns = [listener_single]
+
+    _seed_live_fixtures_if_available(lane_root, direct_dsns + manager_dsns + listener_dsns)
+
     if len(direct_dsns) == 0:
         print("SCRATCHBIRD_MOJO_URL not set; skipping Mojo direct integration smoke.")
     for idx, dsn in enumerate(direct_dsns):
@@ -563,13 +600,6 @@ def main() -> None:
             deterministic_lane=deterministic_lane,
         )
 
-    manager_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URLS", ""))
-    if len(manager_dsns) == 0:
-        manager_single = os.environ.get("SCRATCHBIRD_MOJO_MANAGER_URL", "").strip()
-        if manager_single:
-            manager_dsns = [manager_single]
-    if len(manager_dsns) == 0 and not fallback_disabled:
-        manager_dsns = [_deterministic_fallback_manager_dsn()]
     if len(manager_dsns) == 0:
         print("SCRATCHBIRD_MOJO_MANAGER_URL not set; skipping Mojo manager-proxy smoke.")
     for idx, dsn in enumerate(manager_dsns):
@@ -580,13 +610,9 @@ def main() -> None:
             deterministic_lane=deterministic_lane,
         )
 
-    listener_dsns = _split_dsn_matrix(os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URLS", ""))
-    if len(listener_dsns) == 0:
-        listener_single = os.environ.get("SCRATCHBIRD_MOJO_LISTENER_URL", "").strip()
-        if listener_single:
-            listener_dsns = [listener_single]
     if len(listener_dsns) == 0:
         print("SCRATCHBIRD_MOJO_LISTENER_URL not set; skipping Mojo listener matrix smoke.")
+
     for idx, dsn in enumerate(listener_dsns):
         deterministic_lane = _is_deterministic_lane_dsn(dsn)
         _run_smoke_for_dsn(
