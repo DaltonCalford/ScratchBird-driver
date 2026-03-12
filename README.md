@@ -14,12 +14,12 @@ lane.
 
 Current PH5 closure progress:
 
-- `NCW-050..054B` are complete.
-- `NCW-054C..054D` remain as the immediate full-surface uplift block for the
+- `NCW-050..054C` are complete.
+- `NCW-054D` remains as the immediate full-surface uplift ticket for the
   remaining previously residual driver work.
 - Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
   Rust, Ruby, Pascal, .NET, and C/C++.
-- Remaining driver implementation work is concentrated in `NCW-054C..054D`
+- Remaining driver implementation work is concentrated in `NCW-054D`
   (residual/full-surface uplift for already-closed lanes), `NCW-055`
   (R/Dart/Swift), `NCW-056` (Elixir/Mojo), and `NCW-057` (cross-driver
   promotion/conformance regeneration).
@@ -28,7 +28,7 @@ This README reflects the current implementation-closure state, not the final
 cross-driver promotion decision. PH5 no longer treats convenience, downstream
 consumer, or other previously residual driver surfaces as optional.
 
-**Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)  
+**Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 **Release Targets:** `docs/planning/RELEASE_TARGETS.md`
 
 ---
@@ -55,11 +55,11 @@ Legend:
 
 # Driver Capability Matrix (Work Snapshot: 2026-03-12)
 
-This matrix reflects the current PH5 closure state after `NCW-054B`. A `✅`
+This matrix reflects the current PH5 closure state after `NCW-054C`. A `✅`
 entry means the required closure slice is complete for the lane's actively
-supported surface. `NCW-054A..054B` have absorbed the primary and secondary
-alpha residuals; `NCW-054C..054D` now carry the remaining full-surface uplift
-work before PH5 can claim final closure.
+supported surface. `NCW-054A..054C` have absorbed the primary alpha, secondary
+alpha, and C/C++ residuals; `NCW-054D` now carries the remaining full-surface
+uplift work before PH5 can claim final closure.
 
 ## Alpha Drivers
 
@@ -83,7 +83,7 @@ work before PH5 can claim final closure.
 
 | Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                               |
 | --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green across public API, metadata helpers, type fidelity, resource lifecycle, and always-in-transaction wrapper state; transport remains intentionally listener/IP-bound.                                                                                                  |
+| **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054C` also closes listener-bound transport/config convenience, C++ prepared-statement parity, and RAII pool/lease surfaces without bypassing the listener/parser boundary.                                  |
 | **R (DBI)**                       | 🟡   | 🟡  | ✅    | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); execution is strongest, but live connection, transaction, metadata, type, error, and resource depth remain open.                                                                                                                                             |
 | **Swift (Async/Await)**           | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); base connection path exists, but broader live TXN/EXEC/META/TYPE/ERR/RES coverage remains open.                                                                                                                                                           |
 | **Dart**                          | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); connection path is present, but live transaction, metadata, type, error, and resilience closure is still pending.                                                                                                                                          |

@@ -43,9 +43,9 @@ static inline sb_pool_config sb_pool_config_default(void) {
 typedef struct sb_connection_pool sb_connection_pool;
 
 // Create a new connection pool
-sb_connection_pool* sb_pool_create(const char* conn_str, 
-                                    const sb_pool_config* config, 
-                                    sb_error* err);
+sb_connection_pool* sb_pool_create(const char* conn_str,
+                                   const sb_pool_config* config,
+                                   sb_error* err);
 
 // Destroy the pool and close all connections
 void sb_pool_destroy(sb_connection_pool* pool);
@@ -182,4 +182,68 @@ void sb_stmt_cache_clear(sb_statement_cache* cache);
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __cplusplus
+
+#include <string>
+
+namespace scratchbird {
+namespace client {
+
+struct PoolStats {
+    size_t available_connections{0};
+    size_t total_connections{0};
+    size_t max_connections{0};
+};
+
+class ConnectionLease {
+public:
+    ConnectionLease();
+    ~ConnectionLease();
+
+    ConnectionLease(ConnectionLease&& other) noexcept;
+    ConnectionLease& operator=(ConnectionLease&& other) noexcept;
+    ConnectionLease(const ConnectionLease&) = delete;
+    ConnectionLease& operator=(const ConnectionLease&) = delete;
+
+    bool valid() const;
+    sb_connection* raw() const;
+    sb_result* query(const std::string& sql, sb_error* err = nullptr) const;
+    sb_result* execute(const std::string& sql, sb_error* err = nullptr) const;
+    void reset();
+
+private:
+    friend class ConnectionPool;
+    ConnectionLease(sb_connection_pool* pool, sb_connection* conn);
+
+    sb_connection_pool* pool_{nullptr};
+    sb_connection* conn_{nullptr};
+};
+
+class ConnectionPool {
+public:
+    ConnectionPool();
+    ~ConnectionPool();
+
+    ConnectionPool(ConnectionPool&& other) noexcept;
+    ConnectionPool& operator=(ConnectionPool&& other) noexcept;
+    ConnectionPool(const ConnectionPool&) = delete;
+    ConnectionPool& operator=(const ConnectionPool&) = delete;
+
+    bool open(const std::string& conn_str,
+              const sb_pool_config& config = sb_pool_config_default(),
+              sb_error* err = nullptr);
+    void close();
+    bool isOpen() const;
+    PoolStats stats() const;
+    ConnectionLease acquire(sb_error* err = nullptr);
+
+private:
+    sb_connection_pool* pool_{nullptr};
+};
+
+} // namespace client
+} // namespace scratchbird
+
 #endif

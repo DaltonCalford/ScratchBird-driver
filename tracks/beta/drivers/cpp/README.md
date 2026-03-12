@@ -48,5 +48,12 @@ int main(void) {
 }
 ```
 
-Direct and manager-proxy listener modes are supported. The lane is intentionally
-IP-only and does not implement driver-side IPC transport.
+Direct and manager-proxy listener modes are supported. The lane remains
+listener/IP-bound and does not implement driver-side IPC transport.
+
+The public C++ surface now also includes:
+
+- parsed `ConnectionConfig` mirroring listener-bound role/schema/app/TLS and
+  compression settings
+- `PreparedStatement` with typed parameter setters and execute helpers
+- `ConnectionPool` and `ConnectionLease` RAII wrappers over the pooled C API

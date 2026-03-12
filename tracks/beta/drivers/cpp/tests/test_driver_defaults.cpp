@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "scratchbird/client/connection.h"
 #include "scratchbird/client/driver_config.h"
 #include "scratchbird/client/network_client.h"
 
@@ -221,6 +222,30 @@ TEST(DriverDefaultsEnvTest, ParsesAuthPluginAndPinningParams) {
     EXPECT_EQ(cfg.workload_identity_token, "workload.jwt");
     EXPECT_EQ(cfg.proxy_principal_assertion, "proxy.jwt");
     EXPECT_EQ(cfg.connect_client_flags, 256);
+}
+
+TEST(DriverDefaultsEnvTest, ParseConnectionConfigMirrorsManagedTransportAndSchemaAliases) {
+    scratchbird::client::ConnectionConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseConnectionConfig(
+        "scratchbird://admin:pw@127.0.0.1:3090/main?"
+        "front_door_mode=manager_proxy&manager_auth_token=abc123&"
+        "currentSchema=users.alice&role=ops&applicationName=cpp_api&"
+        "sslmode=verify-full&binary_transfer=true&compression=zstd",
+        &cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.database_name, "main");
+    EXPECT_EQ(cfg.username, "admin");
+    EXPECT_EQ(cfg.transport_mode, "managed");
+    EXPECT_EQ(cfg.front_door_mode, "manager_proxy");
+    EXPECT_EQ(cfg.manager_auth_token, "abc123");
+    EXPECT_EQ(cfg.current_schema, "users.alice");
+    EXPECT_EQ(cfg.role, "ops");
+    EXPECT_EQ(cfg.application_name, "cpp_api");
+    EXPECT_EQ(cfg.ssl_mode, "verify-full");
+    EXPECT_TRUE(cfg.binary_transfer);
+    EXPECT_TRUE(cfg.enable_compression);
 }
 
 TEST(DriverDefaultsEnvTest, RejectsOverlappingPinningProfiles) {

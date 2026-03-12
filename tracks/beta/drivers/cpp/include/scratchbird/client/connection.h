@@ -17,6 +17,13 @@ struct ConnectionConfig {
     std::string username;
     std::string password;
     std::string protocol{"native"};
+    std::string role;
+    std::string current_schema;
+    std::string application_name{"scratchbird_driver"};
+    std::string ssl_mode{"require"};
+    std::string ssl_cert;
+    std::string ssl_key;
+    std::string ssl_root_cert;
 
     // inet_listener | managed
     std::string transport_mode{"inet_listener"};
@@ -50,6 +57,8 @@ struct ConnectionConfig {
     uint32_t write_timeout_ms{30000};
     uint32_t copy_window_bytes{65536};
     uint32_t copy_chunk_bytes{16384};
+    bool binary_transfer{true};
+    bool enable_compression{false};
 
     bool auto_commit{true};
 
@@ -59,6 +68,10 @@ struct ConnectionConfig {
                               const std::string& pass = "")
         : database_name(db_name), username(user), password(pass) {}
 };
+
+core::Status parseConnectionConfig(const std::string& conn_str,
+                                   ConnectionConfig* config,
+                                   core::ErrorContext* ctx = nullptr);
 
 struct ColumnMeta {
     std::string name;
@@ -71,6 +84,7 @@ struct ColumnMeta {
 };
 
 class ResultSetImpl;
+class PreparedStatementImpl;
 
 class ResultSet {
 public:
@@ -130,7 +144,55 @@ public:
 
 private:
     friend class Connection;
+    friend class PreparedStatement;
     std::unique_ptr<ResultSetImpl> impl_;
+};
+
+class PreparedStatement {
+public:
+    PreparedStatement();
+    ~PreparedStatement();
+
+    PreparedStatement(PreparedStatement&& other) noexcept;
+    PreparedStatement& operator=(PreparedStatement&& other) noexcept;
+    PreparedStatement(const PreparedStatement&) = delete;
+    PreparedStatement& operator=(const PreparedStatement&) = delete;
+
+    size_t getParameterCount() const;
+    bool isValid() const;
+    void clearParameters();
+
+    void setNull(size_t index);
+    void setNull(size_t index, uint32_t type_oid);
+    void setBool(size_t index, bool value);
+    void setInt16(size_t index, int16_t value);
+    void setInt32(size_t index, int32_t value);
+    void setInt64(size_t index, int64_t value);
+    void setFloat(size_t index, float value);
+    void setDouble(size_t index, double value);
+    void setString(size_t index, const std::string& value);
+    void setString(size_t index, const std::string& value, uint32_t type_oid);
+    void setBytes(size_t index, const std::vector<uint8_t>& value);
+    void setBytes(size_t index, const uint8_t* data, size_t length);
+    void setBinary(size_t index,
+                   const uint8_t* data,
+                   size_t length,
+                   uint32_t type_oid,
+                   bool length_prefixed);
+    void setTimestamp(size_t index, int64_t microseconds);
+    void setDate(size_t index, int32_t days);
+    void setTime(size_t index, int64_t microseconds);
+    void setUUID(size_t index, const std::vector<uint8_t>& value);
+    void setUUID(size_t index, const std::string& value);
+
+    core::Status executeQuery(ResultSet* results,
+                              core::ErrorContext* ctx = nullptr);
+    core::Status execute(int64_t* rows_affected = nullptr,
+                         core::ErrorContext* ctx = nullptr);
+
+private:
+    friend class Connection;
+    std::unique_ptr<PreparedStatementImpl> impl_;
 };
 
 enum class ConnectionState : uint8_t {
@@ -173,6 +235,9 @@ public:
                               core::ErrorContext* ctx = nullptr);
     core::Status execute(const std::string& sql,
                          int64_t* rows_affected = nullptr,
+                         core::ErrorContext* ctx = nullptr);
+    core::Status prepare(const std::string& sql,
+                         PreparedStatement* stmt,
                          core::ErrorContext* ctx = nullptr);
     core::Status metadataQuery(const std::string& collection_name,
                                ResultSet* results,

@@ -64,17 +64,33 @@ Namespace: `scratchbird::client`
 
 - `ConnectionConfig`
 - `Connection`
+- `PreparedStatement`
 - `ResultSet`
+- `ConnectionPool`
+- `ConnectionLease`
 
 `Connection` provides:
 
 - `connect(...)`, `disconnect()`, `isConnected()`, `getState()`
 - `executeQuery(...)`, `execute(...)`
+- `prepare(...)`
 - `metadataQuery(...)`, `schemas(...)`, `tables(...)`, `columns(...)`,
   `indexes(...)`, `metadataSchemaPayload(...)`
 - `beginTransaction()`, `commit()`, `rollback()`
 - `savepoint()`, `releaseSavepoint()`, `rollbackTo()`
 - `setAutoCommit()`, `getAutoCommit()`, `inTransaction()`
+
+Connection-config helpers:
+
+- `parseConnectionConfig(...)` parses URI/key-value DSNs into the public
+  `ConnectionConfig` surface, including listener-bound manager-proxy, schema,
+  role, TLS, and compression options.
+
+`PreparedStatement` provides:
+
+- typed setters mirroring the network prepared-statement surface
+- `executeQuery(...)`
+- `execute(...)`
 
 ## Pooling And Retry
 
@@ -85,6 +101,11 @@ In `pool.h`:
 - `sb_query_with_retry`, `sb_execute_with_retry`
 - `sb_batch_execute`, `sb_bulk_insert`
 - `sb_stmt_cache_create`, `sb_stmt_cache_get`, `sb_stmt_cache_clear`
+
+C++ pooling helpers:
+
+- `ConnectionPool::open(...)`, `close()`, `stats()`, `acquire()`
+- `ConnectionLease::query(...)`, `execute(...)`, `raw()`, `reset()`
 
 ## Query Pipeline
 

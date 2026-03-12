@@ -746,3 +746,130 @@ uint32_t sb_connection_get_idle_seconds(sb_connection* conn) {
         std::chrono::steady_clock::now() - it->second.last_used_at);
     return static_cast<uint32_t>(std::max<int64_t>(0, idle.count()));
 }
+
+namespace scratchbird {
+namespace client {
+
+ConnectionLease::ConnectionLease() = default;
+
+ConnectionLease::ConnectionLease(sb_connection_pool* pool, sb_connection* conn)
+    : pool_(pool), conn_(conn) {}
+
+ConnectionLease::~ConnectionLease() {
+    reset();
+}
+
+ConnectionLease::ConnectionLease(ConnectionLease&& other) noexcept
+    : pool_(other.pool_), conn_(other.conn_) {
+    other.pool_ = nullptr;
+    other.conn_ = nullptr;
+}
+
+ConnectionLease& ConnectionLease::operator=(ConnectionLease&& other) noexcept {
+    if (this != &other) {
+        reset();
+        pool_ = other.pool_;
+        conn_ = other.conn_;
+        other.pool_ = nullptr;
+        other.conn_ = nullptr;
+    }
+    return *this;
+}
+
+bool ConnectionLease::valid() const {
+    return conn_ != nullptr;
+}
+
+sb_connection* ConnectionLease::raw() const {
+    return conn_;
+}
+
+sb_result* ConnectionLease::query(const std::string& sql, sb_error* err) const {
+    if (!conn_) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection lease is empty");
+        return nullptr;
+    }
+    return sb_query(conn_, sql.c_str(), err);
+}
+
+sb_result* ConnectionLease::execute(const std::string& sql, sb_error* err) const {
+    if (!conn_) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection lease is empty");
+        return nullptr;
+    }
+    return sb_execute(conn_, sql.c_str(), err);
+}
+
+void ConnectionLease::reset() {
+    if (pool_ && conn_) {
+        sb_pool_release(pool_, conn_);
+    }
+    pool_ = nullptr;
+    conn_ = nullptr;
+}
+
+ConnectionPool::ConnectionPool() = default;
+
+ConnectionPool::~ConnectionPool() {
+    close();
+}
+
+ConnectionPool::ConnectionPool(ConnectionPool&& other) noexcept
+    : pool_(other.pool_) {
+    other.pool_ = nullptr;
+}
+
+ConnectionPool& ConnectionPool::operator=(ConnectionPool&& other) noexcept {
+    if (this != &other) {
+        close();
+        pool_ = other.pool_;
+        other.pool_ = nullptr;
+    }
+    return *this;
+}
+
+bool ConnectionPool::open(const std::string& conn_str,
+                          const sb_pool_config& config,
+                          sb_error* err) {
+    close();
+    pool_ = sb_pool_create(conn_str.c_str(), &config, err);
+    return pool_ != nullptr;
+}
+
+void ConnectionPool::close() {
+    if (pool_) {
+        sb_pool_destroy(pool_);
+        pool_ = nullptr;
+    }
+}
+
+bool ConnectionPool::isOpen() const {
+    return pool_ != nullptr;
+}
+
+PoolStats ConnectionPool::stats() const {
+    PoolStats out{};
+    if (!pool_) {
+        return out;
+    }
+    const sb_pool_stats stats = sb_pool_get_stats(pool_);
+    out.available_connections = stats.available_connections;
+    out.total_connections = stats.total_connections;
+    out.max_connections = stats.max_connections;
+    return out;
+}
+
+ConnectionLease ConnectionPool::acquire(sb_error* err) {
+    if (!pool_) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Pool is not open");
+        return ConnectionLease();
+    }
+    sb_connection* conn = sb_pool_acquire(pool_, err);
+    if (!conn) {
+        return ConnectionLease();
+    }
+    return ConnectionLease(pool_, conn);
+}
+
+} // namespace client
+} // namespace scratchbird

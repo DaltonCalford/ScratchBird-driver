@@ -361,7 +361,7 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
                 return core::Status::INVALID_ARGUMENT;
             }
             config.port = static_cast<uint16_t>(parsed);
-        } else if (key == "database" || key == "db") {
+        } else if (key == "database" || key == "db" || key == "dbname") {
             config.database = value;
         } else if (key == "uid" || key == "user" || key == "username") {
             config.username = value;
@@ -369,7 +369,9 @@ core::Status applyConnectionParams(const std::map<std::string, std::string>& par
             config.password = value;
         } else if (key == "role") {
             config.role = value;
-        } else if (key == "schema") {
+        } else if (key == "schema" || key == "current_schema" ||
+                   key == "currentschema" || key == "search_path" ||
+                   key == "searchpath") {
             config.schema = value;
         } else if (key == "transport" || key == "transport_mode" || key == "mode") {
             std::string normalized;

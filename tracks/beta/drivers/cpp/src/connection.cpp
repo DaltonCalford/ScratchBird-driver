@@ -404,6 +404,9 @@ void populatePublicConfigFromNetwork(const NetworkClientConfig& net_cfg,
     config->username = net_cfg.username;
     config->password = net_cfg.password;
     config->protocol = net_cfg.protocol;
+    config->role = net_cfg.role;
+    config->current_schema = net_cfg.schema;
+    config->application_name = net_cfg.application_name;
     config->transport_mode = net_cfg.transport_mode;
     config->host = net_cfg.host;
     config->tcp_port = net_cfg.port;
@@ -431,6 +434,32 @@ void populatePublicConfigFromNetwork(const NetworkClientConfig& net_cfg,
     config->write_timeout_ms = net_cfg.write_timeout_ms;
     config->copy_window_bytes = net_cfg.copy_window_bytes;
     config->copy_chunk_bytes = net_cfg.copy_chunk_bytes;
+    switch (net_cfg.ssl_mode) {
+        case network::SSLMode::DISABLED:
+            config->ssl_mode = "disable";
+            break;
+        case network::SSLMode::ALLOW:
+            config->ssl_mode = "allow";
+            break;
+        case network::SSLMode::PREFER:
+            config->ssl_mode = "prefer";
+            break;
+        case network::SSLMode::VERIFY_CA:
+            config->ssl_mode = "verify-ca";
+            break;
+        case network::SSLMode::VERIFY_FULL:
+            config->ssl_mode = "verify-full";
+            break;
+        case network::SSLMode::REQUIRE:
+        default:
+            config->ssl_mode = "require";
+            break;
+    }
+    config->ssl_cert = net_cfg.ssl_cert;
+    config->ssl_key = net_cfg.ssl_key;
+    config->ssl_root_cert = net_cfg.ssl_root_cert;
+    config->binary_transfer = net_cfg.binary_transfer;
+    config->enable_compression = net_cfg.enable_compression;
 }
 
 } // namespace
@@ -449,6 +478,51 @@ struct ConnectionImpl {
     std::string last_error;
 };
 
+struct PreparedStatementImpl {
+    ConnectionImpl* owner{nullptr};
+    NetworkPreparedStatement statement;
+};
+
+void populateResultSet(ResultSetImpl* impl,
+                       const std::shared_ptr<NetworkResultSet>& shared) {
+    if (!impl) {
+        return;
+    }
+    impl->results = shared;
+    impl->row_index = -1;
+    impl->columns.clear();
+    for (size_t i = 0; i < shared->columns.size(); ++i) {
+        const auto& col = shared->columns[i];
+        impl->columns.push_back(
+            ColumnMeta{col.name,
+                       mapTypeOidToPublicType(col.type_oid),
+                       col.type_oid,
+                       col.type_modifier,
+                       i,
+                       col.format,
+                       col.nullable});
+    }
+}
+
+core::Status parseConnectionConfig(const std::string& conn_str,
+                                   ConnectionConfig* config,
+                                   core::ErrorContext* ctx) {
+    if (!config) {
+        if (ctx) {
+            ctx->message = "config is required";
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+
+    NetworkClientConfig net_cfg;
+    core::Status status = parseDriverConnectionString(conn_str, net_cfg, ctx);
+    if (status != core::Status::OK) {
+        return status;
+    }
+    populatePublicConfigFromNetwork(net_cfg, config);
+    return core::Status::OK;
+}
+
 void markConnectedTransactionState(ConnectionImpl* impl) {
     if (!impl) {
         return;
@@ -466,6 +540,12 @@ ResultSet::ResultSet() : impl_(std::make_unique<ResultSetImpl>()) {}
 ResultSet::~ResultSet() = default;
 ResultSet::ResultSet(ResultSet&& other) noexcept = default;
 ResultSet& ResultSet::operator=(ResultSet&& other) noexcept = default;
+
+PreparedStatement::PreparedStatement()
+    : impl_(std::make_unique<PreparedStatementImpl>()) {}
+PreparedStatement::~PreparedStatement() = default;
+PreparedStatement::PreparedStatement(PreparedStatement&& other) noexcept = default;
+PreparedStatement& PreparedStatement::operator=(PreparedStatement&& other) noexcept = default;
 
 size_t ResultSet::getColumnCount() const {
     return impl_ && impl_->results ? impl_->columns.size() : 0;
@@ -882,6 +962,10 @@ core::Status Connection::connect(const ConnectionConfig& config,
     net_cfg.username = config.username;
     net_cfg.password = config.password;
     net_cfg.protocol = config.protocol.empty() ? "native" : config.protocol;
+    net_cfg.role = config.role;
+    net_cfg.schema = config.current_schema;
+    net_cfg.application_name =
+        config.application_name.empty() ? "scratchbird_driver" : config.application_name;
     net_cfg.transport_mode = config.transport_mode.empty() ? "inet_listener" : config.transport_mode;
     net_cfg.host = config.host.empty() ? "127.0.0.1" : config.host;
     net_cfg.port = config.tcp_port;
@@ -909,6 +993,12 @@ core::Status Connection::connect(const ConnectionConfig& config,
     net_cfg.write_timeout_ms = config.write_timeout_ms;
     net_cfg.copy_window_bytes = config.copy_window_bytes;
     net_cfg.copy_chunk_bytes = config.copy_chunk_bytes;
+    net_cfg.ssl_mode = parseSslMode(config.ssl_mode);
+    net_cfg.ssl_cert = config.ssl_cert;
+    net_cfg.ssl_key = config.ssl_key;
+    net_cfg.ssl_root_cert = config.ssl_root_cert;
+    net_cfg.binary_transfer = config.binary_transfer;
+    net_cfg.enable_compression = config.enable_compression;
 
     impl_->config = config;
     impl_->state = ConnectionState::CONNECTING;
@@ -957,22 +1047,7 @@ core::Status Connection::executeQuery(const std::string& sql,
     auto shared = std::make_shared<NetworkResultSet>();
     core::Status status = impl_->client.executeQuery(sql, *shared, ctx);
     impl_->last_error = impl_->client.lastError();
-    if (results) {
-        results->impl_->results = shared;
-        results->impl_->row_index = -1;
-        results->impl_->columns.clear();
-        for (size_t i = 0; i < shared->columns.size(); ++i) {
-            const auto& col = shared->columns[i];
-            results->impl_->columns.push_back(
-                ColumnMeta{col.name,
-                           mapTypeOidToPublicType(col.type_oid),
-                           col.type_oid,
-                           col.type_modifier,
-                           i,
-                           col.format,
-                           col.nullable});
-        }
-    }
+    populateResultSet(results ? results->impl_.get() : nullptr, shared);
     if (status == core::Status::OK) {
         markConnectedTransactionState(impl_.get());
     }
@@ -990,6 +1065,29 @@ core::Status Connection::execute(const std::string& sql,
     }
     if (status == core::Status::OK) {
         markConnectedTransactionState(impl_.get());
+    }
+    return status;
+}
+
+core::Status Connection::prepare(const std::string& sql,
+                                 PreparedStatement* stmt,
+                                 core::ErrorContext* ctx) {
+    if (!stmt) {
+        if (ctx) {
+            ctx->message = "stmt is required";
+        }
+        impl_->last_error = "stmt is required";
+        return core::Status::INVALID_ARGUMENT;
+    }
+
+    stmt->impl_->statement = NetworkPreparedStatement{};
+    core::Status status = impl_->client.prepare(sql, stmt->impl_->statement, ctx);
+    impl_->last_error = impl_->client.lastError();
+    if (status == core::Status::OK) {
+        stmt->impl_->owner = impl_.get();
+        markConnectedTransactionState(impl_.get());
+    } else {
+        stmt->impl_->owner = nullptr;
     }
     return status;
 }
@@ -1147,6 +1245,164 @@ bool Connection::inTransaction() const {
 const ConnectionConfig& Connection::getConfig() const {
     static const ConnectionConfig kEmpty;
     return impl_ ? impl_->config : kEmpty;
+}
+
+size_t PreparedStatement::getParameterCount() const {
+    return impl_ ? impl_->statement.getParameterCount() : 0;
+}
+
+bool PreparedStatement::isValid() const {
+    return impl_ && impl_->owner != nullptr && impl_->statement.isValid();
+}
+
+void PreparedStatement::clearParameters() {
+    if (impl_) {
+        impl_->statement.clearParameters();
+    }
+}
+
+void PreparedStatement::setNull(size_t index) {
+    if (impl_) {
+        impl_->statement.setNull(index);
+    }
+}
+
+void PreparedStatement::setNull(size_t index, uint32_t type_oid) {
+    if (impl_) {
+        impl_->statement.setNull(index, type_oid);
+    }
+}
+
+void PreparedStatement::setBool(size_t index, bool value) {
+    if (impl_) {
+        impl_->statement.setBool(index, value);
+    }
+}
+
+void PreparedStatement::setInt16(size_t index, int16_t value) {
+    if (impl_) {
+        impl_->statement.setInt16(index, value);
+    }
+}
+
+void PreparedStatement::setInt32(size_t index, int32_t value) {
+    if (impl_) {
+        impl_->statement.setInt32(index, value);
+    }
+}
+
+void PreparedStatement::setInt64(size_t index, int64_t value) {
+    if (impl_) {
+        impl_->statement.setInt64(index, value);
+    }
+}
+
+void PreparedStatement::setFloat(size_t index, float value) {
+    if (impl_) {
+        impl_->statement.setFloat(index, value);
+    }
+}
+
+void PreparedStatement::setDouble(size_t index, double value) {
+    if (impl_) {
+        impl_->statement.setDouble(index, value);
+    }
+}
+
+void PreparedStatement::setString(size_t index, const std::string& value) {
+    if (impl_) {
+        impl_->statement.setString(index, value);
+    }
+}
+
+void PreparedStatement::setString(size_t index,
+                                  const std::string& value,
+                                  uint32_t type_oid) {
+    if (impl_) {
+        impl_->statement.setString(index, value, type_oid);
+    }
+}
+
+void PreparedStatement::setBytes(size_t index, const std::vector<uint8_t>& value) {
+    if (impl_) {
+        impl_->statement.setBytes(index, value);
+    }
+}
+
+void PreparedStatement::setBytes(size_t index, const uint8_t* data, size_t length) {
+    if (impl_) {
+        impl_->statement.setBytes(index, data, length);
+    }
+}
+
+void PreparedStatement::setBinary(size_t index,
+                                  const uint8_t* data,
+                                  size_t length,
+                                  uint32_t type_oid,
+                                  bool length_prefixed) {
+    if (impl_) {
+        impl_->statement.setBinary(index, data, length, type_oid, length_prefixed);
+    }
+}
+
+void PreparedStatement::setTimestamp(size_t index, int64_t microseconds) {
+    if (impl_) {
+        impl_->statement.setTimestamp(index, microseconds);
+    }
+}
+
+void PreparedStatement::setDate(size_t index, int32_t days) {
+    if (impl_) {
+        impl_->statement.setDate(index, days);
+    }
+}
+
+void PreparedStatement::setTime(size_t index, int64_t microseconds) {
+    if (impl_) {
+        impl_->statement.setTime(index, microseconds);
+    }
+}
+
+void PreparedStatement::setUUID(size_t index, const std::vector<uint8_t>& value) {
+    if (impl_) {
+        impl_->statement.setUUID(index, value);
+    }
+}
+
+void PreparedStatement::setUUID(size_t index, const std::string& value) {
+    if (impl_) {
+        impl_->statement.setUUID(index, value);
+    }
+}
+
+core::Status PreparedStatement::executeQuery(ResultSet* results,
+                                             core::ErrorContext* ctx) {
+    if (!impl_ || impl_->owner == nullptr || !impl_->statement.isValid()) {
+        if (ctx) {
+            ctx->message = "prepared statement is not valid";
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+
+    auto shared = std::make_shared<NetworkResultSet>();
+    core::Status status =
+        impl_->owner->client.executePrepared(impl_->statement, *shared, ctx);
+    impl_->owner->last_error = impl_->owner->client.lastError();
+    populateResultSet(results ? results->impl_.get() : nullptr, shared);
+    if (status == core::Status::OK) {
+        markConnectedTransactionState(impl_->owner);
+    }
+    return status;
+}
+
+core::Status PreparedStatement::execute(int64_t* rows_affected,
+                                        core::ErrorContext* ctx) {
+    ResultSet results;
+    core::Status status = executeQuery(&results, ctx);
+    if (rows_affected) {
+        *rows_affected = (status == core::Status::OK) ? results.getRowsAffected() : 0;
+    }
+    return status;
 }
 
 } // namespace client

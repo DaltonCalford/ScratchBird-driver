@@ -3013,6 +3013,92 @@ TEST(DriverCppApiClosureTest, MetadataHelpersExecuteStableFilteredQueries) {
     EXPECT_TRUE(harness.error.empty()) << harness.error;
 }
 
+TEST(DriverCppApiClosureTest, PreparedStatementWrapperExecutesRoundTrip) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Parse, {}},
+        {scratchbird::protocol::MessageType::Describe, {}},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::ParameterDescription,
+           buildParameterDescriptionPayload({scratchbird::protocol::kOidInt4})},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 40)}}},
+        {scratchbird::protocol::MessageType::Bind, {}},
+        {scratchbird::protocol::MessageType::Execute, {}},
+        {scratchbird::protocol::MessageType::Sync,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 1, 0, "UPDATE 1")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 41)}}}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext ctx;
+    ASSERT_EQ(conn.connect(conn_str, "", "", &ctx), scratchbird::core::Status::OK) << ctx.message;
+
+    scratchbird::client::PreparedStatement stmt;
+    ASSERT_EQ(conn.prepare("UPDATE t SET v = $1", &stmt, &ctx), scratchbird::core::Status::OK)
+        << ctx.message;
+    EXPECT_TRUE(stmt.isValid());
+    EXPECT_EQ(stmt.getParameterCount(), 1u);
+
+    stmt.setInt32(1, 7);
+    int64_t rows_affected = 0;
+    ASSERT_EQ(stmt.execute(&rows_affected, &ctx), scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(rows_affected, 1);
+    EXPECT_TRUE(conn.inTransaction());
+
+    conn.disconnect();
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, ConnectionPoolLeaseAutoReleasesToPool) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    ServerHarness harness;
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+
+    sb_pool_config pool_cfg = sb_pool_config_default();
+    pool_cfg.min_connections = 1;
+    pool_cfg.max_connections = 2;
+    pool_cfg.acquire_timeout_seconds = 1;
+    pool_cfg.test_on_checkout = 0;
+
+    scratchbird::client::ConnectionPool pool;
+    sb_error err{};
+    ASSERT_TRUE(pool.open(conn_str, pool_cfg, &err)) << err.message;
+    EXPECT_TRUE(pool.isOpen());
+    EXPECT_EQ(pool.stats().available_connections, 1u);
+
+    {
+        auto lease = pool.acquire(&err);
+        ASSERT_TRUE(lease.valid()) << err.message;
+        EXPECT_NE(lease.raw(), nullptr);
+        EXPECT_EQ(pool.stats().available_connections, 0u);
+    }
+
+    EXPECT_EQ(pool.stats().available_connections, 1u);
+    pool.close();
+    EXPECT_FALSE(pool.isOpen());
+
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
 TEST(DriverCppApiClosureTest, MetadataSchemaPayloadBuildsEditorJson) {
     scratchbird::network::NetworkInitGuard guard;
     ASSERT_TRUE(guard.isInitialized());

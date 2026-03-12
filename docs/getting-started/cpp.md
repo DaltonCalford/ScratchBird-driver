@@ -62,6 +62,10 @@ Current C/C++ lane notes:
 ## Higher-Level Surfaces
 
 - C++ wrapper classes are available under `scratchbird/client/connection.h`.
+- Parsed DSN-to-`ConnectionConfig` helpers are available through
+  `parseConnectionConfig(...)`.
+- Typed C++ prepared statements are available through `Connection::prepare(...)`
+  and `PreparedStatement`.
 - Pooling helpers live in `scratchbird/client/pool.h`.
 - Query pipelining helpers live in `scratchbird/client/pipeline.h`.
 - Enterprise diagnostics, telemetry, and notification APIs are available in the
