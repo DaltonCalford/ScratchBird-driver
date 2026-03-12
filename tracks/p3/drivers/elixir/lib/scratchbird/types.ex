@@ -15,7 +15,6 @@ defmodule ScratchBird.Types do
   @format_binary 1
 
   @oid_bool 16
-  @oid_bytea 17
   @oid_char 18
   @oid_int8 20
   @oid_int2 21
@@ -88,7 +87,7 @@ defmodule ScratchBird.Types do
   end
 
   defmodule Composite do
-    defstruct fields: [], type_oid: @oid_record
+    defstruct fields: [], type_oid: 2249
   end
 
   defmodule Range do
@@ -218,7 +217,7 @@ defmodule ScratchBird.Types do
   end
 
   def encode_param(value) when is_list(value) do
-    if Enum.all?(value, &is_number/1) do
+    if Enum.all?(value, &is_float/1) do
       data = format_vector_literal(value)
       {%{format: @format_binary, data: encode_length_prefixed(data), is_null: false}, @oid_sb_vector}
     else
@@ -281,7 +280,17 @@ defmodule ScratchBird.Types do
   defp decode_binary(@oid_tstzrange, data), do: decode_range(@oid_tstzrange, data)
   defp decode_binary(@oid_daterange, data), do: decode_range(@oid_daterange, data)
 
-  defp decode_binary(_oid, data), do: %RawValue{oid: _oid, data: data}
+  defp decode_binary(0, data) do
+    decoded = strip_length_prefix(data)
+
+    cond do
+      String.starts_with?(decoded, "{") -> parse_array_literal(decoded)
+      String.starts_with?(decoded, "[") -> parse_vector_literal(decoded)
+      true -> %RawValue{oid: 0, data: data}
+    end
+  end
+
+  defp decode_binary(oid, data), do: %RawValue{oid: oid, data: data}
 
   defp encode_json(value) when is_binary(value), do: value
   defp encode_json(value) do
@@ -371,12 +380,12 @@ defmodule ScratchBird.Types do
   defp decode_range_value(_oid, raw), do: raw
 
   defp encode_composite(%Composite{fields: fields, type_oid: type_oid}) do
-    oid = if type_oid == 0, do: @oid_record, else: type_oid
+    oid = if is_integer(type_oid) and type_oid > 0, do: type_oid, else: @oid_record
     header = <<length(fields)::little-32>>
     payload =
       Enum.reduce(fields, header, fn field, acc ->
         field_oid = field.oid || 0
-        {field_oid, data} =
+        {resolved_oid, data} =
           cond do
             is_binary(field.raw) ->
               {field_oid, field.raw}
@@ -392,16 +401,16 @@ defmodule ScratchBird.Types do
               {field_oid, nil}
           end
 
-        if field_oid == 0 do
+        if resolved_oid == 0 do
           raise "composite field OID is required"
         end
 
         case data do
           nil ->
-            acc <> <<field_oid::little-32, -1::little-32>>
+            acc <> <<resolved_oid::little-32, -1::little-32>>
 
           _ ->
-            acc <> <<field_oid::little-32, byte_size(data)::little-32, data::binary>>
+            acc <> <<resolved_oid::little-32, byte_size(data)::little-32, data::binary>>
         end
       end)
 
@@ -422,7 +431,7 @@ defmodule ScratchBird.Types do
     {Enum.reverse(fields), rest}
   end
 
-  defp decode_composite_fields(<<oid::little-32, -1::little-32, rest::binary>>, count, fields) do
+  defp decode_composite_fields(<<oid::little-32, -1::signed-little-32, rest::binary>>, count, fields) do
     decode_composite_fields(rest, count - 1, [%CompositeField{oid: oid, value: nil, raw: nil} | fields])
   end
 
@@ -506,7 +515,7 @@ defmodule ScratchBird.Types do
   end
 
   defp split_array_items(text) do
-    {items, buffer, depth} =
+    {items, buffer, _depth} =
       String.graphemes(text)
       |> Enum.reduce({[], "", 0}, fn ch, {items, buffer, depth} ->
         cond do

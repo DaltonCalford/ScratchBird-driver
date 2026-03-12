@@ -14,15 +14,19 @@ lane.
 
 Current PH5 closure progress:
 
-- `NCW-050..054D` are complete.
+- `NCW-050..055` are complete.
 - `NCW-054D` closed the downstream JDBC consumer uplift for Metabase and
   Superset, including current-schema/default-schema alignment, downstream
   adapter option surfacing, and finalized metadata/index reflection behavior.
+- `NCW-055` closed the beta lanes for R, Dart, and Swift, including live
+  manager-proxy parity, always-in-transaction behavior, full-surface metadata
+  helpers, and the remaining cancel/resilience gaps on their supported
+  surfaces.
 - Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
-  Rust, Ruby, Pascal, .NET, and C/C++.
-- Remaining driver implementation work is concentrated in `NCW-055`
-  (R/Dart/Swift), `NCW-056` (Elixir/Mojo), and `NCW-057` (cross-driver
-  promotion/conformance regeneration).
+  Rust, Ruby, Pascal, .NET, C/C++, R, Dart, and Swift.
+- Remaining driver implementation work is concentrated in `NCW-056`
+  (Elixir/Mojo) and `NCW-057` (cross-driver promotion/conformance
+  regeneration).
 
 This README reflects the current implementation-closure state, not the final
 cross-driver promotion decision. PH5 no longer treats convenience, downstream
@@ -53,13 +57,14 @@ Legend:
 
 ---
 
-# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-054D`)
+# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-055`)
 
-This matrix reflects the current PH5 closure state after `NCW-054D`. A `✅`
+This matrix reflects the current PH5 closure state after `NCW-055`. A `✅`
 entry means the required closure slice is complete for the lane's actively
-supported surface. `NCW-054A..054D` have absorbed the primary alpha,
-secondary alpha, C/C++, and downstream JDBC consumer residuals; PH5 now
-hands off directly to the remaining beta and specialty lanes.
+supported surface. `NCW-054A..054D` absorbed the primary alpha,
+secondary alpha, C/C++, and downstream JDBC consumer residuals, and
+`NCW-055` closes the beta full-surface parity lane. PH5 now hands off to the
+remaining specialty lanes.
 
 ## Alpha Drivers
 
@@ -84,9 +89,9 @@ hands off directly to the remaining beta and specialty lanes.
 | Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                               |
 | --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054C` also closes listener-bound transport/config convenience, C++ prepared-statement parity, and RAII pool/lease surfaces without bypassing the listener/parser boundary.                                  |
-| **R (DBI)**                       | 🟡   | 🟡  | ✅    | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); execution is strongest, but live connection, transaction, metadata, type, error, and resource depth remain open.                                                                                                                                             |
-| **Swift (Async/Await)**           | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); base connection path exists, but broader live TXN/EXEC/META/TYPE/ERR/RES coverage remains open.                                                                                                                                                           |
-| **Dart**                          | ✅    | 🟡  | 🟡   | 🟡   | 🟡   | 🟡  | 🟡  | Still in active PH5 closure work (`NCW-055`); connection path is present, but live transaction, metadata, type, error, and resilience closure is still pending.                                                                                                                                          |
+| **R (DBI)**                       | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the DBI lane now has native and manager-proxy live parity, explicit always-in-transaction handling, reconnect-on-cancel safety, schema-aware metadata, and the remaining type/error/resource surfaces closed on the supported runtime boundary.                               |
+| **Swift (Async/Await)**           | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the async/await lane is green across live connection, pool, manager-proxy, metadata, type, error, and resource coverage on the supported listener-mediated surface.                                                                                                                  |
+| **Dart**                          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the Dart lane now has full live parity across connection, transaction/savepoint, metadata helpers, typed execution, manager-proxy access, and resilience/error behavior on the supported runtime surface.                                                                          |
 
 ---
 

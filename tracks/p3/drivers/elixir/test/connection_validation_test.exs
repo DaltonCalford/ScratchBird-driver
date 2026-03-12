@@ -9,26 +9,40 @@
 defmodule ScratchBirdConnectionValidationTest do
   use ExUnit.Case
 
-  alias ScratchBird.Connection
+  alias ScratchBird.{Config, Connection}
 
-  test "rejects sslmode=disable" do
-    assert {:error, "TLS is required for ScratchBird connections"} =
-             Connection.connect(
-               url: "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable"
-             )
+  test "accepts sslmode=disable for explicit local parity flows" do
+    cfg =
+      Config.from_opts(
+        url: "scratchbird://user:pass@localhost:3092/testdb?sslmode=disable"
+      )
+
+    assert cfg.sslmode == "disable"
   end
 
-  test "rejects binary_transfer=false" do
-    assert {:error, "binary_transfer=false is not supported"} =
-             Connection.connect(
-               url: "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false"
-             )
+  test "accepts binary_transfer=false compatibility setting" do
+    cfg =
+      Config.from_opts(
+        url: "scratchbird://user:pass@localhost:3092/testdb?binary_transfer=false"
+      )
+
+    assert cfg.binary_transfer == false
   end
 
-  test "rejects compression=zstd" do
-    assert {:error, "compression=zstd is not supported"} =
-             Connection.connect(
-               url: "scratchbird://user:pass@localhost:3092/testdb?compression=zstd"
-             )
+  test "accepts compression=zstd compatibility setting" do
+    cfg =
+      Config.from_opts(
+        url: "scratchbird://user:pass@localhost:3092/testdb?compression=zstd"
+      )
+
+    assert cfg.compression == "zstd"
+  end
+
+  test "rejects invalid protocol" do
+    assert_raise ArgumentError, "Only protocol=native is supported; connect to the native parser listener/port.", fn ->
+      Connection.connect(
+        url: "scratchbird://user:pass@localhost:3092/testdb?protocol=postgres"
+      )
+    end
   end
 end

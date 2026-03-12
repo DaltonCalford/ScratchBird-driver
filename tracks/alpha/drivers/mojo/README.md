@@ -56,14 +56,14 @@ Current implementation is a Mojo-Python interop lane:
 From `tracks/alpha/drivers/mojo`:
 
 ```bash
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/type_codecs.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src/scratchbird tests/lifecycle_scaffolds.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src -I src/scratchbird tests/native_bootstrap.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src -I src/scratchbird tests/scratchbird_surface.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/metadata_recursive_schema.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/txn_exec_parity.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/errors.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/type_codecs.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/connection_guards.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src/scratchbird tests/lifecycle_scaffolds.mojo
 python3 tests/wire_transport_bridge.py
 python3 tests/integration.py
 python3 tests/sbdriver_conformance.py --manifest ../../../../docs/fixtures/sbwp_conformance_manifest.json
@@ -85,6 +85,7 @@ Optional launcher env vars:
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URL` for bad-auth smoke (shim-mode deterministic path can append `sb_test_auth_fail=true`)
 - `SCRATCHBIRD_MOJO_BAD_AUTH_URLS` for bad-auth matrix smoke (comma/newline separated)
 - `SCRATCHBIRD_MOJO_WIRE_TRANSPORT` to opt-in wire bridge routing (`python`) for non-deterministic DSNs
+- `SCRATCHBIRD_MOJO_NATIVE_RUN_ARGS` to override native smoke compiler flags (default `-O0 -j1`)
 - `SCRATCHBIRD_MOJO_SKIP_NATIVE_BOOTSTRAP` to bypass native smoke (`tests/scratchbird_surface.mojo` and `tests/native_bootstrap.mojo`) in `tests/integration.py` and `tests/sbdriver_conformance.py`
 - `SCRATCHBIRD_MOJO_NATIVE_REQUIRED` to fail when native bootstrap launcher is unavailable/failing
 - `SCRATCHBIRD_MOJO_DISABLE_FALLBACK_DSN` to require explicit direct/manager/listener/bad-auth DSN env configuration for integration/conformance (default lane behavior uses deterministic fallback DSNs)

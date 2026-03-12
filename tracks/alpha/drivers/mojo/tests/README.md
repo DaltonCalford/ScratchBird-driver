@@ -11,22 +11,23 @@ Python test scripts (`*.py`) via Mojo-Python interop.
 Optional environment overrides:
 - `MOJO_PIXI_MANIFEST`: path to Mojo pixi workspace used by launcher scripts
 - `MOJO_BIN`: explicit Mojo binary (used when pixi manifest is unavailable)
+- `SCRATCHBIRD_MOJO_NATIVE_RUN_ARGS`: optional override for native smoke compiler flags (default `-O0 -j1`)
 
 ## Quick Run
 
 Run from lane root (`tracks/alpha/drivers/mojo`):
 
 ```bash
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_recursive_schema.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/metadata_execution.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/txn_exec_parity.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/errors.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/type_codecs.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/connection_guards.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run -I src/scratchbird tests/lifecycle_scaffolds.mojo
-pixi run -m ~/mojo-work/sb-mojo --executable mojo run tests/integration.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src -I src/scratchbird tests/scratchbird_surface.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src -I src/scratchbird tests/native_bootstrap.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/metadata_recursive_schema.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/metadata_execution.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/txn_exec_parity.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/errors.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/type_codecs.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/connection_guards.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 -I src/scratchbird tests/lifecycle_scaffolds.mojo
+pixi run -m ~/mojo-work/sb-mojo --executable mojo run -O0 -j1 tests/integration.mojo
 ```
 
 Expected behavior:

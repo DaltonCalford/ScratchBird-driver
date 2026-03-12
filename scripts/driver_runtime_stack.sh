@@ -86,14 +86,14 @@ resolve_binary() {
   local value="${!env_var:-}"
   if [[ -n "${value}" ]]; then
     [[ -x "${value}" ]] || die "${env_var} is set but not executable: ${value}"
-    printf '%s\n' "${value}"
+    readlink -f "${value}" 2>/dev/null || printf '%s\n' "${value}"
     return 0
   fi
 
   local candidate
   for candidate in "$@"; do
     if [[ -x "${candidate}" ]]; then
-      printf '%s\n' "${candidate}"
+      readlink -f "${candidate}" 2>/dev/null || printf '%s\n' "${candidate}"
       return 0
     fi
   done
@@ -145,6 +145,18 @@ pid_is_running() {
   local pid="$1"
   [[ -n "${pid}" ]] || return 1
   kill -0 "${pid}" 2>/dev/null
+}
+
+find_manager_proxy_pid() {
+  local manager_bin="${1:-}"
+  if [[ -z "${manager_bin}" ]]; then
+    manager_bin="$(resolve_manager_binary || true)"
+  fi
+  [[ -n "${manager_bin}" ]] || return 1
+
+  local pattern
+  pattern="${manager_bin} --bind ${SCRATCHBIRD_NATIVE_HOST:-127.0.0.1} --port ${MANAGER_PORT}"
+  pgrep -f -- "${pattern}" | head -n 1 || true
 }
 
 wait_for_port() {
@@ -211,6 +223,14 @@ start_manager_proxy() {
 
   mkdir -p "${STACK_CONTROL_DIR}" "${STACK_LOG_DIR}"
 
+  local adopted_pid=""
+  adopted_pid="$(find_manager_proxy_pid "${manager_bin}")"
+  if [[ -n "${adopted_pid}" ]] &&
+     wait_for_port "${SCRATCHBIRD_NATIVE_HOST}" "${MANAGER_PORT}" 1 0; then
+    printf '%s\n' "${adopted_pid}" > "${MANAGER_PID_FILE}"
+    return 0
+  fi
+
   if [[ -f "${MANAGER_PID_FILE}" ]]; then
     local existing_pid
     existing_pid="$(tr -d ' \n\r' < "${MANAGER_PID_FILE}")"
@@ -259,6 +279,15 @@ print_manager_status() {
   if [[ -f "${MANAGER_PID_FILE}" ]]; then
     pid="$(tr -d ' \n\r' < "${MANAGER_PID_FILE}")"
     if [[ -n "${pid}" ]] && pid_is_running "${pid}"; then
+      state="running pid=${pid}"
+    fi
+  fi
+  if [[ "${state}" == "down" ]]; then
+    require_runtime_env
+    load_runtime_env
+    pid="$(find_manager_proxy_pid || true)"
+    if [[ -n "${pid}" ]] && wait_for_port "${SCRATCHBIRD_NATIVE_HOST}" "${MANAGER_PORT}" 1 0; then
+      printf '%s\n' "${pid}" > "${MANAGER_PID_FILE}"
       state="running pid=${pid}"
     fi
   fi

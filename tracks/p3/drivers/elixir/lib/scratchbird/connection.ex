@@ -96,12 +96,6 @@ defmodule ScratchBird.Connection do
         {:error, "front_door_mode must be direct or manager_proxy."}
       sslmode == :error ->
         {:error, "Unsupported sslmode value"}
-      sslmode == {:ok, "disable"} ->
-        {:error, "TLS is required for ScratchBird connections"}
-      config[:binary_transfer] == false ->
-        {:error, "binary_transfer=false is not supported"}
-      config[:compression] == "zstd" ->
-        {:error, "compression=zstd is not supported"}
       true ->
         :ok
     end
@@ -304,7 +298,10 @@ defmodule ScratchBird.Connection do
     ]
 
     if sslmode == {:ok, "disable"} do
-      {:error, "TLS is required for ScratchBird connections"}
+      case :gen_tcp.connect(host, port, opts, connect_timeout) do
+        {:ok, socket} -> {:ok, socket, :tcp}
+        {:error, reason} -> {:error, "TCP connect failed: #{inspect(reason)}"}
+      end
     else
       {:ok, sslmode_value} = sslmode
 
@@ -713,7 +710,7 @@ defmodule ScratchBird.Connection do
 
   defp apply_search_path(state) do
     schema = state.config[:search_path] || state.config[:schema]
-    if is_binary(schema) and String.trim(schema) != "" and String.downcase(schema) != "public" do
+    if is_binary(schema) and String.trim(schema) != "" and String.downcase(schema) not in ["public", "users.public"] do
       case send_simple_query(state, "SET SEARCH_PATH TO " <> schema) do
         {:ok, _result, new_state} -> new_state
         {:error, _reason, new_state} -> new_state
@@ -724,6 +721,8 @@ defmodule ScratchBird.Connection do
   end
 
   defp send_extended_query(state, sql, params) do
+    sql = normalize_query_placeholders(sql, params)
+
     {param_values, param_types} =
       params
       |> Enum.map(&Types.encode_param/1)
@@ -772,6 +771,35 @@ defmodule ScratchBird.Connection do
             end
         end
       error -> error
+    end
+  end
+
+  defp normalize_query_placeholders(sql, params) do
+    if String.contains?(sql, "?") do
+      {rewritten, count} =
+        sql
+        |> String.graphemes()
+        |> Enum.reduce({[], 0, false}, fn ch, {acc, index, in_string} ->
+          cond do
+            ch == "'" ->
+              {[ch | acc], index, not in_string}
+
+            not in_string and ch == "?" ->
+              {[Integer.to_string(index + 1), "$" | acc], index + 1, in_string}
+
+            true ->
+              {[ch | acc], index, in_string}
+          end
+        end)
+        |> then(fn {acc, index, _in_string} -> {acc |> Enum.reverse() |> Enum.join(), index} end)
+
+      if count != length(params) do
+        raise ArgumentError, "parameter count mismatch"
+      end
+
+      rewritten
+    else
+      sql
     end
   end
 
@@ -955,7 +983,7 @@ defmodule ScratchBird.Connection do
                 collect_rows(new_state, columns, rows)
 
               @msg_data_row ->
-                {values, _} = Protocol.parse_data_row(msg.payload)
+                {values, _} = Protocol.parse_data_row(msg.payload, 0)
                 collect_results(new_state, [values | rows])
 
               @msg_command_complete ->
@@ -984,7 +1012,7 @@ defmodule ScratchBird.Connection do
           {:ok, new_state} ->
             case msg.type do
               @msg_data_row ->
-                {values, _} = Protocol.parse_data_row(msg.payload)
+                {values, _} = Protocol.parse_data_row(msg.payload, length(columns))
                 decoded = decode_row(columns, values)
                 collect_rows(new_state, columns, [decoded | rows])
 

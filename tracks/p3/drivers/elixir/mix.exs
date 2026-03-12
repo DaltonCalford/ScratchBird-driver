@@ -14,7 +14,7 @@ defmodule ScratchBirdEcto.MixProject do
       app: :scratchbird_ecto,
       version: "0.1.0",
       description: "ScratchBird Ecto adapter and native protocol client",
-      elixir: "~> 1.15",
+      elixir: "~> 1.14",
       package: package(),
       deps: deps(),
       start_permanent: Mix.env() == :prod
@@ -29,7 +29,9 @@ defmodule ScratchBirdEcto.MixProject do
     [
       {:db_connection, "~> 2.6"},
       {:ecto_sql, "~> 3.11"},
-      {:decimal, "~> 2.0"}
+      {:decimal, "~> 2.0"},
+      {:jason, "~> 1.4"},
+      {:postgrex, "~> 0.19.0"}
     ]
   end
 

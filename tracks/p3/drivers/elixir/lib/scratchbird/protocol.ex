@@ -353,7 +353,7 @@ defmodule ScratchBird.Protocol do
     {:ok, session_id, binary_part(info, 0, info_len)}
   end
 
-  def parse_ready(<<status::8, _::24, txn_id::little-64>>) do
+  def parse_ready(<<status::8, _::24, txn_id::little-64, _::binary>>) do
     {:ok, status, txn_id}
   end
 
@@ -361,6 +361,16 @@ defmodule ScratchBird.Protocol do
     {name, rest} = read_cstring(payload)
     {value, _} = read_cstring(rest)
     {:ok, name, value}
+  end
+
+  def parse_parameter_description(<<count::little-16, _reserved::little-16, rest::binary>>) do
+    parse_parameter_types(count, rest, [])
+  end
+
+  defp parse_parameter_types(0, rest, acc), do: {Enum.reverse(acc), rest} |> elem(0)
+
+  defp parse_parameter_types(count, <<type_oid::little-32, rest::binary>>, acc) do
+    parse_parameter_types(count - 1, rest, [type_oid | acc])
   end
 
   def parse_error(payload) do
@@ -421,16 +431,18 @@ defmodule ScratchBird.Protocol do
   defp error_field_name(?H), do: :hint
   defp error_field_name(_), do: :unknown
 
-  def parse_row_description(<<count::little-16, rest::binary>>) do
+  def parse_row_description(<<count::little-16, _reserved::little-16, rest::binary>>) do
     {columns, _} = parse_columns(count, rest, [])
     columns
   end
 
   defp parse_columns(0, rest, acc), do: {Enum.reverse(acc), rest}
 
-  defp parse_columns(count, payload, acc) do
-    {name, rest} = read_cstring(payload)
-    <<table_oid::little-32, column_idx::little-16, type_oid::little-32, type_size::little-16, type_mod::little-32, format::8, nullable::8, rest2::binary>> = rest
+  defp parse_columns(count, <<name_len::little-32, rest::binary>>, acc) do
+    <<name::binary-size(name_len), rest2::binary>> = rest
+    <<table_oid::little-32, column_idx::little-16, type_oid::little-32, type_size::little-16,
+      type_mod::little-32, format::8, nullable::8, _reserved::little-16, rest3::binary>> = rest2
+
     column = %{
       name: name,
       table_oid: table_oid,
@@ -441,22 +453,51 @@ defmodule ScratchBird.Protocol do
       format: format,
       nullable: nullable == 1
     }
-    parse_columns(count - 1, rest2, [column | acc])
+    parse_columns(count - 1, rest3, [column | acc])
   end
 
-  def parse_data_row(<<count::little-16, rest::binary>>) do
-    parse_row_values(count, rest, [])
+  def parse_data_row(<<count::little-16, null_bytes::little-16, rest::binary>>, column_count) do
+    if column_count > 0 and count != column_count do
+      raise MatchError, "row data column count mismatch"
+    end
+
+    if byte_size(rest) < null_bytes do
+      raise MatchError, "row data truncated"
+    end
+
+    <<null_bitmap::binary-size(null_bytes), values::binary>> = rest
+    parse_row_values(count, values, null_bitmap, 0, [])
   end
 
-  defp parse_row_values(0, rest, acc), do: {Enum.reverse(acc), rest}
+  defp parse_row_values(0, rest, _null_bitmap, _index, acc), do: {Enum.reverse(acc), rest}
 
-  defp parse_row_values(count, <<0xFFFFFFFF::little-32, rest::binary>>, acc) do
-    parse_row_values(count - 1, rest, [%{null: true, data: nil} | acc])
-  end
+  defp parse_row_values(count, rest, null_bitmap, index, acc) do
+    byte_index = div(index, 8)
+    bit_index = rem(index, 8)
 
-  defp parse_row_values(count, <<len::little-32, rest::binary>>, acc) when len >= 0 do
-    <<data::binary-size(len), rest2::binary>> = rest
-    parse_row_values(count - 1, rest2, [%{null: false, data: data} | acc])
+    null_byte =
+      if byte_index < byte_size(null_bitmap) do
+        null_bitmap
+        |> binary_part(byte_index, 1)
+        |> :binary.decode_unsigned()
+      else
+        0
+      end
+
+    is_null = (null_byte &&& (1 <<< bit_index)) != 0
+
+    if is_null do
+      parse_row_values(count - 1, rest, null_bitmap, index + 1, [%{null: true, data: nil} | acc])
+    else
+      <<len::little-32, rest2::binary>> = rest
+
+      if len < 0 do
+        parse_row_values(count - 1, rest2, null_bitmap, index + 1, [%{null: true, data: nil} | acc])
+      else
+        <<data::binary-size(len), rest3::binary>> = rest2
+        parse_row_values(count - 1, rest3, null_bitmap, index + 1, [%{null: false, data: data} | acc])
+      end
+    end
   end
 
   def read_cstring(data) do

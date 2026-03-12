@@ -142,7 +142,7 @@ struct ScratchBirdConfig:
         current_schema_keys.append("search_path")
         current_schema_keys.append("searchpath")
         current_schema_keys.append("currentschema")
-        self.current_schema = _query_last_value_for_keys(dsn, current_schema_keys, "public")
+        self.current_schema = _query_last_value_for_keys(dsn, current_schema_keys, "users.public")
         var metadata_expand_schema_parents_keys = List[String]()
         metadata_expand_schema_parents_keys.append("metadata_expand_schema_parents")
         metadata_expand_schema_parents_keys.append("metadataexpandschemaparents")
@@ -1867,8 +1867,10 @@ fn validate_connect_guards(config: ScratchBirdConfig) raises:
         raise Error("22023 manager_client_flags must be >= 0")
     if config.connect_client_flags < 0:
         raise Error("22023 connect_client_flags must be >= 0")
-    if config.auth_method_id.strip() != "" and not config.auth_method_id.startswith("scratchbird.auth."):
-        raise Error("28000 invalid auth_method_id namespace")
+    var auth_method_id = String(config.auth_method_id.strip())
+    if auth_method_id != "":
+        if len(auth_method_id) < len("scratchbird.auth.") or String(auth_method_id[0:len("scratchbird.auth.")]) != "scratchbird.auth.":
+            raise Error("28000 invalid auth_method_id namespace")
 
     if config.compression.strip().lower() != "off" and config.compression.strip().lower() != "zstd":
         raise Error("0A000 compression=" + config.compression.strip().lower() + " is not supported")

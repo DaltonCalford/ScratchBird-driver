@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -67,14 +68,23 @@ def _wire_transport_dsn(dsn: str) -> str:
     return _dsn_with_append(dsn, "sb_wire_transport=python")
 
 
+def _native_bootstrap_run_args() -> list[str]:
+    raw = os.environ.get("SCRATCHBIRD_MOJO_NATIVE_RUN_ARGS", "").strip()
+    if raw:
+        return shlex.split(raw)
+    return ["-O0", "-j1"]
+
+
 def _native_bootstrap_command(script_path: str) -> list[str] | None:
+    run_args = _native_bootstrap_run_args()
+
     mojo_bin = os.environ.get("MOJO_BIN", "").strip()
     if mojo_bin:
-        return [mojo_bin, "run", "-I", "src", "-I", "src/scratchbird", script_path]
+        return [mojo_bin, "run", *run_args, "-I", "src", "-I", "src/scratchbird", script_path]
 
     mojo_path = shutil.which("mojo")
     if mojo_path:
-        return [mojo_path, "run", "-I", "src", "-I", "src/scratchbird", script_path]
+        return [mojo_path, "run", *run_args, "-I", "src", "-I", "src/scratchbird", script_path]
 
     pixi_path = shutil.which("pixi")
     manifest = pathlib.Path(
@@ -92,6 +102,7 @@ def _native_bootstrap_command(script_path: str) -> list[str] | None:
             "--executable",
             "mojo",
             "run",
+            *run_args,
             "-I",
             "src",
             "-I",

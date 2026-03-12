@@ -407,7 +407,7 @@ fn main() raises:
     _require(cfg.acquire_timeout_s == 30, "acquire timeout default mismatch")
     _require(cfg.auto_commit, "autocommit default mismatch")
     _require(not cfg.read_only, "readonly default mismatch")
-    _require(cfg.current_schema == "public", "current_schema default mismatch")
+    _require(cfg.current_schema == "users.public", "current_schema default mismatch")
     _require(cfg.default_row_fetch_size == 0, "default_row_fetch_size default mismatch")
     _require(cfg.prepare_threshold == 5, "prepare_threshold default mismatch")
     _require(not cfg.rewrite_batched_inserts, "rewrite_batched_inserts default mismatch")

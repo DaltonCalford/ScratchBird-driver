@@ -6,8 +6,6 @@
 # You may obtain a copy of the License at:
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 
-ExUnit.start()
-
 alias ScratchBird.Config
 
 defmodule ScratchBirdConfigTest do

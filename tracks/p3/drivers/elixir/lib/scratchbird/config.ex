@@ -15,9 +15,14 @@ defmodule ScratchBird.Config do
   end
 
   def from_map(opts) when is_map(opts) do
+    dsn =
+      Map.get(opts, :url) ||
+        Map.get(opts, :dsn) ||
+        Map.get(opts, "url") ||
+        Map.get(opts, "dsn")
+
     base =
-      opts
-      |> Map.get(:url) || Map.get(opts, :dsn) || Map.get(opts, "url") || Map.get(opts, "dsn")
+      dsn
       |> parse_dsn()
 
     merged = Map.merge(base, normalize_keys(opts))

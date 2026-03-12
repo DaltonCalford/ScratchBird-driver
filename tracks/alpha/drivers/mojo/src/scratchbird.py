@@ -803,6 +803,22 @@ def _dsn_last_query_value(dsn: str, keys: Iterable[str], default: Optional[str] 
     return last if found else default
 
 
+def _ensure_default_session_schema_dsn(dsn: str) -> str:
+    if not dsn:
+        return dsn
+    parsed = urllib.parse.urlparse(dsn)
+    schema_keys = {"schema", "current_schema", "search_path", "searchpath", "currentschema"}
+    for key, _value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
+        if str(key).strip().lower().replace("-", "_") in schema_keys:
+            return dsn
+    query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query_pairs.append(("current_schema", "users.public"))
+    encoded_query = urllib.parse.urlencode(query_pairs)
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, encoded_query, parsed.fragment)
+    )
+
+
 def _dsn_last_int_query_value(
     dsn: str,
     keys: Iterable[str],
@@ -961,8 +977,6 @@ def _validate_connect_guards(config: ScratchBirdConfig) -> None:
         _dsn_last_query_value(config.dsn, ("sslmode", "ssl"), params.get("sslmode", "require"))
         or "require"
     ).strip().lower()
-    if sslmode == "disable":
-        raise ScratchBirdError("TLS is required for ScratchBird connections", "0A000")
 
     _ = _dsn_last_query_value(config.dsn, ("binary_transfer", "binarytransfer"), None)
     compression = str(_dsn_last_query_value(config.dsn, ("compression",), "off") or "off").strip().lower()
@@ -1225,7 +1239,7 @@ class _ShimConnection:
     def __init__(self, config: ScratchBirdConfig):
         self.config = config
         self._cancel_requested = False
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoint_counter = 0
         self._savepoints: List[str] = []
         self._txn_begin_options: Dict[str, int] = {}
@@ -1378,7 +1392,7 @@ class _ShimConnection:
         self._ensure_open()
         if self._txn_id == 0:
             return
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1386,7 +1400,7 @@ class _ShimConnection:
         self._ensure_open()
         if self._txn_id == 0:
             return
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1574,7 +1588,7 @@ class _PythonWireConnection:
         self.config = config
         self._closed = False
         self._cancel_requested = False
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoint_counter = 0
         self._savepoints: List[str] = []
         self._txn_begin_options: Dict[str, int] = {}
@@ -1582,17 +1596,55 @@ class _PythonWireConnection:
         self._query_count = 0
         self._stream_count = 0
         self._cancel_count = 0
-        try:
-            module = _load_python_driver_module()
-            self._wire = module.connect(dsn=config.dsn)
-        except Exception as exc:
-            raise _to_scratchbird_error(exc) from exc
+        self._needs_reconnect = False
+        self._wire_module = _load_python_driver_module()
+        self._wire_dsn = _ensure_default_session_schema_dsn(config.dsn)
+        self._wire = None
+        self._connect_wire()
 
     def _ensure_open(self) -> None:
         if self._closed:
             raise ScratchBirdError("connection is closed", "08003")
 
+    def _connect_wire(self) -> None:
+        try:
+            self._wire = self._wire_module.connect(dsn=self._wire_dsn)
+        except Exception as exc:
+            raise _to_scratchbird_error(exc) from exc
+        begin_method = getattr(self._wire, "begin", None)
+        wire_txn_id = int(getattr(self._wire, "_txn_id", 0) or 0)
+        if wire_txn_id == 0 and callable(begin_method):
+            try:
+                begin_method()
+            except Exception as exc:
+                raise _to_scratchbird_error(exc) from exc
+        self._needs_reconnect = False
+        self._cancel_requested = False
+        self._txn_id = 1
+        self._savepoints = []
+        self._txn_begin_options = {}
+
+    def _ensure_wire_ready(self) -> None:
+        if self._needs_reconnect:
+            old_wire = self._wire
+            if old_wire is not None:
+                close_method = getattr(old_wire, "close", None)
+                if callable(close_method):
+                    try:
+                        close_method()
+                    except Exception:
+                        pass
+            self._connect_wire()
+
+    def _mark_reconnect_required(self) -> None:
+        self._needs_reconnect = True
+        self._cancel_requested = False
+        self._txn_id = 1
+        self._savepoints = []
+        self._txn_begin_options = {}
+
     def _run_cursor(self, sql: str, params: Optional[Iterable[Any]] = None) -> Any:
+        self._ensure_wire_ready()
         try:
             execute = getattr(self._wire, "execute", None)
             if callable(execute):
@@ -1606,6 +1658,7 @@ class _PythonWireConnection:
                 return query(sql, list(params))
             raise ScratchBirdError("wire transport does not expose query execution", "0A000")
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
 
     def query(self, sql: str, params: Optional[Iterable[Any]] = None) -> ScratchBirdResult:
@@ -1617,6 +1670,7 @@ class _PythonWireConnection:
 
     def prepare(self, sql: str) -> _WireStatement:
         self._ensure_open()
+        self._ensure_wire_ready()
         return _WireStatement(self, sql)
 
     def stream(
@@ -1626,6 +1680,7 @@ class _PythonWireConnection:
         fetch_size: int = 0,
     ) -> _WireStream:
         self._ensure_open()
+        self._ensure_wire_ready()
         _ = fetch_size
         self._cancel_requested = False
         cursor = self._run_cursor(sql, params)
@@ -1662,6 +1717,7 @@ class _PythonWireConnection:
     def ping(self) -> bool:
         if self._closed:
             return False
+        self._ensure_wire_ready()
         ping_method = getattr(self._wire, "ping", None)
         if callable(ping_method):
             try:
@@ -1694,9 +1750,13 @@ class _PythonWireConnection:
             commit_method = getattr(self._wire, "commit", None)
             if callable(commit_method):
                 commit_method()
+            begin_method = getattr(self._wire, "begin", None)
+            if callable(begin_method):
+                begin_method()
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1708,9 +1768,13 @@ class _PythonWireConnection:
             rollback_method = getattr(self._wire, "rollback", None)
             if callable(rollback_method):
                 rollback_method()
+            begin_method = getattr(self._wire, "begin", None)
+            if callable(begin_method):
+                begin_method()
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
-        self._txn_id = 0
+        self._txn_id = 1
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1727,6 +1791,7 @@ class _PythonWireConnection:
             if callable(savepoint_method):
                 savepoint_method(resolved)
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
         self._savepoints.append(resolved)
         return resolved
@@ -1751,6 +1816,7 @@ class _PythonWireConnection:
             if callable(release_method):
                 release_method(resolved)
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
 
     def rollback_to_savepoint(self, name: str) -> None:
@@ -1773,10 +1839,12 @@ class _PythonWireConnection:
             if callable(rollback_to_method):
                 rollback_to_method(resolved)
         except Exception as exc:
+            self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
 
     def query_metadata(self, collection_name: Optional[str] = None) -> ScratchBirdResult:
         self._ensure_open()
+        self._ensure_wire_ready()
         normalized = normalize_metadata_collection_name(collection_name)
         try:
             method = getattr(self._wire, "query_metadata", None)
@@ -1798,6 +1866,7 @@ class _PythonWireConnection:
         restriction_value: Optional[str] = None,
     ) -> ScratchBirdResult:
         self._ensure_open()
+        self._ensure_wire_ready()
         resolved_collection = normalize_metadata_collection_name(collection_name)
         normalized_key = normalize_metadata_restriction_key(restriction_key)
         restrictions: Optional[Dict[str, Any]] = None
@@ -1837,6 +1906,7 @@ class _PythonWireConnection:
         restrictions: Optional[Mapping[str, Any]] = None,
     ) -> ScratchBirdResult:
         self._ensure_open()
+        self._ensure_wire_ready()
         resolved_collection = normalize_metadata_collection_name(collection_name)
         try:
             method = getattr(self._wire, "query_metadata", None)
@@ -1867,6 +1937,7 @@ class _PythonWireConnection:
         expand_schema_parents: bool = False,
     ) -> Dict[str, Any]:
         self._ensure_open()
+        self._ensure_wire_ready()
         try:
             method = getattr(self._wire, "ddl_editor_schema_payload", None)
             if callable(method):
