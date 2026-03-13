@@ -5,7 +5,7 @@
 For repo-local development:
 
 ```bash
-cd tracks/alpha/drivers/python
+cd tracks/p3/drivers/python
 python -m pip install -e ".[test]"
 ```
 

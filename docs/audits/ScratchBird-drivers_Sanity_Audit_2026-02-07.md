@@ -39,8 +39,8 @@ Pass/Fail status is for the local environment; skipped tests are noted.
 
 ## Remediation & Implementation Work Completed
 - Integrated resilience modules across Node/Swift/Dart/Elixir.
-- Implemented `tracks/beta/drivers/cpp/src/statement_cache.cpp` and wired into C++/ODBC builds.
-- Added CLI build runner (`tracks/alpha/drivers/cli/CMakeLists.txt`) and vendored missing headers from the engine repo.
+- Implemented `tracks/p3/drivers/cpp/src/statement_cache.cpp` and wired into C++/ODBC builds.
+- Added CLI build runner (`tracks/p3/drivers/cli/CMakeLists.txt`) and vendored missing headers from the engine repo.
 - Added C++ client `Connection/ResultSet` shim for the CLI conformance runner.
 - Updated JDBC Gradle wrapper to 8.5+; build now passes with JDK 17.
 - Added Indy 10 vendoring for Pascal + TLS 1.3 gating to avoid unsafe fallback.

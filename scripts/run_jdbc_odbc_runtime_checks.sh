@@ -112,14 +112,14 @@ eval "$("${STACK_SCRIPT}" env "${COMMON_STACK_ARGS[@]}")"
 if [[ "${RUN_JDBC}" == "1" ]]; then
   log "running JDBC test suite"
   (
-    cd "${REPO_ROOT}/tracks/alpha/drivers/jdbc"
+    cd "${REPO_ROOT}/tracks/p3/drivers/jdbc"
     ./gradlew test
   )
 fi
 
 if [[ "${RUN_ODBC}" == "1" ]]; then
   log "configuring ODBC test build"
-  cmake -S "${REPO_ROOT}/tracks/alpha/drivers/odbc" \
+  cmake -S "${REPO_ROOT}/tracks/p3/drivers/odbc" \
         -B "${REPO_ROOT}/build/odbc-runtime" \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_TESTING=ON \

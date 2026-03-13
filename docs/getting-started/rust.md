@@ -6,7 +6,7 @@ Add the crate as a dependency or use a local path during repo development:
 
 ```toml
 [dependencies]
-scratchbird = { path = "../tracks/alpha/drivers/rust" }
+scratchbird = { path = "../tracks/p3/drivers/rust" }
 ```
 
 ## Quick Start

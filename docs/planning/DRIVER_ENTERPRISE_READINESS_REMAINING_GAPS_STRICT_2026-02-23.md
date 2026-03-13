@@ -40,4 +40,4 @@ Each gap is tied to a release blocker and includes owners, risk, and acceptance 
 - Area: Swift Driver TLS transport path now routes TLS options requiring certificate files through `NIOSSL` when available.
 - Evidence: 
   - `artifacts/enterprise-readiness/SWIFT-001/latest_verification.log`
-  - `tracks/beta/drivers/swift/Tests/ScratchBirdTests/ConfigTests.swift` (transport policy tests for `sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
+  - `tracks/p3/drivers/swift/Tests/ScratchBirdTests/ConfigTests.swift` (transport policy tests for `sslmode=disable`, `binary_transfer=false`, `compression=zstd`).

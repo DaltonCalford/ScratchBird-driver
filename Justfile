@@ -1,6 +1,6 @@
 # ScratchBird-driver convenience targets
 
-MOJO_TEST_DIR := "tracks/alpha/drivers/mojo/tests"
+MOJO_TEST_DIR := "tracks/p3/drivers/mojo/tests"
 MOJO_MANIFEST := "docs/fixtures/sbwp_conformance_manifest.json"
 
 mojo-conformance:

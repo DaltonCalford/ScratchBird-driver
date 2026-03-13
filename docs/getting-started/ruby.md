@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-gem build tracks/alpha/drivers/ruby/scratchbird.gemspec
+gem build tracks/p3/drivers/ruby/scratchbird.gemspec
 gem install scratchbird-0.1.0.gem
 ```
 

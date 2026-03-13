@@ -10,7 +10,7 @@ Install the Dart SDK (see `docs/development/toolchain-setup.md` for Ubuntu 24.04
 steps).
 
 ```bash
-cd tracks/beta/drivers/dart
+cd tracks/p3/drivers/dart
 dart pub get
 ```
 

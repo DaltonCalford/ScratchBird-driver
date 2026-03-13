@@ -6,7 +6,7 @@ From the repo:
 
 ```r
 # Run from the repo root
-install.packages("tracks/beta/drivers/r", repos = NULL, type = "source")
+install.packages("tracks/p3/drivers/r", repos = NULL, type = "source")
 ```
 
 Dependencies:

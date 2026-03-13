@@ -1,0 +1,131 @@
+# ScratchBird Driver Baseline Requirement Mapping (S0)
+
+## Scope
+
+- Lane-local S0 artifact for `tracks/p3/drivers/dart` only.
+- Mapping is based only on source and tests in this lane.
+- This file does not declare cross-lane or canonical spec authority.
+
+## CONN (JDBCBL)
+
+- Current status: Implemented
+- Lane-local source anchors:
+  - `lib/src/config.dart:68-191` (`ScratchBirdConfig.fromDsn`, URI/KV parsing).
+  - `lib/src/config.dart:193-220` protocol and `front_door_mode` normalization/validation.
+  - `lib/src/client.dart:106-157` primary connect flow (`connect`, `_connect`, `_handshake`, resilience start).
+  - `lib/src/client.dart:190-292` manager proxy handshake/auth/connect path.
+  - `lib/src/client.dart:294-297` close path.
+- Lane-local test anchors:
+  - `test/config_test.dart:13-37` DSN parsing, manager proxy parameters, invalid front-door validation.
+  - `test/connect_validation_test.dart:24-63` connect-time policy rejection coverage (`sslmode=disable`, `binary_transfer=false`, `compression=zstd`).
+  - `test/integration_test.dart:50-80` live direct and manager-proxy connect/query smoke coverage (gated by `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`).
+- Gaps/next actions:
+  - Add manager-proxy integration coverage for handshake/auth/connect failure paths (invalid token, truncated manager frames, non-success MCP status).
+
+## TXN (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/protocol.dart:94-104` isolation and transaction option flags.
+  - `lib/src/protocol.dart:324-364` TXN payload builders (`begin`, `commit`, `rollback`, savepoint operations).
+  - `lib/src/client.dart:330-408` client TXN APIs with active/inactive transaction guardrails.
+  - `lib/src/client.dart:646-670` async `txnStatus` handling updates local transaction id state.
+  - `lib/src/client.dart:778-824` ready-state txn tracking and TXN guard helper methods.
+- Lane-local test anchors:
+  - `test/txn_exec_parity_test.dart:19-60` TXN guardrail checks (`commit`/`rollback`/`savepoint` require active transaction).
+  - `test/txn_exec_parity_test.dart:63-101` TXN payload encoding coverage for begin and savepoint/release/rollback-to payloads.
+  - `test/integration_test.dart:117-166` live begin/commit/rollback/savepoint lifecycle and nested-begin rejection coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+- Gaps/next actions:
+  - Add live integration tests for server-side TXN failure paths (invalid savepoint, conflict, forced rollback conditions).
+
+## EXEC (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/client.dart:308-320` `query` entrypoint with SQL-empty guard.
+  - `lib/src/client.dart:494-500` `cancel` rejects when no active in-flight sequence is tracked.
+  - `lib/src/client.dart:573-644` result collection and send paths with pagination resume and query-sequence reset on terminal outcomes.
+  - `lib/src/client.dart:460-468` SBLR execution path.
+  - `lib/src/protocol.dart:199-302` query/parse/bind/execute/SBLR payload builders.
+- Lane-local test anchors:
+  - `test/txn_exec_parity_test.dart:104-131` EXEC guardrail checks (`query` empty SQL rejection, cancel-without-inflight rejection).
+  - `test/txn_exec_parity_test.dart:134-171` EXEC payload encoding coverage for query/execute/cancel payload contracts.
+  - `test/integration_test.dart:50-96` live simple and parameterized query coverage (gated by `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`).
+- Gaps/next actions:
+  - Add integration tests for pagination (`portalSuspended` path) and SBLR execution.
+  - Add focused execution tests for async message capture paths (`queryPlan`, `notification`, `sblrCompiled`) under live wire flow.
+
+## META (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/metadata.dart:9-31` catalog query constants (schemas/tables/columns/indexes/constraints/procedures/functions).
+  - `lib/src/metadata.dart:33-135` metadata collection normalization + query resolution helpers.
+  - `lib/src/metadata.dart:137-215` metadata-only recursive schema tree shaping (`expandParents`, database root, per-parent uniqueness).
+  - `lib/src/metadata.dart:217-360` metadata row shaping with optional dotted-parent expansion and catalog-preserving synthetic parent rows.
+  - `lib/src/client.dart:329-354` `queryMetadata`, `getSchema`, and `getSchemaTree` client metadata APIs.
+  - `lib/scratchbird.dart:14` metadata export.
+- Lane-local test anchors:
+  - `test/metadata_execution_test.dart:28-107` metadata query alias resolution and runtime schema expansion/tree APIs.
+  - `test/metadata_recursive_schema_test.dart:6-33` database->default-branch style metadata rows and dotted parent expansion behavior.
+  - `test/metadata_recursive_schema_test.dart:35-58` dotted schema parent expansion ordering/uniqueness in path extraction.
+  - `test/metadata_recursive_schema_test.dart:60-79` per-parent uniqueness for duplicate leaf paths.
+  - `test/metadata_recursive_schema_test.dart:81-107` same leaf name under different parents remains distinct in recursive schema tree.
+  - `test/integration_test.dart:168-186` live metadata wrapper execution coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+- Gaps/next actions:
+  - Add live metadata integration coverage for restrictions/wildcards and DDL-editor payload fields.
+
+## TYPE (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/types.dart:14-49` OID/type constants.
+  - `lib/src/types.dart:143-377` parameter encoding and value decoding core logic.
+  - `lib/src/types.dart:413-670` range/composite encode/decode handling.
+  - `lib/src/types.dart:672-760` unknown-binary/text coercion and array literal parsing.
+- Lane-local test anchors:
+  - `test/type_mapping_test.dart:38-101` array/vector/range/composite/inet-cidr-macaddr round-trip coverage.
+  - `test/type_mapping_test.dart:103-230` scalar decode coverage, text-vs-unknown decode behavior, and negative-path range/composite/unsupported-type checks.
+  - `test/integration_test.dart:98-115` live scalar type round-trip smoke coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+  - `test/integration_test.dart:188-220` live json/jsonb round-trip coverage (gated by `SCRATCHBIRD_TEST_DSN`).
+- Gaps/next actions:
+  - Add live integration tests validating binary wire round-trip behavior for complex types (range/composite/vector/inet-cidr-macaddr).
+
+## ERR (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/errors.dart:9-204` typed driver exception hierarchy plus SQLSTATE-to-exception mapping (`mapSqlStateExecutionException`, `mapSqlStateAuthException`).
+  - `lib/src/protocol.dart:145-237` structured protocol error parsing/formatting (`parseErrorMessage`, `formatProtocolErrorMessage`) with optional numeric code extraction.
+  - `lib/src/client.dart:123-317` connect-time option rejection and manager-proxy auth/protocol failure mapping.
+  - `lib/src/client.dart:549-671` execution/auth failure mapping (`cancel`, handshake auth, query failure).
+  - `lib/src/client.dart:752-815`, `857-898`, `913-923`, `976-999`, `1086` protocol/transaction/socket/circuit error mapping.
+  - `lib/src/scram.dart:34-63` SCRAM nonce/signature failures mapped to `ScratchBirdAuthException`.
+  - `lib/src/protocol.dart:59` `MessageType.error` constant.
+- Lane-local test anchors:
+  - `test/error_resilience_test.dart:38-78` protocol framing tests assert `ScratchBirdProtocolException`.
+  - `test/error_resilience_test.dart:81-122` structured server-error parsing/formatting tests.
+  - `test/error_sqlstate_mapping_test.dart:5-68` SQLSTATE class mapping tests for execution/auth exception subclasses.
+  - `test/connect_validation_test.dart:29-69` connect-policy rejection tests assert `ScratchBirdConnectionException`.
+  - `test/txn_exec_parity_test.dart:20-60,119-131` TXN and cancel guardrails assert typed transaction/execution exceptions.
+  - `test/scram_error_test.dart:6-35` SCRAM nonce/signature failures assert `ScratchBirdAuthException`.
+- Gaps/next actions:
+  - Extend SQLSTATE/code mapping to manager-proxy MCP error payloads (non-`MessageType.error` path) so those failures include normalized `sqlState`/`code` metadata.
+  - Add integration coverage that validates parsed SQLSTATE/code propagation from real server `MessageType.error` payloads.
+
+## RES (JDBCBL)
+
+- Current status: Partial
+- Lane-local source anchors:
+  - `lib/src/circuit_breaker.dart:9-114` circuit-breaker implementation.
+  - `lib/src/keepalive.dart:11-87` idle validation and periodic ping orchestration.
+  - `lib/src/leak_detector.dart:11-95` connection leak tracking/guarding with timer callback hook (`onLeakDetected`).
+  - `lib/src/telemetry.dart:11-113` tracing/metrics/slow-query collection with retention/read-only accessors.
+  - `lib/src/client.dart:1053-1103` resilience integration (`_startResilience`, `_stopResilience`, `_withResilience`).
+- Lane-local test anchors:
+  - `test/error_resilience_test.dart:126-177` circuit-breaker transition and recovery tests.
+  - `test/error_resilience_test.dart:179-220` keepalive tracker/manager validation and ping trigger tests.
+  - `test/error_resilience_test.dart:223-293` leak detector guard/stack-capture and timer callback coverage.
+  - `test/error_resilience_test.dart:295-361` telemetry tracing/metrics/sanitization and slow-query retention coverage.
+- Gaps/next actions:
+  - Add integration tests covering idle-validation ping against live sockets and resilience state cleanup on client close.

@@ -17,8 +17,8 @@ Use this guide when wiring the driver into unixODBC/iODBC, pyodbc,
 Build the lane from the repo root:
 
 ```bash
-cmake -S tracks/alpha/drivers/odbc -B tracks/alpha/drivers/odbc/build
-cmake --build tracks/alpha/drivers/odbc/build --config Release
+cmake -S tracks/p3/drivers/odbc -B tracks/p3/drivers/odbc/build
+cmake --build tracks/p3/drivers/odbc/build --config Release
 ```
 
 Register the shared library in `odbcinst.ini`:

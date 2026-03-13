@@ -23,19 +23,19 @@ Audited metadata behavior against:
 
 ## Evidence (Selected)
 
-- Go: `tracks/alpha/drivers/go/metadata.go`
-- Node: `tracks/alpha/drivers/node/src/metadata.ts`
-- Python: `tracks/alpha/drivers/python/src/scratchbird/metadata.py`
-- Ruby: `tracks/alpha/drivers/ruby/lib/scratchbird/metadata.rb`
-- Rust: `tracks/alpha/drivers/rust/src/metadata.rs`
-- PHP: `tracks/alpha/drivers/php/src/Metadata.php`
-- R: `tracks/beta/drivers/r/R/metadata.R`
-- Pascal: `tracks/alpha/drivers/pascal/src/ScratchBird.Metadata.pas`
-- .NET: `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Metadata.cs`
-- JDBC: `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBDatabaseMetaData.java`
-- JDBC closure tests: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/SBJdbcClosureParityTest.java`
-- JDBC pooling reset: `tracks/alpha/drivers/jdbc/src/test/java/com/scratchbird/jdbc/JDBC203PoolingAndRecoveryContractTest.java`
-- ODBC: `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
+- Go: `tracks/p3/drivers/go/metadata.go`
+- Node: `tracks/p3/drivers/node/src/metadata.ts`
+- Python: `tracks/p3/drivers/python/src/scratchbird/metadata.py`
+- Ruby: `tracks/p3/drivers/ruby/lib/scratchbird/metadata.rb`
+- Rust: `tracks/p3/drivers/rust/src/metadata.rs`
+- PHP: `tracks/p3/drivers/php/src/Metadata.php`
+- R: `tracks/p3/drivers/r/R/metadata.R`
+- Pascal: `tracks/p3/drivers/pascal/src/ScratchBird.Metadata.pas`
+- .NET: `tracks/p3/drivers/dotnet/src/ScratchBird.Data/Metadata.cs`
+- JDBC: `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBDatabaseMetaData.java`
+- JDBC closure tests: `tracks/p3/drivers/jdbc/src/test/java/com/scratchbird/jdbc/SBJdbcClosureParityTest.java`
+- JDBC pooling reset: `tracks/p3/drivers/jdbc/src/test/java/com/scratchbird/jdbc/JDBC203PoolingAndRecoveryContractTest.java`
+- ODBC: `tracks/p3/drivers/odbc/src/odbc_handles.cpp`
 
 ## Open Gaps
 

@@ -10,7 +10,7 @@ This report summarizes work completed and the current state of the remaining blo
 - R `DESCRIPTION` DCF format fixed; license file added; imports updated.
 - Elixir Hex bootstrap documented (now includes `mix local.hex --force` and `mix local.rebar --force`).
 - C/C++ statement cache implemented and wired into C++/ODBC builds.
-- CLI build runner added with new `tracks/alpha/drivers/cli/CMakeLists.txt`, C++ client `Connection/ResultSet` shim, CRC32C implementation, and JSON header vendored for conformance runner.
+- CLI build runner added with new `tracks/p3/drivers/cli/CMakeLists.txt`, C++ client `Connection/ResultSet` shim, CRC32C implementation, and JSON header vendored for conformance runner.
 - Resilience modules added to Node/Swift/Dart/Elixir drivers and wired into their connection flows.
 - CI toolchain bootstrap doc added for Dart/Mojo (`docs/development/toolchain-setup.md`).
 

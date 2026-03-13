@@ -7,7 +7,7 @@ The module path is `github.com/scratchbird/scratchbird-go`.
 For repo-local development:
 
 ```bash
-cd tracks/alpha/drivers/go
+cd tracks/p3/drivers/go
 go test ./...
 ```
 

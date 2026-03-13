@@ -12,8 +12,8 @@ Common requirements:
 
 Verified in GitHub Actions on both `ubuntu-latest` and `windows-latest`:
 - Go, Node.js, Python, Ruby, Rust, PHP, R, .NET, JDBC, Pascal, Dart
-- C/C++ client (`tracks/beta/drivers/cpp`)
-- ODBC driver (`tracks/alpha/drivers/odbc`)
+- C/C++ client (`tracks/p3/drivers/cpp`)
+- ODBC driver (`tracks/p3/drivers/odbc`)
 - Elixir (in-development track)
 - CLI tools: Linux supported; Windows build attempt enabled (experimental)
 
@@ -68,12 +68,12 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
 - CLI tools: build passes for `sb_isql`, `sb_admin`, `sb_backup`, `sb_security`, `sb_verify`, `sbdriver_conformance` (OpenSSL 3 deprecation warnings). FDW-backed tools (`sb_pg_isql`, `sb_my_isql`, `sb_fb_isql`) are gated behind `SB_BUILD_CLI_FDW=ON`.
 - 2026-02-18 sanity checks: direct CMake builds for C/C++, ODBC, and CLI succeed on Linux using the documented CI commands.
 
-## Go (`tracks/alpha/drivers/go/`)
+## Go (`tracks/p3/drivers/go/`)
 - Required tools: Go 1.22+.
 - Ubuntu 24.04 packages: `sudo apt install -y golang-go`
 - Build/test: `go test ./...`
 
-## Node.js (`tracks/alpha/drivers/node/`)
+## Node.js (`tracks/p3/drivers/node/`)
 - Required tools: Node.js 20+ and npm.
 - Ubuntu 24.04 packages: `sudo apt install -y nodejs npm`
   - Note: Ubuntu repo may ship Node 18; use NodeSource if you need 20+.
@@ -82,7 +82,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `npm run build`
   - `npm test`
 
-## Python (`tracks/alpha/drivers/python/`)
+## Python (`tracks/p3/drivers/python/`)
 - Required tools: Python 3.11+ and pip.
 - Ubuntu 24.04 packages: `sudo apt install -y python3.11 python3.11-venv python3-pip`
 - Install/test:
@@ -91,7 +91,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `python -m pip install -e ".[test]"`
   - `python -m pytest`
 
-## Ruby (`tracks/alpha/drivers/ruby/`)
+## Ruby (`tracks/p3/drivers/ruby/`)
 - Required tools: Ruby 3.2+ and RubyGems.
 - Ubuntu 24.04 packages: `sudo apt install -y ruby-full`
 - Build/install:
@@ -100,7 +100,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
 - Test: `ruby -Ilib test/*.rb`
   - Tip: include the test directory on the load path: `ruby -Ilib:test test/*.rb`
 
-## Rust (`tracks/alpha/drivers/rust/`)
+## Rust (`tracks/p3/drivers/rust/`)
 - Required tools: Rust 1.76+ (cargo).
 - Ubuntu 24.04 packages: `sudo apt install -y rustc cargo`
   - Note: apt Rust may lag; use `rustup` if you need 1.76+.
@@ -108,14 +108,14 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `cargo build`
   - `cargo test`
 
-## PHP (`tracks/alpha/drivers/php/`)
+## PHP (`tracks/p3/drivers/php/`)
 - Required tools: PHP 8.2+ and Composer.
 - Ubuntu 24.04 packages: `sudo apt install -y php8.2 php8.2-cli php8.2-mbstring php8.2-xml php8.2-curl php8.2-zip composer`
 - Install/test:
   - `composer install`
   - `vendor/bin/phpunit tests`
 
-## R (`tracks/beta/drivers/r/`)
+## R (`tracks/p3/drivers/r/`)
 - Required tools: R 4.3+.
 - Ubuntu 24.04 packages: `sudo apt install -y r-base r-base-dev r-cran-dbi r-cran-openssl r-cran-testthat`
 - R packages (if not using apt): `install.packages(c("DBI", "openssl", "testthat"))`
@@ -123,7 +123,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `R CMD build .`
   - `R CMD check scratchbird_*.tar.gz`
 
-## Pascal (`tracks/alpha/drivers/pascal/`)
+## Pascal (`tracks/p3/drivers/pascal/`)
 - Required tools:
   - FreePascal 3.2+ or Delphi 11+.
 - Default build path uses in-repo native transport/TLS units and requires OpenSSL runtime libraries (`libssl`/`libcrypto`).
@@ -135,24 +135,24 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
 - FreePascal: include units from `src/` and compile with `fpc`.
 - Delphi: add units in `src/` to the project.
 - Unit test program available:
-  - `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FE./tracks/alpha/drivers/pascal/tests ./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests.pas`
-  - `./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests`
+  - `fpc -Mdelphi -Fu./tracks/p3/drivers/pascal/src -FE./tracks/p3/drivers/pascal/tests ./tracks/p3/drivers/pascal/tests/TlsCryptoAndPolicyTests.pas`
+  - `./tracks/p3/drivers/pascal/tests/TlsCryptoAndPolicyTests`
 
-## .NET (`tracks/alpha/drivers/dotnet/`)
+## .NET (`tracks/p3/drivers/dotnet/`)
 - Required tools: .NET SDK 8.0+.
 - Ubuntu 24.04 packages: `sudo apt install -y dotnet-sdk-8.0`
 - Build/test:
   - `dotnet build src/ScratchBird.Data/ScratchBird.Data.csproj`
   - `dotnet test`
 
-## Java/JDBC (`tracks/alpha/drivers/jdbc/`)
+## Java/JDBC (`tracks/p3/drivers/jdbc/`)
 - Required tools: JDK 17+ and Gradle.
 - Ubuntu 24.04 packages: `sudo apt install -y openjdk-17-jdk gradle`
 - If building on JDK 21+, use Gradle 8.5+ (wrapper is pinned accordingly).
 - Linux/macOS: `./gradlew build`
 - Windows: `gradlew.bat build`
 
-## ODBC (`tracks/alpha/drivers/odbc/`)
+## ODBC (`tracks/p3/drivers/odbc/`)
 - Required tools:
   - CMake 3.22+, C/C++ compiler.
   - ODBC headers (e.g., unixODBC-dev on Linux).
@@ -164,7 +164,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `cmake -S . -B build`
   - `cmake --build build --config Release`
 
-## C/C++ (`tracks/beta/drivers/cpp/`)
+## C/C++ (`tracks/p3/drivers/cpp/`)
 - Required tools: CMake 3.22+, C/C++ compiler.
 - Ubuntu 24.04 packages: `sudo apt install -y build-essential cmake`
 - Build:
@@ -174,7 +174,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `cmake -S . -B build`
   - `cmake --build build --config Release`
 
-## Dart (`tracks/beta/drivers/dart/`)
+## Dart (`tracks/p3/drivers/dart/`)
 - Required tools: Dart 3.3+ (Flutter SDK also works).
 - Ubuntu 24.04 packages: `dart` (from the Dart apt repo), or install via Flutter SDK.
 - CI bootstrap: see `docs/development/toolchain-setup.md`.
@@ -182,7 +182,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `dart pub get`
   - `dart test`
 
-## Swift (`tracks/beta/drivers/swift/`)
+## Swift (`tracks/p3/drivers/swift/`)
 - Required tools: Swift 5.10+ (SwiftPM), plus a C toolchain for dependencies.
 - Ubuntu 24.04 packages: not available via apt; install Swift from swift.org or use `swiftly`.
 - Build/test:
@@ -200,7 +200,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `mix test`
 - CI uses Elixir `1.15.x` with OTP `26.x` on Linux and Windows.
 
-## Mojo (`tracks/alpha/drivers/mojo/`)
+## Mojo (`tracks/p3/drivers/mojo/`)
 - Required tools: Mojo 24.4+ (Python is used for the bridge).
 - Ubuntu 24.04 packages: not available via apt; install from Modular (Mojo).
 - CI bootstrap: see `docs/development/toolchain-setup.md`.
@@ -208,7 +208,7 @@ Results from a full local pass (Ubuntu 24.04). This is not a release certificati
   - `mojo test -I src tests`
   - CI gating: set `MOJO_ENABLED=true` and ensure `mojo` is on PATH.
 
-## CLI Tools (`tracks/alpha/drivers/cli/`)
+## CLI Tools (`tracks/p3/drivers/cli/`)
 - Required tools: C++17 toolchain + OpenSSL.
 - Build/test:
   - `cmake -S . -B build_cli -DSB_BUILD_CLI=ON -DSB_BUILD_CPP=ON -DSB_BUILD_ODBC=OFF`

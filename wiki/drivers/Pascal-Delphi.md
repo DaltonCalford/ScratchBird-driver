@@ -14,12 +14,12 @@ ScratchBird native client and adapters for Delphi/FreePascal.
 ## Install
 
 ```bash
-cd tracks/alpha/drivers/pascal
+cd tracks/p3/drivers/pascal
 # Add src/ to your unit search path, then compile with FPC or Delphi.
 ```
 
 FreePascal builds require Indy (`IdTCPClient`, `IdSSL`, `IdSSLOpenSSL` units).
-Indy is vendored at `tracks/alpha/drivers/pascal/third_party/indy`. Add
+Indy is vendored at `tracks/p3/drivers/pascal/third_party/indy`. Add
 `Lib/Core`, `Lib/Protocols`, `Lib/System`, and `Lib/Security` to your `-Fu`
 search paths, or build `Lib/indylaz.lpk` and add the package.
 TLS 1.3 is required; Indy 10 does not provide TLS 1.3 by default, so the client
@@ -49,7 +49,7 @@ end;
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/pascal.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/pascal.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/pascal/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/pascal/README.md)
 
 ## Configuration
 

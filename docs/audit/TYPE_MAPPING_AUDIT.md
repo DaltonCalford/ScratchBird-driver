@@ -12,21 +12,21 @@ explicit mappings but does not validate binary encoding correctness.
 
 ## Evidence Sources
 
-- `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
-- `tracks/alpha/drivers/go/types.go`
-- `tracks/alpha/drivers/node/src/types.ts`
-- `tracks/alpha/drivers/python/src/scratchbird/types.py`
-- `tracks/alpha/drivers/ruby/lib/scratchbird/types.rb`
-- `tracks/alpha/drivers/rust/src/types.rs`
-- `tracks/alpha/drivers/php/src/TypeDecoder.php`
-- `tracks/beta/drivers/r/R/types.R`
-- `tracks/alpha/drivers/pascal/src/ScratchBird.Types.pas`
-- `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/TypeDecoder.cs`
-- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBTypeCodec.java`
-- `tracks/beta/drivers/dart/lib/src/types.dart`
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+- `tracks/p3/drivers/go/types.go`
+- `tracks/p3/drivers/node/src/types.ts`
+- `tracks/p3/drivers/python/src/scratchbird/types.py`
+- `tracks/p3/drivers/ruby/lib/scratchbird/types.rb`
+- `tracks/p3/drivers/rust/src/types.rs`
+- `tracks/p3/drivers/php/src/TypeDecoder.php`
+- `tracks/p3/drivers/r/R/types.R`
+- `tracks/p3/drivers/pascal/src/ScratchBird.Types.pas`
+- `tracks/p3/drivers/dotnet/src/ScratchBird.Data/TypeDecoder.cs`
+- `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBTypeCodec.java`
+- `tracks/p3/drivers/dart/lib/src/types.dart`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 - `tracks/p3/drivers/elixir/lib/scratchbird/types.ex`
-- `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+- `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 ## Summary
 
@@ -43,7 +43,7 @@ explicit mappings but does not validate binary encoding correctness.
 
 ### C/C++
 
-- `sb_type` in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+- `sb_type` in `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
   covers the required SBWP families, and the C++ wrapper now carries mapped
   `sb_type` metadata plus deterministic access to binary-backed complex values.
 - Remaining enhancement work, if needed later, is about richer language-level

@@ -28,7 +28,7 @@ eval "$(scripts/driver_runtime_stack.sh env)"
 The Go driver includes a harness runner:
 
 ```bash
-cd tracks/alpha/drivers/go
+cd tracks/p3/drivers/go
 SCRATCHBIRD_GO_URL="scratchbird://user:pass@localhost:3092/db" \
 SCRATCHBIRD_CONFORMANCE_MANIFEST="../docs/fixtures/sbwp_conformance_manifest.json" \
 go test ./conformance

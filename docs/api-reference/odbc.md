@@ -76,4 +76,4 @@ Server and protocol failures are normalized into SQLSTATE-driven ODBC errors.
 
 - [ODBC getting started](../getting-started/odbc.md)
 - [ODBC connectivity guide](../user-documentation/connectivity/odbc.md)
-- [ODBC baseline mapping](../../tracks/alpha/drivers/odbc/BASELINE_REQUIREMENT_MAPPING.md)
+- [ODBC baseline mapping](../../tracks/p3/drivers/odbc/BASELINE_REQUIREMENT_MAPPING.md)

@@ -15,7 +15,7 @@ R DBI-compatible driver for ScratchBird using SBWP v1.1.
 
 ```r
 # From the repo root
-install.packages("tracks/beta/drivers/r", repos = NULL, type = "source")
+install.packages("tracks/p3/drivers/r", repos = NULL, type = "source")
 ```
 
 Dependencies: `DBI`, `openssl` (tests: `testthat`).
@@ -35,7 +35,7 @@ dbDisconnect(con)
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/r.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/r.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/r/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/r/README.md)
 
 ## Configuration
 

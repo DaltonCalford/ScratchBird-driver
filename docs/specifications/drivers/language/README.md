@@ -2,22 +2,22 @@
 
 Status: Draft (Template)
 
-This directory contains per-language driver specification templates for all
-Alpha/Beta target drivers referenced in the ScratchBird specifications.
+This directory contains per-language driver specification templates for the
+current pre-release driver lanes referenced in the ScratchBird specifications.
 
-## Target Drivers (Alpha/Beta)
+## Target Drivers (Pre-Release)
 
-- `tracks/beta/drivers/cpp/` - C/C++
+- `tracks/p3/drivers/cpp/` - C/C++
 - `dotnet-csharp/` - .NET/C#
 - `golang/` - Go
 - `java-jdbc/` - Java JDBC
 - `nodejs-typescript/` - Node.js/TypeScript
 - `pascal-delphi/` - Pascal/Delphi/FreePascal
-- `tracks/alpha/drivers/php/` - PHP
-- `tracks/alpha/drivers/python/` - Python
-- `tracks/beta/drivers/r/` - R
-- `tracks/alpha/drivers/ruby/` - Ruby
-- `tracks/alpha/drivers/rust/` - Rust
+- `tracks/p3/drivers/php/` - PHP
+- `tracks/p3/drivers/python/` - Python
+- `tracks/p3/drivers/r/` - R
+- `tracks/p3/drivers/ruby/` - Ruby
+- `tracks/p3/drivers/rust/` - Rust
 
 ## Source List
 

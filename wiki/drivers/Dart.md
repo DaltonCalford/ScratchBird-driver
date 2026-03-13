@@ -16,7 +16,7 @@ Native Dart/Flutter driver for ScratchBird using SBWP v1.1 (partial).
 Install the Dart SDK (see `docs/development/toolchain-setup.md` for Ubuntu 24.04).
 
 ```bash
-cd tracks/beta/drivers/dart
+cd tracks/p3/drivers/dart
 dart pub get
 ```
 
@@ -38,7 +38,7 @@ await client.close();
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/dart.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/dart.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/dart/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/dart/README.md)
 
 ## Configuration
 

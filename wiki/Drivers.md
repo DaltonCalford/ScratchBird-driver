@@ -34,15 +34,15 @@ See `docs/BUILD_MATRIX.md` for full build/test details and commands.
 ### Build
 
 ```bash
-cd tracks/beta/drivers/cpp
+cd tracks/p3/drivers/cpp
 cmake -S . -B build
 cmake --build build
 ```
 
 ### Notes
 
-- `tracks/beta/drivers/cpp` provides the C/C++ client library (SBWP v1.1).
-- `tracks/alpha/drivers/odbc` provides the ODBC 3.8 driver (SBWP v1.1).
+- `tracks/p3/drivers/cpp` provides the C/C++ client library (SBWP v1.1).
+- `tracks/p3/drivers/odbc` provides the ODBC 3.8 driver (SBWP v1.1).
 
 ---
 

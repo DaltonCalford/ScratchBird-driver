@@ -101,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('tracks/alpha/drivers/node/package-lock.json', 'tracks/alpha/drivers/node/npm-shrinkwrap.json', 'tracks/alpha/drivers/node/yarn.lock') }}
+          key: ${{ runner.os }}-npm-${{ hashFiles('tracks/p3/drivers/node/package-lock.json', 'tracks/p3/drivers/node/npm-shrinkwrap.json', 'tracks/p3/drivers/node/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
@@ -118,7 +118,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('tracks/alpha/drivers/python/pyproject.toml', 'tracks/alpha/drivers/python/setup.cfg', 'tracks/alpha/drivers/python/setup.py') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('tracks/p3/drivers/python/pyproject.toml', 'tracks/p3/drivers/python/setup.cfg', 'tracks/p3/drivers/python/setup.py') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
@@ -139,8 +139,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            tracks/alpha/drivers/rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('tracks/alpha/drivers/rust/Cargo.lock') }}
+            tracks/p3/drivers/rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tracks/p3/drivers/rust/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -159,7 +159,7 @@ jobs:
             ~/.cache/composer
             ~/.composer/cache
             ~\AppData\Local\Composer\cache
-          key: ${{ runner.os }}-composer-${{ hashFiles('tracks/alpha/drivers/php/composer.lock', 'tracks/alpha/drivers/php/composer.json') }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('tracks/p3/drivers/php/composer.lock', 'tracks/p3/drivers/php/composer.json') }}
           restore-keys: |
             ${{ runner.os }}-composer-
 
@@ -173,7 +173,7 @@ jobs:
         if: matrix.language == 'r'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: tracks/beta/drivers/r
+          working-directory: tracks/p3/drivers/r
 
       - name: Setup .NET
         if: matrix.language == 'dotnet'
@@ -189,7 +189,7 @@ jobs:
             ~/.nuget/packages
             ~/.nuget/v3-cache
             ~\AppData\Local\NuGet\v3-cache
-          key: ${{ runner.os }}-nuget-${{ hashFiles('tracks/alpha/drivers/dotnet/**/*.csproj', 'tracks/alpha/drivers/dotnet/**/*.sln', 'tracks/alpha/drivers/dotnet/**/packages.lock.json', 'tracks/alpha/drivers/dotnet/global.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tracks/p3/drivers/dotnet/**/*.csproj', 'tracks/p3/drivers/dotnet/**/*.sln', 'tracks/p3/drivers/dotnet/**/packages.lock.json', 'tracks/p3/drivers/dotnet/global.json') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -237,7 +237,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('tracks/alpha/drivers/jdbc/**/*.gradle*', 'tracks/alpha/drivers/jdbc/gradle.properties', 'tracks/alpha/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('tracks/p3/drivers/jdbc/**/*.gradle*', 'tracks/p3/drivers/jdbc/gradle.properties', 'tracks/p3/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -256,7 +256,7 @@ jobs:
       - name: Build/Test Dart
         if: matrix.language == 'dart'
         run: |
-          cd tracks/beta/drivers/dart
+          cd tracks/p3/drivers/dart
           dart pub get
           dart test
 
@@ -279,19 +279,19 @@ jobs:
 
       - name: Go tests
         if: matrix.language == 'go'
-        working-directory: tracks/alpha/drivers/go
+        working-directory: tracks/p3/drivers/go
         run: go test ./...
 
       - name: Node tests
         if: matrix.language == 'node'
-        working-directory: tracks/alpha/drivers/node
+        working-directory: tracks/p3/drivers/node
         run: |
           npm install
           npm test
 
       - name: Python tests
         if: matrix.language == 'python'
-        working-directory: tracks/alpha/drivers/python
+        working-directory: tracks/p3/drivers/python
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[test]"
@@ -316,7 +316,7 @@ jobs:
             exit 1
           fi
           export MOJO_PIXI_MANIFEST=/tmp/mojo-env
-          cd "$GITHUB_WORKSPACE/tracks/alpha/drivers/mojo"
+          cd "$GITHUB_WORKSPACE/tracks/p3/drivers/mojo"
           pixi run -m /tmp/mojo-env --executable mojo run -I src -I src/scratchbird tests/scratchbird_surface.mojo
           pixi run -m /tmp/mojo-env --executable mojo run -I src -I src/scratchbird tests/native_bootstrap.mojo
           pixi run -m /tmp/mojo-env --executable mojo run tests/metadata_execution.mojo
@@ -338,41 +338,41 @@ jobs:
 
       - name: Ruby tests
         if: matrix.language == 'ruby'
-        working-directory: tracks/alpha/drivers/ruby
+        working-directory: tracks/p3/drivers/ruby
         run: ruby -Ilib:test test/*.rb
 
       - name: Rust tests
         if: matrix.language == 'rust'
-        working-directory: tracks/alpha/drivers/rust
+        working-directory: tracks/p3/drivers/rust
         run: cargo test
 
       - name: PHP tests
         if: matrix.language == 'php'
-        working-directory: tracks/alpha/drivers/php
+        working-directory: tracks/p3/drivers/php
         run: |
           composer install
           vendor/bin/phpunit tests
 
       - name: R checks
         if: matrix.language == 'r'
-        working-directory: tracks/beta/drivers/r
+        working-directory: tracks/p3/drivers/r
         run: |
           R CMD build .
           Rscript -e "pkgs <- Sys.glob('scratchbird_*.tar.gz'); if (length(pkgs) == 0) stop('No package tarball found after R CMD build') ; system2('R', c('CMD','check', pkgs[1], '--no-manual'), stdout = TRUE, stderr = TRUE)"
 
       - name: .NET tests
         if: matrix.language == 'dotnet'
-        working-directory: tracks/alpha/drivers/dotnet
+        working-directory: tracks/p3/drivers/dotnet
         run: dotnet test
 
       - name: JDBC tests (Linux)
         if: matrix.language == 'jdbc' && runner.os == 'Linux'
-        working-directory: tracks/alpha/drivers/jdbc
+        working-directory: tracks/p3/drivers/jdbc
         run: ./gradlew test
 
       - name: JDBC tests (Windows)
         if: matrix.language == 'jdbc' && runner.os == 'Windows'
-        working-directory: tracks/alpha/drivers/jdbc
+        working-directory: tracks/p3/drivers/jdbc
         shell: cmd
         run: gradlew.bat test
 
@@ -387,20 +387,20 @@ jobs:
 
       - name: Swift tests (Linux)
         if: matrix.language == 'swift' && runner.os == 'Linux'
-        working-directory: tracks/beta/drivers/swift
+        working-directory: tracks/p3/drivers/swift
         run: swift test
 
       - name: C++ build/tests
         if: matrix.language == 'cpp'
         run: |
-          cmake -S tracks/beta/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+          cmake -S tracks/p3/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
           cmake --build build-cpp --config Release
           ctest --test-dir build-cpp --output-on-failure --build-config Release
 
       - name: ODBC build
         if: matrix.language == 'odbc'
         run: |
-          cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
+          cmake -S tracks/p3/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
           cmake --build build-odbc --config Release
 
       - name: ODBC enterprise readiness gate (in-tree)
@@ -432,9 +432,9 @@ jobs:
       - name: Pascal build (Linux)
         if: matrix.language == 'pascal' && runner.os == 'Linux'
         run: |
-          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/ConfigTests.pas
-          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/SqlTests.pas
-          fpc -Fu./tracks/alpha/drivers/pascal/src tracks/alpha/drivers/pascal/tests/IntegrationTest.pas
+          fpc -Fu./tracks/p3/drivers/pascal/src tracks/p3/drivers/pascal/tests/ConfigTests.pas
+          fpc -Fu./tracks/p3/drivers/pascal/src tracks/p3/drivers/pascal/tests/SqlTests.pas
+          fpc -Fu./tracks/p3/drivers/pascal/src tracks/p3/drivers/pascal/tests/IntegrationTest.pas
 
       - name: Pascal build (Windows)
         if: matrix.language == 'pascal' && runner.os == 'Windows'
@@ -468,7 +468,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ubuntu-gradle-${{ hashFiles('tracks/alpha/drivers/jdbc/**/*.gradle*', 'tracks/alpha/drivers/jdbc/gradle.properties', 'tracks/alpha/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ubuntu-gradle-${{ hashFiles('tracks/p3/drivers/jdbc/**/*.gradle*', 'tracks/p3/drivers/jdbc/gradle.properties', 'tracks/p3/drivers/jdbc/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ubuntu-gradle-
 

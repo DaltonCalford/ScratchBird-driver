@@ -2,7 +2,7 @@
 
 ## Install
 
-Add `tracks/alpha/drivers/pascal/src` to your project search path.
+Add `tracks/p3/drivers/pascal/src` to your project search path.
 
 Default builds use the first-party native transport/TLS units and require
 OpenSSL runtime libraries (`libssl`/`libcrypto`).
@@ -63,8 +63,8 @@ queue/listener helpers. See [API reference](../api-reference/pascal.md).
 
 Unit-level TLS coverage (crypto + policy):
 
-- `fpc -Mdelphi -Fu./tracks/alpha/drivers/pascal/src -FE./tracks/alpha/drivers/pascal/tests ./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests.pas`
-- `./tracks/alpha/drivers/pascal/tests/TlsCryptoAndPolicyTests`
+- `fpc -Mdelphi -Fu./tracks/p3/drivers/pascal/src -FE./tracks/p3/drivers/pascal/tests ./tracks/p3/drivers/pascal/tests/TlsCryptoAndPolicyTests.pas`
+- `./tracks/p3/drivers/pascal/tests/TlsCryptoAndPolicyTests`
 
 Integration tests are gated by:
 

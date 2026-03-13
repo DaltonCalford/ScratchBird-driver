@@ -14,7 +14,7 @@ Native ScratchBird ODBC 3.8 driver using SBWP v1.1 on port 3092.
 ## Install
 
 ```bash
-cd tracks/alpha/drivers/odbc
+cd tracks/p3/drivers/odbc
 cmake -S . -B build
 cmake --build build
 ```

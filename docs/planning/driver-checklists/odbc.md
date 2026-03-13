@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Implement SQLMoreResults (multi-result set support) in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`. Status: DONE (2026-02-04)
+- [x] Implement SQLMoreResults (multi-result set support) in `tracks/p3/drivers/odbc/src/odbc_handles.cpp`. Status: DONE (2026-02-04)
 
 ### Integration Appendix Tasks
 
@@ -12,7 +12,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: Result set metadata is retrieved via SQLNumResultCols and SQLDescribeCol/SQLColAttribute. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate SQLColumns result set columns (ORDINAL_POSITION, TYPE_NAME, etc.). (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate SQLDescribeCol and SQLNumResultCols behavior. (Sources: `docs/specifications/integrations/drivers/odbc/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Expand type mapping to cover complex SBWP types where applicable in `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Expand type mapping to cover complex SBWP types where applicable in `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P2 (Follow-ups)
 
 ### Integration Appendix Tasks
@@ -42,7 +42,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: The driver must tolerate long-running introspection queries. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate Workbench migration wizard completes schema introspection. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Confirm data copy works for large tables with paging. (Sources: `docs/specifications/integrations/tools/mysql-workbench/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for metadata + type coverage in `tracks/alpha/drivers/odbc/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for metadata + type coverage in `tracks/p3/drivers/odbc/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

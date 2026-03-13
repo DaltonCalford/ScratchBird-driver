@@ -34,7 +34,7 @@ Common gaps (where applicable):
 
 ## Driver Audit
 
-### C/C++ (libscratchbird_client) `tracks/beta/drivers/cpp/`
+### C/C++ (libscratchbird_client) `tracks/p3/drivers/cpp/`
 Implemented:
 - SBWP v1.1 framing, SCRAM, PARSE/BIND/EXECUTE, portal paging, notifications.
 - C API `SET_OPTION`/`PING`, metadata helpers, typed/public result metadata,
@@ -49,13 +49,13 @@ Outstanding:
 - Full SQLSTATE-by-code remapping remains part of the broader cross-driver
   portfolio work, not a unique C/C++ blocker.
 
-### ODBC `tracks/alpha/drivers/odbc/`
+### ODBC `tracks/p3/drivers/odbc/`
 Implemented:
 - SBWP v1.1 client via C++ bridge, binary transfer, cancel, prepare/bind, and catalog metadata mappings (sys.* + information_schema for PK/FK).
 Outstanding:
 - Type mapping is still limited to ODBC-friendly types; complex SBWP types are returned as text/binary without rich wrappers.
 
-### Go `tracks/alpha/drivers/go/`
+### Go `tracks/p3/drivers/go/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, server-side prepare/bind, paging, cancel, notifications, set_option, ping.
 - Type mapping including composite, range, geometry, vector literal, arrays, inet/cidr/macaddr.
@@ -63,7 +63,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### Node.js `tracks/alpha/drivers/node/`
+### Node.js `tracks/p3/drivers/node/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option, ping.
 - Type mapping including composite, range, geometry, vector literal, arrays, inet/cidr/macaddr.
@@ -71,7 +71,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### Python `tracks/alpha/drivers/python/`
+### Python `tracks/p3/drivers/python/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, inet/cidr/macaddr.
@@ -79,7 +79,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### Ruby `tracks/alpha/drivers/ruby/`
+### Ruby `tracks/p3/drivers/ruby/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, inet/cidr/macaddr.
@@ -87,7 +87,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### Rust `tracks/alpha/drivers/rust/`
+### Rust `tracks/p3/drivers/rust/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, inet/cidr/macaddr.
@@ -95,7 +95,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### PHP `tracks/alpha/drivers/php/`
+### PHP `tracks/p3/drivers/php/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, vector literal, inet/cidr/macaddr.
@@ -103,7 +103,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### R `tracks/beta/drivers/r/`
+### R `tracks/p3/drivers/r/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, vector literal, inet/cidr/macaddr.
@@ -111,7 +111,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### Pascal/Delphi `tracks/alpha/drivers/pascal/`
+### Pascal/Delphi `tracks/p3/drivers/pascal/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, vector literal, inet/cidr/macaddr.
@@ -119,7 +119,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### .NET `tracks/alpha/drivers/dotnet/`
+### .NET `tracks/p3/drivers/dotnet/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - Type mapping including composite, range, geometry, arrays, vector literal, inet/cidr/macaddr.
@@ -127,7 +127,7 @@ Implemented:
 Outstanding:
 - Error mapping is SQLSTATE class-prefix based.
 
-### JDBC `tracks/alpha/drivers/jdbc/`
+### JDBC `tracks/p3/drivers/jdbc/`
 Implemented:
 - SBWP v1.1 protocol, SCRAM, prepare/bind, paging, cancel, notifications, set_option.
 - JDBC DatabaseMetaData for PK/FK/indexes using information_schema and sys.*.
@@ -143,7 +143,7 @@ Outstanding:
 - No unique PH5 blocker remains for the baseline JDBC lane; residual work is
   downstream consumer alignment on top of the closed JDBC surface.
 
-### Dart `tracks/beta/drivers/dart/`
+### Dart `tracks/p3/drivers/dart/`
 Implemented:
 - SBWP v1.1 framing, SCRAM, parse/bind, basic query and paging.
 - Range decoding and geometry wrapper types.
@@ -155,7 +155,7 @@ Outstanding:
 - No metadata helper APIs.
 - No conformance/integration tests beyond basic config tests.
 
-### Swift `tracks/beta/drivers/swift/`
+### Swift `tracks/p3/drivers/swift/`
 Implemented:
 - SBWP v1.1 framing, SCRAM, parse/bind, basic query.
 - TLS is implemented via NIOSSL (Apple + Linux).
@@ -179,7 +179,7 @@ Outstanding:
 - Ecto adapter incomplete for full metadata coverage.
 - No conformance/integration tests.
 
-### Mojo `tracks/alpha/drivers/mojo/`
+### Mojo `tracks/p3/drivers/mojo/`
 Implemented:
 - Config wrapper and Python-bridge adapter.
 Outstanding:
@@ -214,7 +214,7 @@ Outstanding:
 - Complex SBWP types still map to Metabase base types conservatively; this is
   acceptable adapter behavior and not a remaining PH5 blocker.
 
-### CLI `tracks/alpha/drivers/cli/`
+### CLI `tracks/p3/drivers/cli/`
 Implemented:
 - Multiple protocol runners and admin tools.
 Outstanding:

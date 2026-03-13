@@ -26,16 +26,16 @@ Scope: `ScratchBird-driver` tracks `alpha`, `beta`, and `p3` drivers
 1. Harness contract moved to native-parser-first naming and requirements:
    - `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md`
    - `docs/fixtures/sbwp_conformance_manifest.json`
-   - `tracks/alpha/drivers/go/conformance/harness.go` (kind aliases for `native_query` and `native_prepare_bind`)
+   - `tracks/p3/drivers/go/conformance/harness.go` (kind aliases for `native_query` and `native_prepare_bind`)
 2. C++ core driver now enforces native parser endpoint selection in config parsing/connect:
-   - `tracks/beta/drivers/cpp/include/scratchbird/client/network_client.h`
-   - `tracks/beta/drivers/cpp/src/driver_config.cpp`
-   - `tracks/beta/drivers/cpp/src/network_client.cpp`
+   - `tracks/p3/drivers/cpp/include/scratchbird/client/network_client.h`
+   - `tracks/p3/drivers/cpp/src/driver_config.cpp`
+   - `tracks/p3/drivers/cpp/src/network_client.cpp`
 3. ODBC now validates and normalizes `protocol=native` during DSN parsing and connect:
-   - `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
-   - `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp`
+   - `tracks/p3/drivers/odbc/src/odbc_handles.cpp`
+   - `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp`
 4. `sb_isql` parser option no longer switches parser dialects at runtime (`SET PARSER` removed in startup flow):
-   - `tracks/alpha/drivers/cli/sb_isql.cpp`
+   - `tracks/p3/drivers/cli/sb_isql.cpp`
    - `docs/user-documentation/tools/sb-isql.md`
    - `wiki/cli-tools/sb-isql.md`
 5. Pascal TLS specification added for in-repo implementation (not TaurusTLS code reuse):
@@ -67,23 +67,23 @@ Legend:
 
 | Driver | SQL QUERY default | SBLR API | Bytecode flag aligned | Evidence |
 |---|---|---|---|---|
-| Go | Yes | Yes | No | `tracks/alpha/drivers/go/conn.go:532`, `tracks/alpha/drivers/go/conn.go:546`, `tracks/alpha/drivers/go/conn.go:717`, `tracks/alpha/drivers/go/protocol.go:126` |
-| Node | Yes | Yes | No | `tracks/alpha/drivers/node/src/client.ts:890`, `tracks/alpha/drivers/node/src/client.ts:899`, `tracks/alpha/drivers/node/src/client.ts:473`, `tracks/alpha/drivers/node/src/protocol.ts:126` |
-| Python | Yes | Yes | No | `tracks/alpha/drivers/python/src/scratchbird/connection.py:648`, `tracks/alpha/drivers/python/src/scratchbird/connection.py:651`, `tracks/alpha/drivers/python/src/scratchbird/connection.py:403`, `tracks/alpha/drivers/python/src/scratchbird/protocol.py:138` |
-| Rust | Yes | Yes | No | `tracks/alpha/drivers/rust/src/client.rs:919`, `tracks/alpha/drivers/rust/src/client.rs:924`, `tracks/alpha/drivers/rust/src/client.rs:395`, `tracks/alpha/drivers/rust/src/protocol.rs:110` |
-| Ruby | Yes | Yes | No | `tracks/alpha/drivers/ruby/lib/scratchbird/client.rb:625`, `tracks/alpha/drivers/ruby/lib/scratchbird/client.rb:637`, `tracks/alpha/drivers/ruby/lib/scratchbird/client.rb:180`, `tracks/alpha/drivers/ruby/lib/scratchbird/protocol.rb:121` |
-| PHP | Yes | Yes | No | `tracks/alpha/drivers/php/src/Connection.php:611`, `tracks/alpha/drivers/php/src/Connection.php:616`, `tracks/alpha/drivers/php/src/Connection.php:190`, `tracks/alpha/drivers/php/src/Protocol.php:128` |
-| .NET | Yes | Yes | No | `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:379`, `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:383`, `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:192`, `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/WireProtocol.cs:134` |
-| JDBC | Yes | Yes | No | `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:832`, `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:838`, `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:465`, `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:203` |
-| Pascal | Yes | Yes | No | `tracks/alpha/drivers/pascal/src/ScratchBird.Client.pas:1071`, `tracks/alpha/drivers/pascal/src/ScratchBird.Client.pas:1083`, `tracks/alpha/drivers/pascal/src/ScratchBird.Client.pas:487`, `tracks/alpha/drivers/pascal/src/ScratchBird.Protocol.pas:141` |
-| C++ core | Yes | Yes | No | `tracks/beta/drivers/cpp/src/network_client.cpp:777`, `tracks/beta/drivers/cpp/src/network_client.cpp:783`, `tracks/beta/drivers/cpp/src/network_client.cpp:1368`, `tracks/beta/drivers/cpp/include/scratchbird/protocol/sbwp_protocol.h:116` |
-| ODBC | Yes | No (bridge API) | No (inherits C++) | `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp:157`, `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp:167` |
-| CLI tools | Yes | No | Partial (`wire_protocol` copy only) | `tracks/alpha/drivers/cli/sb_isql.cpp:1559`, `tracks/alpha/drivers/cli/sbdriver_conformance.cpp:722`, `tracks/alpha/drivers/cli/include/scratchbird/protocol/wire_protocol.h:340` |
-| Dart | Yes | Yes | No | `tracks/beta/drivers/dart/lib/src/client.dart:391`, `tracks/beta/drivers/dart/lib/src/client.dart:395`, `tracks/beta/drivers/dart/lib/src/client.dart:254`, `tracks/beta/drivers/dart/lib/src/protocol.dart:91` |
-| Swift | Yes | Yes | No | `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift:381`, `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift:386`, `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift:251`, `tracks/beta/drivers/swift/Sources/ScratchBird/Protocol.swift:113` |
-| R | Yes | Yes | No | `tracks/beta/drivers/r/R/client.R:475`, `tracks/beta/drivers/r/R/client.R:480`, `tracks/beta/drivers/r/R/client.R:177`, `tracks/beta/drivers/r/R/protocol.R:119` |
+| Go | Yes | Yes | No | `tracks/p3/drivers/go/conn.go:532`, `tracks/p3/drivers/go/conn.go:546`, `tracks/p3/drivers/go/conn.go:717`, `tracks/p3/drivers/go/protocol.go:126` |
+| Node | Yes | Yes | No | `tracks/p3/drivers/node/src/client.ts:890`, `tracks/p3/drivers/node/src/client.ts:899`, `tracks/p3/drivers/node/src/client.ts:473`, `tracks/p3/drivers/node/src/protocol.ts:126` |
+| Python | Yes | Yes | No | `tracks/p3/drivers/python/src/scratchbird/connection.py:648`, `tracks/p3/drivers/python/src/scratchbird/connection.py:651`, `tracks/p3/drivers/python/src/scratchbird/connection.py:403`, `tracks/p3/drivers/python/src/scratchbird/protocol.py:138` |
+| Rust | Yes | Yes | No | `tracks/p3/drivers/rust/src/client.rs:919`, `tracks/p3/drivers/rust/src/client.rs:924`, `tracks/p3/drivers/rust/src/client.rs:395`, `tracks/p3/drivers/rust/src/protocol.rs:110` |
+| Ruby | Yes | Yes | No | `tracks/p3/drivers/ruby/lib/scratchbird/client.rb:625`, `tracks/p3/drivers/ruby/lib/scratchbird/client.rb:637`, `tracks/p3/drivers/ruby/lib/scratchbird/client.rb:180`, `tracks/p3/drivers/ruby/lib/scratchbird/protocol.rb:121` |
+| PHP | Yes | Yes | No | `tracks/p3/drivers/php/src/Connection.php:611`, `tracks/p3/drivers/php/src/Connection.php:616`, `tracks/p3/drivers/php/src/Connection.php:190`, `tracks/p3/drivers/php/src/Protocol.php:128` |
+| .NET | Yes | Yes | No | `tracks/p3/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:379`, `tracks/p3/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:383`, `tracks/p3/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs:192`, `tracks/p3/drivers/dotnet/src/ScratchBird.Data/WireProtocol.cs:134` |
+| JDBC | Yes | Yes | No | `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:832`, `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:838`, `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:465`, `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java:203` |
+| Pascal | Yes | Yes | No | `tracks/p3/drivers/pascal/src/ScratchBird.Client.pas:1071`, `tracks/p3/drivers/pascal/src/ScratchBird.Client.pas:1083`, `tracks/p3/drivers/pascal/src/ScratchBird.Client.pas:487`, `tracks/p3/drivers/pascal/src/ScratchBird.Protocol.pas:141` |
+| C++ core | Yes | Yes | No | `tracks/p3/drivers/cpp/src/network_client.cpp:777`, `tracks/p3/drivers/cpp/src/network_client.cpp:783`, `tracks/p3/drivers/cpp/src/network_client.cpp:1368`, `tracks/p3/drivers/cpp/include/scratchbird/protocol/sbwp_protocol.h:116` |
+| ODBC | Yes | No (bridge API) | No (inherits C++) | `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp:157`, `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp:167` |
+| CLI tools | Yes | No | Partial (`wire_protocol` copy only) | `tracks/p3/drivers/cli/sb_isql.cpp:1559`, `tracks/p3/drivers/cli/sbdriver_conformance.cpp:722`, `tracks/p3/drivers/cli/include/scratchbird/protocol/wire_protocol.h:340` |
+| Dart | Yes | Yes | No | `tracks/p3/drivers/dart/lib/src/client.dart:391`, `tracks/p3/drivers/dart/lib/src/client.dart:395`, `tracks/p3/drivers/dart/lib/src/client.dart:254`, `tracks/p3/drivers/dart/lib/src/protocol.dart:91` |
+| Swift | Yes | Yes | No | `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift:381`, `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift:386`, `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift:251`, `tracks/p3/drivers/swift/Sources/ScratchBird/Protocol.swift:113` |
+| R | Yes | Yes | No | `tracks/p3/drivers/r/R/client.R:475`, `tracks/p3/drivers/r/R/client.R:480`, `tracks/p3/drivers/r/R/client.R:177`, `tracks/p3/drivers/r/R/protocol.R:119` |
 | Elixir (p3) | Yes | Yes | No | `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex:364`, `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex:369`, `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex:192`, `tracks/p3/drivers/elixir/lib/scratchbird/protocol.ex:120` |
-| Mojo | Yes | No | No | `tracks/alpha/drivers/mojo/src/scratchbird.mojo:1309`, `tracks/alpha/drivers/mojo/src/scratchbird.mojo:1317`, `tracks/alpha/drivers/mojo/src/scratchbird.mojo:812` |
+| Mojo | Yes | No | No | `tracks/p3/drivers/mojo/src/scratchbird.mojo:1309`, `tracks/p3/drivers/mojo/src/scratchbird.mojo:1317`, `tracks/p3/drivers/mojo/src/scratchbird.mojo:812` |
 
 ## Additional Observations
 
@@ -93,7 +93,7 @@ Legend:
 2. Conformance contract now uses native-parser-first kinds; some adapters still rely on legacy aliases:
    - `docs/fixtures/sbwp_conformance_manifest.json:13`
    - `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md:44`
-   - `tracks/alpha/drivers/go/conformance/harness.go:436`
+   - `tracks/p3/drivers/go/conformance/harness.go:436`
 3. Native protocol alignment doc still describes unparameterized SQL `QUERY`:
    - `docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md:33`
 
@@ -108,7 +108,7 @@ Legend:
 
 ### Phase 2: Core Library First
 
-1. Update C++ core (`tracks/beta/drivers/cpp/`) to become reference implementation.
+1. Update C++ core (`tracks/p3/drivers/cpp/`) to become reference implementation.
 2. Migrate ODBC + CLI to consume new bytecode-first C++ query path.
 
 ### Phase 3: Language Drivers

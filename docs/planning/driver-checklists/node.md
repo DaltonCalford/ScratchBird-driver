@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/node/src/errors.ts`. Issue: DONE (2026-03-04)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/node/src/errors.ts`. Issue: DONE (2026-03-04)
 
 ### Integration Appendix Tasks
 
@@ -30,5 +30,5 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: Avoid relying on TypeORM `synchronize` for production migrations. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate entity metadata discovery for `@Entity` with custom schema. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Verify parameterized queries use positional `$1` or named bindings as expected by the driver. (Sources: `docs/specifications/integrations/orm/typeorm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for full type matrix in `tracks/alpha/drivers/node/test/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for full type matrix in `tracks/p3/drivers/node/test/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)

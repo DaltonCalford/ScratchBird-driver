@@ -155,7 +155,7 @@ ScratchBird DBeaver integration installed into:
 
 Next steps:
   1) Build JDBC jar:
-     cd /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/jdbc && ./gradlew clean jar
+     cd /home/dcalford/CliWork/ScratchBird-driver/tracks/p3/drivers/jdbc && ./gradlew clean jar
   2) Build plugin/test in DBeaver:
      cd ${DBEAVER_DIR}
      /home/dcalford/CliWork/dbeaver-common/mvnw -f product/aggregate/pom.xml -pl ../../../dbeaver-common/modules/org.jkiss.utils,../../../dbeaver-common/modules/com.dbeaver.jdbc.api,../../plugins/org.jkiss.dbeaver.model,../../plugins/org.jkiss.dbeaver.model.jdbc,../../plugins/org.jkiss.dbeaver.model.lsm,../../plugins/org.jkiss.dbeaver.model.sql,../../plugins/org.jkiss.dbeaver.model.sql.jdbc,../../plugins/org.jkiss.dbeaver.registry,../../plugins/org.jkiss.dbeaver.ext.generic,../../plugins/org.jkiss.dbeaver.ext.scratchbird,../../test/org.jkiss.dbeaver.ext.scratchbird.test -am verify -DskipITs

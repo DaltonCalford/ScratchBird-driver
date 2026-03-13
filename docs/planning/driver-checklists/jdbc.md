@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`. Issue: Closed (2026-02-23)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`. Issue: Closed (2026-02-23)
 
 ### Integration Appendix Tasks
 
@@ -67,7 +67,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: Result sets must preserve graph element structure (nodes, relationships, paths). (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate parameter binding for lists and nested maps. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Ensure path result shapes are preserved in metadata helpers. (Sources: `docs/specifications/integrations/orm/cypher-opencypher/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for full type matrix in `tracks/alpha/drivers/jdbc/src/test/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for full type matrix in `tracks/p3/drivers/jdbc/src/test/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

@@ -5,11 +5,11 @@
 From the repo root:
 
 ```bash
-cmake -S tracks/beta/drivers/cpp -B tracks/beta/drivers/cpp/build
-cmake --build tracks/beta/drivers/cpp/build --config Release
+cmake -S tracks/p3/drivers/cpp -B tracks/p3/drivers/cpp/build
+cmake --build tracks/p3/drivers/cpp/build --config Release
 ```
 
-The public headers live under `tracks/beta/drivers/cpp/include/`.
+The public headers live under `tracks/p3/drivers/cpp/include/`.
 
 ## Quick Start
 
@@ -76,5 +76,5 @@ Current C/C++ lane notes:
 The lane test suite is built with CMake. After configuring the build:
 
 ```bash
-ctest --test-dir tracks/beta/drivers/cpp/build --output-on-failure
+ctest --test-dir tracks/p3/drivers/cpp/build --output-on-failure
 ```

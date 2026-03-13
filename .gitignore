@@ -154,6 +154,9 @@ r/*.Rproj
 r/src/*.o
 r/src/*.so
 r/src/*.dll
+tracks/p3/drivers/r/src/*.o
+tracks/p3/drivers/r/src/*.so
+tracks/p3/drivers/r/src/*.dll
 
 # ===================
 # Pascal
@@ -164,12 +167,12 @@ pascal/*.exe
 pascal/*.dll
 pascal/*.so
 pascal/lib/
-tracks/alpha/drivers/pascal/tests/*.o
-tracks/alpha/drivers/pascal/tests/*.ppu
-tracks/alpha/drivers/pascal/tests/IntegrationTest
-tracks/alpha/drivers/pascal/tests/*Tests
-tracks/alpha/drivers/pascal/src/*.o
-tracks/alpha/drivers/pascal/src/*.ppu
+tracks/p3/drivers/pascal/tests/*.o
+tracks/p3/drivers/pascal/tests/*.ppu
+tracks/p3/drivers/pascal/tests/IntegrationTest
+tracks/p3/drivers/pascal/tests/*Tests
+tracks/p3/drivers/pascal/src/*.o
+tracks/p3/drivers/pascal/src/*.ppu
 
 # ===================
 # Elixir
@@ -178,6 +181,10 @@ elixir/_build/
 elixir/deps/
 elixir/.elixir_ls/
 elixir/.mix/
+tracks/p3/drivers/elixir/_build/
+tracks/p3/drivers/elixir/deps/
+tracks/p3/drivers/elixir/.elixir_ls/
+tracks/p3/drivers/elixir/.mix/
 
 # ===================
 # Swift
@@ -187,6 +194,11 @@ swift/.swiftpm/
 swift/Packages/
 swift/Package.resolved
 tracks/**/Package.resolved
+
+# ===================
+# C/C++
+# ===================
+tracks/p3/drivers/cpp/build_odbc_gate/
 
 # ===================
 # Dart

@@ -18,7 +18,7 @@ This report aggregates per-lane conformance gate execution evidence for the driv
 | RUBY | `ruby -Itest test/test_metadata_recursive_schema.rb` (+ regression checks: `test_sql.rb`, `test_txn_exec_parity.rb`, `test_conn_auth_protocol.rb`) | PASS |
 | PASCAL | `fpc -Mdelphi -Fu./src -FE/tmp/sb_pascal_tests -FU/tmp/sb_pascal_tests ./tests/MetadataRecursiveSchemaTests.pas` + `/tmp/sb_pascal_tests/MetadataRecursiveSchemaTests` | PASS |
 | MOJO | `cd ~/mojo-work/sb-mojo && pixi run mojo tests/metadata_recursive_schema.mojo` (+ `txn_exec_parity.mojo`, `integration.mojo`) | FAIL (compile/parse compatibility and module-resolution issues) |
-| CLI | `cmake -S tracks/alpha/drivers/cli -B /tmp/sb_cli_s3_build && cmake --build /tmp/sb_cli_s3_build --target sbdriver_txn_exec_tests sbdriver_metadata_shaping_tests -j4` + `/tmp/sb_cli_s3_build/sbdriver_txn_exec_tests` + `/tmp/sb_cli_s3_build/sbdriver_metadata_shaping_tests` | PASS |
+| CLI | `cmake -S tracks/p3/drivers/cli -B /tmp/sb_cli_s3_build && cmake --build /tmp/sb_cli_s3_build --target sbdriver_txn_exec_tests sbdriver_metadata_shaping_tests -j4` + `/tmp/sb_cli_s3_build/sbdriver_txn_exec_tests` + `/tmp/sb_cli_s3_build/sbdriver_metadata_shaping_tests` | PASS |
 | DART | `dart test test/metadata_recursive_schema_test.dart` (+ lane suite subset including config/type/txn parity) | PASS |
 | SWIFT | `swift test --build-path /tmp/sb_swift_s3_build --filter MetadataRecursiveSchemaTests` | PASS |
 | R | `Rscript -e 'testthat::test_local(filter = "metadata_recursive_schema", reporter = "summary")'` | PASS |

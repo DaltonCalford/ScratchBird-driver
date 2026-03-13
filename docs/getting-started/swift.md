@@ -7,7 +7,7 @@ Partial SBWP v1.1 implementation. TLS required, binary-only enforced, zstd rejec
 ## Build
 
 ```bash
-cd tracks/beta/drivers/swift
+cd tracks/p3/drivers/swift
 swift build
 ```
 

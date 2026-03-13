@@ -46,13 +46,13 @@ These steps assume:
 ### 1) Build ScratchBird JDBC JAR
 
 ```bash
-cd ~/CliWork/ScratchBird-driver/tracks/alpha/drivers/jdbc
+cd ~/CliWork/ScratchBird-driver/tracks/p3/drivers/jdbc
 ./gradlew clean jar
 ```
 
 JAR output:
 
-- `~/CliWork/ScratchBird-driver/tracks/alpha/drivers/jdbc/build/libs/scratchbird-jdbc-*.jar`
+- `~/CliWork/ScratchBird-driver/tracks/p3/drivers/jdbc/build/libs/scratchbird-jdbc-*.jar`
 
 ### 2) Build the p2 Update Site
 
@@ -85,7 +85,7 @@ If you are testing local builds, set the library manually:
 1. Open `Database` -> `Driver Manager` -> `ScratchBird`
 2. `Libraries` tab -> add local file
 3. Select:
-   `~/CliWork/ScratchBird-driver/tracks/alpha/drivers/jdbc/build/libs/scratchbird-jdbc-*.jar`
+   `~/CliWork/ScratchBird-driver/tracks/p3/drivers/jdbc/build/libs/scratchbird-jdbc-*.jar`
 4. Save and reconnect
 
 ### 5) Optional: Enable Parent Schema Expansion (JDBC Layer)

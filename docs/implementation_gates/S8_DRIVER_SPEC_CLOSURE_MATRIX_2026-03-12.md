@@ -23,22 +23,22 @@ specialty closure `NCW-056`.
 
 | Driver | Lane | Closure State | Current supported-surface note |
 |---|---|---|---|
-| JDBC | `tracks/alpha/drivers/jdbc` | MET | Current-schema/default-schema, pool reset, metadata parity, and downstream consumer surfaces closed |
-| ODBC | `tracks/alpha/drivers/odbc` | MET | Packaged runtime/catalog/type surface closed |
-| CPP | `tracks/beta/drivers/cpp` | MET | Listener-mediated C/C++ API surface closed |
-| DOTNET | `tracks/alpha/drivers/dotnet` | MET | Connection, transaction, metadata, type, and multi-result surface closed |
-| GO | `tracks/alpha/drivers/go` | MET | Live primary lane closed |
-| RUST | `tracks/alpha/drivers/rust` | MET | Live parity plus generated-key/callable residuals closed |
-| NODE | `tracks/alpha/drivers/node` | MET | Routine metadata, metadata helpers, and session-schema behavior closed |
-| PYTHON | `tracks/alpha/drivers/python` | MET | Metadata, routine, and schema fallback surface closed |
-| PHP | `tracks/alpha/drivers/php` | MET | Metadata convenience and routine metadata surface closed |
-| RUBY | `tracks/alpha/drivers/ruby` | MET | Cancel sequencing and specialty residuals closed |
-| PASCAL | `tracks/alpha/drivers/pascal` | MET | Routine-wrapper, generated-key, and stream-control residuals closed |
-| MOJO | `tracks/alpha/drivers/mojo` | MET | Supported listener-mediated wire-bridge surface closed |
-| CLI | `tracks/alpha/drivers/cli` | MET | CLI protocol surface closed on declared PH5 scope |
-| DART | `tracks/beta/drivers/dart` | MET | Beta lane full-surface parity closed |
-| SWIFT | `tracks/beta/drivers/swift` | MET | Beta lane full-surface parity closed |
-| R | `tracks/beta/drivers/r` | MET | Beta lane full-surface parity closed |
+| JDBC | `tracks/p3/drivers/jdbc` | MET | Current-schema/default-schema, pool reset, metadata parity, and downstream consumer surfaces closed |
+| ODBC | `tracks/p3/drivers/odbc` | MET | Packaged runtime/catalog/type surface closed |
+| CPP | `tracks/p3/drivers/cpp` | MET | Listener-mediated C/C++ API surface closed |
+| DOTNET | `tracks/p3/drivers/dotnet` | MET | Connection, transaction, metadata, type, and multi-result surface closed |
+| GO | `tracks/p3/drivers/go` | MET | Live primary lane closed |
+| RUST | `tracks/p3/drivers/rust` | MET | Live parity plus generated-key/callable residuals closed |
+| NODE | `tracks/p3/drivers/node` | MET | Routine metadata, metadata helpers, and session-schema behavior closed |
+| PYTHON | `tracks/p3/drivers/python` | MET | Metadata, routine, and schema fallback surface closed |
+| PHP | `tracks/p3/drivers/php` | MET | Metadata convenience and routine metadata surface closed |
+| RUBY | `tracks/p3/drivers/ruby` | MET | Cancel sequencing and specialty residuals closed |
+| PASCAL | `tracks/p3/drivers/pascal` | MET | Routine-wrapper, generated-key, and stream-control residuals closed |
+| MOJO | `tracks/p3/drivers/mojo` | MET | Supported listener-mediated wire-bridge surface closed |
+| CLI | `tracks/p3/drivers/cli` | MET | CLI protocol surface closed on declared PH5 scope |
+| DART | `tracks/p3/drivers/dart` | MET | Beta lane full-surface parity closed |
+| SWIFT | `tracks/p3/drivers/swift` | MET | Beta lane full-surface parity closed |
+| R | `tracks/p3/drivers/r` | MET | Beta lane full-surface parity closed |
 | ELIXIR | `tracks/p3/drivers/elixir` | MET | Specialty lane closed on supported listener-mediated surface |
 
 ## Closure definition

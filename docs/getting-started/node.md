@@ -5,7 +5,7 @@
 For repo-local development:
 
 ```bash
-cd tracks/alpha/drivers/node
+cd tracks/p3/drivers/node
 npm install
 npm run build
 ```
@@ -65,6 +65,6 @@ Integration tests are gated by:
 Local test run:
 
 ```bash
-cd tracks/alpha/drivers/node
+cd tracks/p3/drivers/node
 npm test
 ```

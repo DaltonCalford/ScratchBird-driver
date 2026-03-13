@@ -8,11 +8,11 @@ Checklist: `cli.md`
 Priority: P1 (Core)
 
 Description:
-Validate `sb_isql` against SBWP v1.1 conformance harness in `tracks/alpha/drivers/cli/sb_isql.cpp`
+Validate `sb_isql` against SBWP v1.1 conformance harness in `tracks/p3/drivers/cli/sb_isql.cpp`
 
 Files:
 - `sb_isql`
-- `tracks/alpha/drivers/cli/sb_isql.cpp`
+- `tracks/p3/drivers/cli/sb_isql.cpp`
 
 
 ## 2. Validate `sbdriver_conformance` output against `docs/specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md`
@@ -35,12 +35,12 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+Expand `sb_type` and `sb_value` coverage to full SBWP type matrix in `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
 
 Files:
 - `sb_type`
 - `sb_value`
-- `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+- `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
 
 
 ## 4. Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr
@@ -50,24 +50,24 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `tracks/beta/drivers/cpp/src/`
+Implement encoding/decoding for arrays, composite, range, geometry, vector, inet/cidr/macaddr in `tracks/p3/drivers/cpp/src/`
 
 Files:
-- `tracks/beta/drivers/cpp/src/`
+- `tracks/p3/drivers/cpp/src/`
 
 
-## 5. Expose SET_OPTION and PING helpers and `tracks/beta/drivers/cpp/src/scratchbird_client_c.cpp`
+## 5. Expose SET_OPTION and PING helpers and `tracks/p3/drivers/cpp/src/scratchbird_client_c.cpp`
 
 Checklist: `cpp.md`
 Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Expose SET_OPTION and PING helpers in `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h` and `tracks/beta/drivers/cpp/src/scratchbird_client_c.cpp`
+Expose SET_OPTION and PING helpers in `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h` and `tracks/p3/drivers/cpp/src/scratchbird_client_c.cpp`
 
 Files:
-- `tracks/beta/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
-- `tracks/beta/drivers/cpp/src/scratchbird_client_c.cpp`
+- `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`
+- `tracks/p3/drivers/cpp/src/scratchbird_client_c.cpp`
 
 
 ## 6. Add sys.* metadata helper queries or API
@@ -77,10 +77,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add sys.* metadata helper queries or API in `tracks/beta/drivers/cpp/include/scratchbird/client/`
+Add sys.* metadata helper queries or API in `tracks/p3/drivers/cpp/include/scratchbird/client/`
 
 Files:
-- `tracks/beta/drivers/cpp/include/scratchbird/client/`
+- `tracks/p3/drivers/cpp/include/scratchbird/client/`
 
 
 ## 7. Add conformance tests for type mapping and paging
@@ -90,10 +90,10 @@ Priority: P2 (Follow-ups)
 Status: Done (2026-02-04)
 
 Description:
-Add conformance tests for type mapping and paging in `tracks/beta/drivers/cpp/tests/`
+Add conformance tests for type mapping and paging in `tracks/p3/drivers/cpp/tests/`
 
 Files:
-- `tracks/beta/drivers/cpp/tests/`
+- `tracks/p3/drivers/cpp/tests/`
 
 
 ## 8. Enforce TLS required (reject `sslmode=disable`)
@@ -103,26 +103,26 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Enforce TLS required (reject `sslmode=disable`) in `tracks/beta/drivers/dart/lib/src/client.dart`
+Enforce TLS required (reject `sslmode=disable`) in `tracks/p3/drivers/dart/lib/src/client.dart`
 
 Files:
 - `sslmode=disable`
-- `tracks/beta/drivers/dart/lib/src/client.dart`
+- `tracks/p3/drivers/dart/lib/src/client.dart`
 
 
-## 9. Enforce binary-only (reject `binary_transfer=false`) or `tracks/beta/drivers/dart/lib/src/config.dart`
+## 9. Enforce binary-only (reject `binary_transfer=false`) or `tracks/p3/drivers/dart/lib/src/config.dart`
 
 Checklist: `dart.md`
 Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/dart/lib/src/client.dart` or `tracks/beta/drivers/dart/lib/src/config.dart`
+Enforce binary-only (reject `binary_transfer=false`) in `tracks/p3/drivers/dart/lib/src/client.dart` or `tracks/p3/drivers/dart/lib/src/config.dart`
 
 Files:
 - `binary_transfer=false`
-- `tracks/beta/drivers/dart/lib/src/client.dart`
-- `tracks/beta/drivers/dart/lib/src/config.dart`
+- `tracks/p3/drivers/dart/lib/src/client.dart`
+- `tracks/p3/drivers/dart/lib/src/config.dart`
 
 
 ## 10. Reject `compression=zstd` until server support exists
@@ -132,11 +132,11 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Reject `compression=zstd` until server support exists in `tracks/beta/drivers/dart/lib/src/client.dart`
+Reject `compression=zstd` until server support exists in `tracks/p3/drivers/dart/lib/src/client.dart`
 
 Files:
 - `compression=zstd`
-- `tracks/beta/drivers/dart/lib/src/client.dart`
+- `tracks/p3/drivers/dart/lib/src/client.dart`
 
 
 ## 11. Add array encoding/decoding
@@ -146,10 +146,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add array encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`
+Add array encoding/decoding in `tracks/p3/drivers/dart/lib/src/types.dart`
 
 Files:
-- `tracks/beta/drivers/dart/lib/src/types.dart`
+- `tracks/p3/drivers/dart/lib/src/types.dart`
 
 
 ## 12. Add composite encoding/decoding
@@ -159,10 +159,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add composite encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`
+Add composite encoding/decoding in `tracks/p3/drivers/dart/lib/src/types.dart`
 
 Files:
-- `tracks/beta/drivers/dart/lib/src/types.dart`
+- `tracks/p3/drivers/dart/lib/src/types.dart`
 
 
 ## 13. Add vector literal encode/decode
@@ -172,10 +172,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add vector literal encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`
+Add vector literal encode/decode in `tracks/p3/drivers/dart/lib/src/types.dart`
 
 Files:
-- `tracks/beta/drivers/dart/lib/src/types.dart`
+- `tracks/p3/drivers/dart/lib/src/types.dart`
 
 
 ## 14. Add inet/cidr/macaddr encode/decode
@@ -185,24 +185,24 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`
+Add inet/cidr/macaddr encode/decode in `tracks/p3/drivers/dart/lib/src/types.dart`
 
 Files:
-- `tracks/beta/drivers/dart/lib/src/types.dart`
+- `tracks/p3/drivers/dart/lib/src/types.dart`
 
 
-## 15. Add sys.* metadata helpers and export via `tracks/beta/drivers/dart/lib/scratchbird.dart`
+## 15. Add sys.* metadata helpers and export via `tracks/p3/drivers/dart/lib/scratchbird.dart`
 
 Checklist: `dart.md`
 Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add sys.* metadata helpers in `tracks/beta/drivers/dart/lib/src/metadata.dart` and export via `tracks/beta/drivers/dart/lib/scratchbird.dart`
+Add sys.* metadata helpers in `tracks/p3/drivers/dart/lib/src/metadata.dart` and export via `tracks/p3/drivers/dart/lib/scratchbird.dart`
 
 Files:
-- `tracks/beta/drivers/dart/lib/src/metadata.dart`
-- `tracks/beta/drivers/dart/lib/scratchbird.dart`
+- `tracks/p3/drivers/dart/lib/src/metadata.dart`
+- `tracks/p3/drivers/dart/lib/scratchbird.dart`
 
 
 ## 16. Add conformance/integration tests
@@ -212,10 +212,10 @@ Priority: P2 (Follow-ups)
 Status: Done (2026-02-04)
 
 Description:
-Add conformance/integration tests in `tracks/beta/drivers/dart/test/`
+Add conformance/integration tests in `tracks/p3/drivers/dart/test/`
 
 Files:
-- `tracks/beta/drivers/dart/test/`
+- `tracks/p3/drivers/dart/test/`
 
 
 ## 17. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -225,10 +225,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Errors.cs`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/dotnet/src/ScratchBird.Data/Errors.cs`
 
 Files:
-- `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Errors.cs`
+- `tracks/p3/drivers/dotnet/src/ScratchBird.Data/Errors.cs`
 
 
 ## 18. Add conformance tests for full type matrix
@@ -237,10 +237,10 @@ Checklist: `dotnet.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/dotnet/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/dotnet/tests/`
 
 Files:
-- `tracks/alpha/drivers/dotnet/tests/`
+- `tracks/p3/drivers/dotnet/tests/`
 
 
 ## 19. Enforce TLS required (reject `sslmode=disable`)
@@ -384,10 +384,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/go/errors.go`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/go/errors.go`
 
 Files:
-- `tracks/alpha/drivers/go/errors.go`
+- `tracks/p3/drivers/go/errors.go`
 
 
 ## 30. Add conformance tests for full type matrix
@@ -396,10 +396,10 @@ Checklist: `go.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/go/conformance/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/go/conformance/`
 
 Files:
-- `tracks/alpha/drivers/go/conformance/`
+- `tracks/p3/drivers/go/conformance/`
 
 
 ## 31. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping (error mapping)
@@ -409,10 +409,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping)
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/` (error mapping)
 
 Files:
-- `tracks/alpha/drivers/jdbc/src/main/java/com/scratchbird/jdbc/`
+- `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/`
 
 
 ## 32. Add conformance tests for full type matrix
@@ -421,10 +421,10 @@ Checklist: `jdbc.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/jdbc/src/test/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/jdbc/src/test/`
 
 Files:
-- `tracks/alpha/drivers/jdbc/src/test/`
+- `tracks/p3/drivers/jdbc/src/test/`
 
 
 ## 33. Revalidate `scratchbird-feature-support` flags vs JDBC metadata coverage
@@ -461,10 +461,10 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Replace Python bridge with native SBWP client in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+Replace Python bridge with native SBWP client in `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 Files:
-- `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+- `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 
 ## 36. Enforce TLS required and binary-only once native transport exists
@@ -496,10 +496,10 @@ Checklist: `mojo.md`
 Priority: P1 (Core)
 
 Description:
-Implement SBWP type encoding/decoding wrappers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+Implement SBWP type encoding/decoding wrappers in `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 Files:
-- `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+- `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 
 ## 39. Add array, composite, range, geometry, vector, inet/cidr/macaddr support
@@ -518,10 +518,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add sys.* metadata helpers in `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+Add sys.* metadata helpers in `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 Files:
-- `tracks/alpha/drivers/mojo/src/scratchbird.mojo`
+- `tracks/p3/drivers/mojo/src/scratchbird.mojo`
 
 
 ## 41. Add conformance/integration tests
@@ -540,10 +540,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/node/src/errors.ts`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/node/src/errors.ts`
 
 Files:
-- `tracks/alpha/drivers/node/src/errors.ts`
+- `tracks/p3/drivers/node/src/errors.ts`
 
 
 ## 43. Add conformance tests for full type matrix
@@ -552,10 +552,10 @@ Checklist: `node.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/node/test/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/node/test/`
 
 Files:
-- `tracks/alpha/drivers/node/test/`
+- `tracks/p3/drivers/node/test/`
 
 
 ## 44. Expand type mapping to cover complex SBWP types where applicable
@@ -564,10 +564,10 @@ Checklist: `odbc.md`
 Priority: P1 (Core)
 
 Description:
-Expand type mapping to cover complex SBWP types where applicable in `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp`
+Expand type mapping to cover complex SBWP types where applicable in `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp`
 
 Files:
-- `tracks/alpha/drivers/odbc/src/odbc_client_bridge.cpp`
+- `tracks/p3/drivers/odbc/src/odbc_client_bridge.cpp`
 
 
 ## 45. Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns
@@ -576,12 +576,12 @@ Checklist: `odbc.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns in `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
+Removed fallback metadata queries; use only server-defined `sys.columns` and `sys.index_columns` columns in `tracks/p3/drivers/odbc/src/odbc_handles.cpp`
 
 Files:
 - `sys.columns`
 - `sys.index_columns`
-- `tracks/alpha/drivers/odbc/src/odbc_handles.cpp`
+- `tracks/p3/drivers/odbc/src/odbc_handles.cpp`
 
 
 ## 46. Add conformance tests for metadata + type coverage
@@ -590,10 +590,10 @@ Checklist: `odbc.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for metadata + type coverage in `tracks/alpha/drivers/odbc/tests/`
+Add conformance tests for metadata + type coverage in `tracks/p3/drivers/odbc/tests/`
 
 Files:
-- `tracks/alpha/drivers/odbc/tests/`
+- `tracks/p3/drivers/odbc/tests/`
 
 
 ## 47. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -603,10 +603,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/pascal/src/ScratchBird.Errors.pas`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/pascal/src/ScratchBird.Errors.pas`
 
 Files:
-- `tracks/alpha/drivers/pascal/src/ScratchBird.Errors.pas`
+- `tracks/p3/drivers/pascal/src/ScratchBird.Errors.pas`
 
 
 ## 48. Add conformance tests for full type matrix
@@ -615,10 +615,10 @@ Checklist: `pascal.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/pascal/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/pascal/tests/`
 
 Files:
-- `tracks/alpha/drivers/pascal/tests/`
+- `tracks/p3/drivers/pascal/tests/`
 
 
 ## 49. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -628,10 +628,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/php/src/Errors.php`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/php/src/Errors.php`
 
 Files:
-- `tracks/alpha/drivers/php/src/Errors.php`
+- `tracks/p3/drivers/php/src/Errors.php`
 
 
 ## 50. Add conformance tests for full type matrix
@@ -640,10 +640,10 @@ Checklist: `php.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/php/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/php/tests/`
 
 Files:
-- `tracks/alpha/drivers/php/tests/`
+- `tracks/p3/drivers/php/tests/`
 
 
 ## 51. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -653,10 +653,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/python/src/scratchbird/connection.py`
 
 Files:
-- `tracks/alpha/drivers/python/src/scratchbird/connection.py`
+- `tracks/p3/drivers/python/src/scratchbird/connection.py`
 
 
 ## 52. Add conformance tests for full type matrix
@@ -665,10 +665,10 @@ Checklist: `python.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/python/tests/`
 
 Files:
-- `tracks/alpha/drivers/python/tests/`
+- `tracks/p3/drivers/python/tests/`
 
 
 ## 53. Add SQLSTATE class-prefix mapping (currently only prefixes message)
@@ -677,10 +677,10 @@ Checklist: `r.md`
 Priority: P1 (Core)
 
 Description:
-Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`
+Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/p3/drivers/r/R/client.R`
 
 Files:
-- `tracks/beta/drivers/r/R/client.R`
+- `tracks/p3/drivers/r/R/client.R`
 
 
 ## 54. Add conformance tests for full type matrix
@@ -689,10 +689,10 @@ Checklist: `r.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/r/tests/`
 
 Files:
-- `tracks/beta/drivers/r/tests/`
+- `tracks/p3/drivers/r/tests/`
 
 
 ## 55. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -702,10 +702,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/ruby/lib/scratchbird/errors.rb`
 
 Files:
-- `tracks/alpha/drivers/ruby/lib/scratchbird/errors.rb`
+- `tracks/p3/drivers/ruby/lib/scratchbird/errors.rb`
 
 
 ## 56. Add conformance tests for full type matrix
@@ -714,10 +714,10 @@ Checklist: `ruby.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/ruby/test/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/ruby/test/`
 
 Files:
-- `tracks/alpha/drivers/ruby/test/`
+- `tracks/p3/drivers/ruby/test/`
 
 
 ## 57. Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping
@@ -727,10 +727,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/rust/src/errors.rs`
+Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/rust/src/errors.rs`
 
 Files:
-- `tracks/alpha/drivers/rust/src/errors.rs`
+- `tracks/p3/drivers/rust/src/errors.rs`
 
 
 ## 58. Add conformance tests for full type matrix
@@ -739,10 +739,10 @@ Checklist: `rust.md`
 Priority: P2 (Follow-ups)
 
 Description:
-Add conformance tests for full type matrix in `tracks/alpha/drivers/rust/tests/`
+Add conformance tests for full type matrix in `tracks/p3/drivers/rust/tests/`
 
 Files:
-- `tracks/alpha/drivers/rust/tests/`
+- `tracks/p3/drivers/rust/tests/`
 
 
 ## 59. Map column types using `sys.columns.data_type_name` (remove numeric `data_type_id` fallback)
@@ -780,10 +780,10 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Implement TLS transport in `tracks/beta/drivers/swift/Sources/ScratchBird/Socket.swift`
+Implement TLS transport in `tracks/p3/drivers/swift/Sources/ScratchBird/Socket.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Socket.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Socket.swift`
 
 
 ## 62. Enforce binary-only (reject `binary_transfer=false`)
@@ -793,11 +793,11 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`
+Enforce binary-only (reject `binary_transfer=false`) in `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`
 
 Files:
 - `binary_transfer=false`
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`
 
 
 ## 63. Reject `compression=zstd` until server support exists
@@ -807,11 +807,11 @@ Priority: P0 (Blocking)
 Status: Done (2026-02-04)
 
 Description:
-Reject `compression=zstd` until server support exists in `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`
+Reject `compression=zstd` until server support exists in `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`
 
 Files:
 - `compression=zstd`
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Connection.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`
 
 
 ## 64. Add array encoding/decoding
@@ -821,10 +821,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add array encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+Add array encoding/decoding in `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 
 ## 65. Add composite encoding/decoding
@@ -834,10 +834,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add composite encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+Add composite encoding/decoding in `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 
 ## 66. Add range encoding/decoding
@@ -847,10 +847,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add range encoding/decoding in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+Add range encoding/decoding in `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 
 ## 67. Add inet/cidr/macaddr encode/decode
@@ -860,10 +860,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+Add inet/cidr/macaddr encode/decode in `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 
 ## 68. Add vector literal encode/decode
@@ -873,10 +873,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add vector literal encode/decode in `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+Add vector literal encode/decode in `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Types.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Types.swift`
 
 
 ## 69. Add sys.* metadata helpers
@@ -886,10 +886,10 @@ Priority: P1 (Core)
 Status: Done (2026-02-04)
 
 Description:
-Add sys.* metadata helpers in `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift`
+Add sys.* metadata helpers in `tracks/p3/drivers/swift/Sources/ScratchBird/Metadata.swift`
 
 Files:
-- `tracks/beta/drivers/swift/Sources/ScratchBird/Metadata.swift`
+- `tracks/p3/drivers/swift/Sources/ScratchBird/Metadata.swift`
 
 
 ## 70. Add conformance/integration tests
@@ -899,10 +899,10 @@ Priority: P2 (Follow-ups)
 Status: Done (2026-02-04)
 
 Description:
-Add conformance/integration tests in `tracks/beta/drivers/swift/Tests/`
+Add conformance/integration tests in `tracks/p3/drivers/swift/Tests/`
 
 Files:
-- `tracks/beta/drivers/swift/Tests/`
+- `tracks/p3/drivers/swift/Tests/`
 
 ## Deferred Alpha Items (2026-02-04)
 
@@ -4238,7 +4238,7 @@ Deferred checklist item from `docs/planning/driver-checklists/cpp.md` for later 
 Files:
 - `docs/specifications/integrations/drivers/cpp/SPECIFICATION.md`
 
-## 363. Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/beta/drivers/r/R/client.R`.
+## 363. Add SQLSTATE class-prefix mapping (currently only prefixes message) in `tracks/p3/drivers/r/R/client.R`.
 
 Checklist: `r.md`
 Priority: Deferred (Beta/P3)
@@ -4247,9 +4247,9 @@ Description:
 Deferred checklist item from `docs/planning/driver-checklists/r.md` for later integration/testing work.
 
 Files:
-- `tracks/beta/drivers/r/R/client.R`
+- `tracks/p3/drivers/r/R/client.R`
 
-## 364. Add conformance tests for full type matrix in `tracks/beta/drivers/r/tests/`.
+## 364. Add conformance tests for full type matrix in `tracks/p3/drivers/r/tests/`.
 
 Checklist: `r.md`
 Priority: Deferred (Beta/P3)
@@ -4258,7 +4258,7 @@ Description:
 Deferred checklist item from `docs/planning/driver-checklists/r.md` for later integration/testing work.
 
 Files:
-- `tracks/beta/drivers/r/tests/`
+- `tracks/p3/drivers/r/tests/`
 
 ## 365. Constraint: Conform to R DBI generics and return data frames with stable column classes. (Sources: `docs/specifications/integrations/drivers/r/SPECIFICATION.md`)
 

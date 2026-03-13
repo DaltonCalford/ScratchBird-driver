@@ -14,7 +14,7 @@ Native ScratchBird driver using Swift Concurrency (async/await), partial SBWP su
 ## Install
 
 ```bash
-cd tracks/beta/drivers/swift
+cd tracks/p3/drivers/swift
 swift build
 ```
 
@@ -34,7 +34,7 @@ try await conn.close()
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/swift.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/swift.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/beta/drivers/swift/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/swift/README.md)
 
 ## Configuration
 

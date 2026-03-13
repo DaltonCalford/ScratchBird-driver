@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/python/src/scratchbird/connection.py`. Issue: DONE (2026-03-04)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/python/src/scratchbird/connection.py`. Issue: DONE (2026-03-04)
 
 ### Integration Appendix Tasks
 
@@ -25,7 +25,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: The backend adapter must implement Django Database Backend APIs (operations, features, introspection). (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate `inspectdb` output matches metadata contract. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Confirm Django migration operations for indexes and constraints. (Sources: `docs/specifications/integrations/orm/django-orm/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for full type matrix in `tracks/alpha/drivers/python/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for full type matrix in `tracks/p3/drivers/python/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

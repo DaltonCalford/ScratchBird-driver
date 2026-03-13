@@ -3,7 +3,7 @@
 ## Build
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew build
 ```
 

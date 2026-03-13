@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/php/src/Errors.php`. Issue: DONE (2026-03-04)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/php/src/Errors.php`. Issue: DONE (2026-03-04)
 
 ### Integration Appendix Tasks
 
@@ -36,7 +36,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: Ensure migration commands (`php artisan migrate`) and schema builder operations are supported. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate schema builder support for indexes and foreign keys. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Confirm Eloquent casts (date, json, array) match ScratchBird types. (Sources: `docs/specifications/integrations/orm/laravel-eloquent/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for full type matrix in `tracks/alpha/drivers/php/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for full type matrix in `tracks/p3/drivers/php/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)
 
 ### Integration Appendix Tasks

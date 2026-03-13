@@ -12,7 +12,7 @@ Built artifacts are in:
 - Package: `scratchbird`
 - Artifact: `release/packages/npm/scratchbird-0.1.0.tgz`
 - Publish:
-  - `cd tracks/alpha/drivers/node`
+  - `cd tracks/p3/drivers/node`
   - `npm login`
   - `npm publish /absolute/path/to/release/packages/npm/scratchbird-0.1.0.tgz --access public`
 - Registry/support:
@@ -66,7 +66,7 @@ Built artifacts are in:
 - Artifact: `release/packages/crates/scratchbird-0.1.0.crate`
 - Publish:
   - `cargo login <CRATES_IO_TOKEN>`
-  - `cd tracks/alpha/drivers/rust`
+  - `cd tracks/p3/drivers/rust`
   - `cargo publish`
 - Registry/support:
   - <https://crates.io/>
@@ -142,7 +142,7 @@ Built artifacts are in:
 ## 11. Dart (pub.dev)
 
 - Current status:
-  - `tracks/beta/drivers/dart/pubspec.yaml` has `publish_to: 'none'`, so publish is intentionally disabled.
+  - `tracks/p3/drivers/dart/pubspec.yaml` has `publish_to: 'none'`, so publish is intentionally disabled.
 - To publish:
   - Remove `publish_to: 'none'`.
   - Run `dart pub publish --dry-run`.

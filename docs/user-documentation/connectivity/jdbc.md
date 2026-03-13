@@ -16,11 +16,11 @@ protocol (SBWP v1.1) on port 3092.
 ## Build
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew build
 ```
 
-Jar output: `tracks/alpha/drivers/jdbc/build/libs/scratchbird-jdbc.jar`
+Jar output: `tracks/p3/drivers/jdbc/build/libs/scratchbird-jdbc.jar`
 
 ---
 

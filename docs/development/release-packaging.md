@@ -11,7 +11,7 @@ packaging tools below.
 ## Python
 
 ```bash
-cd tracks/alpha/drivers/python
+cd tracks/p3/drivers/python
 python -m pip install build
 twine upload dist/*
 ```
@@ -19,7 +19,7 @@ twine upload dist/*
 ## Node.js
 
 ```bash
-cd tracks/alpha/drivers/node
+cd tracks/p3/drivers/node
 npm run build
 npm publish
 ```
@@ -27,7 +27,7 @@ npm publish
 ## Ruby
 
 ```bash
-cd tracks/alpha/drivers/ruby
+cd tracks/p3/drivers/ruby
 gem build scratchbird.gemspec
 gem push scratchbird-0.1.0.gem
 ```
@@ -35,7 +35,7 @@ gem push scratchbird-0.1.0.gem
 ## Rust
 
 ```bash
-cd tracks/alpha/drivers/rust
+cd tracks/p3/drivers/rust
 cargo publish
 ```
 
@@ -50,14 +50,14 @@ Use `R CMD build` and `R CMD check`, then publish to the target repository.
 ## .NET
 
 ```bash
-cd tracks/alpha/drivers/dotnet
+cd tracks/p3/drivers/dotnet
 dotnet pack
 ```
 
 ## JDBC
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew publish
 ```
 

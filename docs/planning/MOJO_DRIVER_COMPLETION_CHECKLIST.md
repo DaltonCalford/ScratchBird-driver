@@ -6,7 +6,7 @@ and the shared SBWP conformance fixtures.
 ## 1) Goal + Constraints (Spec: Goal, Constraints)
 
 - [ ] Confirm Mojo package layout: `scratchbird_mojo` with `scratchbird`, `scratchbird/protocol`, `scratchbird/transport`.
-- [x] Document transport isolation boundaries for swapping TCP/TLS implementation later (see `tracks/alpha/drivers/mojo/README.md`).
+- [x] Document transport isolation boundaries for swapping TCP/TLS implementation later (see `tracks/p3/drivers/mojo/README.md`).
 - [ ] Remove Python transport dependency in runtime path.
 
 ## 2) Configuration + DSN (Spec: Configuration)
@@ -65,4 +65,4 @@ Use `docs/fixtures/sbwp_conformance_manifest.json` and fixtures:
 
 - [ ] `scratchbird_mojo` package with examples.
 - [ ] Integration tests gated by `SCRATCHBIRD_TEST_DSN`.
-- [ ] Update `tracks/alpha/drivers/mojo/README.md` to reflect native transport completion.
+- [ ] Update `tracks/p3/drivers/mojo/README.md` to reflect native transport completion.

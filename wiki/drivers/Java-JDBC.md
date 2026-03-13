@@ -14,7 +14,7 @@ ScratchBird JDBC driver using SBWP v1.1.
 ## Install
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew build
 ```
 
@@ -40,7 +40,7 @@ Connection conn = DriverManager.getConnection(
 
 - [Getting started](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/getting-started/jdbc.md)
 - [API reference](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/docs/api-reference/jdbc.md)
-- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/alpha/drivers/jdbc/README.md)
+- [Driver README](https://github.com/DaltonCalford/ScratchBird-driver/blob/main/tracks/p3/drivers/jdbc/README.md)
 
 ## Configuration
 

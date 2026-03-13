@@ -5,11 +5,11 @@
 From the repo root:
 
 ```bash
-cmake -S tracks/alpha/drivers/odbc -B tracks/alpha/drivers/odbc/build
-cmake --build tracks/alpha/drivers/odbc/build --config Release
+cmake -S tracks/p3/drivers/odbc -B tracks/p3/drivers/odbc/build
+cmake --build tracks/p3/drivers/odbc/build --config Release
 ```
 
-See `tracks/alpha/drivers/odbc/docs/BUILD_MATRIX.md` for ODBC manager and
+See `tracks/p3/drivers/odbc/docs/BUILD_MATRIX.md` for ODBC manager and
 OpenSSL prerequisites.
 
 ## Register The Driver
@@ -76,5 +76,5 @@ Common ODBC keys include:
 After configuring the build:
 
 ```bash
-ctest --test-dir tracks/alpha/drivers/odbc/build --output-on-failure
+ctest --test-dir tracks/p3/drivers/odbc/build --output-on-failure
 ```

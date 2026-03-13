@@ -4,7 +4,7 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P1 (Core)
 
-- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/alpha/drivers/dotnet/src/ScratchBird.Data/Errors.cs`. Issue: Closed (2026-02-23)
+- [x] Replace SQLSTATE class-prefix mapping with spec-complete SQLSTATE mapping in `tracks/p3/drivers/dotnet/src/ScratchBird.Data/Errors.cs`. Issue: Closed (2026-02-23)
 
 ### Integration Appendix Tasks
 
@@ -25,5 +25,5 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 - [x] Constraint: Ensure parameter binding supports anonymous objects and `DynamicParameters`. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Validate Dapper multi-mapping (`splitOn`) with joined queries. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
 - [x] Test: Ensure `QueryMultiple` works with multiple result sets. (Sources: `docs/specifications/integrations/orm/dapper/SPECIFICATION.md`) Status: DEFERRED (2026-02-04)
-- [x] Add conformance tests for full type matrix in `tracks/alpha/drivers/dotnet/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
+- [x] Add conformance tests for full type matrix in `tracks/p3/drivers/dotnet/tests/`. Issue: DONE (2026-02-04) (Sources: ``)
 ## P3 (Future)

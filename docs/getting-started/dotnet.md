@@ -5,7 +5,7 @@
 Build the provider from the repo:
 
 ```bash
-dotnet build tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj
+dotnet build tracks/p3/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj
 ```
 
 For application development, add a project or package reference to

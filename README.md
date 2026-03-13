@@ -71,7 +71,7 @@ secondary alpha, C/C++, and downstream JDBC consumer residuals, and
 `NCW-055` and `NCW-056` closed the remaining beta and specialty full-surface
 parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
 
-## Alpha Drivers
+## Pre-Release Drivers
 
 | Driver          | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                        |
 | --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -89,7 +89,7 @@ parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
 
 ---
 
-## Beta Drivers
+## Additional Pre-Release Drivers
 
 | Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                               |
 | --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -100,7 +100,7 @@ parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
 
 ---
 
-## Specialty Drivers
+## Specialty Pre-Release Drivers
 
 | Driver                    | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                     |
 | ------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -108,7 +108,7 @@ parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
 
 ---
 
-## Ecosystem Adapter Status (Alpha Track)
+## Ecosystem Adapter Status (Track Status Unchanged)
 
 | Adapter                | Current State                                                                                                                                                                     |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -175,23 +175,23 @@ FDW-based emulation CLI tools remain gated by engine-side adapters.
 ScratchBird-driver/
 ├── docs/
 ├── wiki/
-├── tracks/alpha/drivers/cli/
-├── tracks/beta/drivers/cpp/
-├── tracks/alpha/drivers/odbc/
-├── tracks/alpha/drivers/go/
-├── tracks/alpha/drivers/python/
-├── tracks/alpha/drivers/node/
-├── tracks/alpha/drivers/ruby/
-├── tracks/alpha/drivers/rust/
-├── tracks/alpha/drivers/php/
-├── tracks/beta/drivers/r/
-├── tracks/alpha/drivers/pascal/
-├── tracks/alpha/drivers/dotnet/
-├── tracks/alpha/drivers/jdbc/
-├── tracks/beta/drivers/dart/
-├── tracks/beta/drivers/swift/
+├── tracks/p3/drivers/cli/
+├── tracks/p3/drivers/cpp/
+├── tracks/p3/drivers/odbc/
+├── tracks/p3/drivers/go/
+├── tracks/p3/drivers/python/
+├── tracks/p3/drivers/node/
+├── tracks/p3/drivers/ruby/
+├── tracks/p3/drivers/rust/
+├── tracks/p3/drivers/php/
+├── tracks/p3/drivers/r/
+├── tracks/p3/drivers/pascal/
+├── tracks/p3/drivers/dotnet/
+├── tracks/p3/drivers/jdbc/
+├── tracks/p3/drivers/dart/
+├── tracks/p3/drivers/swift/
 ├── tracks/p3/drivers/elixir/
-├── tracks/alpha/drivers/mojo/
+├── tracks/p3/drivers/mojo/
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 └── LICENSE

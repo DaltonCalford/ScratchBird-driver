@@ -5,7 +5,7 @@
 For repo-local development:
 
 ```bash
-cd tracks/alpha/drivers/php
+cd tracks/p3/drivers/php
 composer install
 ```
 

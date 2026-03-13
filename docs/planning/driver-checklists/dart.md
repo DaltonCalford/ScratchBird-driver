@@ -4,20 +4,20 @@ Note: Integration priorities map to checklist buckets as follows: P0 → P1 (Cor
 
 ## P0 (Blocking)
 
-- [x] Enforce TLS required (reject `sslmode=disable`) in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
-- [x] Enforce binary-only (reject `binary_transfer=false`) in `tracks/beta/drivers/dart/lib/src/client.dart` or `tracks/beta/drivers/dart/lib/src/config.dart`. Issue: DONE (2026-03-04)
-- [x] Reject `compression=zstd` until server support exists in `tracks/beta/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
+- [x] Enforce TLS required (reject `sslmode=disable`) in `tracks/p3/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
+- [x] Enforce binary-only (reject `binary_transfer=false`) in `tracks/p3/drivers/dart/lib/src/client.dart` or `tracks/p3/drivers/dart/lib/src/config.dart`. Issue: DONE (2026-03-04)
+- [x] Reject `compression=zstd` until server support exists in `tracks/p3/drivers/dart/lib/src/client.dart`. Issue: DONE (2026-03-04)
 
 ## P1 (Core)
 
-- [x] Add array encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
-- [x] Add composite encoding/decoding in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
-- [x] Add vector literal encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
-- [x] Add inet/cidr/macaddr encode/decode in `tracks/beta/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
-- [x] Add sys.* metadata helpers in `tracks/beta/drivers/dart/lib/src/metadata.dart` and export via `tracks/beta/drivers/dart/lib/scratchbird.dart`. Issue: DONE (2026-03-04)
+- [x] Add array encoding/decoding in `tracks/p3/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add composite encoding/decoding in `tracks/p3/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add vector literal encode/decode in `tracks/p3/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add inet/cidr/macaddr encode/decode in `tracks/p3/drivers/dart/lib/src/types.dart`. Issue: DONE (2026-03-04)
+- [x] Add sys.* metadata helpers in `tracks/p3/drivers/dart/lib/src/metadata.dart` and export via `tracks/p3/drivers/dart/lib/scratchbird.dart`. Issue: DONE (2026-03-04)
 
 ## P2 (Follow-ups)
 
-- [x] Add conformance/integration tests in `tracks/beta/drivers/dart/test/`. Issue: DONE (2026-03-04)
+- [x] Add conformance/integration tests in `tracks/p3/drivers/dart/test/`. Issue: DONE (2026-03-04)
 
 ## P3 (Future)

@@ -41,7 +41,7 @@ Linux-only in CI:
 ## Go
 
 ```bash
-cd tracks/alpha/drivers/go
+cd tracks/p3/drivers/go
 
 go test ./...
 ```
@@ -54,7 +54,7 @@ Integration env:
 ## Python
 
 ```bash
-cd tracks/alpha/drivers/python
+cd tracks/p3/drivers/python
 python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 python -m pytest
@@ -68,7 +68,7 @@ Integration env:
 ## Node.js
 
 ```bash
-cd tracks/alpha/drivers/node
+cd tracks/p3/drivers/node
 npm install
 npm test
 ```
@@ -81,21 +81,21 @@ Integration env:
 ## C/C++
 
 ```bash
-cmake -S tracks/beta/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+cmake -S tracks/p3/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
 cmake --build build-cpp --config Release
 ```
 
 ## ODBC
 
 ```bash
-cmake -S tracks/alpha/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
+cmake -S tracks/p3/drivers/odbc -B build-odbc -DCMAKE_BUILD_TYPE=Release
 cmake --build build-odbc --config Release
 ```
 
 Runtime verification command (after stack/env setup above):
 
 ```bash
-cmake -S tracks/alpha/drivers/odbc -B build/odbc-runtime -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DODBC_FETCH_GTEST=ON
+cmake -S tracks/p3/drivers/odbc -B build/odbc-runtime -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DODBC_FETCH_GTEST=ON
 cmake --build build/odbc-runtime --config Release
 ctest --test-dir build/odbc-runtime --output-on-failure -R '^scratchbird_odbc_tests$'
 ```
@@ -114,7 +114,7 @@ Notes:
 ## Ruby
 
 ```bash
-cd tracks/alpha/drivers/ruby
+cd tracks/p3/drivers/ruby
 ruby -Ilib:test test/*.rb
 ```
 
@@ -126,7 +126,7 @@ Integration env:
 ## Rust
 
 ```bash
-cd tracks/alpha/drivers/rust
+cd tracks/p3/drivers/rust
 cargo test
 ```
 
@@ -138,7 +138,7 @@ Integration env:
 ## PHP
 
 ```bash
-cd tracks/alpha/drivers/php
+cd tracks/p3/drivers/php
 composer install
 vendor/bin/phpunit
 ```
@@ -151,7 +151,7 @@ Integration env:
 ## R
 
 ```bash
-cd tracks/beta/drivers/r
+cd tracks/p3/drivers/r
 R -q -e 'devtools::test()'
 ```
 
@@ -180,7 +180,7 @@ Integration env:
 ## Dart
 
 ```bash
-cd tracks/beta/drivers/dart
+cd tracks/p3/drivers/dart
 dart pub get
 dart test
 ```
@@ -192,7 +192,7 @@ Integration env:
 ## Swift
 
 ```bash
-cd tracks/beta/drivers/swift
+cd tracks/p3/drivers/swift
 swift test
 ```
 
@@ -203,7 +203,7 @@ Notes:
 ## Mojo
 
 ```bash
-cd tracks/alpha/drivers/mojo/tests
+cd tracks/p3/drivers/mojo/tests
 mojo integration.mojo
 ```
 
@@ -213,7 +213,7 @@ Integration env:
 
 ## Pascal/Delphi
 
-Run the test projects under `tracks/alpha/drivers/pascal/tests/` with:
+Run the test projects under `tracks/p3/drivers/pascal/tests/` with:
 
 - `SCRATCHBIRD_PASCAL_URL`
 - `SCRATCHBIRD_PASCAL_STREAM_SQL` (optional)
@@ -224,7 +224,7 @@ Run the test projects under `tracks/alpha/drivers/pascal/tests/` with:
 ## .NET
 
 ```bash
-cd tracks/alpha/drivers/dotnet
+cd tracks/p3/drivers/dotnet
 dotnet test
 ```
 
@@ -236,14 +236,14 @@ Integration env:
 ## JDBC
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew test
 ```
 
 Windows:
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 gradlew.bat test
 ```
 
@@ -257,6 +257,6 @@ Integration env:
 Runtime verification command (after stack/env setup above):
 
 ```bash
-cd tracks/alpha/drivers/jdbc
+cd tracks/p3/drivers/jdbc
 ./gradlew test
 ```

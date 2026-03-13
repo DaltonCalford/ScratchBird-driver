@@ -12,11 +12,11 @@ ScratchBird-driver, then bring the migrated drivers to full SBWP v1.1 parity.
 
 ### Code Moves
 
-- [x] Move C/C++ client library (`libscratchbird_client`) into `tracks/beta/drivers/cpp/` (sources + headers)
-- [x] Move C API wrapper (`scratchbird_client_c.*`) into `tracks/beta/drivers/cpp/` and expose shared lib build
-- [x] Move ODBC driver (`scratchbird_odbc`) into `tracks/alpha/drivers/odbc/` (sources + headers)
-- [x] Move CLI clients (`sb_isql`, `sb_fb_isql`, `sb_pg_isql`, `sb_my_isql`, `sbdriver-conformance`) into `tracks/alpha/drivers/cli/`
-- [x] Move ODBC test suite into `tracks/alpha/drivers/odbc/tests/` (unit + integration)
+- [x] Move C/C++ client library (`libscratchbird_client`) into `tracks/p3/drivers/cpp/` (sources + headers)
+- [x] Move C API wrapper (`scratchbird_client_c.*`) into `tracks/p3/drivers/cpp/` and expose shared lib build
+- [x] Move ODBC driver (`scratchbird_odbc`) into `tracks/p3/drivers/odbc/` (sources + headers)
+- [x] Move CLI clients (`sb_isql`, `sb_fb_isql`, `sb_pg_isql`, `sb_my_isql`, `sbdriver-conformance`) into `tracks/p3/drivers/cli/`
+- [x] Move ODBC test suite into `tracks/p3/drivers/odbc/tests/` (unit + integration)
 - [x] Add build system for C/ODBC/CLI (CMake + install targets)
 - [ ] Remove moved code from ScratchBird and update its build references (needs ScratchBird repo audit)
 
