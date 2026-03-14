@@ -36,17 +36,18 @@ require_file() {
 
 insert_after_regex_once() {
   local file="$1"
-  local regex="$2"
-  local new_line="$3"
+  local presence_regex="$2"
+  local anchor_regex="$3"
+  local new_line="$4"
 
-  if grep -Fq "${new_line}" "${file}"; then
+  if grep -Eq "${presence_regex}" "${file}"; then
     return 0
   fi
 
   local tmp
   tmp="$(mktemp)"
 
-  if ! awk -v re="${regex}" -v ins="${new_line}" '
+  if ! awk -v re="${anchor_regex}" -v ins="${new_line}" '
     {
       print $0
       if (!inserted && $0 ~ re) {
@@ -61,7 +62,7 @@ insert_after_regex_once() {
     }
   ' "${file}" > "${tmp}"; then
     rm -f "${tmp}"
-    echo "Failed to patch ${file}: anchor regex not found: ${regex}" >&2
+    echo "Failed to patch ${file}: anchor regex not found: ${anchor_regex}" >&2
     exit 1
   fi
 
@@ -131,21 +132,25 @@ write_dbeaver_reactor_poms
 
 insert_after_regex_once \
   "${DBEAVER_DIR}/plugins/pom.xml" \
+  "<module>org[.]jkiss[.]dbeaver[.]ext[.]scratchbird</module>" \
   "org[.]jkiss[.]dbeaver[.]ext[.]generic</module>" \
   "        <module>org.jkiss.dbeaver.ext.scratchbird</module>"
 
 insert_after_regex_once \
   "${DBEAVER_DIR}/test/pom.xml" \
+  "<module>org[.]jkiss[.]dbeaver[.]ext[.]scratchbird[.]test</module>" \
   "org[.]jkiss[.]dbeaver[.]ext[.]generic[.]test</module>" \
   "        <module>org.jkiss.dbeaver.ext.scratchbird.test</module>"
 
 insert_after_regex_once \
   "${DBEAVER_DIR}/features/org.jkiss.dbeaver.db.feature/feature.xml" \
+  "plugin id=\"org[.]jkiss[.]dbeaver[.]ext[.]scratchbird\"" \
   "plugin id=\"org[.]jkiss[.]dbeaver[.]ext[.]generic\"" \
   "    <plugin id=\"org.jkiss.dbeaver.ext.scratchbird\" version = \"0.0.0\"/>"
 
 insert_after_regex_once \
   "${DBEAVER_DIR}/features/org.jkiss.dbeaver.test.feature/feature.xml" \
+  "plugin id=\"org[.]jkiss[.]dbeaver[.]ext[.]scratchbird[.]test\"" \
   "plugin id=\"org[.]jkiss[.]dbeaver[.]ext[.]generic[.]test\"" \
   "    <plugin id=\"org.jkiss.dbeaver.ext.scratchbird.test\" version=\"0.0.0\"/>"
 

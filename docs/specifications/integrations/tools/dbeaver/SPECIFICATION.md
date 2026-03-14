@@ -1,43 +1,94 @@
-# dbeaver Integration Specification
+# DBeaver Integration Specification
 
-Status: Draft
+Status: Updated 2026-03-13
 Priority: P0
 Category: Database Tool
 
+Canonical contract:
 
-Checklist: `docs/planning/driver-checklists/jdbc.md` (see Integration Appendix Tasks)
-## 1. Goals
+- `~/CliWork/local_work/docs/specifications/work/planning/SCRATCHBIRD_DBEAVER_ADAPTER_CONTRACT_2026-03-13.md`
 
-- Define compatibility requirements for dbeaver.
-- Specify driver/protocol features required for integration.
+## 1. Goal
 
-## 2. Integration Path
+Deliver first-class ScratchBird support in DBeaver while reusing the existing
+ScratchBird JDBC driver.
 
-- Primary driver/protocol used.
-- Authentication requirements.
-- Metadata coverage.
+This now means full DBeaver-native support across:
 
-## 3. Required Features
+1. navigator and metadata browsing
+2. SQL editor/autocomplete/formatter behavior
+3. object create/edit/drop workflows
+4. connection, auth, and TLS/network UX
+5. value rendering and specialized data editors
+6. operational tasks, tools, and related feature families where ScratchBird has
+   real backing capability
 
-- TLS required; reject plaintext or sslmode=disable.
-- Binary-only parameter binding enforced; reject binary_transfer=false.
-- Full SBWP v1.1 message coverage for parse/bind/execute, ready/paging.
-- SQLSTATE mapping must be spec-complete and surfaced in errors.
-- Metadata helpers must use sys.* contract and return stable schemas.
-- All wire types in TYPE_MAPPING_MATRIX.md must encode and decode.
-- Streaming/paging must honor fetch_size and row batching.
-- Timeouts/cancel semantics must follow DRIVER_CANCELLATION_TIMEOUTS.md.
+## 2. Required Integration Path
 
-## 4. Security & Compliance
+1. DBeaver adapter source home:
+   `tracks/alpha/integrations/scratchbird-dbeaver-driver/`
+2. Transport/runtime layer:
+   `tracks/p3/drivers/jdbc/`
+3. Core DBeaver registration mechanism:
+   `org.jkiss.dbeaver.dataSourceProvider`
+4. Generic JDBC customization mechanism:
+   `org.jkiss.dbeaver.generic.meta`
+5. SQL editor specialization:
+   `org.jkiss.dbeaver.sqlDialect`
+6. Full native UX layer:
+   companion ScratchBird UI plugin using DBeaver UI extension points
 
-- TLS 1.3 preferred with server certificate validation.
-- Credential handling must avoid logging secrets.
-- Connection strings must support secure credential sources.
+## 3. Required Adapter Features
 
-## 5. Observability
+1. Register `com.scratchbird.jdbc.SBDriver` as a DBeaver driver.
+2. Provide a ScratchBird datasource provider derived from DBeaver generic JDBC.
+3. Replace the inherited generic schema node with a recursive schema tree.
+4. Inflate dotted ScratchBird schemas into nested navigator directories.
+5. Register a ScratchBird SQL dialect for database-specific SQL editor behavior.
+6. Provide object managers for supported ScratchBird object lifecycle actions.
+7. Provide database editors/configurators for supported object families.
+8. Provide ScratchBird-specific connection/auth/network UI as needed.
+9. Provide value handlers/managers for ScratchBird-specific type behavior.
+10. Wire supported tasks/tools/dashboards/generators where ScratchBird has real
+    backing capability.
+11. Preserve generic folders for tables, views, and data types unless they are
+    intentionally replaced.
+12. Build a stock-installable p2 update site.
+13. Support installation into a DBeaver source checkout without duplicate patch
+   lines on rerun.
 
-- Expose connection state and last SQLSTATE for debugging.
-- Provide lightweight logging hooks (disabled by default).
+## 4. Recursive Schema Contract
+
+1. `users.alice.dev` must render as `users -> alice -> dev`.
+2. Parent segments are reconstructed client-side in the DBeaver adapter.
+3. `sys` and `sys.*` remain identifiable as system schemas.
+4. Recursive directories are a navigator-tree concern, not a DBeaver
+   filesystem-provider concern.
+
+## 5. SQL Editor Requirements
+
+1. ScratchBird scripts must bind to a ScratchBird dialect rather than generic
+   SQL where DBeaver supports dialect-specific behavior.
+2. Autocomplete and related SQL editor behavior must use ScratchBird-specific
+   keyword/type/function rules.
+3. If DBeaver requires dialect adapter factories for parser/text-rule support,
+   ScratchBird must supply them.
+
+## 6. JDBC-Side Requirements
+
+1. JDBC metadata must expose stable schema names and generic metadata coverage.
+2. Optional property `metadataExpandSchemaParents` may emit parent schema rows,
+   but the adapter must function without it.
+3. JDBC changes made solely for DBeaver should be kept minimal unless they
+   benefit other recursive-schema consumers.
+
+## 7. Full-Native Scope Rules
+
+1. Any DBeaver feature family ScratchBird cannot back correctly should be
+   hidden, not exposed as partially broken.
+2. Complete support does not mean implementing every DBeaver extension point in
+   the abstract; it means implementing every relevant feature family that maps
+   to real ScratchBird capability.
 
 ## 6. Performance Expectations
 

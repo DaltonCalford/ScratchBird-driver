@@ -4,6 +4,12 @@ This folder stores ScratchBird-specific DBeaver integration assets inside
 `ScratchBird-driver` so the DBeaver plugin and JDBC compatibility behavior are
 versioned together.
 
+Canonical findings, contract, and workplan artifacts for this adapter live in:
+
+- `~/CliWork/local_work/docs/specifications/work/findings/SCRATCHBIRD_DBEAVER_ADAPTER_FINDINGS_2026-03-13.md`
+- `~/CliWork/local_work/docs/specifications/work/planning/SCRATCHBIRD_DBEAVER_ADAPTER_CONTRACT_2026-03-13.md`
+- `~/CliWork/local_work/docs/specifications/work/planning/SCRATCHBIRD_DBEAVER_ADAPTER_WORKPLAN_2026-03-13.md`
+
 ## Contents
 
 - `plugins/org.jkiss.dbeaver.ext.scratchbird/`
@@ -125,6 +131,10 @@ This copies plugin/test-plugin folders and patches:
 - `~/CliWork/dbeaver/test/pom.xml`
 - `~/CliWork/dbeaver/features/org.jkiss.dbeaver.db.feature/feature.xml`
 - `~/CliWork/dbeaver/features/org.jkiss.dbeaver.test.feature/feature.xml`
+
+The installer matches existing module/plugin IDs semantically, so reruns do not
+duplicate lines if the target files already contain ScratchBird entries with
+different whitespace formatting.
 
 ### 2) Build/Verify In DBeaver
 

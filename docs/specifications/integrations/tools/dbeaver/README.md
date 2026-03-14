@@ -1,34 +1,52 @@
-# dbeaver Integration
+# DBeaver Integration
 
-Status: Draft
+Status: Updated 2026-03-13
 Priority: P0
 Category: Database Tool
 
-## Planning Links
-
-- `docs/planning/ISSUE_STUBS.md`
-- `docs/planning/ISSUE_INDEX.md`
-
 ## Purpose
 
-Define integration requirements and compatibility notes for dbeaver.
+Provide the implementation-facing documentation pack for the ScratchBird
+DBeaver adapter that lives in:
 
-## References
+- `tracks/alpha/integrations/scratchbird-dbeaver-driver/`
 
-- docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
-- docs/specifications/TYPE_MAPPING_MATRIX.md
-- docs/specifications/DRIVER_ERROR_MAPPING.md
-- docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md
-- docs/specifications/METADATA_SCHEMA_CONTRACT.md
-- docs/specifications/DRIVER_PARAMETER_ENCODING.md
-- docs/specifications/DRIVER_RESULT_DECODING.md
-- docs/specifications/DRIVER_STREAMING_AND_PAGING.md
-- docs/specifications/DRIVER_THREAD_SAFETY_POOLING.md
-- docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
-- docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
+This repo-local doc set is a working mirror for engineers in
+`ScratchBird-driver`. Canonical findings, contract, and workplan artifacts live
+under `~/CliWork/local_work/docs/specifications/work/`.
 
-## Scope
+The current tracked adapter is a foundation layer. The target scope for this
+doc pack is now a complete DBeaver-native ScratchBird implementation, not only
+connect-and-browse support.
 
-- Integration entry points
-- Feature compatibility notes
-- Testing requirements
+## Canonical Planning Artifacts
+
+- `~/CliWork/local_work/docs/specifications/work/findings/SCRATCHBIRD_DBEAVER_ADAPTER_FINDINGS_2026-03-13.md`
+- `~/CliWork/local_work/docs/specifications/work/planning/SCRATCHBIRD_DBEAVER_ADAPTER_CONTRACT_2026-03-13.md`
+- `~/CliWork/local_work/docs/specifications/work/planning/SCRATCHBIRD_DBEAVER_ADAPTER_WORKPLAN_2026-03-13.md`
+
+## Contents
+
+- `SPECIFICATION.md`
+  - implementation-facing summary of the full adapter contract
+- `IMPLEMENTATION_PLAN.md`
+  - repo-local execution phases for full DBeaver feature coverage
+- `COMPATIBILITY_MATRIX.md`
+  - capability-by-capability snapshot across DBeaver feature families
+- `API_REFERENCE.md`
+  - plugin/module IDs, extension-point families, scripts, and notable knobs
+- `TESTING_CRITERIA.md`
+  - required validation gates for JDBC, plugins, UI, and packaging
+- `MIGRATION_GUIDE.md`
+  - how to move from ad-hoc DBeaver staging to the tracked adapter lane
+
+## Source of Truth Rules
+
+1. Adapter source files belong in
+   `tracks/alpha/integrations/scratchbird-dbeaver-driver/`.
+2. JDBC-generic behavior belongs in `tracks/p3/drivers/jdbc/` only when it is
+   beneficial beyond DBeaver.
+3. ScratchBird DBeaver work should plan for both a core plugin and a companion
+   UI plugin when the implementation moves beyond the current foundation layer.
+4. The local `~/CliWork/dbeaver` checkout is a staging target, not the source
+   of truth.

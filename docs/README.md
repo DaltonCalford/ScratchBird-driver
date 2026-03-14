@@ -49,6 +49,7 @@ Each driver has two documentation layers:
 - [CLI Tools](../tracks/p3/drivers/cli/README.md)
 - [Superset Driver](../tracks/beta/integrations/scratchbird-superset-driver/README.md)
 - [Metabase Driver](../tracks/alpha/integrations/scratchbird-metabase-driver/README.md)
+- [DBeaver Integration](../tracks/alpha/integrations/scratchbird-dbeaver-driver/README.md)
 - [Elixir (Ecto) Driver](../tracks/p3/drivers/elixir/README.md)
 - [Swift Async Driver](../tracks/p3/drivers/swift/README.md)
 - [Dart Driver](../tracks/p3/drivers/dart/README.md)
