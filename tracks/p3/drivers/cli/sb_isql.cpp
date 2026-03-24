@@ -213,12 +213,45 @@ static std::streambuf* g_original_cerr = nullptr;  // To restore stderr
 
 std::string buildConnectionTarget(const std::string& database_override = "");
 
+bool txnDebugEnabled() {
+    const char* env = std::getenv("SCRATCHBIRD_ISQL_DEBUG_TXN");
+    return env != nullptr && env[0] != '\0' && std::strcmp(env, "0") != 0;
+}
+
+void traceTxnState(const char* stage, const std::string& sql = std::string()) {
+    if (!txnDebugEnabled() || !g_connection) {
+        return;
+    }
+    std::fprintf(stderr,
+                 "[sb_isql_txn] stage=%s state=%d connected=%d in_txn=%d auto_commit=%d sql=%s\n",
+                 stage ? stage : "<null>",
+                 static_cast<int>(g_connection->getState()),
+                 g_connection->isConnected() ? 1 : 0,
+                 g_connection->inTransaction() ? 1 : 0,
+                 g_connection->getAutoCommit() ? 1 : 0,
+                 sql.empty() ? "<none>" : sql.c_str());
+    std::fflush(stderr);
+}
+
+void traceScriptStatement(const char* stage, const std::string& sql) {
+    if (!txnDebugEnabled()) {
+        return;
+    }
+    std::fprintf(stderr,
+                 "[sb_isql_script] stage=%s sql=%s\n",
+                 stage ? stage : "<null>",
+                 sql.empty() ? "<empty>" : sql.c_str());
+    std::fflush(stderr);
+}
+
 bool commitNonInteractiveWork() {
+    traceTxnState("commit_check");
     if (!g_connection || !g_connection->isConnected()) {
         return false;
     }
 
     if (g_connection->getState() != ConnectionState::IN_TRANSACTION) {
+        traceTxnState("commit_skip");
         return true;
     }
 
@@ -226,10 +259,12 @@ bool commitNonInteractiveWork() {
     core::Status status = g_connection->commit(&ctx);
 
     if (status != core::Status::OK) {
+        traceTxnState("commit_fail");
         std::cerr << "Error: Auto-commit failed: " << ctx.message << "\n";
         return false;
     }
 
+    traceTxnState("commit_ok");
     return true;
 }
 
@@ -677,11 +712,23 @@ bool handleSetCommand(const std::string& sql) {
 
     // Get value (rest after whitespace)
     while (pos < upper.size() && (upper[pos] == ' ' || upper[pos] == '\t')) ++pos;
-    std::string value = sql.substr(pos);  // Use original case for value
-    // Trim trailing semicolon and whitespace
-    while (!value.empty() && (value.back() == ';' || value.back() == ' ' || value.back() == '\t')) {
-        value.pop_back();
-    }
+    std::string raw_value = sql.substr(pos);  // Use original case for value
+    std::string value = raw_value;
+    auto trim_right = [](std::string& text, bool trim_semicolon) {
+        while (!text.empty()) {
+            const char ch = text.back();
+            if (ch == ' ' || ch == '\t') {
+                text.pop_back();
+                continue;
+            }
+            if (trim_semicolon && ch == ';') {
+                text.pop_back();
+                continue;
+            }
+            break;
+        }
+    };
+    trim_right(value, true);
 
     auto& out = getOutput();
 
@@ -703,6 +750,8 @@ bool handleSetCommand(const std::string& sql) {
 
     // SET TERM <terminator>
     if (name == "TERM") {
+        value = raw_value;
+        trim_right(value, false);
         if (value.empty()) {
             out << "TERM is '" << g_config.term << "'\n";
         } else {
@@ -1701,6 +1750,7 @@ bool executeSQL(const std::string& sql) {
 
     // Store as last query for \watch
     g_config.last_query = processed_sql;
+    traceTxnState("after_execute", processed_sql);
 
     displayResultSet(results, g_config.timing, duration);
     return true;
@@ -1990,6 +2040,7 @@ bool handleMetaCommand(const std::string& cmd) {
                 const bool statement_is_ddl = statementIsDdlLike(sql_to_exec);
                 const bool statement_controls_txn = statementControlsTransaction(sql_to_exec);
                 needs_commit = needs_commit || statement_needs_commit;
+                traceScriptStatement("execute", sql_to_exec);
                 bool success = executeSQL(sql_to_exec);
                 if (!success) {
                     had_error = true;
@@ -2021,6 +2072,7 @@ bool handleMetaCommand(const std::string& cmd) {
             const bool statement_is_ddl = statementIsDdlLike(sql);
             const bool statement_controls_txn = statementControlsTransaction(sql);
             needs_commit = needs_commit || statement_needs_commit;
+            traceScriptStatement("execute_tail", sql);
             bool success = executeSQL(sql);
             if (!success) {
                 had_error = true;
@@ -2034,7 +2086,10 @@ bool handleMetaCommand(const std::string& cmd) {
                 }
             }
         }
-        if (!had_error && needs_commit && !commitNonInteractiveWork()) {
+        if (had_error) {
+            return false;
+        }
+        if (needs_commit && !commitNonInteractiveWork()) {
             return false;
         }
         return true;

@@ -12,7 +12,7 @@ set(SB_ENGINE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../ScratchBird" CACHE PATH
 set(SB_ENGINE_BUILD_DIR "${SB_ENGINE_SOURCE_DIR}/build" CACHE PATH
     "Path to ScratchBird engine build tree (for FDW CLI linkage)")
 
-set(SB_CPP_DRIVER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../beta/drivers/cpp")
+set(SB_CPP_DRIVER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cpp")
 if (NOT TARGET scratchbird_client)
     add_subdirectory("${SB_CPP_DRIVER_DIR}" "${CMAKE_BINARY_DIR}/scratchbird_cpp")
 endif()

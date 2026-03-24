@@ -268,6 +268,8 @@ private:
                                       core::ErrorContext* ctx = nullptr);
     core::Status handleAsyncMessage(const protocol::ProtocolMessage& msg,
                                     core::ErrorContext* ctx = nullptr);
+    core::Status handleErrorResponse(const protocol::ProtocolMessage& msg,
+                                     core::ErrorContext* ctx = nullptr);
     core::Status drainUntilReady(std::string* command_tag,
                                  uint64_t* rows,
                                  uint64_t* last_id,

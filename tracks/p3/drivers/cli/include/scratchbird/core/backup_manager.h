@@ -68,7 +68,7 @@ struct BackupConfig {
     uint32_t parallel_workers = 4;      // Number of parallel workers
     size_t buffer_size = 1024 * 1024;   // 1MB buffer per worker
     bool verify_checksums = true;       // Verify page checksums
-    bool include_wal = true;            // Include WAL in backup (future)
+    bool include_write_after_journal_extensions = true; // Include derivative post-commit journal/export data if configured (future)
     std::string label;                  // Backup label/description
 };
 

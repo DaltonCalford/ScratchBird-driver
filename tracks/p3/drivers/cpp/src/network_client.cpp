@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <random>
@@ -45,6 +47,65 @@ constexpr uint8_t kMsgMcpAuthStart = 0x66;
 constexpr uint8_t kMsgMcpAuthContinue = 0x67;
 constexpr uint8_t kMsgMcpDbConnect = 0x69;
 constexpr uint8_t kMcpAuthMethodToken = 4;
+
+bool wireDebugEnabled() {
+    static const bool enabled = []() {
+        const char* value = std::getenv("SCRATCHBIRD_DRIVER_WIRE_DEBUG");
+        if (!value || value[0] == '\0') {
+            return false;
+        }
+        std::string normalized(value);
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+        return normalized != "0" &&
+               normalized != "FALSE" &&
+               normalized != "NO" &&
+               normalized != "OFF";
+    }();
+    return enabled;
+}
+
+const char* messageTypeName(protocol::MessageType type) {
+    switch (type) {
+        case protocol::MessageType::Query: return "Query";
+        case protocol::MessageType::Sync: return "Sync";
+        case protocol::MessageType::TxnCommit: return "TxnCommit";
+        case protocol::MessageType::TxnRollback: return "TxnRollback";
+        case protocol::MessageType::Ready: return "Ready";
+        case protocol::MessageType::Error: return "Error";
+        case protocol::MessageType::CommandComplete: return "CommandComplete";
+        case protocol::MessageType::ParameterStatus: return "ParameterStatus";
+        case protocol::MessageType::Notification: return "Notification";
+        case protocol::MessageType::TxnStatus: return "TxnStatus";
+        default: return "Other";
+    }
+}
+
+bool isAsyncMessageType(protocol::MessageType type) {
+    return type == protocol::MessageType::ParameterStatus ||
+           type == protocol::MessageType::Notification ||
+           type == protocol::MessageType::QueryPlan ||
+           type == protocol::MessageType::SblrCompiled;
+}
+
+void traceWireEvent(const char* stage,
+                    protocol::MessageType type,
+                    uint32_t sequence,
+                    bool in_transaction,
+                    const char* detail = nullptr) {
+    if (!wireDebugEnabled()) {
+        return;
+    }
+    std::fprintf(stderr,
+                 "[driver_wire] stage=%s type=%s(%u) seq=%u in_txn=%d detail=%s\n",
+                 stage ? stage : "<null>",
+                 messageTypeName(type),
+                 static_cast<unsigned>(type),
+                 sequence,
+                 in_transaction ? 1 : 0,
+                 detail ? detail : "<none>");
+    std::fflush(stderr);
+}
 
 core::Status setError(core::ErrorContext* ctx, core::Status status, const std::string& message) {
     if (ctx) {
@@ -1014,16 +1075,19 @@ core::Status NetworkClient::executeQuery(const std::string& sql,
                                          core::ErrorContext* ctx) {
     results = NetworkResultSet{};
     uint32_t seq = 0;
+    if (wireDebugEnabled()) {
+        std::fprintf(stderr,
+                     "[driver_wire] stage=execute_query_send sql=%s in_txn=%d\n",
+                     sql.c_str(),
+                     in_transaction_ ? 1 : 0);
+        std::fflush(stderr);
+    }
     auto payload = protocol::buildQueryPayload(sql, protocol::kQueryFlagBinaryResult, 0, 0);
     auto status = sendMessage(protocol::MessageType::Query, payload, 0, false, &seq, ctx);
     if (status != core::Status::OK) {
         return status;
     }
     last_query_sequence_ = seq;
-    status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
-    if (status != core::Status::OK) {
-        return status;
-    }
 
     std::vector<protocol::ColumnInfo> cols;
     while (true) {
@@ -1032,11 +1096,12 @@ core::Status NetworkClient::executeQuery(const std::string& sql,
         if (status != core::Status::OK) {
             return status;
         }
+        traceWireEvent("execute_query_recv",
+                       msg.header.type,
+                       msg.header.sequence,
+                       in_transaction_);
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1082,8 +1147,7 @@ core::Status NetworkClient::executeQuery(const std::string& sql,
                 break;
             }
             case protocol::MessageType::Error:
-                last_query_sequence_ = 0;
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
@@ -1122,10 +1186,7 @@ core::Status NetworkClient::prepare(const std::string& sql,
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1139,7 +1200,7 @@ core::Status NetworkClient::prepare(const std::string& sql,
                 break;
             }
             case protocol::MessageType::Error:
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready: {
                 status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
                 stmt.valid_ = (status == core::Status::OK);
@@ -1172,10 +1233,6 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
         return status;
     }
     last_query_sequence_ = seq;
-    status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
-    if (status != core::Status::OK) {
-        return status;
-    }
 
     std::vector<protocol::ColumnInfo> cols;
     while (true) {
@@ -1185,10 +1242,7 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1234,8 +1288,7 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
                 break;
             }
             case protocol::MessageType::Error:
-                last_query_sequence_ = 0;
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
@@ -1288,10 +1341,6 @@ core::Status NetworkClient::executeServerStatement(uint32_t stmt_id,
         return status;
     }
     last_query_sequence_ = seq;
-    status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
-    if (status != core::Status::OK) {
-        return status;
-    }
 
     std::vector<protocol::ColumnInfo> cols;
     while (true) {
@@ -1301,10 +1350,7 @@ core::Status NetworkClient::executeServerStatement(uint32_t stmt_id,
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1353,10 +1399,14 @@ core::Status NetworkClient::executeServerStatement(uint32_t stmt_id,
                 if (portal_suspended_out) {
                     *portal_suspended_out = true;
                 }
-                break;
-            case protocol::MessageType::Error:
                 last_query_sequence_ = 0;
-                return mapProtocolError(msg, ctx);
+                status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
+                if (status != core::Status::OK) {
+                    return status;
+                }
+                return drainUntilReady(nullptr, nullptr, nullptr, ctx);
+            case protocol::MessageType::Error:
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
@@ -1469,10 +1519,7 @@ core::Status NetworkClient::attachList(NetworkResultSet& results,
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1518,7 +1565,7 @@ core::Status NetworkClient::attachList(NetworkResultSet& results,
                 break;
             }
             case protocol::MessageType::Error:
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             default:
@@ -1550,10 +1597,7 @@ core::Status NetworkClient::ping(core::ErrorContext* ctx) {
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1562,7 +1606,7 @@ core::Status NetworkClient::ping(core::ErrorContext* ctx) {
             case protocol::MessageType::Ready:
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
             case protocol::MessageType::Error:
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             default:
                 break;
         }
@@ -1582,10 +1626,6 @@ core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
         return status;
     }
     last_query_sequence_ = seq;
-    status = sendMessage(protocol::MessageType::Sync, {}, 0, false, nullptr, ctx);
-    if (status != core::Status::OK) {
-        return status;
-    }
 
     std::vector<protocol::ColumnInfo> cols;
     while (true) {
@@ -1595,10 +1635,7 @@ core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
             return status;
         }
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -1644,8 +1681,7 @@ core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
                 break;
             }
             case protocol::MessageType::Error:
-                last_query_sequence_ = 0;
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
                 return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
@@ -1704,6 +1740,10 @@ core::Status NetworkClient::beginTransaction(core::ErrorContext* ctx) {
 }
 
 core::Status NetworkClient::commit(core::ErrorContext* ctx) {
+    traceWireEvent("commit_send",
+                   protocol::MessageType::TxnCommit,
+                   next_sequence_,
+                   in_transaction_);
     auto payload = protocol::buildTxnCommitPayload(0);
     auto status = sendMessage(protocol::MessageType::TxnCommit, payload, 0, false, nullptr, ctx);
     if (status != core::Status::OK) {
@@ -2107,6 +2147,38 @@ core::Status NetworkClient::handleAsyncMessage(const protocol::ProtocolMessage& 
     }
 }
 
+core::Status NetworkClient::handleErrorResponse(const protocol::ProtocolMessage& msg,
+                                                core::ErrorContext* ctx) {
+    const core::Status mapped = mapProtocolError(msg, ctx);
+    while (true) {
+        protocol::ProtocolMessage trailing;
+        core::ErrorContext trailing_ctx;
+        auto status = receiveMessage(trailing, &trailing_ctx);
+        if (status != core::Status::OK) {
+            last_query_sequence_ = 0;
+            return mapped;
+        }
+        traceWireEvent("error_drain_recv",
+                       trailing.header.type,
+                       trailing.header.sequence,
+                       in_transaction_);
+        if (handleAsyncMessage(trailing, &trailing_ctx) == core::Status::OK &&
+            isAsyncMessageType(trailing.header.type)) {
+            continue;
+        }
+        if (trailing.header.type == protocol::MessageType::Error) {
+            continue;
+        }
+        if (trailing.header.type == protocol::MessageType::Ready) {
+            core::ErrorContext ready_ctx;
+            const auto ready_status =
+                parseReadyAndTrackTransaction(trailing.body, in_transaction_, &ready_ctx);
+            last_query_sequence_ = 0;
+            return ready_status == core::Status::OK ? mapped : ready_status;
+        }
+    }
+}
+
 core::Status NetworkClient::drainUntilReady(std::string* command_tag,
                                             uint64_t* rows,
                                             uint64_t* last_id,
@@ -2120,11 +2192,12 @@ core::Status NetworkClient::drainUntilReady(std::string* command_tag,
         if (status != core::Status::OK) {
             return status;
         }
+        traceWireEvent("drain_until_ready_recv",
+                       msg.header.type,
+                       msg.header.sequence,
+                       in_transaction_);
         if (handleAsyncMessage(msg, ctx) == core::Status::OK &&
-            (msg.header.type == protocol::MessageType::ParameterStatus ||
-             msg.header.type == protocol::MessageType::Notification ||
-             msg.header.type == protocol::MessageType::QueryPlan ||
-             msg.header.type == protocol::MessageType::SblrCompiled)) {
+            isAsyncMessageType(msg.header.type)) {
             continue;
         }
         switch (msg.header.type) {
@@ -2137,8 +2210,7 @@ core::Status NetworkClient::drainUntilReady(std::string* command_tag,
                 break;
             }
             case protocol::MessageType::Error:
-                last_query_sequence_ = 0;
-                return mapProtocolError(msg, ctx);
+                return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready: {
                 auto ready_status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
                 if (ready_status != core::Status::OK) {

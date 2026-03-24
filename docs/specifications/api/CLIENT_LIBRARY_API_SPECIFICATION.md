@@ -17,6 +17,7 @@ The `libscratchbird_client` library provides a C API for connecting to ScratchBi
 3. **Error Handling**: Consistent error codes with detailed error messages
 4. **Resource Management**: Clear ownership semantics with explicit cleanup
 5. **Zero-Copy Where Possible**: Minimize data copying for performance
+6. **MGA Recovery Alignment**: reconnect/reset logic restores client state, but transaction truth remains owned by the engine and is never replayed from a driver WAL
 
 ---
 
@@ -248,7 +249,7 @@ typedef struct SBConnectOptions {
     const char* ssl_client_key; /* Client private key path */
 
     /* Optional - Connection behavior */
-    int auto_reconnect;         /* 1 to auto-reconnect on disconnect */
+    int auto_reconnect;         /* 1 to reconnect transport/session on disconnect; does not replay in-flight transactions */
     int read_only;              /* 1 for read-only connection */
     const char* application_name; /* Application name for logging */
 
@@ -328,6 +329,10 @@ SBError sb_ping(SBConnection* conn);
 
 /**
  * Reset connection state (cancel pending queries, rollback transaction).
+ *
+ * This is the client-side recovery primitive for disconnect/cancel cleanup.
+ * It does not reconstruct lost transaction history; the engine remains the
+ * source of MGA transaction truth after restart or reconnect.
  *
  * @param conn Connection handle
  * @return SB_OK on success, error code on failure

@@ -532,8 +532,10 @@ void markConnectedTransactionState(ConnectionImpl* impl) {
         impl->state = ConnectionState::DISCONNECTED;
         return;
     }
-    impl->in_transaction = true;
-    impl->state = ConnectionState::IN_TRANSACTION;
+    impl->in_transaction = impl->client.inTransaction();
+    impl->state = impl->in_transaction
+        ? ConnectionState::IN_TRANSACTION
+        : ConnectionState::CONNECTED;
 }
 
 ResultSet::ResultSet() : impl_(std::make_unique<ResultSetImpl>()) {}

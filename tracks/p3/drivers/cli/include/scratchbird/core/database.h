@@ -74,7 +74,12 @@ namespace scratchbird
     namespace core
     {
 
-// Database header structure for Page 0
+// Database header structure for Page 0.
+//
+// Alpha recovery is MGA/state based, not WAL/redo based. The server treats page
+// contents, transaction inventory truth, and checkpoint/startup markers as
+// authoritative. Driver-side copies keep the same reserved slot names visible
+// so auditors do not mistake them for live WAL machinery.
 #pragma pack(push, 1)
         struct DatabaseHeader
         {
@@ -90,7 +95,7 @@ namespace scratchbird
 
             // Configuration (32 bytes)
             uint32_t block_size;      // Must match page_header.page_size
-            uint32_t wal_level;       // WAL level (0=none for Alpha)
+            uint32_t reserved_wal_level_compat; // Reserved compatibility slot; ScratchBird Alpha does not use WAL
             uint32_t max_connections; // Maximum connections
             uint32_t encoding;        // Database encoding (UTF8=1)
             uint32_t locale;          // Locale ID

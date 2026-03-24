@@ -37,6 +37,12 @@ This README reflects the current implementation-closure state, not the final
 cross-driver promotion decision. PH5 no longer treats convenience, downstream
 consumer, or other previously residual driver surfaces as optional.
 
+Recovery note:
+
+- ScratchBird drivers follow the engine MGA/state-recovery model.
+- Driver reconnect logic restores transport/session state; it does not perform WAL replay or resurrect lost in-flight transactions.
+- Auditor entry point: `docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`
+
 **Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
 **Release Targets:** `docs/planning/RELEASE_TARGETS.md`
 
@@ -137,6 +143,7 @@ All baseline drivers aim to implement:
 - **TLS 1.3 Support** – Driver lanes expose configurable TLS posture; production defaults use TLS and lane-specific parity paths may allow explicit disable
 - **Server-side Prepare/Bind** – PARSE/BIND/EXECUTE for parameters
 - **Transactions** – Always-in-transaction semantics with autocommit mapping
+- **Reconnect and recovery discipline** – Drivers reset, rollback, reopen, or retry against engine MGA truth instead of replaying transaction history
 - **Type Mapping** – Full wire type coverage (including composite/geometry/range)
 - **Binary transfer and compression policy follow lane parity contracts (for example JDBC-compatible lanes accept `binary_transfer=false` and `compression=zstd`; unknown compression values are rejected)**
 

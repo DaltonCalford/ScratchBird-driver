@@ -9,6 +9,7 @@ For day-to-day driver use, start with:
 - [API Reference](api-reference/README.md)
 - [User Documentation](user-documentation/README.md)
 - [Connection Modes and Auth](user-documentation/connectivity/connection-modes-and-auth.md)
+- [MGA Reconnect And Transaction Recovery Audit](audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md)
 
 Planning and specification documents remain in this tree for engineering work,
 but the driver guides in `getting-started/`, `api-reference/`, and the lane
@@ -68,5 +69,6 @@ Quick links:
 - [Main ScratchBird Project](https://github.com/DaltonCalford/ScratchBird)
 - [Native Protocol Alignment](specifications/NATIVE_PROTOCOL_ALIGNMENT.md)
 - [Driver Audit](audit/DRIVER_IMPLEMENTATION_AUDIT.md)
+- [MGA Reconnect / Transaction Recovery Audit](audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md)
 - [Driver Remediation Plan](planning/DRIVER_REMEDIATION_PLAN.md)
 - [Contributing Guide](../CONTRIBUTING.md)
