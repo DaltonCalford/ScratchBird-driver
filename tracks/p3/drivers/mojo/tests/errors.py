@@ -101,6 +101,35 @@ def test_auth_guard_exposes_sqlstate() -> None:
         _require(str(exc) == "authentication failed", "auth guard message mismatch")
 
 
+def test_retry_scope_helper_classifies_statement_and_reconnect_boundaries() -> None:
+    _require(scratchbird.retry_scope_for_sqlstate("40001") == "statement", "40001 retry scope mismatch")
+    _require(scratchbird.retry_scope_for_sqlstate("40P01") == "statement", "40P01 retry scope mismatch")
+    _require(scratchbird.retry_scope_for_sqlstate("08006") == "reconnect", "08006 retry scope mismatch")
+    _require(scratchbird.retry_scope_for_sqlstate("57014") == "none", "57014 retry scope mismatch")
+    _require(scratchbird.retry_scope_for_sqlstate(None) == "none", "nil retry scope mismatch")
+    _require(scratchbird.is_retryable_sqlstate("40001"), "40001 should be retryable")
+    _require(not scratchbird.is_retryable_sqlstate("57014"), "57014 should not be auto-retryable")
+
+
+def test_canonical_isolation_helper_documents_public_alias_mapping() -> None:
+    _require(
+        scratchbird.canonical_isolation_label(scratchbird.ISOLATION_READ_UNCOMMITTED) == "READ COMMITTED",
+        "read uncommitted alias mismatch",
+    )
+    _require(
+        scratchbird.canonical_isolation_label(scratchbird.ISOLATION_READ_COMMITTED) == "READ COMMITTED",
+        "read committed alias mismatch",
+    )
+    _require(
+        scratchbird.canonical_isolation_label(scratchbird.ISOLATION_REPEATABLE_READ) == "SNAPSHOT",
+        "repeatable read alias mismatch",
+    )
+    _require(
+        scratchbird.canonical_isolation_label(scratchbird.ISOLATION_SERIALIZABLE) == "SNAPSHOT TABLE STABILITY",
+        "serializable alias mismatch",
+    )
+
+
 def test_simple_query_truncation_failure_surfaces() -> None:
     conn = QueryErrorHarness("truncated")
     try:
@@ -116,6 +145,8 @@ def main() -> None:
     test_simple_query_error_propagates_detail_and_hint()
     test_extended_query_error_propagates_detail_and_hint()
     test_auth_guard_exposes_sqlstate()
+    test_retry_scope_helper_classifies_statement_and_reconnect_boundaries()
+    test_canonical_isolation_helper_documents_public_alias_mapping()
     test_simple_query_truncation_failure_surfaces()
     print("Mojo error propagation tests OK")
 

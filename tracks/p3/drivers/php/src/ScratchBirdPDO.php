@@ -249,6 +249,11 @@ final class ScratchBirdPDO
         return $this->connection->beginTransaction();
     }
 
+    public function beginTransactionEx(array $options = []): bool
+    {
+        return $this->connection->beginTransactionEx($options);
+    }
+
     public function commit(): bool
     {
         return $this->connection->commit();

@@ -12,12 +12,16 @@
 require_once __DIR__ . '/bootstrap.php';
 
 use PHPUnit\Framework\TestCase;
+use ScratchBird\CircuitBreaker;
 use ScratchBird\PDO\Config;
 use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\Protocol;
 use ScratchBird\PDO\ScratchBirdAuthException;
 use ScratchBird\PDO\ScratchBirdConnectionException;
 use ScratchBird\PDO\ScratchBirdNotSupportedException;
+use ScratchBird\KeepaliveManager;
+use ScratchBird\LeakDetector;
+use ScratchBird\TelemetryCollector;
 
 final class ConnectionConnTest extends TestCase
 {
@@ -105,6 +109,43 @@ final class ConnectionConnTest extends TestCase
         } finally {
             fclose($client);
             fclose($server);
+        }
+    }
+
+    public function testCloseClearsAbandonedSessionStateForFreshReconnectBoundaries(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $cfg = new Config();
+        $conn = $this->newConnectionWithSocket($cfg, $client);
+        $this->setPrivate($conn, 'attachmentId', str_repeat("\x01", 16));
+        $this->setPrivate($conn, 'txnId', 42);
+        $this->setPrivate($conn, 'inTransaction', true);
+        $this->setPrivate($conn, 'sequence', 9);
+        $this->setPrivate($conn, 'lastQuerySequence', 7);
+        $this->setPrivate($conn, 'lastMaxRows', 88);
+        $this->setPrivate($conn, 'parameters', ['attachment_id' => 'stale', 'current_txn_id' => '42']);
+        $this->setPrivate($conn, 'lastPlan', ['format' => 1]);
+        $this->setPrivate($conn, 'lastSblr', ['hash' => 5]);
+
+        try {
+            $conn->close();
+
+            $this->assertFalse($conn->inTransaction());
+            $this->assertNull($conn->lastPlan());
+            $this->assertNull($conn->lastSblr());
+            $this->assertSame(str_repeat("\0", 16), $this->getPrivate($conn, 'attachmentId'));
+            $this->assertSame(0, $this->getPrivate($conn, 'txnId'));
+            $this->assertSame(0, $this->getPrivate($conn, 'sequence'));
+            $this->assertSame(0, $this->getPrivate($conn, 'lastQuerySequence'));
+            $this->assertSame(0, $this->getPrivate($conn, 'lastMaxRows'));
+            $this->assertSame([], $this->getPrivate($conn, 'parameters'));
+        } finally {
+            if (is_resource($client)) {
+                fclose($client);
+            }
+            if (is_resource($server)) {
+                fclose($server);
+            }
         }
     }
 
@@ -256,6 +297,13 @@ final class ConnectionConnTest extends TestCase
         $prop = $class->getProperty('config');
         $prop->setAccessible(true);
         $prop->setValue($conn, $cfg);
+        $this->setPrivate($conn, 'connectionId', 'test-conn');
+        $this->setPrivate($conn, 'circuitBreaker', new CircuitBreaker());
+        $this->setPrivate($conn, 'telemetry', new TelemetryCollector());
+        $this->setPrivate($conn, 'keepaliveManager', new KeepaliveManager());
+        $this->setPrivate($conn, 'keepaliveTracker', null);
+        $this->setPrivate($conn, 'leakDetector', new LeakDetector());
+        $this->setPrivate($conn, 'leakGuard', null);
         return $conn;
     }
 
@@ -281,6 +329,13 @@ final class ConnectionConnTest extends TestCase
         $this->setPrivate($conn, 'lastSblr', null);
         $this->setPrivate($conn, 'hasLastInsertId', false);
         $this->setPrivate($conn, 'lastInsertIdValue', 0);
+        $this->setPrivate($conn, 'connectionId', 'test-conn');
+        $this->setPrivate($conn, 'circuitBreaker', new CircuitBreaker());
+        $this->setPrivate($conn, 'telemetry', new TelemetryCollector());
+        $this->setPrivate($conn, 'keepaliveManager', new KeepaliveManager());
+        $this->setPrivate($conn, 'keepaliveTracker', null);
+        $this->setPrivate($conn, 'leakDetector', new LeakDetector());
+        $this->setPrivate($conn, 'leakGuard', null);
         return $conn;
     }
 
@@ -301,6 +356,14 @@ final class ConnectionConnTest extends TestCase
         $prop = $class->getProperty($property);
         $prop->setAccessible(true);
         $prop->setValue($object, $value);
+    }
+
+    private function getPrivate(object $object, string $property): mixed
+    {
+        $class = new ReflectionClass($object);
+        $prop = $class->getProperty($property);
+        $prop->setAccessible(true);
+        return $prop->getValue($object);
     }
 
     private function invokeConnect(Connection $conn): void

@@ -10,6 +10,7 @@ import Foundation
 
 func validateTxnBeginOptions(
     isolationLevel: UInt8?,
+    readCommittedMode: ScratchBirdReadCommittedMode?,
     accessMode: UInt8?,
     autocommitMode: UInt8?
 ) throws {
@@ -18,6 +19,14 @@ func validateTxnBeginOptions(
             domain: "ScratchBird",
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "isolation level \(isolationLevel) is not supported"]
+        )
+    }
+    if let isolationLevel, readCommittedMode != nil,
+       isolationLevel != isolationReadUncommitted,
+       isolationLevel != isolationReadCommitted {
+        throw ScratchBirdNotSupportedException(
+            message: "readCommittedMode requires a READ COMMITTED isolation alias",
+            sqlState: "0A000"
         )
     }
     if let accessMode, accessMode > 1 {
@@ -67,4 +76,20 @@ func normalizePortalResumeMaxRows(fetchSize: Int) -> UInt32 {
         return UInt32.max
     }
     return UInt32(fetchSize)
+}
+
+func quoteStringLiteral(_ value: String) -> String {
+    let escaped = value.replacingOccurrences(of: "'", with: "''")
+    return "'\(escaped)'"
+}
+
+func buildPreparedTransactionSql(verb: String, globalTransactionId: String) throws -> String {
+    let trimmed = globalTransactionId.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+        throw ScratchBirdProgrammingException(
+            message: "Global transaction id is required",
+            sqlState: "42601"
+        )
+    }
+    return "\(verb) \(quoteStringLiteral(trimmed))"
 }

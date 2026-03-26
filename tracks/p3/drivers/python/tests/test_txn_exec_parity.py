@@ -5,15 +5,27 @@ import struct
 import pytest
 
 from scratchbird import errors
-from scratchbird.connection import Connection, ResultStream
+from scratchbird.connection import (
+    Connection,
+    ResultStream,
+    canonical_isolation_label,
+    canonical_read_committed_mode_label,
+)
 from scratchbird.cursor import Cursor
 from scratchbird.protocol import (
+    ISOLATION_READ_COMMITTED,
+    ISOLATION_READ_UNCOMMITTED,
+    ISOLATION_REPEATABLE_READ,
+    ISOLATION_SERIALIZABLE,
+    READ_COMMITTED_MODE_DEFAULT,
+    READ_COMMITTED_MODE_READ_CONSISTENCY,
     MessageType,
     MSG_FLAG_URGENT,
     TXN_FLAG_HAS_ACCESS,
     TXN_FLAG_HAS_AUTOCOMMIT,
     TXN_FLAG_HAS_DEFERRABLE,
     TXN_FLAG_HAS_ISOLATION,
+    TXN_FLAG_HAS_READ_COMMITTED_MODE,
     TXN_FLAG_HAS_TIMEOUT,
     TXN_FLAG_HAS_WAIT,
     build_cancel_payload,
@@ -21,10 +33,12 @@ from scratchbird.protocol import (
 )
 
 
-def _new_connection(txn_id: int = 0) -> Connection:
+def _new_connection(txn_id: int = 0, active: bool = False) -> Connection:
     conn = Connection.__new__(Connection)
     conn._closed = False
     conn._txn_id = txn_id
+    conn._runtime_txn_active = active or txn_id != 0
+    conn._portal_resume_pending = False
     conn._authed = False
     conn._autocommit = True
     conn._connected = True
@@ -50,6 +64,8 @@ class _ResultConnection:
     def __init__(self, messages):
         self._messages = list(messages)
         self._txn_id = 0
+        self._runtime_txn_active = False
+        self._portal_resume_pending = False
         self.sent_messages = []
 
     def _recv_message(self):
@@ -65,6 +81,23 @@ class _ResultConnection:
 
     def _send_message(self, msg_type, payload):
         self.sent_messages.append((msg_type, payload))
+
+    def _allow_portal_resume(self):
+        self._portal_resume_pending = True
+
+    def _resume_suspended_portal(self, page_size):
+        if not self._portal_resume_pending:
+            raise errors.OperationalError("[55000] portal resume requires explicit suspended state")
+        self._portal_resume_pending = False
+        self._send_message(MessageType.EXECUTE, struct.pack("<I", 0) + struct.pack("<I", page_size))
+
+    def _apply_runtime_ready_state(self, status, txn_id):
+        if int(status) != 0:
+            self._txn_id = int(txn_id)
+            self._runtime_txn_active = True
+        else:
+            self._txn_id = 0
+            self._runtime_txn_active = False
 
 
 def _row_description_payload(name: str, type_oid: int = 25) -> bytes:
@@ -96,6 +129,25 @@ def _data_row_payload(value: str) -> bytes:
     return bytes(payload)
 
 
+def _txn_status_payload(status: str, txn_id: int) -> bytes:
+    payload = bytearray()
+    payload.append(ord(status))
+    payload += b"\x01\x00\x00"
+    payload += struct.pack("<Q", txn_id)
+    payload += struct.pack("<Q", 0)
+    payload += struct.pack("<Q", 0)
+    payload += struct.pack("<I", 0)
+    return bytes(payload)
+
+
+def _parse_sql_from_query_payload(payload: bytes) -> str:
+    raw = payload[12:]
+    terminator = raw.find(b"\x00")
+    if terminator >= 0:
+        raw = raw[:terminator]
+    return raw.decode("utf-8")
+
+
 class _FakeStream:
     def __init__(self, rows, rowcount: int, lastrowid, command: str | None = None):
         self._rows = list(rows)
@@ -121,10 +173,68 @@ def test_begin_rejects_nested_transaction():
         conn.begin()
 
 
-def test_transaction_active_treats_authenticated_connected_session_as_active():
+@pytest.mark.parametrize(
+    ("isolation_level", "expected"),
+    [
+        (ISOLATION_READ_UNCOMMITTED, "READ COMMITTED"),
+        (ISOLATION_READ_COMMITTED, "READ COMMITTED"),
+        (ISOLATION_REPEATABLE_READ, "SNAPSHOT"),
+        (ISOLATION_SERIALIZABLE, "SNAPSHOT TABLE STABILITY"),
+        (99, "UNKNOWN(99)"),
+    ],
+)
+def test_canonical_isolation_label_documents_public_alias_mapping(isolation_level, expected):
+    assert canonical_isolation_label(isolation_level) == expected
+
+
+@pytest.mark.parametrize(
+    ("read_committed_mode", "expected"),
+    [
+        (READ_COMMITTED_MODE_DEFAULT, "READ COMMITTED"),
+        (READ_COMMITTED_MODE_READ_CONSISTENCY, "READ COMMITTED READ CONSISTENCY"),
+        (99, "UNKNOWN(99)"),
+    ],
+)
+def test_canonical_read_committed_mode_label_documents_public_selector(read_committed_mode, expected):
+    assert canonical_read_committed_mode_label(read_committed_mode) == expected
+
+
+def test_transaction_active_false_when_no_ready_activity_and_zero_txn_id():
     conn = _new_connection(txn_id=0)
     conn._authed = True
+    assert conn._transaction_active() is False
+
+
+def test_transaction_active_can_follow_ready_state_with_zero_txn_id():
+    conn = _new_connection(txn_id=0, active=True)
+    conn._authed = True
     assert conn._transaction_active() is True
+
+
+def test_transaction_active_true_when_server_txn_id_present():
+    conn = _new_connection(txn_id=9)
+    conn._authed = True
+    assert conn._transaction_active() is True
+
+
+def test_handle_async_txn_status_can_mark_active_boundary_with_zero_txn_id():
+    conn = _new_connection(txn_id=0)
+
+    handled = conn._handle_async(_Header(MessageType.TXN_STATUS), _txn_status_payload("T", 0))
+
+    assert handled is True
+    assert conn._transaction_active() is True
+    assert conn._txn_id == 0
+
+
+def test_handle_async_txn_status_can_clear_active_boundary():
+    conn = _new_connection(txn_id=11)
+
+    handled = conn._handle_async(_Header(MessageType.TXN_STATUS), _txn_status_payload("I", 0))
+
+    assert handled is True
+    assert conn._transaction_active() is False
+    assert conn._txn_id == 0
 
 
 def test_cancel_sends_urgent_cancel_message(monkeypatch):
@@ -252,29 +362,23 @@ def test_autocommit_true_commits_active_transaction_before_switch(monkeypatch):
     def _fake_commit():
         calls.append(("commit",))
         conn._txn_id = 0
-
-    def _fake_set_option(name, value):
-        calls.append(("set_option", name, value))
+        conn._runtime_txn_active = False
 
     monkeypatch.setattr(conn, "commit", _fake_commit)
-    monkeypatch.setattr(conn, "set_option", _fake_set_option)
 
     conn.autocommit = True
 
-    assert calls == [("commit",), ("set_option", "autocommit", "on")]
+    assert calls == [("commit",)]
     assert conn.autocommit is True
 
 
 def test_autocommit_true_skips_commit_without_active_transaction(monkeypatch):
     conn = _new_connection(txn_id=0)
     conn._autocommit = False
-    calls = []
     monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
-    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
 
     conn.autocommit = True
 
-    assert calls == [("autocommit", "on")]
     assert conn.autocommit is True
 
 
@@ -282,36 +386,31 @@ def test_autocommit_setter_noops_when_value_unchanged(monkeypatch):
     conn = _new_connection(txn_id=17)
     conn._autocommit = True
     monkeypatch.setattr(conn, "commit", lambda: pytest.fail("commit should not be called"))
-    monkeypatch.setattr(conn, "set_option", lambda _name, _value: pytest.fail("set_option should not be called"))
 
     conn.autocommit = True
 
     assert conn.autocommit is True
 
 
-def test_autocommit_false_updates_wire_option(monkeypatch):
+def test_autocommit_false_does_not_inject_wire_option_or_begin(monkeypatch):
     conn = _new_connection(txn_id=0)
     conn._autocommit = True
-    calls = []
-    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
-    monkeypatch.setattr(conn, "begin", lambda **_kwargs: calls.append(("begin",)))
-
-    conn.autocommit = False
-
-    assert calls == [("autocommit", "off"), ("begin",)]
-    assert conn.autocommit is False
-
-
-def test_autocommit_false_skips_begin_when_transaction_active(monkeypatch):
-    conn = _new_connection(txn_id=8)
-    conn._autocommit = True
-    calls = []
-    monkeypatch.setattr(conn, "set_option", lambda name, value: calls.append((name, value)))
+    monkeypatch.setattr(conn, "set_option", lambda *_args, **_kwargs: pytest.fail("set_option should not be called"))
     monkeypatch.setattr(conn, "begin", lambda **_kwargs: pytest.fail("begin should not be called"))
 
     conn.autocommit = False
 
-    assert calls == [("autocommit", "off")]
+    assert conn.autocommit is False
+
+
+def test_autocommit_false_leaves_active_session_boundary_untouched(monkeypatch):
+    conn = _new_connection(txn_id=0, active=True)
+    conn._autocommit = True
+    monkeypatch.setattr(conn, "set_option", lambda *_args, **_kwargs: pytest.fail("set_option should not be called"))
+    monkeypatch.setattr(conn, "begin", lambda **_kwargs: pytest.fail("begin should not be called"))
+
+    conn.autocommit = False
+
     assert conn.autocommit is False
 
 
@@ -461,6 +560,120 @@ def test_begin_sets_expected_flags(monkeypatch):
     assert sent["drained"] is True
 
 
+def test_begin_encodes_read_committed_mode_and_expands_payload(monkeypatch):
+    conn = _new_connection(txn_id=0)
+    sent = {}
+    monkeypatch.setattr(
+        conn,
+        "_send_message",
+        lambda msg_type, payload: sent.update({"msg_type": msg_type, "payload": payload}),
+    )
+    monkeypatch.setattr(conn, "_drain_until_ready", lambda: sent.update({"drained": True}))
+
+    conn.begin(read_committed_mode=READ_COMMITTED_MODE_READ_CONSISTENCY, timeout_ms=25)
+
+    assert sent["msg_type"] == MessageType.TXN_BEGIN
+    assert len(sent["payload"]) == 16
+    flags = struct.unpack_from("<H", sent["payload"], 0)[0]
+    assert flags & TXN_FLAG_HAS_ISOLATION
+    assert flags & TXN_FLAG_HAS_READ_COMMITTED_MODE
+    assert flags & TXN_FLAG_HAS_TIMEOUT
+    assert sent["payload"][4] == ISOLATION_READ_COMMITTED
+    assert struct.unpack_from("<I", sent["payload"], 8)[0] == 25
+    assert sent["payload"][12] == READ_COMMITTED_MODE_READ_CONSISTENCY
+    assert sent["drained"] is True
+
+
+def test_begin_rejects_read_committed_mode_with_snapshot_alias():
+    conn = _new_connection(txn_id=0)
+    with pytest.raises(errors.NotSupportedError, match="READ COMMITTED isolation alias"):
+        conn.begin(
+            isolation_level=ISOLATION_REPEATABLE_READ,
+            read_committed_mode=READ_COMMITTED_MODE_READ_CONSISTENCY,
+        )
+
+
+def test_prepared_transaction_helpers_emit_canonical_control_sql(monkeypatch):
+    conn = _new_connection()
+    sql = []
+    monkeypatch.setattr(conn, "_execute_command", lambda statement: sql.append(statement))
+
+    conn.prepare_transaction("gid-1")
+    conn.commit_prepared("gid-1")
+    conn.rollback_prepared("gid'2")
+
+    assert sql == [
+        "PREPARE TRANSACTION 'gid-1'",
+        "COMMIT PREPARED 'gid-1'",
+        "ROLLBACK PREPARED 'gid''2'",
+    ]
+
+
+def test_prepared_transaction_helpers_reject_empty_gid():
+    conn = _new_connection()
+    with pytest.raises(errors.ProgrammingError, match="42601"):
+        conn.prepare_transaction("   ")
+
+
+def test_dormant_helpers_fail_closed_and_capabilities_stay_explicit():
+    conn = _new_connection()
+
+    assert conn.supports_prepared_transactions() is True
+    assert conn.supports_dormant_reattach() is False
+
+    with pytest.raises(errors.NotSupportedError, match="0A000"):
+        conn.detach_to_dormant()
+    with pytest.raises(errors.NotSupportedError, match="0A000"):
+        conn.reattach_dormant("dormant-1", "token-1")
+
+
+def test_resume_suspended_portal_requires_explicit_pending_state():
+    conn = _new_connection()
+
+    with pytest.raises(errors.OperationalError, match="55000"):
+        conn._resume_suspended_portal(2)
+
+
+def test_result_stream_resumes_only_after_explicit_suspended_state():
+    ready_payload = struct.pack("<B3xQQ", 1, 77, 0)
+    conn = _ResultConnection(
+        [
+            (_Header(MessageType.PORTAL_SUSPENDED), b""),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    stream = ResultStream(conn, page_size=2)
+
+    assert stream.read_row() == (1,)
+    assert conn.sent_messages[0][0] == MessageType.EXECUTE
+    assert struct.unpack_from("<I", conn.sent_messages[0][1], 4)[0] == 2
+    assert stream.read_row() is None
+    assert conn._txn_id == 77
+
+
+def test_result_stream_ignores_stray_reopen_ready_before_next_query_frame():
+    reopen_ready_payload = struct.pack("<B3xQQ", 1, 0, 0)
+    final_ready_payload = struct.pack("<B3xQQ", 1, 0, 0)
+    conn = _ResultConnection(
+        [
+            (_Header(MessageType.TXN_STATUS), _txn_status_payload("T", 0)),
+            (_Header(MessageType.READY), reopen_ready_payload),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), final_ready_payload),
+        ]
+    )
+    stream = ResultStream(conn, page_size=0)
+
+    assert stream.read_row() == ("2",)
+    assert stream.read_row() is None
+    assert conn._runtime_txn_active is True
+    assert conn._txn_id == 0
+
+
 def test_native_sql_rewrites_parameters():
     conn = _new_connection()
     assert conn.native_sql("SELECT ?::INTEGER", [42]) == "SELECT $1::INTEGER"
@@ -537,7 +750,7 @@ def test_cursor_executemany_requires_seq_of_params():
 
 def test_result_stream_propagates_command_complete_last_id():
     command_complete_payload = struct.pack("<B3xQQ", 1, 3, 91) + b"INSERT 0 3\x00"
-    ready_payload = struct.pack("<B3xQQ", 0, 77, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 77, 0)
     conn = _ResultConnection(
         [
             (_Header(MessageType.COMMAND_COMPLETE), command_complete_payload),
@@ -554,7 +767,7 @@ def test_result_stream_propagates_command_complete_last_id():
 
 
 def test_result_stream_exposes_next_result_set_boundaries():
-    ready_payload = struct.pack("<B3xQQ", 0, 81, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 81, 0)
     conn = _ResultConnection(
         [
             (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
@@ -587,7 +800,7 @@ def test_result_stream_exposes_next_result_set_boundaries():
 
 
 def test_cursor_nextset_advances_between_result_sets(monkeypatch):
-    ready_payload = struct.pack("<B3xQQ", 0, 90, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 90, 0)
     stream_conn = _ResultConnection(
         [
             (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
@@ -646,7 +859,7 @@ def test_cursor_execute_propagates_lastrowid_on_stream_completion(monkeypatch):
 
 
 def test_cursor_execute_sets_description_before_first_fetch(monkeypatch):
-    ready_payload = struct.pack("<B3xQQ", 0, 77, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 77, 0)
     stream_conn = _ResultConnection(
         [
             (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("value_col")),
@@ -668,7 +881,7 @@ def test_cursor_execute_sets_description_before_first_fetch(monkeypatch):
 
 
 def test_cursor_execute_synthesizes_description_without_row_description(monkeypatch):
-    ready_payload = struct.pack("<B3xQQ", 0, 88, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 88, 0)
     stream_conn = _ResultConnection(
         [
             (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
@@ -797,7 +1010,7 @@ def test_connection_query_batch_aliases_execute_batch(monkeypatch):
 
 
 def test_connection_query_multi_returns_result_set_summaries(monkeypatch):
-    ready_payload = struct.pack("<B3xQQ", 0, 91, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 91, 0)
     stream_conn = _ResultConnection(
         [
             (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
@@ -834,7 +1047,7 @@ def test_connection_execute_multi_aliases_query_multi(monkeypatch):
 
 
 def test_generated_keys_accumulate_across_result_sets(monkeypatch):
-    ready_payload = struct.pack("<B3xQQ", 0, 90, 0)
+    ready_payload = struct.pack("<B3xQQ", 1, 90, 0)
     stream_conn = _ResultConnection(
         [
             (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),

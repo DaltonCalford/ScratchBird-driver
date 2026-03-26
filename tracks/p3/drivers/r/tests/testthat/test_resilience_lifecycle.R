@@ -85,6 +85,74 @@ test_that("dbDisconnect returns TRUE on repeated calls and only closes once", {
   expect_null(client$con)
 })
 
+test_that("sb_prepare_connection clears abandoned transaction state before reconnect startup", {
+  client <- new.env(parent = emptyenv())
+  client$con <- list(socket = "stale")
+  client$cfg <- list(front_door_mode = "direct")
+  client$attachment_id <- as.raw(rep(0x7f, 16))
+  client$txn_id <- 99
+  client$sequence <- 41L
+  client$last_query_sequence <- 17L
+  client$parameters <- list(current_txn_id = "99")
+  client$last_plan <- list(cost = 10)
+  client$last_sblr <- list(hash = 123)
+  client$prepared <- new.env(parent = emptyenv())
+  client$prepared$stale_stmt <- TRUE
+  client$autocommit <- FALSE
+  client$txn_active <- TRUE
+  client$explicit_txn <- TRUE
+  client$cancel_requested <- TRUE
+  client$needs_reconnect <- TRUE
+
+  closed_socket <- NULL
+  startup_checked <- FALSE
+  implicit_checked <- FALSE
+  schema_applied <- FALSE
+
+  local_mocked_bindings(
+    sb_socket_close = function(con) {
+      closed_socket <<- con$socket
+      invisible(NULL)
+    },
+    sb_open_socket = function(cfg) {
+      list(socket = "fresh")
+    },
+    sb_startup_and_auth = function(client_arg) {
+      startup_checked <<- TRUE
+      expect_equal(client_arg$txn_id, 0)
+      expect_false(client_arg$txn_active)
+      expect_false(client_arg$explicit_txn)
+      expect_false(client_arg$cancel_requested)
+      expect_true(identical(ls(client_arg$prepared), character()))
+      expect_equal(client_arg$parameters, list())
+      invisible(NULL)
+    },
+    sb_ensure_implicit_transaction = function(client_arg) {
+      implicit_checked <<- TRUE
+      client_arg$txn_active <- TRUE
+      client_arg$explicit_txn <- FALSE
+      invisible(NULL)
+    },
+    sb_apply_schema = function(client_arg) {
+      schema_applied <<- TRUE
+      invisible(NULL)
+    },
+    .package = "scratchbird"
+  )
+
+  expect_invisible(sb_prepare_connection(client))
+  expect_identical(closed_socket, "stale")
+  expect_true(startup_checked)
+  expect_true(implicit_checked)
+  expect_true(schema_applied)
+  expect_identical(client$con$socket, "fresh")
+  expect_equal(client$txn_id, 0)
+  expect_true(client$txn_active)
+  expect_false(client$explicit_txn)
+  expect_false(client$cancel_requested)
+  expect_false(client$needs_reconnect)
+})
+
 test_that("dbClearResult is idempotent after completion", {
   result_env <- new.env(parent = emptyenv())
   result_env$done <- FALSE

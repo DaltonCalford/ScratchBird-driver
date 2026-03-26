@@ -43,6 +43,8 @@ class _FakeWireConnection:
     def __init__(self, dsn: str):
         self.dsn = dsn
         self.closed = False
+        self._txn_id = 0
+        self._runtime_txn_active = True
         self.cancel_calls = 0
         self.begin_calls = 0
         self.commit_calls = 0
@@ -68,12 +70,18 @@ class _FakeWireConnection:
     def begin(self, **kwargs):
         _ = kwargs
         self.begin_calls += 1
+        self._txn_id = 1
+        self._runtime_txn_active = True
 
     def commit(self):
         self.commit_calls += 1
+        self._txn_id = 0
+        self._runtime_txn_active = True
 
     def rollback(self):
         self.rollback_calls += 1
+        self._txn_id = 0
+        self._runtime_txn_active = True
 
     def savepoint(self, name: str):
         self.savepoints.append(name)
@@ -163,11 +171,12 @@ def test_wire_prepare_stream_and_lifecycle() -> None:
         prepared = stmt.execute(["5", "7"])
         _require(prepared.rows == [[5, 7]], "wire prepared execute payload mismatch")
 
+        conn.begin()
         try:
             conn.begin()
-            raise RuntimeError("expected wire begin on active transaction to raise")
+            raise RuntimeError("expected nested wire begin on explicit transaction to raise")
         except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "25001", "wire begin should reject already-active transaction")
+            _require(exc.sqlstate == "25001", "nested wire begin should reject already-active explicit transaction")
         savepoint = conn.set_savepoint()
         _require(savepoint == "sp_1", "wire savepoint auto-name mismatch")
         conn.release_savepoint(savepoint)
@@ -218,10 +227,45 @@ def test_wire_transport_maps_sqlstate_from_errors() -> None:
         _restore_fake_driver(previous)
 
 
+def test_wire_reconnect_clears_abandoned_transaction_state() -> None:
+    fake, previous = _with_fake_driver()
+    try:
+        cfg = scratchbird.ScratchBirdConfig(
+            "scratchbird://user:pass@localhost:3092/testdb?sslmode=require&sb_wire_transport=python"
+        )
+        conn = scratchbird.connect(cfg)
+        _require(len(fake.connections) == 1, "initial wire connect should create one fake connection")
+
+        conn._savepoints = ["stale_sp"]
+        conn._txn_begin_options = {"isolation_level": 2, "access_mode": 1}
+        conn._cancel_requested = True
+        conn._mark_reconnect_required()
+
+        _require(conn._needs_reconnect is True, "reconnect flag should be raised")
+        _require(conn._savepoints == [], "reconnect-required path should clear tracked savepoints")
+        _require(conn._txn_begin_options == {}, "reconnect-required path should clear begin options")
+        _require(conn._cancel_requested is False, "reconnect-required path should clear cancel state")
+
+        result = conn.query("SELECT 1")
+        _require(result.rows == [[1]], "reconnected wire query should succeed on the fresh session")
+        _require(len(fake.connections) == 2, "reconnect should allocate a fresh fake wire connection")
+        _require(fake.connections[0].closed is True, "stale fake wire connection should be closed before reconnect")
+        _require(fake.connections[1].begin_calls == 0, "reconnect should not replay explicit begin state implicitly")
+        _require(conn._needs_reconnect is False, "successful reconnect should clear reconnect-required flag")
+        _require(conn._savepoints == [], "fresh wire session should keep cleared savepoint state")
+        _require(conn._txn_begin_options == {}, "fresh wire session should keep cleared begin options")
+        _require(conn._txn_id == 0, "fresh wire session should preserve zero txn id on the fresh boundary")
+        _require(conn._runtime_txn_active is True, "fresh wire session should preserve runtime boundary activity")
+        conn.close()
+    finally:
+        _restore_fake_driver(previous)
+
+
 def main() -> None:
     test_connect_uses_python_wire_transport()
     test_wire_prepare_stream_and_lifecycle()
     test_wire_transport_maps_sqlstate_from_errors()
+    test_wire_reconnect_clears_abandoned_transaction_state()
     print("wire_transport_bridge: OK")
 
 

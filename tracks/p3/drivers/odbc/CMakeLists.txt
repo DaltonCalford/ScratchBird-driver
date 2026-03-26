@@ -32,7 +32,7 @@ add_library(scratchbird_odbc SHARED ${ODBC_SOURCES})
 
 # C++ standard
 set_target_properties(scratchbird_odbc PROPERTIES
-    CXX_STANDARD 11
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     C_STANDARD 99
     C_STANDARD_REQUIRED ON
@@ -45,7 +45,7 @@ option(ODBC_FETCH_GTEST "Fetch GoogleTest from source when not found locally." O
 target_include_directories(scratchbird_odbc
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../cpp/include>
         $<INSTALL_INTERFACE:include>
 )
 
@@ -135,9 +135,9 @@ if(TARGET scratchbird_client)
     target_link_libraries(scratchbird_odbc PRIVATE scratchbird_client)
 else()
     # Try to find or build it
-    if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp)
+    if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/../cpp)
         add_subdirectory(
-            ${CMAKE_CURRENT_LIST_DIR}/../../../beta/drivers/cpp
+            ${CMAKE_CURRENT_LIST_DIR}/../cpp
             ${CMAKE_CURRENT_BINARY_DIR}/scratchbird_cpp
         )
         target_link_libraries(scratchbird_odbc PRIVATE scratchbird_client)

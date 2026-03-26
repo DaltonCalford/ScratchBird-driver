@@ -37,7 +37,8 @@ begin
   Connection := TScratchBirdFDConnection.Create(nil);
   try
     try
-      Connection.StartTransactionEx(ISOLATION_SERIALIZABLE, 1, True, False, 250, 1, 2);
+      Connection.StartTransactionEx(ISOLATION_READ_COMMITTED, 1, True, False, 250, 1, 2,
+        READ_COMMITTED_MODE_READ_CONSISTENCY);
       Fail('FireDAC StartTransactionEx: expected disconnected connection error');
     except
       on E: EScratchbirdConnectionError do
@@ -55,7 +56,8 @@ begin
   Database := TScratchBirdIBDatabase.Create(nil);
   try
     try
-      Database.StartTransactionEx(ISOLATION_SERIALIZABLE, 1, True, False, 250, 1, 2);
+      Database.StartTransactionEx(ISOLATION_READ_COMMITTED, 1, True, False, 250, 1, 2,
+        READ_COMMITTED_MODE_READ_CONSISTENCY);
       Fail('IBX StartTransactionEx: expected disconnected connection error');
     except
       on E: EScratchbirdConnectionError do
@@ -73,7 +75,8 @@ begin
   Connection := TScratchBirdZConnection.Create(nil);
   try
     try
-      Connection.StartTransactionEx(ISOLATION_SERIALIZABLE, 1, True, False, 250, 1, 2);
+      Connection.StartTransactionEx(ISOLATION_READ_COMMITTED, 1, True, False, 250, 1, 2,
+        READ_COMMITTED_MODE_READ_CONSISTENCY);
       Fail('Zeos StartTransactionEx: expected disconnected connection error');
     except
       on E: EScratchbirdConnectionError do
@@ -91,7 +94,8 @@ begin
   Connection := TScratchBirdSQLConnection.Create(nil);
   try
     try
-      Connection.StartTransactionEx(ISOLATION_SERIALIZABLE, 1, True, False, 250, 1, 2);
+      Connection.StartTransactionEx(ISOLATION_READ_COMMITTED, 1, True, False, 250, 1, 2,
+        READ_COMMITTED_MODE_READ_CONSISTENCY);
       Fail('SQLdb StartTransactionEx: expected disconnected connection error');
     except
       on E: EScratchbirdConnectionError do

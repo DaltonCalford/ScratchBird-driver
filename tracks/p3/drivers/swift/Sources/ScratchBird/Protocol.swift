@@ -132,12 +132,18 @@ let isolationReadCommitted: UInt8 = 1
 let isolationRepeatableRead: UInt8 = 2
 let isolationSerializable: UInt8 = 3
 
+let readCommittedModeDefault: UInt8 = 0
+let readCommittedModeReadConsistency: UInt8 = 1
+let readCommittedModeRecordVersion: UInt8 = 2
+let readCommittedModeNoRecordVersion: UInt8 = 3
+
 let txnFlagHasIsolation: UInt16 = 0x0001
 let txnFlagHasAccess: UInt16 = 0x0002
 let txnFlagHasDeferrable: UInt16 = 0x0004
 let txnFlagHasWait: UInt16 = 0x0008
 let txnFlagHasTimeout: UInt16 = 0x0010
 let txnFlagHasAutocommit: UInt16 = 0x0020
+let txnFlagHasReadCommittedMode: UInt16 = 0x0100
 
 let streamStart: UInt8 = 0
 let streamPause: UInt8 = 1
@@ -449,7 +455,8 @@ func buildTxnBeginPayload(
     accessMode: UInt8,
     deferrable: UInt8,
     waitMode: UInt8,
-    timeoutMs: UInt32
+    timeoutMs: UInt32,
+    readCommittedMode: UInt8
 ) -> Data {
     var data = Data()
     data.append(contentsOf: withUnsafeBytes(of: flags.littleEndian, Array.init))
@@ -460,6 +467,10 @@ func buildTxnBeginPayload(
     data.append(deferrable)
     data.append(waitMode)
     data.append(contentsOf: withUnsafeBytes(of: timeoutMs.littleEndian, Array.init))
+    if (flags & txnFlagHasReadCommittedMode) != 0 {
+        data.append(readCommittedMode)
+        data.append(contentsOf: [0, 0, 0])
+    }
     return data
 }
 

@@ -17,6 +17,12 @@ uses
   SysUtils;
 
 type
+  TScratchBirdRetryScope = (
+    rsNone,
+    rsStatement,
+    rsReconnect
+  );
+
   EScratchBirdError = class(Exception)
   public
     SQLState: string;
@@ -41,6 +47,8 @@ type
   EScratchbirdInternalError = class(EScratchBirdError);
 
 function MapSqlState(const SQLState: string; const Msg, Detail, Hint: string): EScratchBirdError;
+function RetryScopeForSqlState(const SQLState: string): TScratchBirdRetryScope;
+function IsRetryableSqlState(const SQLState: string): Boolean;
 
 implementation
 
@@ -93,6 +101,24 @@ begin
       Exit(EScratchbirdInternalError.CreateWithInfo(Msg, SQLState, Detail, Hint));
   end;
   Result := EScratchBirdError.CreateWithInfo(Msg, SQLState, Detail, Hint);
+end;
+
+function RetryScopeForSqlState(const SQLState: string): TScratchBirdRetryScope;
+begin
+  // ScratchBird's MGA restart contract is boundary-based rather than replay-based:
+  //   40xxx conflicts => retry the fresh statement only
+  //   08xxx transport/session failures => reconnect or reopen only
+  //   57xxx cancellation/operator intervention => no automatic replay
+  if (SQLState = '40001') or (SQLState = '40P01') then
+    Exit(rsStatement);
+  if (Length(SQLState) = 5) and (Copy(SQLState, 1, 2) = '08') then
+    Exit(rsReconnect);
+  Result := rsNone;
+end;
+
+function IsRetryableSqlState(const SQLState: string): Boolean;
+begin
+  Result := RetryScopeForSqlState(SQLState) <> rsNone;
 end;
 
 end.

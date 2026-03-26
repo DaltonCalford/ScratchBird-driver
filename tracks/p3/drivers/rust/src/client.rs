@@ -107,6 +107,8 @@ pub struct Client {
     autocommit: bool,
     attachment_id: [u8; 16],
     txn_id: u64,
+    runtime_txn_active: bool,
+    explicit_transaction: bool,
     sequence: u32,
     last_query_sequence: u32,
     authed: bool,
@@ -114,6 +116,7 @@ pub struct Client {
     notification_handlers: Vec<Box<dyn Fn(&protocol::Notification) + Send + Sync>>,
     last_plan: Option<protocol::QueryPlan>,
     last_sblr: Option<protocol::SblrCompiled>,
+    portal_resume_pending: bool,
     circuit_breaker: Arc<CircuitBreaker>,
     telemetry: Arc<TelemetryCollector>,
     keepalive_tracker: Arc<KeepaliveTracker>,
@@ -221,7 +224,13 @@ pub struct CopyResult {
 
 #[derive(Debug, Clone, Default)]
 pub struct TxnBeginOptions {
+    /// Public isolation aliases map onto the canonical MGA modes:
+    /// READ COMMITTED => READ COMMITTED
+    /// REPEATABLE READ => SNAPSHOT
+    /// SERIALIZABLE => SNAPSHOT TABLE STABILITY
+    /// read_committed_mode selects the canonical READ COMMITTED sub-mode.
     pub isolation_level: Option<u8>,
+    pub read_committed_mode: Option<u8>,
     pub access_mode: Option<u8>,
     pub deferrable: Option<bool>,
     pub wait: Option<bool>,
@@ -238,6 +247,68 @@ pub struct TxnEndOptions {
 trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
+fn encode_txn_begin_options(opts: &TxnBeginOptions) -> Result<Vec<u8>> {
+    let mut flags = 0u16;
+    let mut isolation = opts
+        .isolation_level
+        .unwrap_or(protocol::ISOLATION_READ_COMMITTED);
+    if opts.isolation_level.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_ISOLATION;
+    }
+    let read_committed_mode = opts
+        .read_committed_mode
+        .unwrap_or(protocol::READ_COMMITTED_MODE_DEFAULT);
+    if opts.read_committed_mode.is_some() {
+        if let Some(explicit_isolation) = opts.isolation_level {
+            if explicit_isolation != protocol::ISOLATION_READ_UNCOMMITTED
+                && explicit_isolation != protocol::ISOLATION_READ_COMMITTED
+            {
+                return Err(Error::with_sqlstate(
+                    ErrorKind::NotSupported,
+                    "read_committed_mode requires a READ COMMITTED isolation alias",
+                    Some("0A000".to_string()),
+                    None,
+                    None,
+                ));
+            }
+        } else {
+            isolation = protocol::ISOLATION_READ_COMMITTED;
+            flags |= protocol::TXN_FLAG_HAS_ISOLATION;
+        }
+        flags |= protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE;
+    }
+    if opts.access_mode.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_ACCESS;
+    }
+    if opts.deferrable.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_DEFERRABLE;
+    }
+    if opts.wait.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_WAIT;
+    }
+    if opts.timeout_ms.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_TIMEOUT;
+    }
+    if opts.autocommit_mode.is_some() {
+        flags |= protocol::TXN_FLAG_HAS_AUTOCOMMIT;
+    }
+    Ok(protocol::build_txn_begin_payload(
+        flags,
+        opts.conflict_action,
+        opts.autocommit_mode.unwrap_or(0),
+        isolation,
+        opts.access_mode.unwrap_or(0),
+        if opts.deferrable.unwrap_or(false) {
+            1
+        } else {
+            0
+        },
+        if opts.wait.unwrap_or(false) { 1 } else { 0 },
+        opts.timeout_ms.unwrap_or(0),
+        read_committed_mode,
+    ))
+}
+
 impl Client {
     pub fn new(config: Config) -> Self {
         Self {
@@ -247,6 +318,8 @@ impl Client {
             autocommit: true,
             attachment_id: [0u8; 16],
             txn_id: 0,
+            runtime_txn_active: false,
+            explicit_transaction: false,
             sequence: 0,
             last_query_sequence: 0,
             authed: false,
@@ -254,6 +327,7 @@ impl Client {
             notification_handlers: Vec::new(),
             last_plan: None,
             last_sblr: None,
+            portal_resume_pending: false,
             circuit_breaker: Arc::new(CircuitBreaker::new(CircuitBreakerConfig::default())),
             telemetry: Arc::new(TelemetryCollector::new(TelemetryConfig::default())),
             keepalive_tracker: Arc::new(KeepaliveTracker::new(KeepaliveConfig::default())),
@@ -262,14 +336,23 @@ impl Client {
 
     pub async fn connect(&mut self) -> Result<()> {
         let startup_params = self.preflight_connect()?;
+        self.close().await;
         let manager_proxy = self.config.front_door_mode == "manager_proxy";
         let stream = self.connect_transport().await?;
         self.stream = Some(stream);
-        if manager_proxy {
-            self.perform_manager_connect().await?;
+        let connect_result = async {
+            if manager_proxy {
+                self.perform_manager_connect().await?;
+            }
+            self.handshake(startup_params).await?;
+            self.apply_schema().await?;
+            Ok(())
         }
-        self.handshake(startup_params).await?;
-        self.apply_schema().await?;
+        .await;
+        if let Err(err) = connect_result {
+            self.close().await;
+            return Err(err);
+        }
         self.connected = true;
         Ok(())
     }
@@ -470,10 +553,7 @@ impl Client {
         if let Some(mut stream) = self.stream.take() {
             let _ = stream.shutdown().await;
         }
-        self.connected = false;
-        self.authed = false;
-        self.txn_id = 0;
-        self.sequence = 0;
+        self.clear_abandoned_session_state();
     }
 
     pub async fn query(&mut self, sql: &str) -> Result<QueryResult> {
@@ -784,11 +864,9 @@ impl Client {
         if enabled && self.has_active_transaction() {
             self.commit_transaction(None).await?;
         }
-        self.set_option("autocommit", if enabled { "on" } else { "off" })
-            .await?;
-        if !enabled && !self.has_active_transaction() {
-            self.begin_transaction(None).await?;
-        }
+        // Native engine endpoints own the replacement transaction boundary.
+        // Autocommit transitions are local driver policy, not SET_OPTION wire
+        // state or synthetic begin calls.
         self.autocommit = enabled;
         Ok(())
     }
@@ -805,49 +883,83 @@ impl Client {
         self.rollback_transaction(options).await
     }
 
+    pub fn supports_prepared_transactions(&self) -> bool {
+        true
+    }
+
+    pub fn supports_dormant_reattach(&self) -> bool {
+        false
+    }
+
+    pub async fn prepare_transaction(&mut self, global_transaction_id: &str) -> Result<()> {
+        let sql =
+            Self::build_prepared_transaction_sql("PREPARE TRANSACTION", global_transaction_id)?;
+        self.query(&sql).await?;
+        Ok(())
+    }
+
+    pub async fn commit_prepared(&mut self, global_transaction_id: &str) -> Result<()> {
+        let sql = Self::build_prepared_transaction_sql("COMMIT PREPARED", global_transaction_id)?;
+        self.query(&sql).await?;
+        Ok(())
+    }
+
+    pub async fn rollback_prepared(&mut self, global_transaction_id: &str) -> Result<()> {
+        let sql = Self::build_prepared_transaction_sql("ROLLBACK PREPARED", global_transaction_id)?;
+        self.query(&sql).await?;
+        Ok(())
+    }
+
+    pub async fn detach_to_dormant(&mut self) -> Result<()> {
+        Err(Error::with_sqlstate(
+            ErrorKind::NotSupported,
+            "dormant detach is not supported by the Rust driver",
+            Some("0A000".to_string()),
+            None,
+            None,
+        ))
+    }
+
+    pub async fn reattach_dormant(
+        &mut self,
+        _dormant_id: &str,
+        _auth_token: Option<&str>,
+    ) -> Result<()> {
+        Err(Error::with_sqlstate(
+            ErrorKind::NotSupported,
+            "dormant reattach is not supported by the Rust driver",
+            Some("0A000".to_string()),
+            None,
+            None,
+        ))
+    }
+
     pub async fn begin_transaction(&mut self, options: Option<TxnBeginOptions>) -> Result<()> {
         self.ensure_connected()?;
-        self.ensure_no_active_transaction()?;
         let opts = options.unwrap_or_default();
-        let mut flags = 0u16;
-        let isolation = opts
-            .isolation_level
-            .unwrap_or(protocol::ISOLATION_READ_COMMITTED);
-        if opts.isolation_level.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_ISOLATION;
+        if self.runtime_txn_active && self.txn_id == 0 {
+            if self.explicit_transaction {
+                return Err(Self::invalid_txn_state("transaction already active"));
+            }
+            if !Self::can_adopt_fresh_native_boundary(&opts) {
+                return Err(Error::with_sqlstate(
+                    ErrorKind::NotSupported,
+                    "fresh native transaction boundaries only support default READ COMMITTED adoption in the Rust lane",
+                    Some("0A000".to_string()),
+                    None,
+                    None,
+                ));
+            }
+            self.explicit_transaction = true;
+            return Ok(());
         }
-        if opts.access_mode.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_ACCESS;
-        }
-        if opts.deferrable.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_DEFERRABLE;
-        }
-        if opts.wait.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_WAIT;
-        }
-        if opts.timeout_ms.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_TIMEOUT;
-        }
-        if opts.autocommit_mode.is_some() {
-            flags |= protocol::TXN_FLAG_HAS_AUTOCOMMIT;
-        }
-        let payload = protocol::build_txn_begin_payload(
-            flags,
-            opts.conflict_action,
-            opts.autocommit_mode.unwrap_or(0),
-            isolation,
-            opts.access_mode.unwrap_or(0),
-            if opts.deferrable.unwrap_or(false) {
-                1
-            } else {
-                0
-            },
-            if opts.wait.unwrap_or(false) { 1 } else { 0 },
-            opts.timeout_ms.unwrap_or(0),
-        );
+        self.ensure_no_active_transaction()?;
+        let payload = encode_txn_begin_options(&opts)?;
         self.send_message(protocol::MSG_TXN_BEGIN, &payload, 0, false)
             .await?;
-        self.drain_until_ready().await
+        self.drain_until_ready().await?;
+        self.explicit_transaction = true;
+        Ok(())
     }
 
     pub async fn commit_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
@@ -857,7 +969,9 @@ impl Client {
         let payload = protocol::build_txn_commit_payload(flags);
         self.send_message(protocol::MSG_TXN_COMMIT, &payload, 0, false)
             .await?;
-        self.drain_until_ready().await
+        self.drain_until_ready().await?;
+        self.explicit_transaction = false;
+        self.drain_immediate_reopen_boundary().await
     }
 
     pub async fn rollback_transaction(&mut self, options: Option<TxnEndOptions>) -> Result<()> {
@@ -867,7 +981,9 @@ impl Client {
         let payload = protocol::build_txn_rollback_payload(flags);
         self.send_message(protocol::MSG_TXN_ROLLBACK, &payload, 0, false)
             .await?;
-        self.drain_until_ready().await
+        self.drain_until_ready().await?;
+        self.explicit_transaction = false;
+        self.drain_immediate_reopen_boundary().await
     }
 
     pub async fn savepoint(&mut self, name: &str) -> Result<()> {
@@ -920,8 +1036,9 @@ impl Client {
                 || msg.header.msg_type == protocol::MSG_READY
             {
                 if msg.header.msg_type == protocol::MSG_READY {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
+                    self.portal_resume_pending = false;
                 }
                 return Ok(());
             }
@@ -979,6 +1096,7 @@ impl Client {
         let payload = protocol::build_sblr_execute_payload(sblr_hash, sblr_bytecode, &encoded);
         self.last_plan = None;
         self.last_sblr = None;
+        self.portal_resume_pending = false;
         let sequence = self
             .send_message(protocol::MSG_SBLR_EXECUTE, &payload, 0, false)
             .await?;
@@ -1038,6 +1156,22 @@ impl Client {
 
     pub fn last_sblr_compiled(&self) -> Option<&protocol::SblrCompiled> {
         self.last_sblr.as_ref()
+    }
+
+    fn clear_abandoned_session_state(&mut self) {
+        // MGA reconnect creates a fresh attachment/transaction boundary. Session
+        // metadata captured from the abandoned attachment must not survive into
+        // the replacement handshake.
+        self.connected = false;
+        self.authed = false;
+        self.attachment_id = [0u8; 16];
+        self.clear_transaction_state();
+        self.sequence = 0;
+        self.last_query_sequence = 0;
+        self.parameters.clear();
+        self.last_plan = None;
+        self.last_sblr = None;
+        self.portal_resume_pending = false;
     }
 
     // ============================================================================
@@ -1244,8 +1378,8 @@ impl Client {
                     return Ok(CopyState::Failed { error: message });
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
                     return Ok(CopyState::Complete);
                 }
                 _ => continue,
@@ -1279,8 +1413,8 @@ impl Client {
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
                     return Ok(CopyResult {
                         rows_affected: 0,
                         command_tag: "COPY".to_string(),
@@ -1318,8 +1452,8 @@ impl Client {
                     continue;
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
                     return Ok(result);
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -1634,7 +1768,7 @@ impl Client {
                     let (_session_id, info) = protocol::parse_auth_ok(&msg.payload)?;
                     self.attachment_id
                         .copy_from_slice(&msg.header.attachment_id);
-                    self.apply_txn_state(msg.header.txn_id);
+                    self.apply_runtime_txn_id(msg.header.txn_id);
                     self.authed = true;
                     if let Some(ref exchange) = scram {
                         if !info.is_empty() && info.starts_with(b"v=") {
@@ -1648,8 +1782,9 @@ impl Client {
                     self.handle_parameter_status(name, value);
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
+                    self.portal_resume_pending = false;
                     return Ok(());
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -1710,6 +1845,7 @@ impl Client {
         let mut rows = Vec::new();
         let mut row_count = -1;
         let mut command_tag = String::new();
+        let mut ignored_stray_ready = false;
 
         loop {
             let msg = self.recv_message().await?;
@@ -1732,14 +1868,23 @@ impl Client {
                     row_count = rows_affected as i64;
                 }
                 protocol::MSG_PORTAL_SUSPENDED => {
-                    let rows_to_fetch = self.config.fetch_size.max(1);
-                    let payload = protocol::build_execute_payload("", rows_to_fetch);
-                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+                    self.allow_portal_resume();
+                    self.resume_suspended_portal(self.config.fetch_size.max(1))
                         .await?;
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
+                    self.portal_resume_pending = false;
+                    if row_count < 0
+                        && columns.is_empty()
+                        && rows.is_empty()
+                        && !ignored_stray_ready
+                        && status != 0
+                    {
+                        ignored_stray_ready = true;
+                        continue;
+                    }
                     if row_count < 0 {
                         row_count = rows.len() as i64;
                     }
@@ -1805,14 +1950,14 @@ impl Client {
                     saw_result_metadata = false;
                 }
                 protocol::MSG_PORTAL_SUSPENDED => {
-                    let rows_to_fetch = self.config.fetch_size.max(1);
-                    let payload = protocol::build_execute_payload("", rows_to_fetch);
-                    self.send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+                    self.allow_portal_resume();
+                    self.resume_suspended_portal(self.config.fetch_size.max(1))
                         .await?;
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
+                    self.portal_resume_pending = false;
                     if saw_result_metadata || !rows.is_empty() {
                         let pending_row_count = rows.len() as i64;
                         result_sets.push(ResultSetSummary {
@@ -1838,8 +1983,8 @@ impl Client {
             }
             match msg.header.msg_type {
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
                     return Ok(());
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
@@ -1856,7 +2001,7 @@ impl Client {
         }
         if name == "current_txn_id" {
             if let Ok(parsed) = value.trim().parse::<u64>() {
-                self.apply_txn_state(parsed);
+                self.apply_runtime_txn_id(parsed);
             }
         }
         self.parameters.insert(name, value);
@@ -1884,6 +2029,16 @@ impl Client {
                 self.last_sblr = Some(protocol::parse_sblr_compiled(&msg.payload)?);
                 Ok(true)
             }
+            protocol::MSG_TXN_STATUS => {
+                let (status, txn_id) = protocol::parse_txn_status(&msg.payload)?;
+                if status == b'T' {
+                    self.txn_id = txn_id;
+                    self.runtime_txn_active = true;
+                } else {
+                    self.clear_transaction_state();
+                }
+                Ok(true)
+            }
             _ => Ok(false),
         }
     }
@@ -1897,6 +2052,7 @@ impl Client {
         let payload = protocol::build_query_payload(sql, flags, max_rows, timeout_ms);
         self.last_plan = None;
         self.last_sblr = None;
+        self.portal_resume_pending = false;
         let sequence = self
             .send_message(protocol::MSG_QUERY, &payload, 0, false)
             .await?;
@@ -1943,6 +2099,7 @@ impl Client {
         let exec_payload = protocol::build_execute_payload("", max_rows);
         self.last_plan = None;
         self.last_sblr = None;
+        self.portal_resume_pending = false;
         let sequence = self
             .send_message(protocol::MSG_EXECUTE, &exec_payload, 0, false)
             .await?;
@@ -1971,8 +2128,9 @@ impl Client {
                 }
                 protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.apply_runtime_ready_state(status, txn_id);
+                    self.portal_resume_pending = false;
                     return Ok(param_count);
                 }
                 _ => continue,
@@ -2186,7 +2344,7 @@ impl Client {
     }
 
     fn has_active_transaction(&self) -> bool {
-        self.txn_id != 0
+        self.runtime_txn_active || self.txn_id != 0
     }
 
     fn ensure_no_active_transaction(&self) -> Result<()> {
@@ -2230,8 +2388,115 @@ impl Client {
         Ok(trimmed)
     }
 
-    fn apply_txn_state(&mut self, txn_id: u64) {
+    fn quote_string_literal(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    fn build_prepared_transaction_sql(verb: &str, global_transaction_id: &str) -> Result<String> {
+        let normalized = global_transaction_id.trim();
+        if normalized.is_empty() {
+            return Err(Error::with_sqlstate(
+                ErrorKind::Syntax,
+                "global transaction id is required",
+                Some("42601".to_string()),
+                None,
+                None,
+            ));
+        }
+        Ok(format!(
+            "{} {}",
+            verb,
+            Self::quote_string_literal(normalized)
+        ))
+    }
+
+    fn allow_portal_resume(&mut self) {
+        self.portal_resume_pending = true;
+    }
+
+    async fn resume_suspended_portal(&mut self, page_size: u32) -> Result<()> {
+        if !self.portal_resume_pending {
+            return Err(Error::with_sqlstate(
+                ErrorKind::Transaction,
+                "portal resume requires explicit suspended state",
+                Some("55000".to_string()),
+                None,
+                None,
+            ));
+        }
+        self.portal_resume_pending = false;
+        let payload = protocol::build_execute_payload("", page_size.max(1));
+        let sequence = self
+            .send_message(protocol::MSG_EXECUTE, &payload, 0, false)
+            .await?;
+        self.last_query_sequence = sequence;
+        Ok(())
+    }
+
+    fn can_adopt_fresh_native_boundary(opts: &TxnBeginOptions) -> bool {
+        matches!(
+            opts.isolation_level,
+            None | Some(protocol::ISOLATION_READ_COMMITTED)
+        ) && matches!(
+            opts.read_committed_mode,
+            None | Some(protocol::READ_COMMITTED_MODE_DEFAULT)
+        ) && opts.access_mode.is_none()
+            && opts.deferrable.is_none()
+            && opts.wait.is_none()
+            && opts.timeout_ms.is_none()
+            && opts.autocommit_mode.is_none()
+            && opts.conflict_action == 0
+    }
+
+    fn apply_runtime_txn_id(&mut self, txn_id: u64) {
         self.txn_id = txn_id;
+        if txn_id != 0 {
+            self.runtime_txn_active = true;
+        }
+    }
+
+    fn apply_runtime_ready_state(&mut self, status: u8, txn_id: u64) {
+        self.txn_id = txn_id;
+        if status != 0 {
+            // READY is authoritative for native engine session activity. A
+            // fresh MGA boundary may be active while the wire header still
+            // reports txn_id == 0.
+            self.runtime_txn_active = true;
+            return;
+        }
+        self.clear_transaction_state();
+    }
+
+    fn clear_transaction_state(&mut self) {
+        self.txn_id = 0;
+        self.runtime_txn_active = false;
+        self.explicit_transaction = false;
+    }
+
+    async fn drain_immediate_reopen_boundary(&mut self) -> Result<()> {
+        tokio::task::yield_now().await;
+        loop {
+            match timeout(Duration::from_millis(5), self.recv_message()).await {
+                Ok(Ok(msg)) => {
+                    if self.handle_async_message(&msg)? {
+                        continue;
+                    }
+                    match msg.header.msg_type {
+                        protocol::MSG_READY => {
+                            let (status, txn_id, _visibility) =
+                                protocol::parse_ready(&msg.payload)?;
+                            self.apply_runtime_ready_state(status, txn_id);
+                            self.portal_resume_pending = false;
+                            continue;
+                        }
+                        protocol::MSG_ERROR => return self.raise_protocol_error(&msg.payload),
+                        _ => return Ok(()),
+                    }
+                }
+                Ok(Err(err)) => return Err(err),
+                Err(_) => return Ok(()),
+            }
+        }
     }
 
     fn requested_features(&self) -> u64 {
@@ -2303,14 +2568,13 @@ impl<'a> QueryStream<'a> {
                     self.row_count = rows_affected as i64;
                 }
                 protocol::MSG_PORTAL_SUSPENDED => {
-                    let payload = protocol::build_execute_payload("", self.page_size);
-                    self.client
-                        .send_message(protocol::MSG_EXECUTE, &payload, 0, false)
-                        .await?;
+                    self.client.allow_portal_resume();
+                    self.client.resume_suspended_portal(self.page_size).await?;
                 }
                 protocol::MSG_READY => {
-                    let (_status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
-                    self.client.apply_txn_state(txn_id);
+                    let (status, txn_id, _visibility) = protocol::parse_ready(&msg.payload)?;
+                    self.client.apply_runtime_ready_state(status, txn_id);
+                    self.client.portal_resume_pending = false;
                     self.done = true;
                     self.finalize(true).await;
                     return Ok(None);
@@ -2833,6 +3097,83 @@ fn value_to_json(value: &Value) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn read_test_message(stream: &mut TcpStream) -> protocol::Message {
+        let mut header_bytes = [0u8; protocol::HEADER_SIZE];
+        stream.read_exact(&mut header_bytes).await.unwrap();
+        let header = protocol::decode_header(&header_bytes).unwrap();
+        let mut payload = vec![0u8; header.length as usize];
+        if header.length > 0 {
+            stream.read_exact(&mut payload).await.unwrap();
+        }
+        protocol::Message { header, payload }
+    }
+
+    async fn write_test_message(
+        stream: &mut TcpStream,
+        msg_type: u8,
+        payload: &[u8],
+        sequence: u32,
+        attachment_id: [u8; 16],
+        txn_id: u64,
+    ) {
+        let header = protocol::MessageHeader {
+            msg_type,
+            flags: 0,
+            length: payload.len() as u32,
+            sequence,
+            attachment_id,
+            txn_id,
+        };
+        let encoded = protocol::encode_message(&header, payload);
+        stream.write_all(&encoded).await.unwrap();
+    }
+
+    fn test_auth_ok_payload(session_id: [u8; 16]) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(20);
+        payload.extend_from_slice(&session_id);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload
+    }
+
+    fn test_ready_payload(status: u8, txn_id: u64) -> Vec<u8> {
+        let mut payload = vec![0u8; 20];
+        payload[0] = status;
+        payload[4..12].copy_from_slice(&txn_id.to_le_bytes());
+        payload
+    }
+
+    fn test_command_complete_payload(
+        command_type: u8,
+        rows_affected: u64,
+        last_insert_id: u64,
+        tag: &str,
+    ) -> Vec<u8> {
+        let mut payload = vec![0u8; 20];
+        payload[0] = command_type;
+        payload[4..12].copy_from_slice(&rows_affected.to_le_bytes());
+        payload[12..20].copy_from_slice(&last_insert_id.to_le_bytes());
+        payload.extend_from_slice(tag.as_bytes());
+        payload.push(0);
+        payload
+    }
+
+    fn parse_query_sql(payload: &[u8]) -> String {
+        let sql_bytes = &payload[12..];
+        let end = sql_bytes
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(sql_bytes.len());
+        String::from_utf8_lossy(&sql_bytes[..end]).to_string()
+    }
+
+    fn parse_execute_max_rows(payload: &[u8]) -> u32 {
+        let portal_name_len = u32::from_le_bytes(payload[0..4].try_into().unwrap()) as usize;
+        let offset = 4 + portal_name_len;
+        u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
+    }
 
     #[test]
     fn preflight_connect_requires_manager_auth_token() {
@@ -3048,11 +3389,329 @@ mod tests {
         assert_eq!(err.sqlstate.as_deref(), Some("25000"));
         assert_eq!(err.message, "cannot commit without an active transaction");
 
-        client.apply_txn_state(42);
+        client.apply_runtime_txn_id(42);
         let err = client.ensure_no_active_transaction().unwrap_err();
         assert_eq!(err.kind, ErrorKind::Transaction);
         assert_eq!(err.sqlstate.as_deref(), Some("25000"));
         assert_eq!(err.message, "transaction already active");
+    }
+
+    #[test]
+    fn runtime_ready_can_keep_fresh_native_boundary_active_with_zero_txn_id() {
+        let mut client = Client::new(Config::default());
+        client.apply_runtime_ready_state(b'T', 0);
+        assert!(client.has_active_transaction());
+        assert_eq!(client.txn_id, 0);
+    }
+
+    #[tokio::test]
+    async fn begin_adopts_default_fresh_native_boundary_and_rejects_nested_begin() {
+        let mut client = Client::new(Config::default());
+        client.connected = true;
+        client.runtime_txn_active = true;
+        client.txn_id = 0;
+
+        client
+            .begin_transaction(None)
+            .await
+            .expect("adopt default boundary");
+        assert!(client.explicit_transaction);
+        assert!(client.has_active_transaction());
+
+        let err = client.begin_transaction(None).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Transaction);
+        assert_eq!(err.sqlstate.as_deref(), Some("25000"));
+        assert_eq!(err.message, "transaction already active");
+    }
+
+    #[tokio::test]
+    async fn begin_rejects_non_default_fresh_native_boundary_adoption() {
+        let mut client = Client::new(Config::default());
+        client.connected = true;
+        client.runtime_txn_active = true;
+        client.txn_id = 0;
+
+        let err = client
+            .begin_transaction(Some(TxnBeginOptions {
+                read_committed_mode: Some(protocol::READ_COMMITTED_MODE_READ_CONSISTENCY),
+                ..TxnBeginOptions::default()
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
+        assert!(err.message.contains("fresh native transaction boundaries"));
+    }
+
+    #[tokio::test]
+    async fn prepared_transaction_helpers_emit_canonical_control_sql() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let startup = read_test_message(&mut stream).await;
+            assert_eq!(startup.header.msg_type, protocol::MSG_STARTUP);
+
+            let attachment = [0x22_u8; 16];
+            write_test_message(
+                &mut stream,
+                protocol::MSG_AUTH_OK,
+                &test_auth_ok_payload(attachment),
+                1,
+                attachment,
+                0,
+            )
+            .await;
+            write_test_message(
+                &mut stream,
+                protocol::MSG_READY,
+                &test_ready_payload(0, 0),
+                2,
+                attachment,
+                0,
+            )
+            .await;
+
+            for (sequence, expected_sql) in [
+                (3_u32, "PREPARE TRANSACTION 'gid-1'"),
+                (4_u32, "COMMIT PREPARED 'gid-1'"),
+                (5_u32, "ROLLBACK PREPARED 'gid''2'"),
+            ] {
+                let msg = read_test_message(&mut stream).await;
+                assert_eq!(msg.header.msg_type, protocol::MSG_QUERY);
+                assert_eq!(parse_query_sql(&msg.payload), expected_sql);
+                write_test_message(
+                    &mut stream,
+                    protocol::MSG_COMMAND_COMPLETE,
+                    &test_command_complete_payload(0, 0, 0, "OK"),
+                    sequence,
+                    attachment,
+                    0,
+                )
+                .await;
+                write_test_message(
+                    &mut stream,
+                    protocol::MSG_READY,
+                    &test_ready_payload(0, 0),
+                    sequence + 1,
+                    attachment,
+                    0,
+                )
+                .await;
+            }
+        });
+
+        let mut cfg = Config::default();
+        cfg.host = addr.ip().to_string();
+        cfg.port = addr.port();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.sslmode = "disable".to_string();
+
+        let mut client = Client::new(cfg);
+        client.connect().await.unwrap();
+
+        assert!(client.supports_prepared_transactions());
+        client.prepare_transaction("gid-1").await.unwrap();
+        client.commit_prepared("gid-1").await.unwrap();
+        client.rollback_prepared("gid'2").await.unwrap();
+
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn build_prepared_transaction_sql_rejects_empty_gid() {
+        let err = Client::build_prepared_transaction_sql("PREPARE TRANSACTION", "   ")
+            .expect_err("empty gid should be rejected");
+        assert_eq!(err.kind, ErrorKind::Syntax);
+        assert_eq!(err.sqlstate.as_deref(), Some("42601"));
+        assert_eq!(err.message, "global transaction id is required");
+    }
+
+    #[tokio::test]
+    async fn dormant_helpers_fail_closed_and_capabilities_stay_explicit() {
+        let mut client = Client::new(Config::default());
+
+        assert!(!client.supports_dormant_reattach());
+
+        let detach_err = client.detach_to_dormant().await.unwrap_err();
+        assert_eq!(detach_err.kind, ErrorKind::NotSupported);
+        assert_eq!(detach_err.sqlstate.as_deref(), Some("0A000"));
+
+        let reattach_err = client
+            .reattach_dormant("dormant-1", Some("token-1"))
+            .await
+            .unwrap_err();
+        assert_eq!(reattach_err.kind, ErrorKind::NotSupported);
+        assert_eq!(reattach_err.sqlstate.as_deref(), Some("0A000"));
+    }
+
+    #[tokio::test]
+    async fn resume_suspended_portal_requires_explicit_pending_state() {
+        let mut client = Client::new(Config::default());
+        let err = client.resume_suspended_portal(2).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Transaction);
+        assert_eq!(err.sqlstate.as_deref(), Some("55000"));
+        assert_eq!(
+            err.message,
+            "portal resume requires explicit suspended state"
+        );
+    }
+
+    #[tokio::test]
+    async fn query_stream_resumes_only_after_explicit_suspended_state() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let startup = read_test_message(&mut stream).await;
+            assert_eq!(startup.header.msg_type, protocol::MSG_STARTUP);
+
+            let attachment = [0x33_u8; 16];
+            write_test_message(
+                &mut stream,
+                protocol::MSG_AUTH_OK,
+                &test_auth_ok_payload(attachment),
+                1,
+                attachment,
+                0,
+            )
+            .await;
+            write_test_message(
+                &mut stream,
+                protocol::MSG_READY,
+                &test_ready_payload(0, 0),
+                2,
+                attachment,
+                0,
+            )
+            .await;
+
+            let query = read_test_message(&mut stream).await;
+            assert_eq!(query.header.msg_type, protocol::MSG_QUERY);
+            assert_eq!(parse_query_sql(&query.payload), "SELECT 1");
+
+            write_test_message(
+                &mut stream,
+                protocol::MSG_PORTAL_SUSPENDED,
+                &[],
+                3,
+                attachment,
+                0,
+            )
+            .await;
+
+            let execute = read_test_message(&mut stream).await;
+            assert_eq!(execute.header.msg_type, protocol::MSG_EXECUTE);
+            assert_eq!(parse_execute_max_rows(&execute.payload), 2);
+
+            write_test_message(
+                &mut stream,
+                protocol::MSG_READY,
+                &test_ready_payload(0, 77),
+                4,
+                attachment,
+                77,
+            )
+            .await;
+        });
+
+        let mut cfg = Config::default();
+        cfg.host = addr.ip().to_string();
+        cfg.port = addr.port();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.sslmode = "disable".to_string();
+        cfg.fetch_size = 2;
+
+        let mut client = Client::new(cfg);
+        client.connect().await.unwrap();
+        {
+            let mut stream = client.query_stream("SELECT 1").await.unwrap();
+            assert!(stream.next_row().await.unwrap().is_none());
+        }
+        assert_eq!(client.txn_id, 77);
+        assert!(!client.portal_resume_pending);
+
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn connect_clears_abandoned_session_state_before_replacement_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let startup = read_test_message(&mut stream).await;
+            assert_eq!(startup.header.msg_type, protocol::MSG_STARTUP);
+            assert_eq!(startup.header.sequence, 0);
+
+            let replacement_attachment = [0x11_u8; 16];
+            write_test_message(
+                &mut stream,
+                protocol::MSG_AUTH_OK,
+                &test_auth_ok_payload(replacement_attachment),
+                1,
+                replacement_attachment,
+                0,
+            )
+            .await;
+            write_test_message(
+                &mut stream,
+                protocol::MSG_READY,
+                &test_ready_payload(0, 0),
+                2,
+                replacement_attachment,
+                0,
+            )
+            .await;
+        });
+
+        let mut cfg = Config::default();
+        cfg.host = addr.ip().to_string();
+        cfg.port = addr.port();
+        cfg.user = "tester".to_string();
+        cfg.database = "db".to_string();
+        cfg.sslmode = "disable".to_string();
+
+        let mut client = Client::new(cfg);
+        client.connected = true;
+        client.authed = true;
+        client.attachment_id = [0x7f_u8; 16];
+        client.txn_id = 77;
+        client.sequence = 9;
+        client.last_query_sequence = 5;
+        client
+            .parameters
+            .insert("attachment_id".to_string(), "stale".to_string());
+        client.last_plan = Some(protocol::QueryPlan {
+            format: 1,
+            planning_time_us: 1,
+            estimated_rows: 1,
+            estimated_cost: 1,
+            plan: b"stale".to_vec(),
+        });
+        client.last_sblr = Some(protocol::SblrCompiled {
+            hash: 9,
+            version: 1,
+            bytecode: vec![0x42],
+        });
+
+        client.connect().await.unwrap();
+        server.await.unwrap();
+
+        assert!(client.connected);
+        assert!(client.authed);
+        assert_eq!(client.attachment_id, [0x11_u8; 16]);
+        assert_eq!(client.txn_id, 0);
+        assert_eq!(client.sequence, 1);
+        assert_eq!(client.last_query_sequence, 0);
+        assert!(client.parameters.is_empty());
+        assert!(client.last_plan.is_none());
+        assert!(client.last_sblr.is_none());
     }
 
     #[tokio::test]
@@ -3383,5 +4042,36 @@ mod tests {
             filtered[0].get("schema_name"),
             Some(&JsonValue::String("users.alice".to_string()))
         );
+    }
+
+    #[test]
+    fn encode_txn_begin_options_includes_read_committed_mode() {
+        let payload = encode_txn_begin_options(&TxnBeginOptions {
+            read_committed_mode: Some(protocol::READ_COMMITTED_MODE_READ_CONSISTENCY),
+            timeout_ms: Some(25),
+            ..TxnBeginOptions::default()
+        })
+        .expect("encode read committed mode");
+        assert_eq!(payload.len(), 16);
+        let flags = u16::from_le_bytes([payload[0], payload[1]]);
+        assert!(flags & protocol::TXN_FLAG_HAS_ISOLATION != 0);
+        assert!(flags & protocol::TXN_FLAG_HAS_TIMEOUT != 0);
+        assert!(flags & protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE != 0);
+        assert_eq!(payload[4], protocol::ISOLATION_READ_COMMITTED);
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 25);
+        assert_eq!(payload[12], protocol::READ_COMMITTED_MODE_READ_CONSISTENCY);
+    }
+
+    #[test]
+    fn encode_txn_begin_options_rejects_snapshot_alias_for_read_committed_mode() {
+        let err = encode_txn_begin_options(&TxnBeginOptions {
+            isolation_level: Some(protocol::ISOLATION_SERIALIZABLE),
+            read_committed_mode: Some(protocol::READ_COMMITTED_MODE_READ_CONSISTENCY),
+            ..TxnBeginOptions::default()
+        })
+        .expect_err("snapshot alias should be rejected");
+        assert_eq!(err.kind, ErrorKind::NotSupported);
+        assert_eq!(err.sqlstate.as_deref(), Some("0A000"));
+        assert!(err.message.contains("READ COMMITTED isolation alias"));
     }
 }

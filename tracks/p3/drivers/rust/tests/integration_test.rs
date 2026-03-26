@@ -75,6 +75,65 @@ async fn types_fixture_query() {
 }
 
 #[tokio::test]
+async fn transaction_stays_active_across_connect_commit_and_rollback() {
+    let dsn = match env::var("SCRATCHBIRD_RUST_URL") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let config = Config::from_dsn(&dsn).unwrap();
+    let mut client = Client::new(config);
+    client.connect().await.unwrap();
+    client.savepoint("sp_rust_bootstrap").await.unwrap();
+    client.release_savepoint("sp_rust_bootstrap").await.unwrap();
+    client.begin(None).await.unwrap();
+    client.commit(None).await.unwrap();
+    client.savepoint("sp_rust_after_commit").await.unwrap();
+    client.release_savepoint("sp_rust_after_commit").await.unwrap();
+    client.begin(None).await.unwrap();
+    client.rollback(None).await.unwrap();
+    client.savepoint("sp_rust_after_rollback").await.unwrap();
+    client.release_savepoint("sp_rust_after_rollback").await.unwrap();
+    client.close().await;
+}
+
+#[tokio::test]
+async fn nested_begin_is_rejected_while_active() {
+    let dsn = match env::var("SCRATCHBIRD_RUST_URL") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let config = Config::from_dsn(&dsn).unwrap();
+    let mut client = Client::new(config);
+    client.connect().await.unwrap();
+    client.begin(None).await.unwrap();
+    let err = client.begin(None).await.unwrap_err();
+    client.close().await;
+    assert_eq!(err.kind, ErrorKind::Transaction);
+    assert_eq!(err.sqlstate.as_deref(), Some("25000"));
+}
+
+#[tokio::test]
+async fn post_rollback_query_observes_actual_result_after_fresh_reopen() {
+    let dsn = match env::var("SCRATCHBIRD_RUST_URL") {
+        Ok(val) => val,
+        Err(_) => return,
+    };
+    let config = Config::from_dsn(&dsn).unwrap();
+    let mut client = Client::new(config);
+    client.connect().await.unwrap();
+    client.begin(None).await.unwrap();
+    client.rollback(None).await.unwrap();
+    let result = client.query("SELECT 2").await.unwrap();
+    client.close().await;
+    assert!(!result.rows.is_empty());
+    match result.rows[0][0] {
+        Value::Int32(v) => assert_eq!(v, 2),
+        Value::Int64(v) => assert_eq!(v, 2),
+        _ => panic!("unexpected value type"),
+    }
+}
+
+#[tokio::test]
 async fn query_multi_returns_independent_result_sets() {
     let dsn = match env::var("SCRATCHBIRD_RUST_URL") {
         Ok(val) => val,

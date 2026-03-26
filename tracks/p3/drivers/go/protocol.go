@@ -209,12 +209,20 @@ const (
 )
 
 const (
-	txnFlagHasIsolation  uint16 = 0x0001
-	txnFlagHasAccess     uint16 = 0x0002
-	txnFlagHasDeferrable uint16 = 0x0004
-	txnFlagHasWait       uint16 = 0x0008
-	txnFlagHasTimeout    uint16 = 0x0010
-	txnFlagHasAutocommit uint16 = 0x0020
+	readCommittedModeDefault         byte = 0
+	readCommittedModeReadConsistency byte = 1
+	readCommittedModeRecordVersion   byte = 2
+	readCommittedModeNoRecordVersion byte = 3
+)
+
+const (
+	txnFlagHasIsolation         uint16 = 0x0001
+	txnFlagHasAccess            uint16 = 0x0002
+	txnFlagHasDeferrable        uint16 = 0x0004
+	txnFlagHasWait              uint16 = 0x0008
+	txnFlagHasTimeout           uint16 = 0x0010
+	txnFlagHasAutocommit        uint16 = 0x0020
+	txnFlagHasReadCommittedMode uint16 = 0x0100
 )
 
 const (
@@ -574,8 +582,12 @@ func buildUnsubscribePayload(channel string) []byte {
 	return payload
 }
 
-func buildTxnBeginPayload(flags uint16, conflictAction uint8, autocommitMode uint8, isolationLevel uint8, accessMode uint8, deferrable uint8, waitMode uint8, timeoutMs uint32) []byte {
-	payload := make([]byte, 2+1+1+1+1+1+1+4)
+func buildTxnBeginPayload(flags uint16, conflictAction uint8, autocommitMode uint8, isolationLevel uint8, accessMode uint8, deferrable uint8, waitMode uint8, timeoutMs uint32, readCommittedMode uint8) []byte {
+	payloadLen := 2 + 1 + 1 + 1 + 1 + 1 + 1 + 4
+	if flags&txnFlagHasReadCommittedMode != 0 {
+		payloadLen += 4
+	}
+	payload := make([]byte, payloadLen)
 	binary.LittleEndian.PutUint16(payload[0:2], flags)
 	payload[2] = conflictAction
 	payload[3] = autocommitMode
@@ -584,6 +596,9 @@ func buildTxnBeginPayload(flags uint16, conflictAction uint8, autocommitMode uin
 	payload[6] = deferrable
 	payload[7] = waitMode
 	binary.LittleEndian.PutUint32(payload[8:12], timeoutMs)
+	if flags&txnFlagHasReadCommittedMode != 0 {
+		payload[12] = readCommittedMode
+	}
 	return payload
 }
 
@@ -671,6 +686,15 @@ func parseReady(payload []byte) (byte, uint64, uint64, error) {
 	txnID := binary.LittleEndian.Uint64(payload[4:12])
 	epoch := binary.LittleEndian.Uint64(payload[12:20])
 	return status, txnID, epoch, nil
+}
+
+func parseTxnStatus(payload []byte) (byte, uint64, error) {
+	if len(payload) < 12 {
+		return 0, 0, errors.New("txn status truncated")
+	}
+	status := payload[0]
+	txnID := binary.LittleEndian.Uint64(payload[4:12])
+	return status, txnID, nil
 }
 
 func parseParameterStatus(payload []byte) (string, string, error) {

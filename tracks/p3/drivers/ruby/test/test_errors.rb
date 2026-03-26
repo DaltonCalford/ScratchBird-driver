@@ -61,6 +61,26 @@ class TestErrors < Minitest::Test
     assert_includes err.message, "HINT: Use a different id"
   end
 
+  def test_retry_scope_classifies_statement_and_reconnect_boundaries
+    assert_equal Scratchbird::ErrorMapper::RETRY_SCOPE_STATEMENT,
+                 Scratchbird::ErrorMapper.retry_scope_for_sqlstate("40001")
+    assert_equal Scratchbird::ErrorMapper::RETRY_SCOPE_STATEMENT,
+                 Scratchbird::ErrorMapper.retry_scope_for_sqlstate("40P01")
+    assert_equal Scratchbird::ErrorMapper::RETRY_SCOPE_RECONNECT,
+                 Scratchbird::ErrorMapper.retry_scope_for_sqlstate("08006")
+    assert_equal Scratchbird::ErrorMapper::RETRY_SCOPE_NONE,
+                 Scratchbird::ErrorMapper.retry_scope_for_sqlstate("57014")
+    assert_equal Scratchbird::ErrorMapper::RETRY_SCOPE_NONE,
+                 Scratchbird::ErrorMapper.retry_scope_for_sqlstate(nil)
+  end
+
+  def test_retryable_sqlstate_only_allows_fresh_boundary_retries
+    assert Scratchbird::ErrorMapper.retryable_sqlstate?("40001")
+    assert Scratchbird::ErrorMapper.retryable_sqlstate?("08003")
+    refute Scratchbird::ErrorMapper.retryable_sqlstate?("57014")
+    refute Scratchbird::ErrorMapper.retryable_sqlstate?("")
+  end
+
   private
 
   def build_error_payload(severity:, sqlstate:, message:, detail: "", hint: "")

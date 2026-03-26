@@ -718,7 +718,7 @@ SBType sb_get_type(SBResult* result, int index);
  * @param conn Connection handle
  * @return SB_OK on success, error code on failure
  *
- * Uses default isolation level (SNAPSHOT/Repeatable Read).
+ * Uses the lane's documented default transaction profile.
  */
 SBError sb_begin(SBConnection* conn);
 
@@ -726,10 +726,14 @@ SBError sb_begin(SBConnection* conn);
  * Begin a transaction with specific isolation level.
  *
  * @param conn Connection handle
- * @param isolation Isolation level string:
+ * @param isolation Canonical isolation string:
  *   - "READ COMMITTED"
- *   - "REPEATABLE READ" or "SNAPSHOT"
- *   - "SERIALIZABLE"
+ *   - "READ COMMITTED READ CONSISTENCY"
+ *   - "SNAPSHOT"
+ *   - "SNAPSHOT TABLE STABILITY"
+ *
+ * Lanes may additionally accept documented SQL-standard aliases such as
+ * "REPEATABLE READ" or "SERIALIZABLE" when they map them explicitly.
  * @return SB_OK on success, error code on failure
  */
 SBError sb_begin_isolation(SBConnection* conn, const char* isolation);
@@ -802,6 +806,154 @@ int sb_in_transaction(SBConnection* conn);
  */
 SBError sb_set_autocommit(SBConnection* conn, int auto_commit);
 ```
+
+### 7.2 MGA Transaction Truth And Recovery Contract
+
+ScratchBird client libraries sit above an MGA/state-based engine. That means:
+
+- reconnect or reopen repairs transport and session state only
+- reconnect never resurrects an abandoned in-flight transaction
+- drivers do not replay lost statements from a WAL-style journal
+- retry always starts from a fresh engine-visible boundary: a reconnect, a new
+  statement execution, or a newly opened transaction
+
+Driver authors must keep the following distinction explicit in code and public
+documentation:
+
+- attachment/session state can be rebuilt locally
+- transaction truth remains owned by the engine
+- limbo and dormant states are explicit engine features, not implicit reconnect
+  behavior
+- mirrored driver-side engine headers such as
+  `tracks/p3/drivers/cli/include/scratchbird/core/*.h` are informative mirrors
+  of this contract, not an alternative authority source, and must not drift
+  into WAL-style or reconnect-replay semantics
+
+### 7.3 Isolation Modes And Public Mapping
+
+The engine exposes four canonical isolation modes:
+
+| Canonical mode | Engine behavior | Driver guidance |
+| --- | --- | --- |
+| `READ COMMITTED` | Reads latest committed versions at statement time. Lock conflict handling depends on wait policy. | Standard `READ COMMITTED` APIs may map here directly. |
+| `READ COMMITTED READ CONSISTENCY` | Statement-scoped snapshot for read-consistency restart. Lock conflicts, deadlocks, and serialization failures may require statement restart. | Drivers must document any alias or option surface that selects this mode. |
+| `SNAPSHOT` | Transaction-scoped stable snapshot. | SQL-standard `SNAPSHOT` or `REPEATABLE READ` aliases may map here when the lane documents that choice. |
+| `SNAPSHOT TABLE STABILITY` | Snapshot semantics plus table-stability locking behavior. | SQL-standard `SERIALIZABLE` aliases may map here when the lane documents that choice. |
+
+Rules for all driver lanes:
+
+- if a lane exposes only SQL-standard isolation names, it must document its
+  mapping to these canonical engine modes
+- native transaction activity is owned by the wire `READY` / transaction-status
+  signal, not by `current_txn_id` alone; engine-endpoint sessions may be
+  active while still reporting `txn_id == 0` across connect, commit, and
+  rollback, and drivers must keep that distinction explicit in code and docs
+- lanes that expose an explicit begin object on top of the native endpoint
+  must either adopt that already-active fresh boundary for compatible default
+  `READ COMMITTED` semantics or fail closed for unsupported non-default
+  fresh-boundary begin requests; they must not pretend the engine is idle
+- representative typed or custom-begin lanes now expose the canonical
+  `READ COMMITTED` sub-mode selector directly:
+  `ScratchBird-driver/tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`,
+  `ScratchBird-driver/tracks/p3/drivers/dotnet/src/ScratchBird.Data/TransactionOptions.cs`,
+  `ScratchBird-driver/tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`,
+  `ScratchBird-driver/tracks/p3/drivers/go/conn.go`,
+  `ScratchBird-driver/tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBConnection.java`,
+  `ScratchBird-driver/tracks/p3/drivers/python/src/scratchbird/connection.py`,
+  `ScratchBird-driver/tracks/p3/drivers/node/src/client.ts`,
+  `ScratchBird-driver/tracks/p3/drivers/php/src/Connection.php`,
+  `ScratchBird-driver/tracks/p3/drivers/ruby/lib/scratchbird/client.rb`,
+  `ScratchBird-driver/tracks/p3/drivers/rust/src/client.rs`,
+  `ScratchBird-driver/tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`,
+  `ScratchBird-driver/tracks/p3/drivers/dart/lib/src/client.dart`,
+  `ScratchBird-driver/tracks/p3/drivers/r/R/client.R`,
+  `ScratchBird-driver/tracks/p3/drivers/mojo/src/scratchbird.py`,
+  and `ScratchBird-driver/tracks/p3/drivers/pascal/src/ScratchBird.Client.pas`
+- representative live-certified native lanes now include the fresh-boundary
+  adoption / reopen-drain rule in both code and lane tests:
+  `ScratchBird-driver/tracks/p3/drivers/go/conn.go`,
+  `ScratchBird-driver/tracks/p3/drivers/go/integration_test.go`,
+  `ScratchBird-driver/tracks/p3/drivers/php/src/Connection.php`,
+  `ScratchBird-driver/tracks/p3/drivers/php/tests/IntegrationTest.php`,
+  `ScratchBird-driver/tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`,
+  `ScratchBird-driver/tracks/p3/drivers/swift/Tests/ScratchBirdTests/IntegrationTests.swift`,
+  `ScratchBird-driver/tracks/p3/drivers/r/R/client.R`,
+  `ScratchBird-driver/tracks/p3/drivers/r/tests/testthat/test_integration.R`,
+  `ScratchBird-driver/tracks/p3/drivers/mojo/src/scratchbird.py`,
+  and `ScratchBird-driver/tracks/p3/drivers/mojo/tests/integration.py`
+- if a lane cannot expose a canonical mode yet, it must reject or document the
+  limitation rather than silently claiming parity
+- wait/no-wait, timeout, access mode, deferrable, and conflict policy are part
+  of transaction semantics, not transport retry behavior
+
+### 7.4 Restart-Required And Retry Boundary
+
+Drivers must distinguish retryable conditions by boundary, not just by a
+boolean:
+
+| SQLSTATE / class | Meaning | Allowed retry boundary |
+| --- | --- | --- |
+| `40001`, `40P01` | serialization failure / deadlock with restart-required transaction semantics | retry from a fresh statement boundary only; discard statement-local state such as portals, savepoint assumptions, and cached execution context tied to the failed statement |
+| `08xxx` | connection/session breakage | reconnect or reopen only; do not assume the abandoned transaction survived |
+| `57014` | cancel / operator intervention | caller-controlled only; drivers must not auto-replay without a fresh statement boundary and explicit policy |
+
+The driver contract is intentionally fail-closed:
+
+- a retriable conflict does not mean “resume where execution stopped”
+- reconnect does not imply “continue the prior transaction”
+- savepoint stacks, cursor state, and prepared statement caches must be treated
+  as invalid when the underlying boundary was lost
+
+### 7.5 Prepared, Limbo, And Dormant States
+
+The engine supports explicit prepared-transaction (2PC limbo) and dormant
+detach/reattach capabilities. Driver rules are:
+
+- prepared / limbo lifecycle is explicit administrative or application-visible
+  state, never implicit reconnect recovery
+- dormant detach / reattach is an explicit opt-in capability using engine
+  tokens, never a side effect of transport reconnect
+- lanes that do not yet expose these capabilities must not imply that normal
+  reconnect or retry will recover them automatically
+- representative public-driver surfaces are now explicit in code:
+  `tracks/p3/drivers/cli/txn_exec_parity.cpp`,
+  `tracks/p3/drivers/cpp/include/scratchbird/client/scratchbird_client.h`,
+  `tracks/p3/drivers/cpp/include/scratchbird/client/connection.h`,
+  `tracks/p3/drivers/cpp/src/scratchbird_client_c.cpp`,
+  `tracks/p3/drivers/cpp/src/connection.cpp`,
+  `tracks/p3/drivers/dotnet/src/ScratchBird.Data/ScratchBirdConnection.cs`,
+  `tracks/p3/drivers/dotnet/src/ScratchBird.Data/ProtocolClient.cs`,
+  `tracks/p3/drivers/elixir/lib/scratchbird/connection.ex`,
+  `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBConnection.java`,
+  `tracks/p3/drivers/jdbc/src/main/java/com/scratchbird/jdbc/SBProtocolHandler.java`,
+  `tracks/p3/drivers/node/src/client.ts`,
+  `tracks/p3/drivers/php/src/Connection.php`,
+  `tracks/p3/drivers/python/src/scratchbird/connection.py`,
+  `tracks/p3/drivers/r/R/client.R`,
+  `tracks/p3/drivers/pascal/src/ScratchBird.Client.pas`,
+  `tracks/p3/drivers/rust/src/client.rs`,
+  `tracks/p3/drivers/swift/Sources/ScratchBird/Connection.swift`,
+  `tracks/p3/drivers/odbc/include/scratchbird/odbc/odbc_handles.h`,
+  `tracks/p3/drivers/odbc/src/odbc_handles.cpp`,
+  `tracks/p3/drivers/ruby/lib/scratchbird/connection.rb`, and
+  `tracks/p3/drivers/ruby/lib/scratchbird/client.rb`,
+  `tracks/p3/drivers/dart/lib/src/client.dart`, plus
+  `tracks/p3/drivers/go/conn.go`, plus
+  `tracks/p3/drivers/mojo/src/scratchbird.py`
+- prepared transaction helpers may be surfaced through canonical control SQL
+  (`PREPARE TRANSACTION`, `COMMIT PREPARED`, `ROLLBACK PREPARED`) when a lane
+  does not yet have a dedicated transport verb
+- dormant detach / reattach must fail closed as not-supported until the public
+  front door exposes an explicit dormant token flow; reconnect must not be
+  described as a substitute
+- result resume must fail closed unless the driver is responding to an
+  explicit suspended/portal-resume protocol state
+- lanes that do not expose a standalone public portal-resume helper must make
+  that absence explicit in code or lane-local documentation rather than
+  implying reconnect-based continuation
+
+Lane-local READMEs and baseline mappings must point auditors to the specific
+source and tests that implement these surfaces.
 
 ---
 
@@ -1099,10 +1251,16 @@ const char* sb_error_string(SBError error);
  * Check if error is retryable.
  *
  * @param error Error code
- * @return 1 if retryable, 0 otherwise
+ * @return 1 if retryable from a fresh reconnect or statement boundary, 0 otherwise
  */
 int sb_error_is_retryable(SBError error);
 ```
+
+`sb_error_is_retryable(...)` is intentionally narrower than “the operation can
+continue in-place.” A retryable result means the caller may reopen the session
+or reissue the statement from a fresh boundary according to the SQLSTATE and
+lane policy; it does not mean that the driver may replay or resume an abandoned
+transaction automatically.
 
 ---
 

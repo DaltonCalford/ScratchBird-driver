@@ -139,6 +139,7 @@ public:
         uint8_t conflict_action{0};
         uint8_t autocommit_mode{0};
         uint8_t isolation_level{0};
+        uint8_t read_committed_mode{0};
         uint8_t access_mode{0};
         uint8_t deferrable{0};
         uint8_t wait_mode{0};
@@ -290,6 +291,7 @@ private:
 
     bool connected_{false};
     bool in_transaction_{false};
+    uint64_t current_txn_id_{0};
     std::string last_error_;
     uint32_t next_sequence_{0};
     uint32_t last_query_sequence_{0};

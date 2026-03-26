@@ -20,8 +20,8 @@ class TestTxnExecParity < Minitest::Test
       @in_transaction
     end
 
-    def begin_transaction
-      @calls << :begin_transaction
+    def begin_transaction(options = nil)
+      @calls << (options.nil? ? :begin_transaction : [:begin_transaction, options])
       @in_transaction = true
       true
     end
@@ -36,6 +36,41 @@ class TestTxnExecParity < Minitest::Test
       @calls << :rollback
       @in_transaction = false
       true
+    end
+
+    def supports_prepared_transactions?
+      @calls << :supports_prepared_transactions?
+      true
+    end
+
+    def supports_dormant_reattach?
+      @calls << :supports_dormant_reattach?
+      false
+    end
+
+    def prepare_transaction(gid)
+      @calls << [:prepare_transaction, gid]
+      true
+    end
+
+    def commit_prepared(gid)
+      @calls << [:commit_prepared, gid]
+      true
+    end
+
+    def rollback_prepared(gid)
+      @calls << [:rollback_prepared, gid]
+      true
+    end
+
+    def detach_to_dormant
+      @calls << :detach_to_dormant
+      raise Scratchbird::NotSupportedError, "dormant detach/reattach is not yet exposed by the public Ruby driver surface"
+    end
+
+    def reattach_dormant(dormant_id, auth_token = nil)
+      @calls << [:reattach_dormant, dormant_id, auth_token]
+      raise Scratchbird::NotSupportedError, "dormant detach/reattach is not yet exposed by the public Ruby driver surface"
     end
 
     def savepoint(name)
@@ -123,7 +158,7 @@ class TestTxnExecParity < Minitest::Test
 
     assert_equal :query_result, first
     assert_equal :query_result, second
-    assert_equal 1, client.calls.count(:begin_transaction)
+    assert_equal 0, client.calls.count(:begin_transaction)
   end
 
   def test_commit_and_rollback_reset_transaction_gate
@@ -136,9 +171,29 @@ class TestTxnExecParity < Minitest::Test
     conn.rollback
     conn.execute("SELECT 3")
 
-    assert_equal 3, client.calls.count(:begin_transaction)
+    assert_equal 0, client.calls.count(:begin_transaction)
     assert_equal 1, client.calls.count(:commit)
     assert_equal 1, client.calls.count(:rollback)
+  end
+
+  def test_begin_transaction_forwards_mga_options
+    client = FakeClient.new
+    conn = build_connection(client)
+
+    conn.begin_transaction(
+      isolation_level: Scratchbird::Protocol::ISOLATION_READ_COMMITTED,
+      read_committed_mode: Scratchbird::Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY,
+      timeout_ms: 25
+    )
+
+    assert_includes client.calls, [
+      :begin_transaction,
+      {
+        isolation_level: Scratchbird::Protocol::ISOLATION_READ_COMMITTED,
+        read_committed_mode: Scratchbird::Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY,
+        timeout_ms: 25
+      }
+    ]
   end
 
   def test_query_and_stream_forward_options
@@ -163,7 +218,7 @@ class TestTxnExecParity < Minitest::Test
 
     assert_equal :execute_result, result
     assert_equal :execute_stream_result, stream
-    assert_equal 1, client.calls.count(:begin_transaction)
+    assert_equal 0, client.calls.count(:begin_transaction)
     assert_includes client.calls, [:execute, stmt.instance_variable_get(:@name), [1], { max_rows: 1 }]
     assert_includes client.calls, [:execute_stream, stmt.instance_variable_get(:@name), [2], { timeout_ms: 10 }]
   end
@@ -189,6 +244,27 @@ class TestTxnExecParity < Minitest::Test
     assert_includes client.calls, [:savepoint, "sp1"]
     assert_includes client.calls, [:rollback_to_savepoint, "sp1"]
     assert_includes client.calls, [:release_savepoint, "sp1"]
+  end
+
+  def test_prepared_and_dormant_capabilities_delegate_to_client
+    client = FakeClient.new
+    conn = build_connection(client)
+
+    assert_equal true, conn.supports_prepared_transactions?
+    assert_equal false, conn.supports_dormant_reattach?
+    assert_equal true, conn.prepare_transaction("gid_alpha")
+    assert_equal true, conn.commit_prepared("gid_alpha")
+    assert_equal true, conn.rollback_prepared("gid_alpha")
+
+    err = assert_raises(Scratchbird::NotSupportedError) { conn.detach_to_dormant }
+    assert_equal "dormant detach/reattach is not yet exposed by the public Ruby driver surface", err.message
+
+    assert_includes client.calls, :supports_prepared_transactions?
+    assert_includes client.calls, :supports_dormant_reattach?
+    assert_includes client.calls, [:prepare_transaction, "gid_alpha"]
+    assert_includes client.calls, [:commit_prepared, "gid_alpha"]
+    assert_includes client.calls, [:rollback_prepared, "gid_alpha"]
+    assert_includes client.calls, :detach_to_dormant
   end
 
   def test_statement_close_deallocates_prepared_handle
@@ -229,7 +305,7 @@ class TestTxnExecParity < Minitest::Test
     assert_equal [:query_multi_result], query_multi_result
     assert_equal :execute_batch_result, batch_result
     assert_equal [101], generated
-    assert_equal 1, client.calls.count(:begin_transaction)
+    assert_equal 0, client.calls.count(:begin_transaction)
     assert_includes client.calls, [:call, "{ ? = call abs(?) }", [-3], { max_rows: 1 }]
     assert_includes client.calls, [:query_multi, "SELECT 1; SELECT 2", nil, nil]
     assert_includes client.calls, [:execute_batch, "SELECT ?::INTEGER", [[11], [22]], nil]

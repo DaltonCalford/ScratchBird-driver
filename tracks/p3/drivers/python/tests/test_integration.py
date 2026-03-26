@@ -329,17 +329,28 @@ def test_transaction_begin_commit_rollback_cycle_integration():
         pytest.skip("SCRATCHBIRD_TEST_DSN not set")
     conn = scratchbird.connect(dsn)
     try:
-        conn.begin()
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
+
+        conn.commit()
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
+        with pytest.raises(scratchbird.ProgrammingError, match="transaction already active"):
+            conn.begin()
         cur = conn.cursor()
         cur.execute("SELECT 1")
         assert cur.fetchone() == (1,)
-        conn.commit()
-
-        conn.begin()
+        conn.rollback()
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
+        with pytest.raises(scratchbird.ProgrammingError, match="transaction already active"):
+            conn.begin()
         cur = conn.cursor()
         cur.execute("SELECT 2")
         assert cur.fetchone() == (2,)
-        conn.rollback()
+        conn.commit()
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
 
         conn.commit()
         conn.rollback()
@@ -353,10 +364,8 @@ def test_transaction_nested_begin_rejected_integration():
         pytest.skip("SCRATCHBIRD_TEST_DSN not set")
     conn = scratchbird.connect(dsn)
     try:
-        conn.begin()
         with pytest.raises(scratchbird.ProgrammingError, match="transaction already active"):
             conn.begin()
-        conn.rollback()
     finally:
         conn.close()
 
@@ -370,9 +379,13 @@ def test_autocommit_mode_transition_integration():
         assert conn.autocommit is True
         conn.autocommit = False
         assert conn.autocommit is False
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
         cur = conn.cursor()
         cur.execute("SELECT 1")
         assert cur.fetchone() == (1,)
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
         conn.autocommit = True
         assert conn.autocommit is True
     finally:
@@ -386,6 +399,8 @@ def test_transaction_savepoint_lifecycle_integration():
     conn = scratchbird.connect(dsn)
     try:
         conn.autocommit = False
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
         cur = conn.cursor()
         cur.execute("SELECT 1")
         assert cur.fetchone() == (1,)
@@ -393,6 +408,8 @@ def test_transaction_savepoint_lifecycle_integration():
         conn.rollback_to_savepoint("sp1")
         conn.release_savepoint("sp1")
         conn.commit()
+        assert conn._transaction_active() is True
+        assert conn._txn_id == 0
     finally:
         conn.close()
 

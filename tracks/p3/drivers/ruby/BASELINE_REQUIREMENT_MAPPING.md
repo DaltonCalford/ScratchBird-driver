@@ -6,6 +6,36 @@
 - Baseline reflects currently present lane code/tests only.
 - Mapping is grouped by JDBCBL capability groups: `CONN`, `TXN`, `EXEC`, `META`, `TYPE`, `ERR`, `RES`.
 
+## MGA Recovery Contract
+
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `Scratchbird::Client#resume_portal` now fails closed with `55000` unless the
+  server first reported `MSG_PORTAL_SUSPENDED`.
+- `Scratchbird::Connection#prepare_transaction`, `#commit_prepared`, and
+  `#rollback_prepared` expose explicit prepared/limbo control through
+  canonical transaction-control SQL.
+- `Scratchbird::Connection#supports_dormant_reattach?` is explicit and false,
+  and `#detach_to_dormant` / `#reattach_dormant` fail closed until a public
+  dormant front-door exists.
+- `Scratchbird::Client#begin_transaction(options)` now exposes the canonical
+  `READ COMMITTED` sub-mode selector directly through
+  `:read_committed_mode`, including `READ COMMITTED READ CONSISTENCY`.
+- `Scratchbird::Protocol.canonical_read_committed_mode_label(...)` keeps that
+  selector source-visible for auditors and lane tests.
+- Native `READY` status is authoritative for transaction activity in this
+  lane. An active session transaction can legitimately arrive with
+  `txn_id == 0` across connect, commit, and rollback, so autocommit-off
+  statements execute against the server-owned session boundary instead of
+  injecting a synthetic client-side `BEGIN`.
+- `Scratchbird::ErrorMapper.retry_scope_for_sqlstate(...)` makes the retry
+  boundary explicit: `40001`/`40P01` => statement only, `08xxx` => reconnect
+  only, all other SQLSTATEs => no automatic replay.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL: `CONN`)
 
 - Current status: `Implemented`
@@ -49,23 +79,26 @@
   - `lib/scratchbird/connection.rb:37` (`Connection#begin_transaction`, `#commit`, `#rollback`)
   - `lib/scratchbird/connection.rb:50` (`Connection#savepoint`, `#rollback_to_savepoint`, `#release_savepoint`)
   - `lib/scratchbird/connection.rb:52` (`Connection#in_transaction?`, transaction-state gate delegated to client)
-  - `lib/scratchbird/connection.rb:57` (`Connection#execute`/`#stream` autocommit gate via `begin_transaction_if_needed`)
+  - `lib/scratchbird/connection.rb:57` (`Connection#execute`/`#stream` autocommit gate; autocommit-off statements rely on the server-owned session transaction instead of a synthetic local BEGIN`)
   - `lib/scratchbird/connection.rb:78` (`Connection#execute_prepared`, `#stream_prepared` uses the same transaction gate as direct execution)
   - `lib/scratchbird/client.rb:42` (`Client#txn_id` reader + `#in_transaction?`)
-  - `lib/scratchbird/client.rb:125` (`Client#begin_transaction`, `#commit`, `#rollback`)
+  - `lib/scratchbird/client.rb:125` (`Client#begin_transaction`, `#commit`, `#rollback`, READY-driven transaction activity including active-with-zero-txn-id native sessions)
   - `lib/scratchbird/client.rb:146` (`#savepoint`, `#release_savepoint`, `#rollback_to_savepoint`)
-  - `lib/scratchbird/protocol.rb:300` (transaction payload builders)
+  - `lib/scratchbird/protocol.rb:300` (transaction payload builders and `canonical_read_committed_mode_label(...)`)
 - Lane-local test anchors:
   - `test/test_txn_exec_parity.rb:67` (`test_execute_starts_transaction_once_when_autocommit_disabled`)
   - `test/test_txn_exec_parity.rb:79` (`test_commit_and_rollback_reset_transaction_gate`)
+  - `test/test_txn_exec_parity.rb:94` (`test_begin_transaction_forwards_mga_options`)
   - `test/test_txn_exec_parity.rb:106` (`test_statement_execute_and_stream_use_connection_transaction_gate`)
   - `test/test_txn_exec_parity.rb:129` (`test_connection_savepoint_api_forwards_to_client`)
   - `test/test_wire_txn_exec.rb:98` (`test_txn_id_transitions_follow_ready_frames`)
+  - `test/test_wire_txn_exec.rb:121` (`test_begin_transaction_encodes_read_committed_mode`)
+  - `test/test_wire_txn_exec.rb:140` (`test_begin_transaction_rejects_read_committed_mode_with_snapshot_alias`)
   - `test/test_wire_txn_exec.rb:130` (`test_commit_raises_mapped_error_but_applies_ready_state_after_abort`)
   - `test/test_integration.rb:113` (`test_txn_id_transitions_follow_runtime_ready_frames`, env-gated)
   - `test/test_integration.rb:136` (`test_commit_and_rollback_behavior_after_server_abort`, env-gated)
 - Gaps / next actions:
-  - None in lane-local baseline scope.
+  - Public begin now exposes `read_committed_mode`, but richer non-READ-COMMITTED transaction-option parity remains open under `DMRW-005`.
 
 ## EXEC (JDBCBL: `EXEC`)
 
@@ -104,7 +137,7 @@
   - `test/test_wire_txn_exec.rb:80` (`test_deallocate_waits_for_close_complete_then_ready`)
   - `test/test_integration.rb:170` (`test_prepared_close_sequence_roundtrip`, env-gated)
 - Gaps / next actions:
-  - None in lane-local baseline scope.
+  - None in lane-local baseline scope; retry-boundary helpers are now explicit in `lib/scratchbird/errors.rb`.
 
 ## META (JDBCBL: `META`)
 
@@ -189,6 +222,7 @@
   - `lib/scratchbird/connection.rb:85` (`Connection#close_prepared`)
   - `lib/scratchbird/statement.rb:31` (`Statement#close`, `#closed?`, best-effort prepared deallocation)
   - `lib/scratchbird/result.rb:11` (`Result` container/enumeration helpers)
+  - `lib/scratchbird/client.rb:86` (`Client#connect`, same-client reconnect now clears abandoned prepared/session caches before replacement handshake)
   - `lib/scratchbird/client.rb:112` (`Client#close` idempotent cleanup path: socket, keepalive, leak guard, detector teardown)
   - `lib/scratchbird/client.rb:870` (`with_resilience` wrapper for circuit breaker + telemetry + keepalive validation)
   - `lib/scratchbird/client.rb:1150` (`ResultStream` single-consumption iterator and rowcount finalization)
@@ -202,6 +236,7 @@
   - `test/test_resource_resilience.rb:192` (`test_statement_close_is_idempotent_when_close_prepared_raises`)
   - `test/test_resource_resilience.rb:214` (`test_client_close_cleans_resilience_helpers_when_socket_absent`)
   - `test/test_resource_resilience.rb:239` (`test_client_close_is_idempotent_when_socket_close_raises`)
+  - `test/test_resource_resilience.rb:289` (`test_client_connect_clears_abandoned_session_state_on_same_instance_reuse`)
   - `test/test_resource_resilience.rb:264` (`test_with_resilience_success_records_telemetry_and_circuit_success`)
   - `test/test_resource_resilience.rb:287` (`test_with_resilience_failure_records_telemetry_and_circuit_failure`)
   - `test/test_resource_resilience.rb:311` (`test_with_resilience_runs_ping_when_keepalive_validation_required`)

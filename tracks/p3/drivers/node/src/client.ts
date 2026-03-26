@@ -21,12 +21,15 @@ import {
   QUERY_FLAG_RETURN_SBLR,
   QUERY_FLAG_NO_CACHE,
   ISOLATION_READ_COMMITTED,
+  ISOLATION_READ_UNCOMMITTED,
   ISOLATION_REPEATABLE_READ,
   ISOLATION_SERIALIZABLE,
+  READ_COMMITTED_MODE_DEFAULT,
   TXN_FLAG_HAS_ACCESS,
   TXN_FLAG_HAS_AUTOCOMMIT,
   TXN_FLAG_HAS_DEFERRABLE,
   TXN_FLAG_HAS_ISOLATION,
+  TXN_FLAG_HAS_READ_COMMITTED_MODE,
   TXN_FLAG_HAS_TIMEOUT,
   TXN_FLAG_HAS_WAIT,
   buildStartupPayload,
@@ -54,6 +57,7 @@ import {
   parseAuthContinue,
   parseAuthOk,
   parseReady,
+  parseTxnStatus,
   parseParameterStatus,
   parseParameterDescription,
   parseRowDescription,
@@ -137,7 +141,13 @@ interface QueryOptions {
 }
 
 interface TxnBeginOptions {
+  // Public isolation aliases map onto the canonical MGA modes:
+  // READ COMMITTED => READ COMMITTED
+  // REPEATABLE READ => SNAPSHOT
+  // SERIALIZABLE => SNAPSHOT TABLE STABILITY
+  // readCommittedMode adds the canonical READ COMMITTED sub-mode selector.
   isolationLevel?: number;
+  readCommittedMode?: number;
   accessMode?: number;
   deferrable?: boolean;
   wait?: boolean;
@@ -213,6 +223,7 @@ class ProtocolConnection {
   private sequence = 0;
 
   async connect(config: ClientConfig): Promise<void> {
+    this.close();
     const host = config.host ?? "localhost";
     const port = config.port ?? 3092;
     const sslMode = resolveSslMode(config);
@@ -311,6 +322,11 @@ class ProtocolConnection {
     if (this.socket) {
       this.socket.destroy();
     }
+    this.socket = undefined;
+    this.reader = undefined;
+    this.attachmentId = Buffer.alloc(16);
+    this.txnId = 0n;
+    this.sequence = 0;
   }
 }
 
@@ -319,6 +335,7 @@ export class Client {
   private protocol = new ProtocolConnection();
   private connected = false;
   private transactionActive = false;
+  private portalResumePending = false;
   private autoCommit = true;
   private sessionSchema: string | null = null;
   private prepared = new Map<string, { sql: string; paramCount: number }>();
@@ -366,6 +383,10 @@ export class Client {
     if (this.config.compression === "zstd") {
       throw new ScratchbirdNotSupportedError("compression=zstd is not supported", "0A000");
     }
+    this.protocol.close();
+    this.cleanupResilience();
+    this.clearAbandonedSessionState();
+    this.connected = false;
     await this.protocol.connect(this.config);
     if (this.config.frontDoorMode === "manager_proxy") {
       await this.performManagerConnect();
@@ -596,11 +617,10 @@ export class Client {
     if (enabled && this.transactionActive) {
       await this.commitTransaction();
     }
-    await this.setOption("autocommit", enabled ? "on" : "off");
+    // The native engine-endpoint lane owns the replacement session boundary.
+    // Client-side autocommit toggles must stay local instead of inventing a
+    // SET_OPTION/BEGIN protocol that the server does not treat as authoritative.
     this.autoCommit = enabled;
-    if (!enabled && !this.transactionActive) {
-      await this.beginTransaction();
-    }
   }
 
   getSessionSchema(): string | null {
@@ -694,13 +714,80 @@ export class Client {
     await this.rollbackTransaction(options);
   }
 
+  supportsPreparedTransactions(): boolean {
+    return true;
+  }
+
+  supportsDormantReattach(): boolean {
+    return false;
+  }
+
+  async prepareTransaction(gid: string): Promise<void> {
+    this.ensureConnected();
+    const sql = this.buildPreparedTransactionSql("PREPARE TRANSACTION", gid);
+    await this.withResilience("prepare_transaction", sql, async () => {
+      await this.sendSimpleQuery(sql);
+      await this.drainUntilReady();
+    });
+  }
+
+  async commitPrepared(gid: string): Promise<void> {
+    this.ensureConnected();
+    const sql = this.buildPreparedTransactionSql("COMMIT PREPARED", gid);
+    await this.withResilience("commit_prepared", sql, async () => {
+      await this.sendSimpleQuery(sql);
+      await this.drainUntilReady();
+    });
+  }
+
+  async rollbackPrepared(gid: string): Promise<void> {
+    this.ensureConnected();
+    const sql = this.buildPreparedTransactionSql("ROLLBACK PREPARED", gid);
+    await this.withResilience("rollback_prepared", sql, async () => {
+      await this.sendSimpleQuery(sql);
+      await this.drainUntilReady();
+    });
+  }
+
+  async detachToDormant(): Promise<never> {
+    throw new ScratchbirdNotSupportedError(
+      "dormant detach/reattach is not yet exposed by the public node driver surface",
+      "0A000",
+    );
+  }
+
+  async reattachDormant(_dormantId: string, _authToken?: string): Promise<never> {
+    throw new ScratchbirdNotSupportedError(
+      "dormant detach/reattach is not yet exposed by the public node driver surface",
+      "0A000",
+    );
+  }
+
   async beginTransaction(options?: TxnBeginOptions): Promise<void> {
     this.ensureConnected();
     this.ensureNoActiveTransaction();
     await this.withResilience("txn_begin", undefined, async () => {
-      const isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
+      const readCommittedMode = options?.readCommittedMode;
+      let isolation = options?.isolationLevel ?? ISOLATION_READ_COMMITTED;
       let flags = 0;
       if (options?.isolationLevel !== undefined) flags |= TXN_FLAG_HAS_ISOLATION;
+      if (readCommittedMode !== undefined) {
+        if (
+          options?.isolationLevel !== undefined &&
+          options.isolationLevel !== ISOLATION_READ_UNCOMMITTED &&
+          options.isolationLevel !== ISOLATION_READ_COMMITTED
+        ) {
+          throw new ScratchbirdNotSupportedError(
+            "readCommittedMode requires a READ COMMITTED isolation alias",
+            "0A000",
+          );
+        }
+        flags |= TXN_FLAG_HAS_READ_COMMITTED_MODE;
+        if (options?.isolationLevel === undefined) {
+          isolation = ISOLATION_READ_COMMITTED;
+          flags |= TXN_FLAG_HAS_ISOLATION;
+        }
+      }
       if (options?.accessMode !== undefined) flags |= TXN_FLAG_HAS_ACCESS;
       if (options?.deferrable !== undefined) flags |= TXN_FLAG_HAS_DEFERRABLE;
       if (options?.wait !== undefined) flags |= TXN_FLAG_HAS_WAIT;
@@ -714,7 +801,8 @@ export class Client {
         options?.accessMode ?? 0,
         options?.deferrable ? 1 : 0,
         options?.wait ? 1 : 0,
-        options?.timeoutMs ?? 0
+        options?.timeoutMs ?? 0,
+        readCommittedMode ?? READ_COMMITTED_MODE_DEFAULT,
       );
       await this.protocol.sendMessage(MessageType.TXN_BEGIN, payload, 0, false);
       await this.drainUntilReady();
@@ -807,14 +895,12 @@ export class Client {
   }
 
   async terminate(): Promise<void> {
-    if (!this.connected) {
-      this.protocol.close();
-      return;
+    if (this.connected) {
+      await this.protocol.sendMessage(MessageType.TERMINATE, Buffer.alloc(0), 0, false);
     }
-    await this.protocol.sendMessage(MessageType.TERMINATE, Buffer.alloc(0), 0, false);
     this.protocol.close();
     this.cleanupResilience();
-    this.transactionActive = false;
+    this.clearAbandonedSessionState();
     this.connected = false;
   }
 
@@ -895,13 +981,9 @@ export class Client {
   }
 
   async end(): Promise<void> {
-    if (!this.connected) {
-      this.protocol.close();
-      return;
-    }
     this.protocol.close();
     this.cleanupResilience();
-    this.transactionActive = false;
+    this.clearAbandonedSessionState();
     this.connected = false;
   }
 
@@ -941,6 +1023,18 @@ export class Client {
       this.leakGuard = undefined;
     }
     this.leakDetector.stop();
+  }
+
+  private clearAbandonedSessionState(): void {
+    // MGA reconnect creates a new attachment/transaction boundary. Prepared handles,
+    // attachment parameters, and cached plan/SBLR frames from the abandoned session
+    // must be discarded rather than treated as resumable local state.
+    this.clearTransactionState();
+    this.portalResumePending = false;
+    this.prepared.clear();
+    this.parameters = {};
+    this.lastPlan = undefined;
+    this.lastSblr = undefined;
   }
 
   private async validateIfIdle(): Promise<void> {
@@ -1152,8 +1246,8 @@ export class Client {
           continue;
         }
         case MessageType.READY: {
-          const { txnId } = parseReady(msg.payload);
-          this.applyTxnState(txnId);
+          const { status, txnId } = parseReady(msg.payload);
+          this.applyRuntimeReadyState(status, txnId);
           return;
         }
         case MessageType.ERROR:
@@ -1266,13 +1360,14 @@ export class Client {
           continue;
         case MessageType.PORTAL_SUSPENDED: {
           if (pageSize > 0) {
+            this.portalResumePending = true;
             await this.resumePortal(pageSize);
           }
           continue;
         }
         case MessageType.READY: {
-          const { txnId } = parseReady(msg.payload);
-          this.applyTxnState(txnId);
+          const { status, txnId } = parseReady(msg.payload);
+          this.applyRuntimeReadyState(status, txnId);
           finalizeResult();
           return results;
         }
@@ -1332,7 +1427,7 @@ export class Client {
     if (name === "current_txn_id") {
       const parsed = parseBigInt(value);
       if (parsed !== null) {
-        this.applyTxnState(parsed);
+        this.applyRuntimeTxnId(parsed);
       }
     }
   }
@@ -1357,6 +1452,16 @@ export class Client {
       }
       case MessageType.SBLR_COMPILED: {
         this.lastSblr = parseSblrCompiled(msg.payload);
+        return true;
+      }
+      case MessageType.TXN_STATUS: {
+        const { status, txnId } = parseTxnStatus(msg.payload);
+        if (status === "T") {
+          this.applyRuntimeTxnId(txnId);
+          this.transactionActive = true;
+        } else {
+          this.clearTransactionState();
+        }
         return true;
       }
       default:
@@ -1459,13 +1564,14 @@ export class Client {
             }
             case MessageType.PORTAL_SUSPENDED: {
               if (pageSize > 0) {
+                self.portalResumePending = true;
                 await self.resumePortal(pageSize);
               }
               continue;
             }
             case MessageType.READY: {
-              const { txnId } = parseReady(msg.payload);
-              self.applyTxnState(txnId);
+              const { status, txnId } = parseReady(msg.payload);
+              self.applyRuntimeReadyState(status, txnId);
               success = true;
               return;
             }
@@ -1535,6 +1641,10 @@ export class Client {
   }
 
   private async resumePortal(maxRows: number): Promise<void> {
+    if (!this.portalResumePending) {
+      throw new ScratchbirdError("portal resume requires explicit suspended state", "55000");
+    }
+    this.portalResumePending = false;
     const execPayload = buildExecutePayload("", maxRows);
     await this.protocol.sendMessage(MessageType.EXECUTE, execPayload, 0, false);
   }
@@ -1556,8 +1666,8 @@ export class Client {
           paramCount = parseParameterDescription(msg.payload).length;
           continue;
         case MessageType.READY: {
-          const { txnId } = parseReady(msg.payload);
-          this.applyTxnState(txnId);
+          const { status, txnId } = parseReady(msg.payload);
+          this.applyRuntimeReadyState(status, txnId);
           return paramCount;
         }
         default:
@@ -1580,8 +1690,8 @@ export class Client {
         case MessageType.ERROR:
           throw this.raiseProtocolError(msg.payload);
         case MessageType.READY: {
-          const { txnId } = parseReady(msg.payload);
-          this.applyTxnState(txnId);
+          const { status, txnId } = parseReady(msg.payload);
+          this.applyRuntimeReadyState(status, txnId);
           return;
         }
         default:
@@ -1590,9 +1700,36 @@ export class Client {
     }
   }
 
-  private applyTxnState(txnId: bigint): void {
+  private applyRuntimeTxnId(txnId: bigint): void {
     this.protocol.setTxnId(txnId);
-    this.transactionActive = txnId !== 0n;
+    if (txnId > 0n) {
+      this.transactionActive = true;
+    }
+  }
+
+  private applyRuntimeReadyState(status: number, txnId: bigint): void {
+    this.protocol.setTxnId(txnId);
+    if (status !== 0) {
+      // READY is authoritative for native session activity. The engine can
+      // expose a fresh active session boundary while the public wire header
+      // still reports txn_id == 0.
+      this.transactionActive = true;
+      return;
+    }
+    this.clearTransactionState();
+  }
+
+  private clearTransactionState(): void {
+    this.protocol.setTxnId(0n);
+    this.transactionActive = false;
+  }
+
+  private buildPreparedTransactionSql(verb: string, gid: string): string {
+    const normalized = gid.trim();
+    if (!normalized) {
+      throw new ScratchbirdSyntaxError("global transaction id is required", "42601");
+    }
+    return `${verb} '${normalized.replace(/'/g, "''")}'`;
   }
 
   private normalizeQueryOrThrow(text: string, params?: any[] | Record<string, any>): ReturnType<typeof normalizeQuery> {

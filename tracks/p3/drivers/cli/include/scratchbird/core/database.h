@@ -203,10 +203,14 @@ namespace scratchbird
 
             // Dormant transaction handling (reattach support).
             // The ConnectionContext is retained to preserve locks and ProcArray visibility.
+            // This is an explicit suspend/reattach capability with engine-issued tokens,
+            // not an automatic reconnect-recovery path.
             Status detachToDormant(std::unique_ptr<class ConnectionContext> &connection,
                                    ID &dormant_id_out,
                                    ErrorContext *ctx = nullptr);
 
+            // Reattach only succeeds for an explicit dormant token issued by detachToDormant().
+            // Normal reconnect must not be treated as dormant resume.
             Status reattachDormant(const ID &dormant_id,
                                    std::unique_ptr<class ConnectionContext> &connection_out,
                                    ErrorContext *ctx = nullptr);

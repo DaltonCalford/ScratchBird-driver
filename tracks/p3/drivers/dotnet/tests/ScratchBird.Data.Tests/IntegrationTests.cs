@@ -463,7 +463,7 @@ public class IntegrationTests
 
         try
         {
-            using var tx = conn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            using var tx = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
             tx.Save("odbc_pool_savepoint");
             tx.Rollback("odbc_pool_savepoint");
             tx.Release("odbc_pool_savepoint");

@@ -35,20 +35,20 @@
     {
       "id": "types_one_way",
       "kind": "native_query",
-      "sql": "SELECT * FROM type_coverage",
+      "sql": "SELECT * FROM users.public.type_coverage",
       "expect_rows": 1
     },
     {
       "id": "paging_basic_table",
       "kind": "native_query",
-      "sql": "SELECT id FROM basic_table ORDER BY id",
-      "expect_rows": 2,
+      "sql": "SELECT id FROM users.public.basic_table ORDER BY id",
+      "expect_rows": 6,
       "dsn_append": "fetch_size=1"
     },
     {
       "id": "cancel_stream",
       "kind": "cancel",
-      "sql": "SELECT a.id FROM basic_table a, basic_table b, basic_table c, basic_table d, basic_table e",
+      "sql": "SELECT a.id FROM users.public.basic_table a, users.public.basic_table b, users.public.basic_table c, users.public.basic_table d, users.public.basic_table e",
       "cancel_after_rows": 1,
       "expect_sqlstate": "57014",
       "dsn_append": "fetch_size=1",

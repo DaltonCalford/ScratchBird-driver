@@ -301,6 +301,10 @@ def _validate_transaction_smoke(conn: Any) -> None:
         raise RuntimeError("savepoint should remain available after auto-restarted commit transaction")
     conn.release_savepoint("smoke_post_commit")
     conn.rollback()
+    post_rollback = conn.query("SELECT 2")
+    post_rollback_rows = _rows_from_result(post_rollback)
+    if len(post_rollback_rows) == 0 or int(_first_scalar_from_row(post_rollback_rows[0])) != 2:
+        raise RuntimeError("post-rollback query should return the actual result on the fresh boundary")
 
 
 def _validate_prepare_and_stream_smoke(conn: Any, deterministic_lane: bool) -> None:

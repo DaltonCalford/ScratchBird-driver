@@ -32,6 +32,11 @@ ISOLATION_READ_COMMITTED = 1
 ISOLATION_REPEATABLE_READ = 2
 ISOLATION_SERIALIZABLE = 3
 
+READ_COMMITTED_MODE_DEFAULT = 0
+READ_COMMITTED_MODE_READ_CONSISTENCY = 1
+READ_COMMITTED_MODE_RECORD_VERSION = 2
+READ_COMMITTED_MODE_NO_RECORD_VERSION = 3
+
 OID_INT4 = 23
 OID_TEXT = 25
 OID_JSON = 114
@@ -60,6 +65,7 @@ TXN_FLAG_HAS_DEFERRABLE = 0x0004
 TXN_FLAG_HAS_WAIT = 0x0008
 TXN_FLAG_HAS_TIMEOUT = 0x0010
 TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
+TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100
 
 METADATA_SCHEMAS_QUERY = "SELECT schema_id, schema_name, owner_id, default_tablespace_id FROM sys.schemas WHERE is_valid = 1 ORDER BY schema_name"
 METADATA_TABLES_QUERY = "SELECT table_id, schema_id, table_name, table_type, owner_id FROM sys.tables WHERE is_valid = 1 ORDER BY table_name"
@@ -206,6 +212,11 @@ _BASE_DATE = datetime.datetime(2000, 1, 1, 0, 0, 0)
 _SQLSTATE_MESSAGE_RE = re.compile(r"\[([0-9A-Z]{5})\]")
 _PYTHON_DRIVER_MODULE: Any = None
 
+RETRY_SCOPE_NONE = "none"
+RETRY_SCOPE_RECONNECT = "reconnect"
+RETRY_SCOPE_STATEMENT = "statement"
+RETRY_SCOPE_TRANSACTION = "transaction"
+
 
 @dataclass
 class ScratchBirdResult:
@@ -310,6 +321,65 @@ def _extract_sqlstate(value: Any) -> str:
     if match is None:
         return ""
     return match.group(1).upper()
+
+
+def retry_scope_for_sqlstate(sqlstate: Optional[str]) -> str:
+    # Drivers are fail-closed: 40xxx may restart from a fresh statement
+    # boundary, 08xxx requires reconnect or reopen, and no automatic whole
+    # transaction replay is authorized here.
+    if not sqlstate or len(sqlstate) != 5:
+        return RETRY_SCOPE_NONE
+    if sqlstate in ("40001", "40P01"):
+        return RETRY_SCOPE_STATEMENT
+    if sqlstate[:2] == "08":
+        return RETRY_SCOPE_RECONNECT
+    return RETRY_SCOPE_NONE
+
+
+def is_retryable_sqlstate(sqlstate: Optional[str]) -> bool:
+    return retry_scope_for_sqlstate(sqlstate) != RETRY_SCOPE_NONE
+
+
+def canonical_isolation_label(isolation_level: int) -> str:
+    # The Mojo lane still uses SQL-style compatibility aliases for isolation.
+    # READ UNCOMMITTED remains a legacy alias here, not a distinct canonical
+    # MGA mode.
+    mapping = {
+        ISOLATION_READ_UNCOMMITTED: "READ COMMITTED",
+        ISOLATION_READ_COMMITTED: "READ COMMITTED",
+        ISOLATION_REPEATABLE_READ: "SNAPSHOT",
+        ISOLATION_SERIALIZABLE: "SNAPSHOT TABLE STABILITY",
+    }
+    try:
+        normalized = int(isolation_level)
+    except (TypeError, ValueError):
+        return f"UNKNOWN({isolation_level!r})"
+    return mapping.get(normalized, f"UNKNOWN({normalized})")
+
+
+def canonical_read_committed_mode_label(read_committed_mode: int) -> str:
+    mapping = {
+        READ_COMMITTED_MODE_DEFAULT: "READ COMMITTED",
+        READ_COMMITTED_MODE_READ_CONSISTENCY: "READ COMMITTED READ CONSISTENCY",
+        READ_COMMITTED_MODE_RECORD_VERSION: "READ COMMITTED RECORD VERSION",
+        READ_COMMITTED_MODE_NO_RECORD_VERSION: "READ COMMITTED NO RECORD VERSION",
+    }
+    try:
+        normalized = int(read_committed_mode)
+    except (TypeError, ValueError):
+        return f"UNKNOWN({read_committed_mode!r})"
+    return mapping.get(normalized, f"UNKNOWN({normalized})")
+
+
+def _quote_string_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def build_prepared_transaction_sql(verb: str, global_transaction_id: str) -> str:
+    trimmed = str(global_transaction_id).strip()
+    if trimmed == "":
+        raise ScratchBirdError("global transaction id is required", "42601")
+    return f"{verb} {_quote_string_literal(trimmed)}"
 
 
 def _to_scratchbird_error(exc: Exception, default_sqlstate: str = "") -> ScratchBirdError:
@@ -1169,17 +1239,34 @@ def _coerce_txn_option_int(value: Any, field_name: str) -> int:
 
 def _normalize_begin_options(kwargs: Mapping[str, Any]) -> Dict[str, int]:
     wait_raw = kwargs.get("wait_mode", kwargs.get("wait", 0))
+    isolation_level = _coerce_txn_option_int(
+        kwargs.get("isolation_level", ISOLATION_READ_COMMITTED),
+        "isolation_level",
+    )
+    has_read_committed_mode = "read_committed_mode" in kwargs
+    read_committed_mode = READ_COMMITTED_MODE_DEFAULT
+    if has_read_committed_mode:
+        read_committed_mode = _coerce_txn_option_int(
+            kwargs.get("read_committed_mode", READ_COMMITTED_MODE_DEFAULT),
+            "read_committed_mode",
+        )
+        if isolation_level not in (ISOLATION_READ_UNCOMMITTED, ISOLATION_READ_COMMITTED):
+            raise ScratchBirdError(
+                "read_committed_mode requires a READ COMMITTED isolation alias",
+                "0A000",
+            )
+        if "isolation_level" not in kwargs:
+            isolation_level = ISOLATION_READ_COMMITTED
     return {
         "conflict_action": _coerce_txn_option_int(kwargs.get("conflict_action", 0), "conflict_action"),
         "autocommit_mode": _coerce_txn_option_int(kwargs.get("autocommit_mode", 0), "autocommit_mode"),
-        "isolation_level": _coerce_txn_option_int(
-            kwargs.get("isolation_level", ISOLATION_READ_COMMITTED),
-            "isolation_level",
-        ),
+        "isolation_level": isolation_level,
         "access_mode": _coerce_txn_option_int(kwargs.get("access_mode", 0), "access_mode"),
         "deferrable": _coerce_txn_option_int(kwargs.get("deferrable", 0), "deferrable"),
         "wait_mode": _coerce_txn_option_int(wait_raw, "wait_mode"),
         "timeout_ms": _coerce_txn_option_int(kwargs.get("timeout_ms", 0), "timeout_ms"),
+        "read_committed_mode": read_committed_mode,
+        "has_read_committed_mode": 1 if has_read_committed_mode else 0,
     }
 
 
@@ -1195,6 +1282,34 @@ def _static_savepoint_list(conn: Any) -> List[str]:
     savepoints = []
     setattr(conn, "_savepoints", savepoints)
     return savepoints
+
+
+def _connection_runtime_txn_active(conn: Any) -> bool:
+    return bool(getattr(conn, "_runtime_txn_active", False)) or int(getattr(conn, "_txn_id", 0)) != 0
+
+
+def _clear_connection_txn_state(conn: Any) -> None:
+    setattr(conn, "_txn_id", 0)
+    setattr(conn, "_runtime_txn_active", False)
+
+
+def _apply_connection_runtime_txn_id(conn: Any, txn_id: int) -> None:
+    setattr(conn, "_txn_id", int(txn_id))
+    if int(txn_id) != 0:
+        setattr(conn, "_runtime_txn_active", True)
+
+
+def _can_adopt_fresh_native_boundary(normalized: Mapping[str, int]) -> bool:
+    return (
+        int(normalized.get("conflict_action", 0)) == 0
+        and int(normalized.get("autocommit_mode", 0)) == 0
+        and int(normalized.get("isolation_level", ISOLATION_READ_COMMITTED)) == ISOLATION_READ_COMMITTED
+        and int(normalized.get("access_mode", 0)) == 0
+        and int(normalized.get("deferrable", 0)) == 0
+        and int(normalized.get("wait_mode", 0)) == 0
+        and int(normalized.get("timeout_ms", 0)) == 0
+        and int(normalized.get("read_committed_mode", READ_COMMITTED_MODE_DEFAULT)) == READ_COMMITTED_MODE_DEFAULT
+    )
 
 
 def _result_rowcount_or_len(result: Any) -> int:
@@ -1239,7 +1354,9 @@ class _ShimConnection:
     def __init__(self, config: ScratchBirdConfig):
         self.config = config
         self._cancel_requested = False
-        self._txn_id = 1
+        self._txn_id = 0
+        self._runtime_txn_active = True
+        self._explicit_transaction = False
         self._savepoint_counter = 0
         self._savepoints: List[str] = []
         self._txn_begin_options: Dict[str, int] = {}
@@ -1367,7 +1484,8 @@ class _ShimConnection:
         if self._closed:
             return None
         self._cancel_requested = False
-        self._txn_id = 0
+        _clear_connection_txn_state(self)
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
         self._closed = True
@@ -1382,31 +1500,47 @@ class _ShimConnection:
 
     def begin(self, **kwargs: Any) -> None:
         self._ensure_open()
-        if self._txn_id != 0:
-            raise ScratchBirdError("transaction already active", "25001")
-        self._txn_begin_options = _normalize_begin_options(kwargs)
-        self._txn_id = 1
+        normalized = _normalize_begin_options(kwargs)
+        if _connection_runtime_txn_active(self):
+            if self._explicit_transaction:
+                raise ScratchBirdError("transaction already active", "25001")
+            if not _can_adopt_fresh_native_boundary(normalized):
+                raise ScratchBirdError(
+                    "fresh native MGA boundaries can only be adopted as default READ COMMITTED transactions on the live Mojo lane",
+                    "0A000",
+                )
+            self._explicit_transaction = True
+            self._txn_begin_options = normalized
+            self._savepoints = []
+            return
+        self._txn_begin_options = normalized
+        self._runtime_txn_active = True
+        self._explicit_transaction = True
         self._savepoints = []
 
     def commit(self) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        if not _connection_runtime_txn_active(self):
             return
-        self._txn_id = 1
+        self._txn_id = 0
+        self._runtime_txn_active = True
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
     def rollback(self) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        if not _connection_runtime_txn_active(self):
             return
-        self._txn_id = 1
+        self._txn_id = 0
+        self._runtime_txn_active = True
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
     def set_savepoint(self, name: Optional[str] = None) -> str:
         self._ensure_open()
-        if self._txn_id == 0:
+        if not _connection_runtime_txn_active(self):
             raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1417,7 +1551,7 @@ class _ShimConnection:
 
     def release_savepoint(self, name: str) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        if not _connection_runtime_txn_active(self):
             raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1430,7 +1564,7 @@ class _ShimConnection:
 
     def rollback_to_savepoint(self, name: str) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        if not _connection_runtime_txn_active(self):
             raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1465,7 +1599,7 @@ class _ShimConnection:
             "stream_count": 0,
             "cancel_count": 1 if self._cancel_requested else 0,
             "savepoint_depth": len(self._savepoints),
-            "txn_active": self._txn_id != 0,
+            "txn_active": _connection_runtime_txn_active(self),
         }
 
 
@@ -1597,7 +1731,9 @@ class _PythonWireConnection:
         self.config = config
         self._closed = False
         self._cancel_requested = False
-        self._txn_id = 1
+        self._txn_id = 0
+        self._runtime_txn_active = False
+        self._explicit_transaction = False
         self._savepoint_counter = 0
         self._savepoints: List[str] = []
         self._txn_begin_options: Dict[str, int] = {}
@@ -1620,9 +1756,12 @@ class _PythonWireConnection:
             self._wire = self._wire_module.connect(dsn=self._wire_dsn)
         except Exception as exc:
             raise _to_scratchbird_error(exc) from exc
+        # Reconnect creates a fresh wire/session view. Local transaction/savepoint state is
+        # rebuilt from the new session contract and never treated as a resumed old transaction.
         self._needs_reconnect = False
         self._cancel_requested = False
-        self._txn_id = 1
+        self._sync_runtime_state_from_wire()
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1636,12 +1775,29 @@ class _PythonWireConnection:
                         close_method()
                     except Exception:
                         pass
+            # MGA recovery only repairs transport/session state; lost statements are retried
+            # by the caller against engine truth rather than replayed implicitly here.
             self._connect_wire()
 
+    def _sync_runtime_state_from_wire(self) -> None:
+        wire = self._wire
+        if wire is None:
+            _clear_connection_txn_state(self)
+            return
+        wire_txn_id = int(getattr(wire, "_txn_id", 0))
+        self._txn_id = wire_txn_id
+        self._runtime_txn_active = bool(getattr(wire, "_runtime_txn_active", wire_txn_id != 0))
+
+    def _transaction_active(self) -> bool:
+        return _connection_runtime_txn_active(self)
+
     def _mark_reconnect_required(self) -> None:
+        # Once the wire is suspect, local transaction/savepoint state becomes advisory only.
+        # Clearing it prevents the lane from resurrecting an abandoned in-flight transaction.
         self._needs_reconnect = True
         self._cancel_requested = False
-        self._txn_id = 1
+        _clear_connection_txn_state(self)
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
@@ -1672,6 +1828,7 @@ class _PythonWireConnection:
         except Exception as exc:
             self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
+        self._sync_runtime_state_from_wire()
         self._query_count += 1
         return result
 
@@ -1691,6 +1848,7 @@ class _PythonWireConnection:
         _ = fetch_size
         self._cancel_requested = False
         cursor = self._run_cursor(sql, params)
+        self._sync_runtime_state_from_wire()
         self._stream_count += 1
         return _WireStream(self, cursor)
 
@@ -1711,7 +1869,8 @@ class _PythonWireConnection:
             return
         self._closed = True
         self._cancel_requested = False
-        self._txn_id = 0
+        _clear_connection_txn_state(self)
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
         close_method = getattr(self._wire, "close", None)
@@ -1736,22 +1895,37 @@ class _PythonWireConnection:
 
     def begin(self, **kwargs: Any) -> None:
         self._ensure_open()
-        if self._txn_id != 0:
-            raise ScratchBirdError("transaction already active", "25001")
         normalized = _normalize_begin_options(kwargs)
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if self._transaction_active():
+            if self._explicit_transaction:
+                raise ScratchBirdError("transaction already active", "25001")
+            if not _can_adopt_fresh_native_boundary(normalized):
+                raise ScratchBirdError(
+                    "fresh native MGA boundaries can only be adopted as default READ COMMITTED transactions on the live Mojo lane",
+                    "0A000",
+                )
+            self._explicit_transaction = True
+            self._txn_begin_options = normalized
+            self._savepoints = []
+            return
         try:
             begin_method = getattr(self._wire, "begin", None)
             if callable(begin_method):
                 begin_method(**kwargs)
         except Exception as exc:
             raise _to_scratchbird_error(exc) from exc
-        self._txn_id = 1
+        self._sync_runtime_state_from_wire()
+        self._explicit_transaction = True
         self._savepoints = []
         self._txn_begin_options = normalized
 
     def commit(self) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if not self._transaction_active():
             return
         try:
             commit_method = getattr(self._wire, "commit", None)
@@ -1760,13 +1934,16 @@ class _PythonWireConnection:
         except Exception as exc:
             self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
-        self._txn_id = 1
+        self._sync_runtime_state_from_wire()
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
     def rollback(self) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if not self._transaction_active():
             return
         try:
             rollback_method = getattr(self._wire, "rollback", None)
@@ -1775,13 +1952,16 @@ class _PythonWireConnection:
         except Exception as exc:
             self._mark_reconnect_required()
             raise _to_scratchbird_error(exc) from exc
-        self._txn_id = 1
+        self._sync_runtime_state_from_wire()
+        self._explicit_transaction = False
         self._savepoints = []
         self._txn_begin_options = {}
 
     def set_savepoint(self, name: Optional[str] = None) -> str:
         self._ensure_open()
-        if self._txn_id == 0:
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if not self._transaction_active():
             raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1799,7 +1979,9 @@ class _PythonWireConnection:
 
     def release_savepoint(self, name: str) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if not self._transaction_active():
             raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1822,7 +2004,9 @@ class _PythonWireConnection:
 
     def rollback_to_savepoint(self, name: str) -> None:
         self._ensure_open()
-        if self._txn_id == 0:
+        self._ensure_wire_ready()
+        self._sync_runtime_state_from_wire()
+        if not self._transaction_active():
             raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -1978,17 +2162,76 @@ class _PythonWireConnection:
             "stream_count": self._stream_count,
             "cancel_count": self._cancel_count,
             "savepoint_depth": len(self._savepoints),
-            "txn_active": self._txn_id != 0,
+            "txn_active": self._transaction_active(),
         }
 
 
 class ScratchBirdConnection:
     @staticmethod
+    def supports_prepared_transactions() -> bool:
+        return True
+
+    @staticmethod
+    def supports_dormant_reattach() -> bool:
+        return False
+
+    @staticmethod
+    def supports_portal_resume() -> bool:
+        return False
+
+    @staticmethod
+    def build_prepared_transaction_sql(verb: str, global_transaction_id: str) -> str:
+        return build_prepared_transaction_sql(verb, global_transaction_id)
+
+    @staticmethod
+    def prepare_transaction(conn: Any, global_transaction_id: str) -> Any:
+        sql = build_prepared_transaction_sql("PREPARE TRANSACTION", global_transaction_id)
+        return ScratchBirdConnection.query(conn, sql, None)
+
+    @staticmethod
+    def commit_prepared(conn: Any, global_transaction_id: str) -> Any:
+        sql = build_prepared_transaction_sql("COMMIT PREPARED", global_transaction_id)
+        return ScratchBirdConnection.query(conn, sql, None)
+
+    @staticmethod
+    def rollback_prepared(conn: Any, global_transaction_id: str) -> Any:
+        sql = build_prepared_transaction_sql("ROLLBACK PREPARED", global_transaction_id)
+        return ScratchBirdConnection.query(conn, sql, None)
+
+    @staticmethod
+    def detach_to_dormant(conn: Any) -> None:
+        _ = conn
+        raise ScratchBirdError(
+            "dormant detach is not supported by the current public front door",
+            "0A000",
+        )
+
+    @staticmethod
+    def reattach_dormant(conn: Any, dormant_id: str, auth_token: Optional[str] = None) -> None:
+        _ = conn
+        _ = dormant_id
+        _ = auth_token
+        raise ScratchBirdError(
+            "dormant reattach is not supported by the current public front door",
+            "0A000",
+        )
+
+    @staticmethod
     def begin(conn: Any, **kwargs: Any) -> None:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) != 0:
-            raise ScratchBirdError("transaction already active", "25001")
         normalized = _normalize_begin_options(kwargs)
+        if _connection_runtime_txn_active(conn):
+            if bool(getattr(conn, "_explicit_transaction", False)):
+                raise ScratchBirdError("transaction already active", "25001")
+            if not _can_adopt_fresh_native_boundary(normalized):
+                raise ScratchBirdError(
+                    "fresh native MGA boundaries can only be adopted as default READ COMMITTED transactions on the live Mojo lane",
+                    "0A000",
+                )
+            setattr(conn, "_explicit_transaction", True)
+            setattr(conn, "_txn_begin_options", dict(normalized))
+            _static_savepoint_list(conn).clear()
+            return
         flags = 0
         if "isolation_level" in kwargs:
             flags |= TXN_FLAG_HAS_ISOLATION
@@ -2002,50 +2245,73 @@ class ScratchBirdConnection:
             flags |= TXN_FLAG_HAS_TIMEOUT
         if "autocommit_mode" in kwargs:
             flags |= TXN_FLAG_HAS_AUTOCOMMIT
-
-        payload = struct.pack(
-            "<HBBBBBBI",
-            int(flags),
-            normalized["conflict_action"],
-            normalized["autocommit_mode"],
-            normalized["isolation_level"],
-            normalized["access_mode"],
-            normalized["deferrable"],
-            normalized["wait_mode"],
-            normalized["timeout_ms"],
-        )
+        if normalized["has_read_committed_mode"] != 0:
+            flags |= TXN_FLAG_HAS_READ_COMMITTED_MODE
+            if "isolation_level" not in kwargs:
+                flags |= TXN_FLAG_HAS_ISOLATION
+        if flags & TXN_FLAG_HAS_READ_COMMITTED_MODE:
+            payload = struct.pack(
+                "<HBBBBBBIB3x",
+                int(flags),
+                normalized["conflict_action"],
+                normalized["autocommit_mode"],
+                normalized["isolation_level"],
+                normalized["access_mode"],
+                normalized["deferrable"],
+                normalized["wait_mode"],
+                normalized["timeout_ms"],
+                normalized["read_committed_mode"],
+            )
+        else:
+            payload = struct.pack(
+                "<HBBBBBBI",
+                int(flags),
+                normalized["conflict_action"],
+                normalized["autocommit_mode"],
+                normalized["isolation_level"],
+                normalized["access_mode"],
+                normalized["deferrable"],
+                normalized["wait_mode"],
+                normalized["timeout_ms"],
+            )
         conn._send_message(MessageType.TXN_BEGIN, payload)
         conn._drain_until_ready()
-        setattr(conn, "_txn_id", 1)
+        _apply_connection_runtime_txn_id(conn, 1)
+        setattr(conn, "_runtime_txn_active", True)
+        setattr(conn, "_explicit_transaction", True)
         setattr(conn, "_txn_begin_options", dict(normalized))
         _static_savepoint_list(conn).clear()
 
     @staticmethod
     def commit(conn: Any) -> None:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) == 0:
+        if not _connection_runtime_txn_active(conn):
             return
         conn._send_message(MessageType.TXN_COMMIT, b"\x00\x00")
         conn._drain_until_ready()
-        setattr(conn, "_txn_id", 1)
+        setattr(conn, "_txn_id", 0)
+        setattr(conn, "_runtime_txn_active", True)
+        setattr(conn, "_explicit_transaction", False)
         setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 
     @staticmethod
     def rollback(conn: Any) -> None:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) == 0:
+        if not _connection_runtime_txn_active(conn):
             return
         conn._send_message(MessageType.TXN_ROLLBACK, b"\x00\x00")
         conn._drain_until_ready()
-        setattr(conn, "_txn_id", 1)
+        setattr(conn, "_txn_id", 0)
+        setattr(conn, "_runtime_txn_active", True)
+        setattr(conn, "_explicit_transaction", False)
         setattr(conn, "_txn_begin_options", {})
         _static_savepoint_list(conn).clear()
 
     @staticmethod
     def set_savepoint(conn: Any, name: Optional[str] = None) -> str:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) == 0:
+        if not _connection_runtime_txn_active(conn):
             raise ScratchBirdError("cannot set savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -2061,7 +2327,7 @@ class ScratchBirdConnection:
     @staticmethod
     def release_savepoint(conn: Any, name: str) -> None:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) == 0:
+        if not _connection_runtime_txn_active(conn):
             raise ScratchBirdError("cannot release savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":
@@ -2082,7 +2348,7 @@ class ScratchBirdConnection:
     @staticmethod
     def rollback_to_savepoint(conn: Any, name: str) -> None:
         _guard_static_connection_open(conn)
-        if getattr(conn, "_txn_id", 0) == 0:
+        if not _connection_runtime_txn_active(conn):
             raise ScratchBirdError("cannot rollback savepoint when transaction not active", "25000")
         resolved = _coerce_savepoint_name(name)
         if resolved == "":

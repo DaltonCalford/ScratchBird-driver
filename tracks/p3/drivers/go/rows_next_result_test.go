@@ -55,7 +55,7 @@ func TestRowsNextResultSetSeparatesSimpleQueryResults(t *testing.T) {
 			errCh <- fmt.Errorf("write second command complete: %w", err)
 			return
 		}
-		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 42, 0))); err != nil {
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload('T', 42, 0))); err != nil {
 			errCh <- fmt.Errorf("write ready: %w", err)
 			return
 		}
@@ -150,7 +150,7 @@ func TestRowsCloseDrainsAcrossResultSetBoundaries(t *testing.T) {
 			errCh <- fmt.Errorf("write second complete: %w", err)
 			return
 		}
-		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload(0, 13, 0))); err != nil {
+		if _, err := server.Write(encodeMessage(messageHeader{typ: msgReady}, testReadyPayload('T', 13, 0))); err != nil {
 			errCh <- fmt.Errorf("write ready: %w", err)
 			return
 		}

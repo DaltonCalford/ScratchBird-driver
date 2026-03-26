@@ -11,10 +11,13 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLException;
+import java.sql.SQLSyntaxErrorException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -74,6 +77,98 @@ class SBConnectionTransactionModeTest {
         assertEquals(0, protocol.rollbackCalls);
     }
 
+    @Test
+    void setTransactionIsolationWithReadCommittedModeUsesCanonicalSelector() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol, true);
+
+        connection.setTransactionIsolation(
+            SBConnection.TRANSACTION_READ_COMMITTED,
+            SBConnection.READ_COMMITTED_MODE_READ_CONSISTENCY
+        );
+
+        assertEquals(
+            "SET TRANSACTION ISOLATION LEVEL READ COMMITTED READ CONSISTENCY",
+            protocol.executedSql.get(protocol.executedSql.size() - 1)
+        );
+        assertEquals(SBConnection.READ_COMMITTED_MODE_READ_CONSISTENCY, connection.getReadCommittedMode());
+        assertEquals("READ COMMITTED READ CONSISTENCY",
+            SBConnection.canonicalReadCommittedModeLabel(connection.getReadCommittedMode()));
+    }
+
+    @Test
+    void setReadCommittedModeRejectsSnapshotAliases() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol, true);
+        connection.setTransactionIsolation(SBConnection.TRANSACTION_SERIALIZABLE);
+
+        SQLFeatureNotSupportedException ex = assertThrows(
+            SQLFeatureNotSupportedException.class,
+            () -> connection.setReadCommittedMode(SBConnection.READ_COMMITTED_MODE_READ_CONSISTENCY)
+        );
+
+        assertEquals("0A000", ex.getSQLState());
+    }
+
+    @Test
+    void setAutoCommitFalseBeginsManagedTransactionWithConfiguredReadCommittedMode() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        protocol.activeTransaction = false;
+        SBConnection connection = newConnectionForTest(protocol, true);
+        connection.setReadCommittedMode(SBConnection.READ_COMMITTED_MODE_READ_CONSISTENCY);
+
+        connection.setAutoCommit(false);
+
+        assertEquals(1, protocol.beginCalls);
+        assertEquals(SBProtocolHandler.ISOLATION_READ_COMMITTED, protocol.lastIsolationLevel);
+        assertEquals(SBConnection.READ_COMMITTED_MODE_READ_CONSISTENCY, protocol.lastReadCommittedMode);
+    }
+
+    @Test
+    void preparedTransactionHelpersEmitCanonicalControlSql() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol, true);
+
+        connection.prepareTransaction("gid-1");
+        connection.commitPrepared("gid-1");
+        connection.rollbackPrepared("gid'2");
+
+        assertTrue(protocol.executedSql.contains("PREPARE TRANSACTION 'gid-1'"));
+        assertTrue(protocol.executedSql.contains("COMMIT PREPARED 'gid-1'"));
+        assertTrue(protocol.executedSql.contains("ROLLBACK PREPARED 'gid''2'"));
+    }
+
+    @Test
+    void preparedTransactionHelpersRejectEmptyGid() {
+        SQLSyntaxErrorException ex = assertThrows(
+            SQLSyntaxErrorException.class,
+            () -> SBConnection.buildPreparedTransactionSql("PREPARE TRANSACTION", "   ")
+        );
+
+        assertEquals("42601", ex.getSQLState());
+    }
+
+    @Test
+    void dormantHelpersFailClosedAndCapabilitiesStayExplicit() throws Exception {
+        TrackingProtocol protocol = new TrackingProtocol();
+        SBConnection connection = newConnectionForTest(protocol, true);
+
+        assertTrue(connection.supportsPreparedTransactions());
+        assertFalse(connection.supportsDormantReattach());
+
+        SQLFeatureNotSupportedException detach = assertThrows(
+            SQLFeatureNotSupportedException.class,
+            connection::detachToDormant
+        );
+        assertEquals("0A000", detach.getSQLState());
+
+        SQLFeatureNotSupportedException reattach = assertThrows(
+            SQLFeatureNotSupportedException.class,
+            () -> connection.reattachDormant("dormant-1", "token-1")
+        );
+        assertEquals("0A000", reattach.getSQLState());
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol, boolean autoCommit) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
@@ -83,6 +178,8 @@ class SBConnectionTransactionModeTest {
         setField(connection, "telemetry", new TelemetryCollector());
         setField(connection, "readOnly", false);
         setField(connection, "autoCommit", autoCommit);
+        setField(connection, "transactionIsolation", SBConnection.TRANSACTION_READ_COMMITTED);
+        setField(connection, "readCommittedMode", (byte) SBConnection.READ_COMMITTED_MODE_DEFAULT);
         setField(connection, "schema", "public");
         return connection;
     }
@@ -104,6 +201,8 @@ class SBConnectionTransactionModeTest {
         private int beginCalls;
         private int commitCalls;
         private int rollbackCalls;
+        private int lastIsolationLevel = -1;
+        private int lastReadCommittedMode = -1;
         private boolean activeTransaction;
 
         TrackingProtocol() {
@@ -130,6 +229,16 @@ class SBConnectionTransactionModeTest {
         public synchronized void beginTransaction() throws SQLException {
             beginCalls++;
             activeTransaction = true;
+        }
+
+        @Override
+        public synchronized void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
+                                                  boolean wait, int timeoutMs, byte autocommitMode,
+                                                  byte conflictAction, byte readCommittedMode) throws SQLException {
+            beginCalls++;
+            activeTransaction = true;
+            lastIsolationLevel = Byte.toUnsignedInt(isolationLevel);
+            lastReadCommittedMode = Byte.toUnsignedInt(readCommittedMode);
         }
 
         @Override

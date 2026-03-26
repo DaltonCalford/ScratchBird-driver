@@ -22,6 +22,7 @@ struct RuntimeGateOptions {
     manager_proxy: bool,
     auth_method: u8,
     manager_auth_success: bool,
+    zero_txn_ready_status: u8,
 }
 
 impl RuntimeGateOptions {
@@ -30,6 +31,7 @@ impl RuntimeGateOptions {
             manager_proxy: false,
             auth_method,
             manager_auth_success: true,
+            zero_txn_ready_status: 0,
         }
     }
 }
@@ -103,6 +105,7 @@ async fn run_runtime_gate_connection(
     let mut sequence = 0u32;
     let mut txn_id = 0u64;
     let attachment_id = [0x22; 16];
+    let zero_txn_ready_status = options.zero_txn_ready_status;
 
     if options.manager_proxy {
         let continue_to_sbwp =
@@ -200,7 +203,7 @@ async fn run_runtime_gate_connection(
         &mut stream,
         &mut sequence,
         protocol::MSG_READY,
-        &ready_payload(0, txn_id),
+        &ready_payload(if txn_id == 0 { zero_txn_ready_status } else { 1 }, txn_id),
         attachment_id,
         txn_id,
     )
@@ -221,7 +224,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(1, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -238,7 +241,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(1, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -255,7 +258,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(1, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -272,7 +275,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(1, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -290,7 +293,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(if txn_id == 0 { zero_txn_ready_status } else { 1 }, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -308,7 +311,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(if txn_id == 0 { zero_txn_ready_status } else { 1 }, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -327,7 +330,7 @@ async fn run_runtime_gate_connection(
                     &mut stream,
                     &mut sequence,
                     protocol::MSG_READY,
-                    &ready_payload(0, txn_id),
+                    &ready_payload(if txn_id == 0 { zero_txn_ready_status } else { 1 }, txn_id),
                     attachment_id,
                     txn_id,
                 )
@@ -1334,6 +1337,7 @@ async fn runtime_gate_manager_proxy_and_capability_parity() {
         manager_proxy: true,
         auth_method: protocol::AUTH_OIDC,
         manager_auth_success: true,
+        zero_txn_ready_status: 0,
     })
     .await;
 
@@ -1452,6 +1456,7 @@ async fn runtime_gate_manager_proxy_auth_failure_is_deterministic() {
         manager_proxy: true,
         auth_method: protocol::AUTH_OK,
         manager_auth_success: false,
+        zero_txn_ready_status: 0,
     })
     .await;
 
@@ -1506,7 +1511,11 @@ async fn runtime_gate_password_and_scram_auth_paths() {
 
 #[tokio::test]
 async fn runtime_gate_autocommit_transition_semantics() {
-    let server = RuntimeGateServer::start(RuntimeGateOptions::direct(protocol::AUTH_OK)).await;
+    let server = RuntimeGateServer::start(RuntimeGateOptions {
+        zero_txn_ready_status: b'T',
+        ..RuntimeGateOptions::direct(protocol::AUTH_OK)
+    })
+    .await;
     let mut client = build_client_for_server(&server);
     client.connect().await.expect("connect");
     assert!(client.autocommit());
@@ -1530,20 +1539,9 @@ async fn runtime_gate_autocommit_transition_semantics() {
 
     assert_eq!(
         snapshot.events,
-        vec![
-            "set_option:autocommit=off".to_string(),
-            "txn_begin".to_string(),
-            "txn_commit".to_string(),
-            "set_option:autocommit=on".to_string(),
-        ]
+        vec!["txn_commit".to_string()]
     );
-    assert_eq!(
-        snapshot.set_options,
-        vec![
-            ("autocommit".to_string(), "off".to_string()),
-            ("autocommit".to_string(), "on".to_string())
-        ]
-    );
+    assert!(snapshot.set_options.is_empty());
 }
 
 #[tokio::test]

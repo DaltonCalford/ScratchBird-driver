@@ -28,6 +28,16 @@ public:
     virtual std::string lastError() const = 0;
 };
 
+bool supportsPreparedTransactions();
+bool supportsDormantReattach();
+bool supportsPortalResume();
+core::Status buildPreparedTransactionSql(const std::string& verb,
+                                         const std::string& global_transaction_id,
+                                         std::string* sql,
+                                         core::ErrorContext* ctx);
+core::Status rejectDormantReattach(const char* operation,
+                                   core::ErrorContext* ctx);
+
 // Execute a non-prepare statement and validate optional expectations:
 // - expect_rows_affected
 // - expect_rows

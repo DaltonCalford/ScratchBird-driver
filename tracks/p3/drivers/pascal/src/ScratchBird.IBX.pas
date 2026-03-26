@@ -30,7 +30,9 @@ type
     procedure Close;
     procedure StartTransaction;
     procedure StartTransactionEx(IsolationLevel, AccessMode: Byte; Deferrable, WaitMode: Boolean;
-      TimeoutMs: Cardinal; AutocommitMode, ConflictAction: Byte);
+      TimeoutMs: Cardinal; AutocommitMode, ConflictAction: Byte); overload;
+    procedure StartTransactionEx(IsolationLevel, AccessMode: Byte; Deferrable, WaitMode: Boolean;
+      TimeoutMs: Cardinal; AutocommitMode, ConflictAction, ReadCommittedMode: Byte); overload;
     procedure Commit;
     procedure Rollback;
     procedure ExecSQLParams(const Sql: string; const Params: array of TScratchBirdParamInput); virtual;
@@ -125,6 +127,13 @@ procedure TScratchBirdIBDatabase.StartTransactionEx(IsolationLevel, AccessMode: 
   TimeoutMs: Cardinal; AutocommitMode, ConflictAction: Byte);
 begin
   FClient.BeginTransactionEx(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs, AutocommitMode, ConflictAction);
+end;
+
+procedure TScratchBirdIBDatabase.StartTransactionEx(IsolationLevel, AccessMode: Byte; Deferrable, WaitMode: Boolean;
+  TimeoutMs: Cardinal; AutocommitMode, ConflictAction, ReadCommittedMode: Byte);
+begin
+  FClient.BeginTransactionEx(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs, AutocommitMode,
+    ConflictAction, ReadCommittedMode);
 end;
 
 procedure TScratchBirdIBDatabase.Commit;

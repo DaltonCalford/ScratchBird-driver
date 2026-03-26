@@ -14,10 +14,12 @@
 package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.lang.reflect.Field;
 import java.sql.SQLTransientConnectionException;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 import sun.misc.Unsafe;
 
@@ -61,6 +63,31 @@ public class SBConnectionResilienceTest {
         assertEquals(0, protocol.connectAttempts.get());
     }
 
+    @Test
+    public void failoverReconnectInvalidatesNamedCursorRegistry() throws Exception {
+        var protocol = new FailingReplayProtocol();
+        SBConnection connection = newConnectionForTest(protocol);
+        SBResultSet resultSet = new SBResultSet(null, Collections.emptyList(), Collections.emptyList());
+        connection.registerNamedCursor("replay_cursor", resultSet);
+
+        assertEquals("replay_cursor", resultSet.getCursorName());
+
+        AtomicInteger attempts = new AtomicInteger();
+        String result = connection.withResilience("query", "SELECT 1", () -> {
+            attempts.incrementAndGet();
+            if (attempts.get() == 1) {
+                throw new SQLTransientConnectionException("transport reset", "08006");
+            }
+            return "ok";
+        }, true);
+
+        assertEquals("ok", result);
+        assertEquals(2, attempts.get());
+        assertEquals(1, protocol.connectAttempts.get());
+        assertNull(connection.resolveNamedCursor("replay_cursor"));
+        assertNull(resultSet.getCursorName());
+    }
+
     private static SBConnection newConnectionForTest(SBProtocolHandler protocol) throws Exception {
         SBConnection connection = (SBConnection) getUnsafe().allocateInstance(SBConnection.class);
         setField(connection, "protocol", protocol);
@@ -68,6 +95,7 @@ public class SBConnectionResilienceTest {
         setField(connection, "closed", new java.util.concurrent.atomic.AtomicBoolean(false));
         setField(connection, "circuitBreaker", new CircuitBreaker());
         setField(connection, "telemetry", new TelemetryCollector());
+        setField(connection, "namedCursors", new java.util.concurrent.ConcurrentHashMap<String, SBResultSet>());
         setField(connection, "readOnly", false);
         setField(connection, "autoCommit", true);
         setField(connection, "schema", "public");

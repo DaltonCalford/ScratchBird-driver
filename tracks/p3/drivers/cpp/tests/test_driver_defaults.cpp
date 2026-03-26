@@ -64,6 +64,7 @@ private:
 } // namespace
 
 TEST(DriverDefaultsEnvTest, AppliesDefaultsWhenUnset) {
+    EnvGuard schema("SCRATCHBIRD_SCHEMA");
     EnvGuard host("SCRATCHBIRD_DRIVER_HOST", "db.example.test");
     EnvGuard port("SCRATCHBIRD_DRIVER_PORT", "4123");
     EnvGuard sslmode("SCRATCHBIRD_DRIVER_SSLMODE", "verify_full");
@@ -86,6 +87,7 @@ TEST(DriverDefaultsEnvTest, AppliesDefaultsWhenUnset) {
     EXPECT_EQ(cfg.ssl_mode, scratchbird::network::SSLMode::VERIFY_FULL);
     EXPECT_EQ(cfg.connect_timeout_ms, 12000u);
     EXPECT_EQ(cfg.database, "alpha");
+    EXPECT_EQ(cfg.schema, "users.public");
     EXPECT_EQ(cfg.application_name, "scratchbird_test");
     EXPECT_EQ(cfg.ssl_cert, "/tmp/client.crt");
     EXPECT_EQ(cfg.ssl_key, "/tmp/client.key");
@@ -93,6 +95,7 @@ TEST(DriverDefaultsEnvTest, AppliesDefaultsWhenUnset) {
 }
 
 TEST(DriverDefaultsEnvTest, DoesNotOverrideExplicitConfig) {
+    EnvGuard schema("SCRATCHBIRD_SCHEMA");
     EnvGuard host("SCRATCHBIRD_DRIVER_HOST", "env.example.test");
     EnvGuard port("SCRATCHBIRD_DRIVER_PORT", "5000");
     EnvGuard app("SCRATCHBIRD_DRIVER_APPLICATION_NAME", "env_app");
@@ -107,6 +110,18 @@ TEST(DriverDefaultsEnvTest, DoesNotOverrideExplicitConfig) {
     EXPECT_EQ(cfg.host, "override.host");
     EXPECT_EQ(cfg.port, 4100);
     EXPECT_EQ(cfg.application_name, "override_app");
+}
+
+TEST(DriverDefaultsEnvTest, DefaultsSchemaWhenConnectionStringOmitsIt) {
+    EnvGuard schema("SCRATCHBIRD_SCHEMA");
+    scratchbird::client::NetworkClientConfig cfg;
+    scratchbird::core::ErrorContext ctx;
+    auto status = scratchbird::client::parseDriverConnectionString(
+        "scratchbird://admin:pw@127.0.0.1:3092/main?sslmode=disable",
+        cfg,
+        &ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << ctx.message;
+    EXPECT_EQ(cfg.schema, "users.public");
 }
 
 TEST(DriverDefaultsEnvTest, ParsesManagerProxyConnectionParams) {

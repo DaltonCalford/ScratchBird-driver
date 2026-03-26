@@ -143,12 +143,18 @@ ISOLATION_READ_COMMITTED = 1
 ISOLATION_REPEATABLE_READ = 2
 ISOLATION_SERIALIZABLE = 3
 
+READ_COMMITTED_MODE_DEFAULT = 0
+READ_COMMITTED_MODE_READ_CONSISTENCY = 1
+READ_COMMITTED_MODE_RECORD_VERSION = 2
+READ_COMMITTED_MODE_NO_RECORD_VERSION = 3
+
 TXN_FLAG_HAS_ISOLATION = 0x0001
 TXN_FLAG_HAS_ACCESS = 0x0002
 TXN_FLAG_HAS_DEFERRABLE = 0x0004
 TXN_FLAG_HAS_WAIT = 0x0008
 TXN_FLAG_HAS_TIMEOUT = 0x0010
 TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
+TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100
 
 STREAM_START = 0
 STREAM_PAUSE = 1
@@ -445,7 +451,21 @@ def build_txn_begin_payload(
     deferrable: int,
     wait_mode: int,
     timeout_ms: int,
+    read_committed_mode: int = 0,
 ) -> bytes:
+    if flags & TXN_FLAG_HAS_READ_COMMITTED_MODE:
+        return struct.pack(
+            "<HBBBBBBIB3x",
+            flags,
+            conflict_action,
+            autocommit_mode,
+            isolation_level,
+            access_mode,
+            deferrable,
+            wait_mode,
+            timeout_ms,
+            read_committed_mode,
+        )
     return struct.pack(
         "<HBBBBBBI",
         flags,
@@ -509,6 +529,14 @@ def parse_ready(payload: bytes) -> Tuple[int, int, int]:
     txn_id = struct.unpack_from("<Q", payload, 4)[0]
     visibility = struct.unpack_from("<Q", payload, 12)[0]
     return status, txn_id, visibility
+
+
+def parse_txn_status(payload: bytes) -> Tuple[str, int]:
+    if len(payload) < 12:
+        raise ValueError("txn status truncated")
+    status = chr(payload[0])
+    txn_id = struct.unpack_from("<Q", payload, 4)[0]
+    return status, txn_id
 
 
 def parse_parameter_status(payload: bytes) -> Tuple[str, str]:

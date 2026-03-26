@@ -146,12 +146,18 @@ const
   ISOLATION_REPEATABLE_READ = 2;
   ISOLATION_SERIALIZABLE = 3;
 
+  READ_COMMITTED_MODE_DEFAULT = 0;
+  READ_COMMITTED_MODE_READ_CONSISTENCY = 1;
+  READ_COMMITTED_MODE_RECORD_VERSION = 2;
+  READ_COMMITTED_MODE_NO_RECORD_VERSION = 3;
+
   TXN_FLAG_HAS_ISOLATION = $0001;
   TXN_FLAG_HAS_ACCESS = $0002;
   TXN_FLAG_HAS_DEFERRABLE = $0004;
   TXN_FLAG_HAS_WAIT = $0008;
   TXN_FLAG_HAS_TIMEOUT = $0010;
   TXN_FLAG_HAS_AUTOCOMMIT = $0020;
+  TXN_FLAG_HAS_READ_COMMITTED_MODE = $0100;
 
   STREAM_START = 0;
   STREAM_PAUSE = 1;
@@ -213,8 +219,9 @@ function BuildCancelPayload(CancelType, TargetSequence: Cardinal): TBytes;
 function BuildSblrExecutePayload(SblrHash: UInt64; const SblrBytecode: TBytes; const Params: array of TParamValue): TBytes;
 function BuildSubscribePayload(SubscribeType: Byte; const Channel, FilterExpr: string): TBytes;
 function BuildUnsubscribePayload(const Channel: string): TBytes;
+function CanonicalReadCommittedModeName(ReadCommittedMode: Byte): string;
 function BuildTxnBeginPayload(Flags: Word; ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode: Byte;
-  TimeoutMs: Cardinal): TBytes;
+  TimeoutMs: Cardinal; ReadCommittedMode: Byte = READ_COMMITTED_MODE_DEFAULT): TBytes;
 function BuildTxnCommitPayload(Flags: Byte): TBytes;
 function BuildTxnRollbackPayload(Flags: Byte): TBytes;
 function BuildTxnSavepointPayload(const Name: string): TBytes;
@@ -228,6 +235,7 @@ procedure ParseAuthRequest(const Payload: TBytes; out Method: Byte; out Data: TB
 procedure ParseAuthContinue(const Payload: TBytes; out Method, Stage: Byte; out Data: TBytes);
 procedure ParseAuthOk(const Payload: TBytes; out SessionId: TBytes; out ServerInfo: TBytes);
 procedure ParseReady(const Payload: TBytes; out Status: Byte; out TxnId, Visibility: UInt64);
+procedure ParseTxnStatus(const Payload: TBytes; out Status: Byte; out TxnId: UInt64);
 procedure ParseParameterStatus(const Payload: TBytes; out Name, Value: string);
 function ParseParameterDescription(const Payload: TBytes): TArray<Cardinal>;
 function ParseRowDescription(const Payload: TBytes): TArray<TColumnInfo>;
@@ -542,12 +550,30 @@ begin
   Result := ConcatBytes(WriteUInt32LE(System.Length(ChannelBytes)), ChannelBytes);
 end;
 
+function CanonicalReadCommittedModeName(ReadCommittedMode: Byte): string;
+begin
+  case ReadCommittedMode of
+    READ_COMMITTED_MODE_DEFAULT:
+      Result := 'READ COMMITTED';
+    READ_COMMITTED_MODE_READ_CONSISTENCY:
+      Result := 'READ COMMITTED READ CONSISTENCY';
+    READ_COMMITTED_MODE_RECORD_VERSION:
+      Result := 'READ COMMITTED RECORD VERSION';
+    READ_COMMITTED_MODE_NO_RECORD_VERSION:
+      Result := 'READ COMMITTED NO RECORD VERSION';
+  else
+    Result := 'UNKNOWN(' + IntToStr(ReadCommittedMode) + ')';
+  end;
+end;
+
 function BuildTxnBeginPayload(Flags: Word; ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode: Byte;
-  TimeoutMs: Cardinal): TBytes;
+  TimeoutMs: Cardinal; ReadCommittedMode: Byte): TBytes;
 begin
   Result := WriteUInt16LE(Flags);
   Result := ConcatBytes(Result, BytesOf([ConflictAction, AutocommitMode, IsolationLevel, AccessMode, Deferrable, WaitMode]));
   Result := ConcatBytes(Result, WriteUInt32LE(TimeoutMs));
+  if (Flags and TXN_FLAG_HAS_READ_COMMITTED_MODE) <> 0 then
+    Result := ConcatBytes(Result, BytesOf([ReadCommittedMode, 0, 0, 0]));
 end;
 
 function BuildTxnCommitPayload(Flags: Byte): TBytes;
@@ -672,6 +698,14 @@ begin
   Status := Payload[0];
   TxnId := ReadUInt64LE(Payload, 4);
   Visibility := ReadUInt64LE(Payload, 12);
+end;
+
+procedure ParseTxnStatus(const Payload: TBytes; out Status: Byte; out TxnId: UInt64);
+begin
+  if System.Length(Payload) < 12 then
+    raise Exception.Create('Txn status truncated');
+  Status := Payload[0];
+  TxnId := ReadUInt64LE(Payload, 4);
 end;
 
 procedure ParseParameterStatus(const Payload: TBytes; out Name, Value: string);

@@ -117,17 +117,18 @@ class TestIntegration < Minitest::Test
     conn = Scratchbird.connect(dsn)
     begin
       conn.autocommit = false
-      assert_equal false, conn.in_transaction?
+      assert_equal true, conn.in_transaction?
+      assert_equal 0, conn.client.txn_id
       conn.query("SELECT 1")
       assert_equal true, conn.in_transaction?
-      assert_operator conn.client.txn_id, :>, 0
+      assert_equal 0, conn.client.txn_id
       conn.commit
-      assert_equal false, conn.in_transaction?
+      assert_equal true, conn.in_transaction?
       assert_equal 0, conn.client.txn_id
       conn.query("SELECT 1")
       assert_equal true, conn.in_transaction?
       conn.rollback
-      assert_equal false, conn.in_transaction?
+      assert_equal true, conn.in_transaction?
       assert_equal 0, conn.client.txn_id
     ensure
       conn.close
@@ -153,8 +154,10 @@ class TestIntegration < Minitest::Test
       rescue Scratchbird::Error
         nil
       end
+      assert_equal true, conn.in_transaction?
       assert_equal 0, conn.client.txn_id
       conn.rollback
+      assert_equal true, conn.in_transaction?
       assert_equal 0, conn.client.txn_id
     ensure
       conn.close

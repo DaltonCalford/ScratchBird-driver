@@ -47,6 +47,9 @@ final class Connection
     private int $lastQuerySequence = 0;
     private int $lastMaxRows = 0;
     private bool $inTransaction = false;
+    private bool $runtimeTxnActive = false;
+    private bool $explicitTransaction = false;
+    private bool $portalResumePending = false;
     private bool $connected = false;
     private array $attributes = [];
     private array $parameters = [];
@@ -438,12 +441,81 @@ final class Connection
 
     public function beginTransaction(): bool
     {
-        if ($this->inTransaction) {
+        return $this->beginTransactionEx();
+    }
+
+    public function beginTransactionEx(array $options = []): bool
+    {
+        $readCommittedModeProvided = array_key_exists('read_committed_mode', $options);
+        $isolationLevel = $options['isolation_level'] ?? Protocol::ISOLATION_READ_COMMITTED;
+        $flags = 0;
+        if (array_key_exists('isolation_level', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_ISOLATION;
+        }
+        if ($readCommittedModeProvided) {
+            if (
+                array_key_exists('isolation_level', $options) &&
+                $isolationLevel !== Protocol::ISOLATION_READ_UNCOMMITTED &&
+                $isolationLevel !== Protocol::ISOLATION_READ_COMMITTED
+            ) {
+                throw new ScratchBirdNotSupportedException(
+                    'read_committed_mode requires a READ COMMITTED isolation alias',
+                    '0A000'
+                );
+            }
+            $flags |= Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE;
+            if (!array_key_exists('isolation_level', $options)) {
+                $isolationLevel = Protocol::ISOLATION_READ_COMMITTED;
+                $flags |= Protocol::TXN_FLAG_HAS_ISOLATION;
+            }
+        }
+        if (array_key_exists('access_mode', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_ACCESS;
+        }
+        if (array_key_exists('deferrable', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_DEFERRABLE;
+        }
+        if (array_key_exists('wait', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_WAIT;
+        }
+        if (array_key_exists('timeout_ms', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_TIMEOUT;
+        }
+        if (array_key_exists('autocommit_mode', $options)) {
+            $flags |= Protocol::TXN_FLAG_HAS_AUTOCOMMIT;
+        }
+        if ($this->runtimeTxnActive && $this->txnId === 0) {
+            if ($this->explicitTransaction) {
+                throw new ScratchBirdTransactionException('Transaction already active', '25001');
+            }
+            if (!$this->canAdoptFreshNativeBoundary($options)) {
+                throw new ScratchBirdNotSupportedException(
+                    'fresh native transaction boundaries only support default READ COMMITTED adoption in the PHP lane',
+                    '0A000'
+                );
+            }
+            $this->explicitTransaction = true;
+            return true;
+        }
+        if ($this->hasActiveTransaction()) {
             throw new ScratchBirdTransactionException('Transaction already active', '25001');
         }
-        $payload = Protocol::buildTxnBeginPayload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0);
+        $payload = Protocol::buildTxnBeginPayload(
+            $flags,
+            $options['conflict_action'] ?? 0,
+            $options['autocommit_mode'] ?? 0,
+            $isolationLevel,
+            $options['access_mode'] ?? 0,
+            !empty($options['deferrable']) ? 1 : 0,
+            !empty($options['wait']) ? 1 : 0,
+            $options['timeout_ms'] ?? 0,
+            $readCommittedModeProvided
+                ? (int) $options['read_committed_mode']
+                : Protocol::READ_COMMITTED_MODE_DEFAULT
+        );
         $this->sendMessage(Protocol::MSG_TXN_BEGIN, $payload, 0, false);
         $this->drainUntilReady();
+        $this->explicitTransaction = true;
         return true;
     }
 
@@ -458,6 +530,8 @@ final class Connection
         $payload = Protocol::buildTxnCommitPayload(0);
         $this->sendMessage(Protocol::MSG_TXN_COMMIT, $payload, 0, false);
         $this->drainUntilReady();
+        $this->explicitTransaction = false;
+        $this->drainImmediateReopenBoundary();
         return true;
     }
 
@@ -467,7 +541,60 @@ final class Connection
         $payload = Protocol::buildTxnRollbackPayload(0);
         $this->sendMessage(Protocol::MSG_TXN_ROLLBACK, $payload, 0, false);
         $this->drainUntilReady();
+        $this->explicitTransaction = false;
+        $this->drainImmediateReopenBoundary();
         return true;
+    }
+
+    public function supportsPreparedTransactions(): bool
+    {
+        return true;
+    }
+
+    public function supportsDormantReattach(): bool
+    {
+        return false;
+    }
+
+    public function prepareTransaction(string $gid): bool
+    {
+        return $this->executePreparedTransactionControl(
+            'prepare_transaction',
+            $this->buildPreparedTransactionSql('PREPARE TRANSACTION', $gid)
+        );
+    }
+
+    public function commitPrepared(string $gid): bool
+    {
+        return $this->executePreparedTransactionControl(
+            'commit_prepared',
+            $this->buildPreparedTransactionSql('COMMIT PREPARED', $gid)
+        );
+    }
+
+    public function rollbackPrepared(string $gid): bool
+    {
+        return $this->executePreparedTransactionControl(
+            'rollback_prepared',
+            $this->buildPreparedTransactionSql('ROLLBACK PREPARED', $gid)
+        );
+    }
+
+    public function detachToDormant(): never
+    {
+        throw new ScratchBirdNotSupportedException(
+            'dormant detach/reattach is not yet exposed by the public PHP driver surface',
+            '0A000'
+        );
+    }
+
+    public function reattachDormant(string $dormantId, ?string $authToken = null): never
+    {
+        unset($dormantId, $authToken);
+        throw new ScratchBirdNotSupportedException(
+            'dormant detach/reattach is not yet exposed by the public PHP driver surface',
+            '0A000'
+        );
     }
 
     public function savepoint(string $name): void
@@ -514,8 +641,8 @@ final class Connection
             }
             if ($type === Protocol::MSG_PONG || $type === Protocol::MSG_READY) {
                 if ($type === Protocol::MSG_READY) {
-                    [, $txnId] = Protocol::parseReady($payload);
-                    $this->applyTxnState($txnId);
+                    [$status, $txnId] = Protocol::parseReady($payload);
+                    $this->applyRuntimeReadyState($status, $txnId);
                 }
                 return;
             }
@@ -636,8 +763,8 @@ final class Connection
             fclose($this->socket);
             $this->socket = null;
         }
+        $this->clearAbandonedSessionState();
         $this->connected = false;
-        $this->applyTxnState(0);
         $this->hasLastInsertId = false;
         $this->lastInsertIdValue = 0;
         if ($this->keepaliveTracker !== null) {
@@ -654,7 +781,25 @@ final class Connection
 
     public function updateTxnId(int $txnId): void
     {
-        $this->applyTxnState($txnId);
+        $this->applyRuntimeTxnId($txnId);
+    }
+
+    public function updateReadyState(int $status, int $txnId): void
+    {
+        $this->applyRuntimeReadyState($status, $txnId);
+    }
+
+    private function clearAbandonedSessionState(): void
+    {
+        $this->attachmentId = str_repeat("\0", 16);
+        $this->clearTransactionState();
+        $this->sequence = 0;
+        $this->lastQuerySequence = 0;
+        $this->lastMaxRows = 0;
+        $this->portalResumePending = false;
+        $this->parameters = [];
+        $this->lastPlan = null;
+        $this->lastSblr = null;
     }
 
     private function withResilience(string $operation, ?string $sql, callable $fn): mixed
@@ -708,8 +853,17 @@ final class Connection
         });
     }
 
+    public function allowPortalResume(): void
+    {
+        $this->portalResumePending = true;
+    }
+
     public function resumePortal(): void
     {
+        if (!$this->portalResumePending) {
+            throw new ScratchBirdException('portal resume requires explicit suspended state', '55000');
+        }
+        $this->portalResumePending = false;
         $execPayload = Protocol::buildExecutePayload('', $this->lastMaxRows);
         $this->lastQuerySequence = $this->sendMessage(Protocol::MSG_EXECUTE, $execPayload, 0, false);
     }
@@ -772,8 +926,17 @@ final class Connection
             if ($name === 'current_txn_id') {
                 $parsed = $this->parseUint64($value);
                 if ($parsed !== null) {
-                    $this->applyTxnState($parsed);
+                    $this->applyRuntimeTxnId($parsed);
                 }
+            }
+            return true;
+        }
+        if ($type === Protocol::MSG_TXN_STATUS) {
+            [$status, $txnId] = Protocol::parseTxnStatus($payload);
+            if ($status === ord('T')) {
+                $this->applyRuntimeTxnId($txnId);
+            } else {
+                $this->clearTransactionState();
             }
             return true;
         }
@@ -810,8 +973,8 @@ final class Connection
                 continue;
             }
             if ($type === Protocol::MSG_READY) {
-                [, $txnId] = Protocol::parseReady($payload);
-                $this->applyTxnState($txnId);
+                [$status, $txnId] = Protocol::parseReady($payload);
+                $this->applyRuntimeReadyState($status, $txnId);
                 if ($pendingError !== null) {
                     throw $pendingError;
                 }
@@ -1154,7 +1317,7 @@ final class Connection
                 case Protocol::MSG_AUTH_OK:
                     [, $serverInfo] = Protocol::parseAuthOk($payload);
                     $this->attachmentId = $attachmentId;
-                    $this->applyTxnState($txnId);
+                    $this->applyRuntimeTxnId($txnId);
                     if ($scram !== null && $serverInfo !== '' && str_starts_with($serverInfo, 'v=')) {
                         $scram->verifyServerFinal($serverInfo);
                     }
@@ -1164,8 +1327,8 @@ final class Connection
                     $this->parameters[$name] = $value;
                     continue 2;
                 case Protocol::MSG_READY:
-                    [, $txnId] = Protocol::parseReady($payload);
-                    $this->applyTxnState($txnId);
+                    [$status, $txnId] = Protocol::parseReady($payload);
+                    $this->applyRuntimeReadyState($status, $txnId);
                     return;
                 case Protocol::MSG_ERROR:
                     throw $this->buildQueryException($payload);
@@ -1232,8 +1395,8 @@ final class Connection
                 continue;
             }
             if ($type === Protocol::MSG_READY) {
-                [, $txnId] = Protocol::parseReady($payload);
-                $this->applyTxnState($txnId);
+                [$status, $txnId] = Protocol::parseReady($payload);
+                $this->applyRuntimeReadyState($status, $txnId);
                 return $paramCount;
             }
         }
@@ -1276,17 +1439,109 @@ final class Connection
         return (int) $trimmed;
     }
 
-    private function applyTxnState(int $txnId): void
+    private function applyRuntimeTxnId(int $txnId): void
     {
         $this->txnId = $txnId;
-        $this->inTransaction = $txnId !== 0;
+        if ($txnId !== 0) {
+            $this->runtimeTxnActive = true;
+            $this->inTransaction = true;
+        }
+    }
+
+    private function applyRuntimeReadyState(int $status, int $txnId): void
+    {
+        $this->txnId = $txnId;
+        if ($status !== 0) {
+            // READY is authoritative for native MGA activity. A fresh
+            // transaction boundary can remain active while the public wire
+            // header still reports txn_id == 0.
+            $this->runtimeTxnActive = true;
+            $this->inTransaction = true;
+            return;
+        }
+        $this->clearTransactionState();
+    }
+
+    private function clearTransactionState(): void
+    {
+        $this->txnId = 0;
+        $this->runtimeTxnActive = false;
+        $this->explicitTransaction = false;
+        $this->inTransaction = false;
+    }
+
+    private function hasActiveTransaction(): bool
+    {
+        return $this->runtimeTxnActive || $this->txnId !== 0;
+    }
+
+    private function canAdoptFreshNativeBoundary(array $options): bool
+    {
+        $isolationLevel = $options['isolation_level'] ?? Protocol::ISOLATION_READ_COMMITTED;
+        return $isolationLevel === Protocol::ISOLATION_READ_COMMITTED
+            && (!array_key_exists('read_committed_mode', $options)
+                || (int) $options['read_committed_mode'] === Protocol::READ_COMMITTED_MODE_DEFAULT)
+            && !array_key_exists('access_mode', $options)
+            && !array_key_exists('deferrable', $options)
+            && !array_key_exists('wait', $options)
+            && !array_key_exists('timeout_ms', $options)
+            && !array_key_exists('autocommit_mode', $options)
+            && (($options['conflict_action'] ?? 0) === 0);
     }
 
     private function requireActiveTransaction(string $operation): void
     {
-        if (!$this->inTransaction) {
+        if (!$this->hasActiveTransaction()) {
             throw new ScratchBirdTransactionException("No active transaction for {$operation}", '25000');
         }
+    }
+
+    private function drainImmediateReopenBoundary(): void
+    {
+        if ($this->socket === null) {
+            return;
+        }
+        while (true) {
+            $read = [$this->socket];
+            $write = [];
+            $except = [];
+            $ready = @stream_select($read, $write, $except, 0, 0);
+            if ($ready === false || $ready === 0) {
+                return;
+            }
+            [$type, , $payload] = $this->receive();
+            if ($this->handleAsyncMessage($type, $payload)) {
+                continue;
+            }
+            if ($type === Protocol::MSG_ERROR) {
+                throw $this->buildQueryException($payload);
+            }
+            if ($type === Protocol::MSG_READY) {
+                [$status, $txnId] = Protocol::parseReady($payload);
+                $this->applyRuntimeReadyState($status, $txnId);
+                $this->portalResumePending = false;
+                continue;
+            }
+            throw new ScratchBirdException('unexpected message while draining immediate reopen boundary', '08P01');
+        }
+    }
+
+    private function executePreparedTransactionControl(string $operation, string $sql): bool
+    {
+        $this->withResilience($operation, $sql, function () use ($sql): void {
+            $this->sendSimpleQuery($sql, 0);
+            $this->drainUntilReady();
+        });
+        return true;
+    }
+
+    private function buildPreparedTransactionSql(string $verb, string $gid): string
+    {
+        $normalized = trim($gid);
+        if ($normalized === '') {
+            throw new ScratchBirdSyntaxException('Global transaction id must not be empty', '42601');
+        }
+        return $verb . " '" . str_replace("'", "''", $normalized) . "'";
     }
 
     private function normalizeSavepointName(string $name): string

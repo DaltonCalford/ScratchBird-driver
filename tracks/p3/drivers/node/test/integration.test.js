@@ -200,8 +200,11 @@ test("savepoint lifecycle works in explicit transaction mode", async (t) => {
   const client = await connectClient(t);
   if (!client) return;
   try {
+    await assert.rejects(
+      () => client.beginTransaction(),
+      (err) => err && err.code === "25001",
+    );
     try {
-      await client.beginTransaction();
       await client.savepoint("integration_sp");
       await client.query("SELECT 1 as value");
       await client.rollbackToSavepoint("integration_sp");

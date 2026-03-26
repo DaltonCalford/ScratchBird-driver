@@ -8,6 +8,46 @@ R DBI-compatible driver for ScratchBird using the ScratchBird wire protocol.
 - [Getting started](../../../../docs/getting-started/r.md)
 - [API reference](../../../../docs/api-reference/r.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- `sb_prepare_transaction(...)`, `sb_commit_prepared(...)`, and
+  `sb_rollback_prepared(...)` expose prepared/limbo control SQL explicitly in
+  lane source
+- `sb_supports_dormant_reattach(...)` is explicit and
+  `sb_detach_to_dormant(...)` / `sb_reattach_dormant(...)` fail closed with
+  `0A000` instead of treating reconnect as dormant resume
+- `sb_begin(...)` exposes the canonical MGA begin payload fields for
+  `isolation_level`, `access_mode`, `deferrable`, `wait`, `timeout_ms`,
+  `autocommit_mode`, `conflict_action`, and `read_committed_mode`
+- native `READY`, `TXN_STATUS`, and `current_txn_id` are authoritative for
+  transaction activity in this lane, including fresh native MGA boundaries
+  that stay active while `txn_id == 0`
+- compatible default `sb_begin(...)` calls adopt that already-active fresh
+  boundary; unsupported non-default fresh-boundary adoption fails closed with
+  `0A000`
+- result fetch ignores one stray reopen `READY` before any real result
+  material so the first post-commit / post-rollback query sees actual rows
+  instead of an empty-response misclassification
+- `sb_canonical_isolation_label(...)` makes the current alias mapping explicit
+  in lane source: `READ UNCOMMITTED` remains a legacy compatibility alias,
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`
+- `sb_canonical_read_committed_mode_label(...)` now makes the canonical
+  `READ COMMITTED` sub-mode selector explicit in lane source, including
+  `READ COMMITTED READ CONSISTENCY`
+- `sb_retry_scope_for_sqlstate(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Build/Test (Windows/Linux)
 
 See `docs/BUILD_MATRIX.md`.
@@ -63,3 +103,5 @@ Live integration tests are environment-gated:
 - `SCRATCHBIRD_R_URL` for direct-connect integration coverage.
 - `SCRATCHBIRD_R_MANAGER_URL` for manager-proxy connect/query coverage.
 - `SCRATCHBIRD_R_CANCEL_SQL` for cancel/drain lifecycle coverage.
+- the focused native integration file now also proves direct post-rollback
+  query correctness on the fresh MGA boundary

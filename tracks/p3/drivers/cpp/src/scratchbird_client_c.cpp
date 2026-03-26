@@ -107,6 +107,62 @@ std::string hexEncode(const std::vector<uint8_t>& data) {
     return hexEncode(data.data(), data.size());
 }
 
+std::string trimWhitespace(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        out.push_back(ch);
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
+bool buildPreparedTransactionSql(const char* verb,
+                                 const char* global_transaction_id,
+                                 std::string& sql_out,
+                                 sb_error* err) {
+    if (!verb) {
+        set_error(err, SB_ERR_NULL_POINTER, "Prepared-transaction verb is required");
+        return false;
+    }
+    if (!global_transaction_id) {
+        set_error(err, SB_ERR_NULL_POINTER, "Global transaction id is required");
+        return false;
+    }
+    const std::string gid = trimWhitespace(global_transaction_id);
+    if (gid.empty()) {
+        set_error(err, SB_ERR_SYNTAX, "Global transaction id is required");
+        return false;
+    }
+    sql_out = std::string(verb) + " " + quoteSqlLiteral(gid);
+    return true;
+}
+
+int executeTransactionControlSql(sb_connection* conn,
+                                 const std::string& sql,
+                                 sb_error* err) {
+    sb_result* result = sb_execute(conn, sql.c_str(), err);
+    if (!result) {
+        return err ? static_cast<int>(err->code) : SB_ERR_UNKNOWN;
+    }
+    sb_result_free(result);
+    set_error(err, SB_OK, "");
+    return SB_OK;
+}
+
 char* allocateCString(const std::string& value, sb_error* err, const char* oom_message) {
     char* out = static_cast<char*>(std::malloc(value.size() + 1));
     if (!out) {
@@ -129,20 +185,6 @@ std::string quoteSqlIdentifier(const std::string& value) {
         out.push_back(ch);
     }
     out.push_back('"');
-    return out;
-}
-
-std::string quoteSqlLiteral(const std::string& value) {
-    std::string out;
-    out.reserve(value.size() + 2);
-    out.push_back('\'');
-    for (char ch : value) {
-        if (ch == '\'') {
-            out.push_back('\'');
-        }
-        out.push_back(ch);
-    }
-    out.push_back('\'');
     return out;
 }
 
@@ -1404,6 +1446,7 @@ int sb_tx_begin_ex(sb_connection* conn, const sb_txn_options* options, sb_error*
     tx_opts.conflict_action = opts.conflict_action;
     tx_opts.autocommit_mode = opts.autocommit_mode;
     tx_opts.isolation_level = opts.isolation_level;
+    tx_opts.read_committed_mode = opts.read_committed_mode;
     tx_opts.access_mode = opts.access_mode;
     tx_opts.deferrable = opts.deferrable;
     tx_opts.wait_mode = opts.wait_mode;
@@ -1434,6 +1477,75 @@ int sb_tx_rollback(sb_connection* conn, sb_error* err) {
     auto status = conn->client.rollback(&ctx);
     set_error(err, map_status(status), ctx.message);
     return status == scratchbird::core::Status::OK ? SB_OK : map_status(status);
+}
+
+int sb_tx_prepare_transaction(sb_connection* conn,
+                              const char* global_transaction_id,
+                              sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    std::string sql;
+    if (!buildPreparedTransactionSql("PREPARE TRANSACTION", global_transaction_id, sql, err)) {
+        return err ? static_cast<int>(err->code) : SB_ERR_UNKNOWN;
+    }
+    return executeTransactionControlSql(conn, sql, err);
+}
+
+int sb_tx_commit_prepared(sb_connection* conn,
+                          const char* global_transaction_id,
+                          sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    std::string sql;
+    if (!buildPreparedTransactionSql("COMMIT PREPARED", global_transaction_id, sql, err)) {
+        return err ? static_cast<int>(err->code) : SB_ERR_UNKNOWN;
+    }
+    return executeTransactionControlSql(conn, sql, err);
+}
+
+int sb_tx_rollback_prepared(sb_connection* conn,
+                            const char* global_transaction_id,
+                            sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    std::string sql;
+    if (!buildPreparedTransactionSql("ROLLBACK PREPARED", global_transaction_id, sql, err)) {
+        return err ? static_cast<int>(err->code) : SB_ERR_UNKNOWN;
+    }
+    return executeTransactionControlSql(conn, sql, err);
+}
+
+int sb_tx_detach_to_dormant(sb_connection* conn, sb_error* err) {
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    set_error(err,
+              SB_ERR_NOT_IMPLEMENTED,
+              "dormant detach/reattach is not exposed by the public C/C++ front door");
+    return SB_ERR_NOT_IMPLEMENTED;
+}
+
+int sb_tx_reattach_dormant(sb_connection* conn,
+                           const char* dormant_id,
+                           const char* auth_token,
+                           sb_error* err) {
+    (void)dormant_id;
+    (void)auth_token;
+    if (!conn) {
+        set_error(err, SB_ERR_INVALID_HANDLE, "Connection is null");
+        return SB_ERR_INVALID_HANDLE;
+    }
+    set_error(err,
+              SB_ERR_NOT_IMPLEMENTED,
+              "dormant detach/reattach is not exposed by the public C/C++ front door");
+    return SB_ERR_NOT_IMPLEMENTED;
 }
 
 int sb_tx_savepoint(sb_connection* conn, const char* name, sb_error* err) {

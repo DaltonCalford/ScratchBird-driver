@@ -118,6 +118,13 @@ class ScratchBirdInternalException extends ScratchBirdExecutionException {
   });
 }
 
+enum ScratchBirdRetryScope {
+  none,
+  reconnect,
+  statement,
+  transaction,
+}
+
 ScratchBirdExecutionException mapSqlStateExecutionException(
   String message, {
   String? sqlState,
@@ -201,4 +208,24 @@ ScratchBirdException mapSqlStateAuthException(
     sqlState: normalized,
     code: code,
   );
+}
+
+ScratchBirdRetryScope retryScopeForSqlState(String? sqlState) {
+  // Drivers are fail-closed: fresh statement restart for 40xxx, reconnect
+  // only for 08xxx, and no automatic whole-transaction replay.
+  final normalized = (sqlState ?? '').trim().toUpperCase();
+  if (normalized.length != 5) {
+    return ScratchBirdRetryScope.none;
+  }
+  if (normalized == '40001' || normalized == '40P01') {
+    return ScratchBirdRetryScope.statement;
+  }
+  if (normalized.startsWith('08')) {
+    return ScratchBirdRetryScope.reconnect;
+  }
+  return ScratchBirdRetryScope.none;
+}
+
+bool isRetryableSqlState(String? sqlState) {
+  return retryScopeForSqlState(sqlState) != ScratchBirdRetryScope.none;
 }

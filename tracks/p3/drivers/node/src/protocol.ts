@@ -131,12 +131,18 @@ export const ISOLATION_READ_COMMITTED = 1;
 export const ISOLATION_REPEATABLE_READ = 2;
 export const ISOLATION_SERIALIZABLE = 3;
 
+export const READ_COMMITTED_MODE_DEFAULT = 0;
+export const READ_COMMITTED_MODE_READ_CONSISTENCY = 1;
+export const READ_COMMITTED_MODE_RECORD_VERSION = 2;
+export const READ_COMMITTED_MODE_NO_RECORD_VERSION = 3;
+
 export const TXN_FLAG_HAS_ISOLATION = 0x0001;
 export const TXN_FLAG_HAS_ACCESS = 0x0002;
 export const TXN_FLAG_HAS_DEFERRABLE = 0x0004;
 export const TXN_FLAG_HAS_WAIT = 0x0008;
 export const TXN_FLAG_HAS_TIMEOUT = 0x0010;
 export const TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
+export const TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100;
 
 export const STREAM_START = 0;
 export const STREAM_PAUSE = 1;
@@ -549,8 +555,9 @@ export function buildTxnBeginPayload(
   deferrable: number,
   waitMode: number,
   timeoutMs: number,
+  readCommittedMode = READ_COMMITTED_MODE_DEFAULT,
 ): Buffer {
-  const payload = Buffer.alloc(12);
+  const payload = Buffer.alloc(flags & TXN_FLAG_HAS_READ_COMMITTED_MODE ? 16 : 12);
   payload.writeUInt16LE(flags, 0);
   payload.writeUInt8(conflictAction, 2);
   payload.writeUInt8(autocommitMode, 3);
@@ -559,7 +566,25 @@ export function buildTxnBeginPayload(
   payload.writeUInt8(deferrable, 6);
   payload.writeUInt8(waitMode, 7);
   payload.writeUInt32LE(timeoutMs, 8);
+  if (flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) {
+    payload.writeUInt8(readCommittedMode, 12);
+  }
   return payload;
+}
+
+export function canonicalReadCommittedModeLabel(mode: number): string {
+  switch (mode) {
+    case READ_COMMITTED_MODE_DEFAULT:
+      return "READ COMMITTED";
+    case READ_COMMITTED_MODE_READ_CONSISTENCY:
+      return "READ COMMITTED READ CONSISTENCY";
+    case READ_COMMITTED_MODE_RECORD_VERSION:
+      return "READ COMMITTED RECORD VERSION";
+    case READ_COMMITTED_MODE_NO_RECORD_VERSION:
+      return "READ COMMITTED NO RECORD VERSION";
+    default:
+      return `UNKNOWN(${mode})`;
+  }
 }
 
 export function buildTxnCommitPayload(flags: number): Buffer {
@@ -628,6 +653,13 @@ export function parseReady(payload: Buffer): { status: number; txnId: bigint; vi
   const txnId = payload.readBigUInt64LE(4);
   const visibility = payload.readBigUInt64LE(12);
   return { status, txnId, visibility };
+}
+
+export function parseTxnStatus(payload: Buffer): { status: string; txnId: bigint } {
+  if (payload.length < 12) throw new Error("Txn status truncated");
+  const status = String.fromCharCode(payload.readUInt8(0));
+  const txnId = payload.readBigUInt64LE(4);
+  return { status, txnId };
 }
 
 export function parseParameterStatus(payload: Buffer): { name: string; value: string } {

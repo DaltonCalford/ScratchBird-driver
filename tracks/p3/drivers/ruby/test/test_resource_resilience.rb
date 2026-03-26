@@ -285,6 +285,82 @@ class TestResourceResilience < Minitest::Test
     assert_equal 1, leak_detector.stop_calls
   end
 
+  def test_client_connect_clears_abandoned_session_state_on_same_instance_reuse
+    config = Scratchbird::Config.new
+    config.user = "me"
+    config.database = "db"
+    client = Scratchbird::Client.new(config)
+    stale_socket = FakeSocket.new
+    fresh_socket = FakeSocket.new
+    keepalive_manager = FakeKeepaliveManager.new
+    leak_detector = FakeLeakDetector.new
+    tracker = FakeTracker.new
+    leak_guard = FakeLeakGuard.new
+
+    keepalive_manager.define_singleton_method(:start) do
+      @start_calls ||= 0
+      @start_calls += 1
+      true
+    end
+    keepalive_manager.define_singleton_method(:start_calls) do
+      @start_calls || 0
+    end
+    keepalive_manager.define_singleton_method(:register) do |_connection_id, _owner, &_block|
+      @register_calls ||= 0
+      @register_calls += 1
+      FakeTracker.new
+    end
+    keepalive_manager.define_singleton_method(:register_calls) do
+      @register_calls || 0
+    end
+    leak_detector.define_singleton_method(:start) do
+      @start_calls ||= 0
+      @start_calls += 1
+      true
+    end
+    leak_detector.define_singleton_method(:start_calls) do
+      @start_calls || 0
+    end
+    leak_detector.define_singleton_method(:checkout) do |_connection_id, driver:|
+      raise "unexpected driver #{driver}" unless driver == "ruby"
+      leak_guard
+    end
+
+    client.instance_variable_set(:@socket, stale_socket)
+    client.instance_variable_set(:@connected, true)
+    client.instance_variable_set(:@connection_id, "conn-ruby-reconnect")
+    client.instance_variable_set(:@keepalive_manager, keepalive_manager)
+    client.instance_variable_set(:@keepalive_tracker, tracker)
+    client.instance_variable_set(:@leak_detector, leak_detector)
+    client.instance_variable_set(:@leak_guard, leak_guard)
+    client.instance_variable_set(:@prepared, { "stmt" => { sql: "select 1", param_count: 0 } })
+    client.instance_variable_set(:@parameters, { "attachment_id" => "stale", "current_txn_id" => "77" })
+    client.instance_variable_set(:@last_plan, Object.new)
+    client.instance_variable_set(:@last_sblr, Object.new)
+    client.instance_variable_set(:@transaction_active, true)
+    client.instance_variable_set(:@txn_id, 77)
+
+    client.define_singleton_method(:connect_tcp) { fresh_socket }
+    client.define_singleton_method(:wrap_tls) { |raw| raw }
+    client.define_singleton_method(:handshake) { true }
+    client.define_singleton_method(:apply_schema) { true }
+
+    client.connect
+
+    assert_equal 1, stale_socket.close_calls
+    assert_equal true, client.connected?
+    assert_equal 1, keepalive_manager.start_calls
+    assert_equal 1, keepalive_manager.register_calls
+    assert_equal 1, leak_detector.start_calls
+    assert_equal({}, client.parameters)
+    assert_equal({}, client.instance_variable_get(:@prepared))
+    assert_nil client.instance_variable_get(:@last_plan)
+    assert_nil client.instance_variable_get(:@last_sblr)
+    assert_equal false, client.in_transaction?
+    assert_equal 0, client.txn_id
+    assert_raises(ArgumentError) { client.execute("stmt") }
+  end
+
   def test_with_resilience_success_records_telemetry_and_circuit_success
     client = Scratchbird::Client.new(Scratchbird::Config.new)
     breaker = FakeCircuitBreaker.new

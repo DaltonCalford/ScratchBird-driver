@@ -5,6 +5,39 @@
 - Lane-local S0 artifact only for `tracks/p3/drivers/mojo`.
 - Evidence is restricted to files in this lane; no cross-lane claims are made.
 
+## MGA Recovery Contract
+
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `begin(...)` exposes the lane's SQL-style compatibility aliases for
+  transaction begin options, including `read_committed_mode`.
+- `canonical_isolation_label(...)` now makes the current isolation alias
+  mapping explicit in lane source: `READ UNCOMMITTED` remains a legacy
+  compatibility alias, `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`.
+- `canonical_read_committed_mode_label(...)` now makes the canonical
+  `READ COMMITTED` sub-mode selector explicit in lane source, including
+  `READ COMMITTED READ CONSISTENCY`.
+- `retry_scope_for_sqlstate(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay.
+- `supports_prepared_transactions()` and
+  `build_prepared_transaction_sql(...)` make prepared / limbo handling
+  explicit in lane source, and `prepare_transaction(...)`,
+  `commit_prepared(...)`, and `rollback_prepared(...)` use canonical
+  transaction-control SQL rather than reconnect folklore.
+- `supports_dormant_reattach() -> false` plus fail-closed
+  `detach_to_dormant(...)` / `reattach_dormant(...)` make dormant truth
+  explicit in lane code.
+- This lane does not currently expose a standalone public portal-resume API,
+  and `supports_portal_resume() -> false` keeps that absence explicit instead
+  of implying reconnect-based continuation.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL)
 
 - Current status: Implemented (current-syntax native facade/bootstrap + opt-in SBWP wire bridge runtime)
@@ -90,12 +123,21 @@
 - `src/scratchbird_native.mojo:184` (native-bootstrap savepoint release guard `3B001`)
 - `src/scratchbird_native.mojo:199` (native-bootstrap rollback-to-savepoint trim behavior)
 - `src/scratchbird.py:1031` (bridge-shim shared begin-option integer coercion helper emits SQLSTATE `22023` for invalid transaction knob values)
+- `src/scratchbird.py` (`canonical_isolation_label`, explicit isolation alias mapping helper)
+- `src/scratchbird.py` (`retry_scope_for_sqlstate`, `is_retryable_sqlstate`)
+- `src/scratchbird.py:378` (shared `build_prepared_transaction_sql(...)` emits canonical control SQL and rejects blank global transaction ids with SQLSTATE `42601`)
 - `src/scratchbird.py:1056` (bridge-shim static/wire closed-connection guard helper emits SQLSTATE `08003`)
 - `src/scratchbird.py:1061` (bridge-shim static/wire savepoint list normalizer ensures deterministic tracking even when `_savepoints` state is missing/non-list)
 - `src/scratchbird.py:1322` (bridge-shim wire begin option mapping uses normalized/coerced begin options, persists `_txn_begin_options`, and marks transaction active while resetting savepoints)
 - `src/scratchbird.py:1359` (bridge-shim wire `commit` transitions transaction state to inactive while clearing savepoints and `_txn_begin_options`)
 - `src/scratchbird.py:1370` (bridge-shim wire `rollback` transitions transaction state to inactive while clearing savepoints and `_txn_begin_options`)
+- `src/scratchbird.py` now treats live native fresh MGA boundaries as
+  authoritative even when `_txn_id == 0`, adopts compatible default
+  fresh-boundary `begin(...)` calls, and preserves post-commit / post-rollback
+  reopen truth in `_PythonWireConnection`
 - `src/scratchbird.py:1392` (bridge-shim wire savepoint helpers now enforce closed-connection guard precedence via shared static guard helper and deterministic savepoint-list normalization)
+- `src/scratchbird.py:2080` (`supports_prepared_transactions()`, `supports_dormant_reattach()`, and `supports_portal_resume()` make prepared/dormant/no-resume capability truth explicit in the public lane surface)
+- `src/scratchbird.py:2096` (`prepare_transaction(...)`, `commit_prepared(...)`, `rollback_prepared(...)`, `detach_to_dormant(...)`, and `reattach_dormant(...)` now carry explicit prepared/dormant recovery truth in lane code)
 - `src/scratchbird.py:901` (bridge-shim local begin guard enforces closed-connection `08003` + nested transaction `25001`)
 - `src/scratchbird.py:1212` (bridge-shim local begin flow validates/coerces begin options before txn activation)
 - `src/scratchbird.py:909` (bridge-shim local `commit` enforces closed-connection `08003` and remains inactive-txn no-op when open)
@@ -105,6 +147,13 @@
 - `src/scratchbird.py:947` (bridge-shim local rollback-to-savepoint behavior)
 - Lane-local test anchors:
 - `tests/native_bootstrap.mojo:67` (native-bootstrap nested `begin()` rejection with `25001`)
+- `tests/txn_exec_parity.py` now covers fresh-boundary adoption / fail-closed
+  begin semantics on the shared bridge surface.
+- `tests/wire_transport_bridge.py` now proves reconnect and explicit-begin
+  behavior against the live Python-wire bridge state model.
+- `tests/integration.py` now proves that the next post-rollback query returns
+  the real result on the fresh native boundary instead of consuming a stale
+  reopen frame.
 - `tests/native_bootstrap.mojo:75` (native-bootstrap savepoint lifecycle + `25000`/`3B001` guards)
 - `tests/native_bootstrap.mojo:835` (native-bootstrap closed-connection `commit`/`rollback` guards expose SQLSTATE `08003`)
 - `tests/scratchbird_surface.mojo:596` (facade closed-connection `commit`/`rollback` guards expose SQLSTATE `08003`)
@@ -118,6 +167,7 @@
 - `tests/txn_exec_parity.py:250` (shim savepoint lifecycle + rollback-trim assertions)
 - `tests/txn_exec_parity.py:355` (shim closed-connection `begin`/`commit`/`rollback` guards expose SQLSTATE `08003`)
 - `tests/txn_exec_parity.py:488` (wire/static closed-connection guard assertions for begin/commit/rollback/savepoint/query/metadata (including rowcount/restriction helpers, `get_schema`, and `ddl_editor_schema_payload`) expose SQLSTATE `08003`)
+- `tests/txn_exec_parity.py:451` (prepared/dormant/no-portal-resume capability helpers, canonical prepared-control SQL, blank-global-id guard `42601`, and dormant fail-closed `0A000` assertions)
 - `tests/integration.py:207` (integration smoke begin/savepoint/rollback/commit lifecycle assertions)
 - `tests/integration.py:526` (integration runtime executes transaction/savepoint assertions across direct/manager/listener matrices)
 - `tests/wire_transport_bridge.py:155` (wire bridge transaction/savepoint lifecycle assertions)
@@ -402,5 +452,6 @@
 - `tests/integration.py:355` (runtime lifecycle snapshot assertions with monotonic operation tracking)
 - `tests/integration.py:314` (long-running stream cancel assertions used as runtime backpressure/lifecycle signal)
 - `tests/wire_transport_bridge.py:155` (wire bridge lifecycle snapshot and cancel counters)
+- `tests/wire_transport_bridge.py:221` (wire bridge reconnect path proves abandoned transaction/savepoint state is cleared and not replayed into the replacement session)
 - Gaps/next actions:
 - Closed in this cycle for lane runtime parity: lifecycle/backpressure assertions now include wire-mode snapshots and long-running cancel behavior in `tests/integration.py` (`_validate_lifecycle_snapshot`, `_validate_long_running_stream_cancel`) across live DSN matrices when configured.

@@ -10,6 +10,33 @@ Native CLI tools for ScratchBird operations and conformance workflows:
 - [CLI user docs](../../../../docs/user-documentation/tools/README.md)
 - [Documentation index](../../../../docs/README.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- this lane uses explicit disconnect/reset and fresh client allocation in
+  lifecycle/conformance loops rather than transparent same-instance reconnect
+- `SET TRANSACTION` remains SQL-driven in this lane rather than a typed begin
+  API; source comments now make the fail-closed retry rule explicit:
+  `40xxx` requires a fresh statement boundary, `08xxx` requires reconnect or
+  reopen, and the CLI never auto-replays a whole transaction
+- the shared C++ network client under this lane now adopts an already-active
+  fresh native MGA boundary for default begin calls instead of sending a
+  redundant `TXN_BEGIN` back into the engine
+- prepared / limbo truth is explicit in lane source through
+  `txn_exec_parity::{supportsPreparedTransactions,buildPreparedTransactionSql}`
+  rather than implied by reconnect folklore
+- dormant reattach truth is explicit and fail-closed through
+  `txn_exec_parity::{supportsDormantReattach,rejectDormantReattach}`
+- standalone portal resume is intentionally absent and source-visible through
+  `txn_exec_parity::supportsPortalResume() -> false`
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Connection Modes
 
 Network-backed CLIs (`sb_isql`, `sb_admin`, `sb_security`) now support the
@@ -53,6 +80,9 @@ Lane-local sample manifest and one-command runner:
 - The adapter now supports manifest-level typed assertions via
   `expect_columns`, `expect_column_type_oids`, `expect_first_row_json`,
   `expect_first_row_types`, and `expect_rows_json`.
+- The checked-in sample manifest now also proves explicit `txn_exec`
+  commit/rollback verification plus `res_loop_exec` behavior on the shared
+  native runtime stack.
 
 Run:
 

@@ -15,9 +15,24 @@ public enum ScratchBirdTransactionAccessMode : byte
     ReadOnly = 1
 }
 
+public enum ScratchBirdReadCommittedMode : byte
+{
+    Default = ProtocolConstants.ReadCommittedModeDefault,
+    ReadConsistency = ProtocolConstants.ReadCommittedModeReadConsistency,
+    RecordVersion = ProtocolConstants.ReadCommittedModeRecordVersion,
+    NoRecordVersion = ProtocolConstants.ReadCommittedModeNoRecordVersion
+}
+
 public sealed class ScratchBirdTransactionOptions
 {
+    // Public isolation aliases map onto the canonical MGA modes:
+    // ReadCommitted => READ COMMITTED
+    // RepeatableRead => SNAPSHOT
+    // Serializable / Snapshot / Chaos => SNAPSHOT TABLE STABILITY
+    // ReadCommittedMode selects the canonical READ COMMITTED sub-mode when the
+    // public isolation surface stays in the READ COMMITTED alias family.
     public IsolationLevel IsolationLevel { get; set; } = IsolationLevel.ReadCommitted;
+    public ScratchBirdReadCommittedMode? ReadCommittedMode { get; set; }
     public ScratchBirdTransactionAccessMode? AccessMode { get; set; }
     public bool? Deferrable { get; set; }
     public bool? Wait { get; set; }

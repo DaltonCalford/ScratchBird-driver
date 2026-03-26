@@ -7,7 +7,12 @@
 # https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
 """ScratchBird DB-API 2.0 driver."""
 
-from .connection import Connection, connect
+from .connection import (
+    Connection,
+    connect,
+    canonical_isolation_label,
+    canonical_read_committed_mode_label,
+)
 from .errors import (
     Warning,
     Error,
@@ -19,9 +24,23 @@ from .errors import (
     InternalError,
     ProgrammingError,
     NotSupportedError,
+    RETRY_SCOPE_NONE,
+    RETRY_SCOPE_RECONNECT,
+    RETRY_SCOPE_STATEMENT,
+    RETRY_SCOPE_TRANSACTION,
+    extract_sqlstate,
+    retry_scope_for_sqlstate,
+    is_retryable_sqlstate,
 )
 from .types import Blob, Clob, Geometry, Json, Jsonb, Range, RawValue, Ref, RowId, SqlXml
-from .protocol import COPY_FORMAT_TEXT, COPY_FORMAT_BINARY
+from .protocol import (
+    COPY_FORMAT_TEXT,
+    COPY_FORMAT_BINARY,
+    READ_COMMITTED_MODE_DEFAULT,
+    READ_COMMITTED_MODE_READ_CONSISTENCY,
+    READ_COMMITTED_MODE_RECORD_VERSION,
+    READ_COMMITTED_MODE_NO_RECORD_VERSION,
+)
 from .pool import (
     ConnectionPool,
     PoolConfig,
@@ -64,6 +83,8 @@ paramstyle = "named"
 __all__ = [
     "connect",
     "Connection",
+    "canonical_isolation_label",
+    "canonical_read_committed_mode_label",
     "ConnectionPool",
     "PoolConfig",
     "StatementCache",
@@ -79,6 +100,13 @@ __all__ = [
     "InternalError",
     "ProgrammingError",
     "NotSupportedError",
+    "RETRY_SCOPE_NONE",
+    "RETRY_SCOPE_RECONNECT",
+    "RETRY_SCOPE_STATEMENT",
+    "RETRY_SCOPE_TRANSACTION",
+    "extract_sqlstate",
+    "retry_scope_for_sqlstate",
+    "is_retryable_sqlstate",
     "Json",
     "Jsonb",
     "Blob",
@@ -91,6 +119,10 @@ __all__ = [
     "RawValue",
     "COPY_FORMAT_TEXT",
     "COPY_FORMAT_BINARY",
+    "READ_COMMITTED_MODE_DEFAULT",
+    "READ_COMMITTED_MODE_READ_CONSISTENCY",
+    "READ_COMMITTED_MODE_RECORD_VERSION",
+    "READ_COMMITTED_MODE_NO_RECORD_VERSION",
     "SchemaTreeNode",
     "schemas_query",
     "tables_query",

@@ -87,3 +87,13 @@ test_that("errors without SQLSTATE stay generic and omit SQLSTATE prefix", {
   expect_equal(err$sqlstate, "")
   expect_equal(conditionMessage(err), "query failed")
 })
+
+test_that("retry scope helper classifies statement and reconnect boundaries", {
+  expect_equal(sb_retry_scope_for_sqlstate("40001"), "statement")
+  expect_equal(sb_retry_scope_for_sqlstate("40P01"), "statement")
+  expect_equal(sb_retry_scope_for_sqlstate("08006"), "reconnect")
+  expect_equal(sb_retry_scope_for_sqlstate("57014"), "none")
+  expect_equal(sb_retry_scope_for_sqlstate(NULL), "none")
+  expect_true(sb_is_retryable_sqlstate("40001"))
+  expect_false(sb_is_retryable_sqlstate("57014"))
+})

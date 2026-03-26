@@ -16,7 +16,7 @@ uses
   cthreads,
   {$ENDIF}
   SysUtils, Variants,
-  ScratchBird.Client, ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Transport;
+  ScratchBird.Client, ScratchBird.Config, ScratchBird.Protocol, ScratchBird.Sql, ScratchBird.Transport;
 
 type
   TFakeTransport = class(TInterfacedObject, IScratchBirdTransport)

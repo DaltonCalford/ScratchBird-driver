@@ -71,6 +71,13 @@ export {
 } from "./types";
 export { parseDsn } from "./dsn";
 export { normalizeCallableQuery, normalizeCallableSql, normalizeQuery } from "./sql";
+export {
+  READ_COMMITTED_MODE_DEFAULT,
+  READ_COMMITTED_MODE_READ_CONSISTENCY,
+  READ_COMMITTED_MODE_RECORD_VERSION,
+  READ_COMMITTED_MODE_NO_RECORD_VERSION,
+  canonicalReadCommittedModeLabel,
+} from "./protocol";
 export * from "./metadata";
 export * from "./errors";
 export * from "./circuit_breaker";

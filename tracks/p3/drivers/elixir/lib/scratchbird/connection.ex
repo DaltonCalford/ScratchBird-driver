@@ -43,6 +43,7 @@ defmodule ScratchBird.Connection do
   @msg_row_description Protocol.message_type(:row_description)
   @msg_data_row Protocol.message_type(:data_row)
   @msg_command_complete Protocol.message_type(:command_complete)
+  @msg_txn_status Protocol.message_type(:txn_status)
 
   defstruct [
     :socket,
@@ -51,6 +52,8 @@ defmodule ScratchBird.Connection do
     sequence: 0,
     attachment_id: <<0::128>>,
     txn_id: 0,
+    runtime_txn_active: false,
+    runtime_boundary_seen: false,
     params: %{},
     authed: false,
     last_query_sequence: 0,
@@ -66,6 +69,10 @@ defmodule ScratchBird.Connection do
 
   def connect(opts) do
     config = Config.from_opts(opts)
+    # This lane does not perform transparent in-place reconnect on an existing
+    # state struct. Replacement sessions are always created by a fresh
+    # connect/1 handshake, so attachment/transaction identity is re-seeded from
+    # engine truth rather than resurrected from abandoned local state.
     with :ok <- validate_config(config),
          {:ok, socket, transport} <- open_socket(config),
          {:ok, state} <- maybe_perform_manager_connect(%__MODULE__{socket: socket, transport: transport, config: config}),
@@ -111,28 +118,122 @@ defmodule ScratchBird.Connection do
     end)
   end
 
+  def supports_prepared_transactions, do: true
+  def supports_dormant_reattach, do: false
+  def supports_portal_resume, do: false
+
+  def build_prepared_transaction_sql(verb, global_transaction_id) do
+    trimmed =
+      global_transaction_id
+      |> to_string()
+      |> String.trim()
+
+    if trimmed == "" do
+      {:error, %{message: "Global transaction id is required", sqlstate: "42601"}}
+    else
+      {:ok, "#{verb} #{quote_string_literal(trimmed)}"}
+    end
+  end
+
+  def prepare_transaction(state, global_transaction_id) do
+    case build_prepared_transaction_sql("PREPARE TRANSACTION", global_transaction_id) do
+      {:ok, sql} -> query(state, sql, [])
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def commit_prepared(state, global_transaction_id) do
+    case build_prepared_transaction_sql("COMMIT PREPARED", global_transaction_id) do
+      {:ok, sql} -> query(state, sql, [])
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def rollback_prepared(state, global_transaction_id) do
+    case build_prepared_transaction_sql("ROLLBACK PREPARED", global_transaction_id) do
+      {:ok, sql} -> query(state, sql, [])
+      {:error, reason} -> {:error, reason, state}
+    end
+  end
+
+  def detach_to_dormant(state) do
+    {:error,
+     %{message: "Dormant detach is not supported by the current public front door", sqlstate: "0A000"},
+     state}
+  end
+
+  def reattach_dormant(state, dormant_id, auth_token \\ nil) do
+    _ = dormant_id
+    _ = auth_token
+
+    {:error,
+     %{message: "Dormant reattach is not supported by the current public front door", sqlstate: "0A000"},
+     state}
+  end
+
   def begin(state, opts \\ %{}) do
     with_resilience(state, "txn_begin", nil, fn state ->
-      flags = 0
-      flags = if Map.has_key?(opts, :isolation_level), do: flags ||| Protocol.txn_flag(:has_isolation), else: flags
-      flags = if Map.has_key?(opts, :access_mode), do: flags ||| Protocol.txn_flag(:has_access), else: flags
-      flags = if Map.has_key?(opts, :deferrable), do: flags ||| Protocol.txn_flag(:has_deferrable), else: flags
-      flags = if Map.has_key?(opts, :wait), do: flags ||| Protocol.txn_flag(:has_wait), else: flags
-      flags = if Map.has_key?(opts, :timeout_ms), do: flags ||| Protocol.txn_flag(:has_timeout), else: flags
-      flags = if Map.has_key?(opts, :autocommit_mode), do: flags ||| Protocol.txn_flag(:has_autocommit), else: flags
-      payload =
-        Protocol.build_txn_begin_payload(
-          flags,
-          Map.get(opts, :conflict_action, 0),
-          Map.get(opts, :autocommit_mode, 0),
-          Map.get(opts, :isolation_level, Protocol.isolation(:read_committed)),
-          Map.get(opts, :access_mode, 0),
-          if(Map.get(opts, :deferrable), do: 1, else: 0),
-          if(Map.get(opts, :wait), do: 1, else: 0),
-          Map.get(opts, :timeout_ms, 0)
-        )
-      state = send_message(state, Protocol.message_type(:txn_begin), payload, 0)
-      drain_until_ready(state)
+      opts = Enum.into(opts, %{})
+      cond do
+        can_adopt_fresh_native_boundary?(state, opts) ->
+          {:ok, state}
+
+        transaction_active?(state) and state.txn_id == 0 ->
+          {:error,
+           %{
+             message: "non-default begin options cannot adopt an already-active fresh native boundary",
+             sqlstate: "0A000"
+           }, state}
+
+        transaction_active?(state) ->
+          {:error, %{message: "transaction already active", sqlstate: "25001"}, state}
+
+        true ->
+          read_committed_mode = Map.get(opts, :read_committed_mode)
+          flags = 0
+          isolation_level = Map.get(opts, :isolation_level, Protocol.isolation(:read_committed))
+          flags = if Map.has_key?(opts, :isolation_level), do: flags ||| Protocol.txn_flag(:has_isolation), else: flags
+          {flags, isolation_level} =
+            if is_nil(read_committed_mode) do
+              {flags, isolation_level}
+            else
+              if Map.has_key?(opts, :isolation_level) &&
+                   isolation_level not in [
+                     Protocol.isolation(:read_uncommitted),
+                     Protocol.isolation(:read_committed)
+                   ] do
+                raise ArgumentError, "read_committed_mode requires a READ COMMITTED isolation alias"
+              end
+
+              if Map.has_key?(opts, :isolation_level) do
+                {flags ||| Protocol.txn_flag(:has_read_committed_mode), isolation_level}
+              else
+                {
+                  flags ||| Protocol.txn_flag(:has_read_committed_mode) ||| Protocol.txn_flag(:has_isolation),
+                  Protocol.isolation(:read_committed)
+                }
+              end
+            end
+          flags = if Map.has_key?(opts, :access_mode), do: flags ||| Protocol.txn_flag(:has_access), else: flags
+          flags = if Map.has_key?(opts, :deferrable), do: flags ||| Protocol.txn_flag(:has_deferrable), else: flags
+          flags = if Map.has_key?(opts, :wait), do: flags ||| Protocol.txn_flag(:has_wait), else: flags
+          flags = if Map.has_key?(opts, :timeout_ms), do: flags ||| Protocol.txn_flag(:has_timeout), else: flags
+          flags = if Map.has_key?(opts, :autocommit_mode), do: flags ||| Protocol.txn_flag(:has_autocommit), else: flags
+          payload =
+            Protocol.build_txn_begin_payload(
+              flags,
+              Map.get(opts, :conflict_action, 0),
+              Map.get(opts, :autocommit_mode, 0),
+              isolation_level,
+              Map.get(opts, :access_mode, 0),
+              if(Map.get(opts, :deferrable), do: 1, else: 0),
+              if(Map.get(opts, :wait), do: 1, else: 0),
+              Map.get(opts, :timeout_ms, 0),
+              Map.get(opts, :read_committed_mode, Protocol.read_committed_mode(:default))
+            )
+          state = send_message(state, Protocol.message_type(:txn_begin), payload, 0)
+          drain_until_ready(state)
+      end
     end)
   end
 
@@ -194,8 +295,8 @@ defmodule ScratchBird.Connection do
             case msg.type do
               @msg_pong -> {:ok, new_state}
               @msg_ready ->
-                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-                {:ok, %{new_state | txn_id: txn_id}}
+                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+                {:ok, apply_runtime_ready_state(new_state, status, txn_id)}
               @msg_error -> {:error, Protocol.parse_error(msg.payload), new_state}
               _ -> ping(new_state)
             end
@@ -644,7 +745,8 @@ defmodule ScratchBird.Connection do
 
         @msg_auth_ok ->
         {:ok, _session_id, info} = Protocol.parse_auth_ok(msg.payload)
-        state = %{state | attachment_id: msg.attachment_id, txn_id: msg.txn_id, authed: true}
+        state = %{state | attachment_id: msg.attachment_id, authed: true}
+        state = apply_runtime_txn_id(state, msg.txn_id)
         if scram && byte_size(info) > 0 do
           _ = Scram.verify_server_final(scram, to_string(info))
         end
@@ -652,11 +754,11 @@ defmodule ScratchBird.Connection do
 
         @msg_parameter_status ->
           {:ok, name, value} = Protocol.parse_parameter_status(msg.payload)
-          loop_auth(%{state | params: Map.put(state.params, name, value)}, scram)
+          loop_auth(update_parameter_status(state, to_string(name), to_string(value)), scram)
 
         @msg_ready ->
-          {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-          state = %{state | txn_id: txn_id}
+          {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+          state = apply_runtime_ready_state(state, status, txn_id)
           state = apply_search_path(state)
           {:ok, state}
 
@@ -762,8 +864,8 @@ defmodule ScratchBird.Connection do
                 count = length(Protocol.parse_parameter_description(msg.payload))
                 describe_loop(new_state, count)
               @msg_ready ->
-                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-                {:ok, param_count, %{new_state | txn_id: txn_id}}
+                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+                {:ok, param_count, apply_runtime_ready_state(new_state, status, txn_id)}
               @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
               _ ->
@@ -803,6 +905,11 @@ defmodule ScratchBird.Connection do
     end
   end
 
+  defp quote_string_literal(value) do
+    escaped = String.replace(value, "'", "''")
+    "'#{escaped}'"
+  end
+
   defp handle_async(state, msg) do
     case msg.type do
       @msg_parameter_status ->
@@ -823,6 +930,10 @@ defmodule ScratchBird.Connection do
         compiled = Protocol.parse_sblr_compiled(msg.payload)
         {:handled, %{state | last_sblr: compiled}}
 
+      @msg_txn_status ->
+        {:ok, status, txn_id} = Protocol.parse_txn_status(msg.payload)
+        {:handled, apply_runtime_txn_status(state, status, txn_id)}
+
       _ ->
         {:ok, state}
     end
@@ -841,13 +952,87 @@ defmodule ScratchBird.Connection do
       end
     if name == "current_txn_id" do
       case Integer.parse(value) do
-        {txn_id, _} -> %{state | txn_id: txn_id}
+        {txn_id, _} -> apply_runtime_txn_id(state, txn_id)
         _ -> state
       end
     else
       state
     end
   end
+
+  defp apply_runtime_txn_id(state, txn_id) do
+    txn_id = normalize_runtime_txn_id(txn_id)
+    if txn_id > 0 do
+      %{state | txn_id: txn_id, runtime_txn_active: true, runtime_boundary_seen: true}
+    else
+      %{state | txn_id: 0, runtime_boundary_seen: true}
+    end
+  end
+
+  defp apply_runtime_ready_state(state, status, txn_id) do
+    txn_id = normalize_runtime_txn_id(txn_id)
+    if normalize_runtime_status(status) != 0 do
+      # READY is authoritative for native session activity. The engine can
+      # reopen a fresh MGA boundary while the public wire header still reports
+      # txn_id == 0.
+      %{state | txn_id: txn_id, runtime_txn_active: true, runtime_boundary_seen: true}
+    else
+      clear_transaction_state(%{state | runtime_boundary_seen: true})
+    end
+  end
+
+  defp apply_runtime_txn_status(state, status, txn_id) do
+    txn_id = normalize_runtime_txn_id(txn_id)
+    if normalize_runtime_status(status) in [?T, ?t] do
+      %{state | txn_id: txn_id, runtime_txn_active: true, runtime_boundary_seen: true}
+    else
+      clear_transaction_state(%{state | runtime_boundary_seen: true})
+    end
+  end
+
+  defp clear_transaction_state(state) do
+    %{state | txn_id: 0, runtime_txn_active: false}
+  end
+
+  defp transaction_active?(state) do
+    state.runtime_txn_active || state.txn_id != 0
+  end
+
+  defp can_adopt_fresh_native_boundary?(state, opts) do
+    state.runtime_boundary_seen &&
+      state.runtime_txn_active &&
+      state.txn_id == 0 &&
+      compatible_default_fresh_boundary?(opts)
+  end
+
+  defp compatible_default_fresh_boundary?(opts) do
+    isolation = Map.get(opts, :isolation_level, Protocol.isolation(:read_committed))
+    read_committed_mode = Map.get(opts, :read_committed_mode, Protocol.read_committed_mode(:default))
+
+    Map.get(opts, :conflict_action, 0) == 0 &&
+      Map.get(opts, :autocommit_mode, 0) == 0 &&
+      Map.get(opts, :access_mode, 0) == 0 &&
+      Map.get(opts, :timeout_ms, 0) == 0 &&
+      !Map.get(opts, :deferrable, false) &&
+      !Map.get(opts, :wait, false) &&
+      isolation in [Protocol.isolation(:read_uncommitted), Protocol.isolation(:read_committed)] &&
+      read_committed_mode == Protocol.read_committed_mode(:default)
+  end
+
+  defp normalize_runtime_txn_id(txn_id) when is_integer(txn_id), do: txn_id
+  defp normalize_runtime_txn_id(txn_id) when is_binary(txn_id) do
+    case Integer.parse(txn_id) do
+      {value, _} -> value
+      _ -> 0
+    end
+  end
+  defp normalize_runtime_txn_id(_txn_id), do: 0
+
+  defp normalize_runtime_status(status) when is_integer(status), do: status
+  defp normalize_runtime_status(status) when is_binary(status) and byte_size(status) > 0 do
+    :binary.first(status)
+  end
+  defp normalize_runtime_status(_status), do: 0
 
   defp parse_uuid_bytes(value) do
     hex =
@@ -869,8 +1054,8 @@ defmodule ScratchBird.Connection do
           {:ok, new_state} ->
             case msg.type do
               @msg_ready ->
-                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-                {:ok, %{new_state | txn_id: txn_id}}
+                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+                {:ok, apply_runtime_ready_state(new_state, status, txn_id)}
               @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
               _ ->
@@ -990,8 +1175,8 @@ defmodule ScratchBird.Connection do
                 collect_results(new_state, rows)
 
               @msg_ready ->
-                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-                {:ok, %{rows: Enum.reverse(rows), columns: []}, %{new_state | txn_id: txn_id}}
+                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+                {:ok, %{rows: Enum.reverse(rows), columns: []}, apply_runtime_ready_state(new_state, status, txn_id)}
 
               @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}
@@ -1020,8 +1205,8 @@ defmodule ScratchBird.Connection do
                 collect_rows(new_state, columns, rows)
 
               @msg_ready ->
-                {:ok, _status, txn_id} = Protocol.parse_ready(msg.payload)
-                {:ok, %{rows: Enum.reverse(rows), columns: columns}, %{new_state | txn_id: txn_id}}
+                {:ok, status, txn_id} = Protocol.parse_ready(msg.payload)
+                {:ok, %{rows: Enum.reverse(rows), columns: columns}, apply_runtime_ready_state(new_state, status, txn_id)}
 
               @msg_error ->
                 {:error, Protocol.parse_error(msg.payload), new_state}

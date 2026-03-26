@@ -81,6 +81,7 @@ module Scratchbird
       @active_thread = nil
       @transaction_active = false
       @synthetic_txn_id = 0
+      @portal_resume_pending = false
     end
 
     def connect
@@ -92,6 +93,8 @@ module Scratchbird
       end
       begin
         raise ConnectionError, "user and database are required" if @config.user.to_s.empty? || @config.database.to_s.empty?
+        close
+        clear_abandoned_session_state
         raw_socket = connect_tcp
         @socket = wrap_tls(raw_socket)
         perform_manager_connect if @config.front_door_mode == "manager_proxy"
@@ -149,6 +152,7 @@ module Scratchbird
         rescue StandardError
           nil
         end
+        clear_abandoned_session_state
       end
       true
     end
@@ -157,9 +161,40 @@ module Scratchbird
       close
     end
 
-    def begin_transaction
+    def begin_transaction(options = nil)
       ensure_connected
-      payload = Protocol.build_txn_begin_payload(0, 0, 0, Protocol::ISOLATION_READ_COMMITTED, 0, 0, 0, 0)
+      opts = options || {}
+      read_committed_mode = opts[:read_committed_mode]
+      isolation_level = opts.fetch(:isolation_level, Protocol::ISOLATION_READ_COMMITTED)
+      flags = 0
+      flags |= Protocol::TXN_FLAG_HAS_ISOLATION if opts.key?(:isolation_level)
+      if read_committed_mode
+        if opts.key?(:isolation_level) &&
+           ![Protocol::ISOLATION_READ_UNCOMMITTED, Protocol::ISOLATION_READ_COMMITTED].include?(isolation_level)
+          raise NotSupportedError, "read_committed_mode requires a READ COMMITTED isolation alias"
+        end
+        flags |= Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE
+        unless opts.key?(:isolation_level)
+          isolation_level = Protocol::ISOLATION_READ_COMMITTED
+          flags |= Protocol::TXN_FLAG_HAS_ISOLATION
+        end
+      end
+      flags |= Protocol::TXN_FLAG_HAS_ACCESS if opts.key?(:access_mode)
+      flags |= Protocol::TXN_FLAG_HAS_DEFERRABLE if opts.key?(:deferrable)
+      flags |= Protocol::TXN_FLAG_HAS_WAIT if opts.key?(:wait)
+      flags |= Protocol::TXN_FLAG_HAS_TIMEOUT if opts.key?(:timeout_ms)
+      flags |= Protocol::TXN_FLAG_HAS_AUTOCOMMIT if opts.key?(:autocommit_mode)
+      payload = Protocol.build_txn_begin_payload(
+        flags,
+        opts.fetch(:conflict_action, 0),
+        opts.fetch(:autocommit_mode, 0),
+        isolation_level,
+        opts.fetch(:access_mode, 0),
+        opts[:deferrable] ? 1 : 0,
+        opts[:wait] ? 1 : 0,
+        opts.fetch(:timeout_ms, 0),
+        read_committed_mode || Protocol::READ_COMMITTED_MODE_DEFAULT
+      )
       send_message(Protocol::MSG_TXN_BEGIN, payload, 0, false)
       drain_until_ready
       adopt_transaction_after_begin
@@ -170,7 +205,6 @@ module Scratchbird
       payload = Protocol.build_txn_commit_payload(0)
       send_message(Protocol::MSG_TXN_COMMIT, payload, 0, false)
       drain_until_ready
-      clear_transaction_state
     end
 
     def rollback
@@ -178,7 +212,56 @@ module Scratchbird
       payload = Protocol.build_txn_rollback_payload(0)
       send_message(Protocol::MSG_TXN_ROLLBACK, payload, 0, false)
       drain_until_ready
-      clear_transaction_state
+    end
+
+    def supports_prepared_transactions?
+      true
+    end
+
+    def supports_dormant_reattach?
+      false
+    end
+
+    def prepare_transaction(gid)
+      ensure_connected
+      sql = build_prepared_transaction_sql("PREPARE TRANSACTION", gid)
+      with_resilience("prepare_transaction", sql) do
+        send_simple_query(sql, nil)
+        drain_until_ready
+        true
+      end
+    end
+
+    def commit_prepared(gid)
+      ensure_connected
+      sql = build_prepared_transaction_sql("COMMIT PREPARED", gid)
+      with_resilience("commit_prepared", sql) do
+        send_simple_query(sql, nil)
+        drain_until_ready
+        true
+      end
+    end
+
+    def rollback_prepared(gid)
+      ensure_connected
+      sql = build_prepared_transaction_sql("ROLLBACK PREPARED", gid)
+      with_resilience("rollback_prepared", sql) do
+        send_simple_query(sql, nil)
+        drain_until_ready
+        true
+      end
+    end
+
+    def detach_to_dormant
+      raise NotSupportedError, "dormant detach/reattach is not yet exposed by the public Ruby driver surface"
+    end
+
+    def reattach_dormant(_dormant_id, _auth_token = nil)
+      raise NotSupportedError, "dormant detach/reattach is not yet exposed by the public Ruby driver surface"
+    end
+
+    def allow_portal_resume!
+      @portal_resume_pending = true
     end
 
     def savepoint(name)
@@ -219,8 +302,8 @@ module Scratchbird
         when Protocol::MSG_PONG
           return true
         when Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn_id)
           return true
         when Protocol::MSG_ERROR
           handle_query_error(payload)
@@ -486,6 +569,10 @@ module Scratchbird
       apply_runtime_txn_id(txn_id)
     end
 
+    def update_ready_state(status, txn_id)
+      apply_runtime_ready_state(status, txn_id)
+    end
+
     def in_transaction?
       @transaction_active || @txn_id.to_i != 0
     end
@@ -541,8 +628,8 @@ module Scratchbird
           next
         end
         if type == Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn_id)
           raise pending_error if pending_error
           return
         end
@@ -852,8 +939,8 @@ module Scratchbird
           @parameters[name] = value
           next
         when Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn_id)
           return
         when Protocol::MSG_ERROR
           handle_query_error(payload)
@@ -1041,10 +1128,11 @@ module Scratchbird
           rowcount = rows_count
           last_insert_id = parsed_last_id.to_i
         when Protocol::MSG_PORTAL_SUSPENDED
+          allow_portal_resume!
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn_id)
           break
         else
           next
@@ -1099,10 +1187,11 @@ module Scratchbird
           last_insert_id = 0
           result_open = false
         when Protocol::MSG_PORTAL_SUSPENDED
+          allow_portal_resume!
           resume_portal if @last_max_rows.to_i > 0
         when Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn_id)
           if result_open && (!columns.empty? || !rows.empty? || rowcount >= 0 || !command_tag.empty?)
             results << Result.new(columns, rows, rowcount >= 0 ? rowcount : rows.length, command_tag, last_insert_id)
           end
@@ -1173,6 +1262,9 @@ module Scratchbird
     end
 
     def resume_portal
+      raise Error.new("portal resume requires explicit suspended state", "55000") unless @portal_resume_pending
+
+      @portal_resume_pending = false
       exec_payload = Protocol.build_execute_payload("", @last_max_rows.to_i)
       send_message(Protocol::MSG_EXECUTE, exec_payload, 0, false)
     end
@@ -1193,8 +1285,8 @@ module Scratchbird
         when Protocol::MSG_ERROR
           handle_query_error(payload)
         when Protocol::MSG_READY
-          _status, txn = Protocol.parse_ready(payload)
-          apply_runtime_txn_id(txn)
+          status, txn = Protocol.parse_ready(payload)
+          apply_runtime_ready_state(status, txn)
           break
         else
           next
@@ -1301,8 +1393,22 @@ module Scratchbird
       if txn.positive?
         @txn_id = txn
         @transaction_active = true
-      elsif !@transaction_active
+      else
         @txn_id = 0
+      end
+    end
+
+    def apply_runtime_ready_state(status, txn_id)
+      txn = txn_id.to_i
+      if status.to_i != 0
+        # READY status is authoritative for transaction activity. Native
+        # engine-endpoint sessions can expose an active fresh transaction with
+        # txn_id == 0 across the public wire contract.
+        @txn_id = txn
+        @transaction_active = true
+      else
+        @txn_id = 0
+        @transaction_active = false
       end
     end
 
@@ -1317,6 +1423,33 @@ module Scratchbird
     def clear_transaction_state
       @transaction_active = false
       @txn_id = 0
+    end
+
+    def clear_abandoned_session_state
+      # MGA reconnect creates a fresh attachment/transaction boundary. Prepared
+      # handles, attachment parameters, and cached plan/SBLR frames from the
+      # abandoned session must be dropped instead of being treated as resumable
+      # local state on the replacement handshake.
+      @attachment_id = "\0" * 16
+      @txn_id = 0
+      @sequence = 0
+      @last_query_sequence = 0
+      @parameters = {}
+      @prepared = {}
+      @last_plan = nil
+      @last_sblr = nil
+      @cancel_requested = false
+      @active_thread = nil
+      @transaction_active = false
+      @synthetic_txn_id = 0
+      @portal_resume_pending = false
+    end
+
+    def build_prepared_transaction_sql(verb, gid)
+      normalized = gid.to_s.strip
+      raise SyntaxError.new("global transaction id is required", "42601") if normalized.empty?
+
+      "#{verb} '#{normalized.gsub("'", "''")}'"
     end
   end
 
@@ -1356,10 +1489,11 @@ module Scratchbird
           @rowcount = rows_count
           @last_insert_id = parsed_last_id.to_i
         when Protocol::MSG_PORTAL_SUSPENDED
+          @client.allow_portal_resume! if @client.respond_to?(:allow_portal_resume!, true)
           @client.resume_portal if @client.instance_variable_get(:@last_max_rows).to_i > 0
         when Protocol::MSG_READY
-          _status, txn_id = Protocol.parse_ready(payload)
-          @client.update_txn_id(txn_id)
+          status, txn_id = Protocol.parse_ready(payload)
+          @client.update_ready_state(status, txn_id)
           break
         else
           next

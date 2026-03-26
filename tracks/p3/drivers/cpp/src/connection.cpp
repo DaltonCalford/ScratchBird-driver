@@ -118,6 +118,37 @@ std::string formatUuid(const std::vector<uint8_t>& data) {
     return ss.str();
 }
 
+std::string trimWhitespace(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        out.push_back(ch);
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
+core::Status setFeatureNotSupported(core::ErrorContext* ctx, const char* message) {
+    if (ctx) {
+        ctx->set(core::Status::NOT_IMPLEMENTED, message, __FILE__, __LINE__, __func__);
+        ctx->setSQLState(core::SQLSTATE_FEATURE_NOT_SUPPORTED);
+    }
+    return core::Status::NOT_IMPLEMENTED;
+}
+
 void stripLengthPrefix(const std::vector<uint8_t>& data,
                        const uint8_t** out_ptr,
                        size_t* out_len) {
@@ -1182,6 +1213,59 @@ core::Status Connection::metadataSchemaPayload(const std::string* schema_pattern
     return core::Status::OK;
 }
 
+bool Connection::supportsPreparedTransactions() {
+    return true;
+}
+
+bool Connection::supportsDormantReattach() {
+    return false;
+}
+
+bool Connection::supportsPortalResume() {
+    return false;
+}
+
+core::Status Connection::buildPreparedTransactionSql(const std::string& verb,
+                                                     const std::string& global_transaction_id,
+                                                     std::string* sql,
+                                                     core::ErrorContext* ctx) {
+    if (!sql) {
+        if (ctx) {
+            ctx->set(core::Status::INVALID_ARGUMENT,
+                     "SQL output buffer is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+    if (verb.empty()) {
+        if (ctx) {
+            ctx->set(core::Status::INVALID_ARGUMENT,
+                     "Prepared-transaction verb is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+    const std::string gid = trimWhitespace(global_transaction_id);
+    if (gid.empty()) {
+        if (ctx) {
+            ctx->set(core::Status::SYNTAX_ERROR,
+                     "Global transaction id is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+            ctx->setSQLState(core::SQLSTATE_SYNTAX_ERROR);
+        }
+        sql->clear();
+        return core::Status::SYNTAX_ERROR;
+    }
+    *sql = verb + " " + quoteSqlLiteral(gid);
+    return core::Status::OK;
+}
+
 core::Status Connection::beginTransaction(core::ErrorContext* ctx) {
     core::Status status = impl_->client.beginTransaction(ctx);
     impl_->last_error = impl_->client.lastError();
@@ -1206,6 +1290,65 @@ core::Status Connection::rollback(core::ErrorContext* ctx) {
     if (status == core::Status::OK) {
         markConnectedTransactionState(impl_.get());
     }
+    return status;
+}
+
+core::Status Connection::prepareTransaction(const std::string& global_transaction_id,
+                                            core::ErrorContext* ctx) {
+    std::string sql;
+    core::Status status = buildPreparedTransactionSql(
+        "PREPARE TRANSACTION", global_transaction_id, &sql, ctx);
+    if (status != core::Status::OK) {
+        impl_->last_error = ctx ? ctx->message : "Global transaction id is required";
+        return status;
+    }
+    int64_t rows_affected = 0;
+    return execute(sql, &rows_affected, ctx);
+}
+
+core::Status Connection::commitPrepared(const std::string& global_transaction_id,
+                                        core::ErrorContext* ctx) {
+    std::string sql;
+    core::Status status = buildPreparedTransactionSql(
+        "COMMIT PREPARED", global_transaction_id, &sql, ctx);
+    if (status != core::Status::OK) {
+        impl_->last_error = ctx ? ctx->message : "Global transaction id is required";
+        return status;
+    }
+    int64_t rows_affected = 0;
+    return execute(sql, &rows_affected, ctx);
+}
+
+core::Status Connection::rollbackPrepared(const std::string& global_transaction_id,
+                                          core::ErrorContext* ctx) {
+    std::string sql;
+    core::Status status = buildPreparedTransactionSql(
+        "ROLLBACK PREPARED", global_transaction_id, &sql, ctx);
+    if (status != core::Status::OK) {
+        impl_->last_error = ctx ? ctx->message : "Global transaction id is required";
+        return status;
+    }
+    int64_t rows_affected = 0;
+    return execute(sql, &rows_affected, ctx);
+}
+
+core::Status Connection::detachToDormant(core::ErrorContext* ctx) {
+    const char* message =
+        "dormant detach/reattach is not exposed by the public C/C++ front door";
+    core::Status status = setFeatureNotSupported(ctx, message);
+    impl_->last_error = message;
+    return status;
+}
+
+core::Status Connection::reattachDormant(const std::string& dormant_id,
+                                         const std::string& auth_token,
+                                         core::ErrorContext* ctx) {
+    (void)dormant_id;
+    (void)auth_token;
+    const char* message =
+        "dormant detach/reattach is not exposed by the public C/C++ front door";
+    core::Status status = setFeatureNotSupported(ctx, message);
+    impl_->last_error = message;
     return status;
 }
 

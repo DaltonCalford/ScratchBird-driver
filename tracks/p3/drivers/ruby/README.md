@@ -8,6 +8,42 @@ Native ScratchBird Ruby driver using the ScratchBird wire protocol.
 - [API reference](../../../../docs/api-reference/ruby.md)
 - [Baseline requirement mapping (S0)](BASELINE_REQUIREMENT_MAPPING.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- `Scratchbird::Client#resume_portal` now fails closed with `55000` unless the
+  server first reported `MSG_PORTAL_SUSPENDED`
+- same-client reconnect discards prepared handles, attachment parameters, and
+  cached plan/SBLR frames from the abandoned session before the replacement
+  handshake
+- `Scratchbird::Connection#prepare_transaction`, `#commit_prepared`, and
+  `#rollback_prepared` expose explicit prepared/limbo control through
+  canonical transaction-control SQL
+- `Scratchbird::Connection#supports_dormant_reattach?` is explicit and false,
+  and `#detach_to_dormant` / `#reattach_dormant` fail closed until a public
+  dormant front-door exists
+- `Scratchbird::Client#begin_transaction(options)` now exposes the canonical
+  `READ COMMITTED` sub-mode selector directly through
+  `:read_committed_mode`, including `READ COMMITTED READ CONSISTENCY`
+- `Scratchbird::Protocol.canonical_read_committed_mode_label(...)` makes the
+  selected canonical MGA mode visible in lane source and tests
+- native `READY` status is authoritative for transaction activity in this
+  lane; an active session transaction can legitimately arrive with
+  `txn_id == 0` on the public wire seam across connect, commit, and rollback,
+  and autocommit-off statement execution therefore relies on the
+  server-owned session boundary instead of injecting a synthetic
+  client-side `BEGIN`
+- `Scratchbird::ErrorMapper.retry_scope_for_sqlstate(...)` makes the retry
+  boundary explicit: `40001`/`40P01` => fresh statement only, `08xxx` =>
+  reconnect or reopen only, everything else => no automatic replay
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Build/Test (Windows/Linux)
 
 See `docs/BUILD_MATRIX.md`.

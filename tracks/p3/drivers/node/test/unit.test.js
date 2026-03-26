@@ -30,7 +30,10 @@ const {
   shapeMetadataRowsForCollection,
   buildMetadataSchemaTree,
   mapSqlState,
+  READ_COMMITTED_MODE_READ_CONSISTENCY,
+  canonicalReadCommittedModeLabel,
   ScratchbirdSyntaxError,
+  ScratchbirdNotSupportedError,
   ScratchbirdConnectionError,
   ScratchbirdDataError,
   ScratchbirdError,
@@ -168,20 +171,29 @@ test("decodeValue decodes vector", () => {
   assert.deepEqual(decodeValue(OID_SB_VECTOR, buf, FORMAT_BINARY), [1, 2, 3]);
 });
 
-function makeReadyPayload(txnId) {
+function makeReadyPayload(txnId, status = txnId === 0n ? 0 : 1) {
   const payload = Buffer.alloc(20);
-  payload.writeUInt8(txnId === 0n ? 0 : 1, 0);
+  payload.writeUInt8(status, 0);
   payload.writeBigUInt64LE(txnId, 4);
   payload.writeBigUInt64LE(0n, 12);
   return payload;
 }
 
 function createMockProtocol(readyTxnIds = []) {
-  const queue = readyTxnIds.map((txnId) => ({
+  const queue = readyTxnIds.map((entry) => ({
     header: { type: MessageType.READY },
-    payload: makeReadyPayload(txnId),
+    payload: typeof entry === "object"
+      ? makeReadyPayload(entry.txnId ?? 0n, entry.status ?? ((entry.txnId ?? 0n) === 0n ? 0 : 1))
+      : makeReadyPayload(entry),
   }));
   return createQueuedProtocol(queue);
+}
+
+function makeTxnStatusPayload(status, txnId) {
+  const payload = Buffer.alloc(12);
+  payload.writeUInt8(status.charCodeAt(0), 0);
+  payload.writeBigUInt64LE(txnId, 4);
+  return payload;
 }
 
 function createQueuedProtocol(queueEntries = []) {
@@ -263,6 +275,88 @@ test("transaction lifecycle enforces begin-before-commit semantics", async () =>
   );
 });
 
+test("prepared transaction helpers emit canonical control SQL", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol([0n, 0n, 0n]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  await client.prepareTransaction("gid'alpha");
+  await client.commitPrepared("gid'alpha");
+  await client.rollbackPrepared("gid'alpha");
+
+  assert.deepEqual(
+    protocol.sent.map((entry) => entry.type),
+    [MessageType.QUERY, MessageType.QUERY, MessageType.QUERY],
+  );
+  assert.equal(parseSqlFromQueryPayload(protocol.sent[0].payload), "PREPARE TRANSACTION 'gid''alpha'");
+  assert.equal(parseSqlFromQueryPayload(protocol.sent[1].payload), "COMMIT PREPARED 'gid''alpha'");
+  assert.equal(parseSqlFromQueryPayload(protocol.sent[2].payload), "ROLLBACK PREPARED 'gid''alpha'");
+});
+
+test("dormant helpers fail closed and capability flags stay explicit", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  assert.equal(client.supportsPreparedTransactions(), true);
+  assert.equal(client.supportsDormantReattach(), false);
+
+  await assert.rejects(
+    () => client.detachToDormant(),
+    (err) => err && err.code === "0A000",
+  );
+  await assert.rejects(
+    () => client.reattachDormant("dormant-token", "auth-token"),
+    (err) => err && err.code === "0A000",
+  );
+});
+
+test("portal resume requires explicit suspended state", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.protocol = createMockProtocol([]);
+
+  await assert.rejects(
+    () => client.resumePortal(1),
+    (err) => err && err.code === "55000",
+  );
+});
+
+test("beginTransaction encodes readCommittedMode and documents its canonical meaning", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createMockProtocol([42n]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  await client.beginTransaction({
+    readCommittedMode: READ_COMMITTED_MODE_READ_CONSISTENCY,
+    timeoutMs: 25,
+  });
+
+  const payload = protocol.sent[0].payload;
+  assert.equal(canonicalReadCommittedModeLabel(READ_COMMITTED_MODE_READ_CONSISTENCY), "READ COMMITTED READ CONSISTENCY");
+  assert.equal(payload.length, 16);
+  assert.equal(payload.readUInt16LE(0), 0x0111);
+  assert.equal(payload.readUInt8(4), 1);
+  assert.equal(payload.readUInt32LE(8), 25);
+  assert.equal(payload.readUInt8(12), READ_COMMITTED_MODE_READ_CONSISTENCY);
+});
+
+test("beginTransaction rejects readCommittedMode with snapshot aliases", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  client.protocol = createMockProtocol();
+
+  await assert.rejects(
+    () =>
+      client.beginTransaction({
+        isolationLevel: 2,
+        readCommittedMode: READ_COMMITTED_MODE_READ_CONSISTENCY,
+      }),
+    (err) =>
+      err instanceof ScratchbirdNotSupportedError &&
+      err.code === "0A000" &&
+      /READ COMMITTED isolation alias/.test(err.message),
+  );
+});
+
 test("savepoint flows require an active transaction and a non-empty name", async () => {
   const client = new Client({ user: "me", database: "db" });
   const protocol = createMockProtocol([88n, 88n, 88n, 88n, 0n]);
@@ -284,11 +378,40 @@ test("savepoint flows require an active transaction and a non-empty name", async
   );
 });
 
+test("READY can keep the native fresh boundary active with zero txn_id", () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.applyRuntimeReadyState(1, 0n);
+
+  assert.equal(client.transactionActive, true);
+  assert.equal(client.protocol.getTxnId(), 0n);
+});
+
+test("TXN_STATUS updates can mark and clear active native boundaries", () => {
+  const client = new Client({ user: "me", database: "db" });
+
+  const activeHandled = client.handleAsyncMessage({
+    header: { type: MessageType.TXN_STATUS },
+    payload: makeTxnStatusPayload("T", 0n),
+  });
+  assert.equal(activeHandled, true);
+  assert.equal(client.transactionActive, true);
+  assert.equal(client.protocol.getTxnId(), 0n);
+
+  const idleHandled = client.handleAsyncMessage({
+    header: { type: MessageType.TXN_STATUS },
+    payload: makeTxnStatusPayload("I", 0n),
+  });
+  assert.equal(idleHandled, true);
+  assert.equal(client.transactionActive, false);
+  assert.equal(client.protocol.getTxnId(), 0n);
+});
+
 test("autocommit toggle drives implicit begin and commit", async () => {
   const client = new Client({ user: "me", database: "db" });
-  const protocol = createMockProtocol([0n, 77n, 88n, 88n]);
+  const protocol = createMockProtocol([{ txnId: 0n, status: 1 }]);
   client.connected = true;
   client.protocol = protocol;
+  client.transactionActive = true;
   client.collectResults = async () => ({ rows: [], rowCount: 0, fields: [], command: "SELECT", lastId: null });
 
   assert.equal(client.getAutoCommit(), true);
@@ -302,7 +425,7 @@ test("autocommit toggle drives implicit begin and commit", async () => {
   assert.equal(client.transactionActive, true);
   assert.deepEqual(
     protocol.sent.map((entry) => entry.type),
-    [MessageType.SET_OPTION, MessageType.TXN_BEGIN, MessageType.QUERY, MessageType.TXN_COMMIT, MessageType.SET_OPTION],
+    [MessageType.QUERY, MessageType.TXN_COMMIT],
   );
 });
 
@@ -384,6 +507,48 @@ test("prepare supports statement name reuse and refreshes cached SQL", async () 
     protocol.sent.map((entry) => entry.type),
     [MessageType.PARSE, MessageType.PARSE],
   );
+});
+
+test("connect clears abandoned prepared and session-bound state on same client reuse", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = client.protocol;
+  let closes = 0;
+
+  protocol.close = () => {
+    closes++;
+  };
+  protocol.connect = async () => {};
+  client.handshake = async () => {};
+  client.applySchema = async () => {};
+  client.keepaliveManager.start = () => {};
+  client.keepaliveManager.register = () => ({
+    needsValidation() {
+      return false;
+    },
+    markActive() {},
+  });
+  client.leakDetector.start = () => {};
+  client.leakDetector.checkout = () => ({
+    release() {},
+  });
+
+  client.connected = true;
+  client.transactionActive = true;
+  client.prepared.set("stmt", { sql: "select 1", paramCount: 0 });
+  client.parameters = { attachment_id: "stale", current_txn_id: "77" };
+  client.lastPlan = { source: "stale" };
+  client.lastSblr = { source: "stale" };
+
+  await client.connect();
+
+  assert.equal(closes, 1);
+  assert.equal(client.connected, true);
+  assert.equal(client.transactionActive, false);
+  assert.equal(client.prepared.size, 0);
+  assert.deepEqual(client.parameters, {});
+  assert.equal(client.getLastPlan(), undefined);
+  assert.equal(client.getLastSblr(), undefined);
+  await assert.rejects(() => client.execute("stmt"), /Unknown prepared statement: stmt/);
 });
 
 test("nativeSQL and nativeCallableSQL wrap normalization failures as syntax errors", () => {

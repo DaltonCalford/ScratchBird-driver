@@ -133,12 +133,18 @@ final class Protocol
     public const ISOLATION_REPEATABLE_READ = 2;
     public const ISOLATION_SERIALIZABLE = 3;
 
+    public const READ_COMMITTED_MODE_DEFAULT = 0;
+    public const READ_COMMITTED_MODE_READ_CONSISTENCY = 1;
+    public const READ_COMMITTED_MODE_RECORD_VERSION = 2;
+    public const READ_COMMITTED_MODE_NO_RECORD_VERSION = 3;
+
     public const TXN_FLAG_HAS_ISOLATION = 0x0001;
     public const TXN_FLAG_HAS_ACCESS = 0x0002;
     public const TXN_FLAG_HAS_DEFERRABLE = 0x0004;
     public const TXN_FLAG_HAS_WAIT = 0x0008;
     public const TXN_FLAG_HAS_TIMEOUT = 0x0010;
     public const TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
+    public const TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100;
 
     public const STREAM_START = 0;
     public const STREAM_PAUSE = 1;
@@ -364,7 +370,8 @@ final class Protocol
         int $accessMode,
         int $deferrable,
         int $waitMode,
-        int $timeoutMs
+        int $timeoutMs,
+        int $readCommittedMode = self::READ_COMMITTED_MODE_DEFAULT
     ): string {
         $payload = self::writeUInt16LE($flags);
         $payload .= chr($conflictAction)
@@ -374,7 +381,21 @@ final class Protocol
             . chr($deferrable)
             . chr($waitMode);
         $payload .= self::writeUInt32LE($timeoutMs);
+        if (($flags & self::TXN_FLAG_HAS_READ_COMMITTED_MODE) !== 0) {
+            $payload .= chr($readCommittedMode) . "\0\0\0";
+        }
         return $payload;
+    }
+
+    public static function canonicalReadCommittedModeLabel(int $mode): string
+    {
+        return match ($mode) {
+            self::READ_COMMITTED_MODE_DEFAULT => 'READ COMMITTED',
+            self::READ_COMMITTED_MODE_READ_CONSISTENCY => 'READ COMMITTED READ CONSISTENCY',
+            self::READ_COMMITTED_MODE_RECORD_VERSION => 'READ COMMITTED RECORD VERSION',
+            self::READ_COMMITTED_MODE_NO_RECORD_VERSION => 'READ COMMITTED NO RECORD VERSION',
+            default => 'UNKNOWN(' . $mode . ')',
+        };
     }
 
     public static function buildTxnCommitPayload(int $flags): string
@@ -432,6 +453,16 @@ final class Protocol
         $txnId = self::readUInt64LE(substr($payload, 4, 8));
         $visibility = self::readUInt64LE(substr($payload, 12, 8));
         return [$status, $txnId, $visibility];
+    }
+
+    public static function parseTxnStatus(string $payload): array
+    {
+        if (strlen($payload) < 12) {
+            throw new \RuntimeException('Txn status truncated');
+        }
+        $status = ord($payload[0]);
+        $txnId = self::readUInt64LE(substr($payload, 4, 8));
+        return [$status, $txnId];
     }
 
     public static function parseParameterStatus(string $payload): array

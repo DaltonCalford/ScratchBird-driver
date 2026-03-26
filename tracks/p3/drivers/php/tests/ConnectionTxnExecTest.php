@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
 use ScratchBird\PDO\Config;
 use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\Protocol;
+use ScratchBird\PDO\ScratchBirdException;
+use ScratchBird\PDO\ScratchBirdNotSupportedException;
 use ScratchBird\PDO\ScratchBirdTransactionException;
 use ScratchBird\PDO\TypeDecoder;
 
@@ -69,12 +71,12 @@ final class ConnectionTxnExecTest extends TestCase
         $conn = $this->newConnectionWithSocket($client);
 
         try {
-            $this->queueReady($server, 11);
+            $this->queueReady($server, 11, ord('T'));
             $this->assertTrue($conn->beginTransaction());
             $this->assertTrue($conn->inTransaction());
             $this->assertSame(Protocol::MSG_TXN_BEGIN, $this->readSentMessageType($server));
 
-            $this->queueReady($server, 11);
+            $this->queueReady($server, 11, ord('T'));
             $conn->savepoint('sp_one');
             $this->assertSame(Protocol::MSG_TXN_SAVEPOINT, $this->readSentMessageType($server));
 
@@ -82,6 +84,197 @@ final class ConnectionTxnExecTest extends TestCase
             $this->assertTrue($conn->commit());
             $this->assertFalse($conn->inTransaction());
             $this->assertSame(Protocol::MSG_TXN_COMMIT, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testBeginTransactionExEncodesReadCommittedMode(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueReady($server, 14);
+            $this->assertTrue($conn->beginTransactionEx([
+                'isolation_level' => Protocol::ISOLATION_READ_COMMITTED,
+                'read_committed_mode' => Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY,
+            ]));
+
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_TXN_BEGIN, $type);
+            $this->assertSame(16, strlen($payload));
+            $flags = unpack('vflags', substr($payload, 0, 2))['flags'];
+            $this->assertSame(
+                Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE,
+                $flags & Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE
+            );
+            $this->assertSame(
+                Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY,
+                ord($payload[12])
+            );
+            $this->assertSame(
+                'READ COMMITTED READ CONSISTENCY',
+                Protocol::canonicalReadCommittedModeLabel(ord($payload[12]))
+            );
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testBeginTransactionExRejectsReadCommittedModeWithSnapshotAlias(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->expectException(ScratchBirdNotSupportedException::class);
+            $this->expectExceptionMessage('read_committed_mode requires a READ COMMITTED isolation alias');
+            $conn->beginTransactionEx([
+                'isolation_level' => Protocol::ISOLATION_SERIALIZABLE,
+                'read_committed_mode' => Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY,
+            ]);
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testReadyStatusKeepsFreshNativeBoundaryActiveWithZeroTxnId(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $conn->updateReadyState(ord('T'), 0);
+            $this->assertTrue($conn->inTransaction());
+            $this->assertSame(0, $this->getPrivate($conn, 'txnId'));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testBeginTransactionAdoptsFreshNativeBoundaryWithoutSendingWireBegin(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+        $conn->updateReadyState(ord('T'), 0);
+
+        try {
+            $this->assertTrue($conn->beginTransaction());
+            $this->assertTrue($conn->inTransaction());
+            $this->assertTrue($this->getPrivate($conn, 'explicitTransaction'));
+
+            $read = [$server];
+            $write = [];
+            $except = [];
+            $this->assertSame(0, stream_select($read, $write, $except, 0, 0));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testBeginTransactionRejectsNonDefaultFreshBoundaryAdoption(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+        $conn->updateReadyState(ord('T'), 0);
+
+        try {
+            $this->expectException(ScratchBirdNotSupportedException::class);
+            $this->expectExceptionMessage(
+                'fresh native transaction boundaries only support default READ COMMITTED adoption in the PHP lane'
+            );
+            $conn->beginTransactionEx([
+                'isolation_level' => Protocol::ISOLATION_SERIALIZABLE,
+            ]);
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testCommitDrainsImmediateReopenBoundary(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+        $this->setPrivate($conn, 'runtimeTxnActive', true);
+        $this->setPrivate($conn, 'explicitTransaction', true);
+        $this->setPrivate($conn, 'inTransaction', true);
+
+        try {
+            $this->queueReady($server, 0);
+            $this->queueReady($server, 0, ord('T'));
+            $this->assertTrue($conn->commit());
+            $this->assertTrue($conn->inTransaction());
+            $this->assertFalse($this->getPrivate($conn, 'explicitTransaction'));
+            $this->assertSame(Protocol::MSG_TXN_COMMIT, $this->readSentMessageType($server));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testPreparedTransactionHelpersEmitCanonicalControlSql(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->queueReady($server, 0);
+            $this->assertTrue($conn->prepareTransaction("gid'alpha"));
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame("PREPARE TRANSACTION 'gid''alpha'", $this->parseSimpleQuerySql($payload));
+
+            $this->queueReady($server, 0);
+            $this->assertTrue($conn->commitPrepared("gid'alpha"));
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame("COMMIT PREPARED 'gid''alpha'", $this->parseSimpleQuerySql($payload));
+
+            $this->queueReady($server, 0);
+            $this->assertTrue($conn->rollbackPrepared("gid'alpha"));
+            [$type, $payload] = $this->readSentMessage($server);
+            $this->assertSame(Protocol::MSG_QUERY, $type);
+            $this->assertSame("ROLLBACK PREPARED 'gid''alpha'", $this->parseSimpleQuerySql($payload));
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testDormantHelpersFailClosedAndCapabilitiesStayExplicit(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->assertTrue($conn->supportsPreparedTransactions());
+            $this->assertFalse($conn->supportsDormantReattach());
+
+            $this->expectException(ScratchBirdNotSupportedException::class);
+            $this->expectExceptionMessage('dormant detach/reattach is not yet exposed by the public PHP driver surface');
+            $conn->detachToDormant();
+        } finally {
+            fclose($client);
+            fclose($server);
+        }
+    }
+
+    public function testResumePortalRejectsUnsuspendedState(): void
+    {
+        [$client, $server] = $this->newSocketPair();
+        $conn = $this->newConnectionWithSocket($client);
+
+        try {
+            $this->expectException(ScratchBirdException::class);
+            $this->expectExceptionMessage('portal resume requires explicit suspended state');
+            $conn->resumePortal();
         } finally {
             fclose($client);
             fclose($server);
@@ -250,7 +443,7 @@ final class ConnectionTxnExecTest extends TestCase
 
         try {
             $this->queueCommandComplete($server, 0, 'SELECT 0');
-            $this->queueReady($server, 77);
+            $this->queueReady($server, 77, ord('T'));
 
             $stream = $conn->executeQuery('SELECT 1');
             $this->assertNull($stream->readRow());
@@ -414,9 +607,9 @@ final class ConnectionTxnExecTest extends TestCase
         return substr($sqlBytes, 0, $nullPos);
     }
 
-    private function queueReady($server, int $txnId): void
+    private function queueReady($server, int $txnId, int $status = 0): void
     {
-        $payload = chr(0) . "\0\0\0" . $this->uint64Le($txnId) . $this->uint64Le(0);
+        $payload = chr($status) . "\0\0\0" . $this->uint64Le($txnId) . $this->uint64Le(0);
         $this->sendServerMessage($server, Protocol::MSG_READY, $payload);
     }
 

@@ -437,6 +437,20 @@ std::string trimString(const std::string& value) {
     return value.substr(start, end - start + 1);
 }
 
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string quoted;
+    quoted.reserve(value.size() + 2);
+    quoted.push_back('\'');
+    for (char ch : value) {
+        if (ch == '\'') {
+            quoted.push_back('\'');
+        }
+        quoted.push_back(ch);
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
 std::vector<std::string> splitSqlStatements(const std::string& sql) {
     std::vector<std::string> statements;
     std::string current;
@@ -571,20 +585,6 @@ std::string formatGuidStruct(const SQLGUID& guid) {
                   guid.Data4[2], guid.Data4[3], guid.Data4[4],
                   guid.Data4[5], guid.Data4[6], guid.Data4[7]);
     return std::string(buf);
-}
-
-std::string quoteSqlLiteral(const std::string& value) {
-    std::string out;
-    out.reserve(value.size() + 2);
-    out.push_back('\'');
-    for (char ch : value) {
-        if (ch == '\'') {
-            out.push_back('\'');
-        }
-        out.push_back(ch);
-    }
-    out.push_back('\'');
-    return out;
 }
 
 std::vector<std::string> splitBrowsePath(const std::string& path) {
@@ -885,6 +885,13 @@ bool buildIsolationSql(SQLUINTEGER isolation, std::string& out_sql) {
         return false;
     }
 
+    // ODBC exposes SQL-standard isolation aliases only.
+    // READ_UNCOMMITTED remains a legacy compatibility alias here, not a
+    // distinct canonical MGA mode. READ_COMMITTED maps to canonical
+    // READ COMMITTED, REPEATABLE_READ / VERSIONING map to canonical SNAPSHOT,
+    // and SERIALIZABLE maps to canonical SNAPSHOT TABLE STABILITY. A distinct
+    // READ COMMITTED READ CONSISTENCY selector is not exposed via ODBC's
+    // standard SQL_ATTR_TXN_ISOLATION surface.
     switch (isolation) {
         case SQL_TXN_READ_UNCOMMITTED:
             out_sql = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED ON CONFLICT COMMIT";
@@ -1722,6 +1729,74 @@ ColumnMetadata makeCatalogColumn(const std::string& name, SQLSMALLINT type, SQLU
     return meta;
 }
 } // namespace
+
+bool supportsPreparedTransactions() {
+    return true;
+}
+
+bool supportsDormantReattach() {
+    return false;
+}
+
+bool supportsPortalResume() {
+    return false;
+}
+
+SQLRETURN buildPreparedTransactionSql(const std::string& verb,
+                                      const std::string& global_transaction_id,
+                                      std::string& out_sql,
+                                      std::string* sqlstate_out,
+                                      std::string* message_out) {
+    const std::string trimmed_verb = trimString(verb);
+    const std::string trimmed_gid = trimString(global_transaction_id);
+
+    out_sql.clear();
+    if (sqlstate_out) {
+        sqlstate_out->clear();
+    }
+    if (message_out) {
+        message_out->clear();
+    }
+
+    if (trimmed_verb.empty()) {
+        if (sqlstate_out) {
+            *sqlstate_out = "HY024";
+        }
+        if (message_out) {
+            *message_out = "Prepared-transaction verb is required";
+        }
+        return SQL_ERROR;
+    }
+
+    if (trimmed_gid.empty()) {
+        if (sqlstate_out) {
+            *sqlstate_out = "42601";
+        }
+        if (message_out) {
+            *message_out = "Global transaction id is required";
+        }
+        return SQL_ERROR;
+    }
+
+    out_sql = trimString(trimmed_verb) + " " + quoteSqlLiteral(trimmed_gid);
+    return SQL_SUCCESS;
+}
+
+SQLRETURN rejectDormantReattach(const char* operation,
+                                std::string* sqlstate_out,
+                                std::string* message_out) {
+    if (sqlstate_out) {
+        *sqlstate_out = "0A000";
+    }
+    if (message_out) {
+        std::string action = operation ? trimString(operation) : std::string();
+        if (action.empty()) {
+            action = "reattach";
+        }
+        *message_out = "dormant " + action + " is not exposed by the ODBC front door";
+    }
+    return SQL_ERROR;
+}
 
 // =============================================================================
 // OdbcHandle Base Implementation
@@ -3689,6 +3764,7 @@ SQLRETURN OdbcConnection::applyDsnConfig(const std::string& dsn_name) {
 }
 
 SQLRETURN OdbcConnection::establishConnection() {
+    constexpr const char* kDefaultSessionSchema = "users.public";
     if (!client_bridge_) {
         setError("08001", 0, "Client bridge not initialized");
         return SQL_ERROR;
@@ -3712,7 +3788,7 @@ SQLRETURN OdbcConnection::establishConnection() {
     connected_ = true;
     current_database_ = params_.database;
     current_user_ = params_.user;
-    current_schema_ = params_.schema;
+    current_schema_ = params_.schema.empty() ? kDefaultSessionSchema : params_.schema;
 
     if (params_.read_only) {
         access_mode_ = SQL_MODE_READ_ONLY;

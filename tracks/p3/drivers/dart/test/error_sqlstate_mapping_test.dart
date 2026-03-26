@@ -66,4 +66,19 @@ void main() {
     expect(ex.sqlState, equals('08006'));
     expect(ex.code, equals(88));
   });
+
+  test('retry scope classifies statement and reconnect boundaries', () {
+    expect(retryScopeForSqlState('40001'), equals(ScratchBirdRetryScope.statement));
+    expect(retryScopeForSqlState('40P01'), equals(ScratchBirdRetryScope.statement));
+    expect(retryScopeForSqlState('08006'), equals(ScratchBirdRetryScope.reconnect));
+    expect(retryScopeForSqlState('57014'), equals(ScratchBirdRetryScope.none));
+    expect(retryScopeForSqlState(null), equals(ScratchBirdRetryScope.none));
+  });
+
+  test('retryable sqlstate only covers fresh-boundary retries', () {
+    expect(isRetryableSqlState('40001'), isTrue);
+    expect(isRetryableSqlState('08003'), isTrue);
+    expect(isRetryableSqlState('57014'), isFalse);
+    expect(isRetryableSqlState(''), isFalse);
+  });
 }

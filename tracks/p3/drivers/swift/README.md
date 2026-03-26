@@ -9,6 +9,49 @@ binary-only transport.
 - [Getting started](../../../../docs/getting-started/swift.md)
 - [API reference](../../../../docs/api-reference/swift.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- `begin(...)` exposes the canonical MGA begin flags for `isolationLevel`,
+  `readCommittedMode`, `accessMode`, `deferrable`, `wait`, `timeoutMs`,
+  `autocommitMode`, and `conflictAction`
+- current isolation alias mapping is explicit in lane source:
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`
+- `ScratchBirdReadCommittedMode.readConsistency` now exposes the canonical
+  `READ COMMITTED READ CONSISTENCY` selector directly in the public lane
+- `retryScope(forSqlState:)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay
+- native `READY`, `TXN_STATUS`, and `current_txn_id` are authoritative for
+  transaction-state truth on the engine-endpoint lane, including fresh MGA
+  boundaries that remain active while `txnId == 0`
+- compatible default `begin(...)` calls adopt that already-active fresh native
+  boundary, while unsupported non-default fresh-boundary adoption fails closed
+  with `0A000`
+- `commit(...)` and `rollback(...)` drain the immediate reopen boundary before
+  the next operation so the first post-commit / post-rollback query sees real
+  result frames rather than a stray reopen `READY`
+- prepared / limbo truth is explicit in lane code through
+  `supportsPreparedTransactions()`, `prepareTransaction(...)`,
+  `commitPrepared(...)`, and `rollbackPrepared(...)`, which emit canonical
+  transaction-control SQL
+- dormant detach / reattach truth is explicit in lane code through
+  `supportsDormantReattach() -> false`, `detachToDormant()`, and
+  `reattachDormant(...)`, all of which fail closed with `0A000` until the
+  public front door exposes a real dormant-token flow
+- internal result continuation is gated by `allowPortalResume()` and
+  `resumeSuspendedPortal(...)`, so blind resume fails closed with `55000`
+  unless `PORTAL_SUSPENDED` was observed first
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Platform Support
 
 | Platform | Status | Notes |
@@ -65,6 +108,11 @@ Wire errors are mapped into typed Swift exceptions by SQLSTATE class/exact code:
 
 All typed exceptions carry structured fields (`sqlState`, `severity`, `detail`,
 `hint`) and preserve `NSError` compatibility via `errorUserInfo`.
+
+Retry helpers are also exposed directly in lane source:
+
+- `retryScope(forSqlState:)`
+- `isRetryable(sqlState:)`
 
 ## Metadata Helpers
 

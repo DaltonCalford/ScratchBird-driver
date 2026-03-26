@@ -108,11 +108,12 @@ final class ResultStream
                     $this->markResultSetBoundary();
                     return null;
                 case Protocol::MSG_PORTAL_SUSPENDED:
+                    $this->connection->allowPortalResume();
                     $this->connection->resumePortal();
                     break;
                 case Protocol::MSG_READY:
-                    [, $txnId] = Protocol::parseReady($payload);
-                    $this->connection->updateTxnId($txnId);
+                    [$status, $txnId] = Protocol::parseReady($payload);
+                    $this->connection->updateReadyState($status, $txnId);
                     $this->done = true;
                     return null;
                 case Protocol::MSG_EMPTY_QUERY:
@@ -139,8 +140,8 @@ final class ResultStream
                 continue;
             }
             if ($type === Protocol::MSG_READY) {
-                [, $txnId] = Protocol::parseReady($payload);
-                $this->connection->updateTxnId($txnId);
+                [$status, $txnId] = Protocol::parseReady($payload);
+                $this->connection->updateReadyState($status, $txnId);
                 $this->done = true;
                 $this->hasNextResultSet = false;
                 $this->resultSetBoundary = false;

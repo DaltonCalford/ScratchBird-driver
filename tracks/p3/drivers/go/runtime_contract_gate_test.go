@@ -22,8 +22,9 @@ import (
 )
 
 type runtimeGateOptions struct {
-	managerProxy bool
-	authMethod   authMethod
+	managerProxy       bool
+	authMethod         authMethod
+	zeroTxnReadyStatus byte
 }
 
 type runtimeGateServer struct {
@@ -52,6 +53,9 @@ func startRuntimeGateServer(t *testing.T, options runtimeGateOptions) *runtimeGa
 		options:  options,
 		errCh:    make(chan error, 1),
 		done:     make(chan struct{}),
+	}
+	if server.options.zeroTxnReadyStatus == 0 {
+		server.options.zeroTxnReadyStatus = 0
 	}
 	go server.run()
 	return server
@@ -222,7 +226,7 @@ func (s *runtimeGateServer) handleSBWP(conn net.Conn) error {
 	if err := writeSBWP(conn, &sequence, attachment, txnID, msgAuthOk, authOKPayload); err != nil {
 		return err
 	}
-	if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+	if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 		return err
 	}
 
@@ -237,20 +241,20 @@ func (s *runtimeGateServer) handleSBWP(conn net.Conn) error {
 		switch msg.header.typ {
 		case msgTxnBegin:
 			txnID = 77
-			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 				return err
 			}
 		case msgTxnSavepoint, msgTxnRelease, msgTxnRollbackTo:
-			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 				return err
 			}
 		case msgTxnCommit, msgTxnRollback:
 			txnID = 0
-			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 				return err
 			}
 		case msgSetOption:
-			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 				return err
 			}
 		case msgPing:
@@ -268,7 +272,7 @@ func (s *runtimeGateServer) handleSBWP(conn net.Conn) error {
 			if err := s.handleQuery(conn, &sequence, attachment, txnID, sqlText); err != nil {
 				return err
 			}
-			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(0, txnID, 0)); err != nil {
+			if err := writeSBWP(conn, &sequence, attachment, txnID, msgReady, runtimeReadyPayload(s.readyStatus(txnID), txnID, 0)); err != nil {
 				return err
 			}
 		case msgTerminate:
@@ -495,6 +499,13 @@ func runtimeReadyPayload(status byte, txnID, epoch uint64) []byte {
 	binary.LittleEndian.PutUint64(payload[4:12], txnID)
 	binary.LittleEndian.PutUint64(payload[12:20], epoch)
 	return payload
+}
+
+func (s *runtimeGateServer) readyStatus(txnID uint64) byte {
+	if txnID == 0 {
+		return s.options.zeroTxnReadyStatus
+	}
+	return 'T'
 }
 
 func extractManagerAuthStartTokenLen(payload []byte) uint32 {

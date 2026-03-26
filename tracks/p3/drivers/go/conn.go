@@ -59,6 +59,8 @@ type Conn struct {
 	closed               bool
 	attachmentID         [16]byte
 	txnID                uint64
+	runtimeTxnActive     bool
+	explicitTransaction  bool
 	sequence             uint32
 	authed               bool
 	pending              []protocolMessage
@@ -73,6 +75,21 @@ type Conn struct {
 	keepaliveTracker     *KeepaliveTracker
 	leakDetector         *LeakDetector
 	leakGuard            *LeakDetectionGuard
+}
+
+type ReadCommittedMode uint8
+
+const (
+	ReadCommittedModeDefault ReadCommittedMode = iota
+	ReadCommittedModeReadConsistency
+	ReadCommittedModeRecordVersion
+	ReadCommittedModeNoRecordVersion
+)
+
+type TxnBeginOptions struct {
+	Isolation         driver.IsolationLevel
+	ReadOnly          bool
+	ReadCommittedMode *ReadCommittedMode
 }
 
 func (c *Conn) connect(ctx context.Context) error {
@@ -564,18 +581,18 @@ func (c *Conn) handshake(ctx context.Context) error {
 				return err
 			}
 			copy(c.attachmentID[:], msg.header.attachmentID[:])
-			c.txnID = msg.header.txnID
+			c.applyRuntimeTxnID(msg.header.txnID)
 			c.authed = true
 			if scram != nil && len(info) > 0 && strings.HasPrefix(string(info), "v=") {
 				_ = scram.verifyServerFinal(string(info))
 			}
 			_ = sessionID
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err != nil {
 				return err
 			}
-			c.txnID = txnID
+			c.applyRuntimeReadyState(status, txnID)
 			return nil
 		case msgError:
 			return buildProtocolError(msg.body)
@@ -706,11 +723,11 @@ func (c *Conn) PrepareContext(ctx context.Context, query string) (driver.Stmt, e
 		case msgError:
 			return nil, buildProtocolError(msg.body)
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err != nil {
 				return nil, err
 			}
-			c.txnID = txnID
+			c.applyRuntimeReadyState(status, txnID)
 			return &Stmt{conn: c, query: normalized.sql, name: stmtName, paramCount: paramCount}, nil
 		default:
 			continue
@@ -722,14 +739,148 @@ func (c *Conn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
 }
 
+func (c *Conn) SupportsPreparedTransactions() bool {
+	return true
+}
+
+func (c *Conn) SupportsDormantReattach() bool {
+	return false
+}
+
+func (c *Conn) PrepareTransaction(ctx context.Context, gid string) error {
+	sql, err := buildPreparedTransactionSQL("PREPARE TRANSACTION", gid)
+	if err != nil {
+		return err
+	}
+	_, err = c.ExecContext(ctx, sql, nil)
+	return err
+}
+
+func (c *Conn) CommitPrepared(ctx context.Context, gid string) error {
+	sql, err := buildPreparedTransactionSQL("COMMIT PREPARED", gid)
+	if err != nil {
+		return err
+	}
+	_, err = c.ExecContext(ctx, sql, nil)
+	return err
+}
+
+func (c *Conn) RollbackPrepared(ctx context.Context, gid string) error {
+	sql, err := buildPreparedTransactionSQL("ROLLBACK PREPARED", gid)
+	if err != nil {
+		return err
+	}
+	_, err = c.ExecContext(ctx, sql, nil)
+	return err
+}
+
+func (c *Conn) DetachToDormant(_ context.Context) error {
+	return &Error{
+		Kind:     ErrNotSupported,
+		Message:  "dormant detach/reattach is not yet exposed by the public Go driver surface",
+		SQLState: "0A000",
+	}
+}
+
+func (c *Conn) ReattachDormant(_ context.Context, _ string, _ string) error {
+	return &Error{
+		Kind:     ErrNotSupported,
+		Message:  "dormant detach/reattach is not yet exposed by the public Go driver surface",
+		SQLState: "0A000",
+	}
+}
+
+// CanonicalIsolationLabelForDriverIsolation documents the MGA meaning of the
+// SQL-standard isolation aliases accepted by the Go lane.
+//
+// READ UNCOMMITTED remains a legacy compatibility alias here, not a distinct
+// canonical MGA mode.
+func CanonicalIsolationLabelForDriverIsolation(level driver.IsolationLevel) (string, bool) {
+	switch level {
+	case driver.IsolationLevel(sql.LevelReadUncommitted):
+		return "READ COMMITTED", true
+	case driver.IsolationLevel(sql.LevelReadCommitted):
+		return "READ COMMITTED", true
+	case driver.IsolationLevel(sql.LevelRepeatableRead):
+		return "SNAPSHOT", true
+	case driver.IsolationLevel(sql.LevelSerializable):
+		return "SNAPSHOT TABLE STABILITY", true
+	default:
+		return "", false
+	}
+}
+
+// CanonicalReadCommittedModeLabel documents the MGA meaning of the explicit
+// READ COMMITTED sub-mode selector exposed by BeginTxEx.
+func CanonicalReadCommittedModeLabel(mode ReadCommittedMode) string {
+	switch mode {
+	case ReadCommittedModeDefault:
+		return "READ COMMITTED"
+	case ReadCommittedModeReadConsistency:
+		return "READ COMMITTED READ CONSISTENCY"
+	case ReadCommittedModeRecordVersion:
+		return "READ COMMITTED RECORD VERSION"
+	case ReadCommittedModeNoRecordVersion:
+		return "READ COMMITTED NO RECORD VERSION"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", mode)
+	}
+}
+
+func buildPreparedTransactionSQL(verb string, gid string) (string, error) {
+	normalized := strings.TrimSpace(gid)
+	if normalized == "" {
+		return "", &Error{Kind: ErrSyntax, Message: "global transaction id is required", SQLState: "42601"}
+	}
+	escaped := strings.ReplaceAll(normalized, "'", "''")
+	return fmt.Sprintf("%s '%s'", verb, escaped), nil
+}
+
 func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	return c.beginTx(ctx, TxnBeginOptions{
+		Isolation: opts.Isolation,
+		ReadOnly:  opts.ReadOnly,
+	})
+}
+
+// BeginTxEx exposes the driver-owned MGA begin surface for callers that need
+// more than the database/sql isolation/read-only subset.
+func (c *Conn) BeginTxEx(ctx context.Context, opts TxnBeginOptions) (*Tx, error) {
+	return c.beginTx(ctx, opts)
+}
+
+func (c *Conn) beginTx(ctx context.Context, opts TxnBeginOptions) (*Tx, error) {
 	if err := c.ensureOpen(ctx); err != nil {
 		return nil, err
+	}
+	if c.runtimeTxnActive && c.txnID == 0 {
+		if c.explicitTransaction {
+			return nil, &Error{Kind: ErrTransaction, Message: "transaction already active", SQLState: "25001"}
+		}
+		if !canAdoptFreshNativeBoundary(opts) {
+			return nil, &Error{
+				Kind:     ErrNotSupported,
+				Message:  "fresh native transaction boundaries only support default READ COMMITTED adoption in the Go lane",
+				SQLState: "0A000",
+			}
+		}
+		c.explicitTransaction = true
+		return &Tx{conn: c}, nil
+	}
+	if c.hasActiveTransaction() {
+		return nil, &Error{Kind: ErrTransaction, Message: "transaction already active", SQLState: "25001"}
 	}
 	flags := uint16(0)
 	isolation := isolationReadCommitted
 	if opts.Isolation != 0 {
 		flags |= txnFlagHasIsolation
+		if _, ok := CanonicalIsolationLabelForDriverIsolation(opts.Isolation); !ok {
+			return nil, &Error{
+				Kind:     ErrNotSupported,
+				Message:  fmt.Sprintf("isolation level %d is not supported", opts.Isolation),
+				SQLState: "0A000",
+			}
+		}
 		switch opts.Isolation {
 		case driver.IsolationLevel(sql.LevelReadUncommitted):
 			isolation = isolationReadUncommitted
@@ -739,26 +890,40 @@ func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 			isolation = isolationRepeatableRead
 		case driver.IsolationLevel(sql.LevelSerializable):
 			isolation = isolationSerializable
-		default:
-			return nil, &Error{
-				Kind:     ErrNotSupported,
-				Message:  fmt.Sprintf("isolation level %d is not supported", opts.Isolation),
-				SQLState: "0A000",
-			}
 		}
+	}
+	readCommittedMode := readCommittedModeDefault
+	if opts.ReadCommittedMode != nil {
+		if opts.Isolation != 0 {
+			switch opts.Isolation {
+			case driver.IsolationLevel(sql.LevelReadUncommitted), driver.IsolationLevel(sql.LevelReadCommitted):
+			default:
+				return nil, &Error{
+					Kind:     ErrNotSupported,
+					Message:  "read committed mode requires a READ COMMITTED isolation alias",
+					SQLState: "0A000",
+				}
+			}
+		} else {
+			flags |= txnFlagHasIsolation
+			isolation = isolationReadCommitted
+		}
+		flags |= txnFlagHasReadCommittedMode
+		readCommittedMode = byte(*opts.ReadCommittedMode)
 	}
 	accessMode := byte(0)
 	if opts.ReadOnly {
 		flags |= txnFlagHasAccess
 		accessMode = 1
 	}
-	payload := buildTxnBeginPayload(flags, 0, 0, isolation, accessMode, 0, 0, 0)
+	payload := buildTxnBeginPayload(flags, 0, 0, isolation, accessMode, 0, 0, 0, readCommittedMode)
 	if err := c.sendMessage(msgTxnBegin, payload, 0, false); err != nil {
 		return nil, err
 	}
 	if _, _, _, err := c.drainUntilReady(ctx); err != nil {
 		return nil, err
 	}
+	c.explicitTransaction = true
 	return &Tx{conn: c}, nil
 }
 
@@ -770,7 +935,7 @@ func (c *Conn) Savepoint(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if c.txnID == 0 {
+	if !c.hasActiveTransaction() {
 		return &Error{Kind: ErrTransaction, Message: "savepoint requires an active transaction", SQLState: "25000"}
 	}
 	payload := buildTxnSavepointPayload(savepointName)
@@ -789,7 +954,7 @@ func (c *Conn) ReleaseSavepoint(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if c.txnID == 0 {
+	if !c.hasActiveTransaction() {
 		return &Error{Kind: ErrTransaction, Message: "release savepoint requires an active transaction", SQLState: "25000"}
 	}
 	payload := buildTxnReleasePayload(savepointName)
@@ -808,7 +973,7 @@ func (c *Conn) RollbackToSavepoint(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if c.txnID == 0 {
+	if !c.hasActiveTransaction() {
 		return &Error{Kind: ErrTransaction, Message: "rollback to savepoint requires an active transaction", SQLState: "25000"}
 	}
 	payload := buildTxnRollbackToPayload(savepointName)
@@ -951,11 +1116,11 @@ func (c *Conn) sendExtendedQueryWithMaxRows(sql string, args []driver.NamedValue
 		case msgError:
 			return buildProtocolError(msg.body)
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err != nil {
 				return err
 			}
-			c.txnID = txnID
+			c.applyRuntimeReadyState(status, txnID)
 			goto described
 		default:
 			continue
@@ -1007,9 +1172,9 @@ func (c *Conn) Ping(ctx context.Context) error {
 		case msgPong:
 			return nil
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err == nil {
-				c.txnID = txnID
+				c.applyRuntimeReadyState(status, txnID)
 			}
 			return nil
 		case msgError:
@@ -1021,7 +1186,25 @@ func (c *Conn) Ping(ctx context.Context) error {
 }
 
 func (c *Conn) ResetSession(ctx context.Context) error {
-	_ = ctx
+	c.mu.Lock()
+	closed := c.closed || c.raw == nil
+	txnActive := c.explicitTransaction || c.txnID != 0
+	c.mu.Unlock()
+	if closed {
+		c.clearBorrowReuseState()
+		return driver.ErrBadConn
+	}
+	if txnActive {
+		if err := c.sendMessage(msgTxnRollback, buildTxnRollbackPayload(0), 0, false); err != nil {
+			c.clearBorrowReuseState()
+			return driver.ErrBadConn
+		}
+		if _, _, _, err := c.drainUntilReady(ctx); err != nil {
+			c.clearBorrowReuseState()
+			return driver.ErrBadConn
+		}
+	}
+	c.clearBorrowReuseState()
 	return nil
 }
 
@@ -1150,6 +1333,19 @@ func (c *Conn) LastPlan() *queryPlan {
 
 func (c *Conn) LastSblr() *sblrCompiled {
 	return c.lastSblr
+}
+
+func (c *Conn) clearBorrowReuseState() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Pool/session handoff must not let the next borrower observe stale plan/SBLR
+	// metadata or continue an abandoned explicit transaction.
+	c.lastPlan = nil
+	c.lastSblr = nil
+	c.explicitTransaction = false
+	if c.closed || c.raw == nil {
+		c.clearTransactionState()
+	}
 }
 
 func (c *Conn) QuerySblr(ctx context.Context, hash uint64, bytecode []byte, params []driver.NamedValue) (driver.Rows, error) {
@@ -1578,8 +1774,18 @@ func (c *Conn) handleAsyncMessage(msg protocolMessage) bool {
 				}
 			case "current_txn_id":
 				if parsed, err := parseUint64String(value); err == nil {
-					c.txnID = parsed
+					c.applyRuntimeTxnID(parsed)
 				}
+			}
+		}
+		return true
+	case msgTxnStatus:
+		status, txnID, err := parseTxnStatus(msg.body)
+		if err == nil {
+			if status == 'T' {
+				c.applyRuntimeTxnID(txnID)
+			} else {
+				c.clearTransactionState()
 			}
 		}
 		return true
@@ -1662,6 +1868,78 @@ func parseUint64String(value string) (uint64, error) {
 	return strconv.ParseUint(trimmed, 10, 64)
 }
 
+func canAdoptFreshNativeBoundary(opts TxnBeginOptions) bool {
+	return (opts.Isolation == 0 || opts.Isolation == driver.IsolationLevel(sql.LevelReadCommitted)) &&
+		(opts.ReadCommittedMode == nil || *opts.ReadCommittedMode == ReadCommittedModeDefault) &&
+		!opts.ReadOnly
+}
+
+func (c *Conn) applyRuntimeTxnID(txnID uint64) {
+	c.txnID = txnID
+	if txnID != 0 {
+		c.runtimeTxnActive = true
+	}
+}
+
+func (c *Conn) applyRuntimeReadyState(status byte, txnID uint64) {
+	c.txnID = txnID
+	if status != 0 {
+		// READY is authoritative for native MGA transaction activity. A fresh
+		// boundary may remain active while the public wire header still reports
+		// txn_id == 0.
+		c.runtimeTxnActive = true
+		return
+	}
+	c.clearTransactionState()
+}
+
+func (c *Conn) clearTransactionState() {
+	c.txnID = 0
+	c.runtimeTxnActive = false
+	c.explicitTransaction = false
+}
+
+func (c *Conn) hasActiveTransaction() bool {
+	return c.runtimeTxnActive || c.txnID != 0
+}
+
+func (c *Conn) drainImmediateReopenBoundary() error {
+	if c.raw == nil {
+		return nil
+	}
+	_ = c.raw.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+	defer func() {
+		_ = c.raw.SetReadDeadline(time.Time{})
+	}()
+	for {
+		msg, err := c.receive()
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				return nil
+			}
+			return err
+		}
+		if c.handleAsyncMessage(msg) {
+			continue
+		}
+		switch msg.header.typ {
+		case msgError:
+			return buildProtocolError(msg.body)
+		case msgReady:
+			status, txnID, _, err := parseReady(msg.body)
+			if err != nil {
+				return err
+			}
+			c.applyRuntimeReadyState(status, txnID)
+			_ = c.raw.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+			continue
+		default:
+			c.queue(msg)
+			return nil
+		}
+	}
+}
+
 func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, error) {
 	var tag string
 	var rows uint64
@@ -1689,9 +1967,9 @@ func (c *Conn) drainUntilReady(ctx context.Context) (string, uint64, uint64, err
 				return "", 0, 0, err
 			}
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err == nil {
-				c.txnID = txnID
+				c.applyRuntimeReadyState(status, txnID)
 			}
 			return tag, rows, lastID, nil
 		default:
@@ -1840,9 +2118,9 @@ executeBatch:
 			c.endOperation(span, false)
 			return totalRows, buildProtocolError(msg.body)
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err == nil {
-				c.txnID = txnID
+				c.applyRuntimeReadyState(status, txnID)
 			}
 			c.endOperation(span, true)
 			return totalRows, nil
@@ -2007,8 +2285,11 @@ func (t *Tx) Commit() error {
 	if err := t.conn.sendMessage(msgTxnCommit, buildTxnCommitPayload(0), 0, false); err != nil {
 		return err
 	}
-	_, _, _, err := t.conn.drainUntilReady(context.Background())
-	return err
+	if _, _, _, err := t.conn.drainUntilReady(context.Background()); err != nil {
+		return err
+	}
+	t.conn.explicitTransaction = false
+	return t.conn.drainImmediateReopenBoundary()
 }
 
 func (t *Tx) Rollback() error {
@@ -2018,8 +2299,11 @@ func (t *Tx) Rollback() error {
 	if err := t.conn.sendMessage(msgTxnRollback, buildTxnRollbackPayload(0), 0, false); err != nil {
 		return err
 	}
-	_, _, _, err := t.conn.drainUntilReady(context.Background())
-	return err
+	if _, _, _, err := t.conn.drainUntilReady(context.Background()); err != nil {
+		return err
+	}
+	t.conn.explicitTransaction = false
+	return t.conn.drainImmediateReopenBoundary()
 }
 
 func (t *Tx) Savepoint(name string) error {

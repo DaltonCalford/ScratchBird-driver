@@ -27,8 +27,15 @@ pub use client::{
     QueryResult, QueryStream, ResultSetSummary,
 };
 pub use config::Config;
-pub use errors::{Error, ErrorKind, Result};
+pub use errors::{
+    is_retryable_sqlstate, retry_scope_for_sqlstate, Error, ErrorKind, Result, RetryScope,
+};
 pub use pool::{with_retry, ConnectionPool, PoolConfig, PoolStats, PooledConnection, RetryConfig};
+pub use protocol::{
+    canonical_read_committed_mode_label, READ_COMMITTED_MODE_DEFAULT,
+    READ_COMMITTED_MODE_NO_RECORD_VERSION, READ_COMMITTED_MODE_READ_CONSISTENCY,
+    READ_COMMITTED_MODE_RECORD_VERSION,
+};
 pub use sql::{normalize, normalize_callable, normalize_callable_sql, NormalizedQuery, Params};
 pub use types::{
     Column, Date, Decimal, Geometry, Interval, Json, Jsonb, Money, Param, Range, RangeValue,

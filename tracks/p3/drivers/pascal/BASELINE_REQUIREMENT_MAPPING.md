@@ -5,6 +5,38 @@
 - Maps this lane's current capability coverage to JDBCBL groups: `CONN`, `TXN`, `EXEC`, `META`, `TYPE`, `ERR`, `RES`.
 - All statements below are anchored to lane-local source and test files.
 
+## MGA Recovery Contract
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `BeginTransactionEx(...)` exposes the canonical MGA begin payload fields for
+  isolation/access/deferrable/wait/timeout/autocommit/conflict-action, and
+  the overloaded `BeginTransactionEx(..., ReadCommittedMode)` plus adapter
+  `StartTransactionEx(..., ReadCommittedMode)` surfaces now expose the
+  canonical `READ COMMITTED` sub-mode selector directly.
+  `CanonicalReadCommittedModeName(...)` makes that selector explicit in lane
+  source, including `READ COMMITTED READ CONSISTENCY`, while
+  lane source now spells out the current isolation-byte meaning:
+  `READ UNCOMMITTED` remains a legacy compatibility alias,
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`.
+- `RetryScopeForSqlState(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay.
+- `SupportsPreparedTransactions()` plus `PrepareTransaction(...)`,
+  `CommitPrepared(...)`, and `RollbackPrepared(...)` make prepared / limbo
+  control explicit through canonical transaction-control SQL.
+- `SupportsDormantReattach() -> false`, `DetachToDormant()`, and
+  `ReattachDormant(...)` keep dormant truth explicit and fail closed until
+  the public front door exposes a real dormant token flow.
+- `AllowPortalResume` / `ResumeSuspendedPortal(...)` keep result resume
+  limited to explicit `MSG_PORTAL_SUSPENDED` state instead of blind
+  continuation.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL: CONN)
 - Current status: Implemented
 - Lane-local source anchors:
@@ -30,6 +62,7 @@
 - Lane-local source anchors:
   - `src/ScratchBird.Client.pas:451`, `src/ScratchBird.Client.pas:457`, `src/ScratchBird.Client.pas:459`, `src/ScratchBird.Client.pas:477`, `src/ScratchBird.Client.pas:489`, `src/ScratchBird.Client.pas:501`, `src/ScratchBird.Client.pas:512`, `src/ScratchBird.Client.pas:523`
   - `src/ScratchBird.Client.pas:1243`, `src/ScratchBird.Client.pas:1249`, `src/ScratchBird.Client.pas:1255`
+  - `src/ScratchBird.Client.pas` (`SupportsPreparedTransactions`, `PrepareTransaction`, `CommitPrepared`, `RollbackPrepared`, `SupportsDormantReattach`, `DetachToDormant`, `ReattachDormant`)
   - `src/ScratchBird.Protocol.pas:545`, `src/ScratchBird.Protocol.pas:553`, `src/ScratchBird.Protocol.pas:558`, `src/ScratchBird.Protocol.pas:563`, `src/ScratchBird.Protocol.pas:571`, `src/ScratchBird.Protocol.pas:576`
   - `src/ScratchBird.FireDAC.pas:120`, `src/ScratchBird.FireDAC.pas:125`, `src/ScratchBird.FireDAC.pas:131`, `src/ScratchBird.FireDAC.pas:136` (adapter transaction begin/begin-ex/commit/rollback forwarding)
   - `src/ScratchBird.IBX.pas:118`, `src/ScratchBird.IBX.pas:123`, `src/ScratchBird.IBX.pas:129`, `src/ScratchBird.IBX.pas:134` (adapter transaction begin/begin-ex/commit/rollback forwarding)
@@ -37,6 +70,7 @@
   - `src/ScratchBird.SQLdb.pas:119`, `src/ScratchBird.SQLdb.pas:124`, `src/ScratchBird.SQLdb.pas:130`, `src/ScratchBird.SQLdb.pas:135` (adapter transaction begin/begin-ex/commit/rollback forwarding)
 - Lane-local test anchors:
   - `tests/TxnExecParityTests.pas:66`, `tests/TxnExecParityTests.pas:87`, `tests/TxnExecParityTests.pas:100`, `tests/TxnExecParityTests.pas:121`, `tests/TxnExecParityTests.pas:174`
+  - `tests/TxnExecParityTests.pas` (prepared control SQL emission, blank global-transaction-id validation, and dormant fail-closed capability surface)
   - `tests/AdapterTransactionOptionsTests.pas:32`, `tests/AdapterTransactionOptionsTests.pas:50`, `tests/AdapterTransactionOptionsTests.pas:68`, `tests/AdapterTransactionOptionsTests.pas:86` (adapter `StartTransactionEx` disconnected guard parity across FireDAC/IBX/Zeos/SQLdb)
   - `tests/TxnStateTransitionsTests.pas:228`, `tests/TxnStateTransitionsTests.pas:275` (deterministic wire-ready transaction state transitions across begin/savepoint/release/rollback-to/commit and begin/rollback lifecycle paths, `BeginTransactionEx` option-matrix payload assertions, and injected `40001` conflict-path retry/no-active-txn guard behavior)
   - `tests/IntegrationTest.pas:225`, `tests/IntegrationTest.pas:251`, `tests/IntegrationTest.pas:446` (env-gated live transaction lifecycle coverage for begin/savepoint/release/rollback-to/commit and begin/rollback)
@@ -49,7 +83,7 @@
   - `src/ScratchBird.Client.pas:656`, `src/ScratchBird.Client.pas:689`, `src/ScratchBird.Client.pas:713`, `src/ScratchBird.Client.pas:718`, `src/ScratchBird.Client.pas:1621`, `src/ScratchBird.Client.pas:1636`
   - `src/ScratchBird.Client.pas:175`, `src/ScratchBird.Client.pas:775` (first-class `ExecuteBatch` API with per-statement summary output)
   - `src/ScratchBird.Client.pas:176`, `src/ScratchBird.Client.pas:798` (first-class `QueryMulti` API with rowset materialization per statement)
-  - `src/ScratchBird.Client.pas:374` (`MSG_PORTAL_SUSPENDED` resume path emits `MSG_EXECUTE` with current max rows)
+  - `src/ScratchBird.Client.pas` (`AllowPortalResume` / `ResumeSuspendedPortal(...)` gate `MSG_PORTAL_SUSPENDED` continuation and reject unsuspended resume with `55000`)
   - `src/ScratchBird.Client.pas:1358` (`HandleAsyncMessage` now treats `MSG_NOTICE` as informational async traffic during result-stream reads)
   - `src/ScratchBird.Client.pas:48`, `src/ScratchBird.Client.pas:371`, `src/ScratchBird.Client.pas:372` (`TScratchBirdResultStream` generated-key exposure via `LastInsertId`/`HasLastInsertId` from `MSG_COMMAND_COMPLETE`)
   - `src/ScratchBird.Client.pas:274`, `src/ScratchBird.Common.pas:111`
@@ -65,7 +99,7 @@
   - `tests/QueryMultiTests.pas:269` (`QueryMulti` materializes per-statement rowsets including column/row data and generated-key metadata)
   - `tests/QueryMultiTests.pas:320` (`QueryMulti` preserves SQL blank-text guard behavior with `42601`)
   - `tests/StreamControlBackpressureTests.pas:200` (client `StreamControl` emits `MSG_STREAM_CONTROL` with encoded window/timeout payload)
-  - `tests/StreamControlBackpressureTests.pas:221` (`MSG_PORTAL_SUSPENDED` read loop triggers `MSG_EXECUTE` resume/backpressure follow-up)
+  - `tests/StreamControlBackpressureTests.pas:221` (`MSG_PORTAL_SUSPENDED` read loop triggers guarded `MSG_EXECUTE` resume/backpressure follow-up only after the explicit suspended state is observed)
   - `tests/StreamControlBackpressureTests.pas:257` (result stream captures generated key metadata via `LastInsertId`/`HasLastInsertId`)
   - `tests/StreamControlBackpressureTests.pas:286` (result stream ignores async `MSG_NOTICE` frames without surfacing unsupported-message failures)
   - `tests/AdapterPrepareLifecycleTests.pas:146` (adapter prepare guardrails for missing connection/database assignment)
@@ -75,9 +109,9 @@
   - `tests/AdapterPrepareLifecycleTests.pas:305` (SQLdb prepare snapshot and normalized parameter ordering reuse on exec)
   - `tests/TxnExecParityTests.pas:142`, `tests/TxnExecParityTests.pas:193`
   - `tests/SqlTests.pas:42`, `tests/SqlTests.pas:54`, `tests/SqlTests.pas:63`
-  - `tests/IntegrationTest.pas:198`, `tests/IntegrationTest.pas:215`, `tests/IntegrationTest.pas:255`, `tests/IntegrationTest.pas:263`, `tests/IntegrationTest.pas:271`, `tests/IntegrationTest.pas:277`, `tests/IntegrationTest.pas:408`, `tests/IntegrationTest.pas:422`, `tests/IntegrationTest.pas:445`, `tests/IntegrationTest.pas:447`, `tests/IntegrationTest.pas:449`, `tests/IntegrationTest.pas:454` (env-gated live prepared query, batch, multi-result, stream-control, and fixture-backed generated-key execution coverage with optional SQL/expected-id overrides)
+  - `tests/IntegrationTest.pas:193`, `tests/IntegrationTest.pas:210`, `tests/IntegrationTest.pas:250`, `tests/IntegrationTest.pas:258`, `tests/IntegrationTest.pas:266`, `tests/IntegrationTest.pas:272`, `tests/IntegrationTest.pas:403`, `tests/IntegrationTest.pas:417`, `tests/IntegrationTest.pas:440`, `tests/IntegrationTest.pas:442`, `tests/IntegrationTest.pas:444`, `tests/IntegrationTest.pas:449` (env-gated live prepared query, batch, multi-result, stream-control, and optional generated-key execution coverage; generated-key live verification runs only when `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL` is set)
 - Parity notes:
-  - Live advanced execution checks remain env-gated in `tests/IntegrationTest.pas`, with deterministic lane coverage for batch/multi-result, stream-control/backpressure, generated-key extraction, and async notice handling.
+  - Live advanced execution checks remain env-gated in `tests/IntegrationTest.pas`. Generated-key live verification is opt-in via `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`, while deterministic lane coverage continues to prove batch/multi-result, stream-control/backpressure, generated-key extraction, and async notice handling.
 
 ## META (JDBCBL: META)
 - Current status: Implemented
@@ -142,7 +176,7 @@
 ## ERR (JDBCBL: ERR)
 - Current status: Implemented
 - Lane-local source anchors:
-  - `src/ScratchBird.Errors.pas:47`, `src/ScratchBird.Errors.pas:55`
+  - `src/ScratchBird.Errors.pas:52`, `src/ScratchBird.Errors.pas:60`, `src/ScratchBird.Errors.pas:100`
   - `src/ScratchBird.Protocol.pas:821`
   - `src/ScratchBird.Client.pas:997`
 - Lane-local test anchors:
@@ -150,6 +184,7 @@
   - `tests/ErrorMappingTests.pas:55` (category mapping matrix: warning/no-data/connection/not-supported/data/integrity/auth/txn/syntax/resource/limit/operator/system/internal)
   - `tests/ErrorMappingTests.pas:73` (fallback behavior for unknown SQLSTATE class)
   - `tests/ErrorMappingTests.pas:78` (fallback behavior for invalid SQLSTATE length)
+  - `tests/ErrorMappingTests.pas:83` (`RetryScopeForSqlState` / `IsRetryableSqlState` make statement-vs-reconnect-vs-none boundaries explicit)
 - Gaps/next actions:
   - `BuildQueryError` parses severity from wire payload but categorization is SQLSTATE-driven (`src/ScratchBird.Client.pas:997`).
 

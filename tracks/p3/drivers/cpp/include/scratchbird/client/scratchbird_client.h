@@ -53,6 +53,13 @@ typedef struct sb_error {
     char message[256];
 } sb_error;
 
+typedef enum sb_retry_scope {
+    SB_RETRY_SCOPE_NONE = 0,
+    SB_RETRY_SCOPE_RECONNECT = 1,
+    SB_RETRY_SCOPE_STATEMENT = 2,
+    SB_RETRY_SCOPE_TRANSACTION = 3
+} sb_retry_scope;
+
 typedef enum sb_type {
     SB_TYPE_NULL = 0,
     SB_TYPE_BOOLEAN = 1,
@@ -143,16 +150,103 @@ typedef struct sb_column_meta {
     int nullable;
 } sb_column_meta;
 
+enum {
+    SB_TXN_FLAG_HAS_ISOLATION = 0x0001,
+    SB_TXN_FLAG_HAS_ACCESS_MODE = 0x0002,
+    SB_TXN_FLAG_HAS_DEFERRABLE = 0x0004,
+    SB_TXN_FLAG_HAS_WAIT_MODE = 0x0008,
+    SB_TXN_FLAG_HAS_TIMEOUT = 0x0010,
+    SB_TXN_FLAG_HAS_AUTOCOMMIT = 0x0020,
+    SB_TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100
+};
+
+typedef enum sb_read_committed_mode {
+    SB_READ_COMMITTED_MODE_DEFAULT = 0,
+    SB_READ_COMMITTED_MODE_READ_CONSISTENCY = 1,
+    SB_READ_COMMITTED_MODE_RECORD_VERSION = 2,
+    SB_READ_COMMITTED_MODE_NO_RECORD_VERSION = 3
+} sb_read_committed_mode;
+
 typedef struct sb_txn_options {
     uint16_t flags;
     uint8_t conflict_action;
     uint8_t autocommit_mode;
+    /* SQL-style compatibility aliases:
+     *   0 => READ UNCOMMITTED (legacy alias, not a distinct canonical MGA mode)
+     *   1 => READ COMMITTED
+     *   2 => REPEATABLE READ => canonical SNAPSHOT
+     *   3 => SERIALIZABLE => canonical SNAPSHOT TABLE STABILITY
+     * READ COMMITTED READ CONSISTENCY is requested separately via
+     * read_committed_mode plus SB_TXN_FLAG_HAS_READ_COMMITTED_MODE.
+     */
     uint8_t isolation_level;
+    uint8_t read_committed_mode;
     uint8_t access_mode;
     uint8_t deferrable;
     uint8_t wait_mode;
     uint32_t timeout_ms;
 } sb_txn_options;
+
+static inline const char* sb_canonical_isolation_name(uint8_t isolation_level) {
+    switch (isolation_level) {
+        case 0:
+        case 1:
+            return "READ COMMITTED";
+        case 2:
+            return "SNAPSHOT";
+        case 3:
+            return "SNAPSHOT TABLE STABILITY";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static inline const char* sb_canonical_read_committed_mode_name(uint8_t read_committed_mode) {
+    switch (read_committed_mode) {
+        case SB_READ_COMMITTED_MODE_DEFAULT:
+            return "DEFAULT";
+        case SB_READ_COMMITTED_MODE_READ_CONSISTENCY:
+            return "READ CONSISTENCY";
+        case SB_READ_COMMITTED_MODE_RECORD_VERSION:
+            return "RECORD VERSION";
+        case SB_READ_COMMITTED_MODE_NO_RECORD_VERSION:
+            return "NO RECORD VERSION";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static inline sb_retry_scope sb_retry_scope_for_sqlstate(const char* sqlstate) {
+    if (!sqlstate ||
+        !sqlstate[0] || !sqlstate[1] || !sqlstate[2] || !sqlstate[3] || !sqlstate[4] || sqlstate[5]) {
+        return SB_RETRY_SCOPE_NONE;
+    }
+    if ((sqlstate[0] == '4' && sqlstate[1] == '0' &&
+         ((sqlstate[2] == '0' && sqlstate[3] == '0' && sqlstate[4] == '1') ||
+          (sqlstate[2] == 'P' && sqlstate[3] == '0' && sqlstate[4] == '1')))) {
+        return SB_RETRY_SCOPE_STATEMENT;
+    }
+    if (sqlstate[0] == '0' && sqlstate[1] == '8') {
+        return SB_RETRY_SCOPE_RECONNECT;
+    }
+    return SB_RETRY_SCOPE_NONE;
+}
+
+static inline int sb_is_retryable_sqlstate(const char* sqlstate) {
+    return sb_retry_scope_for_sqlstate(sqlstate) != SB_RETRY_SCOPE_NONE;
+}
+
+static inline int sb_supports_prepared_transactions(void) {
+    return 1;
+}
+
+static inline int sb_supports_dormant_reattach(void) {
+    return 0;
+}
+
+static inline int sb_supports_portal_resume(void) {
+    return 0;
+}
 
 typedef void (*sb_notification_listener_fn)(const char* channel,
                                             const uint8_t* payload,
@@ -264,6 +358,14 @@ int sb_tx_begin(sb_connection* conn, sb_error* err);
 int sb_tx_begin_ex(sb_connection* conn, const sb_txn_options* options, sb_error* err);
 int sb_tx_commit(sb_connection* conn, sb_error* err);
 int sb_tx_rollback(sb_connection* conn, sb_error* err);
+int sb_tx_prepare_transaction(sb_connection* conn, const char* global_transaction_id, sb_error* err);
+int sb_tx_commit_prepared(sb_connection* conn, const char* global_transaction_id, sb_error* err);
+int sb_tx_rollback_prepared(sb_connection* conn, const char* global_transaction_id, sb_error* err);
+int sb_tx_detach_to_dormant(sb_connection* conn, sb_error* err);
+int sb_tx_reattach_dormant(sb_connection* conn,
+                           const char* dormant_id,
+                           const char* auth_token,
+                           sb_error* err);
 int sb_tx_savepoint(sb_connection* conn, const char* name, sb_error* err);
 int sb_tx_release_savepoint(sb_connection* conn, const char* name, sb_error* err);
 int sb_tx_rollback_to(sb_connection* conn, const char* name, sb_error* err);

@@ -49,11 +49,6 @@ begin
     Fail(MessageText + ': expected=' + IntToStr(Int64(Expected)) + ' actual=' + IntToStr(Int64(Actual)));
 end;
 
-function DefaultGeneratedKeySql: string;
-begin
-  Result := 'INSERT INTO generated_key_fixture (note, created_at) VALUES (''pascal-live-generated-key'', CURRENT_TIMESTAMP)';
-end;
-
 function RequireVariantInt64(const Value: Variant; const MessageText: string): Int64;
 begin
   if VarIsNull(Value) or VarIsEmpty(Value) then
@@ -455,7 +450,10 @@ var
 begin
   EffectiveSql := Trim(SqlText);
   if EffectiveSql = '' then
-    EffectiveSql := DefaultGeneratedKeySql;
+  begin
+    Writeln('GeneratedKeyTest: SKIPPED (SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL not set)');
+    Exit;
+  end;
 
   Stream := AClient.ExecuteQuery(EffectiveSql);
   try

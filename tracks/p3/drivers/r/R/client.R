@@ -36,6 +36,7 @@ sb_connect <- function(dsn = "", ...) {
   client$explicit_txn <- FALSE
   client$cancel_requested <- FALSE
   client$needs_reconnect <- FALSE
+  client$portal_resume_pending <- FALSE
   if (identical(cfg$front_door_mode, "manager_proxy")) {
     sb_perform_manager_connect(client)
   }
@@ -48,11 +49,77 @@ sb_connect <- function(dsn = "", ...) {
 sb_disconnect <- function(client) {
   try(sb_socket_close(client$con), silent = TRUE)
   client$con <- NULL
+  sb_clear_transaction_state(client)
+  client$cancel_requested <- FALSE
+  client$needs_reconnect <- FALSE
+  client$portal_resume_pending <- FALSE
+}
+
+sb_transaction_active <- function(client) {
+  isTRUE(client$txn_active) || (!is.null(client$txn_id) && is.finite(client$txn_id) && client$txn_id != 0)
+}
+
+sb_clear_transaction_state <- function(client) {
   client$txn_id <- 0
   client$txn_active <- FALSE
   client$explicit_txn <- FALSE
-  client$cancel_requested <- FALSE
-  client$needs_reconnect <- FALSE
+  invisible(NULL)
+}
+
+sb_apply_runtime_txn_id <- function(client, txn_id) {
+  parsed <- suppressWarnings(as.numeric(txn_id))
+  if (is.na(parsed) || parsed <= 0) {
+    client$txn_id <- 0
+    return(invisible(NULL))
+  }
+  client$txn_id <- parsed
+  client$txn_active <- TRUE
+  invisible(NULL)
+}
+
+sb_apply_runtime_ready_state <- function(client, status, txn_id) {
+  parsed_status <- suppressWarnings(as.integer(status))
+  parsed_txn <- suppressWarnings(as.numeric(txn_id))
+  if (is.na(parsed_txn) || parsed_txn < 0) parsed_txn <- 0
+  client$txn_id <- parsed_txn
+  if (!is.na(parsed_status) && parsed_status != 0L) {
+    # READY is authoritative for native MGA transaction activity. The
+    # engine can publish a fresh active boundary while the public wire
+    # header still reports txn_id == 0.
+    client$txn_active <- TRUE
+    return(invisible(NULL))
+  }
+  sb_clear_transaction_state(client)
+}
+
+sb_can_adopt_fresh_native_boundary <- function(args) {
+  arg_names <- names(args)
+  if (is.null(arg_names)) arg_names <- character()
+  isolation <- if ("isolation_level" %in% arg_names) args$isolation_level else SB_ISOLATION_READ_COMMITTED
+  normalized_isolation <- suppressWarnings(as.integer(isolation))
+  if (is.na(normalized_isolation) ||
+      !(normalized_isolation %in% c(SB_ISOLATION_READ_UNCOMMITTED, SB_ISOLATION_READ_COMMITTED))) {
+    return(FALSE)
+  }
+  read_committed_mode <- if ("read_committed_mode" %in% arg_names) {
+    args$read_committed_mode
+  } else {
+    SB_READ_COMMITTED_MODE_DEFAULT
+  }
+  normalized_rc_mode <- suppressWarnings(as.integer(read_committed_mode))
+  if (is.na(normalized_rc_mode) || normalized_rc_mode != SB_READ_COMMITTED_MODE_DEFAULT) {
+    return(FALSE)
+  }
+  if ("access_mode" %in% arg_names ||
+      "deferrable" %in% arg_names ||
+      "wait" %in% arg_names ||
+      "timeout_ms" %in% arg_names ||
+      "autocommit_mode" %in% arg_names) {
+    return(FALSE)
+  }
+  conflict_action <- if ("conflict_action" %in% arg_names) args$conflict_action else 0L
+  normalized_conflict <- suppressWarnings(as.integer(conflict_action))
+  !is.na(normalized_conflict) && normalized_conflict == 0L
 }
 
 sb_set_autocommit <- function(client, value) {
@@ -64,6 +131,9 @@ sb_is_valid <- function(client) {
 }
 
 sb_prepare_connection <- function(client) {
+  # MGA recovery rule: reconnect only repairs the transport/session surface.
+  # Local transaction/prepared state is reset so the lane never treats an
+  # abandoned in-flight transaction as resumable after reconnect.
   if (!isTRUE(client$needs_reconnect) && !is.null(client$con)) {
     return(invisible(NULL))
   }
@@ -74,7 +144,7 @@ sb_prepare_connection <- function(client) {
 
   client$con <- sb_open_socket(client$cfg)
   client$attachment_id <- raw(16)
-  client$txn_id <- 0
+  sb_clear_transaction_state(client)
   client$sequence <- 0
   client$last_query_sequence <- 0
   client$parameters <- list()
@@ -82,9 +152,8 @@ sb_prepare_connection <- function(client) {
   client$last_sblr <- NULL
   client$prepared <- new.env(parent = emptyenv())
   client$autocommit <- TRUE
-  client$txn_active <- FALSE
-  client$explicit_txn <- FALSE
   client$cancel_requested <- FALSE
+  client$portal_resume_pending <- FALSE
 
   if (identical(client$cfg$front_door_mode, "manager_proxy")) {
     sb_perform_manager_connect(client)
@@ -125,6 +194,8 @@ sb_clear_result <- function(result) {
 }
 
 sb_cancel <- function(client) {
+  # Cancel tears down the live wire and forces a clean reconnect path. The next
+  # operation must re-enter through engine truth instead of resuming local TXN state.
   client$cancel_requested <- TRUE
   payload <- build_cancel_payload(0L, client$last_query_sequence)
   if (!is.null(client$con)) {
@@ -132,27 +203,44 @@ sb_cancel <- function(client) {
     try(sb_socket_close(client$con), silent = TRUE)
   }
   client$con <- NULL
-  client$txn_active <- FALSE
-  client$explicit_txn <- FALSE
+  sb_clear_transaction_state(client)
+  client$portal_resume_pending <- FALSE
   client$needs_reconnect <- TRUE
   invisible(NULL)
 }
 
 sb_begin <- function(client, ...) {
-  if (isTRUE(client$txn_active)) {
+  args <- list(...)
+  flags <- 0L
+  has_isolation <- "isolation_level" %in% names(args)
+  isolation <- if (has_isolation) args$isolation_level else SB_ISOLATION_READ_COMMITTED
+  read_committed_mode <- if ("read_committed_mode" %in% names(args)) args$read_committed_mode else NULL
+  if (!is.null(read_committed_mode)) {
+    normalized_isolation <- suppressWarnings(as.integer(isolation))
+    if (is.na(normalized_isolation) ||
+        !(normalized_isolation %in% c(SB_ISOLATION_READ_UNCOMMITTED, SB_ISOLATION_READ_COMMITTED))) {
+      stop("read_committed_mode requires a READ COMMITTED isolation alias")
+    }
+    flags <- bitwOr(flags, SB_TXN_FLAG_HAS_READ_COMMITTED_MODE)
+    if (!has_isolation) {
+      isolation <- SB_ISOLATION_READ_COMMITTED
+      has_isolation <- TRUE
+    }
+  }
+  if (sb_transaction_active(client)) {
     if (isTRUE(client$explicit_txn)) {
       stop("Transaction already active")
+    }
+    if (!sb_can_adopt_fresh_native_boundary(args)) {
+      sb_stop_sqlstate(
+        "0A000",
+        "non-default transaction options cannot adopt an existing fresh native boundary"
+      )
     }
     client$explicit_txn <- TRUE
     return(invisible(NULL))
   }
-  args <- list(...)
-  flags <- 0L
-  isolation <- SB_ISOLATION_READ_COMMITTED
-  if ("isolation_level" %in% names(args)) {
-    isolation <- args$isolation_level
-    flags <- bitwOr(flags, SB_TXN_FLAG_HAS_ISOLATION)
-  }
+  if (has_isolation) flags <- bitwOr(flags, SB_TXN_FLAG_HAS_ISOLATION)
   if ("access_mode" %in% names(args)) flags <- bitwOr(flags, SB_TXN_FLAG_HAS_ACCESS)
   if ("deferrable" %in% names(args)) flags <- bitwOr(flags, SB_TXN_FLAG_HAS_DEFERRABLE)
   if ("wait" %in% names(args)) flags <- bitwOr(flags, SB_TXN_FLAG_HAS_WAIT)
@@ -166,46 +254,105 @@ sb_begin <- function(client, ...) {
     if (!is.null(args$access_mode)) args$access_mode else 0L,
     if (isTRUE(args$deferrable)) 1L else 0L,
     if (isTRUE(args$wait)) 1L else 0L,
-    if (!is.null(args$timeout_ms)) args$timeout_ms else 0L
+    if (!is.null(args$timeout_ms)) args$timeout_ms else 0L,
+    if (!is.null(read_committed_mode)) read_committed_mode else SB_READ_COMMITTED_MODE_DEFAULT
   )
   sb_send_message(client, SB_MSG_TXN_BEGIN, payload, 0L, FALSE)
   sb_drain_until_ready(client)
-  client$txn_active <- TRUE
   client$explicit_txn <- TRUE
 }
 
+sb_canonical_isolation_label <- function(isolation_level = SB_ISOLATION_READ_COMMITTED) {
+  normalized <- suppressWarnings(as.integer(isolation_level))
+  if (is.na(normalized)) {
+    return(paste0("UNKNOWN(", deparse(isolation_level), ")"))
+  }
+  if (normalized == SB_ISOLATION_READ_UNCOMMITTED) return("READ COMMITTED")
+  if (normalized == SB_ISOLATION_READ_COMMITTED) return("READ COMMITTED")
+  if (normalized == SB_ISOLATION_REPEATABLE_READ) return("SNAPSHOT")
+  if (normalized == SB_ISOLATION_SERIALIZABLE) return("SNAPSHOT TABLE STABILITY")
+  paste0("UNKNOWN(", normalized, ")")
+}
+
+sb_canonical_read_committed_mode_label <- function(read_committed_mode = SB_READ_COMMITTED_MODE_DEFAULT) {
+  normalized <- suppressWarnings(as.integer(read_committed_mode))
+  if (is.na(normalized)) {
+    return(paste0("UNKNOWN(", deparse(read_committed_mode), ")"))
+  }
+  if (normalized == SB_READ_COMMITTED_MODE_DEFAULT) return("READ COMMITTED")
+  if (normalized == SB_READ_COMMITTED_MODE_READ_CONSISTENCY) return("READ COMMITTED READ CONSISTENCY")
+  if (normalized == SB_READ_COMMITTED_MODE_RECORD_VERSION) return("READ COMMITTED RECORD VERSION")
+  if (normalized == SB_READ_COMMITTED_MODE_NO_RECORD_VERSION) return("READ COMMITTED NO RECORD VERSION")
+  paste0("UNKNOWN(", normalized, ")")
+}
+
+sb_supports_prepared_transactions <- function(client) {
+  TRUE
+}
+
+sb_supports_dormant_reattach <- function(client) {
+  FALSE
+}
+
+sb_prepare_transaction <- function(client, global_transaction_id) {
+  sql <- sb_build_prepared_transaction_sql("PREPARE TRANSACTION", global_transaction_id)
+  result <- sb_execute_query(client, sql)
+  sb_fetch_rows(result, -1)
+  invisible(NULL)
+}
+
+sb_commit_prepared <- function(client, global_transaction_id) {
+  sql <- sb_build_prepared_transaction_sql("COMMIT PREPARED", global_transaction_id)
+  result <- sb_execute_query(client, sql)
+  sb_fetch_rows(result, -1)
+  invisible(NULL)
+}
+
+sb_rollback_prepared <- function(client, global_transaction_id) {
+  sql <- sb_build_prepared_transaction_sql("ROLLBACK PREPARED", global_transaction_id)
+  result <- sb_execute_query(client, sql)
+  sb_fetch_rows(result, -1)
+  invisible(NULL)
+}
+
+sb_detach_to_dormant <- function(client) {
+  sb_stop_sqlstate("0A000", "dormant detach is not supported by the R driver")
+}
+
+sb_reattach_dormant <- function(client, dormant_id, auth_token = NULL) {
+  sb_stop_sqlstate("0A000", "dormant reattach is not supported by the R driver")
+}
+
 sb_commit <- function(client, flags = 0L) {
-  if (!isTRUE(client$txn_active)) stop("commit requires an active transaction")
+  if (!sb_transaction_active(client)) stop("commit requires an active transaction")
   result <- sb_execute_query(client, "COMMIT")
   sb_fetch_rows(result, -1)
-  client$txn_active <- TRUE
   client$explicit_txn <- FALSE
   sb_ensure_implicit_transaction(client)
 }
 
 sb_rollback <- function(client, flags = 0L) {
-  if (!isTRUE(client$txn_active)) stop("rollback requires an active transaction")
+  if (!sb_transaction_active(client)) stop("rollback requires an active transaction")
   result <- sb_execute_query(client, "ROLLBACK")
   sb_fetch_rows(result, -1)
-  client$txn_active <- TRUE
   client$explicit_txn <- FALSE
   sb_ensure_implicit_transaction(client)
 }
 
 sb_savepoint <- function(client, name) {
-  if (!isTRUE(client$txn_active)) stop("savepoint requires an active transaction")
+  if (!sb_transaction_active(client)) stop("savepoint requires an active transaction")
   result <- sb_execute_query(client, paste("SAVEPOINT", quote_identifier(name)))
   sb_fetch_rows(result, -1)
 }
 
 sb_release_savepoint <- function(client, name) {
-  if (!isTRUE(client$txn_active)) stop("release savepoint requires an active transaction")
+  if (!sb_transaction_active(client)) stop("release savepoint requires an active transaction")
   result <- sb_execute_query(client, paste("RELEASE SAVEPOINT", quote_identifier(name)))
   sb_fetch_rows(result, -1)
 }
 
 sb_rollback_to_savepoint <- function(client, name) {
-  if (!isTRUE(client$txn_active)) stop("rollback to savepoint requires an active transaction")
+  if (!sb_transaction_active(client)) stop("rollback to savepoint requires an active transaction")
   result <- sb_execute_query(client, paste("ROLLBACK TO SAVEPOINT", quote_identifier(name)))
   sb_fetch_rows(result, -1)
 }
@@ -225,7 +372,7 @@ sb_ping <- function(client) {
     if (response$type == SB_MSG_PONG) return(invisible(NULL))
     if (response$type == SB_MSG_READY) {
       parsed <- parse_ready(response$payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
       return(invisible(NULL))
     }
     if (response$type == SB_MSG_ERROR) sb_raise_query_error(response$payload)
@@ -266,6 +413,8 @@ sb_execute_sblr <- function(client, sblr_hash, sblr_bytecode, params = list()) {
   result$done <- FALSE
   result$page_size <- 0L
   result$pending_rows <- list()
+  result$response_started <- FALSE
+  result$ignored_stray_ready <- FALSE
   result
 }
 
@@ -296,6 +445,8 @@ sb_attach_list <- function(client) {
   result$done <- FALSE
   result$page_size <- 0L
   result$pending_rows <- list()
+  result$response_started <- FALSE
+  result$ignored_stray_ready <- FALSE
   result
 }
 
@@ -516,7 +667,7 @@ sb_startup_and_auth <- function(client) {
     } else if (type == SB_MSG_AUTH_OK) {
       parsed <- parse_auth_ok(payload)
       client$attachment_id <- response$attachment_id
-      client$txn_id <- response$txn_id
+      sb_apply_runtime_txn_id(client, response$txn_id)
       if (!is.null(scram) && length(parsed$server_info) > 0) {
         server_info <- rawToChar(parsed$server_info)
         if (startsWith(server_info, "v=")) sb_scram_verify_server_final(scram, server_info)
@@ -528,7 +679,7 @@ sb_startup_and_auth <- function(client) {
       next
     } else if (type == SB_MSG_READY) {
       parsed <- parse_ready(payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
       break
     } else if (type == SB_MSG_ERROR) {
       sb_raise_query_error(payload)
@@ -562,6 +713,18 @@ quote_identifier <- function(name) {
   paste0('"', gsub('"', '""', name, fixed = TRUE), '"')
 }
 
+sb_quote_string_literal <- function(value) {
+  paste0("'", gsub("'", "''", value, fixed = TRUE), "'")
+}
+
+sb_build_prepared_transaction_sql <- function(verb, global_transaction_id) {
+  normalized <- trimws(global_transaction_id)
+  if (!nzchar(normalized)) {
+    sb_stop_sqlstate("42601", "global transaction id is required")
+  }
+  paste(verb, sb_quote_string_literal(normalized))
+}
+
 sb_execute_query <- function(client, sql, params = list()) {
   sb_prepare_connection(client)
   sb_ensure_implicit_transaction(client)
@@ -579,6 +742,8 @@ sb_execute_query <- function(client, sql, params = list()) {
   result$done <- FALSE
   result$page_size <- page_size
   result$pending_rows <- list()
+  result$response_started <- FALSE
+  result$ignored_stray_ready <- FALSE
   result
 }
 
@@ -586,6 +751,22 @@ sb_ensure_implicit_transaction <- function(client) {
   client$txn_active <- TRUE
   client$explicit_txn <- FALSE
   invisible(NULL)
+}
+
+sb_allow_portal_resume <- function(client) {
+  client$portal_resume_pending <- TRUE
+  invisible(NULL)
+}
+
+sb_resume_suspended_portal <- function(client, page_size) {
+  if (!isTRUE(client$portal_resume_pending)) {
+    sb_stop_sqlstate("55000", "portal resume requires explicit suspended state")
+  }
+  client$portal_resume_pending <- FALSE
+  rows_to_fetch <- suppressWarnings(as.integer(page_size))
+  if (is.na(rows_to_fetch) || rows_to_fetch < 1L) rows_to_fetch <- 1L
+  exec_payload <- build_execute_payload("", rows_to_fetch)
+  sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
 }
 
 sb_prime_result_metadata <- function(result) {
@@ -601,27 +782,39 @@ sb_prime_result_metadata <- function(result) {
       sb_drain_ready_after_error(client)
       sb_raise_query_error(payload)
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
+      result$response_started <- TRUE
       result$columns <- parse_row_description(payload)
       return(invisible(result))
     } else if (type == SB_MSG_DATA_ROW) {
+      result$response_started <- TRUE
       values <- parse_data_row(payload)
       result$pending_rows[[length(result$pending_rows) + 1L]] <- sb_decode_row(result$columns, values)
       if (length(result$columns) > 0) {
         return(invisible(result))
       }
     } else if (type == SB_MSG_COMMAND_COMPLETE) {
+      result$response_started <- TRUE
       parsed <- parse_command_complete(payload)
       result$command_tag <- parsed$tag
       result$rowcount <- parsed$rows
     } else if (type == SB_MSG_PARAMETER_STATUS) {
       parsed <- parse_parameter_status(payload)
-      client$parameters[[parsed$name]] <- parsed$value
+      sb_handle_parameter_status(client, parsed$name, parsed$value)
     } else if (type == SB_MSG_PORTAL_SUSPENDED) {
-      exec_payload <- build_execute_payload("", result$page_size)
-      client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
+      sb_allow_portal_resume(client)
+      client$last_query_sequence <- sb_resume_suspended_portal(client, result$page_size)
     } else if (type == SB_MSG_READY) {
       parsed <- parse_ready(payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
+      client$portal_resume_pending <- FALSE
+      if (!isTRUE(result$response_started) && !isTRUE(result$ignored_stray_ready)) {
+        # Native rollback/commit can publish a fresh-session reopen boundary
+        # before the next statement response begins. Ignore one READY frame
+        # that arrives before any result material so the actual query is not
+        # misclassified as empty.
+        result$ignored_stray_ready <- TRUE
+        next
+      }
       result$done <- TRUE
       return(invisible(result))
     }
@@ -665,23 +858,31 @@ sb_result_next_row <- function(result) {
       sb_drain_ready_after_error(client)
       sb_raise_query_error(payload)
     } else if (type == SB_MSG_ROW_DESCRIPTION) {
+      result$response_started <- TRUE
       result$columns <- parse_row_description(payload)
     } else if (type == SB_MSG_DATA_ROW) {
+      result$response_started <- TRUE
       values <- parse_data_row(payload)
       return(sb_decode_row(result$columns, values))
     } else if (type == SB_MSG_COMMAND_COMPLETE) {
+      result$response_started <- TRUE
       parsed <- parse_command_complete(payload)
       result$command_tag <- parsed$tag
       result$rowcount <- parsed$rows
     } else if (type == SB_MSG_PARAMETER_STATUS) {
       parsed <- parse_parameter_status(payload)
-      client$parameters[[parsed$name]] <- parsed$value
+      sb_handle_parameter_status(client, parsed$name, parsed$value)
     } else if (type == SB_MSG_PORTAL_SUSPENDED) {
-      exec_payload <- build_execute_payload("", result$page_size)
-      client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
+      sb_allow_portal_resume(client)
+      client$last_query_sequence <- sb_resume_suspended_portal(client, result$page_size)
     } else if (type == SB_MSG_READY) {
       parsed <- parse_ready(payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
+      client$portal_resume_pending <- FALSE
+      if (!isTRUE(result$response_started) && !isTRUE(result$ignored_stray_ready)) {
+        result$ignored_stray_ready <- TRUE
+        next
+      }
       result$done <- TRUE
       return(NULL)
     }
@@ -747,12 +948,47 @@ sb_sqlstate_error_class <- function(sqlstate) {
   NULL
 }
 
+sb_retry_scope_for_sqlstate <- function(sqlstate) {
+  if (is.null(sqlstate) || !is.character(sqlstate) || length(sqlstate) != 1L) {
+    return("none")
+  }
+  if (!nzchar(sqlstate) || nchar(sqlstate) != 5L) {
+    return("none")
+  }
+  if (sqlstate %in% c("40001", "40P01")) {
+    return("statement")
+  }
+  if (substr(sqlstate, 1, 2) == "08") {
+    return("reconnect")
+  }
+  "none"
+}
+
+sb_is_retryable_sqlstate <- function(sqlstate) {
+  sb_retry_scope_for_sqlstate(sqlstate) != "none"
+}
+
 sb_error_condition_classes <- function(sqlstate) {
   classes <- c()
   mapped <- sb_sqlstate_error_class(sqlstate)
   if (!is.null(mapped)) classes <- c(classes, mapped)
   if (nzchar(sqlstate)) classes <- c(classes, "scratchbird_sqlstate_error")
   unique(c(classes, "scratchbird_error", "error", "condition"))
+}
+
+sb_stop_sqlstate <- function(sqlstate, message, detail = "", hint = "", severity = "ERROR") {
+  formatted <- if (nzchar(sqlstate)) paste0("[", sqlstate, "] ", message) else message
+  stop(structure(
+    list(
+      message = formatted,
+      call = NULL,
+      sqlstate = sqlstate,
+      detail = detail,
+      hint = hint,
+      severity = severity
+    ),
+    class = sb_error_condition_classes(sqlstate)
+  ))
 }
 
 sb_raise_query_error <- function(payload) {
@@ -794,7 +1030,7 @@ sb_handle_parameter_status <- function(client, name, value) {
   }
   if (name == "current_txn_id") {
     parsed <- suppressWarnings(as.numeric(value))
-    if (!is.na(parsed)) client$txn_id <- parsed
+    if (!is.na(parsed)) sb_apply_runtime_txn_id(client, parsed)
   }
   client$parameters[[name]] <- value
 }
@@ -818,6 +1054,15 @@ sb_handle_async <- function(client, type, payload) {
     client$last_sblr <- parse_sblr_compiled(payload)
     return(TRUE)
   }
+  if (type == SB_MSG_TXN_STATUS) {
+    parsed <- parse_txn_status(payload)
+    if (identical(parsed$status, "T")) {
+      sb_apply_runtime_txn_id(client, parsed$txn_id)
+    } else {
+      sb_clear_transaction_state(client)
+    }
+    return(TRUE)
+  }
   FALSE
 }
 
@@ -827,7 +1072,8 @@ sb_drain_until_ready <- function(client) {
     if (sb_handle_async(client, response$type, response$payload)) next
     if (response$type == SB_MSG_READY) {
       parsed <- parse_ready(response$payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
+      client$portal_resume_pending <- FALSE
       break
     }
     if (response$type == SB_MSG_ERROR) sb_raise_query_error(response$payload)
@@ -840,7 +1086,8 @@ sb_drain_ready_after_error <- function(client) {
     if (sb_handle_async(client, response$type, response$payload)) next
     if (response$type == SB_MSG_READY) {
       parsed <- parse_ready(response$payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
+      client$portal_resume_pending <- FALSE
       break
     }
     if (response$type == SB_MSG_ERROR) next
@@ -853,6 +1100,7 @@ sb_send_simple_query <- function(client, sql, max_rows = 0L) {
   payload <- build_query_payload(sql, flags, max_rows, 0L)
   client$last_plan <- NULL
   client$last_sblr <- NULL
+  client$portal_resume_pending <- FALSE
   client$last_query_sequence <- sb_send_message(client, SB_MSG_QUERY, payload, 0L, FALSE)
 }
 
@@ -878,6 +1126,7 @@ sb_send_extended_query <- function(client, sql, params, max_rows = 0L) {
   exec_payload <- build_execute_payload("", max_rows)
   client$last_plan <- NULL
   client$last_sblr <- NULL
+  client$portal_resume_pending <- FALSE
   client$last_query_sequence <- sb_send_message(client, SB_MSG_EXECUTE, exec_payload, 0L, FALSE)
   if (max_rows == 0L) {
     sb_send_message(client, SB_MSG_SYNC, raw(), 0L, FALSE)
@@ -900,7 +1149,8 @@ sb_describe_statement <- function(client, statement_name) {
       param_count <- length(parse_parameter_description(payload))
     } else if (type == SB_MSG_READY) {
       parsed <- parse_ready(payload)
-      client$txn_id <- parsed$txn_id
+      sb_apply_runtime_ready_state(client, parsed$status, parsed$txn_id)
+      client$portal_resume_pending <- FALSE
       break
     }
   }

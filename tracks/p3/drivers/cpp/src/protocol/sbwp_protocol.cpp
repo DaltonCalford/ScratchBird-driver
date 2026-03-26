@@ -4,6 +4,7 @@
 
 namespace scratchbird::protocol {
 namespace {
+constexpr uint16_t kTxnFlagHasReadCommittedMode = 0x0100;
 
 void setError(core::ErrorContext* ctx, const char* msg) {
     if (ctx) {
@@ -342,8 +343,10 @@ std::vector<uint8_t> buildTxnBeginPayload(uint16_t flags,
                                           uint8_t access_mode,
                                           uint8_t deferrable,
                                           uint8_t wait_mode,
-                                          uint32_t timeout_ms) {
-    std::vector<uint8_t> payload(2 + 1 + 1 + 1 + 1 + 1 + 1 + 4);
+                                          uint32_t timeout_ms,
+                                          uint8_t read_committed_mode) {
+    const bool has_read_committed_mode = (flags & kTxnFlagHasReadCommittedMode) != 0;
+    std::vector<uint8_t> payload(has_read_committed_mode ? 16 : 12);
     writeU16(payload, 0, flags);
     payload[2] = conflict_action;
     payload[3] = autocommit_mode;
@@ -352,6 +355,9 @@ std::vector<uint8_t> buildTxnBeginPayload(uint16_t flags,
     payload[6] = deferrable;
     payload[7] = wait_mode;
     writeU32(payload, 8, timeout_ms);
+    if (has_read_committed_mode) {
+        payload[12] = read_committed_mode;
+    }
     return payload;
 }
 

@@ -23,8 +23,9 @@ Notes:
 - Each integration test assumes the fixtures are loaded into the target database.
 - cancel_stream requires `SCRATCHBIRD_CONFORMANCE_CANCEL=1` when using the
   manifest harness.
-- The current shared static fixture set yields `2` rows for
-  `paging_basic_table` (`SELECT id FROM basic_table ORDER BY id`).
+- The current shared static fixture set yields `6` rows for
+  `paging_basic_table`
+  (`SELECT id FROM users.public.basic_table ORDER BY id`).
 
 ## Per-Driver Checklist
 

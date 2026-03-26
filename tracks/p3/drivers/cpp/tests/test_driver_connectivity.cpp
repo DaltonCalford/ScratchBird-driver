@@ -17,10 +17,12 @@
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#define private public
 #include "scratchbird/client/connection.h"
 #include "scratchbird/client/driver_config.h"
 #include "scratchbird/client/metadata.h"
 #include "scratchbird/client/network_client.h"
+#undef private
 #include "scratchbird/core/error_context.h"
 #include "scratchbird/core/status.h"
 #include "scratchbird/network/network.h"
@@ -367,6 +369,14 @@ std::string hexEncode(const uint8_t* data, size_t len) {
     return out;
 }
 
+std::optional<std::string> integrationDsn() {
+    const char* value = std::getenv("SCRATCHBIRD_TEST_DSN");
+    if (!value || value[0] == '\0') {
+        return std::nullopt;
+    }
+    return std::string(value);
+}
+
 struct NotificationProbe {
     int calls{0};
     std::string channel;
@@ -492,23 +502,32 @@ bool parseTxnBeginPayload(const std::vector<uint8_t>& payload,
                           uint8_t& conflict_action_out,
                           uint8_t& autocommit_mode_out,
                           uint8_t& isolation_level_out,
+                          uint8_t& read_committed_mode_out,
                           uint8_t& access_mode_out,
                           uint8_t& deferrable_out,
                           uint8_t& wait_mode_out,
                           uint32_t& timeout_ms_out,
                           std::string& error_out) {
-    if (payload.size() != 12) {
-        error_out = "txn begin payload size mismatch";
+    if (payload.size() < 12) {
+        error_out = "txn begin payload truncated";
         return false;
     }
     flags_out = readU16Le(payload.data());
     conflict_action_out = payload[2];
     autocommit_mode_out = payload[3];
     isolation_level_out = payload[4];
+    read_committed_mode_out = 0;
     access_mode_out = payload[5];
     deferrable_out = payload[6];
     wait_mode_out = payload[7];
     timeout_ms_out = readU32Le(payload.data() + 8);
+    if ((flags_out & SB_TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0) {
+        if (payload.size() < 13) {
+            error_out = "txn begin payload missing read committed mode";
+            return false;
+        }
+        read_committed_mode_out = payload[12];
+    }
     return true;
 }
 
@@ -1245,6 +1264,33 @@ TEST(DriverConnectivitySmokeTest, ConnectsWithCompressionCompatibilityParamsFrom
     EXPECT_NE(harness.startup_features & scratchbird::protocol::kFeatureCompression, 0ULL);
 }
 
+TEST(DriverCppApiClosureTest, HeaderHelpersExposeRetryBoundaryAndIsolationMeaning) {
+    EXPECT_STREQ(sb_canonical_isolation_name(0), "READ COMMITTED");
+    EXPECT_STREQ(sb_canonical_isolation_name(1), "READ COMMITTED");
+    EXPECT_STREQ(sb_canonical_isolation_name(2), "SNAPSHOT");
+    EXPECT_STREQ(sb_canonical_isolation_name(3), "SNAPSHOT TABLE STABILITY");
+    EXPECT_STREQ(sb_canonical_isolation_name(99), "UNKNOWN");
+    EXPECT_STREQ(sb_canonical_read_committed_mode_name(SB_READ_COMMITTED_MODE_DEFAULT), "DEFAULT");
+    EXPECT_STREQ(sb_canonical_read_committed_mode_name(
+                     SB_READ_COMMITTED_MODE_READ_CONSISTENCY),
+                 "READ CONSISTENCY");
+    EXPECT_STREQ(sb_canonical_read_committed_mode_name(
+                     SB_READ_COMMITTED_MODE_RECORD_VERSION),
+                 "RECORD VERSION");
+    EXPECT_STREQ(sb_canonical_read_committed_mode_name(
+                     SB_READ_COMMITTED_MODE_NO_RECORD_VERSION),
+                 "NO RECORD VERSION");
+    EXPECT_STREQ(sb_canonical_read_committed_mode_name(99), "UNKNOWN");
+
+    EXPECT_EQ(sb_retry_scope_for_sqlstate("40001"), SB_RETRY_SCOPE_STATEMENT);
+    EXPECT_EQ(sb_retry_scope_for_sqlstate("40P01"), SB_RETRY_SCOPE_STATEMENT);
+    EXPECT_EQ(sb_retry_scope_for_sqlstate("08006"), SB_RETRY_SCOPE_RECONNECT);
+    EXPECT_EQ(sb_retry_scope_for_sqlstate("57014"), SB_RETRY_SCOPE_NONE);
+    EXPECT_EQ(sb_retry_scope_for_sqlstate(nullptr), SB_RETRY_SCOPE_NONE);
+    EXPECT_TRUE(sb_is_retryable_sqlstate("40001"));
+    EXPECT_FALSE(sb_is_retryable_sqlstate("57014"));
+}
+
 TEST(DriverConnectivitySmokeTest, ConnectsWithGenericAuthRequestPayloadPreference) {
     scratchbird::network::NetworkInitGuard guard;
     ASSERT_TRUE(guard.isInitialized());
@@ -1502,6 +1548,7 @@ TEST(DriverTxnExecParityTest, CApiTxnBeginExEncodesEnterpriseOptions) {
              uint8_t conflict_action = 0;
              uint8_t autocommit_mode = 0;
              uint8_t isolation_level = 0;
+             uint8_t read_committed_mode = 0;
              uint8_t access_mode = 0;
              uint8_t deferrable = 0;
              uint8_t wait_mode = 0;
@@ -1511,6 +1558,7 @@ TEST(DriverTxnExecParityTest, CApiTxnBeginExEncodesEnterpriseOptions) {
                                        conflict_action,
                                        autocommit_mode,
                                        isolation_level,
+                                       read_committed_mode,
                                        access_mode,
                                        deferrable,
                                        wait_mode,
@@ -1518,10 +1566,12 @@ TEST(DriverTxnExecParityTest, CApiTxnBeginExEncodesEnterpriseOptions) {
                                        error)) {
                  return false;
              }
-             return flags == 0x07 &&
+             return flags == 0x0107 &&
                     conflict_action == 2 &&
                     autocommit_mode == 1 &&
                     isolation_level == 3 &&
+                    read_committed_mode ==
+                        SB_READ_COMMITTED_MODE_READ_CONSISTENCY &&
                     access_mode == 1 &&
                     deferrable == 1 &&
                     wait_mode == 1 &&
@@ -1544,6 +1594,7 @@ TEST(DriverTxnExecParityTest, CApiTxnBeginExEncodesEnterpriseOptions) {
     options.conflict_action = 2;
     options.autocommit_mode = 1;
     options.isolation_level = 3;
+    options.read_committed_mode = SB_READ_COMMITTED_MODE_READ_CONSISTENCY;
     options.access_mode = 1;
     options.deferrable = 1;
     options.wait_mode = 1;
@@ -2287,6 +2338,201 @@ TEST(DriverTxnExecParityTest, FeatureNotSupportedMapsToCNotImplemented) {
     EXPECT_EQ(err.code, SB_ERR_NOT_IMPLEMENTED);
 
     sb_disconnect(conn);
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverTxnExecParityTest, CApiPreparedAndDormantCapabilitiesStayExplicit) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    EXPECT_EQ(sb_supports_prepared_transactions(), 1);
+    EXPECT_EQ(sb_supports_dormant_reattach(), 0);
+    EXPECT_EQ(sb_supports_portal_resume(), 0);
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "PREPARE TRANSACTION")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 64)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != "PREPARE TRANSACTION 'gid''one'") {
+                 error = "unexpected prepare transaction SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "COMMIT PREPARED")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 65)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != "COMMIT PREPARED 'gid''one'") {
+                 error = "unexpected commit prepared SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "ROLLBACK PREPARED")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 66)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql;
+             if (!parseQueryPayloadSql(msg.body, sql, error)) {
+                 return false;
+             }
+             if (sql != "ROLLBACK PREPARED 'gid''one'") {
+                 error = "unexpected rollback prepared SQL";
+                 return false;
+             }
+             return true;
+         }}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    const std::string conn_str = "scratchbird://127.0.0.1:" + std::to_string(harness.port) +
+                                 "/main?sslmode=disable";
+    sb_error err{};
+    sb_connection* conn = sb_connect(conn_str.c_str(), &err);
+    ASSERT_NE(conn, nullptr) << err.message;
+
+    EXPECT_EQ(sb_tx_prepare_transaction(conn, " gid'one ", &err), SB_OK) << err.message;
+    EXPECT_EQ(sb_tx_commit_prepared(conn, " gid'one ", &err), SB_OK) << err.message;
+    EXPECT_EQ(sb_tx_rollback_prepared(conn, " gid'one ", &err), SB_OK) << err.message;
+
+    EXPECT_EQ(sb_tx_detach_to_dormant(conn, &err), SB_ERR_NOT_IMPLEMENTED);
+    EXPECT_EQ(err.code, SB_ERR_NOT_IMPLEMENTED);
+    EXPECT_NE(std::string(err.message).find("dormant"), std::string::npos);
+
+    EXPECT_EQ(sb_tx_reattach_dormant(conn, "dormant-1", "token", &err), SB_ERR_NOT_IMPLEMENTED);
+    EXPECT_EQ(err.code, SB_ERR_NOT_IMPLEMENTED);
+
+    EXPECT_EQ(sb_tx_prepare_transaction(conn, "   ", &err), SB_ERR_SYNTAX);
+    EXPECT_EQ(err.code, SB_ERR_SYNTAX);
+
+    sb_disconnect(conn);
+    harness.stop();
+    EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverTxnExecParityTest, CppPreparedDormantAndCapabilitySurfacesStayExplicit) {
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    EXPECT_TRUE(scratchbird::client::Connection::supportsPreparedTransactions());
+    EXPECT_FALSE(scratchbird::client::Connection::supportsDormantReattach());
+    EXPECT_FALSE(scratchbird::client::Connection::supportsPortalResume());
+
+    std::string sql;
+    scratchbird::core::ErrorContext builder_ctx;
+    auto status = scratchbird::client::Connection::buildPreparedTransactionSql(
+        "PREPARE TRANSACTION", " cpp'gid ", &sql, &builder_ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK);
+    EXPECT_EQ(sql, "PREPARE TRANSACTION 'cpp''gid'");
+
+    scratchbird::core::ErrorContext blank_ctx;
+    sql.clear();
+    status = scratchbird::client::Connection::buildPreparedTransactionSql(
+        "PREPARE TRANSACTION", "   ", &sql, &blank_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::SYNTAX_ERROR);
+    EXPECT_STREQ(blank_ctx.sqlstate, scratchbird::core::SQLSTATE_SYNTAX_ERROR);
+
+    ServerHarnessConfig harness_cfg;
+    harness_cfg.exchanges = {
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "PREPARE TRANSACTION")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 67)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql_text;
+             if (!parseQueryPayloadSql(msg.body, sql_text, error)) {
+                 return false;
+             }
+             if (sql_text != "PREPARE TRANSACTION 'cpp''gid'") {
+                 error = "unexpected C++ prepare transaction SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "COMMIT PREPARED")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 68)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql_text;
+             if (!parseQueryPayloadSql(msg.body, sql_text, error)) {
+                 return false;
+             }
+             if (sql_text != "COMMIT PREPARED 'cpp''gid'") {
+                 error = "unexpected C++ commit prepared SQL";
+                 return false;
+             }
+             return true;
+         }},
+        {scratchbird::protocol::MessageType::Query,
+         {{scratchbird::protocol::MessageType::CommandComplete,
+           buildCommandCompletePayload(0, 0, 0, "ROLLBACK PREPARED")},
+          {scratchbird::protocol::MessageType::Ready, buildReadyPayload(0, 0, 69)}},
+         [](const scratchbird::protocol::ProtocolMessage& msg, std::string& error) {
+             std::string sql_text;
+             if (!parseQueryPayloadSql(msg.body, sql_text, error)) {
+                 return false;
+             }
+             if (sql_text != "ROLLBACK PREPARED 'cpp''gid'") {
+                 error = "unexpected C++ rollback prepared SQL";
+                 return false;
+             }
+             return true;
+         }}
+    };
+
+    ServerHarness harness(std::move(harness_cfg));
+    setupIpv4Listener(harness);
+    harness.start();
+
+    scratchbird::client::ConnectionConfig config;
+    config.database_name = "main";
+    config.host = "127.0.0.1";
+    config.tcp_port = harness.port;
+    config.ssl_mode = "disable";
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext connect_ctx;
+    status = conn.connect(config, &connect_ctx);
+    ASSERT_EQ(status, scratchbird::core::Status::OK) << connect_ctx.message;
+
+    scratchbird::core::ErrorContext txn_ctx;
+    status = conn.prepareTransaction(" cpp'gid ", &txn_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::OK) << txn_ctx.message;
+    status = conn.commitPrepared(" cpp'gid ", &txn_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::OK) << txn_ctx.message;
+    status = conn.rollbackPrepared(" cpp'gid ", &txn_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::OK) << txn_ctx.message;
+
+    scratchbird::core::ErrorContext dormant_ctx;
+    status = conn.detachToDormant(&dormant_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::NOT_IMPLEMENTED);
+    EXPECT_STREQ(dormant_ctx.sqlstate, scratchbird::core::SQLSTATE_FEATURE_NOT_SUPPORTED);
+
+    scratchbird::core::ErrorContext reattach_ctx;
+    status = conn.reattachDormant("dormant-1", "token", &reattach_ctx);
+    EXPECT_EQ(status, scratchbird::core::Status::NOT_IMPLEMENTED);
+    EXPECT_STREQ(reattach_ctx.sqlstate, scratchbird::core::SQLSTATE_FEATURE_NOT_SUPPORTED);
+
+    conn.disconnect();
     harness.stop();
     EXPECT_TRUE(harness.error.empty()) << harness.error;
 }
@@ -3224,4 +3470,133 @@ TEST(DriverCppApiClosureTest, CApiComplexTypeStringAccessReturnsBinaryBackedPayl
     sb_disconnect(conn);
     harness.stop();
     EXPECT_TRUE(harness.error.empty()) << harness.error;
+}
+
+TEST(DriverCppApiClosureTest, NetworkClientDisconnectClearsAbandonedSessionState) {
+    scratchbird::client::NetworkClient client;
+    client.connected_ = true;
+    client.in_transaction_ = true;
+    client.last_error_ = "stale error";
+    client.next_sequence_ = 9;
+    client.last_query_sequence_ = 7;
+    client.query_progress_.rows_processed = 11;
+    client.query_progress_.bytes_processed = 12;
+    client.query_progress_.updated_at_micros = 13;
+    client.session_id_.fill(0xAB);
+    client.parameter_status_["attachment_id"] = "00112233-4455-6677-8899-aabbccddeeff";
+    client.parameter_status_["current_txn_id"] = "42";
+    client.notifications_.push_back({1, "chan", {'p'}, 1, 9});
+    scratchbird::client::NetworkPreparedStatement stmt;
+    stmt.valid_ = true;
+    stmt.statement_name_ = "stmt_one";
+    client.prepared_statements_.emplace(1, std::move(stmt));
+    client.last_plan_ = std::make_unique<scratchbird::protocol::QueryPlan>();
+    client.last_plan_->format = 1;
+    client.last_sblr_ = std::make_unique<scratchbird::protocol::SblrCompiled>();
+    client.last_sblr_->version = 2;
+
+    client.disconnect();
+
+    EXPECT_FALSE(client.connected_);
+    EXPECT_FALSE(client.in_transaction_);
+    EXPECT_TRUE(client.last_error_.empty());
+    EXPECT_EQ(client.next_sequence_, 0u);
+    EXPECT_EQ(client.last_query_sequence_, 0u);
+    EXPECT_EQ(client.query_progress_.rows_processed, 0u);
+    EXPECT_EQ(client.query_progress_.bytes_processed, 0u);
+    EXPECT_EQ(client.query_progress_.updated_at_micros, 0u);
+    EXPECT_TRUE(std::all_of(
+        client.session_id_.begin(),
+        client.session_id_.end(),
+        [](uint8_t byte) { return byte == 0; }));
+    EXPECT_TRUE(client.parameter_status_.empty());
+    EXPECT_TRUE(client.notifications_.empty());
+    EXPECT_TRUE(client.prepared_statements_.empty());
+    EXPECT_EQ(client.last_plan_, nullptr);
+    EXPECT_EQ(client.last_sblr_, nullptr);
+}
+
+TEST(DriverRecoveryIntegrationTest, CppReconnectDoesNotResurrectAbandonedTransaction) {
+    const auto dsn = integrationDsn();
+    if (!dsn.has_value()) {
+        GTEST_SKIP() << "SCRATCHBIRD_TEST_DSN not set";
+    }
+
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    scratchbird::client::Connection conn;
+    scratchbird::core::ErrorContext connect_ctx;
+    ASSERT_EQ(conn.connect(*dsn, "", "", &connect_ctx), scratchbird::core::Status::OK)
+        << connect_ctx.message;
+    ASSERT_TRUE(conn.isConnected());
+    EXPECT_TRUE(conn.inTransaction());
+
+    scratchbird::client::ResultSet result;
+    scratchbird::core::ErrorContext query_ctx;
+    ASSERT_EQ(conn.executeQuery("SELECT 1", &result, &query_ctx), scratchbird::core::Status::OK)
+        << query_ctx.message;
+    ASSERT_TRUE(result.next());
+    EXPECT_EQ(result.getInt32(0), 1);
+
+    scratchbird::core::ErrorContext savepoint_ctx;
+    ASSERT_EQ(conn.savepoint("dmrw007_live_cpp", &savepoint_ctx), scratchbird::core::Status::OK)
+        << savepoint_ctx.message;
+
+    conn.disconnect();
+    ASSERT_FALSE(conn.isConnected());
+    EXPECT_FALSE(conn.inTransaction());
+    EXPECT_EQ(conn.getState(), scratchbird::client::ConnectionState::DISCONNECTED);
+
+    scratchbird::core::ErrorContext reconnect_ctx;
+    ASSERT_EQ(conn.connect(*dsn, "", "", &reconnect_ctx), scratchbird::core::Status::OK)
+        << reconnect_ctx.message;
+    ASSERT_TRUE(conn.isConnected());
+    EXPECT_TRUE(conn.inTransaction());
+
+    scratchbird::core::ErrorContext stale_savepoint_ctx;
+    EXPECT_NE(conn.rollbackTo("dmrw007_live_cpp", &stale_savepoint_ctx), scratchbird::core::Status::OK);
+    EXPECT_TRUE(std::strncmp(stale_savepoint_ctx.sqlstate, "3B", 2) == 0)
+        << stale_savepoint_ctx.sqlstate;
+    ASSERT_TRUE(conn.inTransaction());
+
+    scratchbird::core::ErrorContext rollback_after_reopen_ctx;
+    ASSERT_EQ(conn.rollback(&rollback_after_reopen_ctx), scratchbird::core::Status::OK)
+        << rollback_after_reopen_ctx.message;
+    ASSERT_TRUE(conn.inTransaction());
+
+    scratchbird::core::ErrorContext fresh_savepoint_ctx;
+    ASSERT_EQ(conn.savepoint("dmrw007_live_cpp_fresh", &fresh_savepoint_ctx), scratchbird::core::Status::OK)
+        << fresh_savepoint_ctx.message;
+
+    conn.disconnect();
+}
+
+TEST(DriverRecoveryIntegrationTest, CApiReconnectDoesNotReuseAbandonedTransactionState) {
+    const auto dsn = integrationDsn();
+    if (!dsn.has_value()) {
+        GTEST_SKIP() << "SCRATCHBIRD_TEST_DSN not set";
+    }
+
+    scratchbird::network::NetworkInitGuard guard;
+    ASSERT_TRUE(guard.isInitialized());
+
+    sb_error err{};
+    sb_connection* conn = sb_connect(dsn->c_str(), &err);
+    ASSERT_NE(conn, nullptr) << err.message;
+
+    sb_result* result = sb_query(conn, "SELECT 1", &err);
+    ASSERT_NE(result, nullptr) << err.message;
+    sb_result_free(result);
+    ASSERT_EQ(sb_tx_savepoint(conn, "dmrw007_live_c", &err), SB_OK) << err.message;
+    sb_disconnect(conn);
+
+    conn = sb_connect(dsn->c_str(), &err);
+    ASSERT_NE(conn, nullptr) << err.message;
+
+    EXPECT_NE(sb_tx_rollback_to(conn, "dmrw007_live_c", &err), SB_OK);
+
+    ASSERT_EQ(sb_tx_rollback(conn, &err), SB_OK) << err.message;
+    ASSERT_EQ(sb_tx_savepoint(conn, "dmrw007_live_c_fresh", &err), SB_OK) << err.message;
+    sb_disconnect(conn);
 }

@@ -87,3 +87,27 @@ def test_raise_protocol_error_parser_failure_falls_back_to_query_failed(monkeypa
 
     with pytest.raises(errors.DatabaseError, match="query failed"):
         conn._raise_protocol_error(b"bad")
+
+
+@pytest.mark.parametrize(
+    ("sqlstate", "expected"),
+    [
+        ("40001", errors.RETRY_SCOPE_STATEMENT),
+        ("40P01", errors.RETRY_SCOPE_STATEMENT),
+        ("08006", errors.RETRY_SCOPE_RECONNECT),
+        ("08P01", errors.RETRY_SCOPE_RECONNECT),
+        ("57014", errors.RETRY_SCOPE_NONE),
+        ("23505", errors.RETRY_SCOPE_NONE),
+        (None, errors.RETRY_SCOPE_NONE),
+    ],
+)
+def test_retry_scope_for_sqlstate(sqlstate, expected):
+    assert errors.retry_scope_for_sqlstate(sqlstate) == expected
+    assert errors.is_retryable_sqlstate(sqlstate) is (expected != errors.RETRY_SCOPE_NONE)
+
+
+def test_extract_sqlstate_reads_protocol_prefix():
+    err = errors.OperationalError("[08006] connection lost during read")
+
+    assert errors.extract_sqlstate(err) == "08006"
+    assert errors.extract_sqlstate("plain error") is None

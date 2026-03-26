@@ -24,6 +24,9 @@ defmodule ScratchBird.Ecto.Connection do
 
   @impl true
   def disconnect(_err, state) do
+    # DBConnection reconnects this lane by calling connect/1 for a new state.
+    # We intentionally tear down the current wire/session here instead of
+    # preserving any local transaction claim across the disconnect boundary.
     _ = Connection.close(state.conn)
     :ok
   end

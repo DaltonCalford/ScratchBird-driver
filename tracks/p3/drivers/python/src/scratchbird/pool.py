@@ -419,7 +419,12 @@ def retry_with_backoff(
     max_delay: float = 5.0,
     retryable_errors: Optional[Set[str]] = None,
 ) -> Callable:
-    """Decorator for retry logic with exponential backoff."""
+    """Decorator for retry logic with exponential backoff.
+
+    This helper only governs caller-approved retries from a fresh boundary. It
+    does not make in-flight transactions resumable and must not be treated as a
+    WAL-style replay mechanism.
+    """
     
     if retryable_errors is None:
         retryable_errors = {"OperationalError", "Connection Error"}

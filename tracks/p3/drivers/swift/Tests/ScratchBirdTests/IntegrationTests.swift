@@ -107,6 +107,31 @@ final class IntegrationTests: XCTestCase {
         }
     }
 
+    func testIntegrationDefaultBeginAdoptsFreshBoundaryAndRejectsNestedBegin() async throws {
+        let config = try integrationConfig()
+        try await withConnection(config) { conn in
+            try await conn.begin()
+            do {
+                try await conn.begin()
+                XCTFail("Expected nested begin to fail")
+            } catch let error as ScratchBirdTransactionException {
+                XCTAssertEqual(error.sqlState, "25001")
+            }
+            try await conn.commit()
+        }
+    }
+
+    func testIntegrationPostRollbackQueryReturnsActualResult() async throws {
+        let config = try integrationConfig()
+        try await withConnection(config) { conn in
+            try await conn.rollback()
+            let result = try await conn.query("SELECT 2")
+            XCTAssertFalse(result.rows.isEmpty)
+            XCTAssertFalse(result.rows[0].isEmpty)
+            XCTAssertEqual(asInt(result.rows[0][0]), 2)
+        }
+    }
+
     func testIntegrationMetadataWrappersAndSchemaTree() async throws {
         let config = try integrationConfig()
         try await withConnection(config) { conn in

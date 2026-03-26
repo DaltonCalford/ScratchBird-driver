@@ -39,6 +39,36 @@ const MCP_MSG_AUTH_CONTINUE = 0x67;
 const MCP_MSG_DB_CONNECT = 0x69;
 const MCP_AUTH_METHOD_TOKEN = 4;
 
+const int readCommittedModeDefault = 0;
+const int readCommittedModeReadConsistency = 1;
+const int readCommittedModeRecordVersion = 2;
+const int readCommittedModeNoRecordVersion = 3;
+
+String canonicalReadCommittedModeLabel(int mode) {
+  switch (mode) {
+    case readCommittedModeDefault:
+      return 'READ COMMITTED';
+    case readCommittedModeReadConsistency:
+      return 'READ COMMITTED READ CONSISTENCY';
+    case readCommittedModeRecordVersion:
+      return 'READ COMMITTED RECORD VERSION';
+    case readCommittedModeNoRecordVersion:
+      return 'READ COMMITTED NO RECORD VERSION';
+    default:
+      return 'UNKNOWN($mode)';
+  }
+}
+
+int _normalizePortalResumeMaxRows({required int fetchSize}) {
+  if (fetchSize <= 0) {
+    return 0;
+  }
+  if (fetchSize > 0xffffffff) {
+    return 0xffffffff;
+  }
+  return fetchSize;
+}
+
 class ScratchBirdColumn {
   final String name;
   final int tableOid;
@@ -109,6 +139,7 @@ class ScratchBirdClient {
   int _txnId = 0;
   bool _transactionActive = false;
   bool _explicitTransaction = false;
+  bool _portalResumePending = false;
   final Map<String, String> _parameters = {};
   final List<void Function(NotificationMessage)> _notificationHandlers = [];
   QueryPlanMessage? _lastPlan;
@@ -336,10 +367,7 @@ class ScratchBirdClient {
   }
 
   Future<void> close() async {
-    _lastQuerySequence = null;
-    _txnId = 0;
-    _transactionActive = false;
-    _explicitTransaction = false;
+    _clearAbandonedSessionState();
     await _socket?.close();
     _stopResilience();
   }
@@ -403,8 +431,14 @@ class ScratchBirdClient {
   QueryPlanMessage? get lastQueryPlan => _lastPlan;
   SblrCompiledMessage? get lastSblrCompiled => _lastSblr;
 
+  /// Public isolation aliases map onto the canonical MGA modes:
+  /// READ COMMITTED => READ COMMITTED
+  /// REPEATABLE READ => SNAPSHOT
+  /// SERIALIZABLE => SNAPSHOT TABLE STABILITY
+  /// readCommittedMode selects the canonical READ COMMITTED sub-mode.
   Future<void> begin({
     int? isolationLevel,
+    int? readCommittedMode,
     int? accessMode,
     bool? deferrable,
     bool? wait,
@@ -423,8 +457,23 @@ class ScratchBirdClient {
     }
     await _withResilience("txn_begin", null, () async {
       var flags = 0;
-      final isolation = isolationLevel ?? isolationReadCommitted;
+      var isolation = isolationLevel ?? isolationReadCommitted;
       if (isolationLevel != null) flags |= txnFlagHasIsolation;
+      if (readCommittedMode != null) {
+        if (isolationLevel != null &&
+            isolationLevel != isolationReadUncommitted &&
+            isolationLevel != isolationReadCommitted) {
+          throw const ScratchBirdNotSupportedException(
+            'readCommittedMode requires a READ COMMITTED isolation alias',
+            sqlState: '0A000',
+          );
+        }
+        flags |= txnFlagHasReadCommittedMode;
+        if (isolationLevel == null) {
+          isolation = isolationReadCommitted;
+          flags |= txnFlagHasIsolation;
+        }
+      }
       if (accessMode != null) flags |= txnFlagHasAccess;
       if (deferrable != null) flags |= txnFlagHasDeferrable;
       if (wait != null) flags |= txnFlagHasWait;
@@ -439,6 +488,7 @@ class ScratchBirdClient {
         deferrable == true ? 1 : 0,
         wait == true ? 1 : 0,
         timeoutMs ?? 0,
+        readCommittedMode ?? readCommittedModeDefault,
       );
       await _sendMessage(MessageType.txnBegin, payload);
       await _drainUntilReady();
@@ -465,6 +515,45 @@ class ScratchBirdClient {
     });
     _transactionActive = true;
     _explicitTransaction = false;
+  }
+
+  bool supportsPreparedTransactions() => true;
+
+  Future<void> prepareTransaction(String globalTransactionId) async {
+    await query(_buildPreparedTransactionSql(
+      'PREPARE TRANSACTION',
+      globalTransactionId,
+    ));
+  }
+
+  Future<void> commitPrepared(String globalTransactionId) async {
+    await query(_buildPreparedTransactionSql(
+      'COMMIT PREPARED',
+      globalTransactionId,
+    ));
+  }
+
+  Future<void> rollbackPrepared(String globalTransactionId) async {
+    await query(_buildPreparedTransactionSql(
+      'ROLLBACK PREPARED',
+      globalTransactionId,
+    ));
+  }
+
+  bool supportsDormantReattach() => false;
+
+  Future<void> detachToDormant() async {
+    throw const ScratchBirdNotSupportedException(
+      'Dormant detach requires an explicit public token flow and is not yet exposed in this lane',
+      sqlState: '0A000',
+    );
+  }
+
+  Future<void> reattachDormant(String dormantId, [String? authToken]) async {
+    throw const ScratchBirdNotSupportedException(
+      'Dormant reattach requires an explicit engine-issued token and is not yet exposed in this lane',
+      sqlState: '0A000',
+    );
   }
 
   Future<void> savepoint(String name) async {
@@ -596,6 +685,7 @@ class ScratchBirdClient {
     if (sequence == null) {
       throw const ScratchBirdExecutionException('No active query to cancel');
     }
+    _portalResumePending = false;
     final payload = buildCancelPayload(0, sequence);
     await _sendMessage(MessageType.cancel, payload, flags: 0x08);
   }
@@ -701,16 +791,16 @@ class ScratchBirdClient {
           rows.add(decoded);
           break;
         case MessageType.portalSuspended:
-          _lastQuerySequence = await _sendMessage(
-            MessageType.execute,
-            buildExecutePayload('', config.fetchSize),
+          _allowPortalResume();
+          await _resumeSuspendedPortal(
+            _normalizePortalResumeMaxRows(fetchSize: config.fetchSize),
           );
-          await _sendMessage(MessageType.sync, Uint8List(0));
           break;
         case MessageType.ready:
           _applyTxnState(
             _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
           );
+          _portalResumePending = false;
           _lastQuerySequence = null;
           return ScratchBirdResult(rows, columns);
         case MessageType.error:
@@ -719,6 +809,7 @@ class ScratchBirdClient {
             fallbackMessage: 'Query failed',
           );
           await _drainReadyAfterError();
+          _portalResumePending = false;
           _lastQuerySequence = null;
           throw error;
       }
@@ -729,6 +820,7 @@ class ScratchBirdClient {
     final flags = config.binaryTransfer ? queryFlagBinaryResult : 0;
     _lastPlan = null;
     _lastSblr = null;
+    _portalResumePending = false;
     _lastQuerySequence = await _sendMessage(
         MessageType.query, buildQueryPayload(sql, flags, maxRows, timeoutMs));
   }
@@ -749,6 +841,7 @@ class ScratchBirdClient {
         MessageType.bind, buildBindPayload('', '', paramValues, [1]));
     _lastPlan = null;
     _lastSblr = null;
+    _portalResumePending = false;
     _lastQuerySequence = await _sendMessage(
         MessageType.execute, buildExecutePayload('', maxRows));
     await _sendMessage(MessageType.sync, Uint8List(0));
@@ -913,6 +1006,7 @@ class ScratchBirdClient {
         _applyTxnState(
           _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
         );
+        _portalResumePending = false;
         return;
       }
       if (msg.header.type == MessageType.error) {
@@ -934,6 +1028,7 @@ class ScratchBirdClient {
         _applyTxnState(
           _readTxnId(msg.payload, fallback: msg.header.txnId, offset: 4),
         );
+        _portalResumePending = false;
         return;
       }
       if (msg.header.type == MessageType.error) {
@@ -981,6 +1076,19 @@ class ScratchBirdClient {
     return _transactionActive;
   }
 
+  void _clearAbandonedSessionState() {
+    _sequence = 0;
+    _lastQuerySequence = null;
+    _attachmentId = Uint8List(16);
+    _txnId = 0;
+    _transactionActive = false;
+    _explicitTransaction = false;
+    _portalResumePending = false;
+    _parameters.clear();
+    _lastPlan = null;
+    _lastSblr = null;
+  }
+
   void _applyTxnState(int txnId) {
     _txnId = txnId;
     if (txnId != 0) {
@@ -1006,6 +1114,40 @@ class ScratchBirdClient {
       throw ArgumentError.value(
           name, 'name', 'Savepoint name must not be empty');
     }
+  }
+
+  String _quoteStringLiteral(String value) {
+    return "'${value.replaceAll("'", "''")}'";
+  }
+
+  String _buildPreparedTransactionSql(String verb, String globalTransactionId) {
+    final normalized = globalTransactionId.trim();
+    if (normalized.isEmpty) {
+      throw const ScratchBirdProgrammingException(
+        'Global transaction id must not be empty',
+        sqlState: '42601',
+      );
+    }
+    return '$verb ${_quoteStringLiteral(normalized)}';
+  }
+
+  void _allowPortalResume() {
+    _portalResumePending = true;
+  }
+
+  Future<void> _resumeSuspendedPortal(int maxRows) async {
+    if (!_portalResumePending) {
+      throw const ScratchBirdExecutionException(
+        'Portal resume requires an explicit suspended result state',
+        sqlState: '55000',
+      );
+    }
+    _portalResumePending = false;
+    _lastQuerySequence = await _sendMessage(
+      MessageType.execute,
+      buildExecutePayload('', maxRows),
+    );
+    await _sendMessage(MessageType.sync, Uint8List(0));
   }
 
   String _quoteIdentifier(String value) {

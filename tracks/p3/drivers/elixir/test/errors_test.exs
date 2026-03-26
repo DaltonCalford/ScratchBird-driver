@@ -27,4 +27,19 @@ defmodule ScratchBirdErrorsTest do
     assert Errors.sqlstate_class("X") == :generic
     assert Errors.sqlstate_class(nil) == :generic
   end
+
+  test "retry scope classifies statement and reconnect boundaries" do
+    assert Errors.retry_scope("40001") == :statement
+    assert Errors.retry_scope("40P01") == :statement
+    assert Errors.retry_scope("08006") == :reconnect
+    assert Errors.retry_scope("57014") == :none
+    assert Errors.retry_scope(nil) == :none
+  end
+
+  test "retryable only allows fresh boundary retries" do
+    assert Errors.retryable?("40001")
+    assert Errors.retryable?("08003")
+    refute Errors.retryable?("57014")
+    refute Errors.retryable?("")
+  end
 end

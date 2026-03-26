@@ -41,6 +41,14 @@ class ScratchBirdOperatorInterventionException extends ScratchBirdException {}
 class ScratchBirdSystemException extends ScratchBirdException {}
 class ScratchBirdInternalException extends ScratchBirdException {}
 
+final class RetryScope
+{
+    public const NONE = 'none';
+    public const RECONNECT = 'reconnect';
+    public const STATEMENT = 'statement';
+    public const TRANSACTION = 'transaction';
+}
+
 final class ErrorMapper
 {
     public static function map(string $sqlState, string $message, string $detail = '', string $hint = ''): ScratchBirdException
@@ -86,5 +94,26 @@ final class ErrorMapper
             };
         }
         return new ScratchBirdException($message, $sqlState, $detail, $hint);
+    }
+
+    public static function retryScopeForSqlState(?string $sqlState): string
+    {
+        // Drivers are fail-closed: fresh statement restart for 40xxx,
+        // reconnect only for 08xxx, and no automatic whole-transaction replay.
+        if ($sqlState === null || strlen($sqlState) !== 5) {
+            return RetryScope::NONE;
+        }
+        if ($sqlState === '40001' || $sqlState === '40P01') {
+            return RetryScope::STATEMENT;
+        }
+        if (str_starts_with($sqlState, '08')) {
+            return RetryScope::RECONNECT;
+        }
+        return RetryScope::NONE;
+    }
+
+    public static function isRetryableSqlState(?string $sqlState): bool
+    {
+        return self::retryScopeForSqlState($sqlState) !== RetryScope::NONE;
     }
 }

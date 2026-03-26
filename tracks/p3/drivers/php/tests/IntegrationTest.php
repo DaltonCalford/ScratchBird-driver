@@ -9,12 +9,16 @@
  * https://www.firebirdsql.org/en/initial-developer-s-public-license-version-1-0/
  */
 
+require_once __DIR__ . '/bootstrap.php';
+
 use PHPUnit\Framework\TestCase;
+use ScratchBird\PDO\Connection;
 use ScratchBird\PDO\ScratchBirdAuthException;
 use ScratchBird\PDO\ScratchBirdPDO;
 use ScratchBird\PDO\ScratchBirdException;
 use ScratchBird\PDO\ScratchBirdIntegrityException;
 use ScratchBird\PDO\ScratchBirdNotSupportedException;
+use ScratchBird\PDO\ScratchBirdTransactionException;
 
 final class IntegrationTest extends TestCase
 {
@@ -227,6 +231,52 @@ final class IntegrationTest extends TestCase
         $pdo->releaseSavepoint('php_sp1');
         $this->assertTrue($pdo->commit());
         $this->assertTrue($pdo->inTransaction());
+    }
+
+    public function testNativeConnectionAdoptsFreshBoundaryAndRejectsNestedBegin(): void
+    {
+        $dsn = $this->integrationDsn();
+        if (!$dsn) {
+            $this->markTestSkipped('SCRATCHBIRD_PHP_URL/SCRATCHBIRD_TEST_DSN not set');
+        }
+        $conn = new Connection($dsn);
+        try {
+            $this->assertTrue($conn->beginTransaction());
+            $this->assertTrue($conn->inTransaction());
+
+            try {
+                $conn->beginTransaction();
+                $this->fail('Expected nested begin rejection');
+            } catch (ScratchBirdTransactionException $ex) {
+                $this->assertSame('25001', $ex->sqlState);
+            }
+
+            $this->assertTrue($conn->rollBack());
+            $this->assertTrue($conn->inTransaction());
+        } finally {
+            $conn->close();
+        }
+    }
+
+    public function testNativeConnectionPostRollbackQueryReturnsActualResult(): void
+    {
+        $dsn = $this->integrationDsn();
+        if (!$dsn) {
+            $this->markTestSkipped('SCRATCHBIRD_PHP_URL/SCRATCHBIRD_TEST_DSN not set');
+        }
+        $conn = new Connection($dsn);
+        try {
+            $this->assertTrue($conn->beginTransaction());
+            $this->assertTrue($conn->rollBack());
+            $this->assertTrue($conn->inTransaction());
+
+            $stream = $conn->executeQuery('SELECT 2');
+            $row = $stream->readRow();
+            $this->assertNotNull($row);
+            $this->assertSame(2, (int)$row[0]);
+        } finally {
+            $conn->close();
+        }
     }
 
     public function testMetadataCollectionsAndRestrictionsLiveShape(): void

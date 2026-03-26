@@ -257,12 +257,14 @@ SQLRETURN OdbcClientBridge::rollback() {
 }
 
 client::NetworkClientConfig OdbcClientBridge::buildConfig(const ConnectionParams& params) {
+    constexpr const char* kDefaultSessionSchema = "users.public";
     client::NetworkClientConfig cfg;
     cfg.host = params.server.empty() ? "127.0.0.1" : params.server;
     cfg.port = params.port;
     cfg.database = params.database;
     cfg.username = params.user;
     cfg.password = params.password;
+    cfg.schema = params.schema.empty() ? kDefaultSessionSchema : params.schema;
     cfg.protocol = params.protocol.empty() ? "native" : params.protocol;
     cfg.application_name = params.application_name.empty() ? "scratchbird_odbc" : params.application_name;
     cfg.connect_timeout_ms = params.connect_timeout * 1000;

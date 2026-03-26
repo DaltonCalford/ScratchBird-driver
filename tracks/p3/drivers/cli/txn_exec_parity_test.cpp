@@ -324,6 +324,47 @@ void testTxnExecSavepointFlagsRequireName(int* failures) {
     expect(client.consumedAll(), "rollback_to_savepoint without name should not consume script", failures);
 }
 
+void testPreparedDormantAndPortalCapabilitiesStayExplicit(int* failures) {
+    expect(scratchbird::cli::parity::supportsPreparedTransactions(),
+           "CLI lane should expose prepared-transaction support explicitly",
+           failures);
+    expect(!scratchbird::cli::parity::supportsDormantReattach(),
+           "CLI lane should keep dormant reattach explicitly unsupported",
+           failures);
+    expect(!scratchbird::cli::parity::supportsPortalResume(),
+           "CLI lane should keep standalone portal resume explicitly unsupported",
+           failures);
+
+    std::string sql;
+    ErrorContext ctx;
+    Status status = scratchbird::cli::parity::buildPreparedTransactionSql(
+        " PREPARE TRANSACTION ", " gid'one ", &sql, &ctx);
+    expect(status == Status::OK, "prepared transaction SQL builder should succeed", failures);
+    expect(sql == "PREPARE TRANSACTION 'gid''one'",
+           "prepared transaction SQL should be canonical and quoted",
+           failures);
+
+    sql.clear();
+    ErrorContext blank_ctx;
+    status = scratchbird::cli::parity::buildPreparedTransactionSql(
+        "COMMIT PREPARED", "   ", &sql, &blank_ctx);
+    expect(status == Status::SYNTAX_ERROR,
+           "blank global transaction id should fail with syntax error",
+           failures);
+    expect(std::string(blank_ctx.sqlstate) == "42601",
+           "blank global transaction id should expose SQLSTATE 42601",
+           failures);
+
+    ErrorContext dormant_ctx;
+    status = scratchbird::cli::parity::rejectDormantReattach("reattach", &dormant_ctx);
+    expect(status == Status::NOT_IMPLEMENTED,
+           "CLI dormant reattach should fail closed as not implemented",
+           failures);
+    expect(std::string(dormant_ctx.sqlstate) == "0A000",
+           "CLI dormant reattach should expose SQLSTATE 0A000",
+           failures);
+}
+
 }  // namespace
 
 int main() {
@@ -336,6 +377,7 @@ int main() {
     testTxnExecSavepointReleaseCommit(&failures);
     testTxnExecSavepointRollbackToCommit(&failures);
     testTxnExecSavepointFlagsRequireName(&failures);
+    testPreparedDormantAndPortalCapabilitiesStayExplicit(&failures);
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed\n";

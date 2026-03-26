@@ -14,6 +14,8 @@ const {
   ScratchbirdError,
   ScratchbirdIntegrityError,
   ScratchbirdConnectionError,
+  retryScopeForSqlState,
+  isRetryableSqlState,
 } = require("../dist/index.js");
 
 function errorPayload(fields) {
@@ -73,4 +75,19 @@ test("raiseProtocolError falls back to generic query failed when parser throws",
   } finally {
     protocol.parseErrorMessage = original;
   }
+});
+
+test("retryScopeForSqlState classifies reconnect and statement-only retry boundaries", () => {
+  assert.equal(retryScopeForSqlState("40001"), "statement");
+  assert.equal(retryScopeForSqlState("40P01"), "statement");
+  assert.equal(retryScopeForSqlState("08006"), "reconnect");
+  assert.equal(retryScopeForSqlState("57014"), "none");
+  assert.equal(retryScopeForSqlState(undefined), "none");
+});
+
+test("isRetryableSqlState only allows fresh-boundary retry scopes", () => {
+  assert.equal(isRetryableSqlState("40001"), true);
+  assert.equal(isRetryableSqlState("08003"), true);
+  assert.equal(isRetryableSqlState("57014"), false);
+  assert.equal(isRetryableSqlState(""), false);
 });

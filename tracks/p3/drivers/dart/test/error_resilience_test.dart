@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:scratchbird/scratchbird.dart';
@@ -360,4 +361,76 @@ void main() {
       expect(collector.slowQueries, isEmpty);
     });
   });
+
+  group('res reconnect boundary', () {
+    test('close clears abandoned session state for fresh reconnect boundaries',
+        () async {
+      final client = ScratchBirdClient(
+        const ScratchBirdConfig(
+          host: 'localhost',
+          port: 3092,
+          database: 'mydb',
+          user: 'user',
+        ),
+      );
+      _setPrivateField(client, '_sequence', 9);
+      _setPrivateField(client, '_lastQuerySequence', 7);
+      _setPrivateField(
+        client,
+        '_attachmentId',
+        Uint8List.fromList(List<int>.generate(16, (i) => i + 1)),
+      );
+      _setPrivateField(client, '_txnId', 42);
+      _setPrivateField(client, '_transactionActive', true);
+      _setPrivateField(client, '_explicitTransaction', true);
+      (_getPrivateField(client, '_parameters') as Map<String, String>)
+        ..['attachment_id'] = '11111111-1111-1111-1111-111111111111'
+        ..['current_txn_id'] = '42';
+      _setPrivateField(
+        client,
+        '_lastPlan',
+        QueryPlanMessage(1, 2, 3, 4, Uint8List.fromList([1, 2, 3])),
+      );
+      _setPrivateField(
+        client,
+        '_lastSblr',
+        SblrCompiledMessage(5, 6, Uint8List.fromList([4, 5, 6])),
+      );
+
+      await client.close();
+
+      expect(client.lastQueryPlan, isNull);
+      expect(client.lastSblrCompiled, isNull);
+      expect(_getPrivateField(client, '_sequence'), equals(0));
+      expect(_getPrivateField(client, '_lastQuerySequence'), isNull);
+      expect(_getPrivateField(client, '_txnId'), equals(0));
+      expect(_getPrivateField(client, '_transactionActive'), isFalse);
+      expect(_getPrivateField(client, '_explicitTransaction'), isFalse);
+      expect(
+        (_getPrivateField(client, '_attachmentId') as Uint8List)
+            .every((value) => value == 0),
+        isTrue,
+      );
+      expect(
+        _getPrivateField(client, '_parameters') as Map<String, String>,
+        isEmpty,
+      );
+    });
+  });
+}
+
+LibraryMirror _clientLibrary(Object object) {
+  return reflect(object).type.owner as LibraryMirror;
+}
+
+Symbol _privateSymbol(Object object, String name) {
+  return MirrorSystem.getSymbol(name, _clientLibrary(object));
+}
+
+dynamic _getPrivateField(Object object, String name) {
+  return reflect(object).getField(_privateSymbol(object, name)).reflectee;
+}
+
+void _setPrivateField(Object object, String name, Object? value) {
+  reflect(object).setField(_privateSymbol(object, name), value);
 }

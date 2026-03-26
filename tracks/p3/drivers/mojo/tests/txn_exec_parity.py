@@ -18,6 +18,8 @@ def _require(condition: bool, message: str) -> None:
 class TxnHarness:
     def __init__(self, txn_id: int):
         self._txn_id = txn_id
+        self._runtime_txn_active = txn_id != 0
+        self._explicit_transaction = txn_id != 0
         self._savepoint_counter = 0
         self._savepoints = []
         self.sent = []
@@ -33,6 +35,8 @@ class TxnHarness:
 class TxnHarnessNoSavepoints:
     def __init__(self, txn_id: int):
         self._txn_id = txn_id
+        self._runtime_txn_active = txn_id != 0
+        self._explicit_transaction = txn_id != 0
         self.sent = []
         self.drained = 0
 
@@ -106,6 +110,8 @@ def test_begin_maps_kwargs_to_payload_flags() -> None:
     _require(timeout_ms == 75, "unexpected timeout_ms")
     _require(conn.drained == 1, "begin should drain once")
     _require(conn._txn_id == 1, "begin should mark transaction active")
+    _require(conn._runtime_txn_active is True, "begin should mark runtime boundary active")
+    _require(conn._explicit_transaction is True, "begin should mark explicit transaction active")
     _require(conn._savepoints == [], "begin should reset savepoints")
     begin_options = getattr(conn, "_txn_begin_options", {})
     _require(begin_options.get("isolation_level") == 2, "begin should persist normalized isolation_level")
@@ -114,6 +120,88 @@ def test_begin_maps_kwargs_to_payload_flags() -> None:
     _require(begin_options.get("wait_mode") == 0, "begin should persist normalized wait_mode")
     _require(begin_options.get("timeout_ms") == 75, "begin should persist normalized timeout_ms")
     _require(begin_options.get("autocommit_mode") == 1, "begin should persist normalized autocommit_mode")
+
+
+def test_begin_expands_payload_for_read_committed_mode() -> None:
+    conn = TxnHarness(0)
+    scratchbird.ScratchBirdConnection.begin(
+        conn,
+        timeout_ms=25,
+        read_committed_mode=scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY,
+    )
+
+    _require(len(conn.sent) == 1, "begin should send exactly one message")
+    msg_type, payload, _, _ = conn.sent[0]
+    _require(msg_type == scratchbird.MessageType.TXN_BEGIN, "begin should send TXN_BEGIN")
+    _require(len(payload) == 16, "read_committed_mode should expand begin payload")
+
+    flags, conflict, autocommit_mode, isolation, access_mode, deferrable, wait_mode, timeout_ms, read_committed_mode = struct.unpack(
+        "<HBBBBBBIB3x", payload
+    )
+    _require((flags & scratchbird.TXN_FLAG_HAS_ISOLATION) != 0, "missing isolation flag")
+    _require((flags & scratchbird.TXN_FLAG_HAS_TIMEOUT) != 0, "missing timeout flag")
+    _require(
+        (flags & scratchbird.TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0,
+        "missing read committed mode flag",
+    )
+    _require(conflict == 0, "unexpected conflict_action")
+    _require(autocommit_mode == 0, "unexpected autocommit_mode")
+    _require(isolation == scratchbird.ISOLATION_READ_COMMITTED, "unexpected isolation_level")
+    _require(access_mode == 0, "unexpected access_mode")
+    _require(deferrable == 0, "unexpected deferrable value")
+    _require(wait_mode == 0, "unexpected wait_mode")
+    _require(timeout_ms == 25, "unexpected timeout_ms")
+    _require(
+        read_committed_mode == scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY,
+        "unexpected read_committed_mode",
+    )
+    _require(conn.drained == 1, "begin should drain once")
+    begin_options = getattr(conn, "_txn_begin_options", {})
+    _require(begin_options.get("read_committed_mode") == scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY,
+             "begin should persist normalized read_committed_mode")
+
+
+def test_begin_rejects_read_committed_mode_with_snapshot_alias() -> None:
+    conn = TxnHarness(0)
+    try:
+        scratchbird.ScratchBirdConnection.begin(
+            conn,
+            isolation_level=scratchbird.ISOLATION_SERIALIZABLE,
+            read_committed_mode=scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY,
+        )
+        raise RuntimeError("expected invalid read_committed_mode isolation rejection")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "0A000", "invalid read_committed_mode should raise 0A000")
+        _require("READ COMMITTED isolation alias" in str(exc), "rejection should explain allowed isolation")
+    _require(len(conn.sent) == 0, "invalid begin should not send wire messages")
+    _require(conn.drained == 0, "invalid begin should not drain")
+
+
+def test_canonical_read_committed_mode_label_documents_public_selector() -> None:
+    _require(
+        scratchbird.canonical_read_committed_mode_label(scratchbird.READ_COMMITTED_MODE_DEFAULT)
+        == "READ COMMITTED",
+        "default read committed mode label mismatch",
+    )
+    _require(
+        scratchbird.canonical_read_committed_mode_label(scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY)
+        == "READ COMMITTED READ CONSISTENCY",
+        "read consistency label mismatch",
+    )
+    _require(
+        scratchbird.canonical_read_committed_mode_label(scratchbird.READ_COMMITTED_MODE_RECORD_VERSION)
+        == "READ COMMITTED RECORD VERSION",
+        "record version label mismatch",
+    )
+    _require(
+        scratchbird.canonical_read_committed_mode_label(scratchbird.READ_COMMITTED_MODE_NO_RECORD_VERSION)
+        == "READ COMMITTED NO RECORD VERSION",
+        "no record version label mismatch",
+    )
+    _require(
+        scratchbird.canonical_read_committed_mode_label(99) == "UNKNOWN(99)",
+        "unknown mode label mismatch",
+    )
 
 
 def test_begin_rejects_nested_transaction() -> None:
@@ -126,6 +214,30 @@ def test_begin_rejects_nested_transaction() -> None:
         _require(exc.sqlstate == "25001", "nested begin should map to 25001")
     _require(len(conn.sent) == 0, "nested begin should not send wire messages")
     _require(conn.drained == 0, "nested begin should not drain")
+
+
+def test_begin_adopts_fresh_boundary_and_rejects_non_default_adoption() -> None:
+    conn = TxnHarness(0)
+    conn._runtime_txn_active = True
+    conn._explicit_transaction = False
+    scratchbird.ScratchBirdConnection.begin(conn)
+    _require(len(conn.sent) == 0, "fresh-boundary adoption should not send wire begin")
+    _require(conn._explicit_transaction is True, "fresh-boundary adoption should mark explicit transaction active")
+    _require(conn._runtime_txn_active is True, "fresh-boundary adoption should preserve runtime boundary")
+    _require(conn._txn_id == 0, "fresh-boundary adoption should preserve zero txn id")
+
+    rejected = TxnHarness(0)
+    rejected._runtime_txn_active = True
+    rejected._explicit_transaction = False
+    try:
+        scratchbird.ScratchBirdConnection.begin(
+            rejected,
+            read_committed_mode=scratchbird.READ_COMMITTED_MODE_READ_CONSISTENCY,
+        )
+        raise RuntimeError("expected non-default fresh-boundary adoption rejection")
+    except scratchbird.ScratchBirdError as exc:
+        _require(exc.sqlstate == "0A000", "non-default fresh-boundary adoption should raise 0A000")
+    _require(len(rejected.sent) == 0, "rejected fresh-boundary adoption should not send wire begin")
 
 
 def test_begin_rejects_invalid_integer_kwargs() -> None:
@@ -163,7 +275,9 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
     _require(len(commit_conn.sent) == 1, "active txn should send commit")
     _require(commit_conn.sent[0][0] == scratchbird.MessageType.TXN_COMMIT, "commit should send TXN_COMMIT")
     _require(commit_conn.drained == 1, "active commit should drain once")
-    _require(commit_conn._txn_id == 1, "commit should auto-start the next transaction")
+    _require(commit_conn._txn_id == 0, "commit should preserve zero txn id on the fresh boundary")
+    _require(commit_conn._runtime_txn_active is True, "commit should preserve runtime boundary activity")
+    _require(commit_conn._explicit_transaction is False, "commit should clear explicit transaction state")
     _require(commit_conn._savepoints == [], "commit should clear savepoints")
     _require(getattr(commit_conn, "_txn_begin_options", None) == {}, "commit should clear begin options")
 
@@ -177,7 +291,9 @@ def test_commit_and_rollback_send_when_active_txn() -> None:
         "rollback should send TXN_ROLLBACK",
     )
     _require(rollback_conn.drained == 1, "active rollback should drain once")
-    _require(rollback_conn._txn_id == 1, "rollback should auto-start the next transaction")
+    _require(rollback_conn._txn_id == 0, "rollback should preserve zero txn id on the fresh boundary")
+    _require(rollback_conn._runtime_txn_active is True, "rollback should preserve runtime boundary activity")
+    _require(rollback_conn._explicit_transaction is False, "rollback should clear explicit transaction state")
     _require(rollback_conn._savepoints == [], "rollback should clear savepoints")
     _require(getattr(rollback_conn, "_txn_begin_options", None) == {}, "rollback should clear begin options")
 
@@ -317,9 +433,11 @@ def test_shim_ping_and_txn_lifecycle() -> None:
         conn.commit()
         conn.rollback()
         conn.begin()
-        raise RuntimeError("expected begin on always-active shim connection to raise")
-    except scratchbird.ScratchBirdError as exc:
-        _require(exc.sqlstate == "25001", "begin on always-active shim connection should raise 25001")
+        try:
+            conn.begin()
+            raise RuntimeError("expected nested begin on explicit shim transaction to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "25001", "nested begin on explicit shim transaction should raise 25001")
     finally:
         conn.close()
 
@@ -329,6 +447,7 @@ def test_shim_ping_and_txn_lifecycle_repeated_control() -> None:
     try:
         conn.commit()
         conn.rollback()
+        conn.begin()
         try:
             conn.begin()
             raise RuntimeError("expected repeated begin to raise")
@@ -344,13 +463,15 @@ def test_shim_begin_validates_kwargs_and_prepare_guard() -> None:
     try:
         try:
             conn.begin(isolation_level="bad")
-            raise RuntimeError("expected active shim begin rejection")
+            raise RuntimeError("expected invalid isolation_level rejection")
         except scratchbird.ScratchBirdError as exc:
-            _require(exc.sqlstate == "25001", "active shim begin should raise 25001")
-        _require(getattr(conn, "_txn_id", 0) == 1, "active shim begin should preserve active transaction")
+            _require(exc.sqlstate == "22023", "invalid shim begin should raise 22023")
+        _require(getattr(conn, "_txn_id", 0) == 0, "invalid begin should preserve zero txn id on the fresh boundary")
+        _require(getattr(conn, "_runtime_txn_active", False) is True, "invalid begin should preserve runtime boundary")
 
         conn.commit()
-        _require(getattr(conn, "_txn_id", 0) == 1, "commit should auto-start the next transaction")
+        _require(getattr(conn, "_txn_id", 0) == 0, "commit should preserve zero txn id on the fresh boundary")
+        _require(getattr(conn, "_runtime_txn_active", False) is True, "commit should preserve runtime boundary")
 
         conn.close()
         try:
@@ -358,6 +479,72 @@ def test_shim_begin_validates_kwargs_and_prepare_guard() -> None:
             raise RuntimeError("expected prepare on closed connection to raise")
         except scratchbird.ScratchBirdError as exc:
             _require(exc.sqlstate == "08003", "prepare on closed connection should raise 08003")
+    finally:
+        conn.close()
+
+
+def test_static_prepared_and_dormant_capability_surfaces() -> None:
+    conn = scratchbird.connect(_shim_cfg())
+    try:
+        _require(
+            scratchbird.ScratchBirdConnection.supports_prepared_transactions(),
+            "prepared transaction capability should stay explicit",
+        )
+        _require(
+            not scratchbird.ScratchBirdConnection.supports_dormant_reattach(),
+            "dormant reattach should stay explicit and false",
+        )
+        _require(
+            not scratchbird.ScratchBirdConnection.supports_portal_resume(),
+            "standalone portal resume should stay explicitly unsupported",
+        )
+        _require(
+            scratchbird.ScratchBirdConnection.build_prepared_transaction_sql(
+                "PREPARE TRANSACTION",
+                "gid-1",
+            )
+            == "PREPARE TRANSACTION 'gid-1'",
+            "prepare transaction SQL mismatch",
+        )
+        _require(
+            scratchbird.ScratchBirdConnection.build_prepared_transaction_sql(
+                "COMMIT PREPARED",
+                "gid-1",
+            )
+            == "COMMIT PREPARED 'gid-1'",
+            "commit prepared SQL mismatch",
+        )
+        _require(
+            scratchbird.ScratchBirdConnection.build_prepared_transaction_sql(
+                "ROLLBACK PREPARED",
+                "gid'2",
+            )
+            == "ROLLBACK PREPARED 'gid''2'",
+            "rollback prepared SQL quoting mismatch",
+        )
+        try:
+            scratchbird.ScratchBirdConnection.build_prepared_transaction_sql(
+                "PREPARE TRANSACTION",
+                "   ",
+            )
+            raise RuntimeError("expected blank global transaction id to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "42601", "blank global transaction id should raise 42601")
+        try:
+            scratchbird.ScratchBirdConnection.prepare_transaction(conn, "   ")
+            raise RuntimeError("expected prepared transaction guard to raise")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "42601", "prepared transaction guard should raise 42601")
+        try:
+            scratchbird.ScratchBirdConnection.detach_to_dormant(conn)
+            raise RuntimeError("expected dormant detach to fail closed")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "0A000", "dormant detach should raise 0A000")
+        try:
+            scratchbird.ScratchBirdConnection.reattach_dormant(conn, "dormant-1", "token")
+            raise RuntimeError("expected dormant reattach to fail closed")
+        except scratchbird.ScratchBirdError as exc:
+            _require(exc.sqlstate == "0A000", "dormant reattach should raise 0A000")
     finally:
         conn.close()
 

@@ -39,6 +39,8 @@ type
     FSeenRows: Int64;
     FLastInsertId: UInt64;
     FHasLastInsertId: Boolean;
+    FResponseStarted: Boolean;
+    FIgnoredStrayReady: Boolean;
   public
     constructor Create(Client: TObject);
     destructor Destroy; override;
@@ -108,6 +110,9 @@ type
     FAttachmentId: TBytes;
     FTxnId: UInt64;
     FTransactionActive: Boolean;
+    FRuntimeBoundarySeen: Boolean;
+    FExplicitTransaction: Boolean;
+    FPortalResumePending: Boolean;
     FSequence: Cardinal;
     FLastQuerySequence: Cardinal;
     FLastMaxRows: Cardinal;
@@ -150,14 +155,25 @@ type
     procedure EnsureConnected;
     procedure EnsureTransactionActive(const Operation: string);
     procedure ApplyRuntimeTxnId(TxnId: UInt64);
+    procedure ApplyRuntimeReadyState(Status: Byte; TxnId: UInt64);
     procedure ClearTransactionState;
+    function CanAdoptFreshNativeBoundary(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean;
+      WaitMode: Boolean; TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte;
+      HasReadCommittedMode: Boolean; ReadCommittedMode: Byte): Boolean;
     function NormalizeSavepointName(const Name: string): string;
     function NormalizeSqlText(const Sql: string): string;
+    function QuoteStringLiteral(const Value: string): string;
+    function BuildPreparedTransactionSql(const Verb, GlobalTransactionId: string): string;
+    procedure AllowPortalResume;
+    procedure ResumeSuspendedPortal(MaxRows: Cardinal);
     procedure EnqueueNotification(const Notice: TNotification);
     procedure DispatchNotificationListeners(const Notice: TNotification);
     procedure InitializeClient(const Transport: IScratchBirdTransport);
     function BeginOperation(const Name, Sql: string): TSpanContext;
     procedure EndOperation(Span: TSpanContext; Success: Boolean);
+    procedure BeginTransactionExInternal(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+      TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte; HasReadCommittedMode: Boolean;
+      ReadCommittedMode: Byte);
   public
     constructor Create; overload;
     constructor CreateWithTransport(const Transport: IScratchBirdTransport; StartConnected: Boolean = False); overload;
@@ -166,9 +182,18 @@ type
     procedure Disconnect;
     procedure BeginTransaction;
     procedure BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
-      TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte);
+      TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte); overload;
+    procedure BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+      TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte; ReadCommittedMode: Byte); overload;
     procedure Commit(Flags: Byte = 0);
     procedure Rollback(Flags: Byte = 0);
+    function SupportsPreparedTransactions: Boolean;
+    procedure PrepareTransaction(const GlobalTransactionId: string);
+    procedure CommitPrepared(const GlobalTransactionId: string);
+    procedure RollbackPrepared(const GlobalTransactionId: string);
+    function SupportsDormantReattach: Boolean;
+    procedure DetachToDormant;
+    procedure ReattachDormant(const DormantId: string; const AuthToken: string = '');
     procedure Savepoint(const Name: string);
     procedure ReleaseSavepoint(const Name: string);
     procedure RollbackToSavepoint(const Name: string);
@@ -398,6 +423,8 @@ begin
   FSeenRows := 0;
   FLastInsertId := 0;
   FHasLastInsertId := False;
+  FResponseStarted := False;
+  FIgnoredStrayReady := False;
 end;
 
 destructor TScratchBirdResultStream.Destroy;
@@ -424,6 +451,8 @@ var
   CommandType: Byte;
   Rows, LastId: UInt64;
   Tag: string;
+  Status: Byte;
+  TxnId, Visibility: UInt64;
 begin
   if FDone then
     Exit(nil);
@@ -437,10 +466,14 @@ begin
       MSG_ERROR:
         raise Client.BuildQueryError(Msg.Payload);
       MSG_ROW_DESCRIPTION:
-        FColumns := ParseRowDescription(Msg.Payload);
+        begin
+          FColumns := ParseRowDescription(Msg.Payload);
+          FResponseStarted := True;
+        end;
       MSG_DATA_ROW:
       begin
         Values := ParseRowData(Msg.Payload);
+        FResponseStarted := True;
         SetLength(Row, Length(Values));
         for I := 0 to High(Values) do
         begin
@@ -455,6 +488,7 @@ begin
       MSG_COMMAND_COMPLETE:
       begin
         ParseCommandComplete(Msg.Payload, CommandType, Rows, LastId, Tag);
+        FResponseStarted := True;
         FCommandTag := Tag;
         FRowsAffected := Rows;
         FLastInsertId := LastId;
@@ -462,10 +496,19 @@ begin
       end;
       MSG_PORTAL_SUSPENDED:
       begin
-        Client.SendMessage(MSG_EXECUTE, BuildExecutePayload('', Client.CurrentMaxRows), 0, False);
+        FResponseStarted := True;
+        Client.AllowPortalResume;
+        Client.ResumeSuspendedPortal(Client.CurrentMaxRows);
       end;
       MSG_READY:
       begin
+        ParseReady(Msg.Payload, Status, TxnId, Visibility);
+        Client.ApplyRuntimeReadyState(Status, TxnId);
+        if (not FResponseStarted) and (not FIgnoredStrayReady) then
+        begin
+          FIgnoredStrayReady := True;
+          Continue;
+        end;
         FDone := True;
         if FRowsAffected < 0 then
           FRowsAffected := FSeenRows;
@@ -486,6 +529,9 @@ begin
   FSequence := 0;
   FTxnId := 0;
   FTransactionActive := False;
+  FRuntimeBoundarySeen := False;
+  FExplicitTransaction := False;
+  FPortalResumePending := False;
   FLastMaxRows := 0;
   FParameters := TStringList.Create;
   FHasLastPlan := False;
@@ -523,6 +569,8 @@ begin
   begin
     FConnected := True;
     FTransactionActive := True;
+    FRuntimeBoundarySeen := False;
+    FExplicitTransaction := False;
   end;
 end;
 
@@ -574,7 +622,6 @@ begin
     PerformManagerConnect;
   HandshakeAndAuth;
   FConnected := True;
-  FTransactionActive := True;
   ApplySchema;
   if Assigned(FLeakDetector) then
     FLeakDetector.Checkout(FConnectionId, []);
@@ -587,6 +634,15 @@ begin
   FTransport.Disconnect;
   FConnected := False;
   ClearTransactionState;
+  FPortalResumePending := False;
+  FSequence := 0;
+  FLastQuerySequence := 0;
+  FLastMaxRows := 0;
+  FRuntimeBoundarySeen := False;
+  if Assigned(FParameters) then
+    FParameters.Clear;
+  FHasLastPlan := False;
+  FHasLastSblr := False;
   SetLength(FNotificationQueue, 0);
   if Length(FAttachmentId) = 16 then
     FillChar(FAttachmentId[0], 16, 0);
@@ -615,12 +671,63 @@ end;
 
 procedure TScratchBirdClient.BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
   TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte);
+begin
+  BeginTransactionExInternal(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs, AutocommitMode,
+    ConflictAction, False, READ_COMMITTED_MODE_DEFAULT);
+end;
+
+procedure TScratchBirdClient.BeginTransactionEx(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+  TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte; ReadCommittedMode: Byte);
+begin
+  BeginTransactionExInternal(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs, AutocommitMode,
+    ConflictAction, True, ReadCommittedMode);
+end;
+
+procedure TScratchBirdClient.BeginTransactionExInternal(IsolationLevel: Byte; AccessMode: Byte; Deferrable: Boolean; WaitMode: Boolean;
+  TimeoutMs: Cardinal; AutocommitMode: Byte; ConflictAction: Byte; HasReadCommittedMode: Boolean;
+  ReadCommittedMode: Byte);
 var
   Flags: Word;
   Payload: TBytes;
 begin
   EnsureConnected;
+  // Pascal currently forwards SQL-style compatibility isolation bytes:
+  //   ISOLATION_READ_UNCOMMITTED => legacy alias, not a distinct canonical MGA mode
+  //   ISOLATION_READ_COMMITTED   => canonical READ COMMITTED
+  //   ISOLATION_REPEATABLE_READ  => canonical SNAPSHOT
+  //   ISOLATION_SERIALIZABLE     => canonical SNAPSHOT TABLE STABILITY
+  // ReadCommittedMode exposes the canonical READ COMMITTED sub-modes directly:
+  //   READ_COMMITTED_MODE_DEFAULT           => READ COMMITTED
+  //   READ_COMMITTED_MODE_READ_CONSISTENCY  => READ COMMITTED READ CONSISTENCY
+  //   READ_COMMITTED_MODE_RECORD_VERSION    => READ COMMITTED RECORD VERSION
+  //   READ_COMMITTED_MODE_NO_RECORD_VERSION => READ COMMITTED NO RECORD VERSION
+  if HasReadCommittedMode and not (IsolationLevel in [ISOLATION_READ_UNCOMMITTED, ISOLATION_READ_COMMITTED]) then
+    raise EScratchbirdNotSupported.CreateWithInfo(
+      'ReadCommittedMode requires a READ COMMITTED isolation alias',
+      '0A000',
+      '',
+      ''
+    );
+  if FRuntimeBoundarySeen then
+  begin
+    if FTransactionActive and (FTxnId = 0) then
+    begin
+      if FExplicitTransaction then
+        raise EScratchbirdTransactionError.CreateWithInfo('transaction already active', '25001', '', '');
+      if not CanAdoptFreshNativeBoundary(IsolationLevel, AccessMode, Deferrable, WaitMode, TimeoutMs,
+        AutocommitMode, ConflictAction, HasReadCommittedMode, ReadCommittedMode) then
+        raise EScratchbirdNotSupported.CreateWithInfo(
+          'fresh native transaction boundaries only support default READ COMMITTED adoption in the Pascal lane',
+          '0A000', '', '');
+      FExplicitTransaction := True;
+      Exit;
+    end;
+    if FTransactionActive then
+      raise EScratchbirdTransactionError.CreateWithInfo('transaction already active', '25001', '', '');
+  end;
   Flags := TXN_FLAG_HAS_ISOLATION;
+  if HasReadCommittedMode then
+    Flags := Flags or TXN_FLAG_HAS_READ_COMMITTED_MODE;
   if AccessMode <> 0 then
     Flags := Flags or TXN_FLAG_HAS_ACCESS;
   if Deferrable then
@@ -632,10 +739,10 @@ begin
   if AutocommitMode <> 0 then
     Flags := Flags or TXN_FLAG_HAS_AUTOCOMMIT;
   Payload := BuildTxnBeginPayload(Flags, ConflictAction, AutocommitMode, IsolationLevel, AccessMode,
-    Ord(Deferrable), Ord(WaitMode), TimeoutMs);
+    Ord(Deferrable), Ord(WaitMode), TimeoutMs, ReadCommittedMode);
   SendMessage(MSG_TXN_BEGIN, Payload, 0, False);
   DrainUntilReady;
-  FTransactionActive := True;
+  FExplicitTransaction := True;
 end;
 
 procedure TScratchBirdClient.Commit(Flags: Byte = 0);
@@ -648,7 +755,7 @@ begin
   Payload := BuildTxnCommitPayload(Flags);
   SendMessage(MSG_TXN_COMMIT, Payload, 0, False);
   DrainUntilReady;
-  FTransactionActive := True;
+  FExplicitTransaction := False;
 end;
 
 procedure TScratchBirdClient.Rollback(Flags: Byte = 0);
@@ -661,7 +768,49 @@ begin
   Payload := BuildTxnRollbackPayload(Flags);
   SendMessage(MSG_TXN_ROLLBACK, Payload, 0, False);
   DrainUntilReady;
-  FTransactionActive := True;
+  FExplicitTransaction := False;
+end;
+
+function TScratchBirdClient.SupportsPreparedTransactions: Boolean;
+begin
+  Result := True;
+end;
+
+procedure TScratchBirdClient.PrepareTransaction(const GlobalTransactionId: string);
+begin
+  // Prepared / limbo state is explicit engine truth, not reconnect folklore.
+  ExecSQL(BuildPreparedTransactionSql('PREPARE TRANSACTION', GlobalTransactionId));
+end;
+
+procedure TScratchBirdClient.CommitPrepared(const GlobalTransactionId: string);
+begin
+  ExecSQL(BuildPreparedTransactionSql('COMMIT PREPARED', GlobalTransactionId));
+end;
+
+procedure TScratchBirdClient.RollbackPrepared(const GlobalTransactionId: string);
+begin
+  ExecSQL(BuildPreparedTransactionSql('ROLLBACK PREPARED', GlobalTransactionId));
+end;
+
+function TScratchBirdClient.SupportsDormantReattach: Boolean;
+begin
+  Result := False;
+end;
+
+procedure TScratchBirdClient.DetachToDormant;
+begin
+  raise EScratchbirdNotSupported.CreateWithInfo(
+    'Dormant detach requires an explicit public token flow and is not yet exposed in this lane',
+    '0A000', '', ''
+  );
+end;
+
+procedure TScratchBirdClient.ReattachDormant(const DormantId: string; const AuthToken: string = '');
+begin
+  raise EScratchbirdNotSupported.CreateWithInfo(
+    'Dormant reattach requires an explicit engine-issued token and is not yet exposed in this lane',
+    '0A000', '', ''
+  );
 end;
 
 procedure TScratchBirdClient.Savepoint(const Name: string);
@@ -721,7 +870,8 @@ begin
         MSG_READY:
           begin
             ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          ApplyRuntimeTxnId(TxnId);
+            ApplyRuntimeReadyState(Status, TxnId);
+            FPortalResumePending := False;
             Exit;
           end;
       MSG_ERROR:
@@ -858,6 +1008,7 @@ begin
     end;
     FHasLastPlan := False;
     FHasLastSblr := False;
+    FPortalResumePending := False;
     Payload := BuildSblrExecutePayload(SblrHash, Bytecode, ParamValues);
     FLastQuerySequence := SendMessage(MSG_SBLR_EXECUTE, Payload, 0, False);
     SendMessage(MSG_SYNC, nil, 0, False);
@@ -1244,16 +1395,38 @@ end;
 function TScratchBirdClient.GetDiagnosticsJson: string;
 var
   TelemetrySummary: string;
+  AttachmentZeroed: Boolean;
+  I: Integer;
+  ParameterCount: Integer;
 begin
   TelemetrySummary := GetTelemetrySummaryJson;
+  AttachmentZeroed := Length(FAttachmentId) = 16;
+  if AttachmentZeroed then
+    for I := 0 to High(FAttachmentId) do
+      if FAttachmentId[I] <> 0 then
+      begin
+        AttachmentZeroed := False;
+        Break;
+      end;
+  if Assigned(FParameters) then
+    ParameterCount := FParameters.Count
+  else
+    ParameterCount := 0;
   Result := '{' +
     '"captured_unix_ms":' + IntToStr(DateTimeToUnix(Now, False) * 1000) + ',' +
     '"connected":' + LowerCase(BoolToStr(FConnected, True)) + ',' +
+    '"transaction_active":' + LowerCase(BoolToStr(FTransactionActive, True)) + ',' +
     '"front_door_mode":"' + EscapeJson(FConfig.FrontDoorMode) + '",' +
     '"protocol":"' + EscapeJson(FConfig.Protocol) + '",' +
     '"host":"' + EscapeJson(FConfig.Host) + '",' +
     '"port":' + IntToStr(FConfig.Port) + ',' +
     '"database":"' + EscapeJson(FConfig.Database) + '",' +
+    '"attachment_zeroed":' + LowerCase(BoolToStr(AttachmentZeroed, True)) + ',' +
+    '"parameter_count":' + IntToStr(ParameterCount) + ',' +
+    '"has_last_plan":' + LowerCase(BoolToStr(FHasLastPlan, True)) + ',' +
+    '"has_last_sblr":' + LowerCase(BoolToStr(FHasLastSblr, True)) + ',' +
+    '"next_sequence":' + IntToStr(FSequence) + ',' +
+    '"last_query_sequence":' + IntToStr(FLastQuerySequence) + ',' +
     '"notification_queue_depth":' + IntToStr(NotificationCount) + ',' +
     '"circuit":' + GetCircuitBreakerSummaryJson + ',' +
     '"keepalive":' + GetKeepaliveSummaryJson + ',' +
@@ -1264,6 +1437,7 @@ end;
 
 procedure TScratchBirdClient.Cancel;
 begin
+  FPortalResumePending := False;
   SendMessage(MSG_CANCEL, BuildCancelPayload(0, FLastQuerySequence), MSG_FLAG_URGENT, False);
 end;
 
@@ -1609,7 +1783,7 @@ begin
         MSG_READY:
           begin
             ParseReady(Msg.Payload, Status, TxnId, Visibility);
-            ApplyRuntimeTxnId(TxnId);
+            ApplyRuntimeReadyState(Status, TxnId);
             Exit;
           end;
         MSG_ERROR:
@@ -1674,6 +1848,8 @@ var
   Notice: TNotification;
   Plan: TQueryPlan;
   Compiled: TSblrCompiled;
+  Status: Byte;
+  TxnId: UInt64;
 begin
   Result := True;
   case Msg.MsgType of
@@ -1705,6 +1881,11 @@ begin
     MSG_NOTICE:
       begin
         // Notice payloads are informational; keep result-stream processing uninterrupted.
+      end;
+    MSG_TXN_STATUS:
+      begin
+        ParseTxnStatus(Msg.Payload, Status, TxnId);
+        ApplyRuntimeReadyState(Status, TxnId);
       end;
   else
     Result := False;
@@ -1867,16 +2048,44 @@ end;
 procedure TScratchBirdClient.ApplyRuntimeTxnId(TxnId: UInt64);
 begin
   FTxnId := TxnId;
-  if FConnected then
+  FRuntimeBoundarySeen := True;
+  if TxnId <> 0 then
     FTransactionActive := True
-  else
-    FTransactionActive := TxnId <> 0;
+end;
+
+procedure TScratchBirdClient.ApplyRuntimeReadyState(Status: Byte; TxnId: UInt64);
+begin
+  FRuntimeBoundarySeen := True;
+  if Status <> 0 then
+  begin
+    FTxnId := TxnId;
+    FTransactionActive := True;
+    Exit;
+  end;
+  ClearTransactionState;
 end;
 
 procedure TScratchBirdClient.ClearTransactionState;
 begin
   FTransactionActive := False;
+  FExplicitTransaction := False;
   FTxnId := 0;
+  FPortalResumePending := False;
+end;
+
+function TScratchBirdClient.CanAdoptFreshNativeBoundary(IsolationLevel: Byte; AccessMode: Byte;
+  Deferrable: Boolean; WaitMode: Boolean; TimeoutMs: Cardinal; AutocommitMode: Byte;
+  ConflictAction: Byte; HasReadCommittedMode: Boolean; ReadCommittedMode: Byte): Boolean;
+begin
+  Result :=
+    (IsolationLevel in [ISOLATION_READ_UNCOMMITTED, ISOLATION_READ_COMMITTED]) and
+    (AccessMode = 0) and
+    (not Deferrable) and
+    (not WaitMode) and
+    (TimeoutMs = 0) and
+    (AutocommitMode = 0) and
+    (ConflictAction = 0) and
+    ((not HasReadCommittedMode) or (ReadCommittedMode = READ_COMMITTED_MODE_DEFAULT));
 end;
 
 function TScratchBirdClient.NormalizeSavepointName(const Name: string): string;
@@ -1891,6 +2100,40 @@ begin
   Result := Trim(Sql);
   if Result = '' then
     raise EScratchbirdSyntaxError.CreateWithInfo('SQL text is required', '42601', '', '');
+end;
+
+function TScratchBirdClient.QuoteStringLiteral(const Value: string): string;
+begin
+  Result := '''' + StringReplace(Value, '''', '''''', [rfReplaceAll]) + '''';
+end;
+
+function TScratchBirdClient.BuildPreparedTransactionSql(const Verb, GlobalTransactionId: string): string;
+var
+  NormalizedGid: string;
+begin
+  NormalizedGid := Trim(GlobalTransactionId);
+  if NormalizedGid = '' then
+    raise EScratchbirdSyntaxError.CreateWithInfo(
+      'global transaction id is required',
+      '42601', '', ''
+    );
+  Result := Verb + ' ' + QuoteStringLiteral(NormalizedGid);
+end;
+
+procedure TScratchBirdClient.AllowPortalResume;
+begin
+  FPortalResumePending := True;
+end;
+
+procedure TScratchBirdClient.ResumeSuspendedPortal(MaxRows: Cardinal);
+begin
+  if not FPortalResumePending then
+    raise EScratchBirdError.CreateWithInfo(
+      'portal resume requires an explicit suspended result state',
+      '55000', '', ''
+    );
+  FPortalResumePending := False;
+  FLastQuerySequence := SendMessage(MSG_EXECUTE, BuildExecutePayload('', MaxRows), 0, False);
 end;
 
 function TScratchBirdClient.BeginOperation(const Name, Sql: string): TSpanContext;
@@ -1938,11 +2181,15 @@ begin
       Continue;
     case Msg.MsgType of
       MSG_ERROR:
+        begin
+          FExplicitTransaction := False;
         raise BuildQueryError(Msg.Payload);
+        end;
       MSG_READY:
         begin
           ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          ApplyRuntimeTxnId(TxnId);
+          ApplyRuntimeReadyState(Status, TxnId);
+          FPortalResumePending := False;
           Exit;
         end;
     end;
@@ -1977,7 +2224,8 @@ begin
       MSG_READY:
         begin
           ParseReady(Msg.Payload, Status, TxnId, Visibility);
-          ApplyRuntimeTxnId(TxnId);
+          ApplyRuntimeReadyState(Status, TxnId);
+          FPortalResumePending := False;
           Exit;
         end;
     end;
@@ -1993,6 +2241,7 @@ begin
   if FConfig.BinaryTransfer then
     Flags := Flags or $04;
   FLastMaxRows := MaxRows;
+  FPortalResumePending := False;
   Payload := BuildQueryPayload(Sql, Flags, MaxRows, 0);
   FHasLastPlan := False;
   FHasLastSblr := False;
@@ -2033,6 +2282,7 @@ begin
   BindPayload := BuildBindPayload('', '', ParamValues, ResultFormats);
   SendMessage(MSG_BIND, BindPayload, 0, False);
   FLastMaxRows := MaxRows;
+  FPortalResumePending := False;
   ExecPayload := BuildExecutePayload('', MaxRows);
   FHasLastPlan := False;
   FHasLastSblr := False;

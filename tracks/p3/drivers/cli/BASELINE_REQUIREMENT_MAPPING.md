@@ -5,6 +5,23 @@
 - Maps this lane's current capabilities to JDBCBL groups: `CONN`, `TXN`, `EXEC`, `META`, `TYPE`, `ERR`, `RES`.
 - All statements below are anchored to files in this lane.
 
+## MGA Recovery Contract
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- This lane uses explicit disconnect/reset and fresh client allocation in
+  lifecycle/conformance loops rather than transparent same-instance reconnect.
+- `SET TRANSACTION` remains SQL-driven in this lane rather than a typed begin
+  API; source comments now make the fail-closed retry rule explicit:
+  `40xxx` requires a fresh statement boundary, `08xxx` requires reconnect or
+  reopen, and the CLI never auto-replays a whole transaction.
+- the shared C++ network client under this lane now adopts a compatible
+  default fresh native MGA boundary instead of sending a redundant
+  `TXN_BEGIN` when the engine has already reopened the session transaction.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL: CONN)
 - Current status: Implemented
 - Lane-local source anchors:
@@ -28,10 +45,13 @@
   - `sb_isql.cpp:935-949` exposes `SET AUTODDL`; `sb_isql.cpp:175` stores `autoddl` in config.
   - `sb_isql.cpp:2678-2688` applies stop/exit behavior after execution errors.
   - `sbdriver_conformance.cpp:712-748` adapts network client begin/commit/rollback operations for conformance runs.
+  - `txn_exec_parity.cpp:133-205` exposes explicit prepared/dormant/no-portal capability helpers and canonical prepared-transaction SQL construction.
   - `txn_exec_parity.cpp:168-349` implements `txn_exec` flow (`begin -> optional savepoint operations -> sql -> commit/rollback -> verify_sql`) with error-safe rollback and savepoint option validation.
 - Lane-local test anchors:
   - `sbdriver_conformance.cpp:829-833,895-897` normalizes `txn` alias and dispatches `txn_exec`.
   - `txn_exec_parity_test.cpp:173-338` covers commit/rollback verification, rollback-on-error behavior, savepoint release/rollback-to flows, and savepoint option guardrails.
+  - `txn_exec_parity_test.cpp:327-380` proves explicit prepared/dormant/no-portal capability truth and fail-closed dormant handling.
+  - `conformance/sbwp_conformance_manifest.sample.json` now proves live `txn_exec` commit/rollback verification on the shared native runtime through `sbdriver_conformance`.
   - `CMakeLists.txt:208-215` adds the dedicated `sbdriver_txn_exec_tests` lane test target.
 - Gaps/next actions:
   - `AUTODDL` is configurable (`sb_isql.cpp:935-949`) but not consumed by a separate transaction-control path in this lane.
@@ -48,8 +68,9 @@
   - `txn_exec_parity_test.cpp:132-170` validates `native_exec` success and mismatch handling.
   - `txn_exec_parity_test.cpp:173-225` validates execution parity inside transaction commit/rollback flows.
   - `sbdriver_conformance.cpp:874-1230` continues to cover query, prepare, paging, progress, notify, copy, lob, and cancel paths.
+  - `conformance/sbwp_conformance_manifest.sample.json` now proves live `native_exec`, `txn_exec`, and `res_loop_exec` behavior on the shared native runtime.
 - Gaps/next actions:
-  - Add live-connection manifest coverage for `native_exec` and `txn_exec` paths in lane CI.
+  - Expand live-connection manifest coverage beyond the checked-in sample to the rest of the CLI front-door command families.
   - `\sblr` remains a placeholder pending client support (`sb_isql.cpp:2435-2443`).
 
 ## META (JDBCBL: META)
@@ -111,4 +132,4 @@
   - `res_lifecycle_parity_test.cpp:92-194` stress-tests repeated connect/execute/disconnect iterations plus cleanup semantics on connect/execute failure paths.
 - Gaps/next actions:
   - `sb_isql` still uses a global non-owning `Connection*` alias to a stack connection object; migrate this global state to an explicit RAII session/context object.
-  - Collect live `res_loop_exec` conformance artifacts under DSN-backed runtime (current shell is env-gated).
+  - Promote the checked-in live `res_loop_exec` sample into routine CI/runtime artifact collection once the lane's broader shell gate is stabilized.

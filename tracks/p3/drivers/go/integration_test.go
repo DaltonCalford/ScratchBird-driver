@@ -10,6 +10,7 @@ package scratchbird
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +32,25 @@ func openTestDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	return db
+}
+
+func openDirectConn(t *testing.T) *Conn {
+	t.Helper()
+	dsn := os.Getenv("SCRATCHBIRD_GO_URL")
+	if dsn == "" {
+		t.Skip("SCRATCHBIRD_GO_URL not set")
+	}
+	cfg, err := ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("parse config error: %v", err)
+	}
+	conn := &Conn{config: cfg}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.Ping(ctx); err != nil {
+		t.Fatalf("connect ping error: %v", err)
+	}
+	return conn
 }
 
 func TestIntegrationSelect(t *testing.T) {
@@ -89,6 +109,73 @@ func TestIntegrationCancel(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Logf("cancel error: %v", err)
+	}
+}
+
+func TestIntegrationDirectConnAdoptsFreshBoundaryAndRejectsNestedBegin(t *testing.T) {
+	conn := openDirectConn(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	txDriver, err := conn.BeginTx(ctx, driver.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx error: %v", err)
+	}
+	if !conn.hasActiveTransaction() {
+		t.Fatalf("expected active native transaction boundary after begin")
+	}
+	if !conn.explicitTransaction {
+		t.Fatalf("expected explicit transaction marker after begin")
+	}
+
+	_, err = conn.BeginTx(ctx, driver.TxOptions{})
+	if err == nil {
+		t.Fatalf("expected nested begin rejection")
+	}
+	var driverErr *Error
+	if !errors.As(err, &driverErr) || driverErr.SQLState != "25001" {
+		t.Fatalf("expected 25001 nested begin error, got %v", err)
+	}
+
+	tx := txDriver.(*Tx)
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("rollback error: %v", err)
+	}
+	if !conn.hasActiveTransaction() {
+		t.Fatalf("expected fresh native boundary after rollback")
+	}
+}
+
+func TestIntegrationDirectConnPostRollbackQueryObservesActualResult(t *testing.T) {
+	conn := openDirectConn(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	txDriver, err := conn.BeginTx(ctx, driver.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx error: %v", err)
+	}
+	if err := txDriver.(*Tx).Rollback(); err != nil {
+		t.Fatalf("rollback error: %v", err)
+	}
+
+	rowsIface, err := conn.QueryContext(ctx, "SELECT 2", nil)
+	if err != nil {
+		t.Fatalf("query error: %v", err)
+	}
+	rows := rowsIface.(*Rows)
+	defer rows.Close()
+
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		t.Fatalf("next error: %v", err)
+	}
+	if got := fmt.Sprint(dest[0]); got != "2" {
+		t.Fatalf("unexpected row value: got %q want %q", got, "2")
 	}
 }
 

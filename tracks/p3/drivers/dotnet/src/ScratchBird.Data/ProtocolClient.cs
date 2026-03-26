@@ -47,6 +47,7 @@ internal sealed class ProtocolClient
     private Stream? _stream;
     private byte[] _attachmentId = new byte[16];
     private ulong _txnId;
+    private bool _runtimeTxnActive;
     private uint _sequence;
     private uint _lastQuerySequence;
     private bool _connected;
@@ -57,6 +58,7 @@ internal sealed class ProtocolClient
     private readonly Dictionary<string, PreparedStatement> _preparedStatements = new(StringComparer.Ordinal);
     private uint _preparedStatementSequence;
     private uint _portalSequence;
+    private bool _portalResumePending;
     private ScratchBirdConfig? _config;
     private record struct PreparedStatement(string Name, string Sql, uint[] ParamTypes, DateTimeOffset LastUsedUtc);
 
@@ -99,10 +101,12 @@ internal sealed class ProtocolClient
         _sequence = 0;
         _lastQuerySequence = 0;
         _txnId = 0;
+        _runtimeTxnActive = false;
         _parameters.Clear();
         _preparedStatements.Clear();
         _preparedStatementSequence = 0;
         _portalSequence = 0;
+        _portalResumePending = false;
         _attachmentId = new byte[16];
         _config = config;
 
@@ -257,14 +261,14 @@ internal sealed class ProtocolClient
                 case MessageType.PORTAL_SUSPENDED:
                 {
                     var pageSize = maxRows > 0 ? maxRows : 1;
-                    var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)pageSize);
-                    SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                    AllowPortalResume();
+                    ResumeSuspendedPortal((uint)pageSize);
                     break;
                 }
                 case MessageType.READY:
                 {
                     var ready = ProtocolCodec.ParseReady(msg.Payload);
-                    _txnId = ready.TxnId;
+                    ApplyRuntimeReadyState(ready.Status, ready.TxnId);
                     if (sawResultMetadata || rows.Count > 0)
                     {
                         resultSets.Add(new ResultSetSummary(
@@ -302,6 +306,16 @@ internal sealed class ProtocolClient
     public void Begin(ScratchBirdTransactionOptions options)
     {
         EnsureConnected();
+        if (_runtimeTxnActive && _txnId == 0)
+        {
+            if (!CanAdoptFreshNativeBoundary(options))
+            {
+                throw new ScratchBirdNotSupportedException(
+                    "fresh native MGA boundaries can only be adopted as default READ COMMITTED transactions on the live .NET lane",
+                    "0A000");
+            }
+            return;
+        }
         var payload = CreateTxnBeginPayload(options);
         SendMessage(MessageType.TXN_BEGIN, payload, 0, false);
         DrainUntilReady();
@@ -354,6 +368,20 @@ internal sealed class ProtocolClient
             autocommitMode = options.AutoCommit.Value ? (byte)1 : (byte)0;
         }
 
+        byte readCommittedMode = ProtocolConstants.ReadCommittedModeDefault;
+        if (options.ReadCommittedMode.HasValue)
+        {
+            if (!AllowsReadCommittedMode(options.IsolationLevel))
+            {
+                throw new ScratchBirdNotSupportedException(
+                    "ReadCommittedMode requires a READ COMMITTED isolation alias",
+                    "0A000");
+            }
+
+            flags |= ProtocolConstants.TxnFlagHasReadCommittedMode;
+            readCommittedMode = (byte)options.ReadCommittedMode.Value;
+        }
+
         return ProtocolCodec.BuildTxnBeginPayload(
             flags,
             conflictAction: 0,
@@ -362,7 +390,15 @@ internal sealed class ProtocolClient
             accessMode,
             deferrable,
             waitMode,
-            timeoutMs);
+            timeoutMs,
+            readCommittedMode);
+    }
+
+    private static bool AllowsReadCommittedMode(IsolationLevel isolationLevel)
+    {
+        return isolationLevel is IsolationLevel.Unspecified
+            or IsolationLevel.ReadUncommitted
+            or IsolationLevel.ReadCommitted;
     }
 
     private static byte MapIsolationLevel(IsolationLevel isolationLevel)
@@ -446,7 +482,7 @@ internal sealed class ProtocolClient
                 case MessageType.READY:
                 {
                     var ready = ProtocolCodec.ParseReady(msg.Payload);
-                    _txnId = ready.TxnId;
+                    ApplyRuntimeReadyState(ready.Status, ready.TxnId);
                     return;
                 }
                 case MessageType.ERROR:
@@ -537,7 +573,26 @@ internal sealed class ProtocolClient
     {
         _stream?.Dispose();
         _client?.Close();
+        _portalResumePending = false;
         _connected = false;
+        ClearTransactionState();
+    }
+
+    internal void AllowPortalResume()
+    {
+        _portalResumePending = true;
+    }
+
+    internal void ResumeSuspendedPortal(uint pageSize)
+    {
+        if (!_portalResumePending)
+        {
+            throw new ScratchBirdTransactionException("portal resume requires explicit suspended state", "55000");
+        }
+
+        _portalResumePending = false;
+        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, pageSize);
+        SendMessage(MessageType.EXECUTE, execPayload, 0, false);
     }
 
     private void EnsureConnected()
@@ -692,7 +747,7 @@ internal sealed class ProtocolClient
                 case MessageType.READY:
                 {
                     var ready = ProtocolCodec.ParseReady(msg.Payload);
-                    _txnId = ready.TxnId;
+                    ApplyRuntimeReadyState(ready.Status, ready.TxnId);
                     return;
                 }
                 case MessageType.ERROR:
@@ -830,7 +885,7 @@ internal sealed class ProtocolClient
                     throw BuildQueryException(msg.Payload);
                 case MessageType.READY:
                     var ready = ProtocolCodec.ParseReady(msg.Payload);
-                    _txnId = ready.TxnId;
+                    ApplyRuntimeReadyState(ready.Status, ready.TxnId);
                     return paramCount;
                 default:
                     continue;
@@ -1079,7 +1134,21 @@ internal sealed class ProtocolClient
                 }
                 if (status.Name == "current_txn_id" && TryParseUInt64(status.Value, out var txnId))
                 {
-                    _txnId = txnId;
+                    ApplyRuntimeTxnId(txnId);
+                }
+                return true;
+            }
+            case MessageType.TXN_STATUS:
+            {
+                var status = ProtocolCodec.ParseTxnStatus(msg.Payload);
+                if (status.Status == 'T')
+                {
+                    ApplyRuntimeTxnId(status.TxnId);
+                    _runtimeTxnActive = true;
+                }
+                else
+                {
+                    ClearTransactionState();
                 }
                 return true;
             }
@@ -1121,13 +1190,55 @@ internal sealed class ProtocolClient
                 case MessageType.READY:
                 {
                     var ready = ProtocolCodec.ParseReady(msg.Payload);
-                    _txnId = ready.TxnId;
+                    ApplyRuntimeReadyState(ready.Status, ready.TxnId);
                     return;
                 }
                 case MessageType.ERROR:
                     throw BuildQueryException(msg.Payload);
             }
         }
+    }
+
+    private bool CanAdoptFreshNativeBoundary(ScratchBirdTransactionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.IsolationLevel == IsolationLevel.ReadCommitted
+            && options.ReadCommittedMode is null
+            && options.AccessMode is null
+            && options.Deferrable is null
+            && options.Wait is null
+            && options.TimeoutMs is null
+            && options.AutoCommit is null;
+    }
+
+    private void ApplyRuntimeTxnId(ulong txnId)
+    {
+        _txnId = txnId;
+        if (txnId > 0)
+        {
+            _runtimeTxnActive = true;
+        }
+    }
+
+    private void ApplyRuntimeReadyState(byte status, ulong txnId)
+    {
+        _txnId = txnId;
+        if (status != 0)
+        {
+            // READY is authoritative for native transaction activity. The
+            // engine can expose a fresh active boundary while the public wire
+            // header still reports txn_id == 0.
+            _runtimeTxnActive = true;
+            return;
+        }
+
+        ClearTransactionState();
+    }
+
+    private void ClearTransactionState()
+    {
+        _txnId = 0;
+        _runtimeTxnActive = false;
     }
 
     private static List<FieldSummary> SummarizeFields(IReadOnlyList<ColumnInfo> columns)
@@ -1392,7 +1503,7 @@ internal sealed class ProtocolClient
     private void SetAttachment(byte[] attachmentId, ulong txnId)
     {
         _attachmentId = attachmentId;
-        _txnId = txnId;
+        ApplyRuntimeTxnId(txnId);
     }
 
     private ScratchBirdException BuildQueryException(byte[] payload)
@@ -1685,8 +1796,8 @@ internal sealed class ProtocolClient
                     }
                     case MessageType.PORTAL_SUSPENDED:
                     {
-                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
-                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        _client.AllowPortalResume();
+                        _client.ResumeSuspendedPortal((uint)_pageSize);
                         break;
                     }
                     case MessageType.READY:
@@ -1756,8 +1867,8 @@ internal sealed class ProtocolClient
                         return true;
                     case MessageType.PORTAL_SUSPENDED:
                     {
-                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
-                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        _client.AllowPortalResume();
+                        _client.ResumeSuspendedPortal((uint)_pageSize);
                         break;
                     }
                     case MessageType.READY:
@@ -1802,8 +1913,8 @@ internal sealed class ProtocolClient
                         return;
                     case MessageType.PORTAL_SUSPENDED:
                     {
-                        var execPayload = ProtocolCodec.BuildExecutePayload(string.Empty, (uint)_pageSize);
-                        _client.SendMessage(MessageType.EXECUTE, execPayload, 0, false);
+                        _client.AllowPortalResume();
+                        _client.ResumeSuspendedPortal((uint)_pageSize);
                         break;
                     }
                     case MessageType.READY:
@@ -1868,7 +1979,7 @@ internal sealed class ProtocolClient
         private void MarkReady(byte[] payload)
         {
             var ready = ProtocolCodec.ParseReady(payload);
-            _client._txnId = ready.TxnId;
+            _client.ApplyRuntimeReadyState(ready.Status, ready.TxnId);
             _done = true;
             _currentResultComplete = true;
             _timeoutCts?.Cancel();

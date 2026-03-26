@@ -258,6 +258,42 @@ final class ScratchBirdSocket {
         return buffer
     }
 
+    func hasPendingData() -> Bool {
+        #if canImport(Network)
+        if nwConnection != nil {
+            return !nwBuffer.isEmpty
+        }
+        #endif
+        #if canImport(NIOCore) && canImport(NIOPosix) && canImport(NIOSSL)
+        if let nioReadBuffer {
+            _ = nioReadBuffer
+            return false
+        }
+        #endif
+
+        if fd < 0 {
+            return false
+        }
+
+        var probe: UInt8 = 0
+        let flags = Int32(MSG_PEEK | MSG_DONTWAIT)
+        let result = withUnsafeMutablePointer(to: &probe) { ptr in
+            recv(fd, ptr, 1, flags)
+        }
+        if result > 0 {
+            return true
+        }
+        if result == 0 {
+            return false
+        }
+
+        #if canImport(Glibc)
+        return errno != EAGAIN && errno != EWOULDBLOCK
+        #else
+        return errno != EAGAIN && errno != EWOULDBLOCK
+        #endif
+    }
+
     func close() {
         #if canImport(Network)
         if let connection = nwConnection {

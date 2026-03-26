@@ -16,6 +16,43 @@ using namespace scratchbird::odbc;
 
 namespace {
 
+class EnvGuard {
+public:
+    explicit EnvGuard(const char* name) : name_(name) {
+        const char* existing = std::getenv(name);
+        if (existing) {
+            had_value_ = true;
+            old_value_ = existing;
+        }
+#if defined(_WIN32)
+        _putenv_s(name, "");
+#else
+        unsetenv(name);
+#endif
+    }
+
+    ~EnvGuard() {
+#if defined(_WIN32)
+        if (had_value_) {
+            _putenv_s(name_.c_str(), old_value_.c_str());
+        } else {
+            _putenv_s(name_.c_str(), "");
+        }
+#else
+        if (had_value_) {
+            setenv(name_.c_str(), old_value_.c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+#endif
+    }
+
+private:
+    std::string name_;
+    bool had_value_{false};
+    std::string old_value_;
+};
+
 class FakeOdbcClientBridge : public scratchbird::odbc::OdbcClientBridge {
 public:
     SQLRETURN executeSQL(const std::string& sql,
@@ -216,6 +253,25 @@ TEST_F(OdbcCatalogTest, ColumnsParseTypesAndPrimaryKeys) {
     EXPECT_EQ(stmt_.rows_[0][2], "users");
     EXPECT_EQ(stmt_.rows_[0][3], "id");
     EXPECT_EQ(stmt_.rows_[0][5], "PRIMARY");
+}
+
+TEST(OdbcConnectionConfigTest, BuildConfigDefaultsSessionSchemaToUsersPublic) {
+    EnvGuard schema("SCRATCHBIRD_SCHEMA");
+    scratchbird::odbc::ConnectionParams params;
+    params.server = "127.0.0.1";
+    params.port = 13092;
+    params.database = "main";
+    params.user = "SysArch";
+    params.password = "replaceme";
+
+    scratchbird::odbc::OdbcClientBridge bridge;
+    auto cfg = bridge.buildConfig(params);
+
+    EXPECT_EQ(cfg.schema, "users.public");
+
+    params.schema = "tenant.analytics";
+    cfg = bridge.buildConfig(params);
+    EXPECT_EQ(cfg.schema, "tenant.analytics");
 }
 
 TEST_F(OdbcCatalogTest, ColumnsParseExtendedTypeMatrixShapes) {
@@ -548,6 +604,16 @@ private:
     std::string message_;
 };
 
+class DisconnectRecordingClientBridge : public RecordingClientBridge {
+public:
+    int disconnect_calls{0};
+
+    void disconnect() override {
+        ++disconnect_calls;
+        connected = false;
+    }
+};
+
 class SmokeClientBridge : public RecordingClientBridge {
 public:
     SQLRETURN executeSQL(const std::string& sql,
@@ -601,6 +667,32 @@ TEST(OdbcAutocommitTest, SetAutocommitSendsConflictClause) {
     EXPECT_EQ(bridge_ptr->sql_log[1], "SET AUTOCOMMIT ON ON CONFLICT COMMIT");
 }
 
+TEST(OdbcLifecycleTest, DisconnectClearsAbandonedSessionState) {
+    scratchbird::odbc::OdbcEnvironment env;
+    scratchbird::odbc::OdbcConnection conn(&env);
+
+    auto bridge = std::make_unique<DisconnectRecordingClientBridge>();
+    auto* bridge_ptr = bridge.get();
+    conn.client_bridge_ = std::move(bridge);
+    conn.connected_ = true;
+    conn.connection_dead_ = true;
+    conn.in_transaction_ = true;
+    conn.prepared_sql_[11] = "SELECT 1";
+    ASSERT_NE(conn.createStatement(), nullptr);
+    ASSERT_EQ(conn.getStatementCount(), 1u);
+
+    SQLRETURN rc = conn.disconnect();
+
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    EXPECT_FALSE(conn.connected_);
+    EXPECT_FALSE(conn.connection_dead_);
+    EXPECT_FALSE(conn.in_transaction_);
+    EXPECT_TRUE(conn.prepared_sql_.empty());
+    EXPECT_EQ(conn.getStatementCount(), 0u);
+    EXPECT_EQ(bridge_ptr->disconnect_calls, 1);
+    EXPECT_FALSE(bridge_ptr->connected);
+}
+
 TEST(OdbcAutocommitTest, IsolationMappingUsesSetTransaction) {
     scratchbird::odbc::OdbcEnvironment env;
     scratchbird::odbc::OdbcConnection conn(&env);
@@ -620,6 +712,79 @@ TEST(OdbcAutocommitTest, IsolationMappingUsesSetTransaction) {
     EXPECT_EQ(bridge_ptr->sql_log[0],
               "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE ON CONFLICT COMMIT");
     EXPECT_EQ(bridge_ptr->sql_log[1], "SET AUTOCOMMIT ON ON CONFLICT COMMIT");
+}
+
+TEST(OdbcAutocommitTest, IsolationSqlDocumentsCanonicalAliasSurface) {
+    scratchbird::odbc::OdbcEnvironment env;
+    scratchbird::odbc::OdbcConnection conn(&env);
+
+    auto bridge = std::make_unique<RecordingClientBridge>();
+    auto* bridge_ptr = bridge.get();
+    conn.client_bridge_ = std::move(bridge);
+    conn.connected_ = true;
+
+    auto setIsolation = [&](SQLUINTEGER isolation) -> std::string {
+        bridge_ptr->sql_log.clear();
+        SQLRETURN rc = conn.setAttribute(SQL_ATTR_TXN_ISOLATION,
+                                         reinterpret_cast<SQLPOINTER>(static_cast<uintptr_t>(isolation)),
+                                         0);
+        EXPECT_EQ(rc, SQL_SUCCESS);
+        EXPECT_GE(bridge_ptr->sql_log.size(), 1u);
+        if (rc != SQL_SUCCESS || bridge_ptr->sql_log.empty()) {
+            return "";
+        }
+        return bridge_ptr->sql_log.front();
+    };
+
+    EXPECT_EQ(setIsolation(SQL_TXN_READ_UNCOMMITTED),
+              "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED ON CONFLICT COMMIT");
+    EXPECT_EQ(setIsolation(SQL_TXN_READ_COMMITTED),
+              "SET TRANSACTION ISOLATION LEVEL READ COMMITTED ON CONFLICT COMMIT");
+    EXPECT_EQ(setIsolation(SQL_TXN_REPEATABLE_READ),
+              "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ ON CONFLICT COMMIT");
+    EXPECT_EQ(setIsolation(SQL_TXN_SERIALIZABLE),
+              "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE ON CONFLICT COMMIT");
+}
+
+TEST(OdbcLifecycleTest, PreparedDormantAndPortalCapabilitiesStayExplicit) {
+    EXPECT_TRUE(scratchbird::odbc::supportsPreparedTransactions());
+    EXPECT_FALSE(scratchbird::odbc::supportsDormantReattach());
+    EXPECT_FALSE(scratchbird::odbc::supportsPortalResume());
+
+    std::string sql;
+    std::string sqlstate;
+    std::string message;
+    SQLRETURN rc = scratchbird::odbc::buildPreparedTransactionSql(
+        " PREPARE TRANSACTION ",
+        " gid'one ",
+        sql,
+        &sqlstate,
+        &message);
+    ASSERT_EQ(rc, SQL_SUCCESS);
+    EXPECT_EQ(sql, "PREPARE TRANSACTION 'gid''one'");
+    EXPECT_TRUE(sqlstate.empty());
+    EXPECT_TRUE(message.empty());
+
+    sql.clear();
+    sqlstate.clear();
+    message.clear();
+    rc = scratchbird::odbc::buildPreparedTransactionSql(
+        "COMMIT PREPARED",
+        "   ",
+        sql,
+        &sqlstate,
+        &message);
+    ASSERT_EQ(rc, SQL_ERROR);
+    EXPECT_TRUE(sql.empty());
+    EXPECT_EQ(sqlstate, "42601");
+    EXPECT_EQ(message, "Global transaction id is required");
+
+    sqlstate.clear();
+    message.clear();
+    rc = scratchbird::odbc::rejectDormantReattach("reattach", &sqlstate, &message);
+    ASSERT_EQ(rc, SQL_ERROR);
+    EXPECT_EQ(sqlstate, "0A000");
+    EXPECT_NE(message.find("dormant reattach"), std::string::npos);
 }
 
 TEST(OdbcTransactionTest, EnvHandleEndTranCommitsConnectedConnections) {

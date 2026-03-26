@@ -105,6 +105,33 @@ void runBiMetadataSmoke(const std::string& conn_str, const char* label) {
     SQLFreeHandle(SQL_HANDLE_ENV, env);
 }
 
+std::string fetchSingleText(SQLHSTMT stmt, const char* sql) {
+    SQLRETURN exec_rc = SQLExecDirect(
+        stmt,
+        reinterpret_cast<SQLCHAR*>(const_cast<char*>(sql)),
+        SQL_NTS);
+    EXPECT_TRUE(SQL_SUCCEEDED(exec_rc))
+        << "SQLExecDirect failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    if (!SQL_SUCCEEDED(exec_rc)) {
+        return {};
+    }
+
+    SQLRETURN fetch_rc = SQLFetch(stmt);
+    EXPECT_EQ(fetch_rc, SQL_SUCCESS)
+        << "SQLFetch failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    if (fetch_rc != SQL_SUCCESS) {
+        return {};
+    }
+
+    char value[256] = {};
+    SQLLEN value_len = 0;
+    SQLRETURN get_rc = SQLGetData(stmt, 1, SQL_C_CHAR, value, sizeof(value), &value_len);
+    EXPECT_TRUE(SQL_SUCCEEDED(get_rc))
+        << "SQLGetData failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    SQLCloseCursor(stmt);
+    return SQL_SUCCEEDED(get_rc) ? std::string(value) : std::string();
+}
+
 }  // namespace
 
 TEST(OdbcExternalRuntimeTest, ConnectsThroughListenerAndQueriesFixtureData) {
@@ -141,13 +168,86 @@ TEST(OdbcExternalRuntimeTest, ConnectsThroughListenerAndQueriesFixtureData) {
 
     SQLRETURN exec_rc = SQLExecDirect(stmt,
                                       reinterpret_cast<SQLCHAR*>(const_cast<char*>(
-                                          "UPDATE basic_table SET name = name "
+                                          "UPDATE users.public.basic_table SET name = name "
                                           "WHERE name = 'baseline'")),
                                       SQL_NTS);
     ASSERT_TRUE(SQL_SUCCEEDED(exec_rc)) << "SQLExecDirect failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
     SQLLEN row_count = 0;
     ASSERT_EQ(SQLRowCount(stmt, &row_count), SQL_SUCCESS);
     EXPECT_GE(row_count, 0);
+
+    SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+    SQLDisconnect(dbc);
+    SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+    SQLFreeHandle(SQL_HANDLE_ENV, env);
+}
+
+TEST(OdbcExternalRuntimeTest, RollbackLeavesImmediateQueryUsableOnFreshBoundary) {
+    const char* conn_env = std::getenv("SCRATCHBIRD_ODBC_TEST_CONNSTR");
+    if (conn_env == nullptr || std::string(conn_env).empty()) {
+        GTEST_SKIP() << "SCRATCHBIRD_ODBC_TEST_CONNSTR is not set";
+    }
+
+    std::string conn_str(conn_env);
+
+    SQLHENV env = SQL_NULL_HENV;
+    SQLHDBC dbc = SQL_NULL_HDBC;
+    SQLHSTMT stmt = SQL_NULL_HSTMT;
+
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env), SQL_SUCCESS);
+    ASSERT_EQ(SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION,
+                            reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC3), 0), SQL_SUCCESS);
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_DBC, env, &dbc), SQL_SUCCESS);
+
+    SQLCHAR out_conn[1024] = {};
+    SQLSMALLINT out_len = 0;
+    SQLRETURN conn_rc = SQLDriverConnect(dbc,
+                                         nullptr,
+                                         reinterpret_cast<SQLCHAR*>(&conn_str[0]),
+                                         SQL_NTS,
+                                         out_conn,
+                                         sizeof(out_conn),
+                                         &out_len,
+                                         SQL_DRIVER_NOPROMPT);
+    ASSERT_TRUE(SQL_SUCCEEDED(conn_rc))
+        << "SQLDriverConnect failed: " << diagMessage(SQL_HANDLE_DBC, dbc);
+
+    ASSERT_EQ(SQLSetConnectAttr(dbc,
+                                SQL_ATTR_AUTOCOMMIT,
+                                reinterpret_cast<SQLPOINTER>(static_cast<uintptr_t>(SQL_AUTOCOMMIT_OFF)),
+                                0),
+              SQL_SUCCESS);
+
+    ASSERT_EQ(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt), SQL_SUCCESS);
+
+    SQLRETURN exec_rc = SQLExecDirect(
+        stmt,
+        reinterpret_cast<SQLCHAR*>(const_cast<char*>(
+            "UPDATE users.public.basic_table SET name = 'rollback-probe' WHERE name = 'baseline'")),
+        SQL_NTS);
+    ASSERT_TRUE(SQL_SUCCEEDED(exec_rc))
+        << "UPDATE failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    SQLCloseCursor(stmt);
+
+    ASSERT_EQ(SQLEndTran(SQL_HANDLE_DBC, dbc, SQL_ROLLBACK), SQL_SUCCESS)
+        << "Rollback failed: " << diagMessage(SQL_HANDLE_DBC, dbc);
+
+    std::string baseline_name = fetchSingleText(
+        stmt,
+        "SELECT name FROM users.public.basic_table WHERE name = 'baseline'");
+    ASSERT_EQ(baseline_name, "baseline")
+        << "Fresh-boundary query did not observe rolled-back state";
+
+    SQLRETURN probe_exec_rc = SQLExecDirect(
+        stmt,
+        reinterpret_cast<SQLCHAR*>(const_cast<char*>(
+            "SELECT name FROM users.public.basic_table WHERE name = 'rollback-probe'")),
+        SQL_NTS);
+    ASSERT_TRUE(SQL_SUCCEEDED(probe_exec_rc))
+        << "Probe select failed: " << diagMessage(SQL_HANDLE_STMT, stmt);
+    ASSERT_EQ(SQLFetch(stmt), SQL_NO_DATA)
+        << "Rolled-back row should not remain visible after rollback";
+    SQLCloseCursor(stmt);
 
     SQLFreeHandle(SQL_HANDLE_STMT, stmt);
     SQLDisconnect(dbc);

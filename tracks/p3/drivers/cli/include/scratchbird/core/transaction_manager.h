@@ -38,7 +38,7 @@ namespace scratchbird::core
         ACTIVE = 0,
         COMMITTED = 1,
         ABORTED = 2,
-        PREPARED = 3, // For future 2PC support
+        PREPARED = 3, // Transaction prepared (2PC limbo)
     };
 
     // Transaction information
@@ -147,17 +147,20 @@ namespace scratchbird::core
         auto rollbackTransaction(uint32_t proc_id, uint64_t xid, ErrorContext *ctx = nullptr)
             -> Status;
 
-        // Prepare a transaction for 2PC (limbo state)
+        // Prepare a transaction for 2PC (limbo state).
+        // This is an explicit engine-managed state, not a reconnect side effect.
         // LOCKING: Thread-safe. Acquires mutex_ for pre-prepare work, releases before I/O.
         auto prepareTransaction(uint32_t proc_id, uint64_t xid, const std::string& gid,
                                 const ID& owner_id, ErrorContext *ctx = nullptr) -> Status;
 
-        // Commit a prepared (2PC) transaction
+        // Commit a prepared (2PC) transaction.
+        // Limbo resolution is explicit; drivers must not imply automatic replay.
         // LOCKING: Thread-safe. Acquires mutex_ for state updates, releases before I/O.
         auto commitPreparedTransaction(const std::string& gid,
                                        ErrorContext *ctx = nullptr) -> Status;
 
-        // Roll back a prepared (2PC) transaction
+        // Roll back a prepared (2PC) transaction.
+        // Reconnect alone never resolves prepared work.
         // LOCKING: Thread-safe. Acquires mutex_ for state updates, releases before I/O.
         auto rollbackPreparedTransaction(const std::string& gid,
                                          ErrorContext *ctx = nullptr) -> Status;

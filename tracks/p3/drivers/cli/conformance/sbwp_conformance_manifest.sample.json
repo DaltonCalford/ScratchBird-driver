@@ -42,11 +42,20 @@
       "cleanup_sql": "DELETE FROM basic_table WHERE id = 7100"
     },
     {
+      "id": "txn_rollback_verify",
+      "kind": "txn_exec",
+      "sql": "INSERT INTO basic_table (id) VALUES (7200)",
+      "txn_end": "rollback",
+      "expect_rows_affected": 1,
+      "verify_sql": "SELECT id FROM basic_table WHERE id = 7200",
+      "verify_expect_rows": 0
+    },
+    {
       "id": "res_loop_smoke",
       "kind": "res_loop_exec",
       "sql": "SELECT 1",
       "loop_iterations": 25,
-      "expect_total_rows_affected": 0,
+      "expect_total_rows_affected": 25,
       "expect_total_rows": 25
     }
   ]

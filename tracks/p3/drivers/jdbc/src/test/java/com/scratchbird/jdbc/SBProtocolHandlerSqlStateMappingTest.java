@@ -11,7 +11,10 @@ package com.scratchbird.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.SQLException;
@@ -68,6 +71,85 @@ public class SBProtocolHandlerSqlStateMappingTest {
         assertFalse(ex instanceof java.sql.SQLTransientException);
     }
 
+    @Test
+    public void retryScopeClassifiesStatementAndReconnectBoundaries() {
+        assertEquals(SBRetryScope.STATEMENT, SBProtocolHandler.retryScopeForSqlState("40001"));
+        assertEquals(SBRetryScope.STATEMENT, SBProtocolHandler.retryScopeForSqlState("40P01"));
+        assertEquals(SBRetryScope.RECONNECT, SBProtocolHandler.retryScopeForSqlState("08006"));
+        assertEquals(SBRetryScope.NONE, SBProtocolHandler.retryScopeForSqlState("57014"));
+        assertEquals(SBRetryScope.NONE, SBProtocolHandler.retryScopeForSqlState(null));
+    }
+
+    @Test
+    public void retryableSqlStateOnlyAllowsFreshBoundaryRetries() {
+        assertTrue(SBProtocolHandler.isRetryableSqlState("40001"));
+        assertTrue(SBProtocolHandler.isRetryableSqlState("08003"));
+        assertFalse(SBProtocolHandler.isRetryableSqlState("57014"));
+        assertFalse(SBProtocolHandler.isRetryableSqlState(""));
+    }
+
+    @Test
+    public void txnBeginPayloadExpandsForReadCommittedMode() throws Exception {
+        Method method = SBProtocolHandler.class.getDeclaredMethod(
+            "buildTxnBeginPayload",
+            short.class,
+            byte.class,
+            byte.class,
+            byte.class,
+            byte.class,
+            byte.class,
+            byte.class,
+            int.class,
+            byte.class
+        );
+        method.setAccessible(true);
+        short flags = (short) (0x0001 | 0x0100);
+        byte[] payload = (byte[]) method.invoke(
+            new SBProtocolHandler(new SBConnectionProperties()),
+            flags,
+            (byte) 0,
+            (byte) 0,
+            SBProtocolHandler.ISOLATION_READ_COMMITTED,
+            (byte) 0,
+            (byte) 0,
+            (byte) 0,
+            0,
+            SBProtocolHandler.READ_COMMITTED_MODE_READ_CONSISTENCY
+        );
+
+        assertEquals(16, payload.length);
+        assertEquals(SBProtocolHandler.READ_COMMITTED_MODE_READ_CONSISTENCY, Byte.toUnsignedInt(payload[12]));
+    }
+
+    @Test
+    public void resumeSuspendedPortalRequiresExplicitSuspendedState() {
+        SBProtocolHandler handler = new SBProtocolHandler(new SBConnectionProperties());
+
+        SQLException ex = org.junit.jupiter.api.Assertions.assertThrows(
+            SQLException.class,
+            () -> handler.resumeSuspendedPortal(2)
+        );
+
+        assertEquals("55000", ex.getSQLState());
+    }
+
+    @Test
+    public void resumeSuspendedPortalWritesExecuteAfterExplicitSuspendedState() throws Exception {
+        SBProtocolHandler handler = new SBProtocolHandler(new SBConnectionProperties());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        setPrivateField(handler, "outputStream", output);
+        setPrivateField(handler, "attachmentId", new byte[16]);
+        setPrivateField(handler, "txnId", 0L);
+
+        handler.allowPortalResume();
+        handler.resumeSuspendedPortal(4);
+
+        byte[] written = output.toByteArray();
+        assertTrue(written.length >= 48);
+        assertEquals(0x07, written[6] & 0xff);
+        assertEquals(4, java.nio.ByteBuffer.wrap(written, 44, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt());
+    }
+
     private static SQLException createSQLExceptionFromState(String state) throws Exception {
         var method = getCreateSQLExceptionMethod();
         var handler = new SBProtocolHandler(new SBConnectionProperties());
@@ -87,5 +169,11 @@ public class SBProtocolHandlerSqlStateMappingTest {
         var method = SBProtocolHandler.class.getDeclaredMethod("createSQLException", String.class, String.class);
         method.setAccessible(true);
         return method;
+    }
+
+    private static void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+        var field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 }

@@ -24,6 +24,7 @@ use ScratchBird\PDO\ScratchBirdNotSupportedException;
 use ScratchBird\PDO\ScratchBirdSyntaxException;
 use ScratchBird\PDO\ScratchBirdTransactionException;
 use ScratchBird\PDO\ScratchBirdWarning;
+use ScratchBird\PDO\RetryScope;
 
 final class ErrorsTest extends TestCase
 {
@@ -91,6 +92,23 @@ final class ErrorsTest extends TestCase
         $recordError->invoke($connection, new RuntimeException('socket read failed'));
 
         $this->assertSame(['HY000', 0, 'socket read failed'], $connection->errorInfo());
+    }
+
+    public function testRetryScopeClassifiesStatementAndReconnectBoundaries(): void
+    {
+        $this->assertSame(RetryScope::STATEMENT, ErrorMapper::retryScopeForSqlState('40001'));
+        $this->assertSame(RetryScope::STATEMENT, ErrorMapper::retryScopeForSqlState('40P01'));
+        $this->assertSame(RetryScope::RECONNECT, ErrorMapper::retryScopeForSqlState('08006'));
+        $this->assertSame(RetryScope::NONE, ErrorMapper::retryScopeForSqlState('57014'));
+        $this->assertSame(RetryScope::NONE, ErrorMapper::retryScopeForSqlState(null));
+    }
+
+    public function testIsRetryableSqlStateOnlyAllowsFreshBoundaryRetries(): void
+    {
+        $this->assertTrue(ErrorMapper::isRetryableSqlState('40001'));
+        $this->assertTrue(ErrorMapper::isRetryableSqlState('08003'));
+        $this->assertFalse(ErrorMapper::isRetryableSqlState('57014'));
+        $this->assertFalse(ErrorMapper::isRetryableSqlState(''));
     }
 
     private function newConnectionWithoutConstructor(): Connection

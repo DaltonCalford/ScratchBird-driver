@@ -16,6 +16,50 @@ Current implementation is a Mojo-Python interop lane:
 - [S3 Metadata Implementation](S3_METADATA_IMPLEMENTATION.md)
 - [Tests](tests/README.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- `begin(...)` exposes the lane's SQL-style compatibility aliases for
+  transaction begin options, including `read_committed_mode`, and
+  `canonical_isolation_label(...)` now makes the current mapping explicit in lane source:
+  `READ UNCOMMITTED` remains a legacy compatibility alias,
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`
+- `canonical_read_committed_mode_label(...)` now makes the canonical
+  `READ COMMITTED` sub-mode selector explicit in lane source, including
+  `READ COMMITTED READ CONSISTENCY`
+- `retry_scope_for_sqlstate(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay
+- on the live `sb_wire_transport=python` engine-endpoint path, native
+  `READY`, `TXN_STATUS`, and `current_txn_id` own transaction-state truth,
+  including fresh MGA boundaries that remain active while `txn_id == 0`
+- compatible default `begin(...)` calls now adopt that already-active fresh
+  native boundary, while unsupported non-default fresh-boundary adoption fails
+  closed with `0A000`
+- `commit()` and `rollback()` now preserve that fresh native boundary and the
+  live matrix proves the next post-rollback query sees the real result instead
+  of a stale reopen frame
+- `supports_prepared_transactions()` and
+  `build_prepared_transaction_sql(...)` make prepared / limbo handling
+  explicit in lane source, and `prepare_transaction(...)`,
+  `commit_prepared(...)`, and `rollback_prepared(...)` use canonical
+  transaction-control SQL rather than reconnect folklore
+- `supports_dormant_reattach() -> false` plus fail-closed
+  `detach_to_dormant(...)` / `reattach_dormant(...)` make dormant truth
+  explicit in lane code
+- this lane does not currently expose a standalone public portal-resume helper,
+  and `supports_portal_resume() -> false` keeps that absence explicit instead
+  of implying reconnect-based continuation
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Status
 
 - Full SBWP v1.1 API surface is represented in-lane through the Python-backed shim.

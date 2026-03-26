@@ -33,6 +33,8 @@ export class ScratchbirdOperatorInterventionError extends ScratchbirdError {}
 export class ScratchbirdSystemError extends ScratchbirdError {}
 export class ScratchbirdInternalError extends ScratchbirdError {}
 
+export type RetryScope = "none" | "reconnect" | "statement" | "transaction";
+
 export function mapSqlState(code?: string): new (...args: any[]) => ScratchbirdError {
   if (!code || code.length < 2) {
     return ScratchbirdError;
@@ -129,4 +131,23 @@ export function mapSqlState(code?: string): new (...args: any[]) => ScratchbirdE
       return ScratchbirdInternalError;
   }
   return ScratchbirdError;
+}
+
+export function retryScopeForSqlState(code?: string): RetryScope {
+  // Drivers are fail-closed: fresh statement restart for 40xxx, reconnect
+  // only for 08xxx, and no automatic whole-transaction replay.
+  if (!code || code.length !== 5) {
+    return "none";
+  }
+  if (code === "40001" || code === "40P01") {
+    return "statement";
+  }
+  if (code.slice(0, 2) === "08") {
+    return "reconnect";
+  }
+  return "none";
+}
+
+export function isRetryableSqlState(code?: string): boolean {
+  return retryScopeForSqlState(code) !== "none";
 }

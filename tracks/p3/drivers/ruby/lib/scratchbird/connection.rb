@@ -50,9 +50,9 @@ module Scratchbird
       @autocommit = next_value
     end
 
-    def begin_transaction
+    def begin_transaction(options = nil)
       ensure_open
-      @client.begin_transaction
+      @client.begin_transaction(options)
     end
 
     def commit
@@ -63,6 +63,39 @@ module Scratchbird
     def rollback
       ensure_open
       @client.rollback
+    end
+
+    def supports_prepared_transactions?
+      @client.supports_prepared_transactions?
+    end
+
+    def supports_dormant_reattach?
+      @client.supports_dormant_reattach?
+    end
+
+    def prepare_transaction(gid)
+      ensure_open
+      @client.prepare_transaction(gid)
+    end
+
+    def commit_prepared(gid)
+      ensure_open
+      @client.commit_prepared(gid)
+    end
+
+    def rollback_prepared(gid)
+      ensure_open
+      @client.rollback_prepared(gid)
+    end
+
+    def detach_to_dormant
+      ensure_open
+      @client.detach_to_dormant
+    end
+
+    def reattach_dormant(dormant_id, auth_token = nil)
+      ensure_open
+      @client.reattach_dormant(dormant_id, auth_token)
     end
 
     def savepoint(name)
@@ -222,8 +255,10 @@ module Scratchbird
     end
 
     def begin_transaction_if_needed
-      return if autocommit || in_transaction?
-      @client.begin_transaction
+      return if autocommit
+      # Native MGA sessions own the replacement transaction boundary on the
+      # server side. With autocommit disabled, statements execute against that
+      # session transaction directly instead of injecting a client-side BEGIN.
     end
 
     def build_config(options)

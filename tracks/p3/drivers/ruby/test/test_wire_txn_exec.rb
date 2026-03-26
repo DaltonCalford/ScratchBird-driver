@@ -15,7 +15,7 @@ class TestWireTxnExec < Minitest::Test
       msg(Scratchbird::Protocol::MSG_PORTAL_SUSPENDED, :suspended),
       msg(Scratchbird::Protocol::MSG_DATA_ROW, [2]),
       msg(Scratchbird::Protocol::MSG_COMMAND_COMPLETE, :command_complete),
-      msg(Scratchbird::Protocol::MSG_READY, [0, 19, 0])
+      msg(Scratchbird::Protocol::MSG_READY, [1, 19, 0])
     ]
     client, sent = build_client_with_script(messages)
     client.define_singleton_method(:decode_row) { |_columns, values| values }
@@ -94,9 +94,9 @@ class TestWireTxnExec < Minitest::Test
 
   def test_txn_id_transitions_follow_ready_frames
     messages = [
-      msg(Scratchbird::Protocol::MSG_READY, [0, 55, 0]),
+      msg(Scratchbird::Protocol::MSG_READY, [1, 55, 0]),
       msg(Scratchbird::Protocol::MSG_READY, [0, 0, 0]),
-      msg(Scratchbird::Protocol::MSG_READY, [0, 66, 0]),
+      msg(Scratchbird::Protocol::MSG_READY, [1, 66, 0]),
       msg(Scratchbird::Protocol::MSG_READY, [0, 0, 0])
     ]
     client, sent = build_client_with_script(messages)
@@ -121,6 +121,88 @@ class TestWireTxnExec < Minitest::Test
       ],
       sent.map { |entry| entry[0] }
     )
+  end
+
+  def test_ready_status_can_report_active_transaction_with_zero_txn_id
+    messages = [msg(Scratchbird::Protocol::MSG_READY, [1, 0, 0])]
+    client, _sent = build_client_with_script(messages)
+
+    with_protocol_parse_stubs(parse_ready: ->(payload) { payload }) do
+      client.send(:drain_until_ready)
+      assert_equal true, client.in_transaction?
+      assert_equal 0, client.txn_id
+    end
+  end
+
+  def test_begin_transaction_encodes_read_committed_mode
+    messages = [msg(Scratchbird::Protocol::MSG_READY, [1, 55, 0])]
+    client, sent = build_client_with_script(messages)
+
+    with_protocol_parse_stubs(parse_ready: ->(payload) { payload }) do
+      client.begin_transaction(
+        isolation_level: Scratchbird::Protocol::ISOLATION_READ_COMMITTED,
+        read_committed_mode: Scratchbird::Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY
+      )
+    end
+
+    payload = sent.first[1]
+    flags = payload.byteslice(0, 2).unpack1("v")
+    assert_equal 16, payload.bytesize
+    assert_equal Scratchbird::Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE,
+                 flags & Scratchbird::Protocol::TXN_FLAG_HAS_READ_COMMITTED_MODE
+    assert_equal Scratchbird::Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY, payload.getbyte(12)
+    assert_equal "READ COMMITTED READ CONSISTENCY",
+                 Scratchbird::Protocol.canonical_read_committed_mode_label(payload.getbyte(12))
+  end
+
+  def test_begin_transaction_rejects_read_committed_mode_with_snapshot_alias
+    client, _sent = build_client_with_script([])
+
+    err = assert_raises(Scratchbird::NotSupportedError) do
+      client.begin_transaction(
+        isolation_level: Scratchbird::Protocol::ISOLATION_SERIALIZABLE,
+        read_committed_mode: Scratchbird::Protocol::READ_COMMITTED_MODE_READ_CONSISTENCY
+      )
+    end
+
+    assert_equal "read_committed_mode requires a READ COMMITTED isolation alias", err.message
+  end
+
+  def test_prepared_transaction_helpers_emit_canonical_control_sql
+    messages = [
+      msg(Scratchbird::Protocol::MSG_READY, [0, 0, 0]),
+      msg(Scratchbird::Protocol::MSG_READY, [0, 0, 0]),
+      msg(Scratchbird::Protocol::MSG_READY, [0, 0, 0])
+    ]
+    client, sent = build_client_with_script(messages)
+
+    with_protocol_parse_stubs(parse_ready: ->(payload) { payload }) do
+      assert_equal true, client.prepare_transaction("gid'alpha")
+      assert_equal true, client.commit_prepared("gid'alpha")
+      assert_equal true, client.rollback_prepared("gid'alpha")
+    end
+
+    assert_equal "PREPARE TRANSACTION 'gid''alpha'", parse_sql_from_query_payload(sent[0][1])
+    assert_equal "COMMIT PREPARED 'gid''alpha'", parse_sql_from_query_payload(sent[1][1])
+    assert_equal "ROLLBACK PREPARED 'gid''alpha'", parse_sql_from_query_payload(sent[2][1])
+  end
+
+  def test_dormant_helpers_fail_closed_and_capabilities_stay_explicit
+    client, _sent = build_client_with_script([])
+
+    assert_equal true, client.supports_prepared_transactions?
+    assert_equal false, client.supports_dormant_reattach?
+
+    err = assert_raises(Scratchbird::NotSupportedError) { client.detach_to_dormant }
+    assert_equal "dormant detach/reattach is not yet exposed by the public Ruby driver surface", err.message
+  end
+
+  def test_resume_portal_requires_explicit_suspended_state
+    client, _sent = build_client_with_script([])
+    client.instance_variable_set(:@last_max_rows, 1)
+
+    err = assert_raises(Scratchbird::Error) { client.send(:resume_portal) }
+    assert_equal "55000", err.sqlstate
   end
 
   def test_commit_raises_mapped_error_but_applies_ready_state_after_abort
@@ -168,6 +250,11 @@ class TestWireTxnExec < Minitest::Test
 
   def msg(type, payload)
     [type, 0, payload, 1, ("\0" * 16), 0]
+  end
+
+  def parse_sql_from_query_payload(payload)
+    sql_bytes = payload.byteslice(12, payload.bytesize - 12)
+    sql_bytes.sub(/\x00\z/, "")
   end
 
   def with_protocol_parse_stubs(stubs)

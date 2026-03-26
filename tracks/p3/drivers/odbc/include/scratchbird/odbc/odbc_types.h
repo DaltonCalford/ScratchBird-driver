@@ -833,7 +833,7 @@ struct ConnectionParams {
     uint32_t connect_timeout{30};
     uint32_t query_timeout{0};
     std::string application_name;
-    std::string schema{"public"};
+    std::string schema{"users.public"};
     std::string charset{"UTF8"};
     bool read_only{false};
     bool auto_commit{true};

@@ -126,12 +126,18 @@ defmodule ScratchBird.Protocol do
   def isolation(:repeatable_read), do: 2
   def isolation(:serializable), do: 3
 
+  def read_committed_mode(:default), do: 0
+  def read_committed_mode(:read_consistency), do: 1
+  def read_committed_mode(:record_version), do: 2
+  def read_committed_mode(:no_record_version), do: 3
+
   def txn_flag(:has_isolation), do: 0x0001
   def txn_flag(:has_access), do: 0x0002
   def txn_flag(:has_deferrable), do: 0x0004
   def txn_flag(:has_wait), do: 0x0008
   def txn_flag(:has_timeout), do: 0x0010
   def txn_flag(:has_autocommit), do: 0x0020
+  def txn_flag(:has_read_committed_mode), do: 0x0100
 
   def stream_control(:start), do: 0
   def stream_control(:pause), do: 1
@@ -299,9 +305,26 @@ defmodule ScratchBird.Protocol do
     <<byte_size(channel_bytes)::little-32, channel_bytes::binary>>
   end
 
-  def build_txn_begin_payload(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms) do
-    <<flags::little-16, conflict_action::8, autocommit_mode::8, isolation_level::8, access_mode::8,
-      deferrable::8, wait_mode::8, timeout_ms::little-32>>
+  def build_txn_begin_payload(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms, read_committed_mode \\ read_committed_mode(:default)) do
+    payload =
+      <<flags::little-16, conflict_action::8, autocommit_mode::8, isolation_level::8, access_mode::8,
+        deferrable::8, wait_mode::8, timeout_ms::little-32>>
+
+    if (flags &&& txn_flag(:has_read_committed_mode)) != 0 do
+      <<payload::binary, read_committed_mode::8, 0::24>>
+    else
+      payload
+    end
+  end
+
+  def canonical_read_committed_mode_label(mode) do
+    case mode do
+      0 -> "READ COMMITTED"
+      1 -> "READ COMMITTED READ CONSISTENCY"
+      2 -> "READ COMMITTED RECORD VERSION"
+      3 -> "READ COMMITTED NO RECORD VERSION"
+      _ -> "UNKNOWN(#{mode})"
+    end
   end
 
   def build_txn_commit_payload(flags) do
@@ -354,6 +377,10 @@ defmodule ScratchBird.Protocol do
   end
 
   def parse_ready(<<status::8, _::24, txn_id::little-64, _::binary>>) do
+    {:ok, status, txn_id}
+  end
+
+  def parse_txn_status(<<status::8, _::24, txn_id::little-64, _::binary>>) do
     {:ok, status, txn_id}
   end
 

@@ -153,6 +153,21 @@ final class ErrorResilienceTests: XCTestCase {
         XCTAssertEqual(error.message, "Authentication failed")
     }
 
+    func testRetryScopeClassifiesStatementAndReconnectBoundaries() {
+        XCTAssertEqual(retryScope(forSqlState: "40001"), .statement)
+        XCTAssertEqual(retryScope(forSqlState: "40P01"), .statement)
+        XCTAssertEqual(retryScope(forSqlState: "08006"), .reconnect)
+        XCTAssertEqual(retryScope(forSqlState: "57014"), .none)
+        XCTAssertEqual(retryScope(forSqlState: nil), .none)
+    }
+
+    func testIsRetryableOnlyAllowsFreshBoundaryRetries() {
+        XCTAssertTrue(isRetryable(sqlState: "40001"))
+        XCTAssertTrue(isRetryable(sqlState: "08003"))
+        XCTAssertFalse(isRetryable(sqlState: "57014"))
+        XCTAssertFalse(isRetryable(sqlState: ""))
+    }
+
     func testCircuitBreakerTransitionsClosedOpenHalfOpenClosed() async {
         let breaker = CircuitBreaker(
             config: .init(
@@ -303,6 +318,48 @@ final class ErrorResilienceTests: XCTestCase {
         XCTAssertEqual(sanitized, "select * from users where email='?' and role='?'")
     }
 
+    func testCloseClearsAbandonedSessionStateForFreshReconnectBoundaries() async throws {
+        let conn = ScratchBirdConnection.debugCreateForTesting(
+            config: ScratchBirdConfig(database: "mydb", user: "user")
+        )
+        conn.debugSeedAbandonedSessionStateForTesting(
+            sequence: 9,
+            lastQuerySequence: 7,
+            attachmentId: Data((1...16).map { UInt8($0) }),
+            txnId: 42,
+            transactionActive: true,
+            explicitTransaction: true,
+            parameters: [
+                "attachment_id": "11111111-1111-1111-1111-111111111111",
+                "current_txn_id": "42",
+            ],
+            lastPlan: QueryPlanMessage(
+                format: 1,
+                planningTimeUs: 2,
+                estimatedRows: 3,
+                estimatedCost: 4,
+                plan: Data([1, 2, 3])
+            ),
+            lastSblr: SblrCompiledMessage(
+                hash: 5,
+                version: 6,
+                bytecode: Data([4, 5, 6])
+            )
+        )
+
+        try await conn.close()
+
+        XCTAssertNil(conn.lastQueryPlan())
+        XCTAssertNil(conn.lastSblrCompiled())
+        XCTAssertEqual(field(conn, named: "sequence") as UInt32?, 0)
+        XCTAssertEqual(field(conn, named: "lastQuerySequence") as UInt32?, 0)
+        XCTAssertEqual(field(conn, named: "txnId") as UInt64?, 0)
+        XCTAssertEqual(field(conn, named: "transactionActive") as Bool?, false)
+        XCTAssertEqual(field(conn, named: "explicitTransaction") as Bool?, false)
+        XCTAssertEqual(field(conn, named: "parameters") as [String: String]?, [:])
+        XCTAssertEqual(field(conn, named: "attachmentId") as Data?, Data(repeating: 0, count: 16))
+    }
+
     private func makeValidHeaderData() -> Data {
         let header = MessageHeader(
             type: .query,
@@ -334,6 +391,14 @@ final class ErrorResilienceTests: XCTestCase {
         }
         XCTFail("Missing telemetry field \(label)")
         return -1
+    }
+
+    private func field<T>(_ object: Any, named label: String) -> T? {
+        let mirror = Mirror(reflecting: object)
+        for child in mirror.children where child.label == label {
+            return child.value as? T
+        }
+        return nil
     }
 
     private func ascii(_ char: Character) -> UInt8 {

@@ -34,6 +34,18 @@ class OdbcStatement;
 class OdbcDescriptor;
 class OdbcClientBridge;
 
+bool supportsPreparedTransactions();
+bool supportsDormantReattach();
+bool supportsPortalResume();
+SQLRETURN buildPreparedTransactionSql(const std::string& verb,
+                                      const std::string& global_transaction_id,
+                                      std::string& out_sql,
+                                      std::string* sqlstate_out = nullptr,
+                                      std::string* message_out = nullptr);
+SQLRETURN rejectDormantReattach(const char* operation,
+                                std::string* sqlstate_out = nullptr,
+                                std::string* message_out = nullptr);
+
 // =============================================================================
 // Handle Type Constants (for runtime type checking)
 // =============================================================================
@@ -382,6 +394,10 @@ private:
     SQLUINTEGER txn_isolation_{SQL_TXN_READ_COMMITTED};
     SQLUINTEGER packet_size_{8192};
     bool connection_dead_{false};
+    // Tracks the ODBC wrapper's explicit transaction mode. The native bridge
+    // can still own an active fresh MGA boundary while this remains false,
+    // so live recovery truth comes from the bridge/runtime rather than this
+    // wrapper-local flag alone.
     bool in_transaction_{false};
     bool metadata_id_{false};
 

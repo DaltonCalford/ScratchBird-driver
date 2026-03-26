@@ -1517,6 +1517,10 @@ bool executeSQL(const std::string& sql) {
                 std::cerr << "Error: Not connected to database\n";
                 return false;
             }
+            // The CLI lane keeps transaction configuration as explicit SQL text
+            // and does not auto-replay failed work. Recovery remains fail-closed:
+            // SQLSTATE 40xxx requires a fresh statement boundary and SQLSTATE
+            // 08xxx requires reconnect or reopen.
             core::ErrorContext ctx;
             core::Status status = g_connection->execute(trimmed, nullptr, &ctx);
             if (status != core::Status::OK) {

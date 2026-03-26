@@ -10,6 +10,7 @@ package scratchbird
 import "fmt"
 
 type ErrorKind string
+type RetryScope string
 
 const (
 	ErrWarning      ErrorKind = "warning"
@@ -27,6 +28,13 @@ const (
 	ErrSystem       ErrorKind = "system"
 	ErrInternal     ErrorKind = "internal"
 	ErrUnknown      ErrorKind = "unknown"
+)
+
+const (
+	RetryScopeNone        RetryScope = "none"
+	RetryScopeReconnect   RetryScope = "reconnect"
+	RetryScopeStatement   RetryScope = "statement"
+	RetryScopeTransaction RetryScope = "transaction"
 )
 
 type Error struct {
@@ -112,4 +120,28 @@ func mapSQLState(sqlState string) ErrorKind {
 		}
 	}
 	return ErrUnknown
+}
+
+// RetryScopeForSQLState classifies whether a driver may retry from a fresh
+// boundary. ScratchBird drivers do not replay in-flight transactions:
+//
+//   - 40001 / 40P01 => retry only from a fresh statement boundary
+//   - 08xxx         => reconnect or reopen only
+//   - everything else, including 57014, requires explicit caller policy
+func RetryScopeForSQLState(sqlState string) RetryScope {
+	if len(sqlState) != 5 {
+		return RetryScopeNone
+	}
+	switch sqlState {
+	case "40001", "40P01":
+		return RetryScopeStatement
+	}
+	if sqlState[:2] == "08" {
+		return RetryScopeReconnect
+	}
+	return RetryScopeNone
+}
+
+func IsRetryableSQLState(sqlState string) bool {
+	return RetryScopeForSQLState(sqlState) != RetryScopeNone
 }

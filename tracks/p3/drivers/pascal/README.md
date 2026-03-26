@@ -8,6 +8,42 @@ ScratchBird native wire protocol client and adapters for Delphi/FreePascal.
 - [Getting started](../../../../docs/getting-started/pascal.md)
 - [API reference](../../../../docs/api-reference/pascal.md)
 
+## MGA Recovery Contract
+
+This lane follows ScratchBird's MGA/state-based engine recovery model.
+
+- reconnect or reopen only repairs transport and session state
+- reconnect never resurrects abandoned in-flight transactions or replay lost statements
+- transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth
+- result resume is valid only for explicit suspended protocol states
+- `BeginTransactionEx(...)` exposes the canonical MGA begin payload fields for
+  isolation/access/deferrable/wait/timeout/autocommit/conflict-action, and
+  the overloaded `BeginTransactionEx(..., ReadCommittedMode)` plus adapter
+  `StartTransactionEx(..., ReadCommittedMode)` surfaces now expose the
+  canonical `READ COMMITTED` sub-mode selector directly.
+  `CanonicalReadCommittedModeName(...)` makes that selector explicit in lane
+  source, including `READ COMMITTED READ CONSISTENCY`, while
+  lane source now spells out the current isolation-byte meaning:
+  `READ UNCOMMITTED` remains a legacy compatibility alias,
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`
+- `RetryScopeForSqlState(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay
+- `SupportsPreparedTransactions()` plus `PrepareTransaction(...)`,
+  `CommitPrepared(...)`, and `RollbackPrepared(...)` make limbo control
+  explicit via canonical transaction-control SQL instead of reconnect folklore
+- `SupportsDormantReattach()` is explicit and false; `DetachToDormant()` and
+  `ReattachDormant(...)` fail closed with `0A000` until the public front door
+  exposes a real dormant token flow
+- `TScratchBirdResultStream` now resumes only after an explicit
+  `MSG_PORTAL_SUSPENDED` state and routes continuation through the internal
+  `AllowPortalResume` / `ResumeSuspendedPortal(...)` guard, so blind resume
+  attempts fail closed with `55000`
+
+See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## Build/Test (Windows/Linux)
 
 See `docs/BUILD_MATRIX.md`.

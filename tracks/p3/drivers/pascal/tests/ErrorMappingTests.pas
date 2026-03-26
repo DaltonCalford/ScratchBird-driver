@@ -38,6 +38,12 @@ begin
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
 end;
 
+procedure AssertEqualRetryScope(Expected, Actual: TScratchBirdRetryScope; const MessageText: string);
+begin
+  if Expected <> Actual then
+    Fail(MessageText);
+end;
+
 procedure AssertMappedClass(const SQLState: string; ExpectedClass: TScratchBirdErrorClass);
 var
   Err: EScratchBirdError;
@@ -81,11 +87,25 @@ begin
   AssertMappedClass('42P1', EScratchBirdError);
 end;
 
+procedure TestRetryScopeClassification;
+begin
+  AssertEqualRetryScope(rsStatement, RetryScopeForSqlState('40001'), '40001 retry scope');
+  AssertEqualRetryScope(rsStatement, RetryScopeForSqlState('40P01'), '40P01 retry scope');
+  AssertEqualRetryScope(rsReconnect, RetryScopeForSqlState('08006'), '08006 retry scope');
+  AssertEqualRetryScope(rsReconnect, RetryScopeForSqlState('08003'), '08003 retry scope');
+  AssertEqualRetryScope(rsNone, RetryScopeForSqlState('57014'), '57014 retry scope');
+  AssertEqualRetryScope(rsNone, RetryScopeForSqlState(''), 'empty retry scope');
+  AssertTrue(IsRetryableSqlState('40001'), '40001 retryable');
+  AssertTrue(IsRetryableSqlState('08006'), '08006 retryable');
+  AssertTrue(not IsRetryableSqlState('57014'), '57014 not retryable');
+end;
+
 begin
   try
     TestMappedCategories;
     TestFallbackForUnknownSqlState;
     TestFallbackForInvalidSqlStateLength;
+    TestRetryScopeClassification;
     Writeln('ErrorMappingTests: OK');
   except
     on E: Exception do

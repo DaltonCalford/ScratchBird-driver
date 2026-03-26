@@ -654,6 +654,7 @@ void applyDriverDefaults(NetworkClientConfig& config) {
 }
 
 void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
+    constexpr const char* kDefaultSessionSchema = "users.public";
     auto getEnv = [](const char* key) -> const char* {
         return std::getenv(key);
     };
@@ -856,6 +857,10 @@ void applyDriverDefaultsFromEnv(NetworkClientConfig& config) {
     }
     if (const char* copy_chunk = getEnv("SCRATCHBIRD_COPY_CHUNK_BYTES")) {
         parseU32(copy_chunk, config.copy_chunk_bytes);
+    }
+
+    if (config.schema.empty()) {
+        config.schema = kDefaultSessionSchema;
     }
 
     // Backward-compatible driver-prefixed environment names.

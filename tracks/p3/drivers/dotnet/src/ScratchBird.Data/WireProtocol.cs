@@ -139,12 +139,18 @@ internal static class ProtocolConstants
     public const byte IsolationRepeatableRead = 2;
     public const byte IsolationSerializable = 3;
 
+    public const byte ReadCommittedModeDefault = 0;
+    public const byte ReadCommittedModeReadConsistency = 1;
+    public const byte ReadCommittedModeRecordVersion = 2;
+    public const byte ReadCommittedModeNoRecordVersion = 3;
+
     public const ushort TxnFlagHasIsolation = 0x0001;
     public const ushort TxnFlagHasAccess = 0x0002;
     public const ushort TxnFlagHasDeferrable = 0x0004;
     public const ushort TxnFlagHasWait = 0x0008;
     public const ushort TxnFlagHasTimeout = 0x0010;
     public const ushort TxnFlagHasAutocommit = 0x0020;
+    public const ushort TxnFlagHasReadCommittedMode = 0x0100;
 
     public const byte StreamStart = 0;
     public const byte StreamPause = 1;
@@ -540,10 +546,11 @@ internal static class ProtocolCodec
         byte accessMode,
         byte deferrable,
         byte waitMode,
-        uint timeoutMs
+        uint timeoutMs,
+        byte readCommittedMode = ProtocolConstants.ReadCommittedModeDefault
     )
     {
-        var payload = new byte[12];
+        var payload = new byte[(flags & ProtocolConstants.TxnFlagHasReadCommittedMode) != 0 ? 16 : 12];
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0, 2), flags);
         payload[2] = conflictAction;
         payload[3] = autocommitMode;
@@ -552,6 +559,10 @@ internal static class ProtocolCodec
         payload[6] = deferrable;
         payload[7] = waitMode;
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8, 4), timeoutMs);
+        if ((flags & ProtocolConstants.TxnFlagHasReadCommittedMode) != 0)
+        {
+            payload[12] = readCommittedMode;
+        }
         return payload;
     }
 
@@ -653,6 +664,18 @@ internal static class ProtocolCodec
         var txnId = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(4, 8));
         var visibility = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(12, 8));
         return (status, txnId, visibility);
+    }
+
+    public static (char Status, ulong TxnId) ParseTxnStatus(byte[] payload)
+    {
+        if (payload.Length < 12)
+        {
+            throw new InvalidOperationException("Txn status truncated");
+        }
+
+        var status = (char)payload[0];
+        var txnId = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(4, 8));
+        return (status, txnId);
     }
 
     public static (string Name, string Value) ParseParameterStatus(byte[] payload)

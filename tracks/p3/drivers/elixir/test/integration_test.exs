@@ -46,6 +46,41 @@ defmodule ScratchBirdIntegrationTest do
       Connection.close(conn)
     end
   end
+
+  test "rollback leaves immediate query usable on native fresh boundary", %{dsn: dsn} do
+    {:ok, conn} = Connection.connect(url: dsn)
+
+    try do
+      {:ok, conn} = Connection.begin(conn)
+
+      {:ok, _result, conn} =
+        Connection.query(
+          conn,
+          "UPDATE basic_table SET name = 'elixir-rollback-probe' WHERE name = 'baseline'",
+          []
+        )
+
+      {:ok, conn} = Connection.rollback(conn)
+
+      {:ok, baseline_result, conn} =
+        Connection.query(conn, "SELECT 1 FROM basic_table WHERE name = 'baseline'", [])
+
+      assert length(baseline_result.rows) == 1
+      assert length(List.first(baseline_result.rows)) == 1
+      refute is_nil(List.first(List.first(baseline_result.rows)))
+
+      {:ok, probe_result, _conn} =
+        Connection.query(
+          conn,
+          "SELECT 1 FROM basic_table WHERE name = 'elixir-rollback-probe'",
+          []
+        )
+
+      assert probe_result.rows == []
+    after
+      Connection.close(conn)
+    end
+  end
 end
 
 defmodule ScratchBirdManagerProxyIntegrationTest do

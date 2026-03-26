@@ -262,9 +262,27 @@ public:
                                        std::string* payload_json,
                                        core::ErrorContext* ctx = nullptr);
 
+    static bool supportsPreparedTransactions();
+    static bool supportsDormantReattach();
+    static bool supportsPortalResume();
+    static core::Status buildPreparedTransactionSql(const std::string& verb,
+                                                    const std::string& global_transaction_id,
+                                                    std::string* sql,
+                                                    core::ErrorContext* ctx = nullptr);
+
     core::Status beginTransaction(core::ErrorContext* ctx = nullptr);
     core::Status commit(core::ErrorContext* ctx = nullptr);
     core::Status rollback(core::ErrorContext* ctx = nullptr);
+    core::Status prepareTransaction(const std::string& global_transaction_id,
+                                    core::ErrorContext* ctx = nullptr);
+    core::Status commitPrepared(const std::string& global_transaction_id,
+                                core::ErrorContext* ctx = nullptr);
+    core::Status rollbackPrepared(const std::string& global_transaction_id,
+                                  core::ErrorContext* ctx = nullptr);
+    core::Status detachToDormant(core::ErrorContext* ctx = nullptr);
+    core::Status reattachDormant(const std::string& dormant_id,
+                                 const std::string& auth_token,
+                                 core::ErrorContext* ctx = nullptr);
     core::Status savepoint(const std::string& name,
                            core::ErrorContext* ctx = nullptr);
     core::Status releaseSavepoint(const std::string& name,

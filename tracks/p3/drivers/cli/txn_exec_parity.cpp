@@ -28,6 +28,20 @@ std::string toLowerCopy(const std::string& value) {
     return out;
 }
 
+std::string quoteSqlLiteral(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char ch : value) {
+        out.push_back(ch);
+        if (ch == '\'') {
+            out.push_back('\'');
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
 std::string bestError(const TxnExecClient& client, const core::ErrorContext* ctx) {
     if (ctx != nullptr && !ctx->message.empty()) {
         return ctx->message;
@@ -115,6 +129,77 @@ bool isSimpleIdentifier(const std::string& value) {
 }
 
 }  // namespace
+
+bool supportsPreparedTransactions() {
+    return true;
+}
+
+bool supportsDormantReattach() {
+    return false;
+}
+
+bool supportsPortalResume() {
+    return false;
+}
+
+core::Status buildPreparedTransactionSql(const std::string& verb,
+                                         const std::string& global_transaction_id,
+                                         std::string* sql,
+                                         core::ErrorContext* ctx) {
+    if (sql == nullptr) {
+        if (ctx != nullptr) {
+            ctx->set(core::Status::INVALID_ARGUMENT,
+                     "SQL output buffer is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+    if (trimCopy(verb).empty()) {
+        if (ctx != nullptr) {
+            ctx->set(core::Status::INVALID_ARGUMENT,
+                     "Prepared-transaction verb is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+        }
+        return core::Status::INVALID_ARGUMENT;
+    }
+    const std::string gid = trimCopy(global_transaction_id);
+    if (gid.empty()) {
+        if (ctx != nullptr) {
+            ctx->set(core::Status::SYNTAX_ERROR,
+                     "Global transaction id is required",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+            ctx->setSQLState(core::SQLSTATE_SYNTAX_ERROR);
+        }
+        sql->clear();
+        return core::Status::SYNTAX_ERROR;
+    }
+    *sql = trimCopy(verb) + " " + quoteSqlLiteral(gid);
+    return core::Status::OK;
+}
+
+core::Status rejectDormantReattach(const char* operation,
+                                   core::ErrorContext* ctx) {
+    const std::string op = trimCopy(operation != nullptr ? operation : "");
+    const std::string message =
+        op.empty()
+            ? "dormant detach/reattach is not exposed by the CLI front door"
+            : "dormant " + op + " is not exposed by the CLI front door";
+    if (ctx != nullptr) {
+        ctx->set(core::Status::NOT_IMPLEMENTED,
+                 message.c_str(),
+                 __FILE__,
+                 __LINE__,
+                 __func__);
+        ctx->setSQLState(core::SQLSTATE_FEATURE_NOT_SUPPORTED);
+    }
+    return core::Status::NOT_IMPLEMENTED;
+}
 
 void runNativeExecCase(TxnExecClient& client,
                        const nlohmann::json& test,

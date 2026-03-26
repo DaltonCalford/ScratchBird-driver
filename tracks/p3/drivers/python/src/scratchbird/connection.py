@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Sequence
 import socket
 import ssl
 import os
+import select
 import struct
 
 from . import errors
@@ -41,13 +42,21 @@ from .protocol import (
     QUERY_FLAG_INCLUDE_PLAN,
     QUERY_FLAG_RETURN_SBLR,
     QUERY_FLAG_NO_CACHE,
+    ISOLATION_READ_UNCOMMITTED,
     ISOLATION_READ_COMMITTED,
+    ISOLATION_REPEATABLE_READ,
+    ISOLATION_SERIALIZABLE,
+    READ_COMMITTED_MODE_DEFAULT,
+    READ_COMMITTED_MODE_READ_CONSISTENCY,
+    READ_COMMITTED_MODE_RECORD_VERSION,
+    READ_COMMITTED_MODE_NO_RECORD_VERSION,
     TXN_FLAG_HAS_ACCESS,
     TXN_FLAG_HAS_AUTOCOMMIT,
     TXN_FLAG_HAS_DEFERRABLE,
     TXN_FLAG_HAS_ISOLATION,
     TXN_FLAG_HAS_TIMEOUT,
     TXN_FLAG_HAS_WAIT,
+    TXN_FLAG_HAS_READ_COMMITTED_MODE,
     COPY_FORMAT_TEXT,
     COPY_FORMAT_BINARY,
     HEADER_SIZE,
@@ -103,6 +112,7 @@ from .protocol import (
     parse_parameter_description,
     parse_parameter_status,
     parse_ready,
+    parse_txn_status,
     parse_row_description,
 )
 from .scram import ScramExchange
@@ -130,6 +140,54 @@ MCP_MSG_AUTH_START = 0x66
 MCP_MSG_AUTH_CONTINUE = 0x67
 MCP_MSG_DB_CONNECT = 0x69
 MCP_AUTH_METHOD_TOKEN = 4
+
+CANONICAL_ISOLATION_READ_COMMITTED = "READ COMMITTED"
+CANONICAL_ISOLATION_READ_COMMITTED_READ_CONSISTENCY = "READ COMMITTED READ CONSISTENCY"
+CANONICAL_ISOLATION_SNAPSHOT = "SNAPSHOT"
+CANONICAL_ISOLATION_SNAPSHOT_TABLE_STABILITY = "SNAPSHOT TABLE STABILITY"
+
+
+def canonical_isolation_label(isolation_level: int) -> str:
+    """Return the canonical MGA meaning of a Python isolation alias byte.
+
+    The Python lane still uses the protocol's SQL-style compatibility aliases:
+
+    - READ UNCOMMITTED is only a legacy compatibility alias here
+    - READ COMMITTED maps to canonical READ COMMITTED
+    - REPEATABLE READ maps to canonical SNAPSHOT
+    - SERIALIZABLE maps to canonical SNAPSHOT TABLE STABILITY
+
+    A distinct READ COMMITTED READ CONSISTENCY selector is not exposed in this
+    lane yet.
+    """
+
+    mapping = {
+        ISOLATION_READ_UNCOMMITTED: CANONICAL_ISOLATION_READ_COMMITTED,
+        ISOLATION_READ_COMMITTED: CANONICAL_ISOLATION_READ_COMMITTED,
+        ISOLATION_REPEATABLE_READ: CANONICAL_ISOLATION_SNAPSHOT,
+        ISOLATION_SERIALIZABLE: CANONICAL_ISOLATION_SNAPSHOT_TABLE_STABILITY,
+    }
+    try:
+        normalized = int(isolation_level)
+    except (TypeError, ValueError):
+        return f"UNKNOWN({isolation_level!r})"
+    return mapping.get(normalized, f"UNKNOWN({normalized})")
+
+
+def canonical_read_committed_mode_label(read_committed_mode: int) -> str:
+    """Return the canonical MGA meaning of a read-committed mode selector."""
+
+    mapping = {
+        READ_COMMITTED_MODE_DEFAULT: CANONICAL_ISOLATION_READ_COMMITTED,
+        READ_COMMITTED_MODE_READ_CONSISTENCY: CANONICAL_ISOLATION_READ_COMMITTED_READ_CONSISTENCY,
+        READ_COMMITTED_MODE_RECORD_VERSION: "READ COMMITTED RECORD VERSION",
+        READ_COMMITTED_MODE_NO_RECORD_VERSION: "READ COMMITTED NO RECORD VERSION",
+    }
+    try:
+        normalized = int(read_committed_mode)
+    except (TypeError, ValueError):
+        return f"UNKNOWN({read_committed_mode!r})"
+    return mapping.get(normalized, f"UNKNOWN({normalized})")
 
 
 @dataclass
@@ -429,6 +487,8 @@ class Connection:
         self._sequence = 0
         self._attachment_id = b"\x00" * 16
         self._txn_id = 0
+        self._runtime_txn_active = False
+        self._portal_resume_pending = False
         self._authed = False
         self._parameters: Dict[str, str] = {}
         self._notification_handlers = []
@@ -516,6 +576,8 @@ class Connection:
         if not self._closed:
             self._closed = True
             self._connected = False
+            self._portal_resume_pending = False
+            self._clear_transaction_state()
             self._clear_cancel_timeout()
             try:
                 if self._keepalive:
@@ -571,6 +633,7 @@ class Connection:
         payload = build_txn_commit_payload(0)
         self._send_message(MessageType.TXN_COMMIT, payload)
         self._drain_until_ready()
+        self._drain_immediate_reopen_boundary()
 
     def rollback(self) -> None:
         self._ensure_open()
@@ -579,13 +642,56 @@ class Connection:
         payload = build_txn_rollback_payload(0)
         self._send_message(MessageType.TXN_ROLLBACK, payload)
         self._drain_until_ready()
+        self._drain_immediate_reopen_boundary()
+
+    def supports_prepared_transactions(self) -> bool:
+        return True
+
+    def supports_dormant_reattach(self) -> bool:
+        return False
+
+    def prepare_transaction(self, gid: str) -> None:
+        self._ensure_open()
+        self._execute_command(self._build_prepared_transaction_sql("PREPARE TRANSACTION", gid))
+
+    def commit_prepared(self, gid: str) -> None:
+        self._ensure_open()
+        self._execute_command(self._build_prepared_transaction_sql("COMMIT PREPARED", gid))
+
+    def rollback_prepared(self, gid: str) -> None:
+        self._ensure_open()
+        self._execute_command(self._build_prepared_transaction_sql("ROLLBACK PREPARED", gid))
+
+    def detach_to_dormant(self) -> None:
+        raise errors.NotSupportedError(
+            "[0A000] dormant detach/reattach is not yet exposed by the public Python driver surface"
+        )
+
+    def reattach_dormant(self, dormant_id: str, auth_token: Optional[str] = None) -> None:
+        _ = dormant_id
+        _ = auth_token
+        raise errors.NotSupportedError(
+            "[0A000] dormant detach/reattach is not yet exposed by the public Python driver surface"
+        )
 
     def begin(self, **kwargs) -> None:
         self._ensure_open()
         if self._transaction_active():
             raise errors.ProgrammingError("transaction already active")
         flags = 0
+        # Python currently exposes the protocol's SQL-style isolation aliases.
+        # canonical_isolation_label(...) documents the MGA meaning of each byte.
         isolation = kwargs.get("isolation_level", ISOLATION_READ_COMMITTED)
+        read_committed_mode = kwargs.get("read_committed_mode", None)
+        if read_committed_mode is not None:
+            if isolation not in (ISOLATION_READ_UNCOMMITTED, ISOLATION_READ_COMMITTED):
+                raise errors.NotSupportedError(
+                    "read_committed_mode requires a READ COMMITTED isolation alias"
+                )
+            flags |= TXN_FLAG_HAS_READ_COMMITTED_MODE
+            if "isolation_level" not in kwargs:
+                isolation = ISOLATION_READ_COMMITTED
+                flags |= TXN_FLAG_HAS_ISOLATION
         if "isolation_level" in kwargs:
             flags |= TXN_FLAG_HAS_ISOLATION
         if "access_mode" in kwargs:
@@ -607,6 +713,7 @@ class Connection:
             1 if kwargs.get("deferrable") else 0,
             1 if kwargs.get("wait") else 0,
             kwargs.get("timeout_ms", 0),
+            read_committed_mode if read_committed_mode is not None else READ_COMMITTED_MODE_DEFAULT,
         )
         self._send_message(MessageType.TXN_BEGIN, payload)
         self._drain_until_ready()
@@ -651,8 +758,8 @@ class Connection:
             if header.msg_type == MessageType.PONG:
                 return
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
                 return
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
@@ -1052,8 +1159,32 @@ class Connection:
         if self._closed:
             raise errors.InterfaceError("connection is closed")
 
+    def _apply_runtime_txn_id(self, txn_id: int) -> None:
+        txn = int(txn_id)
+        if txn > 0:
+            self._txn_id = txn
+            self._runtime_txn_active = True
+        else:
+            self._txn_id = 0
+
+    def _apply_runtime_ready_state(self, status: int, txn_id: int) -> None:
+        txn = int(txn_id)
+        if int(status) != 0:
+            # READY status is authoritative for native transaction activity.
+            # Engine-endpoint sessions can legitimately expose an active fresh
+            # session boundary while the public wire header still reports
+            # txn_id == 0.
+            self._txn_id = txn
+            self._runtime_txn_active = True
+        else:
+            self._clear_transaction_state()
+
+    def _clear_transaction_state(self) -> None:
+        self._txn_id = 0
+        self._runtime_txn_active = False
+
     def _transaction_active(self) -> bool:
-        return self._txn_id != 0 or (self._connected and self._authed and not self._closed)
+        return self._runtime_txn_active or self._txn_id != 0
 
     def _normalize_savepoint_name(self, name: str) -> str:
         if not isinstance(name, str):
@@ -1062,6 +1193,12 @@ class Connection:
         if not normalized:
             raise errors.ProgrammingError("savepoint name is required")
         return normalized
+
+    def _build_prepared_transaction_sql(self, verb: str, gid: str) -> str:
+        if not isinstance(gid, str) or not gid.strip():
+            raise errors.ProgrammingError("[42601] global transaction id is required")
+        escaped = gid.strip().replace("'", "''")
+        return f"{verb} '{escaped}'"
 
     def _normalize_metadata_collection(self, collection_name: str) -> str:
         try:
@@ -1120,7 +1257,7 @@ class Connection:
             if name == "current_txn_id":
                 parsed = _parse_uint64(value)
                 if parsed is not None:
-                    self._txn_id = parsed
+                    self._apply_runtime_txn_id(parsed)
             return True
         if header.msg_type == MessageType.NOTIFICATION:
             notice = parse_notification(payload)
@@ -1132,6 +1269,14 @@ class Connection:
             return True
         if header.msg_type == MessageType.SBLR_COMPILED:
             self._last_sblr = parse_sblr_compiled(payload)
+            return True
+        if header.msg_type == MessageType.TXN_STATUS:
+            status, txn_id = parse_txn_status(payload)
+            if status == "T":
+                self._txn_id = int(txn_id)
+                self._runtime_txn_active = True
+            else:
+                self._clear_transaction_state()
             return True
         return False
 
@@ -1151,10 +1296,10 @@ class Connection:
             return
         if next_value and self._transaction_active():
             self.commit()
-        self.set_option("autocommit", "on" if next_value else "off")
+        # The native engine-endpoint lane owns the replacement session
+        # boundary on the server side. The Python wrapper must not treat
+        # autocommit transitions as a local SET_OPTION/BEGIN protocol.
         self._autocommit = next_value
-        if not next_value and not self._transaction_active():
-            self.begin()
 
     def cancel(self) -> None:
         self._ensure_open()
@@ -1318,7 +1463,7 @@ class Connection:
             if header.msg_type == MessageType.AUTH_OK:
                 _, info = parse_auth_ok(payload)
                 self._attachment_id = header.attachment_id
-                self._txn_id = header.txn_id
+                self._apply_runtime_txn_id(header.txn_id)
                 self._authed = True
                 if scram and info.startswith(b"v="):
                     scram.verify_server_final(info.decode("utf-8", errors="replace"))
@@ -1327,8 +1472,8 @@ class Connection:
                 self._handle_async(header, payload)
                 continue
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
                 return
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
@@ -1453,11 +1598,13 @@ class Connection:
             self._execute_command(statement)
 
     def _send_simple_query(self, sql: str, max_rows: int = 0) -> None:
+        self._portal_resume_pending = False
         flags = QUERY_FLAG_BINARY_RESULT if self._config.binary_transfer else 0
         payload = build_query_payload(sql, flags, max_rows, 0)
         self._send_message(MessageType.QUERY, payload)
 
     def _send_extended_query(self, sql: str, params, max_rows: int = 0) -> None:
+        self._portal_resume_pending = False
         param_values = []
         param_types = []
         for param in params:
@@ -1508,8 +1655,8 @@ class Connection:
             if header.msg_type == MessageType.PARAMETER_DESCRIPTION:
                 param_count = len(parse_parameter_description(payload))
             elif header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
                 return param_count
 
     def _drain_until_ready(self) -> None:
@@ -1520,9 +1667,43 @@ class Connection:
             if header.msg_type == MessageType.ERROR:
                 self._raise_protocol_error(payload)
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
+                self._portal_resume_pending = False
                 return
+
+    def _drain_immediate_reopen_boundary(self) -> None:
+        sock = getattr(self, "_socket", None)
+        if sock is None:
+            return
+        while True:
+            try:
+                readable, _, _ = select.select([sock], [], [], 0)
+            except (OSError, ValueError):
+                return
+            if not readable:
+                return
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.ERROR:
+                self._raise_protocol_error(payload)
+            if header.msg_type == MessageType.READY:
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
+                self._portal_resume_pending = False
+                continue
+            return
+
+    def _allow_portal_resume(self) -> None:
+        self._portal_resume_pending = True
+
+    def _resume_suspended_portal(self, page_size: int) -> None:
+        if not self._portal_resume_pending:
+            raise errors.OperationalError("[55000] portal resume requires explicit suspended state")
+        self._portal_resume_pending = False
+        exec_payload = build_execute_payload("", page_size)
+        self._send_message(MessageType.EXECUTE, exec_payload)
 
     def _raise_protocol_error(self, payload: bytes) -> None:
         try:
@@ -1614,8 +1795,8 @@ class Connection:
             if self._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
                 self._end_operation(span, True)
                 return int(rows_copied)
 
@@ -1695,8 +1876,8 @@ class Connection:
             if self._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
                 self._end_operation(span, True)
                 return b"".join(chunks)
 
@@ -1817,6 +1998,8 @@ class ResultStream:
         self._result_set_boundary = False
         self._prefetched_message = None
         self._prefetched_rows = []
+        self._response_started = False
+        self._ignored_stray_ready = False
 
     def prime_metadata(self) -> None:
         if self._done or self._result_set_boundary or self.columns:
@@ -1828,12 +2011,15 @@ class ResultStream:
             if header.msg_type == MessageType.ERROR:
                 self._connection._raise_protocol_error(payload)
             if header.msg_type == MessageType.ROW_DESCRIPTION:
+                self._response_started = True
                 self.columns = parse_row_description(payload)
                 return
             if header.msg_type == MessageType.DATA_ROW:
+                self._response_started = True
                 self._prefetched_rows.append(self._decode_data_row(payload))
                 return
             if header.msg_type == MessageType.COMMAND_COMPLETE:
+                self._response_started = True
                 _, rows_affected, last_id, tag = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
                 self.lastrowid = int(last_id)
@@ -1842,12 +2028,21 @@ class ResultStream:
                 self._mark_result_set_boundary()
                 return
             if header.msg_type == MessageType.PORTAL_SUSPENDED:
-                exec_payload = build_execute_payload("", self._page_size)
-                self._connection._send_message(MessageType.EXECUTE, exec_payload)
+                self._connection._allow_portal_resume()
+                self._connection._resume_suspended_portal(self._page_size)
                 continue
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._connection._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._connection._apply_runtime_ready_state(status, txn_id)
+                self._connection._portal_resume_pending = False
+                if not self._response_started and not self._ignored_stray_ready:
+                    # Native rollback/commit can publish a fresh-session reopen
+                    # boundary before the next statement response begins.
+                    # Ignore one READY frame that arrives before any query
+                    # result material so the actual statement response is not
+                    # misclassified as empty.
+                    self._ignored_stray_ready = True
+                    continue
                 self._done = True
                 return
 
@@ -1865,10 +2060,13 @@ class ResultStream:
             if header.msg_type == MessageType.ERROR:
                 self._connection._raise_protocol_error(payload)
             if header.msg_type == MessageType.ROW_DESCRIPTION:
+                self._response_started = True
                 self.columns = parse_row_description(payload)
             elif header.msg_type == MessageType.DATA_ROW:
+                self._response_started = True
                 return self._decode_data_row(payload)
             elif header.msg_type == MessageType.COMMAND_COMPLETE:
+                self._response_started = True
                 _, rows_affected, last_id, tag = parse_command_complete(payload)
                 self.rowcount = int(rows_affected)
                 self.lastrowid = int(last_id)
@@ -1877,11 +2075,15 @@ class ResultStream:
                 self._mark_result_set_boundary()
                 return None
             elif header.msg_type == MessageType.PORTAL_SUSPENDED:
-                exec_payload = build_execute_payload("", self._page_size)
-                self._connection._send_message(MessageType.EXECUTE, exec_payload)
+                self._connection._allow_portal_resume()
+                self._connection._resume_suspended_portal(self._page_size)
             elif header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._connection._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._connection._apply_runtime_ready_state(status, txn_id)
+                self._connection._portal_resume_pending = False
+                if not self._response_started and not self._ignored_stray_ready:
+                    self._ignored_stray_ready = True
+                    continue
                 self._done = True
                 return None
 
@@ -1893,6 +2095,8 @@ class ResultStream:
             return False
         self._has_next_result_set = False
         self._result_set_boundary = False
+        self._response_started = False
+        self._ignored_stray_ready = False
         self.columns = []
         self.rowcount = -1
         self.lastrowid = None
@@ -1912,8 +2116,9 @@ class ResultStream:
             if self._connection._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.READY:
-                _, txn_id, _ = parse_ready(payload)
-                self._connection._txn_id = txn_id
+                status, txn_id, _ = parse_ready(payload)
+                self._connection._apply_runtime_ready_state(status, txn_id)
+                self._connection._portal_resume_pending = False
                 self._done = True
                 self._has_next_result_set = False
                 self._result_set_boundary = False

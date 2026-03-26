@@ -72,6 +72,13 @@ public final class ScratchBirdNotSupportedException: ScratchBirdDriverException 
 public final class ScratchBirdTimeoutException: ScratchBirdDriverException {}
 public final class ScratchBirdOperationalException: ScratchBirdDriverException {}
 
+public enum ScratchBirdRetryScope: String {
+    case none
+    case reconnect
+    case statement
+    case transaction
+}
+
 func mapSqlStateError(
     message: String,
     sqlState: String?,
@@ -286,4 +293,22 @@ private func mapSqlStateClass(
     default:
         return nil
     }
+}
+
+public func retryScope(forSqlState sqlState: String?) -> ScratchBirdRetryScope {
+    // Drivers are fail-closed: fresh statement restart for 40xxx, reconnect
+    // only for 08xxx, and no automatic whole-transaction replay.
+    guard let sqlState, sqlState.count == 5 else {
+        return .none
+    }
+    switch sqlState {
+    case "40001", "40P01":
+        return .statement
+    default:
+        return String(sqlState.prefix(2)) == "08" ? .reconnect : .none
+    }
+}
+
+public func isRetryable(sqlState: String?) -> Bool {
+    return retryScope(forSqlState: sqlState) != .none
 }

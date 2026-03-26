@@ -735,6 +735,17 @@ std::string readEnv(const char* key) {
     return value == nullptr ? "" : value;
 }
 
+bool envFlagEnabled(const char* key) {
+    std::string value = readEnv(key);
+    if (value.empty()) {
+        return false;
+    }
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
 std::string resolveConformanceDsn() {
     static const char* kDsnEnvKeys[] = {
         "SB_CONFORMANCE_DSN",
@@ -1106,6 +1117,25 @@ int main(int argc, char** argv) {
         result["rows"] = json::array();
         result["columns"] = json::array();
         result["column_type_oids"] = json::array();
+
+        if (test.contains("requires") && test["requires"].is_array()) {
+            bool requires_cancel = false;
+            for (const auto& requirement : test["requires"]) {
+                if (requirement.is_string() && requirement.get<std::string>() == "cancel") {
+                    requires_cancel = true;
+                    break;
+                }
+            }
+            if (requires_cancel && !envFlagEnabled("SCRATCHBIRD_CONFORMANCE_CANCEL")) {
+                result["status"] = "skipped";
+                result["skip_reason"] =
+                    "SCRATCHBIRD_CONFORMANCE_CANCEL not enabled for cancel-gated conformance test";
+                results_out.push_back(std::move(result));
+                std::cerr << "[conformance_debug] skip test=" << test_id
+                          << " reason=cancel_env_gate\n";
+                continue;
+            }
+        }
 
         scratchbird::client::NetworkClientConfig config;
         scratchbird::core::ErrorContext ctx;

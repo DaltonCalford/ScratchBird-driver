@@ -189,6 +189,8 @@ public sealed class ScratchBirdConnection : DbConnection
             return _client;
         }
 
+        // MGA recovery rule: a stale transport can be reopened, but the driver must drop
+        // any local claim that an abandoned transaction is still active on the new session.
         _clientLease?.Dispose();
         _clientLease = null;
         _client = null;
@@ -389,6 +391,44 @@ public sealed class ScratchBirdConnection : DbConnection
     {
         var normalized = SqlHelpers.NormalizeCallable(sql, NormalizeParameterList(parameters));
         return normalized.Sql;
+    }
+
+    public bool SupportsPreparedTransactions() => true;
+
+    public bool SupportsDormantReattach() => false;
+
+    public void PrepareTransaction(string globalTransactionId)
+    {
+        TrackOperation("Connection.PrepareTransaction", () =>
+            ExecuteControlCommand(BuildPreparedTransactionSql("PREPARE TRANSACTION", globalTransactionId)));
+    }
+
+    public void CommitPrepared(string globalTransactionId)
+    {
+        TrackOperation("Connection.CommitPrepared", () =>
+            ExecuteControlCommand(BuildPreparedTransactionSql("COMMIT PREPARED", globalTransactionId)));
+    }
+
+    public void RollbackPrepared(string globalTransactionId)
+    {
+        TrackOperation("Connection.RollbackPrepared", () =>
+            ExecuteControlCommand(BuildPreparedTransactionSql("ROLLBACK PREPARED", globalTransactionId)));
+    }
+
+    public void DetachToDormant()
+    {
+        throw new ScratchBirdNotSupportedException(
+            "dormant detach/reattach is not yet exposed by the public .NET driver surface",
+            "0A000");
+    }
+
+    public void ReattachDormant(string dormantId, string? authToken = null)
+    {
+        _ = dormantId;
+        _ = authToken;
+        throw new ScratchBirdNotSupportedException(
+            "dormant detach/reattach is not yet exposed by the public .NET driver surface",
+            "0A000");
     }
 
     public ConnectionDiagnosticsSummary GetDiagnostics()
@@ -967,6 +1007,17 @@ public sealed class ScratchBirdConnection : DbConnection
             "typeinfo" or "type_info" or "types" => "typeinfo",
             _ => collectionName?.ToLowerInvariant() ?? string.Empty
         };
+    }
+
+    internal static string BuildPreparedTransactionSql(string verb, string globalTransactionId)
+    {
+        if (string.IsNullOrWhiteSpace(globalTransactionId))
+        {
+            throw new ScratchBirdSyntaxException("global transaction id is required", "42601");
+        }
+
+        var escaped = globalTransactionId.Trim().Replace("'", "''", StringComparison.Ordinal);
+        return $"{verb} '{escaped}'";
     }
 
     private DataTable BuildCatalogsMetadataTable(string collectionName, string?[]? restrictionValues)

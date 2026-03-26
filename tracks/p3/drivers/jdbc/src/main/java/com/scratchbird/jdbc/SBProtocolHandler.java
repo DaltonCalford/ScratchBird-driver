@@ -221,7 +221,15 @@ public class SBProtocolHandler {
     private static final int QUERY_FLAG_NO_CACHE = 0x20;
     private static final int MAX_PREPARED_STATEMENTS = 256;
 
-    private static final byte ISOLATION_READ_COMMITTED = 1;
+    static final byte ISOLATION_READ_UNCOMMITTED = 0;
+    static final byte ISOLATION_READ_COMMITTED = 1;
+    static final byte ISOLATION_REPEATABLE_READ = 2;
+    static final byte ISOLATION_SERIALIZABLE = 3;
+
+    public static final byte READ_COMMITTED_MODE_DEFAULT = 0;
+    public static final byte READ_COMMITTED_MODE_READ_CONSISTENCY = 1;
+    public static final byte READ_COMMITTED_MODE_RECORD_VERSION = 2;
+    public static final byte READ_COMMITTED_MODE_NO_RECORD_VERSION = 3;
 
     private static final short TXN_FLAG_HAS_ISOLATION = 0x0001;
     private static final short TXN_FLAG_HAS_ACCESS = 0x0002;
@@ -229,6 +237,7 @@ public class SBProtocolHandler {
     private static final short TXN_FLAG_HAS_WAIT = 0x0008;
     private static final short TXN_FLAG_HAS_TIMEOUT = 0x0010;
     private static final short TXN_FLAG_HAS_AUTOCOMMIT = 0x0020;
+    private static final short TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100;
 
     private static final ScheduledExecutorService TIMEOUT_SCHEDULER =
         Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
@@ -251,6 +260,7 @@ public class SBProtocolHandler {
     private int sequence = 0;
     private byte[] attachmentId = new byte[16];
     private long txnId = 0;
+    private boolean runtimeTxnActive = false;
 
     private final Map<String, String> serverParameters = new HashMap<>();
     private SBScramClient scramClient;
@@ -261,6 +271,7 @@ public class SBProtocolHandler {
     private final Map<String, PreparedStatementCacheEntry> preparedStatements =
         new LinkedHashMap<>(16, 0.75f, true);
     private int preparedStatementSequence = 0;
+    private boolean portalResumePending = false;
 
     public SBProtocolHandler(SBConnectionProperties props) {
         this.props = props;
@@ -408,11 +419,54 @@ public class SBProtocolHandler {
     }
 
     public synchronized void beginTransaction() throws SQLException {
-        beginTransaction(ISOLATION_READ_COMMITTED, (byte) 0, false, false, 0, (byte) 0, (byte) 0);
+        beginTransaction(
+            ISOLATION_READ_COMMITTED,
+            (byte) 0,
+            false,
+            false,
+            0,
+            (byte) 0,
+            (byte) 0,
+            READ_COMMITTED_MODE_DEFAULT
+        );
+    }
+
+    public static SBRetryScope retryScopeForSqlState(String state) {
+        // Drivers are fail-closed: fresh statement restart for 40xxx,
+        // reconnect only for 08xxx, and no automatic whole-transaction replay.
+        if (state == null || state.length() != 5) {
+            return SBRetryScope.NONE;
+        }
+        if ("40001".equals(state) || "40P01".equals(state)) {
+            return SBRetryScope.STATEMENT;
+        }
+        if (state.startsWith("08")) {
+            return SBRetryScope.RECONNECT;
+        }
+        return SBRetryScope.NONE;
+    }
+
+    public static boolean isRetryableSqlState(String state) {
+        return retryScopeForSqlState(state) != SBRetryScope.NONE;
     }
 
     public synchronized void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
                                  boolean wait, int timeoutMs, byte autocommitMode, byte conflictAction) throws SQLException {
+        beginTransaction(
+            isolationLevel,
+            accessMode,
+            deferrable,
+            wait,
+            timeoutMs,
+            autocommitMode,
+            conflictAction,
+            READ_COMMITTED_MODE_DEFAULT
+        );
+    }
+
+    public synchronized void beginTransaction(byte isolationLevel, byte accessMode, boolean deferrable,
+                                 boolean wait, int timeoutMs, byte autocommitMode, byte conflictAction,
+                                 byte readCommittedMode) throws SQLException {
         try {
             short flags = TXN_FLAG_HAS_ISOLATION;
             if (accessMode != 0) flags |= TXN_FLAG_HAS_ACCESS;
@@ -420,12 +474,28 @@ public class SBProtocolHandler {
             if (wait) flags |= TXN_FLAG_HAS_WAIT;
             if (timeoutMs > 0) flags |= TXN_FLAG_HAS_TIMEOUT;
             if (autocommitMode != 0) flags |= TXN_FLAG_HAS_AUTOCOMMIT;
+            if (readCommittedMode != READ_COMMITTED_MODE_DEFAULT) flags |= TXN_FLAG_HAS_READ_COMMITTED_MODE;
             byte[] payload = buildTxnBeginPayload(flags, conflictAction, autocommitMode, isolationLevel,
-                accessMode, (byte) (deferrable ? 1 : 0), (byte) (wait ? 1 : 0), timeoutMs);
+                accessMode, (byte) (deferrable ? 1 : 0), (byte) (wait ? 1 : 0), timeoutMs, readCommittedMode);
             sendMessage(MSG_TXN_BEGIN, payload, (byte) 0, false);
             drainUntilReady();
         } catch (IOException e) {
             throw createSQLException("Failed to begin transaction: " + e.getMessage(), "08006", e);
+        }
+    }
+
+    public static String canonicalReadCommittedModeLabel(int mode) {
+        switch (mode) {
+            case READ_COMMITTED_MODE_DEFAULT:
+                return "READ COMMITTED";
+            case READ_COMMITTED_MODE_READ_CONSISTENCY:
+                return "READ COMMITTED READ CONSISTENCY";
+            case READ_COMMITTED_MODE_RECORD_VERSION:
+                return "READ COMMITTED RECORD VERSION";
+            case READ_COMMITTED_MODE_NO_RECORD_VERSION:
+                return "READ COMMITTED NO RECORD VERSION";
+            default:
+                return "UNKNOWN(" + mode + ")";
         }
     }
 
@@ -496,7 +566,7 @@ public class SBProtocolHandler {
                 }
                 if (msg.type == MSG_READY) {
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
                     return;
                 }
                 if (msg.type == MSG_ERROR) {
@@ -625,7 +695,7 @@ public class SBProtocolHandler {
                     }
                     if (msg.type == MSG_READY) {
                         ReadyStatus ready = parseReady(msg.payload);
-                        txnId = ready.txnId;
+                        applyRuntimeReadyState(ready);
                         return true;
                     }
                     if (msg.type == MSG_ERROR) {
@@ -648,6 +718,8 @@ public class SBProtocolHandler {
         } catch (IOException e) {
             // Ignore
         }
+        clearTransactionState();
+        portalResumePending = false;
         connected = false;
     }
 
@@ -659,7 +731,27 @@ public class SBProtocolHandler {
         } catch (IOException e) {
             // Ignore
         }
+        clearTransactionState();
+        portalResumePending = false;
         connected = false;
+    }
+
+    synchronized void allowPortalResume() {
+        portalResumePending = true;
+    }
+
+    synchronized void resumeSuspendedPortal(int pageSize) throws SQLException {
+        if (!portalResumePending) {
+            throw createSQLException("portal resume requires explicit suspended state", "55000");
+        }
+        portalResumePending = false;
+        int nextPageSize = Math.max(pageSize, 1);
+        byte[] payload = buildExecutePayload("", nextPageSize);
+        try {
+            sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
+        } catch (IOException e) {
+            throw createSQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
+        }
     }
 
     public synchronized boolean isConnected() {
@@ -682,7 +774,31 @@ public class SBProtocolHandler {
     }
 
     public synchronized boolean hasActiveTransaction() {
-        return txnId != 0;
+        return runtimeTxnActive || txnId != 0;
+    }
+
+    private void applyRuntimeTxnId(long runtimeTxnId) {
+        txnId = runtimeTxnId;
+        if (runtimeTxnId > 0) {
+            runtimeTxnActive = true;
+        }
+    }
+
+    private void applyRuntimeReadyState(ReadyStatus ready) {
+        txnId = ready.txnId;
+        if (ready.status != 0) {
+            // READY is authoritative for native MGA activity. The engine can
+            // publish a fresh active boundary while the public wire header
+            // still reports txn_id == 0.
+            runtimeTxnActive = true;
+            return;
+        }
+        clearTransactionState();
+    }
+
+    private void clearTransactionState() {
+        txnId = 0;
+        runtimeTxnActive = false;
     }
 
     public String getServerParameter(String name) {
@@ -924,7 +1040,7 @@ public class SBProtocolHandler {
                 case MSG_AUTH_OK: {
                     AuthOk ok = parseAuthOk(msg.payload);
                     attachmentId = msg.attachmentId;
-                    txnId = msg.txnId;
+                    applyRuntimeTxnId(msg.txnId);
                     if (scramClient != null && ok.serverInfo.length > 0) {
                         String info = new String(ok.serverInfo, StandardCharsets.UTF_8);
                         if (info.startsWith("v=")) {
@@ -940,7 +1056,7 @@ public class SBProtocolHandler {
                 }
                 case MSG_READY: {
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
                     return;
                 }
                 case MSG_ERROR: {
@@ -963,7 +1079,7 @@ public class SBProtocolHandler {
         }
         if ("current_txn_id".equalsIgnoreCase(status.name)) {
             try {
-                txnId = Long.parseLong(status.value.trim());
+                applyRuntimeTxnId(Long.parseLong(status.value.trim()));
             } catch (NumberFormatException ignore) {
                 // Ignore invalid txn id.
             }
@@ -991,6 +1107,15 @@ public class SBProtocolHandler {
                 lastSblr = parseSblrCompiled(msg.payload);
                 return true;
             }
+            case MSG_TXN_STATUS: {
+                TxnStatus status = parseTxnStatus(msg.payload);
+                if (status.status == 'T') {
+                    applyRuntimeTxnId(status.txnId);
+                } else {
+                    clearTransactionState();
+                }
+                return true;
+            }
             default:
                 return false;
         }
@@ -1002,6 +1127,8 @@ public class SBProtocolHandler {
         List<Object[]> rows = new ArrayList<>();
         long updateCount = -1;
         String commandTag = null;
+        boolean responseStarted = false;
+        boolean ignoredStrayReady = false;
 
         while (true) {
             ProtocolMessage msg = readMessage();
@@ -1010,13 +1137,16 @@ public class SBProtocolHandler {
             }
             switch (msg.type) {
                 case MSG_ROW_DESCRIPTION:
+                    responseStarted = true;
                     columns = parseRowDescription(msg.payload);
                     result.setColumns(columns);
                     break;
                 case MSG_DATA_ROW:
+                    responseStarted = true;
                     rows.add(parseDataRow(msg.payload, columns));
                     break;
                 case MSG_COMMAND_COMPLETE: {
+                    responseStarted = true;
                     CommandComplete complete = parseCommandComplete(msg.payload);
                     commandTag = complete.tag;
                     updateCount = complete.rows;
@@ -1024,7 +1154,11 @@ public class SBProtocolHandler {
                 }
                 case MSG_READY: {
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
+                    if (!responseStarted && !ignoredStrayReady) {
+                        ignoredStrayReady = true;
+                        continue;
+                    }
                     result.setRows(rows);
                     result.setCommandTag(commandTag);
                     if (updateCount >= 0) {
@@ -1067,7 +1201,7 @@ public class SBProtocolHandler {
             switch (msg.type) {
                 case MSG_READY: {
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
                     return;
                 }
                 case MSG_ERROR: {
@@ -1094,7 +1228,7 @@ public class SBProtocolHandler {
                 }
                 if (msg.type == MSG_READY) {
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
                     return;
                 }
                 if (msg.type == MSG_ERROR) {
@@ -1442,8 +1576,11 @@ public class SBProtocolHandler {
     }
 
     private byte[] buildTxnBeginPayload(short flags, byte conflictAction, byte autocommitMode,
-                                        byte isolationLevel, byte accessMode, byte deferrable, byte waitMode, int timeoutMs) {
-        ByteBuffer buf = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+                                        byte isolationLevel, byte accessMode, byte deferrable,
+                                        byte waitMode, int timeoutMs, byte readCommittedMode) {
+        ByteBuffer buf = ByteBuffer
+            .allocate((flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0 ? 16 : 12)
+            .order(ByteOrder.LITTLE_ENDIAN);
         buf.putShort(flags);
         buf.put(conflictAction);
         buf.put(autocommitMode);
@@ -1452,6 +1589,12 @@ public class SBProtocolHandler {
         buf.put(deferrable);
         buf.put(waitMode);
         buf.putInt(timeoutMs);
+        if ((flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0) {
+            buf.put(readCommittedMode);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+        }
         return buf.array();
     }
 
@@ -1886,7 +2029,7 @@ public class SBProtocolHandler {
                         error.sqlState != null ? error.sqlState : "42000");
                 case MSG_READY:
                     ReadyStatus ready = parseReady(msg.payload);
-                    txnId = ready.txnId;
+                    applyRuntimeReadyState(ready);
                     return paramCount;
                 default:
                     break;
@@ -1904,6 +2047,17 @@ public class SBProtocolHandler {
         long txn = buf.getLong();
         long visibility = buf.getLong();
         return new ReadyStatus(status, txn, visibility);
+    }
+
+    private TxnStatus parseTxnStatus(byte[] payload) {
+        if (payload.length < 12) {
+            return new TxnStatus((byte) 0, 0);
+        }
+        ByteBuffer buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        byte status = buf.get();
+        buf.get(new byte[3]);
+        long txn = buf.getLong();
+        return new TxnStatus(status, txn);
     }
 
     private void upgradeToSSL(String sslMode) throws IOException, SQLException {
@@ -2018,6 +2172,8 @@ public class SBProtocolHandler {
         private long updateCount = -1;
         private String commandTag;
         private boolean done = false;
+        private boolean responseStarted = false;
+        private boolean ignoredStrayReady = false;
         private final int pageSize;
         private final ScheduledFuture<?> cancelTask;
 
@@ -2044,28 +2200,31 @@ public class SBProtocolHandler {
                 }
                 switch (msg.type) {
                     case MSG_ROW_DESCRIPTION:
+                        responseStarted = true;
                         columns = protocol.parseRowDescription(msg.payload);
                         break;
                     case MSG_DATA_ROW:
+                        responseStarted = true;
                         return protocol.parseDataRow(msg.payload, columns);
                     case MSG_COMMAND_COMPLETE: {
+                        responseStarted = true;
                         CommandComplete complete = protocol.parseCommandComplete(msg.payload);
                         commandTag = complete.tag;
                         updateCount = complete.rows;
                         break;
                     }
                     case MSG_PORTAL_SUSPENDED: {
-                        byte[] payload = protocol.buildExecutePayload("", pageSize);
-                        try {
-                            protocol.sendMessage(MSG_EXECUTE, payload, (byte) 0, false);
-                        } catch (IOException e) {
-                            throw protocol.createSQLException("Failed to resume portal: " + e.getMessage(), "08006", e);
-                        }
+                        protocol.allowPortalResume();
+                        protocol.resumeSuspendedPortal(pageSize);
                         break;
                     }
                     case MSG_READY: {
                         ReadyStatus ready = protocol.parseReady(msg.payload);
-                        protocol.txnId = ready.txnId;
+                        protocol.applyRuntimeReadyState(ready);
+                        if (!responseStarted && !ignoredStrayReady) {
+                            ignoredStrayReady = true;
+                            continue;
+                        }
                         done = true;
                         if (cancelTask != null) {
                             cancelTask.cancel(false);
@@ -2235,6 +2394,16 @@ public class SBProtocolHandler {
             this.status = status;
             this.txnId = txnId;
             this.visibility = visibility;
+        }
+    }
+
+    private static final class TxnStatus {
+        final byte status;
+        final long txnId;
+
+        TxnStatus(byte status, long txnId) {
+            this.status = status;
+            this.txnId = txnId;
         }
     }
 

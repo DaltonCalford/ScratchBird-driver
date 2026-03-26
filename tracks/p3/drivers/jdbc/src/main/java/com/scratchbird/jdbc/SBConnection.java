@@ -38,6 +38,10 @@ public class SBConnection implements Connection {
 
     /** Snapshot isolation level (ScratchBird extension) */
     public static final int TRANSACTION_SNAPSHOT = 5;
+    public static final int READ_COMMITTED_MODE_DEFAULT = SBProtocolHandler.READ_COMMITTED_MODE_DEFAULT;
+    public static final int READ_COMMITTED_MODE_READ_CONSISTENCY = SBProtocolHandler.READ_COMMITTED_MODE_READ_CONSISTENCY;
+    public static final int READ_COMMITTED_MODE_RECORD_VERSION = SBProtocolHandler.READ_COMMITTED_MODE_RECORD_VERSION;
+    public static final int READ_COMMITTED_MODE_NO_RECORD_VERSION = SBProtocolHandler.READ_COMMITTED_MODE_NO_RECORD_VERSION;
 
     @FunctionalInterface
     public interface NotificationListener {
@@ -94,6 +98,7 @@ public class SBConnection implements Connection {
     private boolean autoCommit = true;
     private boolean readOnly = false;
     private int transactionIsolation = TRANSACTION_READ_COMMITTED;
+    private byte readCommittedMode = (byte) READ_COMMITTED_MODE_DEFAULT;
     private String catalog;
     private String schema;
     private int holdability = ResultSet.HOLD_CURSORS_OVER_COMMIT;
@@ -181,7 +186,7 @@ public class SBConnection implements Connection {
             applySchemaSetting(schema);
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
             if (!autoCommit && !protocol.hasActiveTransaction()) {
-                protocol.beginTransaction();
+                beginManagedTransaction();
             }
             if (schema == null || schema.isBlank()) {
                 schema = discoverCurrentSchema();
@@ -507,6 +512,63 @@ public class SBConnection implements Connection {
         return SBSQLParser.convertToNativeSQL(sql);
     }
 
+    public boolean supportsPreparedTransactions() {
+        return true;
+    }
+
+    public boolean supportsDormantReattach() {
+        return false;
+    }
+
+    public void prepareTransaction(String globalTransactionId) throws SQLException {
+        checkClosed();
+        String sql = buildPreparedTransactionSql("PREPARE TRANSACTION", globalTransactionId);
+        withResilience("prepareTransaction", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void commitPrepared(String globalTransactionId) throws SQLException {
+        checkClosed();
+        String sql = buildPreparedTransactionSql("COMMIT PREPARED", globalTransactionId);
+        withResilience("commitPrepared", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void rollbackPrepared(String globalTransactionId) throws SQLException {
+        checkClosed();
+        String sql = buildPreparedTransactionSql("ROLLBACK PREPARED", globalTransactionId);
+        withResilience("rollbackPrepared", sql, () -> {
+            protocol.execute(sql);
+            return null;
+        });
+    }
+
+    public void detachToDormant() throws SQLFeatureNotSupportedException {
+        throw new SQLFeatureNotSupportedException(
+            "dormant detach/reattach is not yet exposed by the public JDBC driver surface",
+            "0A000");
+    }
+
+    public void reattachDormant(String dormantId, String authToken) throws SQLFeatureNotSupportedException {
+        Objects.requireNonNull(dormantId, "dormantId");
+        Objects.requireNonNull(authToken, "authToken");
+        throw new SQLFeatureNotSupportedException(
+            "dormant detach/reattach is not yet exposed by the public JDBC driver surface",
+            "0A000");
+    }
+
+    static String buildPreparedTransactionSql(String verb, String globalTransactionId) throws SQLSyntaxErrorException {
+        if (globalTransactionId == null || globalTransactionId.trim().isEmpty()) {
+            throw new SQLSyntaxErrorException("global transaction id is required", "42601");
+        }
+        String escaped = globalTransactionId.trim().replace("'", "''");
+        return verb + " '" + escaped + "'";
+    }
+
     @Override
     public void setAutoCommit(boolean autoCommit) throws SQLException {
         checkClosed();
@@ -518,7 +580,7 @@ public class SBConnection implements Connection {
             this.autoCommit = autoCommit;
             protocol.execute("SET AUTOCOMMIT " + (autoCommit ? "ON" : "OFF"));
             if (!autoCommit && !protocol.hasActiveTransaction()) {
-                protocol.beginTransaction();
+                beginManagedTransaction();
             }
         }
     }
@@ -645,34 +707,41 @@ public class SBConnection implements Connection {
     @Override
     public void setTransactionIsolation(int level) throws SQLException {
         checkClosed();
-        String isolationLevel;
-        switch (level) {
-            case TRANSACTION_READ_UNCOMMITTED:
-                isolationLevel = "READ UNCOMMITTED";
-                break;
-            case TRANSACTION_READ_COMMITTED:
-                isolationLevel = "READ COMMITTED";
-                break;
-            case TRANSACTION_REPEATABLE_READ:
-                isolationLevel = "REPEATABLE READ";
-                break;
-            case TRANSACTION_SERIALIZABLE:
-                isolationLevel = "SERIALIZABLE";
-                break;
-            case TRANSACTION_SNAPSHOT:
-                isolationLevel = "SNAPSHOT";
-                break;
-            default:
-                throw new SQLException("Invalid transaction isolation level: " + level, "HY024");
-        }
-        protocol.execute("SET TRANSACTION ISOLATION LEVEL " + isolationLevel);
-        this.transactionIsolation = level;
+        applyTransactionIsolation(level, null);
     }
 
     @Override
     public int getTransactionIsolation() throws SQLException {
         checkClosed();
         return transactionIsolation;
+    }
+
+    public void setTransactionIsolation(int level, int readCommittedMode) throws SQLException {
+        checkClosed();
+        applyTransactionIsolation(level, normalizeReadCommittedMode(readCommittedMode));
+    }
+
+    public void setReadCommittedMode(int readCommittedMode) throws SQLException {
+        checkClosed();
+        if (!supportsReadCommittedMode(transactionIsolation)) {
+            throw new SQLFeatureNotSupportedException(
+                "readCommittedMode requires a READ COMMITTED isolation alias",
+                "0A000"
+            );
+        }
+        byte normalized = normalizeReadCommittedMode(readCommittedMode);
+        this.readCommittedMode = normalized;
+        protocol.execute("SET TRANSACTION ISOLATION LEVEL "
+            + buildIsolationLevelSql(transactionIsolation, normalized));
+    }
+
+    public int getReadCommittedMode() throws SQLException {
+        checkClosed();
+        return Byte.toUnsignedInt(readCommittedMode);
+    }
+
+    public static String canonicalReadCommittedModeLabel(int readCommittedMode) {
+        return SBProtocolHandler.canonicalReadCommittedModeLabel(readCommittedMode);
     }
 
     @Override
@@ -1212,14 +1281,19 @@ public class SBConnection implements Connection {
             throw new SQLException("Protocol handler is not available", "08003");
         }
 
+        // MGA recovery rule: failover reconnect repairs the wire/session surface only.
+        // Cursors bound to the abandoned session must not survive as resumable local state.
+        invalidateNamedCursorsAfterReconnect();
         protocol.close();
         protocol.connect();
 
         applySchemaSetting(schema);
 
         if (!autoCommit) {
+            // ScratchBird remains always-in-transaction after reconnect, but this is a new
+            // session transaction, not a resurrection of the abandoned in-flight one.
             protocol.execute("SET AUTOCOMMIT OFF");
-            protocol.beginTransaction();
+            beginManagedTransaction();
         }
 
         protocol.execute("SET TRANSACTION READ " + (readOnly ? "ONLY" : "WRITE"));
@@ -1227,6 +1301,15 @@ public class SBConnection implements Connection {
         if (keepaliveTracker != null) {
             keepaliveTracker.markActive();
         }
+    }
+
+    private void invalidateNamedCursorsAfterReconnect() {
+        for (SBResultSet resultSet : namedCursors.values()) {
+            if (resultSet != null) {
+                resultSet.assignCursorName(null);
+            }
+        }
+        namedCursors.clear();
     }
 
     private boolean isFailoverReplayCandidate(SQLException ex) {
@@ -1296,10 +1379,12 @@ public class SBConnection implements Connection {
         if (autoCommit != baseline.isAutoCommit()) {
             setAutoCommit(baseline.isAutoCommit());
         } else if (!autoCommit && !protocol.hasActiveTransaction()) {
-            protocol.beginTransaction();
+            beginManagedTransaction();
         }
 
-        if (transactionIsolation != TRANSACTION_READ_COMMITTED) {
+        if (transactionIsolation != TRANSACTION_READ_COMMITTED
+            || readCommittedMode != (byte) READ_COMMITTED_MODE_DEFAULT) {
+            readCommittedMode = (byte) READ_COMMITTED_MODE_DEFAULT;
             setTransactionIsolation(TRANSACTION_READ_COMMITTED);
         }
 
@@ -1342,6 +1427,95 @@ public class SBConnection implements Connection {
             return first ? "" : sql.toString();
         }
         return "SET SCHEMA " + formatSchemaPath(trimmed);
+    }
+
+    private void applyTransactionIsolation(int level, Byte explicitReadCommittedMode) throws SQLException {
+        byte effectiveReadCommittedMode = readCommittedMode;
+        if (explicitReadCommittedMode != null) {
+            if (!supportsReadCommittedMode(level)) {
+                throw new SQLFeatureNotSupportedException(
+                    "readCommittedMode requires a READ COMMITTED isolation alias",
+                    "0A000"
+                );
+            }
+            effectiveReadCommittedMode = explicitReadCommittedMode;
+        } else if (!supportsReadCommittedMode(level)) {
+            effectiveReadCommittedMode = (byte) READ_COMMITTED_MODE_DEFAULT;
+        }
+
+        protocol.execute("SET TRANSACTION ISOLATION LEVEL "
+            + buildIsolationLevelSql(level, effectiveReadCommittedMode));
+        this.transactionIsolation = level;
+        this.readCommittedMode = effectiveReadCommittedMode;
+    }
+
+    private static boolean supportsReadCommittedMode(int level) {
+        return level == TRANSACTION_READ_UNCOMMITTED || level == TRANSACTION_READ_COMMITTED;
+    }
+
+    private static byte normalizeReadCommittedMode(int readCommittedMode) throws SQLException {
+        switch (readCommittedMode) {
+            case READ_COMMITTED_MODE_DEFAULT:
+            case READ_COMMITTED_MODE_READ_CONSISTENCY:
+            case READ_COMMITTED_MODE_RECORD_VERSION:
+            case READ_COMMITTED_MODE_NO_RECORD_VERSION:
+                return (byte) readCommittedMode;
+            default:
+                throw new SQLException("Invalid READ COMMITTED mode: " + readCommittedMode, "HY024");
+        }
+    }
+
+    private static String buildIsolationLevelSql(int level, byte readCommittedMode) throws SQLException {
+        switch (level) {
+            case TRANSACTION_READ_UNCOMMITTED:
+                if (readCommittedMode == (byte) READ_COMMITTED_MODE_DEFAULT) {
+                    return "READ UNCOMMITTED";
+                }
+                return canonicalReadCommittedModeLabel(Byte.toUnsignedInt(readCommittedMode));
+            case TRANSACTION_READ_COMMITTED:
+                return canonicalReadCommittedModeLabel(Byte.toUnsignedInt(readCommittedMode));
+            case TRANSACTION_REPEATABLE_READ:
+                return "REPEATABLE READ";
+            case TRANSACTION_SERIALIZABLE:
+                return "SERIALIZABLE";
+            case TRANSACTION_SNAPSHOT:
+                return "SNAPSHOT";
+            default:
+                throw new SQLException("Invalid transaction isolation level: " + level, "HY024");
+        }
+    }
+
+    private static byte mapIsolationToWireLevel(int level) throws SQLException {
+        switch (level) {
+            case TRANSACTION_READ_UNCOMMITTED:
+                return SBProtocolHandler.ISOLATION_READ_UNCOMMITTED;
+            case TRANSACTION_READ_COMMITTED:
+                return SBProtocolHandler.ISOLATION_READ_COMMITTED;
+            case TRANSACTION_REPEATABLE_READ:
+            case TRANSACTION_SNAPSHOT:
+                return SBProtocolHandler.ISOLATION_REPEATABLE_READ;
+            case TRANSACTION_SERIALIZABLE:
+                return SBProtocolHandler.ISOLATION_SERIALIZABLE;
+            default:
+                throw new SQLException("Invalid transaction isolation level: " + level, "HY024");
+        }
+    }
+
+    private void beginManagedTransaction() throws SQLException {
+        byte wireIsolation = mapIsolationToWireLevel(transactionIsolation);
+        byte effectiveReadCommittedMode = supportsReadCommittedMode(transactionIsolation)
+            ? readCommittedMode
+            : (byte) READ_COMMITTED_MODE_DEFAULT;
+        protocol.beginTransaction(
+            wireIsolation,
+            (byte) 0,
+            false,
+            false,
+            0,
+            (byte) 0,
+            (byte) 0,
+            effectiveReadCommittedMode
+        );
     }
 
     private static String formatSchemaPath(String schemaPath) {

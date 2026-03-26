@@ -115,12 +115,18 @@ pub const ISOLATION_READ_COMMITTED: u8 = 1;
 pub const ISOLATION_REPEATABLE_READ: u8 = 2;
 pub const ISOLATION_SERIALIZABLE: u8 = 3;
 
+pub const READ_COMMITTED_MODE_DEFAULT: u8 = 0;
+pub const READ_COMMITTED_MODE_READ_CONSISTENCY: u8 = 1;
+pub const READ_COMMITTED_MODE_RECORD_VERSION: u8 = 2;
+pub const READ_COMMITTED_MODE_NO_RECORD_VERSION: u8 = 3;
+
 pub const TXN_FLAG_HAS_ISOLATION: u16 = 0x0001;
 pub const TXN_FLAG_HAS_ACCESS: u16 = 0x0002;
 pub const TXN_FLAG_HAS_DEFERRABLE: u16 = 0x0004;
 pub const TXN_FLAG_HAS_WAIT: u16 = 0x0008;
 pub const TXN_FLAG_HAS_TIMEOUT: u16 = 0x0010;
 pub const TXN_FLAG_HAS_AUTOCOMMIT: u16 = 0x0020;
+pub const TXN_FLAG_HAS_READ_COMMITTED_MODE: u16 = 0x0100;
 
 pub const STREAM_START: u8 = 0;
 pub const STREAM_PAUSE: u8 = 1;
@@ -615,8 +621,13 @@ pub fn build_txn_begin_payload(
     deferrable: u8,
     wait_mode: u8,
     timeout_ms: u32,
+    read_committed_mode: u8,
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity(12);
+    let mut out = Vec::with_capacity(if (flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0 {
+        16
+    } else {
+        12
+    });
     out.extend_from_slice(&flags.to_le_bytes());
     out.push(conflict_action);
     out.push(autocommit_mode);
@@ -625,7 +636,21 @@ pub fn build_txn_begin_payload(
     out.push(deferrable);
     out.push(wait_mode);
     out.extend_from_slice(&timeout_ms.to_le_bytes());
+    if (flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0 {
+        out.push(read_committed_mode);
+        out.extend_from_slice(&[0, 0, 0]);
+    }
     out
+}
+
+pub fn canonical_read_committed_mode_label(mode: u8) -> String {
+    match mode {
+        READ_COMMITTED_MODE_DEFAULT => "READ COMMITTED".to_string(),
+        READ_COMMITTED_MODE_READ_CONSISTENCY => "READ COMMITTED READ CONSISTENCY".to_string(),
+        READ_COMMITTED_MODE_RECORD_VERSION => "READ COMMITTED RECORD VERSION".to_string(),
+        READ_COMMITTED_MODE_NO_RECORD_VERSION => "READ COMMITTED NO RECORD VERSION".to_string(),
+        _ => format!("UNKNOWN({mode})"),
+    }
 }
 
 pub fn build_txn_commit_payload(flags: u8) -> Vec<u8> {
@@ -825,6 +850,18 @@ pub fn parse_ready(payload: &[u8]) -> Result<(u8, u64, u64)> {
     let txn_id = u64::from_le_bytes(payload[4..12].try_into().unwrap_or([0u8; 8]));
     let visibility = u64::from_le_bytes(payload[12..20].try_into().unwrap_or([0u8; 8]));
     Ok((status, txn_id, visibility))
+}
+
+pub fn parse_txn_status(payload: &[u8]) -> Result<(u8, u64)> {
+    if payload.len() < 12 {
+        return Err(Error::new(
+            ErrorKind::Connection,
+            "txn status truncated",
+        ));
+    }
+    let status = payload[0];
+    let txn_id = u64::from_le_bytes(payload[4..12].try_into().unwrap_or([0u8; 8]));
+    Ok((status, txn_id))
 }
 
 pub fn parse_parameter_status(payload: &[u8]) -> Result<(String, String)> {
@@ -1161,4 +1198,44 @@ pub fn parse_error_message(payload: &[u8]) -> Result<(String, String, String, St
     }
 
     Ok((severity, sqlstate, message, detail, hint))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_txn_begin_payload, canonical_read_committed_mode_label,
+        READ_COMMITTED_MODE_READ_CONSISTENCY, TXN_FLAG_HAS_ISOLATION,
+        TXN_FLAG_HAS_READ_COMMITTED_MODE, TXN_FLAG_HAS_TIMEOUT,
+    };
+
+    #[test]
+    fn build_txn_begin_payload_expands_for_read_committed_mode() {
+        let flags =
+            TXN_FLAG_HAS_ISOLATION | TXN_FLAG_HAS_TIMEOUT | TXN_FLAG_HAS_READ_COMMITTED_MODE;
+        let payload = build_txn_begin_payload(
+            flags,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            25,
+            READ_COMMITTED_MODE_READ_CONSISTENCY,
+        );
+        assert_eq!(payload.len(), 16);
+        assert_eq!(u16::from_le_bytes([payload[0], payload[1]]), flags);
+        assert_eq!(payload[4], 1);
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 25);
+        assert_eq!(payload[12], READ_COMMITTED_MODE_READ_CONSISTENCY);
+    }
+
+    #[test]
+    fn canonical_read_committed_mode_label_documents_public_selector() {
+        assert_eq!(
+            canonical_read_committed_mode_label(READ_COMMITTED_MODE_READ_CONSISTENCY),
+            "READ COMMITTED READ CONSISTENCY"
+        );
+        assert_eq!(canonical_read_committed_mode_label(99), "UNKNOWN(99)");
+    }
 }

@@ -33,6 +33,11 @@ module Scratchbird
   class InternalError < Error; end
 
   module ErrorMapper
+    RETRY_SCOPE_NONE = "none"
+    RETRY_SCOPE_RECONNECT = "reconnect"
+    RETRY_SCOPE_STATEMENT = "statement"
+    RETRY_SCOPE_TRANSACTION = "transaction"
+
     def self.from_sqlstate(sqlstate, message, detail = "", hint = "")
       sqlstate = sqlstate.to_s
       text = [message, detail, hint].compact.join("\n").downcase
@@ -81,6 +86,21 @@ module Scratchbird
         end
       end
       Error.new(message, sqlstate, detail, hint)
+    end
+
+    def self.retry_scope_for_sqlstate(sqlstate)
+      # Drivers are fail-closed: fresh statement restart for 40xxx,
+      # reconnect only for 08xxx, and no automatic whole-transaction replay.
+      sqlstate = sqlstate.to_s
+      return RETRY_SCOPE_NONE unless sqlstate.length == 5
+      return RETRY_SCOPE_STATEMENT if sqlstate == "40001" || sqlstate == "40P01"
+      return RETRY_SCOPE_RECONNECT if sqlstate.start_with?("08")
+
+      RETRY_SCOPE_NONE
+    end
+
+    def self.retryable_sqlstate?(sqlstate)
+      retry_scope_for_sqlstate(sqlstate) != RETRY_SCOPE_NONE
     end
 
     def self.integrity_message?(text)

@@ -124,12 +124,18 @@ SB_ISOLATION_READ_COMMITTED <- 1L
 SB_ISOLATION_REPEATABLE_READ <- 2L
 SB_ISOLATION_SERIALIZABLE <- 3L
 
+SB_READ_COMMITTED_MODE_DEFAULT <- 0L
+SB_READ_COMMITTED_MODE_READ_CONSISTENCY <- 1L
+SB_READ_COMMITTED_MODE_RECORD_VERSION <- 2L
+SB_READ_COMMITTED_MODE_NO_RECORD_VERSION <- 3L
+
 SB_TXN_FLAG_HAS_ISOLATION <- 0x0001
 SB_TXN_FLAG_HAS_ACCESS <- 0x0002
 SB_TXN_FLAG_HAS_DEFERRABLE <- 0x0004
 SB_TXN_FLAG_HAS_WAIT <- 0x0008
 SB_TXN_FLAG_HAS_TIMEOUT <- 0x0010
 SB_TXN_FLAG_HAS_AUTOCOMMIT <- 0x0020
+SB_TXN_FLAG_HAS_READ_COMMITTED_MODE <- 0x0100
 
 SB_STREAM_START <- 0L
 SB_STREAM_PAUSE <- 1L
@@ -360,8 +366,8 @@ build_unsubscribe_payload <- function(channel) {
   c(pack_u32(length(channel_bytes)), channel_bytes)
 }
 
-build_txn_begin_payload <- function(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms) {
-  c(
+build_txn_begin_payload <- function(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms, read_committed_mode = SB_READ_COMMITTED_MODE_DEFAULT) {
+  payload <- c(
     pack_u16(flags),
     pack_u8(conflict_action),
     pack_u8(autocommit_mode),
@@ -371,6 +377,10 @@ build_txn_begin_payload <- function(flags, conflict_action, autocommit_mode, iso
     pack_u8(wait_mode),
     pack_u32(timeout_ms)
   )
+  if (bitwAnd(flags, SB_TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0L) {
+    payload <- c(payload, pack_u8(read_committed_mode), raw(3))
+  }
+  payload
 }
 
 build_txn_commit_payload <- function(flags) {
@@ -426,6 +436,13 @@ parse_ready <- function(payload) {
   txn_id <- read_u64(payload, 5)
   visibility <- read_u64(payload, 13)
   list(status = as.integer(status), txn_id = txn_id, visibility = visibility)
+}
+
+parse_txn_status <- function(payload) {
+  if (length(payload) < 12) stop("Txn status truncated")
+  status <- rawToChar(payload[1])
+  txn_id <- read_u64(payload, 5)
+  list(status = status, txn_id = txn_id)
 }
 
 parse_parameter_status <- function(payload) {

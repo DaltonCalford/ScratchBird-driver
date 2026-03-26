@@ -6,6 +6,37 @@
 - Maps Swift lane capability areas to JDBCBL groups using evidence in this lane's source and tests.
 - Not a cross-lane conformance statement.
 
+## MGA Recovery Contract
+
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `begin(...)` exposes the canonical MGA begin flags for `isolationLevel`,
+  `readCommittedMode`, `accessMode`, `deferrable`, `wait`, `timeoutMs`,
+  `autocommitMode`, and `conflictAction`.
+- Current isolation alias mapping is explicit in lane source:
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`.
+- `ScratchBirdReadCommittedMode.readConsistency` now exposes the canonical
+  `READ COMMITTED READ CONSISTENCY` selector directly in the public lane.
+- `retryScope(forSqlState:)` makes the retry boundary explicit:
+  `40001`/`40P01` => statement only, `08xxx` => reconnect only, all other
+  SQLSTATEs => no automatic replay.
+- Prepared / limbo truth is explicit in lane source through
+  `supportsPreparedTransactions()`, `prepareTransaction(...)`,
+  `commitPrepared(...)`, and `rollbackPrepared(...)`, which emit canonical
+  transaction-control SQL.
+- Dormant truth is explicit in lane source through
+  `supportsDormantReattach() -> false`, `detachToDormant()`, and
+  `reattachDormant(...)`, which all fail closed with `0A000`.
+- Result continuation is explicitly suspended-only through
+  `allowPortalResume()` and `resumeSuspendedPortal(...)`, which reject blind
+  resume with `55000` unless `.portalSuspended` was observed first.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (`JDBCBL-CONN`)
 
 - Current status: `Implemented`
@@ -26,20 +57,31 @@
 
 ## TXN (`JDBCBL-TXN`)
 
-- Current status: `Partial`
+- Current status: `Implemented` (focused live MGA boundary certified)
 - Lane-local source anchors:
   - `Sources/ScratchBird/Protocol.swift:38-43`
-  - `Sources/ScratchBird/Protocol.swift:116-126`
+  - `Sources/ScratchBird/Protocol.swift:116-127`
   - `Sources/ScratchBird/Protocol.swift:325-369`
-  - `Sources/ScratchBird/TxnExecValidation.swift:11-49`
-  - `Sources/ScratchBird/Connection.swift:152-238`
+  - `Sources/ScratchBird/TxnExecValidation.swift:11-65`
+  - `Sources/ScratchBird/Connection.swift:152-245`
+  - `Sources/ScratchBird/Connection.swift:394-437` explicit prepared / limbo and dormant fail-closed helper surface.
+  - `Sources/ScratchBird/Connection.swift` now treats native `READY`,
+    `TXN_STATUS`, and `current_txn_id` as authoritative transaction-state
+    surfaces, adopts compatible default fresh native boundaries in `begin(...)`,
+    and drains immediate reopen boundaries after `commit(...)` / `rollback(...)`.
 - Lane-local test anchors:
-  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:13-47`
-  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:62-93`
+  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:13-58`
+  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:73-145`
   - `Tests/ScratchBirdTests/IntegrationTests.swift:48-60` env-gated live begin/commit/rollback/savepoint lifecycle.
+  - `Tests/ScratchBirdTests/TxnExecParityTests.swift` now covers active fresh
+    boundary adoption plus non-default fresh-boundary fail-closed behavior.
+  - `Tests/ScratchBirdTests/IntegrationTests.swift` now proves default
+    fresh-boundary `begin(...)` adoption and real post-rollback query results
+    on the live native lane.
 - Gaps/next actions:
-  - Add transaction-state behavior checks tied to server `READY`/txn-id transitions (unit coverage is payload/validation focused today).
-  - Add explicit live failure semantics for nested/broken transaction flows with SQLSTATE assertions.
+  - Broader execution-layer portal suspend / resume and cancellation timing
+    parity still lives under `JDBCBL-EXEC`; the core TXN fresh-boundary gap is
+    closed in this lane.
 
 ## EXEC (`JDBCBL-EXEC`)
 
@@ -50,11 +92,12 @@
   - `Sources/ScratchBird/Connection.swift:284-295`
   - `Sources/ScratchBird/Connection.swift:333-339`
   - `Sources/ScratchBird/Connection.swift:392-449`
+  - `Sources/ScratchBird/Connection.swift:695-698`, `Sources/ScratchBird/Connection.swift:940-955` suspended-only resume guard and execution path.
   - `Sources/ScratchBird/Protocol.swift:266-280`
-  - `Sources/ScratchBird/TxnExecValidation.swift:51-70`
+  - `Sources/ScratchBird/TxnExecValidation.swift:51-65`
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/TxnExecParityTests.swift:50-60`
-  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:95-104`
+  - `Tests/ScratchBirdTests/TxnExecParityTests.swift:95-145`
   - `Tests/ScratchBirdTests/IntegrationTests.swift:13-85` env-gated live simple/parameterized execution plus batch/multi/helper execution paths.
 - Gaps/next actions:
   - Add live execution tests for cancellation timing and portal suspend/resume behavior.
@@ -112,7 +155,7 @@
 - Lane-local test anchors:
   - `Tests/ScratchBirdTests/ConfigTests.swift:51-99`
   - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:13-53` protocol header decode guardrails (`invalidHeader`, `unsupportedVersion`, `payloadTooLarge`).
-  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-154` wire-error payload parsing, typed SQLSTATE mapping, structured SQLSTATE/detail/hint propagation, and malformed-payload fallback assertions.
+  - `Tests/ScratchBirdTests/ErrorResilienceTests.swift:55-154` wire-error payload parsing, typed SQLSTATE mapping, structured SQLSTATE/detail/hint propagation, malformed-payload fallback assertions, and retry-scope classification.
   - `Tests/ScratchBirdTests/IntegrationTests.swift:78-132` env-gated live SQLSTATE propagation for execution failures plus optional bad-auth connect mapping (`SCRATCHBIRD_TEST_BAD_AUTH_DSN`).
 - Gaps/next actions:
   - Expand live auth/connect `.error` propagation to include manager auth failures and explicit read-loop teardown paths.

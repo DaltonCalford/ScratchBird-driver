@@ -99,12 +99,18 @@ const int isolationReadCommitted = 1;
 const int isolationRepeatableRead = 2;
 const int isolationSerializable = 3;
 
+const int readCommittedModeDefault = 0;
+const int readCommittedModeReadConsistency = 1;
+const int readCommittedModeRecordVersion = 2;
+const int readCommittedModeNoRecordVersion = 3;
+
 const int txnFlagHasIsolation = 0x0001;
 const int txnFlagHasAccess = 0x0002;
 const int txnFlagHasDeferrable = 0x0004;
 const int txnFlagHasWait = 0x0008;
 const int txnFlagHasTimeout = 0x0010;
 const int txnFlagHasAutocommit = 0x0020;
+const int txnFlagHasReadCommittedMode = 0x0100;
 
 const int streamStart = 0;
 const int streamPause = 1;
@@ -429,8 +435,11 @@ Uint8List buildTxnBeginPayload(
   int deferrable,
   int waitMode,
   int timeoutMs,
+  int readCommittedMode,
 ) {
-  final payload = ByteData(12);
+  final payload = ByteData(
+    (flags & txnFlagHasReadCommittedMode) != 0 ? 16 : 12,
+  );
   payload.setUint16(0, flags, Endian.little);
   payload.setUint8(2, conflictAction);
   payload.setUint8(3, autocommitMode);
@@ -439,6 +448,9 @@ Uint8List buildTxnBeginPayload(
   payload.setUint8(6, deferrable);
   payload.setUint8(7, waitMode);
   payload.setUint32(8, timeoutMs, Endian.little);
+  if ((flags & txnFlagHasReadCommittedMode) != 0) {
+    payload.setUint8(12, readCommittedMode);
+  }
   return payload.buffer.asUint8List();
 }
 

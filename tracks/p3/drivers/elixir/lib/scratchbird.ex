@@ -9,7 +9,7 @@
 defmodule ScratchBird do
   @moduledoc false
 
-  alias ScratchBird.{Errors, Metadata}
+  alias ScratchBird.{Errors, Metadata, Protocol}
 
   defdelegate schemas_query(), to: Metadata
   defdelegate tables_query(), to: Metadata
@@ -21,4 +21,10 @@ defmodule ScratchBird do
   defdelegate functions_query(), to: Metadata
 
   defdelegate sqlstate_class(code), to: Errors
+  defdelegate retry_scope(code), to: Errors
+  defdelegate retryable?(code), to: Errors
+  defdelegate canonical_read_committed_mode_label(mode), to: Protocol
+  defdelegate supports_prepared_transactions(), to: ScratchBird.Connection
+  defdelegate supports_dormant_reattach(), to: ScratchBird.Connection
+  defdelegate supports_portal_resume(), to: ScratchBird.Connection
 end

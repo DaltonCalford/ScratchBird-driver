@@ -4,6 +4,7 @@
 
 #include "scratchbird/client/network_client.h"
 #include "scratchbird/client/driver_config.h"
+#include "scratchbird/core/sqlstate.h"
 
 #include <algorithm>
 #include <chrono>
@@ -128,6 +129,18 @@ bool isNativeProtocol(const std::string& value) {
 bool isManagerProxyMode(const std::string& value) {
     std::string lower = toLower(value);
     return lower == "manager_proxy" || lower == "manager-proxy" || lower == "managed";
+}
+
+bool canAdoptFreshNativeBoundary(const NetworkClient::TransactionOptions& options) {
+    return options.flags == 0 &&
+           options.conflict_action == 0 &&
+           options.autocommit_mode == 0 &&
+           options.isolation_level == 0 &&
+           options.read_committed_mode == 0 &&
+           options.access_mode == 0 &&
+           options.deferrable == 0 &&
+           options.wait_mode == 0 &&
+           options.timeout_ms == 0;
 }
 
 bool isManagedTransport(const std::string& value) {
@@ -588,13 +601,19 @@ core::Status mapProtocolError(const protocol::ProtocolMessage& msg,
 
 core::Status parseReadyAndTrackTransaction(const std::vector<uint8_t>& payload,
                                            bool& in_transaction,
+                                           uint64_t& current_txn_id,
                                            core::ErrorContext* ctx) {
     uint8_t status_byte = 0;
     uint64_t txn_id = 0;
     uint64_t epoch = 0;
     auto status = protocol::parseReady(payload, status_byte, txn_id, epoch, ctx);
     if (status == core::Status::OK) {
+        // READY status is authoritative for transaction activity. The native
+        // engine-endpoint path can legitimately report an active session
+        // transaction with txn_id == 0 because only the boolean boundary is
+        // exposed across that seam.
         in_transaction = status_byte != 0;
+        current_txn_id = txn_id;
     }
     return status;
 }
@@ -1061,8 +1080,18 @@ void NetworkClient::disconnect() {
         socket_.reset();
     }
     tls_ctx_.reset();
+    session_id_.fill(0);
+    parameter_status_.clear();
+    prepared_statements_.clear();
+    notifications_.clear();
+    last_plan_.reset();
+    last_sblr_.reset();
+    resetQueryProgress();
+    next_sequence_ = 0;
+    last_query_sequence_ = 0;
     connected_ = false;
     in_transaction_ = false;
+    current_txn_id_ = 0;
     last_error_.clear();
 }
 
@@ -1150,7 +1179,7 @@ core::Status NetworkClient::executeQuery(const std::string& sql,
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             default:
                 break;
         }
@@ -1202,7 +1231,7 @@ core::Status NetworkClient::prepare(const std::string& sql,
             case protocol::MessageType::Error:
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready: {
-                status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                status = parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
                 stmt.valid_ = (status == core::Status::OK);
                 return status;
             }
@@ -1291,7 +1320,7 @@ core::Status NetworkClient::executePrepared(NetworkPreparedStatement& stmt,
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             default:
                 break;
         }
@@ -1409,7 +1438,7 @@ core::Status NetworkClient::executeServerStatement(uint32_t stmt_id,
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             default:
                 break;
         }
@@ -1567,7 +1596,7 @@ core::Status NetworkClient::attachList(NetworkResultSet& results,
             case protocol::MessageType::Error:
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             default:
                 break;
         }
@@ -1604,7 +1633,7 @@ core::Status NetworkClient::ping(core::ErrorContext* ctx) {
             case protocol::MessageType::Pong:
                 return core::Status::OK;
             case protocol::MessageType::Ready:
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             case protocol::MessageType::Error:
                 return handleErrorResponse(msg, ctx);
             default:
@@ -1684,7 +1713,7 @@ core::Status NetworkClient::executeSblr(uint64_t sblr_hash,
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready:
                 last_query_sequence_ = 0;
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             default:
                 break;
         }
@@ -1720,14 +1749,55 @@ bool NetworkClient::takeLastSblrCompiled(protocol::SblrCompiled& out) {
 
 core::Status NetworkClient::beginTransaction(const TransactionOptions& options,
                                              core::ErrorContext* ctx) {
-    auto payload = protocol::buildTxnBeginPayload(options.flags,
+    if (in_transaction_) {
+        if (current_txn_id_ == 0) {
+            if (canAdoptFreshNativeBoundary(options)) {
+                // Native MGA sessions can legitimately begin with an already
+                // active fresh boundary after connect, commit, or rollback.
+                // Adopt that engine-owned boundary instead of sending a second
+                // begin request back through the server.
+                return core::Status::OK;
+            }
+            if (ctx) {
+                ctx->set(core::Status::NOT_SUPPORTED,
+                         "fresh native transaction boundaries only support default READ COMMITTED adoption in the C/C++ lane",
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+                ctx->setSQLState(core::SQLSTATE_FEATURE_NOT_SUPPORTED);
+            }
+            return core::Status::NOT_SUPPORTED;
+        }
+        if (ctx) {
+            ctx->set(core::Status::INVALID_TRANSACTION_STATE,
+                     "transaction already active",
+                     __FILE__,
+                     __LINE__,
+                     __func__);
+            ctx->setSQLState(core::SQLSTATE_ACTIVE_SQL_TRANSACTION);
+        }
+        return core::Status::INVALID_TRANSACTION_STATE;
+    }
+
+    uint16_t flags = options.flags;
+    uint8_t isolation_level = options.isolation_level;
+    if (options.read_committed_mode != 0) {
+        flags |= 0x0100;
+        if ((flags & 0x0001) == 0) {
+            flags |= 0x0001;
+            isolation_level = 1;
+        }
+    }
+
+    auto payload = protocol::buildTxnBeginPayload(flags,
                                                   options.conflict_action,
                                                   options.autocommit_mode,
-                                                  options.isolation_level,
+                                                  isolation_level,
                                                   options.access_mode,
                                                   options.deferrable,
                                                   options.wait_mode,
-                                                  options.timeout_ms);
+                                                  options.timeout_ms,
+                                                  options.read_committed_mode);
     auto status = sendMessage(protocol::MessageType::TxnBegin, payload, 0, false, nullptr, ctx);
     if (status != core::Status::OK) {
         return status;
@@ -2108,6 +2178,8 @@ core::Status NetworkClient::handleAsyncMessage(const protocol::ProtocolMessage& 
                     if (uuid.size() == session_id_.size()) {
                         std::copy(uuid.begin(), uuid.end(), session_id_.begin());
                     }
+                } else if (name == "current_txn_id") {
+                    current_txn_id_ = static_cast<uint64_t>(std::strtoull(value.c_str(), nullptr, 10));
                 }
             }
             return status;
@@ -2172,7 +2244,7 @@ core::Status NetworkClient::handleErrorResponse(const protocol::ProtocolMessage&
         if (trailing.header.type == protocol::MessageType::Ready) {
             core::ErrorContext ready_ctx;
             const auto ready_status =
-                parseReadyAndTrackTransaction(trailing.body, in_transaction_, &ready_ctx);
+                parseReadyAndTrackTransaction(trailing.body, in_transaction_, current_txn_id_, &ready_ctx);
             last_query_sequence_ = 0;
             return ready_status == core::Status::OK ? mapped : ready_status;
         }
@@ -2212,7 +2284,7 @@ core::Status NetworkClient::drainUntilReady(std::string* command_tag,
             case protocol::MessageType::Error:
                 return handleErrorResponse(msg, ctx);
             case protocol::MessageType::Ready: {
-                auto ready_status = parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                auto ready_status = parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
                 if (ready_status != core::Status::OK) {
                     return ready_status;
                 }
@@ -2439,7 +2511,7 @@ core::Status NetworkClient::handshake(core::ErrorContext* ctx) {
                 continue;
             }
             case protocol::MessageType::Ready:
-                return parseReadyAndTrackTransaction(msg.body, in_transaction_, ctx);
+                return parseReadyAndTrackTransaction(msg.body, in_transaction_, current_txn_id_, ctx);
             case protocol::MessageType::Error:
                 return mapProtocolError(msg, ctx);
             default:

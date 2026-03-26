@@ -129,12 +129,18 @@ module Scratchbird
     ISOLATION_REPEATABLE_READ = 2
     ISOLATION_SERIALIZABLE = 3
 
+    READ_COMMITTED_MODE_DEFAULT = 0
+    READ_COMMITTED_MODE_READ_CONSISTENCY = 1
+    READ_COMMITTED_MODE_RECORD_VERSION = 2
+    READ_COMMITTED_MODE_NO_RECORD_VERSION = 3
+
     TXN_FLAG_HAS_ISOLATION = 0x0001
     TXN_FLAG_HAS_ACCESS = 0x0002
     TXN_FLAG_HAS_DEFERRABLE = 0x0004
     TXN_FLAG_HAS_WAIT = 0x0008
     TXN_FLAG_HAS_TIMEOUT = 0x0010
     TXN_FLAG_HAS_AUTOCOMMIT = 0x0020
+    TXN_FLAG_HAS_READ_COMMITTED_MODE = 0x0100
 
     STREAM_START = 0
     STREAM_PAUSE = 1
@@ -309,8 +315,27 @@ module Scratchbird
       [channel_bytes.bytesize].pack("V") + channel_bytes
     end
 
-    def self.build_txn_begin_payload(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms)
-      [flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms].pack("vCCCCCCV")
+    def self.build_txn_begin_payload(flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms, read_committed_mode = READ_COMMITTED_MODE_DEFAULT)
+      payload = [flags, conflict_action, autocommit_mode, isolation_level, access_mode, deferrable, wait_mode, timeout_ms].pack("vCCCCCCV")
+      if (flags & TXN_FLAG_HAS_READ_COMMITTED_MODE) != 0
+        payload << [read_committed_mode, 0, 0, 0].pack("CCCC")
+      end
+      payload
+    end
+
+    def self.canonical_read_committed_mode_label(mode)
+      case mode
+      when READ_COMMITTED_MODE_DEFAULT
+        "READ COMMITTED"
+      when READ_COMMITTED_MODE_READ_CONSISTENCY
+        "READ COMMITTED READ CONSISTENCY"
+      when READ_COMMITTED_MODE_RECORD_VERSION
+        "READ COMMITTED RECORD VERSION"
+      when READ_COMMITTED_MODE_NO_RECORD_VERSION
+        "READ COMMITTED NO RECORD VERSION"
+      else
+        "UNKNOWN(#{mode})"
+      end
     end
 
     def self.build_txn_commit_payload(flags)

@@ -140,6 +140,9 @@ test_that("integration savepoint lifecycle", {
 
     scratchbird:::sb_begin(client)
     scratchbird:::sb_rollback(client)
+    post_rollback <- sb_query(client, "SELECT 2")
+    expect_true(length(post_rollback$rows) > 0)
+    expect_equal(as.integer(post_rollback$rows[[1]][[1]]), 2L)
     scratchbird:::sb_savepoint(client, "sp_r_after_rollback")
     scratchbird:::sb_release_savepoint(client, "sp_r_after_rollback")
   })

@@ -60,6 +60,12 @@ begin
     Fail(MessageText + ': expected="' + Expected + '" actual="' + Actual + '"');
 end;
 
+procedure AssertContains(const Needle, Haystack, MessageText: string);
+begin
+  if Pos(Needle, Haystack) = 0 then
+    Fail(MessageText + ': missing substring "' + Needle + '"');
+end;
+
 procedure AssertEqualBytes(const Expected, Actual: TBytes; const MessageText: string);
 var
   I: Integer;
@@ -113,6 +119,14 @@ begin
   Buffer[Offset + 7] := Byte((Value shr 56) and $FF);
 end;
 
+procedure WriteUInt32LEAt(var Buffer: TBytes; Offset: Integer; Value: Cardinal);
+begin
+  Buffer[Offset] := Byte(Value and $FF);
+  Buffer[Offset + 1] := Byte((Value shr 8) and $FF);
+  Buffer[Offset + 2] := Byte((Value shr 16) and $FF);
+  Buffer[Offset + 3] := Byte((Value shr 24) and $FF);
+end;
+
 function BuildReadyPayload(Status: Byte; TxnId, Visibility: UInt64): TBytes;
 begin
   SetLength(Result, 20);
@@ -120,6 +134,84 @@ begin
   Result[0] := Status;
   WriteUInt64LEAt(Result, 4, TxnId);
   WriteUInt64LEAt(Result, 12, Visibility);
+end;
+
+function BuildCommandCompletePayload(CommandType: Byte; Rows, LastId: UInt64; const Tag: string): TBytes;
+var
+  TagBytes: TBytes;
+begin
+  TagBytes := TEncoding.UTF8.GetBytes(Tag);
+  SetLength(Result, 20 + Length(TagBytes) + 1);
+  FillChar(Result[0], Length(Result), 0);
+  Result[0] := CommandType;
+  WriteUInt64LEAt(Result, 4, Rows);
+  WriteUInt64LEAt(Result, 12, LastId);
+  if Length(TagBytes) > 0 then
+    Move(TagBytes[0], Result[20], Length(TagBytes));
+  Result[20 + Length(TagBytes)] := 0;
+end;
+
+function BuildParameterStatusPayload(const Name, Value: string): TBytes;
+var
+  NameBytes, ValueBytes: TBytes;
+  Offset: Integer;
+begin
+  NameBytes := TEncoding.UTF8.GetBytes(Name);
+  ValueBytes := TEncoding.UTF8.GetBytes(Value);
+  SetLength(Result, 8 + Length(NameBytes) + Length(ValueBytes));
+  FillChar(Result[0], Length(Result), 0);
+  Offset := 0;
+  WriteUInt32LEAt(Result, Offset, Length(NameBytes));
+  Inc(Offset, 4);
+  if Length(NameBytes) > 0 then
+  begin
+    Move(NameBytes[0], Result[Offset], Length(NameBytes));
+    Inc(Offset, Length(NameBytes));
+  end;
+  WriteUInt32LEAt(Result, Offset, Length(ValueBytes));
+  Inc(Offset, 4);
+  if Length(ValueBytes) > 0 then
+    Move(ValueBytes[0], Result[Offset], Length(ValueBytes));
+end;
+
+function BuildQueryPlanPayload(Format: Cardinal; PlanningTimeUs, EstimatedRows,
+  EstimatedCost: UInt64; const PlanBytes: TBytes): TBytes;
+var
+  Offset: Integer;
+begin
+  SetLength(Result, 32 + Length(PlanBytes));
+  FillChar(Result[0], Length(Result), 0);
+  Offset := 0;
+  WriteUInt32LEAt(Result, Offset, Format);
+  Inc(Offset, 4);
+  WriteUInt32LEAt(Result, Offset, Length(PlanBytes));
+  Inc(Offset, 4);
+  WriteUInt64LEAt(Result, Offset, PlanningTimeUs);
+  Inc(Offset, 8);
+  WriteUInt64LEAt(Result, Offset, EstimatedRows);
+  Inc(Offset, 8);
+  WriteUInt64LEAt(Result, Offset, EstimatedCost);
+  Inc(Offset, 8);
+  if Length(PlanBytes) > 0 then
+    Move(PlanBytes[0], Result[Offset], Length(PlanBytes));
+end;
+
+function BuildSblrCompiledPayload(Hash: UInt64; Version: Cardinal;
+  const Bytecode: TBytes): TBytes;
+var
+  Offset: Integer;
+begin
+  SetLength(Result, 16 + Length(Bytecode));
+  FillChar(Result[0], Length(Result), 0);
+  Offset := 0;
+  WriteUInt64LEAt(Result, Offset, Hash);
+  Inc(Offset, 8);
+  WriteUInt32LEAt(Result, Offset, Version);
+  Inc(Offset, 4);
+  WriteUInt32LEAt(Result, Offset, Length(Bytecode));
+  Inc(Offset, 4);
+  if Length(Bytecode) > 0 then
+    Move(Bytecode[0], Result[Offset], Length(Bytecode));
 end;
 
 procedure DecodeOutboundFrame(const Frame: TBytes; out MsgType: TScratchBirdMessageType; out Payload: TBytes);
@@ -154,22 +246,22 @@ begin
   Transport := TFakeTransport.Create;
   Client := TScratchBirdClient.CreateWithTransport(Transport, True);
   try
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 41, 0), 0, 1, nil, 41));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 41, 0), 0, 1, nil, 41));
     Client.BeginTransaction;
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 41, 0), 0, 2, nil, 41));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 41, 0), 0, 2, nil, 41));
     Client.Savepoint('sp_a');
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 41, 0), 0, 3, nil, 41));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 41, 0), 0, 3, nil, 41));
     Client.ReleaseSavepoint('sp_a');
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 41, 0), 0, 4, nil, 41));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 41, 0), 0, 4, nil, 41));
     Client.RollbackToSavepoint('sp_a');
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 5, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 0, 0), 0, 5, nil, 0));
     Client.Commit;
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 6, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 0, 0), 0, 6, nil, 0));
     Client.Savepoint('sp_after_commit');
 
     AssertEqualInt(6, Transport.WriteCount, 'commit lifecycle write count');
@@ -199,13 +291,13 @@ begin
   Transport := TFakeTransport.Create;
   Client := TScratchBirdClient.CreateWithTransport(Transport, True);
   try
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 77, 0), 0, 1, nil, 77));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 77, 0), 0, 1, nil, 77));
     Client.BeginTransaction;
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 0, 0), 0, 2, nil, 0));
     Client.Rollback;
 
-    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 3, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 0, 0), 0, 3, nil, 0));
     Client.Savepoint('sp_after_rollback');
 
     AssertEqualInt(3, Transport.WriteCount, 'rollback lifecycle write count');
@@ -215,6 +307,40 @@ begin
     AssertTrue(MsgType = MSG_TXN_ROLLBACK, 'second write should be txn rollback');
     DecodeOutboundType(Transport.WriteAt(2), MsgType);
     AssertTrue(MsgType = MSG_TXN_SAVEPOINT, 'third write should be savepoint in auto-started txn');
+  finally
+    Client.Free;
+  end;
+end;
+
+procedure TestRuntimeFreshBoundaryAdoptsDefaultBeginAndRejectsNonDefault;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  MsgType: TScratchBirdMessageType;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(1, 0, 0), 0, 1, nil, 0));
+    Client.Ping;
+
+    try
+      Client.BeginTransactionEx(ISOLATION_SERIALIZABLE, 0, False, False, 0, 0, 0);
+      Fail('fresh native boundary should reject non-default adoption');
+    except
+      on E: EScratchbirdNotSupported do
+      begin
+        AssertEqualString('0A000', E.SQLState, 'fresh-boundary adoption SQLSTATE');
+        AssertContains('fresh native transaction boundaries only support default READ COMMITTED adoption',
+          E.Message, 'fresh-boundary adoption message');
+      end;
+    end;
+
+    Client.BeginTransaction;
+
+    AssertEqualInt(1, Transport.WriteCount, 'default fresh-boundary adoption should not emit txn begin');
+    DecodeOutboundType(Transport.WriteAt(0), MsgType);
+    AssertTrue(MsgType = MSG_PING, 'fresh-boundary proof should only emit ping');
   finally
     Client.Free;
   end;
@@ -329,6 +455,125 @@ begin
   end;
 end;
 
+procedure TestBeginTransactionExReadCommittedModePayloadAndValidation;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  MsgType: TScratchBirdMessageType;
+  Payload: TBytes;
+  ExpectedPayload: TBytes;
+  Flags: Word;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 9100, 0), 0, 1, nil, 9100));
+    Client.BeginTransactionEx(ISOLATION_READ_COMMITTED, 0, False, False, 25, 0, 0,
+      READ_COMMITTED_MODE_READ_CONSISTENCY);
+
+    Flags := TXN_FLAG_HAS_ISOLATION or TXN_FLAG_HAS_TIMEOUT or TXN_FLAG_HAS_READ_COMMITTED_MODE;
+    ExpectedPayload := BuildTxnBeginPayload(Flags, 0, 0, ISOLATION_READ_COMMITTED, 0, 0, 0, 25,
+      READ_COMMITTED_MODE_READ_CONSISTENCY);
+    DecodeOutboundFrame(Transport.WriteAt(0), MsgType, Payload);
+    AssertTrue(MsgType = MSG_TXN_BEGIN, 'read committed mode write should be txn begin');
+    AssertEqualBytes(ExpectedPayload, Payload, 'read committed mode begin payload');
+
+    Transport.QueueInbound(EncodeMessage(MSG_READY, BuildReadyPayload(0, 0, 0), 0, 2, nil, 0));
+    Client.Rollback;
+
+    try
+      Client.BeginTransactionEx(ISOLATION_SERIALIZABLE, 0, False, False, 0, 0, 0,
+        READ_COMMITTED_MODE_READ_CONSISTENCY);
+      Fail('BeginTransactionEx should reject read committed mode with snapshot aliases');
+    except
+      on E: EScratchbirdNotSupported do
+      begin
+        AssertEqualString('0A000', E.SQLState, 'read committed mode validation SQLSTATE');
+        AssertTrue(Pos('READ COMMITTED isolation alias', E.Message) > 0,
+          'read committed mode validation message');
+      end;
+    end;
+
+    AssertEqualInt(2, Transport.WriteCount, 'validation failure should not emit extra writes');
+  finally
+    Client.Free;
+  end;
+end;
+
+procedure TestDisconnectClearsAbandonedSessionState;
+var
+  Transport: TFakeTransport;
+  Client: TScratchBirdClient;
+  Stream: TScratchBirdResultStream;
+  Diagnostics: string;
+  PlanBytes: TBytes;
+  Bytecode: TBytes;
+begin
+  Transport := TFakeTransport.Create;
+  Client := TScratchBirdClient.CreateWithTransport(Transport, True);
+  try
+    SetLength(PlanBytes, 3);
+    PlanBytes[0] := 1;
+    PlanBytes[1] := 2;
+    PlanBytes[2] := 3;
+    SetLength(Bytecode, 3);
+    Bytecode[0] := 4;
+    Bytecode[1] := 5;
+    Bytecode[2] := 6;
+
+    Transport.QueueInbound(EncodeMessage(MSG_PARAMETER_STATUS,
+      BuildParameterStatusPayload('attachment_id', '00112233-4455-6677-8899-aabbccddeeff'),
+      0, 1, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_PARAMETER_STATUS,
+      BuildParameterStatusPayload('current_txn_id', '42'),
+      0, 2, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_QUERY_PLAN,
+      BuildQueryPlanPayload(1, 2, 3, 4, PlanBytes),
+      0, 3, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_SBLR_COMPILED,
+      BuildSblrCompiledPayload(5, 6, Bytecode),
+      0, 4, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_COMMAND_COMPLETE,
+      BuildCommandCompletePayload(0, 0, 0, 'SELECT 0'),
+      0, 5, nil, 0));
+    Transport.QueueInbound(EncodeMessage(MSG_READY,
+      BuildReadyPayload(1, 42, 0),
+      0, 6, nil, 42));
+
+    Stream := Client.ExecuteQuery('select 1');
+    try
+      while Stream.ReadRow <> nil do
+      begin
+      end;
+    finally
+      Stream.Free;
+    end;
+
+    Diagnostics := Client.GetDiagnosticsJson;
+    AssertContains('"connected":true', Diagnostics, 'pre-disconnect connected state');
+    AssertContains('"transaction_active":true', Diagnostics, 'pre-disconnect txn state');
+    AssertContains('"attachment_zeroed":false', Diagnostics, 'pre-disconnect attachment state');
+    AssertContains('"parameter_count":2', Diagnostics, 'pre-disconnect parameter count');
+    AssertContains('"has_last_plan":true', Diagnostics, 'pre-disconnect plan state');
+    AssertContains('"has_last_sblr":true', Diagnostics, 'pre-disconnect sblr state');
+    AssertContains('"next_sequence":1', Diagnostics, 'pre-disconnect sequence state');
+
+    Client.Disconnect;
+
+    Diagnostics := Client.GetDiagnosticsJson;
+    AssertContains('"connected":false', Diagnostics, 'post-disconnect connected state');
+    AssertContains('"transaction_active":false', Diagnostics, 'post-disconnect txn state');
+    AssertContains('"attachment_zeroed":true', Diagnostics, 'post-disconnect attachment state');
+    AssertContains('"parameter_count":0', Diagnostics, 'post-disconnect parameter count');
+    AssertContains('"has_last_plan":false', Diagnostics, 'post-disconnect plan state');
+    AssertContains('"has_last_sblr":false', Diagnostics, 'post-disconnect sblr state');
+    AssertContains('"next_sequence":0', Diagnostics, 'post-disconnect sequence state');
+    AssertContains('"last_query_sequence":0', Diagnostics, 'post-disconnect query sequence state');
+  finally
+    Client.Free;
+  end;
+end;
+
 procedure TFakeTransport.Configure(const Config: TScratchBirdConfig);
 begin
   // no-op for deterministic unit tests
@@ -396,8 +641,11 @@ begin
   try
     TestBeginSavepointCommitLifecycleTransitions;
     TestBeginRollbackStartsNextTxnState;
+    TestRuntimeFreshBoundaryAdoptsDefaultBeginAndRejectsNonDefault;
     TestBeginTransactionExOptionMatrixEncodesPayload;
     TestBeginTransactionExConflictPathRetainsTxnAvailability;
+    TestBeginTransactionExReadCommittedModePayloadAndValidation;
+    TestDisconnectClearsAbandonedSessionState;
     Writeln('TxnStateTransitionsTests: OK');
   except
     on E: Exception do

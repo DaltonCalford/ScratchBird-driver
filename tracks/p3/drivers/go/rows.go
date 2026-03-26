@@ -173,9 +173,9 @@ func (r *Rows) nextRow() ([]driver.Value, error) {
 				return nil, err
 			}
 		case msgReady:
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err == nil {
-				r.conn.txnID = txnID
+				r.conn.applyRuntimeReadyState(status, txnID)
 			}
 			r.done = true
 			return nil, io.EOF
@@ -195,9 +195,9 @@ func (r *Rows) markResultSetBoundary() error {
 			continue
 		}
 		if msg.header.typ == msgReady {
-			_, txnID, _, err := parseReady(msg.body)
+			status, txnID, _, err := parseReady(msg.body)
 			if err == nil {
-				r.conn.txnID = txnID
+				r.conn.applyRuntimeReadyState(status, txnID)
 			}
 			r.done = true
 			r.hasNextSet = false

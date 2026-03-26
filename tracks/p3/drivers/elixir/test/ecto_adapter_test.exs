@@ -11,6 +11,8 @@ defmodule ScratchBirdEctoAdapterTest do
 
   import Ecto.Query
 
+  alias ScratchBird.Connection
+
   defmodule ExampleSchema do
     use Ecto.Schema
 
@@ -83,5 +85,40 @@ defmodule ScratchBirdEctoAdapterTest do
     assert insert_sql =~ "INSERT INTO \"example_records\""
     assert update_sql =~ "UPDATE \"example_records\""
     assert delete_sql =~ "DELETE FROM \"example_records\""
+  end
+
+  test "disconnect closes the current wire and leaves replacement to fresh connect" do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
+    {:ok, port} = :inet.port(listener)
+    parent = self()
+
+    acceptor =
+      spawn_link(fn ->
+        {:ok, accepted} = :gen_tcp.accept(listener)
+        send(parent, {:accepted_socket, accepted})
+
+        receive do
+          :stop -> :gen_tcp.close(accepted)
+        end
+      end)
+
+    {:ok, socket} = :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false])
+    assert_receive {:accepted_socket, _accepted_socket}
+
+    conn = %Connection{
+      transport: :tcp,
+      socket: socket,
+      txn_id: 77,
+      authed: true,
+      attachment_id: <<1::128>>
+    }
+
+    state = %ScratchBird.Ecto.Connection{conn: conn, config: [], in_transaction: true}
+
+    assert :ok == ScratchBird.Ecto.Connection.disconnect(:network_error, state)
+    assert {:error, :closed} = :gen_tcp.send(socket, "x")
+
+    send(acceptor, :stop)
+    :gen_tcp.close(listener)
   end
 end

@@ -66,6 +66,13 @@ public struct SblrCompiledMessage {
     public let bytecode: Data
 }
 
+public enum ScratchBirdReadCommittedMode: UInt8 {
+    case defaultMode = 0
+    case readConsistency = 1
+    case recordVersion = 2
+    case noRecordVersion = 3
+}
+
 struct ScratchBirdResilienceDebugStats {
     let keepaliveValidationAttempts: Int
     let keepaliveValidationSuccesses: Int
@@ -100,6 +107,7 @@ public final class ScratchBirdConnection {
     private var txnId: UInt64 = 0
     private var transactionActive = false
     private var explicitTransaction = false
+    private var portalResumePending = false
     private var parameters: [String: String] = [:]
     private var notificationHandlers: [(NotificationMessage) -> Void] = []
     private var lastPlan: QueryPlanMessage?
@@ -164,10 +172,38 @@ public final class ScratchBirdConnection {
         }.value
     }
 
+    static func debugCreateForTesting(config: ScratchBirdConfig) -> ScratchBirdConnection {
+        ScratchBirdConnection(config: config, socket: ScratchBirdSocket())
+    }
+
+    func debugSeedAbandonedSessionStateForTesting(
+        sequence: UInt32,
+        lastQuerySequence: UInt32,
+        attachmentId: Data,
+        txnId: UInt64,
+        transactionActive: Bool,
+        explicitTransaction: Bool,
+        parameters: [String: String],
+        lastPlan: QueryPlanMessage?,
+        lastSblr: SblrCompiledMessage?
+    ) {
+        self.sequence = sequence
+        self.lastQuerySequence = lastQuerySequence
+        self.attachmentId = attachmentId
+        self.txnId = txnId
+        self.transactionActive = transactionActive
+        self.explicitTransaction = explicitTransaction
+        self.parameters = parameters
+        self.lastPlan = lastPlan
+        self.lastSblr = lastSblr
+    }
+
+    func debugApplyRuntimeReadyStateForTesting(status: UInt8, txnId: UInt64) {
+        applyRuntimeReadyState(status: status, txnId: txnId)
+    }
+
     public func close() async throws {
-        txnId = 0
-        transactionActive = false
-        explicitTransaction = false
+        clearAbandonedSessionState()
         socket.close()
         stopResilience()
     }
@@ -292,8 +328,14 @@ public final class ScratchBirdConnection {
         return lastSblr
     }
 
+    /// Public isolation aliases map onto the canonical MGA modes:
+    /// READ COMMITTED => READ COMMITTED
+    /// REPEATABLE READ => SNAPSHOT
+    /// SERIALIZABLE => SNAPSHOT TABLE STABILITY
+    /// readCommittedMode selects the canonical READ COMMITTED sub-mode.
     public func begin(
         isolationLevel: UInt8? = nil,
+        readCommittedMode: ScratchBirdReadCommittedMode? = nil,
         accessMode: UInt8? = nil,
         deferrable: Bool? = nil,
         wait: Bool? = nil,
@@ -304,6 +346,7 @@ public final class ScratchBirdConnection {
         try await Task.detached {
             try validateTxnBeginOptions(
                 isolationLevel: isolationLevel,
+                readCommittedMode: readCommittedMode,
                 accessMode: accessMode,
                 autocommitMode: autocommitMode
             )
@@ -314,13 +357,35 @@ public final class ScratchBirdConnection {
                         sqlState: "25001"
                     )
                 }
+                if !self.canAdoptFreshNativeBoundary(
+                    isolationLevel: isolationLevel,
+                    readCommittedMode: readCommittedMode,
+                    accessMode: accessMode,
+                    deferrable: deferrable,
+                    wait: wait,
+                    timeoutMs: timeoutMs,
+                    autocommitMode: autocommitMode,
+                    conflictAction: conflictAction
+                ) {
+                    throw ScratchBirdNotSupportedException(
+                        message: "fresh native MGA boundaries can only be adopted as default READ COMMITTED transactions on the live Swift lane",
+                        sqlState: "0A000"
+                    )
+                }
                 self.explicitTransaction = true
                 return
             }
             try await self.withResilience(operation: "txn_begin") {
                 var flags: UInt16 = 0
-                let isolation = isolationLevel ?? isolationReadCommitted
+                var isolation = isolationLevel ?? isolationReadCommitted
                 if isolationLevel != nil { flags |= txnFlagHasIsolation }
+                if readCommittedMode != nil {
+                    if isolationLevel == nil {
+                        isolation = isolationReadCommitted
+                        flags |= txnFlagHasIsolation
+                    }
+                    flags |= txnFlagHasReadCommittedMode
+                }
                 if accessMode != nil { flags |= txnFlagHasAccess }
                 if deferrable != nil { flags |= txnFlagHasDeferrable }
                 if wait != nil { flags |= txnFlagHasWait }
@@ -334,14 +399,59 @@ public final class ScratchBirdConnection {
                     accessMode: accessMode ?? 0,
                     deferrable: deferrable == true ? 1 : 0,
                     waitMode: wait == true ? 1 : 0,
-                    timeoutMs: timeoutMs ?? 0
+                    timeoutMs: timeoutMs ?? 0,
+                    readCommittedMode: readCommittedMode?.rawValue ?? readCommittedModeDefault
                 )
                 _ = try self.sendMessage(type: .txnBegin, payload: payload)
                 _ = try self.drainUntilReady()
             }
-            self.transactionActive = true
             self.explicitTransaction = true
         }.value
+    }
+
+    public func supportsPreparedTransactions() -> Bool {
+        true
+    }
+
+    public func prepareTransaction(_ globalTransactionId: String) async throws {
+        _ = try await query(try buildPreparedTransactionSql(
+            verb: "PREPARE TRANSACTION",
+            globalTransactionId: globalTransactionId
+        ))
+    }
+
+    public func commitPrepared(_ globalTransactionId: String) async throws {
+        _ = try await query(try buildPreparedTransactionSql(
+            verb: "COMMIT PREPARED",
+            globalTransactionId: globalTransactionId
+        ))
+    }
+
+    public func rollbackPrepared(_ globalTransactionId: String) async throws {
+        _ = try await query(try buildPreparedTransactionSql(
+            verb: "ROLLBACK PREPARED",
+            globalTransactionId: globalTransactionId
+        ))
+    }
+
+    public func supportsDormantReattach() -> Bool {
+        false
+    }
+
+    public func detachToDormant() async throws {
+        throw ScratchBirdNotSupportedException(
+            message: "Dormant detach is not supported by the current public front door",
+            sqlState: "0A000"
+        )
+    }
+
+    public func reattachDormant(_ dormantId: String, authToken: String? = nil) async throws {
+        _ = dormantId
+        _ = authToken
+        throw ScratchBirdNotSupportedException(
+            message: "Dormant reattach is not supported by the current public front door",
+            sqlState: "0A000"
+        )
     }
 
     public func commit(flags: UInt8 = 0) async throws {
@@ -351,8 +461,8 @@ public final class ScratchBirdConnection {
                 try self.sendSimpleQuery("COMMIT", maxRows: 0, timeoutMs: 0)
                 _ = try self.collectResults()
             }
-            self.transactionActive = true
             self.explicitTransaction = false
+            try self.drainImmediateReopenBoundary()
         }.value
     }
 
@@ -363,8 +473,8 @@ public final class ScratchBirdConnection {
                 try self.sendSimpleQuery("ROLLBACK", maxRows: 0, timeoutMs: 0)
                 _ = try self.collectResults()
             }
-            self.transactionActive = true
             self.explicitTransaction = false
+            try self.drainImmediateReopenBoundary()
         }.value
     }
 
@@ -423,7 +533,9 @@ public final class ScratchBirdConnection {
                         return
                     }
                     if msg.header.type == .ready {
-                        self.applyTxnState(self.readTxnId(msg.payload, fallback: msg.header.txnId))
+                        let ready = self.parseReadyState(msg.payload, fallback: msg.header.txnId)
+                        self.applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
+                        self.portalResumePending = false
                         return
                     }
                     if msg.header.type == .error {
@@ -464,6 +576,7 @@ public final class ScratchBirdConnection {
             let encoded = try params.map { try encodeParam($0) }
             let paramValues = encoded.map { $0.param }
             let payload = buildSblrExecutePayload(sblrHash: sblrHash, sblrBytecode: bytecode, params: paramValues)
+            self.portalResumePending = false
             self.lastPlan = nil
             self.lastSblr = nil
             self.lastQuerySequence = try self.sendMessage(type: .sblrExecute, payload: payload)
@@ -502,6 +615,7 @@ public final class ScratchBirdConnection {
 
     public func cancel() async throws {
         try await Task.detached {
+            self.portalResumePending = false
             let targetSequence = try requireCancelableSequence(self.lastQuerySequence)
             let payload = buildCancelPayload(cancelType: 0, targetSequence: targetSequence)
             _ = try self.sendMessage(type: .cancel, payload: payload, flags: messageFlagUrgent)
@@ -546,11 +660,12 @@ public final class ScratchBirdConnection {
                 }
             case .authOk:
                 attachmentId = msg.header.attachmentId
-                applyTxnState(msg.header.txnId)
+                applyRuntimeTxnId(msg.header.txnId)
             case .parameterStatus:
                 handleParameterStatus(msg.payload)
             case .ready:
-                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
+                let ready = parseReadyState(msg.payload, fallback: msg.header.txnId)
+                applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
                 return
             case .error:
                 throw buildScratchBirdError(
@@ -583,7 +698,9 @@ public final class ScratchBirdConnection {
                 }
                 rows.append(decoded)
             case .ready:
-                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
+                let ready = parseReadyState(msg.payload, fallback: msg.header.txnId)
+                applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
+                portalResumePending = false
                 lastQuerySequence = 0
                 return ScratchBirdResult(rows: rows, columns: columns)
             case .error:
@@ -592,13 +709,14 @@ public final class ScratchBirdConnection {
                     fallbackMessage: "Query failed",
                     defaultSqlState: "42000"
                 )
+                portalResumePending = false
                 try drainReadyAfterError()
                 lastQuerySequence = 0
                 throw error
             case .portalSuspended:
                 let resumeMaxRows = normalizePortalResumeMaxRows(fetchSize: config.fetchSize)
-                lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: resumeMaxRows))
-                try sendMessage(type: .sync, payload: Data())
+                allowPortalResume()
+                try resumeSuspendedPortal(resumeMaxRows)
             default:
                 continue
             }
@@ -607,6 +725,7 @@ public final class ScratchBirdConnection {
 
     private func sendSimpleQuery(_ sql: String, maxRows: UInt32, timeoutMs: UInt32) throws {
         let flags: UInt32 = config.binaryTransfer ? queryFlagBinaryResult : 0
+        portalResumePending = false
         lastPlan = nil
         lastSblr = nil
         lastQuerySequence = try sendMessage(
@@ -625,6 +744,7 @@ public final class ScratchBirdConnection {
         _ = try sendMessage(type: .sync, payload: Data())
         _ = try drainUntilReady()
         _ = try sendMessage(type: .bind, payload: buildBindPayload(portal: "", statement: "", params: paramValues, resultFormats: [1]))
+        portalResumePending = false
         lastPlan = nil
         lastSblr = nil
         lastQuerySequence = try sendMessage(type: .execute, payload: buildExecutePayload(portal: "", maxRows: maxRows))
@@ -654,7 +774,13 @@ public final class ScratchBirdConnection {
             }
             return true
         case .txnStatus:
-            applyTxnState(msg.payload.count >= 12 ? readUInt64LE(msg.payload, 4) : msg.header.txnId)
+            let status = parseTxnStatus(msg.payload, fallback: msg.header.txnId)
+            if status.status == Character("T").asciiValue {
+                applyRuntimeTxnId(status.txnId)
+                transactionActive = true
+            } else {
+                clearTransactionState()
+            }
             return true
         default:
             return false
@@ -741,7 +867,7 @@ public final class ScratchBirdConnection {
             attachmentId = parsed
         }
         if name == "current_txn_id", let parsed = UInt64(value.trimmingCharacters(in: .whitespaces)) {
-            applyTxnState(parsed)
+            applyRuntimeTxnId(parsed)
         }
     }
 
@@ -825,11 +951,76 @@ public final class ScratchBirdConnection {
         return transactionActive
     }
 
-    private func applyTxnState(_ txnId: UInt64) {
+    private func clearTransactionState() {
+        txnId = 0
+        transactionActive = false
+    }
+
+    private func clearAbandonedSessionState() {
+        sequence = 0
+        lastQuerySequence = 0
+        attachmentId = Data(repeating: 0, count: 16)
+        clearTransactionState()
+        explicitTransaction = false
+        portalResumePending = false
+        parameters.removeAll()
+        lastPlan = nil
+        lastSblr = nil
+    }
+
+    func allowPortalResume() {
+        portalResumePending = true
+    }
+
+    func resumeSuspendedPortal(_ maxRows: UInt32) throws {
+        guard portalResumePending else {
+            throw ScratchBirdOperationalException(
+                message: "Portal resume requires an explicit suspended result state",
+                sqlState: "55000"
+            )
+        }
+        portalResumePending = false
+        lastQuerySequence = try sendMessage(
+            type: .execute,
+            payload: buildExecutePayload(portal: "", maxRows: maxRows)
+        )
+        try sendMessage(type: .sync, payload: Data())
+    }
+
+    private func applyRuntimeTxnId(_ txnId: UInt64) {
         self.txnId = txnId
         if txnId != 0 {
             transactionActive = true
         }
+    }
+
+    private func applyRuntimeReadyState(status: UInt8, txnId: UInt64) {
+        if status != 0 {
+            self.txnId = txnId
+            transactionActive = true
+        } else {
+            clearTransactionState()
+        }
+    }
+
+    private func canAdoptFreshNativeBoundary(
+        isolationLevel: UInt8?,
+        readCommittedMode: ScratchBirdReadCommittedMode?,
+        accessMode: UInt8?,
+        deferrable: Bool?,
+        wait: Bool?,
+        timeoutMs: UInt32?,
+        autocommitMode: UInt8?,
+        conflictAction: UInt8
+    ) -> Bool {
+        return (isolationLevel == nil || isolationLevel == isolationReadCommitted)
+            && (readCommittedMode == nil || readCommittedMode == .defaultMode)
+            && accessMode == nil
+            && deferrable == nil
+            && wait == nil
+            && timeoutMs == nil
+            && autocommitMode == nil
+            && conflictAction == 0
     }
 
     private func requireActiveTransaction(_ operation: String) throws {
@@ -847,11 +1038,41 @@ public final class ScratchBirdConnection {
         explicitTransaction = false
     }
 
-    private func readTxnId(_ payload: Data, fallback: UInt64) -> UInt64 {
-        if payload.count >= 12 {
-            return readUInt64LE(payload, 4)
+    private func parseReadyState(_ payload: Data, fallback: UInt64) -> (status: UInt8, txnId: UInt64) {
+        if payload.count >= 20 {
+            return (payload[0], readUInt64LE(payload, 4))
         }
-        return fallback
+        return (fallback == 0 ? 0 : Character("T").asciiValue ?? 0, fallback)
+    }
+
+    private func parseTxnStatus(_ payload: Data, fallback: UInt64) -> (status: UInt8, txnId: UInt64) {
+        if payload.count >= 12 {
+            return (payload[0], readUInt64LE(payload, 4))
+        }
+        return (fallback == 0 ? 0 : Character("T").asciiValue ?? 0, fallback)
+    }
+
+    private func drainImmediateReopenBoundary() throws {
+        while socket.hasPendingData() {
+            let msg = try recvMessage()
+            if handleAsyncMessage(msg) {
+                continue
+            }
+            if msg.header.type == .ready {
+                let ready = parseReadyState(msg.payload, fallback: msg.header.txnId)
+                applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
+                portalResumePending = false
+                continue
+            }
+            if msg.header.type == .error {
+                throw buildScratchBirdError(
+                    from: msg.payload,
+                    fallbackMessage: "Request failed",
+                    defaultSqlState: "42000"
+                )
+            }
+            return
+        }
     }
 
     private func quoteIdentifier(_ value: String) -> String {
@@ -1009,7 +1230,9 @@ public final class ScratchBirdConnection {
                 continue
             }
             if msg.header.type == .ready {
-                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
+                let ready = parseReadyState(msg.payload, fallback: msg.header.txnId)
+                applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
+                portalResumePending = false
                 return true
             }
             if msg.header.type == .error {
@@ -1029,7 +1252,9 @@ public final class ScratchBirdConnection {
                 continue
             }
             if msg.header.type == .ready {
-                applyTxnState(readTxnId(msg.payload, fallback: msg.header.txnId))
+                let ready = parseReadyState(msg.payload, fallback: msg.header.txnId)
+                applyRuntimeReadyState(status: ready.status, txnId: ready.txnId)
+                portalResumePending = false
                 return
             }
             if msg.header.type == .error {

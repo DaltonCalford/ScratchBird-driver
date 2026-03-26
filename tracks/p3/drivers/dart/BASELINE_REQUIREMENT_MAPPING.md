@@ -6,6 +6,39 @@
 - Mapping is based only on source and tests in this lane.
 - This file does not declare cross-lane or canonical spec authority.
 
+## MGA Recovery Contract
+
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `begin(...)` exposes the canonical MGA begin flags for `isolationLevel`,
+  `readCommittedMode`, `accessMode`, `deferrable`, `wait`, `timeoutMs`,
+  `autocommitMode`, and `conflictAction`.
+- Current isolation alias mapping is explicit in lane source:
+  `READ COMMITTED` => canonical `READ COMMITTED`,
+  `REPEATABLE READ` => canonical `SNAPSHOT`,
+  `SERIALIZABLE` => canonical `SNAPSHOT TABLE STABILITY`.
+- `readCommittedModeReadConsistency` plus
+  `canonicalReadCommittedModeLabel(...)` make the canonical
+  `READ COMMITTED` sub-modes explicit in lane source, including the direct
+  `READ COMMITTED READ CONSISTENCY` selector.
+- `retryScopeForSqlState(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => statement only, `08xxx` => reconnect only, all other
+  SQLSTATEs => no automatic replay.
+- Prepared / limbo truth is explicit in lane source through
+  `supportsPreparedTransactions()`, `prepareTransaction(...)`,
+  `commitPrepared(...)`, and `rollbackPrepared(...)`, which emit canonical
+  transaction-control SQL.
+- Dormant truth is explicit in lane source through
+  `supportsDormantReattach() -> false`, `detachToDormant()`, and
+  `reattachDormant(...)`, which all fail closed with `0A000`.
+- Result continuation is explicitly suspended-only through
+  `_allowPortalResume()` and `_resumeSuspendedPortal(...)`, which reject blind
+  resume with `55000` unless `MessageType.portalSuspended` was observed first.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL)
 
 - Current status: Implemented
@@ -26,14 +59,17 @@
 
 - Current status: Partial
 - Lane-local source anchors:
-  - `lib/src/protocol.dart:94-104` isolation and transaction option flags.
-  - `lib/src/protocol.dart:324-364` TXN payload builders (`begin`, `commit`, `rollback`, savepoint operations).
-  - `lib/src/client.dart:330-408` client TXN APIs with active/inactive transaction guardrails.
+  - `lib/src/protocol.dart:94-108` isolation, read-committed-mode, and transaction option flags.
+  - `lib/src/protocol.dart:423-458` TXN payload builders (`begin`, `commit`, `rollback`, savepoint operations).
+  - `lib/src/client.dart:23-40` public canonical read-committed-mode selector surface.
+  - `lib/src/client.dart:423-470` client TXN APIs with active/inactive transaction guardrails.
+  - `lib/src/client.dart:520-559` explicit prepared / limbo and dormant fail-closed helper surface.
   - `lib/src/client.dart:646-670` async `txnStatus` handling updates local transaction id state.
   - `lib/src/client.dart:778-824` ready-state txn tracking and TXN guard helper methods.
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:19-60` TXN guardrail checks (`commit`/`rollback`/`savepoint` require active transaction).
-  - `test/txn_exec_parity_test.dart:63-101` TXN payload encoding coverage for begin and savepoint/release/rollback-to payloads.
+  - `test/txn_exec_parity_test.dart:76-145` prepared transaction canonical SQL plus dormant fail-closed coverage.
+  - `test/txn_exec_parity_test.dart:63-145` TXN payload encoding coverage for begin, read-committed-mode, and savepoint/release/rollback-to payloads.
   - `test/integration_test.dart:117-166` live begin/commit/rollback/savepoint lifecycle and nested-begin rejection coverage (gated by `SCRATCHBIRD_TEST_DSN`).
 - Gaps/next actions:
   - Add live integration tests for server-side TXN failure paths (invalid savepoint, conflict, forced rollback conditions).
@@ -45,10 +81,12 @@
   - `lib/src/client.dart:308-320` `query` entrypoint with SQL-empty guard.
   - `lib/src/client.dart:494-500` `cancel` rejects when no active in-flight sequence is tracked.
   - `lib/src/client.dart:573-644` result collection and send paths with pagination resume and query-sequence reset on terminal outcomes.
+  - `lib/src/client.dart:793-795`, `lib/src/client.dart:1134-1152` suspended-only resume guard and execution path.
   - `lib/src/client.dart:460-468` SBLR execution path.
   - `lib/src/protocol.dart:199-302` query/parse/bind/execute/SBLR payload builders.
 - Lane-local test anchors:
   - `test/txn_exec_parity_test.dart:104-131` EXEC guardrail checks (`query` empty SQL rejection, cancel-without-inflight rejection).
+  - `test/txn_exec_parity_test.dart:274-291` suspended-only resume fail-closed coverage.
   - `test/txn_exec_parity_test.dart:134-171` EXEC payload encoding coverage for query/execute/cancel payload contracts.
   - `test/integration_test.dart:50-96` live simple and parameterized query coverage (gated by `SCRATCHBIRD_TEST_DSN` and `SCRATCHBIRD_TEST_MANAGER_DSN`).
 - Gaps/next actions:
@@ -105,7 +143,7 @@
 - Lane-local test anchors:
   - `test/error_resilience_test.dart:38-78` protocol framing tests assert `ScratchBirdProtocolException`.
   - `test/error_resilience_test.dart:81-122` structured server-error parsing/formatting tests.
-  - `test/error_sqlstate_mapping_test.dart:5-68` SQLSTATE class mapping tests for execution/auth exception subclasses.
+  - `test/error_sqlstate_mapping_test.dart:5-68` SQLSTATE class mapping tests for execution/auth exception subclasses plus retry-scope classification.
   - `test/connect_validation_test.dart:29-69` connect-policy rejection tests assert `ScratchBirdConnectionException`.
   - `test/txn_exec_parity_test.dart:20-60,119-131` TXN and cancel guardrails assert typed transaction/execution exceptions.
   - `test/scram_error_test.dart:6-35` SCRAM nonce/signature failures assert `ScratchBirdAuthException`.

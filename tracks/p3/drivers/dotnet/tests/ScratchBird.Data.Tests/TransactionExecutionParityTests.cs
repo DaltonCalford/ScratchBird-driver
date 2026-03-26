@@ -9,7 +9,9 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Data;
+using System.IO;
 using System.Reflection;
+using System.Text;
 using ScratchBird.Data;
 using Xunit;
 
@@ -33,6 +35,59 @@ public class TransactionExecutionParityTests
     {
         using var connection = CreateOpenConnection();
         Assert.Throws<ArgumentNullException>(() => connection.BeginTransaction(options: null!));
+    }
+
+    [Fact]
+    public void BeginTransaction_AdoptsFreshNativeBoundaryWithoutSendingTxnBegin()
+    {
+        var stream = new ProtocolCaptureStream();
+        using var connection = CreateOpenConnectionWithHealthyClient(stream);
+        var client = (ProtocolClient)GetPrivateField(connection, "_client")!;
+        SetPrivateField(client, "_runtimeTxnActive", true);
+        SetPrivateField(client, "_txnId", 0UL);
+
+        using var transaction = connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
+
+        Assert.NotNull(transaction);
+        Assert.True(connection.HasActiveTransaction);
+        Assert.Empty(ParseWrittenMessages(stream.WrittenBytes));
+    }
+
+    [Fact]
+    public void BeginTransactionWithOptions_RejectsNonDefaultFreshNativeBoundaryAdoption()
+    {
+        var stream = new ProtocolCaptureStream();
+        using var connection = CreateOpenConnectionWithHealthyClient(stream);
+        var client = (ProtocolClient)GetPrivateField(connection, "_client")!;
+        SetPrivateField(client, "_runtimeTxnActive", true);
+        SetPrivateField(client, "_txnId", 0UL);
+
+        var ex = Assert.Throws<ScratchBirdNotSupportedException>(() =>
+            connection.BeginTransaction(new ScratchBirdTransactionOptions
+            {
+                IsolationLevel = IsolationLevel.Serializable
+            }));
+        Assert.Equal("0A000", ex.SqlState);
+    }
+
+    [Fact]
+    public void EnsureConnectedClient_ClearsActiveTransactionBeforeReconnectFailure()
+    {
+        using var connection = new ScratchBirdConnection(
+            "Host=127.0.0.1;Port=1;Database=main;Username=sb_admin;Password=SbAdmin_Compat1!;Pooling=false;SslMode=disable;AllowInsecure=true;Connect Timeout=1;Socket Timeout=1");
+        SetPrivateField(connection, "_state", ConnectionState.Open);
+        SetPrivateField(connection, "_client", new ProtocolClient());
+
+        var activeTransaction = new ScratchBirdTransaction(connection, IsolationLevel.ReadCommitted);
+        SetPrivateField(connection, "_activeTransaction", activeTransaction);
+
+        var ex = Assert.Throws<TargetInvocationException>(() => InvokePrivateMethod(connection, "EnsureConnectedClient"));
+        Assert.NotNull(ex.InnerException);
+        Assert.True(
+            ex.InnerException is ScratchBirdException || ex.InnerException is AggregateException,
+            $"Unexpected reconnect failure type: {ex.InnerException.GetType().FullName}");
+        Assert.Null(GetPrivateField(connection, "_activeTransaction"));
+        Assert.Null(GetPrivateField(connection, "_client"));
     }
 
     [Fact]
@@ -300,6 +355,40 @@ public class TransactionExecutionParityTests
     }
 
     [Fact]
+    public void CreateTxnBeginPayload_WithReadCommittedModeExpandsPayload()
+    {
+        var payload = ProtocolClient.CreateTxnBeginPayload(new ScratchBirdTransactionOptions
+        {
+            ReadCommittedMode = ScratchBirdReadCommittedMode.ReadConsistency,
+            TimeoutMs = 250
+        });
+
+        var expectedFlags =
+            ProtocolConstants.TxnFlagHasIsolation |
+            ProtocolConstants.TxnFlagHasTimeout |
+            ProtocolConstants.TxnFlagHasReadCommittedMode;
+
+        Assert.Equal(16, payload.Length);
+        Assert.Equal(expectedFlags, BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(0, 2)));
+        Assert.Equal(ProtocolConstants.IsolationReadCommitted, payload[4]);
+        Assert.Equal(250u, BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(8, 4)));
+        Assert.Equal(ProtocolConstants.ReadCommittedModeReadConsistency, payload[12]);
+    }
+
+    [Fact]
+    public void CreateTxnBeginPayload_ReadCommittedModeRejectsSnapshotAliases()
+    {
+        var ex = Assert.Throws<ScratchBirdNotSupportedException>(() =>
+            ProtocolClient.CreateTxnBeginPayload(new ScratchBirdTransactionOptions
+            {
+                IsolationLevel = IsolationLevel.Serializable,
+                ReadCommittedMode = ScratchBirdReadCommittedMode.ReadConsistency
+            }));
+        Assert.Equal("0A000", ex.SqlState);
+        Assert.Contains("READ COMMITTED isolation alias", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateTxnBeginPayload_ThrowsWhenTimeoutIsNegative()
     {
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -307,11 +396,144 @@ public class TransactionExecutionParityTests
         Assert.Contains("TimeoutMs", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PreparedTransactionHelpersEmitCanonicalControlSql()
+    {
+        var stream = new ProtocolCaptureStream(
+            BuildReadyMessage(1, 11),
+            BuildReadyMessage(2, 12),
+            BuildReadyMessage(3, 0));
+        using var connection = CreateOpenConnectionWithHealthyClient(stream);
+
+        connection.PrepareTransaction("gid-1");
+        connection.CommitPrepared("gid-1");
+        connection.RollbackPrepared("gid'2");
+
+        var messages = ParseWrittenMessages(stream.WrittenBytes);
+        var sql = new List<string>();
+        foreach (var message in messages)
+        {
+            if ((MessageType)message.Header.Type == MessageType.QUERY)
+            {
+                sql.Add(ParseQuerySql(message.Payload));
+            }
+        }
+
+        Assert.Equal(
+            new[]
+            {
+                "PREPARE TRANSACTION 'gid-1'",
+                "COMMIT PREPARED 'gid-1'",
+                "ROLLBACK PREPARED 'gid''2'"
+            },
+            sql);
+    }
+
+    [Fact]
+    public void BuildPreparedTransactionSql_RejectsEmptyGid()
+    {
+        var ex = Assert.Throws<ScratchBirdSyntaxException>(() =>
+            ScratchBirdConnection.BuildPreparedTransactionSql("PREPARE TRANSACTION", "   "));
+        Assert.Equal("42601", ex.SqlState);
+    }
+
+    [Fact]
+    public void DormantHelpersFailClosedAndCapabilitiesStayExplicit()
+    {
+        using var connection = CreateOpenConnection();
+
+        Assert.True(connection.SupportsPreparedTransactions());
+        Assert.False(connection.SupportsDormantReattach());
+
+        var detach = Assert.Throws<ScratchBirdNotSupportedException>(() => connection.DetachToDormant());
+        Assert.Equal("0A000", detach.SqlState);
+
+        var reattach = Assert.Throws<ScratchBirdNotSupportedException>(() => connection.ReattachDormant("dormant-1", "token-1"));
+        Assert.Equal("0A000", reattach.SqlState);
+    }
+
+    [Fact]
+    public void ResumeSuspendedPortal_RequiresExplicitSuspendedState()
+    {
+        var client = new ProtocolClient();
+        SetPrivateField(client, "_connected", true);
+        SetPrivateField(client, "_stream", new ProtocolCaptureStream());
+
+        var ex = Assert.Throws<ScratchBirdTransactionException>(() => client.ResumeSuspendedPortal(2));
+        Assert.Equal("55000", ex.SqlState);
+    }
+
+    [Fact]
+    public void ResumeSuspendedPortal_WritesExecuteOnlyAfterExplicitSuspendedState()
+    {
+        var client = new ProtocolClient();
+        var stream = new ProtocolCaptureStream();
+        SetPrivateField(client, "_connected", true);
+        SetPrivateField(client, "_stream", stream);
+
+        client.AllowPortalResume();
+        client.ResumeSuspendedPortal(4);
+
+        var messages = ParseWrittenMessages(stream.WrittenBytes);
+        Assert.Single(messages);
+        Assert.Equal(MessageType.EXECUTE, (MessageType)messages[0].Header.Type);
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(messages[0].Payload.AsSpan(4, 4)));
+    }
+
     private static ScratchBirdConnection CreateOpenConnection()
     {
         var connection = new ScratchBirdConnection("Host=localhost;Port=13092;Database=main;Username=sb_admin;Password=SbAdmin_Compat1!;Pooling=false");
         SetPrivateField(connection, "_state", ConnectionState.Open);
         return connection;
+    }
+
+    private static ScratchBirdConnection CreateOpenConnectionWithHealthyClient(ProtocolCaptureStream stream)
+    {
+        var connection = CreateOpenConnection();
+        var client = new ProtocolClient();
+        SetPrivateField(client, "_connected", true);
+        SetPrivateField(client, "_stream", stream);
+        SetPrivateField(connection, "_client", client);
+        return connection;
+    }
+
+    private static ProtocolMessage BuildReadyMessage(uint sequence, ulong txnId)
+    {
+        var payload = new byte[20];
+        payload[0] = 0;
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(4, 8), txnId);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(12, 8), txnId);
+        return new ProtocolMessage(
+            new MessageHeader((byte)MessageType.READY, 0, (uint)payload.Length, sequence, new byte[16], txnId),
+            payload);
+    }
+
+    private static List<ProtocolMessage> ParseWrittenMessages(byte[] buffer)
+    {
+        var messages = new List<ProtocolMessage>();
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var header = ProtocolMessage.ParseHeader(buffer.AsSpan(offset, ProtocolConstants.HeaderSize));
+            offset += ProtocolConstants.HeaderSize;
+            var payload = new byte[header.Length];
+            Buffer.BlockCopy(buffer, offset, payload, 0, (int)header.Length);
+            offset += (int)header.Length;
+            messages.Add(new ProtocolMessage(header, payload));
+        }
+        return messages;
+    }
+
+    private static string ParseQuerySql(byte[] payload)
+    {
+        if (payload.Length <= 12)
+        {
+            return string.Empty;
+        }
+
+        var terminator = Array.IndexOf(payload, (byte)0, 12);
+        var end = terminator >= 0 ? terminator : payload.Length;
+        return Encoding.UTF8.GetString(payload, 12, end - 12);
     }
 
     private static void SetPrivateField(object target, string fieldName, object? value)
@@ -326,5 +548,65 @@ public class TransactionExecutionParityTests
         var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(field);
         return field!.GetValue(target);
+    }
+
+    private static object? InvokePrivateMethod(object target, string methodName, params object?[]? args)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return method!.Invoke(target, args);
+    }
+
+    private sealed class ProtocolCaptureStream : Stream
+    {
+        private readonly MemoryStream _reads;
+        private readonly MemoryStream _writes = new();
+
+        public ProtocolCaptureStream(params ProtocolMessage[] responses)
+        {
+            _reads = new MemoryStream();
+            foreach (var response in responses)
+            {
+                var bytes = response.ToBytes();
+                _reads.Write(bytes, 0, bytes.Length);
+            }
+            _reads.Position = 0;
+        }
+
+        public byte[] WrittenBytes => _writes.ToArray();
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _reads.Length;
+        public override long Position
+        {
+            get => _reads.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return _reads.Read(buffer, offset, count);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _writes.Write(buffer, offset, count);
+        }
     }
 }

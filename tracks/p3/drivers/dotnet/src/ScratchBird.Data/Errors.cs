@@ -108,6 +108,14 @@ public class ScratchBirdInternalException : ScratchBirdException
         : base(message, sqlState, detail, hint) { }
 }
 
+public enum ScratchBirdRetryScope
+{
+    None,
+    Reconnect,
+    Statement,
+    Transaction
+}
+
 public static class ScratchBirdSqlStateMapper
 {
     public static ScratchBirdException Create(string message, string? sqlState, string? detail, string? hint)
@@ -125,6 +133,28 @@ public static class ScratchBirdSqlStateMapper
 
         var mappedClass = MapByStateClass(message, sqlState, detail, hint);
         return mappedClass ?? new ScratchBirdException(message, sqlState, detail, hint);
+    }
+
+    public static ScratchBirdRetryScope RetryScopeForSqlState(string? sqlState)
+    {
+        // Drivers are fail-closed: fresh statement restart for 40xxx,
+        // reconnect only for 08xxx, and no automatic whole-transaction replay.
+        if (string.IsNullOrEmpty(sqlState) || sqlState.Length != 5)
+        {
+            return ScratchBirdRetryScope.None;
+        }
+
+        return sqlState switch
+        {
+            "40001" or "40P01" => ScratchBirdRetryScope.Statement,
+            _ when sqlState.StartsWith("08", StringComparison.Ordinal) => ScratchBirdRetryScope.Reconnect,
+            _ => ScratchBirdRetryScope.None
+        };
+    }
+
+    public static bool IsRetryableSqlState(string? sqlState)
+    {
+        return RetryScopeForSqlState(sqlState) != ScratchBirdRetryScope.None;
     }
 
     private static ScratchBirdException? MapByExactState(string message, string sqlState, string? detail, string? hint)

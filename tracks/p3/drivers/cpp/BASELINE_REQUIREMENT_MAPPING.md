@@ -5,6 +5,31 @@
 - This is a lane-local S0 artifact for `tracks/p3/drivers/cpp` only.
 - Mapping evidence is restricted to files under this lane's `include/`, `src/`, and `tests/`.
 
+## MGA Recovery Contract
+
+- This lane follows ScratchBird's MGA/state-based engine recovery model.
+- Reconnect or reopen only repairs transport and session state.
+- Reconnect never resurrects abandoned in-flight transactions or replay lost statements.
+- Transaction recovery in the lane means reset, rollback, reopen, or retry against engine truth.
+- Result resume is valid only for explicit suspended protocol states.
+- `sb_txn_options` exposes the canonical MGA begin payload fields directly, and
+  `sb_canonical_isolation_name(...)` now makes the current isolation-byte
+  meaning explicit in lane source: isolation byte `0` remains a legacy
+  compatibility alias, `1` => canonical `READ COMMITTED`,
+  `2` => canonical `SNAPSHOT`, `3` => canonical `SNAPSHOT TABLE STABILITY`.
+- `sb_txn_options.read_committed_mode` now exposes the distinct
+  `READ COMMITTED READ CONSISTENCY` / record-version / no-record-version
+  selector without changing the lane's compatibility isolation aliases.
+- `sb_retry_scope_for_sqlstate(...)` makes the retry boundary explicit:
+  `40001`/`40P01` => fresh statement only, `08xxx` => reconnect or reopen
+  only, everything else => no automatic replay.
+- native `READY` plus `current_txn_id` are authoritative for transaction
+  activity in this lane, including fresh active MGA boundaries that stay open
+  while `txn_id == 0`.
+- compatible default `beginTransaction(...)` calls now adopt that already
+  active fresh boundary instead of sending a redundant `TXN_BEGIN`.
+- See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
+
 ## CONN (JDBCBL: CONN)
 
 - Current status: `Implemented`
@@ -18,6 +43,7 @@
 - Lane-local test anchors:
   - `tests/test_driver_defaults.cpp` (`ParsesManagerProxyConnectionParams`, `RejectsIpcTransportParams`, `RejectsUnixServerEndpoint`, `ManagedTransportSetsManagerProxyFrontDoor`, auth pinning tests)
   - `tests/test_driver_connectivity.cpp` (`ConnectsToLocalListener`, `ConnectsWithPasswordAuthChallengeAndCarriesAuthParams`, `ConnectsWithCompressionCompatibilityParamsFromDsn`, `RejectsIpcTransportBeforeDial`, `RejectsInvalidAuthMethodIdBeforeDial`, `RejectsManagerProxyModeWithoutTokenBeforeDial`, `ConnectsThroughManagerProxyHandshake`, `ManagerProxyAuthFailureMapsToInvalidAuthorization`)
+  - `tests/test_driver_connectivity.cpp` (`DriverRecoveryIntegrationTest.CppReconnectDoesNotResurrectAbandonedTransaction`, `DriverRecoveryIntegrationTest.CApiReconnectDoesNotReuseAbandonedTransactionState`, env-gated by `SCRATCHBIRD_TEST_DSN`)
 - Gaps / next actions:
   - No open S0 CONN parity gaps. IP-only transport in this lane (`inet_listener` and `managed`) is intentional design scope, with driver-side IPC/embedded delegated to ScratchBird server/engine layers.
 
@@ -26,10 +52,16 @@
 - Current status: `Implemented`
 - Lane-local source anchors:
   - `src/scratchbird_client_c.cpp` (`sb_tx_begin`, `sb_tx_commit`, `sb_tx_rollback`, `sb_tx_savepoint`, `sb_tx_release_savepoint`, `sb_tx_rollback_to`)
+  - `src/scratchbird_client_c.cpp` (`sb_tx_prepare_transaction`, `sb_tx_commit_prepared`, `sb_tx_rollback_prepared`, `sb_tx_detach_to_dormant`, `sb_tx_reattach_dormant`)
+  - `include/scratchbird/client/scratchbird_client.h` (`sb_txn_options`, `sb_canonical_isolation_name`, `sb_retry_scope_for_sqlstate`, prepared/dormant capability helpers)
   - `src/network_client.cpp` (`NetworkClient::beginTransaction`, `NetworkClient::commit`, `NetworkClient::rollback`, `NetworkClient::savepoint`, `NetworkClient::releaseSavepoint`, `NetworkClient::rollbackToSavepoint`, `mapProtocolError`, `drainUntilReady`)
-  - `src/connection.cpp` (`Connection::beginTransaction`, `Connection::commit`, `Connection::rollback`, savepoint helpers)
+  - `src/connection.cpp` (`Connection::beginTransaction`, `Connection::commit`, `Connection::rollback`, savepoint helpers, `prepareTransaction`, `commitPrepared`, `rollbackPrepared`, `detachToDormant`, `reattachDormant`)
+  - `include/scratchbird/client/connection.h` (prepared/dormant capability helpers plus public C++ transaction-control surface)
 - Lane-local test anchors:
+  - `tests/test_driver_connectivity.cpp` (`HeaderHelpersExposeRetryBoundaryAndIsolationMeaning`, `CApiTxnBeginExEncodesEnterpriseOptions`)
+  - `tests/test_driver_connectivity.cpp` (`CApiPreparedAndDormantCapabilitiesStayExplicit`, `CppPreparedDormantAndCapabilitySurfacesStayExplicit`)
   - `tests/test_driver_connectivity.cpp` (`TransactionRoundTripBeginCommitRollback`, `SavepointRoundTripUsesTxnMessages`, `RollbackMapsNoActiveTransactionSqlState`, `CommitMapsReadOnlyAndAbortedSqlStates`, `CApiSavepointAndSqlStateMappingAtBoundary`)
+  - `tests/test_driver_connectivity.cpp` (`DriverRecoveryIntegrationTest.CppReconnectDoesNotResurrectAbandonedTransaction`, `DriverRecoveryIntegrationTest.CApiReconnectDoesNotReuseAbandonedTransactionState`, env-gated by `SCRATCHBIRD_TEST_DSN`)
 - Gaps / next actions:
   - No open S0 TXN parity gaps.
 

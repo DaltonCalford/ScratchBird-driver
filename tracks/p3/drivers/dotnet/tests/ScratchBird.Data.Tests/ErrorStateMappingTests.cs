@@ -50,4 +50,23 @@ public class ErrorStateMappingTests
         Assert.IsType<ScratchBirdConnectionException>(ex);
         Assert.Equal("08012", ex.SqlState);
     }
+
+    [Fact]
+    public void RetryScopeClassifiesStatementAndReconnectBoundaries()
+    {
+        Assert.Equal(ScratchBirdRetryScope.Statement, ScratchBirdSqlStateMapper.RetryScopeForSqlState("40001"));
+        Assert.Equal(ScratchBirdRetryScope.Statement, ScratchBirdSqlStateMapper.RetryScopeForSqlState("40P01"));
+        Assert.Equal(ScratchBirdRetryScope.Reconnect, ScratchBirdSqlStateMapper.RetryScopeForSqlState("08006"));
+        Assert.Equal(ScratchBirdRetryScope.None, ScratchBirdSqlStateMapper.RetryScopeForSqlState("57014"));
+        Assert.Equal(ScratchBirdRetryScope.None, ScratchBirdSqlStateMapper.RetryScopeForSqlState(null));
+    }
+
+    [Fact]
+    public void IsRetryableSqlStateOnlyAllowsFreshBoundaryRetries()
+    {
+        Assert.True(ScratchBirdSqlStateMapper.IsRetryableSqlState("40001"));
+        Assert.True(ScratchBirdSqlStateMapper.IsRetryableSqlState("08003"));
+        Assert.False(ScratchBirdSqlStateMapper.IsRetryableSqlState("57014"));
+        Assert.False(ScratchBirdSqlStateMapper.IsRetryableSqlState(string.Empty));
+    }
 }

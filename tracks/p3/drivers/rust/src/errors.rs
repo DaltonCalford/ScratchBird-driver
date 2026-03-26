@@ -26,6 +26,14 @@ pub enum ErrorKind {
     Internal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryScope {
+    None,
+    Reconnect,
+    Statement,
+    Transaction,
+}
+
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -131,9 +139,31 @@ pub fn error_from_sqlstate(
     Error::with_sqlstate(kind, message, Some(sqlstate.to_string()), detail, hint)
 }
 
+pub fn retry_scope_for_sqlstate(sqlstate: Option<&str>) -> RetryScope {
+    // Drivers are fail-closed: fresh statement restart for 40xxx, reconnect
+    // only for 08xxx, and no automatic whole-transaction replay.
+    let Some(sqlstate) = sqlstate else {
+        return RetryScope::None;
+    };
+    if sqlstate.len() != 5 {
+        return RetryScope::None;
+    }
+    match sqlstate {
+        "40001" | "40P01" => RetryScope::Statement,
+        _ if &sqlstate[..2] == "08" => RetryScope::Reconnect,
+        _ => RetryScope::None,
+    }
+}
+
+pub fn is_retryable_sqlstate(sqlstate: Option<&str>) -> bool {
+    retry_scope_for_sqlstate(sqlstate) != RetryScope::None
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{error_from_sqlstate, ErrorKind};
+    use super::{
+        error_from_sqlstate, is_retryable_sqlstate, retry_scope_for_sqlstate, ErrorKind, RetryScope,
+    };
 
     #[test]
     fn exact_sqlstate_mapping_prefers_known_codes() {
@@ -158,5 +188,31 @@ mod tests {
 
         let short = error_from_sqlstate("123", "short", None, None);
         assert_eq!(short.kind, ErrorKind::Unknown);
+    }
+
+    #[test]
+    fn retry_scope_classifies_statement_and_reconnect_boundaries() {
+        assert_eq!(
+            retry_scope_for_sqlstate(Some("40001")),
+            RetryScope::Statement
+        );
+        assert_eq!(
+            retry_scope_for_sqlstate(Some("40P01")),
+            RetryScope::Statement
+        );
+        assert_eq!(
+            retry_scope_for_sqlstate(Some("08006")),
+            RetryScope::Reconnect
+        );
+        assert_eq!(retry_scope_for_sqlstate(Some("57014")), RetryScope::None);
+        assert_eq!(retry_scope_for_sqlstate(None), RetryScope::None);
+    }
+
+    #[test]
+    fn retryable_sqlstate_only_covers_fresh_boundary_retries() {
+        assert!(is_retryable_sqlstate(Some("40001")));
+        assert!(is_retryable_sqlstate(Some("08003")));
+        assert!(!is_retryable_sqlstate(Some("57014")));
+        assert!(!is_retryable_sqlstate(Some("")));
     }
 }

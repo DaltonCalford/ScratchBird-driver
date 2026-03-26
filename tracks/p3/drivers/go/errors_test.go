@@ -72,3 +72,27 @@ func TestDriverErrorStringFormatting(t *testing.T) {
 		t.Fatalf("nil error string mismatch: got %q", got)
 	}
 }
+
+func TestRetryScopeForSQLState(t *testing.T) {
+	tests := []struct {
+		sqlState string
+		want     RetryScope
+	}{
+		{sqlState: "40001", want: RetryScopeStatement},
+		{sqlState: "40P01", want: RetryScopeStatement},
+		{sqlState: "08006", want: RetryScopeReconnect},
+		{sqlState: "08P01", want: RetryScopeReconnect},
+		{sqlState: "57014", want: RetryScopeNone},
+		{sqlState: "23505", want: RetryScopeNone},
+		{sqlState: "", want: RetryScopeNone},
+	}
+
+	for _, tc := range tests {
+		if got := RetryScopeForSQLState(tc.sqlState); got != tc.want {
+			t.Fatalf("RetryScopeForSQLState(%q) mismatch: got %q want %q", tc.sqlState, got, tc.want)
+		}
+		if got := IsRetryableSQLState(tc.sqlState); got != (tc.want != RetryScopeNone) {
+			t.Fatalf("IsRetryableSQLState(%q) mismatch: got %t", tc.sqlState, got)
+		}
+	}
+}
