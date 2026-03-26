@@ -19,9 +19,10 @@ This lane follows ScratchBird's MGA/state-based engine recovery model.
 - `prepare_transaction(...)`, `commit_prepared(...)`, and
   `rollback_prepared(...)` now expose explicit prepared / limbo control
   surfaces through canonical transaction-control SQL
-- `supports_dormant_reattach()` is explicit and false, and
-  `detach_to_dormant()` / `reattach_dormant(...)` fail closed with `0A000`
-  until the public front door exposes a real dormant token flow
+- `supports_dormant_reattach()` is explicit and true on the native public
+  lane, `detach_to_dormant()` returns the engine-issued `dormant_id` plus
+  `dormant_reattach_token`, and `reattach_dormant(...)` uses those explicit
+  startup parameters on reconnect instead of implying reconnect-based recovery
 - `begin(...)` exposes the canonical MGA begin payload fields for
   `isolation_level`, `access_mode`, `deferrable`, `wait`, `timeout_ms`,
   `autocommit_mode`, `conflict_action`, and `read_committed_mode`

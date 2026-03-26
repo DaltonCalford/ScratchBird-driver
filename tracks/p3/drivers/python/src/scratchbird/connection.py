@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import socket
 import ssl
@@ -230,6 +230,8 @@ class ConnectionConfig:
     auth_require_channel_binding: bool = False
     workload_identity_token: Optional[str] = None
     proxy_principal_assertion: Optional[str] = None
+    dormant_id: Optional[str] = None
+    dormant_reattach_token: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -384,6 +386,11 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
         AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION,
         params.get("proxyprincipalassertion", params.get("proxy_assertion", cfg.proxy_principal_assertion)),
     )
+    cfg.dormant_id = params.get("dormant_id", params.get("dormantid", cfg.dormant_id))
+    cfg.dormant_reattach_token = params.get(
+        "dormant_reattach_token",
+        params.get("dormantreattachtoken", cfg.dormant_reattach_token),
+    )
     cfg.extra = {
         k: v
         for k, v in params.items()
@@ -467,6 +474,10 @@ def connect(dsn=None, user=None, password=None, host=None, database=None, **kwar
             AUTH_PARAM_PROXY_PRINCIPAL_ASSERTION,
             "proxyprincipalassertion",
             "proxy_assertion",
+            "dormant_id",
+            "dormantid",
+            "dormant_reattach_token",
+            "dormantreattachtoken",
         }
     }
 
@@ -498,6 +509,8 @@ class Connection:
         self._cancel_requested = False
         self._cancel_socket_timeout = None
         self._cancel_timeout_seconds = 0.2
+        self._keepalive_tracker = None
+        self._skip_schema_apply_once = False
         self._circuit_breaker = CircuitBreaker(CircuitBreakerConfig(), name=self._conn_id)
         self._telemetry = TelemetryCollector(TelemetryConfig())
         self._keepalive = KeepaliveManager(KeepaliveConfig())
@@ -558,8 +571,14 @@ class Connection:
         if self._config.front_door_mode == "manager_proxy":
             self._perform_manager_connect()
         self._startup_and_auth()
-        self._apply_schema()
+        if self._skip_schema_apply_once:
+            self._skip_schema_apply_once = False
+        else:
+            self._apply_schema()
         self._connected = True
+        if self._keepalive and getattr(self, "_keepalive_tracker", None):
+            self._keepalive.unregister(self._conn_id)
+            self._keepalive_tracker = None
         self._keepalive_tracker = self._keepalive.register(
             self._conn_id,
             self._ping_for_keepalive,
@@ -601,6 +620,54 @@ class Connection:
                     self._socket.close()
                 except OSError:
                     pass
+                self._socket = None
+
+    def _disconnect_socket_for_reconnect(self) -> None:
+        self._connected = False
+        self._authed = False
+        self._portal_resume_pending = False
+        self._attachment_id = b"\x00" * 16
+        self._parameters.clear()
+        self._clear_transaction_state()
+        self._clear_cancel_timeout()
+        if self._keepalive and getattr(self, "_keepalive_tracker", None):
+            try:
+                self._keepalive.unregister(self._conn_id)
+            except Exception:
+                pass
+            self._keepalive_tracker = None
+        if self._socket:
+            try:
+                self._socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                self._socket.close()
+            except OSError:
+                pass
+            self._socket = None
+
+    def _reconnect_with_dormant_params(
+        self,
+        dormant_id: str,
+        dormant_reattach_token: str,
+    ) -> None:
+        prior_dormant_id = self._config.dormant_id
+        prior_dormant_token = self._config.dormant_reattach_token
+        prior_skip_schema = self._skip_schema_apply_once
+        self._config.dormant_id = dormant_id
+        self._config.dormant_reattach_token = dormant_reattach_token
+        self._skip_schema_apply_once = True
+        self._disconnect_socket_for_reconnect()
+        try:
+            self._connect()
+        except Exception:
+            self._disconnect_socket_for_reconnect()
+            raise
+        finally:
+            self._config.dormant_id = prior_dormant_id
+            self._config.dormant_reattach_token = prior_dormant_token
+            self._skip_schema_apply_once = prior_skip_schema
 
     def _begin_operation(self, name: str, sql: Optional[str] = None):
         if self._circuit_breaker and not self._circuit_breaker.allow_request():
@@ -648,7 +715,7 @@ class Connection:
         return True
 
     def supports_dormant_reattach(self) -> bool:
-        return False
+        return True
 
     def prepare_transaction(self, gid: str) -> None:
         self._ensure_open()
@@ -662,16 +729,31 @@ class Connection:
         self._ensure_open()
         self._execute_command(self._build_prepared_transaction_sql("ROLLBACK PREPARED", gid))
 
-    def detach_to_dormant(self) -> None:
-        raise errors.NotSupportedError(
-            "[0A000] dormant detach/reattach is not yet exposed by the public Python driver surface"
+    def detach_to_dormant(self) -> Tuple[str, str]:
+        self._ensure_open()
+        self._parameters.pop("dormant_id", None)
+        self._parameters.pop("dormant_reattach_token", None)
+        self.attach_detach()
+        dormant_id = self._parameters.get("dormant_id")
+        reattach_token = self._parameters.get("dormant_reattach_token")
+        if not dormant_id or not reattach_token:
+            raise errors.OperationalError(
+                "[08006] expected dormant detach identifiers from the server"
+            )
+        return (
+            _normalize_uuid_text(dormant_id, "dormant_id"),
+            _normalize_uuid_text(reattach_token, "dormant_reattach_token"),
         )
 
     def reattach_dormant(self, dormant_id: str, auth_token: Optional[str] = None) -> None:
-        _ = dormant_id
-        _ = auth_token
-        raise errors.NotSupportedError(
-            "[0A000] dormant detach/reattach is not yet exposed by the public Python driver surface"
+        self._ensure_open()
+        if auth_token is None:
+            raise errors.ProgrammingError(
+                "[42601] dormant reattach requires the engine-issued auth token"
+            )
+        self._reconnect_with_dormant_params(
+            _normalize_uuid_text(dormant_id, "dormant_id"),
+            _normalize_uuid_text(auth_token, "dormant_reattach_token"),
         )
 
     def begin(self, **kwargs) -> None:
@@ -1485,10 +1567,17 @@ class Connection:
             "user": self._config.user or "",
             "client_flags": str(int(self._config.connect_client_flags or 0x0100) & 0xFFFF),
         }
+        if bool(self._config.dormant_id) != bool(self._config.dormant_reattach_token):
+            raise ValueError(
+                "dormant_id and dormant_reattach_token must be provided together"
+            )
         if self._config.role:
             params["role"] = self._config.role
         if self._config.application_name:
             params["application_name"] = self._config.application_name
+        if self._config.dormant_id:
+            params["dormant_id"] = self._config.dormant_id
+            params["dormant_reattach_token"] = self._config.dormant_reattach_token or ""
         selection = AuthPluginSelection(
             method_id=self._config.auth_method_id or "",
             method_payload=self._config.auth_method_payload or "",
@@ -2165,6 +2254,20 @@ def _parse_uuid_bytes(value: str) -> Optional[bytes]:
         return bytes.fromhex(hex_value)
     except ValueError:
         return None
+
+
+def _normalize_uuid_text(value: str, field_name: str) -> str:
+    parsed = _parse_uuid_bytes(value)
+    if parsed is None:
+        raise errors.ProgrammingError(f"[42601] {field_name} must be UUID text")
+    hex_value = parsed.hex()
+    return (
+        f"{hex_value[0:8]}-"
+        f"{hex_value[8:12]}-"
+        f"{hex_value[12:16]}-"
+        f"{hex_value[16:20]}-"
+        f"{hex_value[20:32]}"
+    )
 
 
 def _parse_uint64(value: str) -> Optional[int]:

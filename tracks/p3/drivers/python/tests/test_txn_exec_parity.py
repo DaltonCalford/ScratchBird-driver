@@ -42,6 +42,12 @@ def _new_connection(txn_id: int = 0, active: bool = False) -> Connection:
     conn._authed = False
     conn._autocommit = True
     conn._connected = True
+    conn._parameters = {}
+    conn._skip_schema_apply_once = False
+    conn._keepalive_tracker = None
+    conn._keepalive = None
+    conn._socket = None
+    conn._cancel_socket_timeout = None
     conn._session_schema = None
     conn._config = type(
         "Cfg",
@@ -49,6 +55,8 @@ def _new_connection(txn_id: int = 0, active: bool = False) -> Connection:
         {
             "schema": None,
             "binary_transfer": True,
+            "dormant_id": None,
+            "dormant_reattach_token": None,
         },
     )()
     conn._cursors = []
@@ -215,6 +223,87 @@ def test_transaction_active_true_when_server_txn_id_present():
     conn = _new_connection(txn_id=9)
     conn._authed = True
     assert conn._transaction_active() is True
+
+
+def test_supports_dormant_reattach_is_explicitly_true():
+    conn = _new_connection()
+    assert conn.supports_dormant_reattach() is True
+
+
+def test_detach_to_dormant_returns_engine_issued_identifiers(monkeypatch):
+    conn = _new_connection(txn_id=9, active=True)
+    sent = []
+
+    def _send_message(msg_type, payload, flags=0, force_zero=False):
+        sent.append((msg_type, payload, flags, force_zero))
+
+    def _drain_until_ready():
+        conn._parameters["dormant_id"] = "00112233-4455-6677-8899-aabbccddeeff"
+        conn._parameters["dormant_reattach_token"] = "ffeeddcc-bbaa-9988-7766-554433221100"
+
+    monkeypatch.setattr(conn, "_send_message", _send_message)
+    monkeypatch.setattr(conn, "_drain_until_ready", _drain_until_ready)
+
+    dormant_id, reattach_token = conn.detach_to_dormant()
+
+    assert sent == [(MessageType.ATTACH_DETACH, b"", 0, False)]
+    assert dormant_id == "00112233-4455-6677-8899-aabbccddeeff"
+    assert reattach_token == "ffeeddcc-bbaa-9988-7766-554433221100"
+
+
+def test_detach_to_dormant_rejects_missing_identifiers(monkeypatch):
+    conn = _new_connection(txn_id=9, active=True)
+
+    monkeypatch.setattr(conn, "_send_message", lambda *args, **kwargs: None)
+    monkeypatch.setattr(conn, "_drain_until_ready", lambda: None)
+
+    with pytest.raises(errors.OperationalError, match="expected dormant detach identifiers"):
+        conn.detach_to_dormant()
+
+
+def test_reattach_dormant_reconnects_with_explicit_startup_params(monkeypatch):
+    conn = _new_connection()
+    events = []
+
+    monkeypatch.setattr(
+        conn,
+        "_disconnect_socket_for_reconnect",
+        lambda: events.append(("disconnect", None)),
+    )
+
+    def _connect():
+        events.append(
+            (
+                "connect",
+                (
+                    conn._config.dormant_id,
+                    conn._config.dormant_reattach_token,
+                    conn._skip_schema_apply_once,
+                ),
+            )
+        )
+
+    monkeypatch.setattr(conn, "_connect", _connect)
+
+    conn.reattach_dormant(
+        "00112233-4455-6677-8899-aabbccddeeff",
+        "ffeeddcc-bbaa-9988-7766-554433221100",
+    )
+
+    assert events == [
+        ("disconnect", None),
+        (
+            "connect",
+            (
+                "00112233-4455-6677-8899-aabbccddeeff",
+                "ffeeddcc-bbaa-9988-7766-554433221100",
+                True,
+            ),
+        ),
+    ]
+    assert conn._config.dormant_id is None
+    assert conn._config.dormant_reattach_token is None
+    assert conn._skip_schema_apply_once is False
 
 
 def test_handle_async_txn_status_can_mark_active_boundary_with_zero_txn_id():
@@ -615,16 +704,18 @@ def test_prepared_transaction_helpers_reject_empty_gid():
         conn.prepare_transaction("   ")
 
 
-def test_dormant_helpers_fail_closed_and_capabilities_stay_explicit():
+def test_dormant_helpers_require_engine_issued_token_and_explicit_uuid_inputs():
     conn = _new_connection()
 
     assert conn.supports_prepared_transactions() is True
-    assert conn.supports_dormant_reattach() is False
+    assert conn.supports_dormant_reattach() is True
 
-    with pytest.raises(errors.NotSupportedError, match="0A000"):
+    with pytest.raises(errors.InterfaceError, match="no active socket"):
         conn.detach_to_dormant()
-    with pytest.raises(errors.NotSupportedError, match="0A000"):
-        conn.reattach_dormant("dormant-1", "token-1")
+    with pytest.raises(errors.ProgrammingError, match="42601"):
+        conn.reattach_dormant("not-a-uuid", "token-1")
+    with pytest.raises(errors.ProgrammingError, match="42601"):
+        conn.reattach_dormant("00112233-4455-6677-8899-aabbccddeeff", None)
 
 
 def test_resume_suspended_portal_requires_explicit_pending_state():

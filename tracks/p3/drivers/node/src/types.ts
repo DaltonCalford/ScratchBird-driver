@@ -49,6 +49,8 @@ export interface ClientConfig {
   authRequireChannelBinding?: boolean;
   workloadIdentityToken?: string;
   proxyPrincipalAssertion?: string;
+  dormantId?: string;
+  dormantReattachToken?: string;
 }
 
 export interface FieldDef {

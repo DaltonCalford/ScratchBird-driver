@@ -559,6 +559,7 @@ internal sealed class ProtocolClient
 
     public (uint Format, ulong PlanningTimeUs, ulong EstimatedRows, ulong EstimatedCost, byte[] Plan)? LastPlan => _lastPlan;
     public (ulong Hash, uint Version, byte[] Bytecode)? LastSblr => _lastSblr;
+    public bool TryGetParameter(string name, out string value) => _parameters.TryGetValue(name, out value!);
 
     public void Cancel()
     {
@@ -611,6 +612,13 @@ internal sealed class ProtocolClient
             ["user"] = config.Username,
             ["client_flags"] = config.ConnectClientFlags.ToString(CultureInfo.InvariantCulture)
         };
+        if (!string.IsNullOrWhiteSpace(config.DormantId) !=
+            !string.IsNullOrWhiteSpace(config.DormantReattachToken))
+        {
+            throw new ScratchBirdSyntaxException(
+                "dormant_id and dormant_reattach_token must be provided together",
+                "42601");
+        }
         if (!string.IsNullOrWhiteSpace(config.Role))
         {
             parameters["role"] = config.Role;
@@ -618,6 +626,11 @@ internal sealed class ProtocolClient
         if (!string.IsNullOrWhiteSpace(config.ApplicationName))
         {
             parameters["application_name"] = config.ApplicationName;
+        }
+        if (!string.IsNullOrWhiteSpace(config.DormantId))
+        {
+            parameters["dormant_id"] = config.DormantId;
+            parameters["dormant_reattach_token"] = config.DormantReattachToken;
         }
         if (!string.IsNullOrWhiteSpace(config.AuthMethodId))
         {

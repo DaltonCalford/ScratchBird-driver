@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("ScratchBird ADO.NET provider (native protocol)")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+a0cf7b242e7f6e3fb9637fe01119e727f0275760")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0+a1b813e8ba03772fcd99771e0aad7864491e5c44")]
 [assembly: System.Reflection.AssemblyProductAttribute("ScratchBird.Data")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ScratchBird.Data")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.1.0.0")]

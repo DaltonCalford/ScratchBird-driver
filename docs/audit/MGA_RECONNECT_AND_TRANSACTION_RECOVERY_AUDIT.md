@@ -82,6 +82,14 @@ Driver truth must stay explicit here:
 - limbo is entered only through an explicit prepare path
 - limbo resolution is an explicit commit-prepared or rollback-prepared action
 - dormant reattach requires an explicit engine-issued token
+- the native public front door now carries that dormant token flow explicitly:
+  `ATTACH_DETACH` publishes `dormant_id` plus `dormant_reattach_token`, and
+  startup accepts the same pair for reattach
+- the Python, Node, and .NET lanes now surface explicit dormant detach /
+  reattach helpers against that contract:
+  `detach_to_dormant()` / `reattach_dormant(...)`,
+  `detachToDormant()` / `reattachDormant(...)`, and
+  `DetachToDormant()` / `ReattachDormant(...)`
 - reconnect alone must never be described as a substitute for prepared or
   dormant recovery
 - lanes that do not yet expose dormant tokens publicly must fail closed as

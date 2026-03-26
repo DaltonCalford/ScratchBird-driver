@@ -104,6 +104,16 @@ test("parseDsn supports auth plugin and pinning params", () => {
   assert.equal(cfg.proxyPrincipalAssertion, "signed-assertion");
 });
 
+test("parseDsn supports dormant reattach params", () => {
+  const cfg = parseDsn(
+    "scratchbird://user:pass@localhost:3092/db"
+      + "?dormant_id=00112233-4455-6677-8899-aabbccddeeff"
+      + "&dormant_reattach_token=ffeeddcc-bbaa-9988-7766-554433221100",
+  );
+  assert.equal(cfg.dormantId, "00112233-4455-6677-8899-aabbccddeeff");
+  assert.equal(cfg.dormantReattachToken, "ffeeddcc-bbaa-9988-7766-554433221100");
+});
+
 test("applyAuthPluginSelection sets extended params and rejects invalid namespace", () => {
   const params = {};
   applyAuthPluginSelection(params, {
@@ -193,6 +203,17 @@ function makeTxnStatusPayload(status, txnId) {
   const payload = Buffer.alloc(12);
   payload.writeUInt8(status.charCodeAt(0), 0);
   payload.writeBigUInt64LE(txnId, 4);
+  return payload;
+}
+
+function makeParameterStatusPayload(name, value) {
+  const nameBuffer = Buffer.from(name, "utf8");
+  const valueBuffer = Buffer.from(value, "utf8");
+  const payload = Buffer.alloc(8 + nameBuffer.length + valueBuffer.length);
+  payload.writeUInt32LE(nameBuffer.length, 0);
+  nameBuffer.copy(payload, 4);
+  payload.writeUInt32LE(valueBuffer.length, 4 + nameBuffer.length);
+  valueBuffer.copy(payload, 8 + nameBuffer.length);
   return payload;
 }
 
@@ -294,18 +315,89 @@ test("prepared transaction helpers emit canonical control SQL", async () => {
   assert.equal(parseSqlFromQueryPayload(protocol.sent[2].payload), "ROLLBACK PREPARED 'gid''alpha'");
 });
 
-test("dormant helpers fail closed and capability flags stay explicit", async () => {
+test("dormant helpers expose the explicit native token flow", async () => {
   const client = new Client({ user: "me", database: "db" });
   assert.equal(client.supportsPreparedTransactions(), true);
-  assert.equal(client.supportsDormantReattach(), false);
+  assert.equal(client.supportsDormantReattach(), true);
+});
+
+test("detachToDormant returns engine-issued identifiers", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  const protocol = createQueuedProtocol([
+    {
+      header: { type: MessageType.PARAMETER_STATUS },
+      payload: makeParameterStatusPayload("dormant_id", "00112233-4455-6677-8899-aabbccddeeff"),
+    },
+    {
+      header: { type: MessageType.PARAMETER_STATUS },
+      payload: makeParameterStatusPayload("dormant_reattach_token", "ffeeddcc-bbaa-9988-7766-554433221100"),
+    },
+    makeReadyMessage(0n),
+  ]);
+  client.connected = true;
+  client.protocol = protocol;
+
+  const detached = await client.detachToDormant();
+
+  assert.equal(detached.dormantId, "00112233-4455-6677-8899-aabbccddeeff");
+  assert.equal(detached.reattachToken, "ffeeddcc-bbaa-9988-7766-554433221100");
+  assert.deepEqual(protocol.sent.map((entry) => entry.type), [MessageType.ATTACH_DETACH]);
+});
+
+test("detachToDormant rejects missing identifiers", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+  client.protocol = createMockProtocol([0n]);
 
   await assert.rejects(
     () => client.detachToDormant(),
-    (err) => err && err.code === "0A000",
+    (err) => err && err.code === "08006",
+  );
+});
+
+test("reattachDormant reconnects with explicit startup params", async () => {
+  const client = new Client({ user: "me", database: "db", schema: "analytics.dev" });
+  const observed = [];
+  client.connected = true;
+  client.protocol.close = () => {};
+  client.cleanupResilience = () => {};
+  client.clearAbandonedSessionState = () => {};
+  client.connect = async function connectWithCapture() {
+    observed.push({
+      dormantId: this.config.dormantId,
+      dormantReattachToken: this.config.dormantReattachToken,
+      skipSchemaApplyOnce: this.skipSchemaApplyOnce,
+    });
+  };
+
+  await client.reattachDormant(
+    "00112233-4455-6677-8899-aabbccddeeff",
+    "ffeeddcc-bbaa-9988-7766-554433221100",
+  );
+
+  assert.deepEqual(observed, [
+    {
+      dormantId: "00112233-4455-6677-8899-aabbccddeeff",
+      dormantReattachToken: "ffeeddcc-bbaa-9988-7766-554433221100",
+      skipSchemaApplyOnce: true,
+    },
+  ]);
+  assert.equal(client.config.dormantId, undefined);
+  assert.equal(client.config.dormantReattachToken, undefined);
+  assert.equal(client.skipSchemaApplyOnce, false);
+});
+
+test("reattachDormant validates token requirements", async () => {
+  const client = new Client({ user: "me", database: "db" });
+  client.connected = true;
+
+  await assert.rejects(
+    () => client.reattachDormant("not-a-uuid", "ffeeddcc-bbaa-9988-7766-554433221100"),
+    (err) => err && err.code === "42601",
   );
   await assert.rejects(
-    () => client.reattachDormant("dormant-token", "auth-token"),
-    (err) => err && err.code === "0A000",
+    () => client.reattachDormant("00112233-4455-6677-8899-aabbccddeeff"),
+    (err) => err && err.code === "42601",
   );
 });
 

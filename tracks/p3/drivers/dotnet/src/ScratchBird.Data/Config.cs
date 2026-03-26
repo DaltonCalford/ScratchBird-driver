@@ -43,6 +43,8 @@ public sealed class ScratchBirdConfig
     public bool AuthRequireChannelBinding { get; set; } = false;
     public string WorkloadIdentityToken { get; set; } = "";
     public string ProxyPrincipalAssertion { get; set; } = "";
+    public string DormantId { get; set; } = "";
+    public string DormantReattachToken { get; set; } = "";
     public int DefaultFetchSize { get; set; } = 0;
     public bool Pooling { get; set; } = false;
     public int MinPoolSize { get; set; } = 0;
@@ -336,6 +338,14 @@ internal static class DsnParser
             case "proxyprincipalassertion":
             case "proxy_assertion":
                 cfg.ProxyPrincipalAssertion = value;
+                break;
+            case "dormant_id":
+            case "dormantid":
+                cfg.DormantId = value;
+                break;
+            case "dormant_reattach_token":
+            case "dormantreattachtoken":
+                cfg.DormantReattachToken = value;
                 break;
             case "fetch_size":
             case "fetchsize":

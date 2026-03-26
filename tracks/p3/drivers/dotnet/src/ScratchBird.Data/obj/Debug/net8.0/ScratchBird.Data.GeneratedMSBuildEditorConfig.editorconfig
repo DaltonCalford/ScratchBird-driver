@@ -8,6 +8,6 @@ build_property.PlatformNeutralAssembly =
 build_property.EnforceExtendedAnalyzerRules = 
 build_property._SupportedPlatformList = Linux,macOS,Windows
 build_property.RootNamespace = ScratchBird.Data
-build_property.ProjectDir = /home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/dotnet/src/ScratchBird.Data/
+build_property.ProjectDir = /home/dcalford/CliWork/ScratchBird-driver/tracks/p3/drivers/dotnet/src/ScratchBird.Data/
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 

@@ -438,18 +438,103 @@ public class TransactionExecutionParityTests
     }
 
     [Fact]
-    public void DormantHelpersFailClosedAndCapabilitiesStayExplicit()
+    public void DormantHelpersExposeTheExplicitNativeTokenFlow()
     {
         using var connection = CreateOpenConnection();
 
         Assert.True(connection.SupportsPreparedTransactions());
-        Assert.False(connection.SupportsDormantReattach());
+        Assert.True(connection.SupportsDormantReattach());
+    }
 
-        var detach = Assert.Throws<ScratchBirdNotSupportedException>(() => connection.DetachToDormant());
-        Assert.Equal("0A000", detach.SqlState);
+    [Fact]
+    public void DetachToDormant_ReturnsEngineIssuedIdentifiers()
+    {
+        var stream = new ProtocolCaptureStream(
+            BuildParameterStatusMessage(1, "dormant_id", "00112233-4455-6677-8899-aabbccddeeff"),
+            BuildParameterStatusMessage(2, "dormant_reattach_token", "ffeeddcc-bbaa-9988-7766-554433221100"),
+            BuildReadyMessage(3, 0));
+        using var connection = CreateOpenConnectionWithHealthyClient(stream);
 
-        var reattach = Assert.Throws<ScratchBirdNotSupportedException>(() => connection.ReattachDormant("dormant-1", "token-1"));
-        Assert.Equal("0A000", reattach.SqlState);
+        var detached = connection.DetachToDormant();
+
+        Assert.Equal("00112233-4455-6677-8899-aabbccddeeff", detached.DormantId);
+        Assert.Equal("ffeeddcc-bbaa-9988-7766-554433221100", detached.ReattachToken);
+
+        var messages = ParseWrittenMessages(stream.WrittenBytes);
+        Assert.Single(messages);
+        Assert.Equal(MessageType.ATTACH_DETACH, (MessageType)messages[0].Header.Type);
+    }
+
+    [Fact]
+    public void DetachToDormant_RejectsMissingIdentifiers()
+    {
+        var stream = new ProtocolCaptureStream(BuildReadyMessage(1, 0));
+        using var connection = CreateOpenConnectionWithHealthyClient(stream);
+
+        var ex = Assert.Throws<ScratchBirdConnectionException>(() => connection.DetachToDormant());
+        Assert.Equal("08006", ex.SqlState);
+    }
+
+    [Fact]
+    public void ProtocolHandshake_IncludesDormantStartupParams()
+    {
+        var stream = new ProtocolCaptureStream(BuildReadyMessage(1, 0));
+        var client = new ProtocolClient();
+        SetPrivateField(client, "_connected", true);
+        SetPrivateField(client, "_stream", stream);
+
+        var config = new ScratchBirdConfig
+        {
+            Database = "main",
+            Username = "sb_admin",
+            ConnectClientFlags = 0x0100,
+            DormantId = "00112233-4455-6677-8899-aabbccddeeff",
+            DormantReattachToken = "ffeeddcc-bbaa-9988-7766-554433221100",
+        };
+
+        InvokePrivateMethod(client, "Handshake", config);
+
+        var messages = ParseWrittenMessages(stream.WrittenBytes);
+        Assert.Single(messages);
+        Assert.Equal(MessageType.STARTUP, (MessageType)messages[0].Header.Type);
+        var startupText = Encoding.UTF8.GetString(messages[0].Payload);
+        Assert.Contains("dormant_id", startupText, StringComparison.Ordinal);
+        Assert.Contains("dormant_reattach_token", startupText, StringComparison.Ordinal);
+        Assert.Contains("00112233-4455-6677-8899-aabbccddeeff", startupText, StringComparison.Ordinal);
+        Assert.Contains("ffeeddcc-bbaa-9988-7766-554433221100", startupText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReconnectWithDormantParams_RestoresConfigAfterReconnectFailure()
+    {
+        using var connection = new ScratchBirdConnection(
+            "Host=127.0.0.1;Port=1;Database=main;Username=sb_admin;Password=SbAdmin_Compat1!;Pooling=false;SslMode=disable;AllowInsecure=true;Connect Timeout=1;Socket Timeout=1;Schema=analytics.dev");
+
+        var ex = Assert.Throws<TargetInvocationException>(() => InvokePrivateMethod(
+            connection,
+            "ReconnectWithDormantParams",
+            "00112233-4455-6677-8899-aabbccddeeff",
+            "ffeeddcc-bbaa-9988-7766-554433221100"));
+        Assert.NotNull(ex.InnerException);
+
+        var config = (ScratchBirdConfig)GetPrivateField(connection, "_config")!;
+        Assert.Equal(string.Empty, config.DormantId);
+        Assert.Equal(string.Empty, config.DormantReattachToken);
+        Assert.False((bool)GetPrivateField(connection, "_skipSchemaApplyOnce")!);
+    }
+
+    [Fact]
+    public void ReattachDormant_RejectsMissingOrInvalidIdentifiers()
+    {
+        using var connection = CreateOpenConnection();
+
+        var invalidUuid = Assert.Throws<ScratchBirdSyntaxException>(() =>
+            connection.ReattachDormant("not-a-uuid", "ffeeddcc-bbaa-9988-7766-554433221100"));
+        Assert.Equal("42601", invalidUuid.SqlState);
+
+        var missingToken = Assert.Throws<ScratchBirdSyntaxException>(() =>
+            connection.ReattachDormant("00112233-4455-6677-8899-aabbccddeeff", null));
+        Assert.Equal("42601", missingToken.SqlState);
     }
 
     [Fact]
@@ -505,6 +590,21 @@ public class TransactionExecutionParityTests
         BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(12, 8), txnId);
         return new ProtocolMessage(
             new MessageHeader((byte)MessageType.READY, 0, (uint)payload.Length, sequence, new byte[16], txnId),
+            payload);
+    }
+
+    private static ProtocolMessage BuildParameterStatusMessage(uint sequence, string name, string value)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        var valueBytes = Encoding.UTF8.GetBytes(value);
+        var payload = new byte[8 + nameBytes.Length + valueBytes.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)nameBytes.Length);
+        Buffer.BlockCopy(nameBytes, 0, payload, 4, nameBytes.Length);
+        var valueOffset = 4 + nameBytes.Length;
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(valueOffset, 4), (uint)valueBytes.Length);
+        Buffer.BlockCopy(valueBytes, 0, payload, valueOffset + 4, valueBytes.Length);
+        return new ProtocolMessage(
+            new MessageHeader((byte)MessageType.PARAMETER_STATUS, 0, (uint)payload.Length, sequence, new byte[16], 0),
             payload);
     }
 

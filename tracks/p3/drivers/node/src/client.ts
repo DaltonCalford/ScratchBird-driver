@@ -88,7 +88,13 @@ import {
   encodeParam,
   decodeValue,
 } from "./types";
-import { mapSqlState, ScratchbirdError, ScratchbirdNotSupportedError, ScratchbirdSyntaxError } from "./errors";
+import {
+  mapSqlState,
+  ScratchbirdConnectionError,
+  ScratchbirdError,
+  ScratchbirdNotSupportedError,
+  ScratchbirdSyntaxError,
+} from "./errors";
 import { CircuitBreaker } from "./circuit_breaker";
 import { KeepaliveManager, KeepaliveTracker } from "./keepalive";
 import { LeakDetector, LeakDetectionGuard } from "./leak_detector";
@@ -350,6 +356,7 @@ export class Client {
   private keepaliveTracker?: KeepaliveTracker;
   private readonly leakDetector = new LeakDetector();
   private leakGuard?: LeakDetectionGuard;
+  private skipSchemaApplyOnce = false;
 
   constructor(config?: ClientConfig | string) {
     const parsed = typeof config === "string" ? parseDsn(config) : {};
@@ -392,7 +399,11 @@ export class Client {
       await this.performManagerConnect();
     }
     await this.handshake();
-    await this.applySchema();
+    if (this.skipSchemaApplyOnce) {
+      this.skipSchemaApplyOnce = false;
+    } else {
+      await this.applySchema();
+    }
     this.keepaliveManager.start();
     this.keepaliveTracker = this.keepaliveManager.register(this.connectionId, async () => {
       try {
@@ -719,7 +730,7 @@ export class Client {
   }
 
   supportsDormantReattach(): boolean {
-    return false;
+    return true;
   }
 
   async prepareTransaction(gid: string): Promise<void> {
@@ -749,17 +760,36 @@ export class Client {
     });
   }
 
-  async detachToDormant(): Promise<never> {
-    throw new ScratchbirdNotSupportedError(
-      "dormant detach/reattach is not yet exposed by the public node driver surface",
-      "0A000",
-    );
+  async detachToDormant(): Promise<{ dormantId: string; reattachToken: string }> {
+    this.ensureConnected();
+    delete this.parameters.dormant_id;
+    delete this.parameters.dormant_reattach_token;
+    await this.attachDetach();
+    const dormantId = this.parameters.dormant_id;
+    const reattachToken = this.parameters.dormant_reattach_token;
+    if (!dormantId || !reattachToken) {
+      throw new ScratchbirdConnectionError(
+        "expected dormant detach identifiers from the server",
+        "08006",
+      );
+    }
+    return {
+      dormantId: normalizeUuidText(dormantId, "dormantId"),
+      reattachToken: normalizeUuidText(reattachToken, "dormantReattachToken"),
+    };
   }
 
-  async reattachDormant(_dormantId: string, _authToken?: string): Promise<never> {
-    throw new ScratchbirdNotSupportedError(
-      "dormant detach/reattach is not yet exposed by the public node driver surface",
-      "0A000",
+  async reattachDormant(dormantId: string, authToken?: string): Promise<void> {
+    this.ensureConnected();
+    if (!authToken) {
+      throw new ScratchbirdSyntaxError(
+        "dormant reattach requires the engine-issued auth token",
+        "42601",
+      );
+    }
+    await this.reconnectWithDormantParams(
+      normalizeUuidText(dormantId, "dormantId"),
+      normalizeUuidText(authToken, "dormantReattachToken"),
     );
   }
 
@@ -993,6 +1023,26 @@ export class Client {
     }
   }
 
+  private async reconnectWithDormantParams(dormantId: string, dormantReattachToken: string): Promise<void> {
+    const priorDormantId = this.config.dormantId;
+    const priorDormantToken = this.config.dormantReattachToken;
+    const priorSkipSchema = this.skipSchemaApplyOnce;
+    this.config.dormantId = dormantId;
+    this.config.dormantReattachToken = dormantReattachToken;
+    this.skipSchemaApplyOnce = true;
+    this.protocol.close();
+    this.cleanupResilience();
+    this.clearAbandonedSessionState();
+    this.connected = false;
+    try {
+      await this.connect();
+    } finally {
+      this.config.dormantId = priorDormantId;
+      this.config.dormantReattachToken = priorDormantToken;
+      this.skipSchemaApplyOnce = priorSkipSchema;
+    }
+  }
+
   private async ensureImplicitTransaction(): Promise<void> {
     if (this.autoCommit || this.transactionActive) {
       return;
@@ -1178,11 +1228,21 @@ export class Client {
       user: this.config.user ?? "",
       client_flags: String(this.config.connectClientFlags ?? 0x0100),
     };
+    if (!!this.config.dormantId !== !!this.config.dormantReattachToken) {
+      throw new ScratchbirdSyntaxError(
+        "dormantId and dormantReattachToken must be provided together",
+        "42601",
+      );
+    }
     if (this.config.role) {
       params.role = this.config.role;
     }
     if (this.config.applicationName) {
       params.application_name = this.config.applicationName;
+    }
+    if (this.config.dormantId) {
+      params.dormant_id = this.config.dormantId;
+      params.dormant_reattach_token = this.config.dormantReattachToken ?? "";
     }
     applyAuthPluginSelection(params, {
       methodId: this.config.authMethodId,
@@ -1855,6 +1915,21 @@ function parseUuidBytes(value: string): Buffer | null {
     return null;
   }
   return Buffer.from(hex, "hex");
+}
+
+function normalizeUuidText(value: string, label: string): string {
+  const parsed = parseUuidBytes(value);
+  if (!parsed) {
+    throw new ScratchbirdSyntaxError(`${label} must be a UUID`, "42601");
+  }
+  const hex = parsed.toString("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }
 
 function parseBigInt(value: string): bigint | null {

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "mGPTEQqFlj7SZ5Xr/Vc6KpC7ydZyGwo1GoBZBA31eMPzNAYgelwKbx5YVm8AZ6skygfB2ld1ggwMT8oaFYXO3A==",
+  "dgSpecHash": "AZM3Ul4U1oWcgOEpb2Q5vXYfIL+MTl8xovaEqUfCpjHFpp2R7nimZamTtkPZPim5Sjb7kX/lVGPFRWwtyLDMYw==",
   "success": true,
-  "projectFilePath": "/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj",
+  "projectFilePath": "/home/dcalford/CliWork/ScratchBird-driver/tracks/p3/drivers/dotnet/tests/ScratchBird.Data.Tests/ScratchBird.Data.Tests.csproj",
   "expectedPackageFiles": [
     "/home/dcalford/.nuget/packages/microsoft.codecoverage/17.10.0/microsoft.codecoverage.17.10.0.nupkg.sha512",
     "/home/dcalford/.nuget/packages/microsoft.net.test.sdk/17.10.0/microsoft.net.test.sdk.17.10.0.nupkg.sha512",

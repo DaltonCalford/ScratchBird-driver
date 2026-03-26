@@ -913,6 +913,14 @@ detach/reattach capabilities. Driver rules are:
   state, never implicit reconnect recovery
 - dormant detach / reattach is an explicit opt-in capability using engine
   tokens, never a side effect of transport reconnect
+- the native public front door now exposes that dormant token flow explicitly:
+  `ATTACH_DETACH` publishes `dormant_id` plus `dormant_reattach_token`, and
+  startup accepts the same pair for reattach
+- the Python, Node, and .NET lanes now expose explicit dormant detach /
+  reattach helpers through that public/native contract:
+  `detach_to_dormant()` / `reattach_dormant(...)`,
+  `detachToDormant()` / `reattachDormant(...)`, and
+  `DetachToDormant()` / `ReattachDormant(...)`
 - lanes that do not yet expose these capabilities must not imply that normal
   reconnect or retry will recover them automatically
 - representative public-driver surfaces are now explicit in code:

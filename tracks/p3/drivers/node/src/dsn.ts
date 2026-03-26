@@ -241,6 +241,14 @@ function setConfigParam(config: Partial<ClientConfig>, key: string, value: strin
     case "proxy_assertion":
       config.proxyPrincipalAssertion = value;
       break;
+    case "dormant_id":
+    case "dormantid":
+      config.dormantId = value;
+      break;
+    case "dormant_reattach_token":
+    case "dormantreattachtoken":
+      config.dormantReattachToken = value;
+      break;
     default:
       break;
   }

@@ -39,6 +39,7 @@ public sealed class ScratchBirdConnection : DbConnection
     private HashSet<Action<ScratchBirdNotification>>? _notificationListeners;
     private ProtocolClient? _notificationBridgeClient;
     private bool _notificationBridgeRequested;
+    private bool _skipSchemaApplyOnce;
 
     public ScratchBirdConnection() { }
 
@@ -152,7 +153,14 @@ public sealed class ScratchBirdConnection : DbConnection
             }
             _state = ConnectionState.Open;
             _leakMonitor.Checkout();
-            ApplySchema();
+            if (_skipSchemaApplyOnce)
+            {
+                _skipSchemaApplyOnce = false;
+            }
+            else
+            {
+                ApplySchema();
+            }
             InstallNotificationBridgeIfNeeded(_client);
         }
         catch
@@ -241,6 +249,32 @@ public sealed class ScratchBirdConnection : DbConnection
 
         pingTask.GetAwaiter().GetResult();
         return true;
+    }
+
+    private void ReconnectWithDormantParams(string dormantId, string dormantReattachToken)
+    {
+        var priorDormantId = _config.DormantId;
+        var priorDormantToken = _config.DormantReattachToken;
+        var priorSkipSchema = _skipSchemaApplyOnce;
+        _config.DormantId = dormantId;
+        _config.DormantReattachToken = dormantReattachToken;
+        _skipSchemaApplyOnce = true;
+        _client?.Close();
+        _clientLease?.Dispose();
+        _clientLease = null;
+        _client = null;
+        _activeTransaction = null;
+
+        try
+        {
+            OpenWithRetry();
+        }
+        finally
+        {
+            _config.DormantId = priorDormantId;
+            _config.DormantReattachToken = priorDormantToken;
+            _skipSchemaApplyOnce = priorSkipSchema;
+        }
     }
 
     public override async Task OpenAsync(CancellationToken cancellationToken)
@@ -395,7 +429,7 @@ public sealed class ScratchBirdConnection : DbConnection
 
     public bool SupportsPreparedTransactions() => true;
 
-    public bool SupportsDormantReattach() => false;
+    public bool SupportsDormantReattach() => true;
 
     public void PrepareTransaction(string globalTransactionId)
     {
@@ -415,20 +449,43 @@ public sealed class ScratchBirdConnection : DbConnection
             ExecuteControlCommand(BuildPreparedTransactionSql("ROLLBACK PREPARED", globalTransactionId)));
     }
 
-    public void DetachToDormant()
+    public (string DormantId, string ReattachToken) DetachToDormant()
     {
-        throw new ScratchBirdNotSupportedException(
-            "dormant detach/reattach is not yet exposed by the public .NET driver surface",
-            "0A000");
+        return TrackOperation("Connection.DetachToDormant", () =>
+        {
+            var client = EnsureConnectedClient();
+            client.AttachDetach();
+            if (!client.TryGetParameter("dormant_id", out var dormantId) ||
+                !client.TryGetParameter("dormant_reattach_token", out var reattachToken) ||
+                string.IsNullOrWhiteSpace(dormantId) ||
+                string.IsNullOrWhiteSpace(reattachToken))
+            {
+                throw new ScratchBirdConnectionException(
+                    "expected dormant detach identifiers from the server",
+                    "08006");
+            }
+
+            return (
+                NormalizeUuidText(dormantId, "dormant_id"),
+                NormalizeUuidText(reattachToken, "dormant_reattach_token"));
+        });
     }
 
     public void ReattachDormant(string dormantId, string? authToken = null)
     {
-        _ = dormantId;
-        _ = authToken;
-        throw new ScratchBirdNotSupportedException(
-            "dormant detach/reattach is not yet exposed by the public .NET driver surface",
-            "0A000");
+        TrackOperation("Connection.ReattachDormant", () =>
+        {
+            if (string.IsNullOrWhiteSpace(authToken))
+            {
+                throw new ScratchBirdSyntaxException(
+                    "dormant reattach requires the engine-issued auth token",
+                    "42601");
+            }
+
+            ReconnectWithDormantParams(
+                NormalizeUuidText(dormantId, "dormant_id"),
+                NormalizeUuidText(authToken, "dormant_reattach_token"));
+        });
     }
 
     public ConnectionDiagnosticsSummary GetDiagnostics()
@@ -1018,6 +1075,16 @@ public sealed class ScratchBirdConnection : DbConnection
 
         var escaped = globalTransactionId.Trim().Replace("'", "''", StringComparison.Ordinal);
         return $"{verb} '{escaped}'";
+    }
+
+    internal static string NormalizeUuidText(string value, string label)
+    {
+        if (!Guid.TryParse(value, out var guid))
+        {
+            throw new ScratchBirdSyntaxException($"{label} must be a UUID", "42601");
+        }
+
+        return guid.ToString("D");
     }
 
     private DataTable BuildCatalogsMetadataTable(string collectionName, string?[]? restrictionValues)

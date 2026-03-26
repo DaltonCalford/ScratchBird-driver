@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "ugiWj00k2Ar5mpv57BlCKpiZWK2WTKa1vfoYzvi5ZJV6Xn+7mBYQTWIoLGhNjzHicvccj1dMoSZ1gQ297LFneA==",
+  "dgSpecHash": "tle0sI2H5DtA1DjHrD+Y4xjSijY/1z3Mar6j5QJ+P1LrHWwfwWlLZIJ9c7L7zo5Ot0myB8p7C3WobJceFP6l8Q==",
   "success": true,
-  "projectFilePath": "/home/dcalford/CliWork/ScratchBird-driver/tracks/alpha/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj",
+  "projectFilePath": "/home/dcalford/CliWork/ScratchBird-driver/tracks/p3/drivers/dotnet/src/ScratchBird.Data/ScratchBird.Data.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

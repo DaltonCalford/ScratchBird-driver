@@ -14,9 +14,11 @@ Mapping of NODEBL groups to JDBC baseline groups for the Node lane.
 - `prepareTransaction(...)`, `commitPrepared(...)`, and
   `rollbackPrepared(...)` expose explicit prepared/limbo control through
   canonical transaction-control SQL.
-- `supportsDormantReattach()` is explicit and false, and
-  `detachToDormant()` / `reattachDormant()` fail closed with `0A000` until a
-  public dormant front-door exists.
+- `supportsDormantReattach()` is explicit and true on the native public lane;
+  `detachToDormant()` returns the engine-issued `dormantId` plus
+  `reattachToken`, and `reattachDormant(...)` uses those same explicit
+  tokens through the public/native startup contract instead of implying
+  reconnect-based recovery.
 - `beginTransaction(options)` exposes the canonical MGA begin flags for
   `isolationLevel`, `accessMode`, `deferrable`, `wait`, `timeoutMs`,
   `autocommitMode`, `conflictAction`, and `readCommittedMode`.
