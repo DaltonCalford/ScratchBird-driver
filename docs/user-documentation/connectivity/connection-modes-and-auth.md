@@ -1,5 +1,9 @@
 # Connection Modes and Auth
 
+> Section 32 boundary note: this document describes maintained client-facing
+> integration seams only. It should not be read as proof that internal engine,
+> listener, parser-agent, or IPC seams are public extension contracts.
+
 Shared connectivity and authentication behavior for the maintained
 ScratchBird-driver lanes.
 

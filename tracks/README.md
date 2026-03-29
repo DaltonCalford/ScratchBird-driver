@@ -1,5 +1,9 @@
 # Track Structure
 
+> Section 32 boundary note: maintained driver tracks define bounded public
+> integration surfaces. Track layout does not imply a universal plugin ABI or
+> runtime-parity guarantee across engine, listener, and tooling layers.
+
 This repository is organized by delivery track to keep the root clean and make
 scope clear.
 

@@ -59,6 +59,9 @@
  *   \plan                    Show last query plan (SBWP QUERY_PLAN)
  *   \sblr                    Show last compiled SBLR (SBWP SBLR_COMPILED)
  */
+// Section 32 invariant: sb_isql is a client-tool runtime surface. It must stay
+// distinct from engine execution ownership, listener-front-door ownership, and
+// parser-agent ownership even when those surfaces cooperate at runtime.
 
 #include <iostream>
 #include <fstream>

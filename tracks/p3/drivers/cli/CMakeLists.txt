@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(scratchbird_cli LANGUAGES CXX)
 
+# Section 32 invariant: the CLI target set is a bounded public tooling surface.
+# It does not imply universal runtime parity or a stable plugin ABI across
+# engine, listener, parser-agent, and client layers.
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
