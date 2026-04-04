@@ -1,7 +1,13 @@
 # Java JDBC Driver Specification
 
-Status: Draft
+Status: Complete
 Priority: P0
+
+## Implementation Status
+
+- Current lane verdict: complete against the lane-local JDBC/.NET-class baseline mapping.
+- Source of truth: `tracks/p3/drivers/jdbc/BASELINE_REQUIREMENT_MAPPING.md`
+- Outstanding baseline gaps: none in lane-local baseline scope.
 
 ## 1. Goals
 

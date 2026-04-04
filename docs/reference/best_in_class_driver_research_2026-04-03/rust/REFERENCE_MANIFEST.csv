@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+rust,tokio-postgres docs,selected_docs,https://docs.rs/tokio-postgres/latest/tokio_postgres/,docs/reference/best_in_class_driver_research_2026-04-03/rust/downloads/01_tokio-postgres_docs.html,2026-04-03,downloaded,,text/html
+rust,rust-postgres repo,selected_repo,https://github.com/sfackler/rust-postgres,docs/reference/best_in_class_driver_research_2026-04-03/rust/downloads/02_rust-postgres_repo.html,2026-04-03,downloaded,refs/heads/master 6e6a627832313cbd92bbf383c74dac1cd7064cb0,text/html
+rust,sqlx docs,candidate_docs,https://docs.rs/sqlx/latest/sqlx/,docs/reference/best_in_class_driver_research_2026-04-03/rust/downloads/03_sqlx_docs.html,2026-04-03,downloaded,,text/html
+rust,mysql_async docs,candidate_docs,https://docs.rs/mysql_async/latest/mysql_async/,docs/reference/best_in_class_driver_research_2026-04-03/rust/downloads/04_mysql_async_docs.html,2026-04-03,downloaded,,text/html

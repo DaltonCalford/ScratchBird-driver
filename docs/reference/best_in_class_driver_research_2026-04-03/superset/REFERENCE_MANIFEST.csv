@@ -1,0 +1,4 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+superset,Superset DB engine specs,selected_docs,https://github.com/apache/superset/tree/master/superset/db_engine_specs,docs/reference/best_in_class_driver_research_2026-04-03/superset/downloads/01_Superset_DB_engine_specs.html,2026-04-03,downloaded,,text/html
+superset,Superset repo,selected_repo,https://github.com/apache/superset,docs/reference/best_in_class_driver_research_2026-04-03/superset/downloads/02_Superset_repo.html,2026-04-03,downloaded,refs/heads/master d796543f5a0c5f6306f3140d48647640b7a28a14,text/html
+superset,Superset repo,candidate_repo,https://github.com/apache/superset,docs/reference/best_in_class_driver_research_2026-04-03/superset/downloads/03_Superset_repo.html,2026-04-03,downloaded,refs/heads/master d796543f5a0c5f6306f3140d48647640b7a28a14,text/html

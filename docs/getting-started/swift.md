@@ -1,8 +1,16 @@
 # Swift Driver
 
-## Status
+<!-- lane-status:start -->
+## Current Status
 
-Partial SBWP v1.1 implementation. TLS required, binary-only enforced, zstd rejected; metadata helpers and conformance coverage remain incomplete.
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `PostgresNIO`
+- Authoritative lane spec: `docs/specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/swift.md`
+- Remaining gap summary: Cancellation timing, portal suspend/resume, richer metadata families, advanced type roundtrips, error propagation, and pool recovery semantics remain incomplete.
+<!-- lane-status:end -->
 
 ## Build
 

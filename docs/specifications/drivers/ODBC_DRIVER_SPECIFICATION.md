@@ -1,5 +1,10 @@
 # ScratchBird ODBC Driver Specification
 
+Implementation status: Partial against the lane-local JDBC/.NET-class baseline mapping.
+Source of truth: `tracks/p3/drivers/odbc/BASELINE_REQUIREMENT_MAPPING.md`
+Outstanding baseline gaps:
+- `META` remains partial because broader full-family metadata parity and richer catalog surfaces are still incomplete.
+
 ## 1. Overview
 
 ### 1.1 Purpose
@@ -48,6 +53,14 @@ requirements supersede generic ODBC guidance where they conflict:
 - Positioned updates and bulk operations are not supported (SQLSetPos/SQLBulkOperations return HYC00).
 - Descriptor handles are not exposed (SQL_ATTR_IMP_ROW_DESC / SQL_ATTR_IMP_PARAM_DESC return NULL).
 - ODBC connects via the network listener only (no direct embedded engine access).
+
+### 1.5 Release Readiness
+
+The ODBC driver may not be labeled release-ready without the evidence pack
+required by `../DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`, including raw
+contract test results, a conformance report, a compatibility matrix,
+performance numbers, a known-gap list, and a packaging/release cadence
+statement.
 
 ---
 
@@ -755,3 +768,50 @@ SQLFreeHandle(SQL_HANDLE_ENV, henv);
 3. Sign in with database credentials
 4. Select schema and tables
 ```
+
+<!-- odbc-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `Microsoft ODBC Driver for SQL Server`
+- Current state: `partial`
+- Track root: `tracks/p3/drivers/odbc`
+
+Competitive closure targets:
+
+- use Microsoft ODBC behavior as the user-visible bar while anchoring implementation detail against psqlODBC
+- freeze metadata-family and diagnostics expectations in authoritative docs
+
+Remaining implementation or proof deltas:
+
+- META remains partial because broader full-family metadata parity and richer catalog surfaces are still incomplete
+- later work is focused on metadata breadth and live catalog validation
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/odbc/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/odbc.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_TEST_DSN`
+
+Build/bootstrap commands:
+
+- `cmake -S tracks/p3/drivers/odbc -B build/odbc-runtime -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DODBC_FETCH_GTEST=ON`
+- `cmake --build build/odbc-runtime --config Release`
+
+Verification commands:
+
+- `ctest --test-dir build/odbc-runtime --output-on-failure -R '^scratchbird_odbc_tests$'`
+
+<!-- odbc-server-independent-closure:end -->

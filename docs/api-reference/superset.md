@@ -1,23 +1,34 @@
-# Superset Driver API Reference
+# Superset Driver API / Integration Reference
 
-The Superset driver consists of:
+<!-- lane-status:start -->
+## Current Status
 
-- `scratchbird_superset.dialect.ScratchBirdDialect`
-- `scratchbird_superset.engine_spec.ScratchBirdEngineSpec`
+- Lane kind: `adapter`
+- Current state: `partial_adapter`
+- Best-in-class benchmark: `Superset PostgreSQL engine spec`
+- Authoritative lane spec: `docs/application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/superset.md`
+- Remaining gap summary: EngineSpec behavior, SQL Lab validation, deployment packaging, and live query workflows remain open.
+<!-- lane-status:end -->
 
-## SQLAlchemy Dialect
+## Authority
 
-The dialect registers the `scratchbird://` scheme and delegates DB-API calls
-to the ScratchBird Python driver. It implements schema/table/column/index
-reflection using `sys.*` catalog views, normalizes JDBC-style DSN aliases such
-as `currentSchema` and `searchPath` to the Python driver contract, and resolves
-the default schema from the live session via `SHOW current_schema` with
-`users.public` fallback.
+- Compatibility specification: `../application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- Track root: `tracks/beta/integrations/scratchbird-superset-driver`
+- Later verification packet: `../development/server-verification/superset.md`
 
-## Engine Spec
+## Integration Surface
 
-The EngineSpec exposes ScratchBird capabilities, time grain expressions, and
-metadata for Superset.
+- benchmark target: `Superset PostgreSQL engine spec`
+- current state: `partial_adapter`
 
-See `tracks/beta/integrations/scratchbird-superset-driver/scratchbird_superset/engine_spec.py` for the
-canonical implementation.
+## Required Integration Families
+
+- freeze EngineSpec, SQL Lab, and deployment expectations against the PostgreSQL engine spec
+- require metadata sync, dialect, and packaging evidence
+
+## Remaining Server-Blocked Validation
+
+- EngineSpec behavior, SQL Lab validation, and deployment packaging remain server-blocked
+- runtime sync and benchmark evidence remain open

@@ -1,7 +1,15 @@
 # Elixir Ecto Adapter Specification (ScratchBird)
 
-Status: In development (post-0.1.0)
-Last Updated: 2026-02-18
+Status: Partial
+Last Updated: 2026-04-03
+
+## Implementation Status
+
+- Current lane verdict: partial against the lane-local JDBC/.NET-class baseline mapping.
+- Source of truth: `tracks/p3/drivers/elixir/BASELINE_REQUIREMENT_MAPPING.md`
+- Outstanding baseline gaps:
+  - `EXEC`: no standalone public portal-resume helper and deterministic stream/paging proof is still limited.
+  - `RES`: resilience still uses fresh-connect-only recovery rather than transparent in-place reconnect.
 
 ## Goal
 
@@ -113,9 +121,61 @@ Ecto custom types:
   - prepare/bind
   - type encode/decode
   - streaming/paging
+- Publish release evidence per `DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`.
 
 ## Deliverables
 
 - `scratchbird_ecto` Hex package.
 - `ScratchBird.Ecto` adapter with docs and examples.
 - Test suite gated by `SCRATCHBIRD_TEST_DSN`.
+- Release evidence pack with compatibility, performance, known-gap, and
+  packaging/cadence artifacts.
+
+<!-- elixir-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `Postgrex`
+- Current state: `partial`
+- Track root: `tracks/p3/drivers/elixir`
+
+Competitive closure targets:
+
+- freeze stream/resume, telemetry, and reconnect semantics against Postgrex-class behavior
+- require both direct-driver and Ecto evidence in the release pack
+
+Remaining implementation or proof deltas:
+
+- EXEC: no standalone public portal-resume helper and deterministic stream/paging proof remains limited
+- RES: resilience still uses fresh-connect-only recovery rather than transparent in-place reconnect
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/elixir/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/elixir.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_TEST_DSN`
+
+Build/bootstrap commands:
+
+- `cd tracks/p3/drivers/elixir`
+- `mix local.hex --force`
+- `mix local.rebar --force`
+- `mix deps.get`
+
+Verification commands:
+
+- `mix test`
+
+<!-- elixir-server-independent-closure:end -->

@@ -1,0 +1,4 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+pascal,FireDAC docs,selected_docs,https://docwiki.embarcadero.com/RADStudio/Alexandria/en/Connect_to_PostgreSQL_(FireDAC),docs/reference/best_in_class_driver_research_2026-04-03/pascal/downloads/01_FireDAC_docs.html,2026-04-03,downloaded,,text/html
+pascal,ZeosLib mirror,anchor_docs,https://github.com/frones/ZeosLib,docs/reference/best_in_class_driver_research_2026-04-03/pascal/downloads/02_ZeosLib_mirror.html,2026-04-03,downloaded,,text/html
+pascal,FreePascal FCL docs,candidate_docs,https://docs.freepascal.org/docs-html/fcl/,docs/reference/best_in_class_driver_research_2026-04-03/pascal/downloads/03_FreePascal_FCL_docs.html,2026-04-03,downloaded,,text/html

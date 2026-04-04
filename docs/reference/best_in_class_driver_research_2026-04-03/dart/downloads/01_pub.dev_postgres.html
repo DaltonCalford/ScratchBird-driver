@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en-us"><head><script src="https://www.googletagmanager.com/gtm.js?id=GTM-MX6DBN9" async="async"></script><script src="/static/hash-qdshfgq0/js/gtm.js" async="async"></script><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="ie=edge"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="twitter:card" content="summary"/><meta name="twitter:site" content="@dart_lang"/><meta name="twitter:description" content="PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse."/><meta name="twitter:image" content="https://pub.dev/static/hash-qdshfgq0/img/pub-dev-icon-cover-image.png"/><meta property="og:type" content="website"/><meta property="og:site_name" content="Dart packages"/><meta property="og:title" content="postgres | Dart package"/><meta property="og:description" content="PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse."/><meta property="og:image" content="https://pub.dev/static/hash-qdshfgq0/img/pub-dev-icon-cover-image.png"/><meta property="og:url" content="https://pub.dev/packages/postgres"/><title>postgres | Dart package</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&amp;family=Google+Sans+Display:wght@400&amp;family=Google+Sans+Text:wght@400;500;700&amp;family=Google+Sans+Mono:wght@400;700&amp;display=swap"/><link rel="shortcut icon" href="/favicon.ico?hash=nk4nss8c7444fg0chird9erqef2vkhb8"/><meta rel="apple-touch-icon" href="/static/hash-qdshfgq0/img/apple-touch-icon.png"/><meta rel="apple-touch-icon-precomposed" href="/static/hash-qdshfgq0/img/apple-touch-icon.png"/><link rel="stylesheet" href="https://www.gstatic.com/glue/v25_0/ccb.min.css"/><link rel="search" type="application/opensearchdescription+xml" title="Dart packages" href="/osd.xml"/><link rel="canonical" href="https://pub.dev/packages/postgres"/><meta name="description" content="PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse."/><link rel="alternate" type="application/atom+xml" title="Recently published packages on pub.dev" href="/feed.atom"/><link rel="alternate" type="application/atom+xml" title="Recently published versions of package postgres on pub.dev" href="/api/packages/postgres/feed.atom"/><link rel="stylesheet" type="text/css" href="/static/hash-qdshfgq0/material/bundle/styles.css"/><link rel="stylesheet" type="text/css" href="/static/hash-qdshfgq0/css/style.css"/><script src="/static/hash-qdshfgq0/material/bundle/script.min.js" defer="defer"></script><script src="/static/hash-qdshfgq0/js/script.dart.js" defer="defer"></script><script src="https://www.gstatic.com/brandstudio/kato/cookie_choice_component/cookie_consent_bar.v3.js" defer="defer" data-autoload-cookie-consent-bar="true"></script><meta name="pub-page-data" content="eyJwa2dEYXRhIjp7InBhY2thZ2UiOiJwb3N0Z3JlcyIsInZlcnNpb24iOiIzLjUuOSIsInB1Ymxpc2hlcklkIjoiYWdpbG9yZC5jb20iLCJpc0Rpc2NvbnRpbnVlZCI6ZmFsc2UsImlzTGF0ZXN0Ijp0cnVlfSwic2Vzc2lvbkF3YXJlIjpmYWxzZX0="/><link rel="preload" href="/static/hash-qdshfgq0/highlight/highlight-with-init.js" as="script"/></head><body class="light-theme"><script src="/static/hash-qdshfgq0/js/dark-init.js"></script><noscript><iframe class="-gtm-iframe" src="https://www.googletagmanager.com/ns.html?id=GTM-MX6DBN9" height="0" width="0"></iframe></noscript><div class="site-header"><button class="hamburger" aria-label="menu toggle"></button><a class="logo" href="/" aria-label="Go to the landing page of pub.dev"><img class="site-logo" src="/static/hash-qdshfgq0/img/pub-dev-logo.svg" alt="" width="140" height="30" role="presentation"/></a><div class="site-header-space"></div><div class="site-header-mask"></div><div class="site-header-search"><form action="/packages" method="GET"><input class="site-header-search-input" name="q" placeholder="New search..." autocomplete="on" title="Search"/></form></div><nav class="site-header-nav scroll-container"><div class="nav-login-container"><button id="-account-login" class="nav-main-button link">Sign in</button></div><div class="nav-container nav-help-container hoverable"><button class="nav-main-button">Help</button><div class="nav-hover-popup"><div class="nav-table-columns"><div class="nav-table-column"><h3>pub.dev</h3><a class="nav-link" href="/help/search" rel="noopener" target="_blank">Searching for packages</a><a class="nav-link" href="/help/scoring" rel="noopener" target="_blank">Package scoring and pub points</a></div><div class="nav-table-column"><h3>Flutter</h3><a class="nav-link" href="https://flutter.dev/using-packages/" rel="noopener" target="_blank">Using packages</a><a class="nav-link" href="https://flutter.dev/developing-packages/" rel="noopener" target="_blank">Developing packages and plugins</a><a class="nav-link" href="https://dart.dev/tools/pub/publishing" rel="noopener" target="_blank">Publishing a package</a></div><div class="nav-table-column"><h3>Dart</h3><a class="nav-link" href="https://dart.dev/guides/packages" rel="noopener" target="_blank">Using packages</a><a class="nav-link" href="https://dart.dev/tools/pub/publishing" rel="noopener" target="_blank">Publishing a package</a></div></div></div></div><div class="nav-container nav-help-container-mobile foldable"><h3 class="foldable-button">pub.dev <img class="foldable-icon" src="/static/hash-qdshfgq0/img/nav-mobile-foldable-icon.svg" alt="toggle folding of the section" width="13" height="6"/></h3><div class="foldable-content"><a class="nav-link" href="/help/search" rel="noopener" target="_blank">Searching for packages</a><a class="nav-link" href="/help/scoring" rel="noopener" target="_blank">Package scoring and pub points</a></div></div><div class="nav-container nav-help-container-mobile foldable"><h3 class="foldable-button">Flutter <img class="foldable-icon" src="/static/hash-qdshfgq0/img/nav-mobile-foldable-icon.svg" alt="toggle folding of the section" width="13" height="6"/></h3><div class="foldable-content"><a class="nav-link" href="https://flutter.dev/using-packages/" rel="noopener" target="_blank">Using packages</a><a class="nav-link" href="https://flutter.dev/developing-packages/" rel="noopener" target="_blank">Developing packages and plugins</a><a class="nav-link" href="https://dart.dev/tools/pub/publishing" rel="noopener" target="_blank">Publishing a package</a></div></div><div class="nav-container nav-help-container-mobile foldable"><h3 class="foldable-button">Dart <img class="foldable-icon" src="/static/hash-qdshfgq0/img/nav-mobile-foldable-icon.svg" alt="toggle folding of the section" width="13" height="6"/></h3><div class="foldable-content"><a class="nav-link" href="https://dart.dev/guides/packages" rel="noopener" target="_blank">Using packages</a><a class="nav-link" href="https://dart.dev/tools/pub/publishing" rel="noopener" target="_blank">Publishing a package</a></div></div></nav><button class="-pub-theme-toggle" aria-label="light/dark theme toggle"></button></div><div id="banner-container"></div><main class="container"><div class="detail-wrapper -active -has-info-box"><div class="detail-header -is-loose"><div class="detail-container"><div class="detail-header-outer-block"><div class="detail-header-content-block"><h1 class="title pub-monochrome-icon-hoverable">postgres 3.5.9 <span class="pkg-page-title-copy"><img class="pub-monochrome-icon pkg-page-title-copy-icon filter-invert-on-dark" src="/static/hash-qdshfgq0/img/content-copy-icon.svg" alt="copy &quot;postgres: ^3.5.9&quot; to clipboard" width="18" height="18" title="Copy &quot;postgres: ^3.5.9&quot; to clipboard" data-copy-content="postgres: ^3.5.9" data-ga-click-event="copy-package-version"/><div class="pkg-page-title-copy-feedback"><span class="code">postgres: ^3.5.9</span> copied to clipboard</div></span></h1><div class="metadata">Published <span><a class="-x-ago" href="" title="Oct 22, 2025" role="button" data-timestamp="1761139889153">5 months ago</a></span> • <a class="-pub-publisher" href="/publishers/agilord.com"><img class="-pub-publisher-shield filter-invert-on-dark" src="/static/hash-qdshfgq0/img/material-icon-verified.svg" alt="verified publisher" width="14" height="14" title="Published by a pub.dev verified publisher"/>agilord.com</a></div><div class="detail-tags-and-like"><div class="detail-tags"><div class="-pub-tag-badge"><span class="tag-badge-main">SDK</span><a class="tag-badge-sub" href="/packages?q=sdk%3Adart" rel="nofollow" title="Packages compatible with Dart SDK">Dart</a><a class="tag-badge-sub" href="/packages?q=sdk%3Aflutter" rel="nofollow" title="Packages compatible with Flutter SDK">Flutter</a></div><div class="-pub-tag-badge"><span class="tag-badge-main">Platform</span><a class="tag-badge-sub" href="/packages?q=platform%3Aandroid" rel="nofollow" title="Packages compatible with Android platform">Android</a><a class="tag-badge-sub" href="/packages?q=platform%3Aios" rel="nofollow" title="Packages compatible with iOS platform">iOS</a><a class="tag-badge-sub" href="/packages?q=platform%3Alinux" rel="nofollow" title="Packages compatible with Linux platform">Linux</a><a class="tag-badge-sub" href="/packages?q=platform%3Amacos" rel="nofollow" title="Packages compatible with macOS platform">macOS</a><a class="tag-badge-sub" href="/packages?q=platform%3Awindows" rel="nofollow" title="Packages compatible with Windows platform">Windows</a></div></div><div class="like-button-and-label"><button class="mdc-icon-button like-button-and-label--button" data-ga-click-event="toggle-like" aria-pressed="false" data-package="postgres" data-value="407" title="Like this package"><img class="mdc-icon-button__icon" src="/static/hash-qdshfgq0/img/like-inactive.svg" alt="liked status: inactive" width="18" height="18"/><img class="mdc-icon-button__icon mdc-icon-button__icon--on" src="/static/hash-qdshfgq0/img/like-active.svg" alt="liked status: active" width="18" height="18"/></button><span class="like-button-and-label--count-wrapper"><span class="like-button-and-label--count">407</span></span></div></div></div></div></div></div><div class="detail-container"><div class="detail-lead"><div class="detail-metadata-toggle"><div class="detail-metadata-toggle-icon">→</div><h3 class="detail-lead-title">Metadata</h3></div><p class="detail-lead-text">PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse.</p><p class="detail-lead-more"><a class="detail-metadata-toggle">More...</a></p></div></div><div class="detail-body"><div class="detail-tabs"><div class="detail-tabs-wide-header"><div class="detail-container"><ul class="detail-tabs-header"><li class="detail-tab tab-button detail-tab-readme-title -active">Readme</li><li class="detail-tab tab-link detail-tab-changelog-title"><a href="/packages/postgres/changelog" role="button">Changelog</a></li><li class="detail-tab tab-link detail-tab-example-title"><a href="/packages/postgres/example" role="button">Example</a></li><li class="detail-tab tab-link detail-tab-installing-title"><a href="/packages/postgres/install" role="button">Installing</a></li><li class="detail-tab tab-link detail-tab-versions-title"><a href="/packages/postgres/versions" role="button">Versions</a></li><li class="detail-tab tab-link detail-tab-analysis-title"><a href="/packages/postgres/score" role="button">Scores</a></li></ul></div></div><div class="detail-container detail-body-main"><div class="detail-tabs-content"><section class="tab-content detail-tab-readme-content -active markdown-body"><h1 id="postgresql-client" class="hash-header">PostgreSQL client <a href="#postgresql-client" class="hash-link">#</a></h1>
+<p><a href="https://github.com/isoos/postgresql-dart/actions/workflows/dart.yml" rel="ugc"><img src="https://github.com/isoos/postgresql-dart/actions/workflows/dart.yml/badge.svg" alt="CI"></a></p>
+<p>A library for connecting to and querying PostgreSQL databases (see <a href="https://www.postgresql.org/docs/13/protocol-overview.html" rel="ugc">Postgres Protocol</a>). This driver uses the more efficient and secure extended query format of the PostgreSQL protocol.</p>
+<h2 id="usage" class="hash-header">Usage <a href="#usage" class="hash-link">#</a></h2>
+<p>Create a <code>Connection</code>:</p>
+<pre><code class="language-dart">  final conn = await Connection.open(Endpoint(
+    host: 'localhost',
+    database: 'postgres',
+    username: 'user',
+    password: 'pass',
+  ));
+</code></pre>
+<p>Execute queries with <code>execute</code>:</p>
+<pre><code class="language-dart">  final result = await conn.execute("SELECT 'foo'");
+  print(result[0][0]); // first row and first field
+</code></pre>
+<p>Named parameters, returning rows as map of column names:</p>
+<pre><code class="language-dart">  final result = await conn.execute(
+    Sql.named('SELECT * FROM a_table WHERE id=@id'),
+    parameters: {'id': 'xyz'},
+  );
+  print(result.first.toColumnMap());
+</code></pre>
+<p>Execute queries in a transaction:</p>
+<pre><code class="language-dart">  await conn.runTx((s) async {
+    final rs = await s.execute('SELECT count(*) FROM foo');
+    await s.execute(
+      r'UPDATE a_table SET totals=$1 WHERE id=$2',
+      parameters: [rs[0][0], 'xyz'],
+    );
+  });
+</code></pre>
+<p>See the API documentation: <a href="https://pub.dev/documentation/postgres/latest/">https://pub.dev/documentation/postgres/latest/</a></p>
+<h2 id="connection-string-urls" class="hash-header">Connection string URLs <a href="#connection-string-urls" class="hash-link">#</a></h2>
+<p>The package supports connection strings for both single connections and connection pools:</p>
+<pre><code class="language-dart">await Connection.openFromUrl('postgresql://localhost/mydb');
+await Connection.openFromUrl(
+  'postgresql://user:pass@db.example.com:5432/production?sslmode=verify-full'
+);
+await Connection.openFromUrl(
+  'postgresql://localhost/mydb?connect_timeout=10&amp;query_timeout=60'
+);
+Pool.withUrl(
+  'postgresql://localhost/mydb?max_connection_count=10&amp;max_connection_age=3600'
+);
+</code></pre>
+<h3 id="url-format" class="hash-header">URL Format <a href="#url-format" class="hash-link">#</a></h3>
+<p><code>postgresql://[userspec@][hostspec][:port][/dbname][?paramspec]</code></p>
+<ul>
+<li><strong>Scheme</strong>: <code>postgresql://</code> or <code>postgres://</code></li>
+<li><strong>User</strong>: <code>username</code> or <code>username:password</code> (can also be set via <code>user</code>/<code>username</code> and <code>password</code> query parameters)</li>
+<li><strong>Host</strong>: hostname or IP address (defaults to <code>localhost</code>). Supports multiple hosts via comma-separated list (<code>host1:5433,host2:5434</code>) or multiple <code>host</code> query parameters (<code>?host=host1:5433&amp;host=host2:5434</code>)</li>
+<li><strong>Port</strong>: port number (defaults to <code>5432</code>, can be overridden via <code>port</code> query parameter)</li>
+<li><strong>Database</strong>: database name (defaults to <code>postgres</code>, can be overridden via <code>database</code> query parameter)</li>
+<li><strong>Parameters</strong>: query parameters (see below)</li>
+</ul>
+<h3 id="standard-parameters" class="hash-header">Standard Parameters <a href="#standard-parameters" class="hash-link">#</a></h3>
+<p>These parameters are supported by <code>Connection.openFromUrl()</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+<th>Example Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>application_name</code></td>
+<td>String</td>
+<td>Sets the application name</td>
+<td><code>application_name=myapp</code></td>
+</tr>
+<tr>
+<td><code>client_encoding</code></td>
+<td>String</td>
+<td>Character encoding</td>
+<td><code>UTF8</code>, <code>LATIN1</code></td>
+</tr>
+<tr>
+<td><code>connect_timeout</code></td>
+<td>Integer</td>
+<td>Connection timeout in seconds</td>
+<td><code>connect_timeout=30</code></td>
+</tr>
+<tr>
+<td><code>database</code></td>
+<td>String</td>
+<td>Database name (overrides URL path)</td>
+<td><code>database=mydb</code></td>
+</tr>
+<tr>
+<td><code>host</code></td>
+<td>String</td>
+<td>Alternative host specification (supports Unix sockets)</td>
+<td><code>host=/var/run/postgresql</code>, <code>host=host1:5433</code></td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>String</td>
+<td>Password (overrides URL userspec)</td>
+<td><code>password=secret</code></td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>Integer</td>
+<td>Port number (overrides URL port)</td>
+<td><code>port=5433</code></td>
+</tr>
+<tr>
+<td><code>user</code> / <code>username</code></td>
+<td>String</td>
+<td>Username (overrides URL userspec)</td>
+<td><code>user=myuser</code></td>
+</tr>
+<tr>
+<td><code>sslmode</code></td>
+<td>String</td>
+<td>SSL mode</td>
+<td><code>disable</code>, <code>require</code>, <code>verify-ca</code>, <code>verify-full</code></td>
+</tr>
+<tr>
+<td><code>sslcert</code></td>
+<td>String</td>
+<td>Path to client certificate</td>
+<td><code>sslcert=/path/to/cert.pem</code></td>
+</tr>
+<tr>
+<td><code>sslkey</code></td>
+<td>String</td>
+<td>Path to client private key</td>
+<td><code>sslkey=/path/to/key.pem</code></td>
+</tr>
+<tr>
+<td><code>sslrootcert</code></td>
+<td>String</td>
+<td>Path to root certificate</td>
+<td><code>sslrootcert=/path/to/ca.pem</code></td>
+</tr>
+<tr>
+<td><code>replication</code></td>
+<td>String</td>
+<td>Replication mode</td>
+<td><code>database</code> (logical), <code>true</code>/<code>physical</code>, <code>false</code>/<code>no_select</code> (none)</td>
+</tr>
+<tr>
+<td><code>query_timeout</code></td>
+<td>Integer</td>
+<td>Query timeout in seconds</td>
+<td><code>query_timeout=300</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="pool-specific-parameters" class="hash-header">Pool-Specific Parameters <a href="#pool-specific-parameters" class="hash-link">#</a></h3>
+<p>These additional parameters are supported by <code>Pool.withUrl()</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+<th>Example Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_connection_count</code></td>
+<td>Integer</td>
+<td>Maximum number of concurrent connections</td>
+<td><code>max_connection_count=20</code></td>
+</tr>
+<tr>
+<td><code>max_connection_age</code></td>
+<td>Integer</td>
+<td>Maximum connection lifetime in seconds</td>
+<td><code>max_connection_age=3600</code></td>
+</tr>
+<tr>
+<td><code>max_session_use</code></td>
+<td>Integer</td>
+<td>Maximum session duration in seconds</td>
+<td><code>max_session_use=600</code></td>
+</tr>
+<tr>
+<td><code>max_query_count</code></td>
+<td>Integer</td>
+<td>Maximum queries per connection</td>
+<td><code>max_query_count=1000</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="connection-pooling" class="hash-header">Connection pooling <a href="#connection-pooling" class="hash-link">#</a></h2>
+<p>The library supports connection pooling (and masking the connection pool as
+regular session executor).</p>
+<h2 id="custom-type-codecs" class="hash-header">Custom type codecs <a href="#custom-type-codecs" class="hash-link">#</a></h2>
+<p>The library supports registering custom type codecs (and generic object encoders)
+through the<code>ConnectionSettings.typeRegistry</code>.</p>
+<h2 id="streaming-replication-protocol" class="hash-header">Streaming replication protocol <a href="#streaming-replication-protocol" class="hash-link">#</a></h2>
+<p>The library supports connecting to PostgreSQL using the <a href="https://www.postgresql.org/docs/13/protocol-replication.html" rel="ugc">Streaming Replication Protocol</a>.
+See <a href="https://pub.dev/documentation/postgres/latest/postgres/Connection/Connection.html">Connection</a> documentation for more info.
+An example can also be found at the following repository: <a href="https://github.com/osaxma/postgresql-dart-replication-example" rel="ugc">postgresql-dart-replication-example</a></p>
+<h2 id="other-notes" class="hash-header">Other notes <a href="#other-notes" class="hash-link">#</a></h2>
+<p>This library originally started as <a href="https://github.com/stablekernel/postgresql-dart" rel="ugc">StableKernel's postgres library</a>,
+but got a full API overhaul and partial rewrite of the internals.</p>
+<p>Please file feature requests and bugs at the <a href="https://github.com/isoos/postgresql-dart/issues" rel="ugc">issue tracker</a>.</p>
+</section></div></div></div><aside class="detail-info-box"><a class="packages-scores" href="/packages/postgres/score"><div class="packages-score packages-score-like" data-package="postgres"><div class="packages-score-value -has-value"><span class="packages-score-value-number">407</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">likes</div></div><div class="packages-score packages-score-health"><div class="packages-score-value -has-value"><span class="packages-score-value-number">160</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">points</div></div><div class="packages-score packages-score-downloads" title="Number of downloads of this package during the past 30 days"><div class="packages-score-value -has-value"><span class="packages-score-value-number">124k</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">downloads</div></div></a><h3 class="title">Documentation</h3><p><a class="link" href="/documentation/postgres/latest/">API reference</a><br/></p><h3 class="title">Publisher</h3><p><a href="/publishers/agilord.com"><img class="-pub-publisher-shield filter-invert-on-dark" src="/static/hash-qdshfgq0/img/material-icon-verified.svg" alt="verified publisher" width="14" height="14" title="Published by a pub.dev verified publisher"/>agilord.com</a></p><h3 class="title">Weekly Downloads</h3><div id="-weekly-downloads-sparkline" class="weekly-downloads-sparkline" data-widget="weekly-sparkline" data-weekly-sparkline-points="AGDMaXpvAADvgAAAR2gAAH9sAABaXAAAZ2AAAIpYAAANWwAAb5IAAJ5kAADcWQAAcVIAAK1LAADaRgAAYU8AAMV7AABSbwAAwmMAAMJyAADCVQAAB3IAANVaAABUXwAA+kQAAH4+AACtZgAA/0MAAJw0AABlQAAA5TgAAK1KAAAuRAAAz20AAKx3AAAdQgAAVkEAAHJvAAB+YAAAwVMAAB92AAA0rgAArY8AAAVhAAAbZwAAIm8AABZzAAD6YgAAuGYAAMFuAADrRQAAcVkAAOhbAAA="></div><h3 class="title pkg-infobox-metadata">Metadata</h3><p>PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse.</p><p><a class="link" href="https://github.com/isoos/postgresql-dart" rel="ugc">Repository (GitHub)</a><br/><a class="link" href="https://github.com/isoos/postgresql-dart/issues" rel="ugc">View&#47;report issues</a><br/></p><h3 class="title">Topics</h3><p><a class="topics-tag" href="/packages?q=topic%3Asql" rel="nofollow">#sql</a> <a class="topics-tag" href="/packages?q=topic%3Adb" rel="nofollow">#db</a> <a class="topics-tag" href="/packages?q=topic%3Adatabase" rel="nofollow">#database</a> <a class="topics-tag" href="/packages?q=topic%3Apostgres" rel="nofollow">#postgres</a></p><h3 class="title">License</h3><p><img class="inline-icon-img filter-invert-on-dark" src="/static/hash-qdshfgq0/img/material-icon-balance.svg" alt="" width="14" height="14" role="presentation"/>BSD-3-Clause (<a href="/packages/postgres/license">license</a>)</p><h3 class="title">Dependencies</h3><p><a href="/packages/async" title="^2.12.0">async</a>, <a href="/packages/buffer" title="^1.2.3">buffer</a>, <a href="/packages/charcode" title="^1.4.0">charcode</a>, <a href="/packages/collection" title="^1.19.1">collection</a>, <a href="/packages/crypto" title="^3.0.6">crypto</a>, <a href="/packages/meta" title="^1.16.0">meta</a>, <a href="/packages/pool" title="^1.5.1">pool</a>, <a href="/packages/stack_trace" title="^1.12.1">stack_trace</a>, <a href="/packages/stream_channel" title="^2.1.4">stream_channel</a></p><h3 class="title">More</h3><p><a href="/packages?q=dependency%3Apostgres" rel="nofollow">Packages that depend on postgres</a></p></aside></div><script type="application/ld+json">{"@context":"http\u003a\u002f\u002fschema.org","@type":"SoftwareSourceCode","name":"postgres","version":"3.5.9","description":"postgres - PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse.","url":"https\u003a\u002f\u002fpub.dev\u002fpackages\u002fpostgres","dateCreated":"2016-09-30T02\u003a17\u003a10.942Z","dateModified":"2025-10-22T13\u003a31\u003a29.153158Z","programmingLanguage":"Dart","image":"https\u003a\u002f\u002fpub.dev\u002fstatic\u002fimg\u002fpub-dev-icon-cover-image.png","license":"https\u003a\u002f\u002fpub.dev\u002fpackages\u002fpostgres\u002flicense"}</script></div><div class="detail-metadata"><h3 class="detail-metadata-title"><span class="detail-metadata-toggle">←</span> Metadata</h3><div class="detail-info-box"><a class="packages-scores" href="/packages/postgres/score"><div class="packages-score packages-score-like" data-package="postgres"><div class="packages-score-value -has-value"><span class="packages-score-value-number">407</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">likes</div></div><div class="packages-score packages-score-health"><div class="packages-score-value -has-value"><span class="packages-score-value-number">160</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">points</div></div><div class="packages-score packages-score-downloads" title="Number of downloads of this package during the past 30 days"><div class="packages-score-value -has-value"><span class="packages-score-value-number">124k</span><span class="packages-score-value-sign"></span></div><div class="packages-score-label">downloads</div></div></a><h3 class="title">Documentation</h3><p><a class="link" href="/documentation/postgres/latest/">API reference</a><br/></p><h3 class="title">Publisher</h3><p><a href="/publishers/agilord.com"><img class="-pub-publisher-shield filter-invert-on-dark" src="/static/hash-qdshfgq0/img/material-icon-verified.svg" alt="verified publisher" width="14" height="14" title="Published by a pub.dev verified publisher"/>agilord.com</a></p><h3 class="title">Weekly Downloads</h3><div id="-weekly-downloads-sparkline" class="weekly-downloads-sparkline" data-widget="weekly-sparkline" data-weekly-sparkline-points="AGDMaXpvAADvgAAAR2gAAH9sAABaXAAAZ2AAAIpYAAANWwAAb5IAAJ5kAADcWQAAcVIAAK1LAADaRgAAYU8AAMV7AABSbwAAwmMAAMJyAADCVQAAB3IAANVaAABUXwAA+kQAAH4+AACtZgAA/0MAAJw0AABlQAAA5TgAAK1KAAAuRAAAz20AAKx3AAAdQgAAVkEAAHJvAAB+YAAAwVMAAB92AAA0rgAArY8AAAVhAAAbZwAAIm8AABZzAAD6YgAAuGYAAMFuAADrRQAAcVkAAOhbAAA="></div><h3 class="title pkg-infobox-metadata">Metadata</h3><p>PostgreSQL database driver. Supports binary protocol, connection pooling and statement reuse.</p><p><a class="link" href="https://github.com/isoos/postgresql-dart" rel="ugc">Repository (GitHub)</a><br/><a class="link" href="https://github.com/isoos/postgresql-dart/issues" rel="ugc">View&#47;report issues</a><br/></p><h3 class="title">Topics</h3><p><a class="topics-tag" href="/packages?q=topic%3Asql" rel="nofollow">#sql</a> <a class="topics-tag" href="/packages?q=topic%3Adb" rel="nofollow">#db</a> <a class="topics-tag" href="/packages?q=topic%3Adatabase" rel="nofollow">#database</a> <a class="topics-tag" href="/packages?q=topic%3Apostgres" rel="nofollow">#postgres</a></p><h3 class="title">License</h3><p><img class="inline-icon-img filter-invert-on-dark" src="/static/hash-qdshfgq0/img/material-icon-balance.svg" alt="" width="14" height="14" role="presentation"/>BSD-3-Clause (<a href="/packages/postgres/license">license</a>)</p><h3 class="title">Dependencies</h3><p><a href="/packages/async" title="^2.12.0">async</a>, <a href="/packages/buffer" title="^1.2.3">buffer</a>, <a href="/packages/charcode" title="^1.4.0">charcode</a>, <a href="/packages/collection" title="^1.19.1">collection</a>, <a href="/packages/crypto" title="^3.0.6">crypto</a>, <a href="/packages/meta" title="^1.16.0">meta</a>, <a href="/packages/pool" title="^1.5.1">pool</a>, <a href="/packages/stack_trace" title="^1.12.1">stack_trace</a>, <a href="/packages/stream_channel" title="^2.1.4">stream_channel</a></p><h3 class="title">More</h3><p><a href="/packages?q=dependency%3Apostgres" rel="nofollow">Packages that depend on postgres</a></p></div><p class="detail-lead-back"><a class="detail-metadata-toggle">Back</a></p></div><div id="-screenshot-carousel" class="carousel"><fab id="-carousel-prev" class="mdc-fab carousel-prev carousel-nav" data-mdc-auto-init="MDCRipple" title="Previous" data-ga-click-event="screenshot-carousel-prev-click" tabindex="0"><div class="mdc-fab__ripple"></div><img class="mdc-fab__icon" src="/static/hash-qdshfgq0/img/keyboard_arrow_left.svg" alt="previous" width="24" height="24" aria-hidden="true"/></fab><div id="-image-container" class="image-container"></div><fab id="-carousel-next" class="mdc-fab carousel-next carousel-nav" data-mdc-auto-init="MDCRipple" title="Next" data-ga-click-event="screenshot-carousel-next-click" tabindex="0"><div class="mdc-fab__ripple"></div><img class="mdc-fab__icon" src="/static/hash-qdshfgq0/img/keyboard_arrow_right.svg" alt="next" width="24" height="24" aria-hidden="true"/></fab><p id="-screenshot-description" class="screenshot-description"></p></div></main><footer class="site-footer"><a class="link" href="https://dart.dev/">Dart language</a><a class="link sep" href="/report?subject=package%3Apostgres&amp;url=https%3A%2F%2Fpub.dev%2Fpackages%2Fpostgres">Report package</a><a class="link sep" href="/policy">Policy</a><a class="link sep" href="https://www.google.com/intl/en/policies/terms/">Terms</a><a class="link sep" href="https://developers.google.com/terms/">API Terms</a><a class="link sep" href="/security">Security</a><a class="link sep" href="https://www.google.com/intl/en/policies/privacy/">Privacy</a><a class="link sep" href="/help">Help</a><a class="link icon sep" href="/feed.atom"><img class="inline-icon" src="/static/hash-qdshfgq0/img/rss-feed-icon.svg" alt="RSS" width="20" height="20" title="RSS/atom feed"/></a><a class="link icon github_issue" href="https://github.com/dart-lang/pub-dev/issues/new"><img class="inline-icon" src="/static/hash-qdshfgq0/img/bug-report-white-96px.png" alt="bug report" width="20" height="20" title="Report an issue with this site"/></a></footer><script src="/static/hash-qdshfgq0/highlight/highlight-with-init.js" defer="defer"></script></body></html>

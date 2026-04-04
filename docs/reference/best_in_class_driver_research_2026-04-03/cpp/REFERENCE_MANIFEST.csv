@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+cpp,libpqxx docs,selected_docs,https://libpqxx.readthedocs.io/stable/,docs/reference/best_in_class_driver_research_2026-04-03/cpp/downloads/01_libpqxx_docs.html,2026-04-03,downloaded,,text/html
+cpp,libpqxx repo,selected_repo,https://github.com/jtv/libpqxx,docs/reference/best_in_class_driver_research_2026-04-03/cpp/downloads/02_libpqxx_repo.html,2026-04-03,downloaded,refs/heads/master 0314658cdc693d9d223490aecf0932b81854d13e,text/html
+cpp,SOCI repo,candidate_repo,https://github.com/SOCI/soci,docs/reference/best_in_class_driver_research_2026-04-03/cpp/downloads/03_SOCI_repo.html,2026-04-03,downloaded,refs/heads/master 897dac8f9cb327eb24827731e569fadd32ae53d4,text/html
+cpp,nanodbc docs,candidate_docs,https://nanodbc.github.io/nanodbc/,docs/reference/best_in_class_driver_research_2026-04-03/cpp/downloads/04_nanodbc_docs.html,2026-04-03,downloaded,,text/html

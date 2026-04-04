@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+odbc,Microsoft ODBC docs,selected_docs,https://learn.microsoft.com/en-us/sql/connect/odbc/microsoft-odbc-driver-for-sql-server,docs/reference/best_in_class_driver_research_2026-04-03/odbc/downloads/01_Microsoft_ODBC_docs.html,2026-04-03,downloaded,,text/html
+odbc,psqlODBC project,anchor_docs,https://odbc.postgresql.org/,docs/reference/best_in_class_driver_research_2026-04-03/odbc/downloads/02_psqlODBC_project.html,2026-04-03,downloaded,,text/html
+odbc,psqlODBC repo,anchor_repo,https://github.com/postgresql-interfaces/psqlodbc,docs/reference/best_in_class_driver_research_2026-04-03/odbc/downloads/03_psqlODBC_repo.html,2026-04-03,downloaded,refs/heads/main 863a0e938dd50c7b68208484bdc3ef8b00735a92,text/html
+odbc,MySQL Connector/ODBC repo,candidate_repo,https://github.com/mysql/mysql-connector-odbc,docs/reference/best_in_class_driver_research_2026-04-03/odbc/downloads/04_MySQL_Connector_ODBC_repo.html,2026-04-03,downloaded,refs/heads/trunk 48709cc9393225aa768e32219eb66292815f489b,text/html

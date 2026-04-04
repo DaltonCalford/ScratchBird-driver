@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+prisma,Prisma PostgreSQL docs,selected_docs,https://www.prisma.io/docs/orm/overview/databases/postgresql,docs/reference/best_in_class_driver_research_2026-04-03/prisma/downloads/01_Prisma_PostgreSQL_docs.html,2026-04-03,downloaded,,text/html
+prisma,Prisma repo,selected_repo,https://github.com/prisma/prisma,docs/reference/best_in_class_driver_research_2026-04-03/prisma/downloads/02_Prisma_repo.html,2026-04-03,downloaded,refs/heads/main ada077ba32b5801d00d32f1434a45aaae7bc09a9,text/html
+prisma,Prisma MySQL docs,candidate_docs,https://www.prisma.io/docs/orm/overview/databases/mysql,docs/reference/best_in_class_driver_research_2026-04-03/prisma/downloads/03_Prisma_MySQL_docs.html,2026-04-03,downloaded,,text/html
+prisma,Prisma SQL Server docs,candidate_docs,https://www.prisma.io/docs/orm/overview/databases/sql-server,docs/reference/best_in_class_driver_research_2026-04-03/prisma/downloads/04_Prisma_SQL_Server_docs.html,2026-04-03,downloaded,,text/html

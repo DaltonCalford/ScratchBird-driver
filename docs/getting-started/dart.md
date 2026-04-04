@@ -1,8 +1,16 @@
 # Dart Driver
 
-## Status
+<!-- lane-status:start -->
+## Current Status
 
-Partial SBWP v1.1 implementation. TLS/binary-only enforcement and zstd rejection are implemented; metadata helpers and full type coverage are still incomplete.
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `postgres (Dart)`
+- Authoritative lane spec: `docs/specifications/DRIVER_DART_DATABASE_API.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/dart.md`
+- Remaining gap summary: Live TXN failure-path validation, pagination/portal-suspend coverage, richer metadata families, complex-type roundtrips, and resilience cleanup proof remain open.
+<!-- lane-status:end -->
 
 ## Install
 

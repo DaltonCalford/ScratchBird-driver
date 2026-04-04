@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+node,node-postgres docs,selected_docs,https://node-postgres.com/,docs/reference/best_in_class_driver_research_2026-04-03/node/downloads/01_node-postgres_docs.html,2026-04-03,downloaded,,text/html
+node,node-postgres repo,selected_repo,https://github.com/brianc/node-postgres,docs/reference/best_in_class_driver_research_2026-04-03/node/downloads/02_node-postgres_repo.html,2026-04-03,downloaded,refs/heads/master c78b302666d593007359eb2bd223c5b325a07058,text/html
+node,mysql2 docs,candidate_docs,https://sidorares.github.io/node-mysql2/docs,docs/reference/best_in_class_driver_research_2026-04-03/node/downloads/03_mysql2_docs.html,2026-04-03,downloaded,,text/html
+node,tedious repo,candidate_repo,https://github.com/tediousjs/tedious,docs/reference/best_in_class_driver_research_2026-04-03/node/downloads/04_tedious_repo.html,2026-04-03,downloaded,refs/heads/master 529402b943753d47988cc6c8d3babd91c85dd824,text/html

@@ -1,7 +1,18 @@
 # Swift Async/Await Driver Specification (ScratchBird)
 
-Status: In development (post-0.1.0)
-Last Updated: 2026-02-18
+Status: Partial
+Last Updated: 2026-04-03
+
+## Implementation Status
+
+- Current lane verdict: partial against the lane-local JDBC/.NET-class baseline mapping.
+- Source of truth: `tracks/p3/drivers/swift/BASELINE_REQUIREMENT_MAPPING.md`
+- Outstanding baseline gaps:
+  - `EXEC`: live cancellation timing and portal suspend/resume behavior coverage is still missing.
+  - `META`: full metadata family completeness beyond current schema/table/tree entry points is still missing.
+  - `TYPE`: live advanced codec roundtrip coverage is still missing.
+  - `ERR`: live auth/connect error propagation remains incomplete.
+  - `RES`: wait-queue/timeout/fault-recovery pool semantics remain incomplete.
 
 ## Goal
 
@@ -102,9 +113,62 @@ Errors conform to:
   - prepare/bind
   - type encoding/decoding
   - streaming/paging
+- Publish release evidence per `DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`.
 
 ## Deliverables
 
 - Swift Package Manager release.
 - API docs with async/await examples.
 - Integration tests gated by `SCRATCHBIRD_TEST_DSN`.
+- Release evidence pack with compatibility, performance, known-gap, and
+  packaging/cadence artifacts.
+
+<!-- swift-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `PostgresNIO`
+- Current state: `partial`
+- Track root: `tracks/p3/drivers/swift`
+
+Competitive closure targets:
+
+- freeze PostgresNIO-class async, pooling, and codec expectations
+- require wait-queue, timeout, and fault-recovery evidence
+
+Remaining implementation or proof deltas:
+
+- EXEC: live cancellation timing and portal suspend/resume coverage remains open
+- META: catalog payload families remain incomplete
+- TYPE: advanced type roundtrip proof remains open
+- ERR: auth/connect error propagation proof remains open
+- RES: pool wait-queue, timeout, and fault-recovery semantics remain open
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/swift/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/swift.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_TEST_DSN`
+
+Build/bootstrap commands:
+
+- `cd tracks/p3/drivers/swift`
+- `swift build`
+
+Verification commands:
+
+- `swift test`
+
+<!-- swift-server-independent-closure:end -->

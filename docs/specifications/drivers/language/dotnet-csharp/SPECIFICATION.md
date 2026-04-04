@@ -1,107 +1,44 @@
-# .NET/C# Driver Specification
+# .NET Driver Specification
 
-Status: Draft
+Status: Complete
 Priority: P0
 
-## 1. Goals
+## Implementation Status
 
-- Provide a native SBWP v1.1 driver with idiomatic .NET/C# APIs.
-- Conform to the language standard interface where applicable.
-- Meet the shared ScratchBird driver requirements.
+- Current lane verdict: `baseline_complete`
+- Source of truth: `docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md`
+- Selected benchmark: `Npgsql`
+- Track root: `tracks/p3/drivers/dotnet`
 
-## 2. Scope
+## Competitive Closure Targets
 
-- Native SBWP v1.1 connectivity.
-- Prepared statements and parameter binding.
-- Metadata helpers per sys.* contract.
-- Error mapping and cancellation semantics.
+- freeze Npgsql-class diagnostics, pooling expectations, and release evidence requirements
+- require reproducible compatibility matrices and benchmark output in the release pack
 
-## 3. Non-Goals
+## Remaining Implementation Deltas
 
-- Emulated protocol drivers (PostgreSQL/MySQL/Firebird/MSSQL).
-- Server-side UDR connectors.
+- no lane-local JDBC/.NET-class baseline gaps remain
+- remaining work is competitive proof, packaging polish, and later live evidence collection
 
-## 4. Required Features
+## Required Release Evidence
 
-- TLS required; reject plaintext or sslmode=disable.
-- Binary-only parameter binding enforced; reject binary_transfer=false.
-- Full SBWP v1.1 message coverage for parse/bind/execute, ready/paging.
-- SQLSTATE mapping must be spec-complete and surfaced in errors.
-- Metadata helpers must use sys.* contract and return stable schemas.
-- All wire types in TYPE_MAPPING_MATRIX.md must encode and decode.
-- Streaming/paging must honor fetch_size and row batching.
-- Timeouts/cancel semantics must follow DRIVER_CANCELLATION_TIMEOUTS.md.
+This lane must stage a complete evidence pack under:
 
-## 5. Type Mapping
+`release/readiness/dotnet/<version>/`
 
-- Full encode/decode for all wire types in TYPE_MAPPING_MATRIX.md.
-- Preserve round-trip fidelity for composite, range, geometry, and vector.
+Required files are defined by:
 
-## 6. Metadata Contract
+- `docs/specifications/DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`
+- `docs/development/release-evidence/README.md`
 
-- Implement METADATA_SCHEMA_CONTRACT.md as the source of truth.
-- Use DRIVER_METADATA_JDBC_ODBC_MAPPING.md for JDBC/ODBC compatible shapes.
+## Later Server Verification
 
-## 7. Error Mapping
+The later live verification packet for this lane is:
 
-- Implement SQLSTATE mapping per DRIVER_ERROR_MAPPING.md.
-- Surface message, sqlstate, detail, hint, and retriable flag.
+`docs/development/server-verification/dotnet.md`
 
-## 8. Security Requirements
+## Non-Goals
 
-- TLS 1.3 preferred with server certificate validation.
-- Credential handling must avoid logging secrets.
-- Connection strings must support secure credential sources.
-
-## 9. Observability Requirements
-
-- Expose connection state and last SQLSTATE for debugging.
-- Provide lightweight logging hooks (disabled by default).
-
-## 10. Performance Requirements
-
-- Avoid per-row allocations in hot loops.
-- Use buffered I/O for network reads and writes.
-- Support prepared statement reuse and pooled connections.
-
-## 11. Conformance & Testing
-
-- Unit tests for encode/decode of all wire types.
-- Integration tests against live ScratchBird server.
-- Conformance harness integration where applicable.
-- Metadata contract validation tests for sys.* queries.
-
-
-## 12. System Constraints & Vendor Quirks
-
-- ADO.NET providers rely on DbConnection/DbCommand/DbDataReader patterns.
-- Providers must support DbProviderFactory-style usage.
-
-## 13. Code Examples
-
-```csharp
-using var conn = new ScratchBirdConnection(connString);
-conn.Open();
-using var cmd = conn.CreateCommand();
-cmd.CommandText = "SELECT 1";
-using var reader = cmd.ExecuteReader();
-```
-
-## 14. Vendor-Specific Test Criteria
-
-- Validate DbDataReader schema metadata (column names/types).
-- Ensure DbException contains SQLSTATE and detail information.
-
-## 15. References
-
-- docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
-- docs/specifications/TYPE_MAPPING_MATRIX.md
-- docs/specifications/DRIVER_ERROR_MAPPING.md
-- docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md
-- docs/specifications/METADATA_SCHEMA_CONTRACT.md
-- docs/specifications/DRIVER_PARAMETER_ENCODING.md
-- docs/specifications/DRIVER_RESULT_DECODING.md
-- docs/specifications/DRIVER_STREAMING_AND_PAGING.md
-- docs/specifications/DRIVER_THREAD_SAFETY_POOLING.md
-- docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
-- docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
+- foreign wire-protocol emulation
+- server-side UDR connector work
+- inventing lane behavior that contradicts SBWP v1.1, MGA, or current repo truth

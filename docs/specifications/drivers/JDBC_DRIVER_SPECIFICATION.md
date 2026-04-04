@@ -1,5 +1,9 @@
 # ScratchBird JDBC Driver Specification
 
+Implementation status: Complete against the lane-local JDBC/.NET-class baseline mapping.
+Source of truth: `tracks/p3/drivers/jdbc/BASELINE_REQUIREMENT_MAPPING.md`
+Outstanding baseline gaps: none in lane-local baseline scope.
+
 ## 1. Overview
 
 ### 1.1 Purpose
@@ -34,6 +38,14 @@ implementation 'com.scratchbird:scratchbird-jdbc:1.0.0'
 **JAR Files:**
 - `scratchbird-jdbc-1.0.0.jar` - Main driver
 - `scratchbird-jdbc-1.0.0-all.jar` - Fat JAR with all dependencies
+
+### 1.4 Release Readiness
+
+The JDBC driver may not be labeled release-ready without the evidence pack
+required by `../DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`, including raw
+contract test results, a conformance report, a compatibility matrix,
+performance numbers, a known-gap list, and a packaging/release cadence
+statement.
 
 ---
 
@@ -903,3 +915,51 @@ public interface UserMapper {
     int delete(Long id);
 }
 ```
+
+<!-- jdbc-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `pgjdbc`
+- Current state: `baseline_complete`
+- Track root: `tracks/p3/drivers/jdbc`
+
+Competitive closure targets:
+
+- freeze pgjdbc-class metadata depth, packaging, and release evidence expectations
+
+Remaining implementation or proof deltas:
+
+- no lane-local JDBC/.NET-class baseline gaps remain
+- remaining work is live compatibility, benchmark proof, and release-evidence staging
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/jdbc/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/jdbc.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_JDBC_URL`
+- `SCRATCHBIRD_JDBC_USER`
+- `SCRATCHBIRD_JDBC_PASSWORD`
+- `SCRATCHBIRD_JDBC_CANCEL_SQL`
+
+Build/bootstrap commands:
+
+- `cd tracks/p3/drivers/jdbc`
+
+Verification commands:
+
+- `./gradlew test`
+
+<!-- jdbc-server-independent-closure:end -->

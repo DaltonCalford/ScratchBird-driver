@@ -1,0 +1,4 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+swift,PostgresNIO repo,selected_repo,https://github.com/vapor/postgres-nio,docs/reference/best_in_class_driver_research_2026-04-03/swift/downloads/01_PostgresNIO_repo.html,2026-04-03,downloaded,refs/heads/main f294b6205defeb23dc04c4e094b04f0de5784d4b,text/html
+swift,PostgresKit repo,candidate_repo,https://github.com/vapor/postgres-kit,docs/reference/best_in_class_driver_research_2026-04-03/swift/downloads/02_PostgresKit_repo.html,2026-04-03,downloaded,refs/heads/main 7c079553e9cda74811e627775bf22e40a9405ad9,text/html
+swift,MySQLNIO repo,candidate_repo,https://github.com/vapor/mysql-nio,docs/reference/best_in_class_driver_research_2026-04-03/swift/downloads/03_MySQLNIO_repo.html,2026-04-03,downloaded,refs/heads/main 7fa853040169b604a16b963f23b481772f4ac181,text/html

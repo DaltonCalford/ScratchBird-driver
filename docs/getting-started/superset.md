@@ -1,48 +1,36 @@
-# Apache Superset Driver
+# Superset Driver
 
-ScratchBird integrates with Apache Superset through the SQLAlchemy dialect and
-EngineSpec shipped in `scratchbird-superset`.
+<!-- lane-status:start -->
+## Current Status
 
-## Install
+- Lane kind: `adapter`
+- Current state: `partial_adapter`
+- Best-in-class benchmark: `Superset PostgreSQL engine spec`
+- Authoritative lane spec: `docs/application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/superset.md`
+- Remaining gap summary: EngineSpec behavior, SQL Lab validation, deployment packaging, and live query workflows remain open.
+<!-- lane-status:end -->
 
-```bash
-pip install scratchbird-superset
-```
+## Authority
 
-## Enable In Superset
+- Compatibility specification: `../application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- API/reference: `../api-reference/superset.md`
 
-1. Install the package into the Superset Python environment.
-2. Restart Superset.
-3. Add a new database with a SQLAlchemy URI such as:
+## Build / Install
 
-```
-scratchbird://user:password@host:3092/database?sslmode=prefer
-```
+- `cd tracks/beta/integrations/scratchbird-superset-driver`
+- `python -m pip install -e ".[tooling,superset]"`
 
-Manager-proxy example:
+## Later Verification Inputs
 
-```
-scratchbird://user:password@host:3090/database?front_door_mode=manager_proxy&manager_auth_token=token
-```
+- `SCRATCHBIRD_TEST_DSN`
 
-Because the Superset adapter rides on the Python driver, the same parity DSN
-features are available here, including `sslmode=disable` for explicit plaintext
-development paths and `compression=zstd|none|off`.
+## Later Verification Commands
 
-JDBC-style session aliases are normalized for convenience as well, so
-`currentSchema` and `searchPath` work in the URI query string even though the
-underlying Python driver expects the normalized schema keys. If no explicit
-schema override is supplied, reflection follows the live session schema and
-ultimately the server default chain that falls back to `users.public`.
+- `python -m pytest`
 
-Use TLS-enabled modes in production.
+## Notes
 
-## Debugging
-
-If the dialect does not load, confirm the package entry points:
-
-- `sqlalchemy.dialects`: `scratchbird`
-- `superset.db_engine_specs`: `scratchbird`
-
-See `tracks/beta/integrations/scratchbird-superset-driver/README.md` for
-scaffold details.
+This adapter is documented to a server-independent completion state. Final
+compatibility proof remains blocked on a working ScratchBird test server.

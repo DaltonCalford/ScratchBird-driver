@@ -1,25 +1,32 @@
 # Go Driver Implementation Plan
 
-Status: Draft
+Status: Current
 Priority: P0
 
-## Phase 1 - Core Connectivity
+## Phase 1 - Offline-Complete Work
 
-- DSN parsing per DRIVER_DSN_AND_CONFIG_STANDARD.md.
-- TLS enforcement and binary-only mode.
-- Basic query execution and result decoding.
+- freeze benchmark target `pgx`
+- push current lane truth into authoritative lane docs
+- enumerate remaining implementation deltas with no hidden assumptions
+- wire shared release-evidence requirements into this lane
+- define later server-verification commands and artifact paths
 
-## Phase 2 - Type Mapping
+## Phase 2 - Remaining Code Or Live-Proof Work
 
-- Implement TYPE_MAPPING_MATRIX.md for encode/decode.
-- Array/composite/range/vector/geometry coverage.
+- no lane-local JDBC/.NET-class baseline gaps remain
+- remaining work is server-backed benchmark, compatibility, and release proof collection
 
-## Phase 3 - Metadata
+## Later Build / Verification Commands
 
-- Implement sys.* metadata helpers.
-- Align JDBC/ODBC metadata mappings.
+Build/bootstrap commands:
 
-## Phase 4 - Conformance & Tooling
+- `cd tracks/p3/drivers/go`
 
-- Run conformance harness and publish reports.
-- Add performance regression tests.
+Verification commands:
+
+- `go test ./...`
+
+## Output Contracts
+
+- release evidence under `release/readiness/go/<version>/`
+- later verification packet in `docs/development/server-verification/go.md`

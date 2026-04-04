@@ -21,5 +21,8 @@ Priority: P0
 
 ## Phase 4 - Conformance & Tooling
 
-- Run conformance harness and publish reports.
-- Add performance regression tests.
+- Land deterministic and live DSN-backed contract tests and export raw result
+  artifacts.
+- Publish conformance report and compatibility matrix.
+- Record performance numbers and regression thresholds.
+- Maintain known-gap list plus packaging/release cadence statement.

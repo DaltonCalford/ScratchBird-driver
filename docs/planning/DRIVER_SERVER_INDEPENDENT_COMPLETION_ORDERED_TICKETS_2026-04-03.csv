@@ -1,0 +1,36 @@
+id,phase,group,title,depends_on,primary_outputs,server_required,status
+OFF-000,0,global,Freeze current offline scope and authoritative targets,,workplan/matrix/tracker/tickets,no,closed
+OFF-001,1,drivers,Close C++ lane docs against competitive model,OFF-000,cpp lane spec package,no,closed
+OFF-002,1,drivers,Close Dart lane docs and explicit remaining gaps,OFF-000,dart spec package,no,closed
+OFF-003,1,drivers,Close .NET lane docs against competitive model,OFF-000,dotnet lane spec package,no,closed
+OFF-004,1,drivers,Close Elixir lane docs and explicit remaining gaps,OFF-000,elixir spec package,no,closed
+OFF-005,1,drivers,Close Go lane docs against competitive model,OFF-000,go lane spec package,no,closed
+OFF-006,1,drivers,Close JDBC lane docs against competitive model,OFF-000,jdbc spec package,no,closed
+OFF-007,1,drivers,Close Mojo lane docs and native-gap handoff,OFF-000,mojo spec package,no,closed
+OFF-008,1,drivers,Close Node lane docs against competitive model,OFF-000,node lane spec package,no,closed
+OFF-009,1,drivers,Close ODBC lane docs and explicit metadata gaps,OFF-000,odbc spec package,no,closed
+OFF-010,1,drivers,Close Pascal lane docs against competitive model,OFF-000,pascal lane spec package,no,closed
+OFF-011,1,drivers,Close PHP lane docs against competitive model,OFF-000,php lane spec package,no,closed
+OFF-012,1,drivers,Close Python lane docs against competitive model,OFF-000,python lane spec package,no,closed
+OFF-013,1,drivers,Close R lane docs and explicit remaining gaps,OFF-000,r lane spec package,no,closed
+OFF-014,1,drivers,Close Ruby lane docs against competitive model,OFF-000,ruby lane spec package,no,closed
+OFF-015,1,drivers,Close Rust lane docs against competitive model,OFF-000,rust lane spec package,no,closed
+OFF-016,1,drivers,Close Swift lane docs and explicit remaining gaps,OFF-000,swift spec package,no,closed
+OFF-017,1,tooling,Close CLI tooling spec package,OFF-000,cli spec package,no,closed
+OFF-018,2,adapters,Close DBeaver compatibility package,OFF-000,dbeaver docs and authority links,no,closed
+OFF-019,2,adapters,Close Hibernate compatibility package,OFF-000,hibernate docs and authority links,no,closed
+OFF-020,2,adapters,Close Metabase compatibility package,OFF-000,metabase docs and authority links,no,closed
+OFF-021,2,adapters,Close Prisma compatibility package,OFF-000,prisma docs and authority links,no,closed
+OFF-022,2,adapters,Close SQLAlchemy compatibility package,OFF-000,sqlalchemy docs and authority links,no,closed
+OFF-023,2,adapters,Close Superset compatibility package,OFF-000,superset docs and authority links,no,closed
+OFF-024,2,adapters,Close TypeORM compatibility package,OFF-000,typeorm docs and authority links,no,closed
+OFF-025,3,cross_cutting,Create deterministic release-evidence templates,OFF-001|OFF-002|OFF-003|OFF-004|OFF-005|OFF-006|OFF-007|OFF-008|OFF-009|OFF-010|OFF-011|OFF-012|OFF-013|OFF-014|OFF-015|OFF-016|OFF-017,shared evidence schemas and lane references,no,closed
+OFF-026,3,cross_cutting,Create per-lane later server-verification packet,OFF-025,verification commands and artifact contracts,no,closed
+OFF-027,3,cross_cutting,Freeze benchmark methodology and output contracts,OFF-025,performance methodology docs,no,closed
+OFF-028,3,cross_cutting,Freeze compatibility matrix schemas and fill rules,OFF-025,compatibility matrix templates,no,closed
+OFF-029,3,cross_cutting,Normalize known-gap reporting rules,OFF-025,known-gap schema and severity rules,no,closed
+OFF-030,3,cross_cutting,Finish packaging and release cadence docs,OFF-025,packaging/release cadence docs,no,closed
+OFF-031,4,cross_cutting,Rationalize integrations tree authority and supersession,OFF-018|OFF-019|OFF-020|OFF-021|OFF-022|OFF-023|OFF-024,integration authority map and supersession notes,no,closed
+OFF-032,4,cross_cutting,Normalize stale gate and audit cross-links,OFF-031,audit/gate supersession cleanup,no,closed
+OFF-033,4,cross_cutting,Sync all repo indexes to final offline truth,OFF-031|OFF-032,README/index updates,no,closed
+OFF-034,4,global,Publish server-blocked-only closeout report,OFF-026|OFF-027|OFF-028|OFF-029|OFF-030|OFF-033,closeout report and tracker closure,no,closed

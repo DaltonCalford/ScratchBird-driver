@@ -1,0 +1,6 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+cli,psql docs,selected_docs,https://www.postgresql.org/docs/current/app-psql.html,docs/reference/best_in_class_driver_research_2026-04-03/cli/downloads/01_psql_docs.html,2026-04-03,downloaded,,text/html
+cli,PostgreSQL repo,selected_repo,https://github.com/postgres/postgres,docs/reference/best_in_class_driver_research_2026-04-03/cli/downloads/02_PostgreSQL_repo.html,2026-04-03,downloaded,refs/heads/master d438a36591c58f60e0748b341855ec5519e1e3b4,text/html
+cli,usql repo,candidate_repo,https://github.com/xo/usql,docs/reference/best_in_class_driver_research_2026-04-03/cli/downloads/03_usql_repo.html,2026-04-03,downloaded,refs/heads/main f7d0fbe808a87e9f6c726e5de2cec1fa284e88f5,text/html
+cli,mycli project,candidate_docs,https://www.mycli.net/,docs/reference/best_in_class_driver_research_2026-04-03/cli/downloads/04_mycli_project.html,2026-04-03,downloaded,,text/html
+cli,mycli repo,candidate_repo,https://github.com/dbcli/mycli,docs/reference/best_in_class_driver_research_2026-04-03/cli/downloads/05_mycli_repo.html,2026-04-03,downloaded,refs/heads/main 788a59113a6251dac077995573439e6da2813741,text/html

@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+dotnet,Npgsql docs,selected_docs,https://www.npgsql.org/doc/index.html,docs/reference/best_in_class_driver_research_2026-04-03/dotnet/downloads/01_Npgsql_docs.html,2026-04-03,downloaded,,text/html
+dotnet,Npgsql repo,selected_repo,https://github.com/npgsql/npgsql,docs/reference/best_in_class_driver_research_2026-04-03/dotnet/downloads/02_Npgsql_repo.html,2026-04-03,downloaded,refs/heads/main 3698a477b3f52808e3c4ecf9ba53e3db8c8b6e5c,text/html
+dotnet,Microsoft.Data.SqlClient docs,candidate_docs,https://learn.microsoft.com/en-us/sql/connect/ado-net/introduction-microsoft-data-sqlclient-namespace?view=sql-server-ver17,docs/reference/best_in_class_driver_research_2026-04-03/dotnet/downloads/03_Microsoft.Data.SqlClient_docs.html,2026-04-03,downloaded,,text/html
+dotnet,MySqlConnector repo,candidate_repo,https://github.com/mysql-net/MySqlConnector,docs/reference/best_in_class_driver_research_2026-04-03/dotnet/downloads/04_MySqlConnector_repo.html,2026-04-03,downloaded,refs/heads/master 060488be2f1109ae18f40ad93821245fe1e7611d,text/html

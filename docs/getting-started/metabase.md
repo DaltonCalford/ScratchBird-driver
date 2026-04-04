@@ -1,32 +1,37 @@
-# Metabase Plugin Driver
+# Metabase Plugin
 
-This driver integrates ScratchBird into Metabase using the ScratchBird JDBC driver.
+<!-- lane-status:start -->
+## Current Status
 
-## Build
+- Lane kind: `adapter`
+- Current state: `partial_adapter`
+- Best-in-class benchmark: `Metabase PostgreSQL driver`
+- Authoritative lane spec: `docs/application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/metabase.md`
+- Remaining gap summary: Schema sync, field fingerprinting, native-query validation, and packaged plugin proof remain open.
+<!-- lane-status:end -->
 
-From `tracks/alpha/integrations/scratchbird-metabase-driver/`:
+## Authority
 
-```bash
-clj -T:build jar
-```
+- Compatibility specification: `../application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- API/reference: `../api-reference/metabase.md`
 
-## Install in Metabase
+## Build / Install
 
-1. Copy the JAR to `MB_PLUGINS_DIR`.
-2. Restart Metabase.
-3. Add a new database using the ScratchBird driver.
+- `cd tracks/alpha/integrations/scratchbird-metabase-driver`
+
+## Later Verification Inputs
+
+- `SCRATCHBIRD_JDBC_URL`
+- `SCRATCHBIRD_JDBC_USER`
+- `SCRATCHBIRD_JDBC_PASSWORD`
+
+## Later Verification Commands
+
+- `clojure -M:test`
 
 ## Notes
 
-- The plugin bundles `metabase-plugin.yaml` and the driver namespace.
-- JDBC URL format: `jdbc:scratchbird://host:3092/database`.
-- Manager-proxy ingress is available through JDBC URL parameters such as
-  `front_door_mode=manager_proxy&manager_auth_token=token`, and the driver now
-  surfaces those fields directly in the Metabase connection UI as well.
-- The plugin inherits current JDBC connection properties, including the
-  standard `sslmode` values, optional `currentSchema`, and auth-plugin startup
-  keys.
-- If `currentSchema` is omitted, ScratchBird resolves the session schema from
-  the server-side user/role/group default chain and falls back to `users.public`.
-
-See `tracks/alpha/integrations/scratchbird-metabase-driver/README.md` for the scaffold details.
+This adapter is documented to a server-independent completion state. Final
+compatibility proof remains blocked on a working ScratchBird test server.

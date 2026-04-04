@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+dart,pub.dev postgres,selected_docs,https://pub.dev/packages/postgres,docs/reference/best_in_class_driver_research_2026-04-03/dart/downloads/01_pub.dev_postgres.html,2026-04-03,downloaded,,text/html
+dart,postgresql-dart repo,selected_repo,https://github.com/isoos/postgresql-dart,docs/reference/best_in_class_driver_research_2026-04-03/dart/downloads/02_postgresql-dart_repo.html,2026-04-03,downloaded,refs/heads/master 43345da8f52f15a395c215ca593920b144f5ad25,text/html
+dart,mysql1 package,candidate_docs,https://pub.dev/packages/mysql1,docs/reference/best_in_class_driver_research_2026-04-03/dart/downloads/03_mysql1_package.html,2026-04-03,downloaded,,text/html
+dart,sqlite3 package,candidate_docs,https://pub.dev/packages/sqlite3,docs/reference/best_in_class_driver_research_2026-04-03/dart/downloads/04_sqlite3_package.html,2026-04-03,downloaded,,text/html

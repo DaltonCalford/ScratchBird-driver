@@ -1,25 +1,34 @@
 # C/C++ Driver Implementation Plan
 
-Status: Draft
-Priority: P2
+Status: Current
+Priority: P0
 
-## Phase 1 - Core Connectivity
+## Phase 1 - Offline-Complete Work
 
-- DSN parsing per DRIVER_DSN_AND_CONFIG_STANDARD.md.
-- TLS enforcement and binary-only mode.
-- Basic query execution and result decoding.
+- freeze benchmark target `libpqxx`
+- push current lane truth into authoritative lane docs
+- enumerate remaining implementation deltas with no hidden assumptions
+- wire shared release-evidence requirements into this lane
+- define later server-verification commands and artifact paths
 
-## Phase 2 - Type Mapping
+## Phase 2 - Remaining Code Or Live-Proof Work
 
-- Implement TYPE_MAPPING_MATRIX.md for encode/decode.
-- Array/composite/range/vector/geometry coverage.
+- no lane-local JDBC/.NET-class baseline gaps remain
+- remaining work is server-backed proof collection and competitive release evidence
 
-## Phase 3 - Metadata
+## Later Build / Verification Commands
 
-- Implement sys.* metadata helpers.
-- Align JDBC/ODBC metadata mappings.
+Build/bootstrap commands:
 
-## Phase 4 - Conformance & Tooling
+- `cmake -S tracks/p3/drivers/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release`
+- `cmake --build build-cpp --config Release`
 
-- Run conformance harness and publish reports.
-- Add performance regression tests.
+Verification commands:
+
+- `ctest --test-dir build-cpp --output-on-failure`
+- `scratchbird_client_tests`
+
+## Output Contracts
+
+- release evidence under `release/readiness/cpp/<version>/`
+- later verification packet in `docs/development/server-verification/cpp.md`

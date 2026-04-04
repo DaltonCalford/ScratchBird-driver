@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+elixir,Postgrex docs,selected_docs,https://hexdocs.pm/postgrex/readme.html,docs/reference/best_in_class_driver_research_2026-04-03/elixir/downloads/01_Postgrex_docs.html,2026-04-03,downloaded,,text/html
+elixir,Postgrex repo,selected_repo,https://github.com/elixir-ecto/postgrex,docs/reference/best_in_class_driver_research_2026-04-03/elixir/downloads/02_Postgrex_repo.html,2026-04-03,downloaded,refs/heads/master 0f92ae39c8f43b6cf39a46ab1142f6fc09be40fe,text/html
+elixir,MyXQL docs,candidate_docs,https://hexdocs.pm/myxql/readme.html,docs/reference/best_in_class_driver_research_2026-04-03/elixir/downloads/03_MyXQL_docs.html,2026-04-03,downloaded,,text/html
+elixir,Tds docs,candidate_docs,https://hexdocs.pm/tds/readme.html,docs/reference/best_in_class_driver_research_2026-04-03/elixir/downloads/04_Tds_docs.html,2026-04-03,downloaded,,text/html

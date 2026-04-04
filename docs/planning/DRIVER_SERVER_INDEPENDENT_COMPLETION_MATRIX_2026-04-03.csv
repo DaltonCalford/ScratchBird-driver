@@ -1,0 +1,36 @@
+work_id,group,lane_or_area,scope,current_truth,offline_goal,primary_outputs,server_dependency,status
+OFF-000,global,baseline,freeze_truth,"best-in-class packet complete; implementation audit current","freeze authoritative targets and scope for all offline work","workplan + matrix + tracker + tickets","none",planned
+OFF-001,drivers,cpp,lane_spec_closure,baseline_complete,"push competitive closure and release evidence into lane docs","cpp spec/plan/testing/readme alignment","none",planned
+OFF-002,drivers,dart,lane_spec_closure,partial,"make all outstanding JDBC/.NET-class gaps explicit and add server verification packet","dart top-level spec + lane docs + release evidence hooks","none",planned
+OFF-003,drivers,dotnet,lane_spec_closure,baseline_complete,"push Npgsql-class closure requirements into lane docs","dotnet lane docs + release evidence hooks","none",planned
+OFF-004,drivers,elixir,lane_spec_closure,partial,"close offline spec ambiguity around stream/resume and reconnect behavior","elixir top-level spec + lane docs","none",planned
+OFF-005,drivers,go,lane_spec_closure,baseline_complete,"push pgx-class competitive requirements into lane docs","go lane docs + release evidence hooks","none",planned
+OFF-006,drivers,jdbc,lane_spec_closure,baseline_complete,"push pgjdbc-class closure and evidence into JDBC docs","JDBC top-level spec + lane docs","none",planned
+OFF-007,drivers,mojo,lane_spec_closure,hybrid_native_gap,"make native transport gap and later verification rules explicit","mojo top-level spec + lane docs","none",planned
+OFF-008,drivers,node,lane_spec_closure,baseline_complete,"push node-postgres-class closure requirements into lane docs","node lane docs + release evidence hooks","none",planned
+OFF-009,drivers,odbc,lane_spec_closure,partial,"freeze metadata-family gaps and ODBC benchmark target in authoritative docs","ODBC top-level spec + lane docs","none",planned
+OFF-010,drivers,pascal,lane_spec_closure,baseline_complete,"push FireDAC/ZeosLib-derived closure into lane docs","pascal lane docs + release evidence hooks","none",planned
+OFF-011,drivers,php,lane_spec_closure,baseline_complete,"push PDO-grade closure and packaging evidence into lane docs","php lane docs + release evidence hooks","none",planned
+OFF-012,drivers,python,lane_spec_closure,baseline_complete,"push psycopg3-class closure into lane docs","python lane docs + release evidence hooks","none",planned
+OFF-013,drivers,r,lane_spec_closure,partial,"freeze DBI metadata/connection gaps and later proof requirements","r lane docs + release evidence hooks","none",planned
+OFF-014,drivers,ruby,lane_spec_closure,baseline_complete,"push ruby-pg-class closure into lane docs","ruby lane docs + release evidence hooks","none",planned
+OFF-015,drivers,rust,lane_spec_closure,baseline_complete,"push tokio-postgres-class closure into lane docs","rust lane docs + release evidence hooks","none",planned
+OFF-016,drivers,swift,lane_spec_closure,partial,"freeze async/pooling/codec gaps and later proof requirements","swift top-level spec + lane docs","none",planned
+OFF-017,tooling,cli,lane_spec_closure,tooling_partial,"complete authoritative CLI tool contract and offline release evidence rules","CLI top-level spec + tooling docs","none",planned
+OFF-018,adapters,dbeaver,adapter_closure,partial_plugin,"make compatibility, api, and getting-started docs authoritative and synchronized","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-019,adapters,hibernate,adapter_closure,partial_contract_only,"expand scaffold into authoritative compatibility and verification contract","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-020,adapters,metabase,adapter_closure,partial_adapter,"synchronize compatibility, api, and getting-started with benchmark packet","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-021,adapters,prisma,adapter_closure,partial_contract_only,"expand scaffold into authoritative compatibility and verification contract","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-022,adapters,sqlalchemy,adapter_closure,partial_adapter,"synchronize compatibility, api, and getting-started with benchmark packet","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-023,adapters,superset,adapter_closure,partial_adapter,"synchronize compatibility, api, and getting-started with benchmark packet","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-024,adapters,typeorm,adapter_closure,partial_contract_only,"expand scaffold into authoritative compatibility and verification contract","top-level compatibility + api + getting-started + integration authority mapping","none",planned
+OFF-025,cross_cutting,release_evidence,contract_closure,shared_contract_present,"add deterministic per-lane evidence schemas and examples","release evidence templates and per-lane references","none",planned
+OFF-026,cross_cutting,conformance_packets,verification_packet,shared_contract_present,"define exact later commands, env, expected outputs, and artifact locations per lane","server-verification packet docs","none",planned
+OFF-027,cross_cutting,performance_methodology,verification_packet,shared_contract_present,"freeze benchmark methodology and output formats even without measured runs","performance template and methodology docs","none",planned
+OFF-028,cross_cutting,compatibility_matrices,verification_packet,shared_contract_present,"freeze compatibility matrix schema and later fill rules","compatibility template docs","none",planned
+OFF-029,cross_cutting,known_gaps,reporting_contract,mixed_truth,"normalize per-lane known-gap severity and reporting rules","known-gap schema and lane hooks","none",planned
+OFF-030,cross_cutting,packaging_release,release_process,mixed_truth,"finish stable packaging and release cadence docs for every lane","packaging/release cadence contract + indexes","none",planned
+OFF-031,cross_cutting,integration_tree,authority_cleanup,"422 draft spec files remain in integrations tree","classify active vs template vs backlog vs superseded directories","integration authority map + README/index updates","none",planned
+OFF-032,cross_cutting,stale_gate_docs,authority_cleanup,mixed historical gates,"normalize old gate docs so they do not contradict current truth","audit/index/gate cross-links and supersession notes","none",planned
+OFF-033,cross_cutting,repo_indexes,authority_cleanup,mixed index state,"sync planning, spec, audit, api, app-ref, and getting-started indexes","index updates","none",planned
+OFF-034,global,closeout,closeout,planned,"mark repo server-blocked-only and enumerate live-server remaining work","closeout report and tracker closure","none",planned

@@ -1,5 +1,17 @@
 # ODBC Driver API Reference
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `Microsoft ODBC Driver for SQL Server`
+- Authoritative lane spec: `docs/specifications/drivers/ODBC_DRIVER_SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/odbc.md`
+- Remaining gap summary: META remains partial because broader full-family metadata parity and richer catalog surfaces are still incomplete.
+<!-- lane-status:end -->
+
 ## Driver Model
 
 The ScratchBird ODBC lane implements an ODBC 3.8 driver surface over the

@@ -17,6 +17,7 @@ ODBC/JDBC, and shared metadata/query contracts.
 
 - **[JDBC_DRIVER_SPECIFICATION.md](JDBC_DRIVER_SPECIFICATION.md)** - JDBC driver requirements
 - **[ODBC_DRIVER_SPECIFICATION.md](ODBC_DRIVER_SPECIFICATION.md)** - ODBC 3.8 driver requirements
+- **[CLI_TOOLS_SPECIFICATION.md](CLI_TOOLS_SPECIFICATION.md)** - CLI tooling competitive-closure requirements
 - **[ALPHA_DRIVER_BOOTSTRAP.md](ALPHA_DRIVER_BOOTSTRAP.md)** - SBWP v1.1 bootstrap rules
 - **[NATIVE_DRIVER_CONFORMANCE.md](NATIVE_DRIVER_CONFORMANCE.md)** - SBWP v1.1 conformance checklist
 - **[DRIVER_METADATA_QUERY_CONTRACT.md](DRIVER_METADATA_QUERY_CONTRACT.md)** - Metadata query contract
@@ -28,6 +29,18 @@ These templates mirror the Alpha/Beta target driver list in the ScratchBird
 specifications and provide per-language spec scaffolding:
 
 - **[language/README.md](language/README.md)** - Language driver templates index
+
+## Current Driver Parity Status
+
+For the current lane-by-lane verdicts, use:
+- [../audit/DRIVER_IMPLEMENTATION_AUDIT.md](../audit/DRIVER_IMPLEMENTATION_AUDIT.md)
+- [../audit/DRIVER_IMPLEMENTATION_AUDIT_MATRIX.csv](../audit/DRIVER_IMPLEMENTATION_AUDIT_MATRIX.csv)
+
+Current headline state:
+- full-parity application-driver lanes: `cpp`, `dotnet`, `go`, `jdbc`, `node`, `pascal`, `php`, `python`, `ruby`, `rust`
+- partial application-driver lanes: `dart`, `elixir`, `odbc`, `r`, `swift`
+- hybrid lane with remaining native-transport closure gap: `mojo`
+- tooling lane outside the JDBC/.NET parity baseline but now in the Beta 1 competitive-closure program: `cli`
 
 ## Protocol Reference (External)
 
@@ -46,8 +59,10 @@ libraries in this repository:
 
 - [Client library API](../api/CLIENT_LIBRARY_API_SPECIFICATION.md)
 - [Driver metadata contract](DRIVER_METADATA_QUERY_CONTRACT.md)
+- [Shared release evidence contract](../DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md)
+- [Best-in-class competitive closure model](../DRIVER_BEST_IN_CLASS_COMPETITIVE_CLOSURE_MODEL.md)
 - [Main specs index](../README.md)
 
 ---
 
-**Last Updated:** 2026-02-01
+**Last Updated:** 2026-04-03

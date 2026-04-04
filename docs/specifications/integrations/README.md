@@ -1,80 +1,29 @@
-# Integration Specifications (Templates)
-Status: Draft (Template Index)
+# Integration Specifications
+Status: Current
 
-## Drivers & Protocols
+This subtree is no longer treated as a flat active authority surface.
 
-- `drivers/python/`
-- `drivers/nodejs-typescript/`
-- `drivers/java/`
-- `drivers/dotnet/`
-- `drivers/golang/`
-- `drivers/php/`
-- `drivers/pascal-delphi/`
-- `drivers/ruby/`
-- `drivers/rust/`
-- `drivers/r/`
-- `drivers/cpp/`
-- `drivers/odbc/`
-- `drivers/jdbc/`
+See:
 
-## ORMs & Frameworks
+- `../DRIVER_INTEGRATION_AUTHORITY_AND_SUPERSESSION_MAP.md`
 
-- `orm/sqlalchemy/`
-- `orm/sequelize/`
-- `orm/hibernate-jpa/`
-- `orm/entity-framework-core/`
-- `orm/typeorm/`
-- `orm/prisma/`
-- `orm/rails-activerecord/`
-- `orm/laravel-eloquent/`
-- `orm/dapper/`
-- `orm/django-orm/`
-- `orm/cypher-opencypher/`
-- `orm/gremlin-tinkerpop/`
+## Active Authority For Current Beta 1 Closure
 
-## Big Data & Streaming
+Targeted adapters now use top-level authoritative compatibility specs in:
 
-- `bigdata/spark/`
-- `bigdata/flink/`
-- `bigdata/kafka/`
-- `bigdata/hadoop-hive/`
-- `bigdata/hadoop-pig/`
-- `bigdata/hadoop-hbase/`
-- `bigdata/talend/`
-- `bigdata/pentaho/`
-- `bigdata/informatica/`
+- `docs/application-reference/DBEAVER_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/HIBERNATE_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/PRISMA_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/SQLALCHEMY_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/TYPEORM_COMPATIBILITY_SPECIFICATION.md`
 
-## Database Tools
+## Group Classification
 
-- `tools/dbeaver/`
-- `tools/pgadmin/`
-- `tools/mysql-workbench/`
-- `tools/datagrip/`
-- `tools/tableau/`
-- `tools/power-bi/`
-- `tools/qlik/`
-- `tools/grafana/`
-- `tools/metabase/`
-- `tools/prometheus/`
-- `tools/excel-odbc/`
-
-## Applications
-
-- `apps/wordpress/`
-- `apps/drupal/`
-- `apps/joomla/`
-- `apps/magento/`
-- `apps/woocommerce/`
-- `apps/qgis/`
-- `apps/geoserver/`
-- `apps/mattermost/`
-- `apps/odoo/`
-
-## Cloud & Container
-
-- `cloud/docker/`
-- `cloud/kubernetes/`
-- `cloud/terraform/`
-- `cloud/aws/`
-- `cloud/gcp/`
-- `cloud/azure/`
+- `drivers/`: supporting template only
+- `orm/`: future backlog except targeted superseded directories
+- `tools/`: future backlog except targeted superseded directories
+- `apps/`: future backlog
+- `bigdata/`: future backlog
+- `cloud/`: future backlog

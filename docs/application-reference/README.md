@@ -1,15 +1,33 @@
 # Application Driver Specifications
 
-This directory contains application-specific compatibility specs and scaffolds
-for ScratchBird integrations.
+Authoritative compatibility contracts for the active BI/application adapters in
+the Beta 1 driver program.
 
-## Specs
+## Adapter Status
 
-- `docs/application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
-- `docs/application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
-- `docs/application-reference/APPLICATION_DRIVER_SPEC_TEMPLATE.md`
+| Adapter | Current State | Benchmark |
+| --- | --- | --- |
+| `dbeaver` | `partial_plugin` | `DBeaver PostgreSQL extension` |
+| `hibernate` | `partial_contract_only` | `Hibernate PostgreSQLDialect` |
+| `metabase` | `partial_adapter` | `Metabase PostgreSQL driver` |
+| `prisma` | `partial_contract_only` | `Prisma PostgreSQL connector` |
+| `sqlalchemy` | `partial_adapter` | `SQLAlchemy PostgreSQL dialect` |
+| `superset` | `partial_adapter` | `Superset PostgreSQL engine spec` |
+| `typeorm` | `partial_contract_only` | `TypeORM PostgreSQL driver` |
 
-## Scaffolds
+## Authoritative Specs
 
-- `tracks/alpha/integrations/scratchbird-metabase-driver/README.md`
-- `tracks/beta/integrations/scratchbird-superset-driver/README.md`
+- [DBeaver Extension](DBEAVER_COMPATIBILITY_SPECIFICATION.md)
+- [Hibernate Dialect](HIBERNATE_COMPATIBILITY_SPECIFICATION.md)
+- [Metabase Plugin](METABASE_COMPATIBILITY_SPECIFICATION.md)
+- [Prisma Adapter](PRISMA_COMPATIBILITY_SPECIFICATION.md)
+- [SQLAlchemy Dialect](SQLALCHEMY_COMPATIBILITY_SPECIFICATION.md)
+- [Superset Driver](SUPERSET_COMPATIBILITY_SPECIFICATION.md)
+- [TypeORM Adapter](TYPEORM_COMPATIBILITY_SPECIFICATION.md)
+
+## Notes
+
+- Older draft pages under `docs/specifications/integrations/` are supporting
+  template material or explicitly superseded for these targeted adapters.
+- Live verification for these adapters is tracked in
+  `docs/development/server-verification/`.

@@ -1,34 +1,14 @@
 # TypeORM Integration
 
-Status: Draft
-Priority: P1
-Category: ORM/Framework
+Status: Superseded by top-level authoritative compatibility specification
 
-## Planning Links
+## Authority
 
-- `docs/planning/ISSUE_STUBS.md`
-- `docs/planning/ISSUE_INDEX.md`
+This subtree remains as supporting template and historical scaffold material.
 
-## Purpose
+The authoritative compatibility contract now lives at:
 
-Define integration requirements and compatibility notes for TypeORM.
+- `../../application-reference/TYPEORM_COMPATIBILITY_SPECIFICATION.md`
 
-## References
-
-- docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
-- docs/specifications/TYPE_MAPPING_MATRIX.md
-- docs/specifications/DRIVER_ERROR_MAPPING.md
-- docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md
-- docs/specifications/METADATA_SCHEMA_CONTRACT.md
-- docs/specifications/DRIVER_PARAMETER_ENCODING.md
-- docs/specifications/DRIVER_RESULT_DECODING.md
-- docs/specifications/DRIVER_STREAMING_AND_PAGING.md
-- docs/specifications/DRIVER_THREAD_SAFETY_POOLING.md
-- docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
-- docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
-
-## Scope
-
-- Integration entry points
-- Feature compatibility notes
-- Testing requirements
+Do not treat the draft pages in this subtree as the primary truth for Beta 1
+closure work.

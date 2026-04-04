@@ -1,35 +1,32 @@
 # Python Driver
 
-Status: Draft
+Status: Current
 Priority: P0
-Category: Language Driver
+Category: language
 
-## Planning Links
+## Authority
 
-- `docs/planning/ISSUE_STUBS.md`
-- `docs/planning/ISSUE_INDEX.md`
+- Implementation spec: `docs/specifications/drivers/language/python/SPECIFICATION.md`
+- API reference: `docs/api-reference/python.md`
+- Getting started: `docs/getting-started/python.md`
+- Release evidence templates: `docs/development/release-evidence/README.md`
+- Later server verification packet: `docs/development/server-verification/python.md`
 
-## Purpose
+## Current Truth
 
-Provide full driver requirements, design notes, and implementation guidance for Python.
+- Competitive benchmark: `psycopg3`
+- Current state: `baseline_complete`
+- Track root: `tracks/p3/drivers/python`
 
-## References
+## Remaining Work Split
 
-- docs/specifications/NATIVE_PROTOCOL_ALIGNMENT.md
-- docs/specifications/TYPE_MAPPING_MATRIX.md
-- docs/specifications/DRIVER_ERROR_MAPPING.md
-- docs/specifications/DRIVER_METADATA_JDBC_ODBC_MAPPING.md
-- docs/specifications/METADATA_SCHEMA_CONTRACT.md
-- docs/specifications/DRIVER_PARAMETER_ENCODING.md
-- docs/specifications/DRIVER_RESULT_DECODING.md
-- docs/specifications/DRIVER_STREAMING_AND_PAGING.md
-- docs/specifications/DRIVER_THREAD_SAFETY_POOLING.md
-- docs/specifications/DRIVER_CANCELLATION_TIMEOUTS.md
-- docs/specifications/DRIVER_DSN_AND_CONFIG_STANDARD.md
+Completed without a server:
 
-## Scope
+- benchmark-driven specification closure
+- release-evidence contract wiring
+- later verification packet definition
 
-- Native SBWP connectivity
-- Metadata helpers
-- Error mapping
-- Type mapping
+Still server-blocked:
+
+- no lane-local JDBC/.NET-class baseline gaps remain
+- remaining work is live proof collection and release-artifact staging

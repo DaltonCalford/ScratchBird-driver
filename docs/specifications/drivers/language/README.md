@@ -1,42 +1,33 @@
-# Language Driver Templates
+# Language Driver Specifications
 
-Status: Draft (Template)
+Status: Current
 
-This directory contains per-language driver specification templates for the
-current pre-release driver lanes referenced in the ScratchBird specifications.
+This directory contains the authoritative per-language driver specification
+packages for the active lane-local language drivers.
 
-## Target Drivers (Pre-Release)
+## Current Status
 
-- `tracks/p3/drivers/cpp/` - C/C++
-- `dotnet-csharp/` - .NET/C#
-- `golang/` - Go
-- `java-jdbc/` - Java JDBC
-- `nodejs-typescript/` - Node.js/TypeScript
-- `pascal-delphi/` - Pascal/Delphi/FreePascal
-- `tracks/p3/drivers/php/` - PHP
-- `tracks/p3/drivers/python/` - Python
-- `tracks/p3/drivers/r/` - R
-- `tracks/p3/drivers/ruby/` - Ruby
-- `tracks/p3/drivers/rust/` - Rust
+| Lane | Current State | Benchmark |
+| --- | --- | --- |
+| `cpp` | `baseline_complete` | `libpqxx` |
+| `dotnet-csharp` | `baseline_complete` | `Npgsql` |
+| `golang` | `baseline_complete` | `pgx` |
+| `nodejs-typescript` | `baseline_complete` | `node-postgres` |
+| `pascal-delphi` | `baseline_complete` | `FireDAC` |
+| `php` | `baseline_complete` | `PDO_PGSQL` |
+| `python` | `baseline_complete` | `psycopg3` |
+| `r` | `partial` | `RPostgres` |
+| `ruby` | `baseline_complete` | `ruby-pg` |
+| `rust` | `baseline_complete` | `tokio-postgres` |
 
-## Source List
+Top-level driver lanes are tracked in:
 
-- `TARGETS_FROM_SCRATCHBIRD.md`
+- `docs/specifications/DRIVER_DART_DATABASE_API.md`
+- `docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md`
+- `docs/specifications/DRIVER_MOJO_NATIVE_API.md`
+- `docs/specifications/DRIVER_SWIFT_ASYNC_ADAPTER.md`
+- `docs/specifications/drivers/JDBC_DRIVER_SPECIFICATION.md`
+- `docs/specifications/drivers/ODBC_DRIVER_SPECIFICATION.md`
 
-## Template Files
-
-Each driver template includes:
-
-- `README.md`
-- `SPECIFICATION.md`
-- `API_REFERENCE.md`
-- `COMPATIBILITY_MATRIX.md`
-- `IMPLEMENTATION_PLAN.md`
-- `MIGRATION_GUIDE.md`
-- `TESTING_CRITERIA.md`
-
-## How to Use
-
-1. Copy the template into the driver’s implementation plan or spec area.
-2. Fill in language-specific APIs and constraints.
-3. Link directly to shared requirements in `docs/specifications/`.
+See `docs/specifications/DRIVER_LANE_AUTHORITY_INDEX.md` for the full
+cross-lane authority map.

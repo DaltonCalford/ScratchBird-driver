@@ -1,0 +1,4 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+ruby,ruby-pg repo,selected_repo,https://github.com/ged/ruby-pg,docs/reference/best_in_class_driver_research_2026-04-03/ruby/downloads/01_ruby-pg_repo.html,2026-04-03,downloaded,refs/heads/master 61f9b37fc02e5f36565737d25c415c1f26dfad68,text/html
+ruby,mysql2 repo,candidate_repo,https://github.com/brianmario/mysql2,docs/reference/best_in_class_driver_research_2026-04-03/ruby/downloads/02_mysql2_repo.html,2026-04-03,downloaded,refs/heads/master b009d7e114729cbae5bef069a1033dd78acf7745,text/html
+ruby,tiny_tds repo,candidate_repo,https://github.com/rails-sqlserver/tiny_tds,docs/reference/best_in_class_driver_research_2026-04-03/ruby/downloads/03_tiny_tds_repo.html,2026-04-03,downloaded,refs/heads/master 1071d812b0e234a9d89628ba9da63dcd626e4f1b,text/html

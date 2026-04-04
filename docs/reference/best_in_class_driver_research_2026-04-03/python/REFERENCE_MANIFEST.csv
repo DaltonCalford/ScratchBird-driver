@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+python,psycopg3 docs,selected_docs,https://www.psycopg.org/psycopg3/docs/,docs/reference/best_in_class_driver_research_2026-04-03/python/downloads/01_psycopg3_docs.html,2026-04-03,downloaded,,text/html
+python,psycopg repo,selected_repo,https://github.com/psycopg/psycopg,docs/reference/best_in_class_driver_research_2026-04-03/python/downloads/02_psycopg_repo.html,2026-04-03,downloaded,refs/heads/master eaeb5edeb1f08c6930d5598237136fbe167e0317,text/html
+python,asyncpg docs,candidate_docs,https://magicstack.github.io/asyncpg/current/,docs/reference/best_in_class_driver_research_2026-04-03/python/downloads/03_asyncpg_docs.html,2026-04-03,downloaded,,text/html
+python,mysqlclient repo,candidate_repo,https://github.com/PyMySQL/mysqlclient,docs/reference/best_in_class_driver_research_2026-04-03/python/downloads/04_mysqlclient_repo.html,2026-04-03,downloaded,refs/heads/main a417303a0597113d2299f63c04f9055e09950ee1,text/html

@@ -1,5 +1,17 @@
 # Python Driver API Reference
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `baseline_complete`
+- Best-in-class benchmark: `psycopg3`
+- Authoritative lane spec: `docs/specifications/drivers/language/python/SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/python.md`
+- Remaining gap summary: No lane-local JDBC/.NET-class baseline gaps remain. Remaining work is live proof collection and release evidence staging.
+<!-- lane-status:end -->
+
 ## Module
 
 - Package: `scratchbird`
@@ -60,6 +72,13 @@ Metadata:
 - `has_next_result_set()`, `next_result_set()`
 - `description`, `rowcount`, `arraysize`, `statusmessage`, `lastrowid`
 
+Cursor state rule:
+
+- Calling `execute()` again on the same cursor now discards any unread rows or
+  unread result-set trailers from the prior statement before sending the new
+  query. If the caller needs remaining rows or additional result sets, it must
+  consume them with `fetch*()` or `nextset()` before re-executing.
+
 ## Pipeline Module
 
 Import from `scratchbird.pipeline`:
@@ -97,3 +116,8 @@ Use these helper types for complex values:
 
 Exceptions follow the DB-API hierarchy and map to SQLSTATE codes per
 [DRIVER_ERROR_MAPPING.md](../specifications/DRIVER_ERROR_MAPPING.md).
+
+Query and DDL errors now drain the statement's trailing protocol boundary
+before the exception is raised. A subsequent `rollback()` or `execute()` on the
+same connection does not require a reconnect just to recover from a statement
+error.

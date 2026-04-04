@@ -1,5 +1,17 @@
 # Dart API Reference
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `postgres (Dart)`
+- Authoritative lane spec: `docs/specifications/DRIVER_DART_DATABASE_API.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/dart.md`
+- Remaining gap summary: Live TXN failure-path validation, pagination/portal-suspend coverage, richer metadata families, complex-type roundtrips, and resilience cleanup proof remain open.
+<!-- lane-status:end -->
+
 ## ScratchBirdClient
 
 - `ScratchBirdClient.connect(ScratchBirdConfig config)`

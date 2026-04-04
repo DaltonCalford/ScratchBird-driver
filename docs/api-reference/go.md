@@ -1,5 +1,17 @@
 # Go Driver API Reference
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `baseline_complete`
+- Best-in-class benchmark: `pgx`
+- Authoritative lane spec: `docs/specifications/drivers/language/golang/SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/go.md`
+- Remaining gap summary: No lane-local JDBC/.NET-class baseline gaps remain. Remaining work is live proof collection and release evidence staging.
+<!-- lane-status:end -->
+
 ## Package
 
 - Module: `github.com/scratchbird/scratchbird-go`

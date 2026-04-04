@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.39.3">
+    <meta name="project" content="Postgrex v0.22.0">
+
+
+    <title>Postgrex — Postgrex v0.22.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-VYWJUHZE.css" />
+
+    <script defer src="dist/sidebar_items-4CA45E88.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-XBCM4BHM.js"></script>
+
+  <script async defer src="https://s.hexdocs.pm/js/script.js"></script><script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init({endpoint:"https://s.hexdocs.pm/api/event"})</script></head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="readme.html" class="sidebar-projectName" translate="no">
+Postgrex
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.22.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras=""></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of Postgrex</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>Postgrex</h1>
+
+
+      <a href="https://github.com/elixir-ecto/postgrex/blob/v0.22.0/README.md#L1" title="View Source" class="icon-action" rel="help">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+<p><a href="https://github.com/elixir-ecto/postgrex/actions"><img src="https://github.com/elixir-ecto/postgrex/workflows/CI/badge.svg" alt="Build Status"/></a></p><p>PostgreSQL driver for Elixir.</p><p>Documentation: <a href="http://hexdocs.pm/postgrex/">http://hexdocs.pm/postgrex/</a></p><h2 id="examples" class="section-heading"><a href="#examples" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Examples</span></h2><pre><code class="makeup iex" translate="no"><span class="gp unselectable">iex&gt; </span><span class="p" data-group-id="7084944946-1">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">pid</span><span class="p" data-group-id="7084944946-1">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Postgrex</span><span class="o">.</span><span class="n">start_link</span><span class="p" data-group-id="7084944946-2">(</span><span class="ss">hostname</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;postgres&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;postgres&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">database</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;postgres&quot;</span><span class="p" data-group-id="7084944946-2">)</span><span class="w">
+</span><span class="p" data-group-id="7084944946-3">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="7084944946-4">#</span><span class="nc" data-group-id="7084944946-4">PID</span><span class="p" data-group-id="7084944946-4">&lt;</span><span class="mi">0</span><span class="o">.</span><span class="mi">69</span><span class="o">.</span><span class="mi">0</span><span class="p" data-group-id="7084944946-4">&gt;</span><span class="p" data-group-id="7084944946-3">}</span><span class="w">
+
+</span><span class="gp unselectable">iex&gt; </span><span class="nc">Postgrex</span><span class="o">.</span><span class="n">query!</span><span class="p" data-group-id="7084944946-5">(</span><span class="n">pid</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;SELECT user_id, text FROM comments&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="7084944946-6">[</span><span class="p" data-group-id="7084944946-6">]</span><span class="p" data-group-id="7084944946-5">)</span><span class="w">
+</span><span class="p" data-group-id="7084944946-7">%</span><span class="nc" data-group-id="7084944946-7">Postgrex.Result</span><span class="p" data-group-id="7084944946-7">{</span><span class="ss">command</span><span class="p">:</span><span class="w"> </span><span class="ss">:select</span><span class="p">,</span><span class="w"> </span><span class="ss">empty?</span><span class="p">:</span><span class="w"> </span><span class="no">false</span><span class="p">,</span><span class="w"> </span><span class="ss">columns</span><span class="p">:</span><span class="w"> </span><span class="p" data-group-id="7084944946-8">[</span><span class="s">&quot;user_id&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;text&quot;</span><span class="p" data-group-id="7084944946-8">]</span><span class="p">,</span><span class="w"> </span><span class="ss">rows</span><span class="p">:</span><span class="w"> </span><span class="p" data-group-id="7084944946-9">[</span><span class="p" data-group-id="7084944946-10">[</span><span class="mi">3</span><span class="p">,</span><span class="s">&quot;hey&quot;</span><span class="p" data-group-id="7084944946-10">]</span><span class="p">,</span><span class="p" data-group-id="7084944946-11">[</span><span class="mi">4</span><span class="p">,</span><span class="s">&quot;there&quot;</span><span class="p" data-group-id="7084944946-11">]</span><span class="p" data-group-id="7084944946-9">]</span><span class="p">,</span><span class="w"> </span><span class="ss">size</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p" data-group-id="7084944946-7">}</span><span class="err">}</span><span class="w">
+
+</span><span class="gp unselectable">iex&gt; </span><span class="nc">Postgrex</span><span class="o">.</span><span class="n">query!</span><span class="p" data-group-id="7084944946-12">(</span><span class="n">pid</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;INSERT INTO comments (user_id, text) VALUES (10, &#39;heya&#39;)&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="7084944946-13">[</span><span class="p" data-group-id="7084944946-13">]</span><span class="p" data-group-id="7084944946-12">)</span><span class="w">
+</span><span class="p" data-group-id="7084944946-14">%</span><span class="nc" data-group-id="7084944946-14">Postgrex.Result</span><span class="p" data-group-id="7084944946-14">{</span><span class="ss">command</span><span class="p">:</span><span class="w"> </span><span class="ss">:insert</span><span class="p">,</span><span class="w"> </span><span class="ss">columns</span><span class="p">:</span><span class="w"> </span><span class="no">nil</span><span class="p">,</span><span class="w"> </span><span class="ss">rows</span><span class="p">:</span><span class="w"> </span><span class="no">nil</span><span class="p">,</span><span class="w"> </span><span class="ss">num_rows</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p" data-group-id="7084944946-14">}</span></code></pre><h2 id="features" class="section-heading"><a href="#features" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Features</span></h2><ul><li>Automatic decoding and encoding of Elixir values to and from PostgreSQL's binary format</li><li>User defined extensions for encoding and decoding any PostgreSQL type</li><li>Supports transactions, prepared queries and multiple pools via <a href="https://github.com/elixir-ecto/db_connection">DBConnection</a></li><li>Supports PostgreSQL 8.4, 9.0-9.6, and later (hstore is not supported on 8.4)</li></ul><h2 id="data-representation" class="section-heading"><a href="#data-representation" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Data representation</span></h2><table><thead><tr><th style="text-align: left;">PostgreSQL</th><th style="text-align: left;">Elixir</th></tr></thead><tbody><tr><td style="text-align: left;"><code class="inline">NULL</code></td><td style="text-align: left;"><code class="inline">nil</code></td></tr><tr><td style="text-align: left;"><code class="inline">bool</code></td><td style="text-align: left;"><code class="inline">true</code>, <code class="inline">false</code></td></tr><tr><td style="text-align: left;"><code class="inline">char</code></td><td style="text-align: left;"><code class="inline">&quot;é&quot;</code></td></tr><tr><td style="text-align: left;"><code class="inline">int</code></td><td style="text-align: left;"><code class="inline">42</code></td></tr><tr><td style="text-align: left;"><code class="inline">float</code></td><td style="text-align: left;"><code class="inline">42.0</code></td></tr><tr><td style="text-align: left;"><code class="inline">text</code></td><td style="text-align: left;"><code class="inline">&quot;eric&quot;</code></td></tr><tr><td style="text-align: left;"><code class="inline">bytea</code></td><td style="text-align: left;"><code class="inline">&lt;&lt;42&gt;&gt;</code></td></tr><tr><td style="text-align: left;"><code class="inline">numeric</code></td><td style="text-align: left;"><code class="inline">#Decimal&lt;42.0&gt;</code> (1)</td></tr><tr><td style="text-align: left;"><code class="inline">date</code></td><td style="text-align: left;"><code class="inline">%Date{year: 2013, month: 10, day: 12}</code></td></tr><tr><td style="text-align: left;"><code class="inline">time(tz)</code></td><td style="text-align: left;"><code class="inline">%Time{hour: 0, minute: 37, second: 14}</code> (2)</td></tr><tr><td style="text-align: left;"><code class="inline">timestamp</code></td><td style="text-align: left;"><code class="inline">%NaiveDateTime{year: 2013, month: 10, day: 12, hour: 0, minute: 37, second: 14}</code></td></tr><tr><td style="text-align: left;"><code class="inline">timestamptz</code></td><td style="text-align: left;"><code class="inline">%DateTime{year: 2013, month: 10, day: 12, hour: 0, minute: 37, second: 14, time_zone: &quot;Etc/UTC&quot;}</code> (2)</td></tr><tr><td style="text-align: left;"><code class="inline">interval</code></td><td style="text-align: left;"><code class="inline">%Postgrex.Interval{months: 14, days: 40, secs: 10920, microsecs: 315}</code></td></tr><tr><td style="text-align: left;"><code class="inline">interval</code></td><td style="text-align: left;"><code class="inline">%Duration{month: 2, day: 5, second: 0, microsecond: {315, 6}}</code> (3)</td></tr><tr><td style="text-align: left;"><code class="inline">array</code></td><td style="text-align: left;"><code class="inline">[1, 2, 3]</code></td></tr><tr><td style="text-align: left;"><code class="inline">composite type</code></td><td style="text-align: left;"><code class="inline">{42, &quot;title&quot;, &quot;content&quot;}</code></td></tr><tr><td style="text-align: left;"><code class="inline">range</code></td><td style="text-align: left;"><code class="inline">%Postgrex.Range{lower: 1, upper: 5}</code></td></tr><tr><td style="text-align: left;"><code class="inline">multirange</code></td><td style="text-align: left;"><code class="inline">%Postgrex.Multirange{ranges: [%Postgrex.Range{lower: 1, upper: 5}, %Postgrex.Range{lower: 20, upper: 23}]}</code></td></tr><tr><td style="text-align: left;"><code class="inline">uuid</code></td><td style="text-align: left;"><code class="inline">&lt;&lt;160,238,188,153,156,11,78,248,187,109,107,185,189,56,10,17&gt;&gt;</code></td></tr><tr><td style="text-align: left;"><code class="inline">hstore</code></td><td style="text-align: left;"><code class="inline">%{&quot;foo&quot; =&gt; &quot;bar&quot;}</code></td></tr><tr><td style="text-align: left;"><code class="inline">oid types</code></td><td style="text-align: left;"><code class="inline">42</code></td></tr><tr><td style="text-align: left;"><code class="inline">enum</code></td><td style="text-align: left;"><code class="inline">&quot;ok&quot;</code> (4)</td></tr><tr><td style="text-align: left;"><code class="inline">bit</code></td><td style="text-align: left;"><code class="inline">&lt;&lt; 1::1, 0::1 &gt;&gt;</code></td></tr><tr><td style="text-align: left;"><code class="inline">varbit</code></td><td style="text-align: left;"><code class="inline">&lt;&lt; 1::1, 0::1 &gt;&gt;</code></td></tr><tr><td style="text-align: left;"><code class="inline">tsvector</code></td><td style="text-align: left;"><code class="inline">[%Postgrex.Lexeme{positions: [{1, :A}], word: &quot;a&quot;}]</code></td></tr></tbody></table><p>(1) <a href="http://github.com/ericmj/decimal">Decimal</a></p><p>(2) Timezones will always be normalized to UTC or assumed to be UTC when no information is available, either by PostgreSQL or Postgrex</p><p>(3) <code class="inline">%Duration{}</code> may only be used with Elixir 1.17+. Intervals will only be decoded into a <code class="inline">%Duration{}</code> struct if the option <code class="inline">interval_decode_type: Duration</code> is passed to <a href="Postgrex.Types.html#define/3"><code class="inline">Postgrex.Types.define/3</code></a>.</p><p>(4) Enumerated types (enum) are custom named database types with strings as values.</p><p>(5) Anonymous composite types are decoded (read) as tuples but they cannot be encoded (written) to the database</p><p>Postgrex does not automatically cast between types. For example, you can't pass a string where a date is expected. To add type casting, support new types, or change how any of the types above are encoded/decoded, you can use extensions.</p><h2 id="json-support" class="section-heading"><a href="#json-support" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">JSON support</span></h2><p>Postgrex comes with JSON support out of the box via the <a href="https://github.com/michalmuskala/jason">Jason</a> library. To use it, add :jason to your dependencies:</p><pre><code class="makeup elixir" translate="no"><span class="p" data-group-id="5045782309-1">{</span><span class="ss">:jason</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;~&gt; 1.0&quot;</span><span class="p" data-group-id="5045782309-1">}</span></code></pre><p>You can customize it to use another library via the <code class="inline">:json_library</code> configuration:</p><pre><code class="makeup elixir" translate="no"><span class="n">config</span><span class="w"> </span><span class="ss">:postgrex</span><span class="p">,</span><span class="w"> </span><span class="ss">:json_library</span><span class="p">,</span><span class="w"> </span><span class="nc">SomeOtherLib</span></code></pre><p>Once you change the value, you have to recompile Postgrex, which can be done by cleaning its current build:</p><pre><code class="makeup sh" translate="no"><span class="">mix deps.clean postgrex --build
+</span></code></pre><h2 id="extensions" class="section-heading"><a href="#extensions" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Extensions</span></h2><p>Extensions are used to extend Postgrex' built-in type encoding/decoding.</p><p>The <a href="https://github.com/elixir-ecto/postgrex/blob/master/lib/postgrex/extensions/">extensions</a> directory in this project provides implementation for many Postgres' built-in data types. It is also a great example of how to implement your own extensions. For example, you can look at the <a href="https://github.com/elixir-ecto/postgrex/blob/master/lib/postgrex/extensions/date.ex"><code class="inline">Date</code></a> extension as a starting point.</p><p>Once you defined your extensions, you should build custom type modules, passing all of your extensions as arguments:</p><pre><code class="makeup elixir" translate="no"><span class="nc">Postgrex.Types</span><span class="o">.</span><span class="n">define</span><span class="p" data-group-id="0392432867-1">(</span><span class="nc">MyApp.PostgrexTypes</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0392432867-2">[</span><span class="nc">MyApp.Postgis.Extensions</span><span class="p" data-group-id="0392432867-2">]</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0392432867-3">[</span><span class="p" data-group-id="0392432867-3">]</span><span class="p" data-group-id="0392432867-1">)</span></code></pre><p><a href="Postgrex.Types.html#define/3"><code class="inline">Postgrex.Types.define/3</code></a> must be called on its own file, outside of any module and function, as it only needs to be defined once during compilation.</p><p>Once a type module is defined, you must specify it on <code class="inline">start_link</code>:</p><pre><code class="makeup elixir" translate="no"><span class="nc">Postgrex</span><span class="o">.</span><span class="n">start_link</span><span class="p" data-group-id="0699320005-1">(</span><span class="ss">types</span><span class="p">:</span><span class="w"> </span><span class="nc">MyApp.PostgrexTypes</span><span class="p" data-group-id="0699320005-1">)</span></code></pre><h2 id="oid-type-encoding" class="section-heading"><a href="#oid-type-encoding" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">OID type encoding</span></h2><p>PostgreSQL's wire protocol supports encoding types either as text or as binary. Unlike most client libraries Postgrex uses the binary protocol, not the text protocol. This allows for efficient encoding of types (e.g. 4-byte integers are encoded as 4 bytes, not as a string of digits) and automatic support for arrays and composite types.</p><p>Unfortunately the PostgreSQL binary protocol transports <a href="http://www.postgresql.org/docs/current/static/datatype-oid.html#DATATYPE-OID-TABLE">OID types</a> as integers while the text protocol transports them as string of their name, if one exists, and otherwise as integer.</p><p>This means you either need to supply oid types as integers or perform an explicit cast (which would be automatic when using the text protocol) in the query.</p><pre><code class="makeup elixir" translate="no"><span class="c1"># Fails since $1 is regclass not text.</span><span class="w">
+</span><span class="n">query</span><span class="p" data-group-id="0329181324-1">(</span><span class="s">&quot;select nextval($1)&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0329181324-2">[</span><span class="s">&quot;some_sequence&quot;</span><span class="p" data-group-id="0329181324-2">]</span><span class="p" data-group-id="0329181324-1">)</span><span class="w">
+
+</span><span class="c1"># Perform an explicit cast, this would happen automatically when using a</span><span class="w">
+</span><span class="c1"># client library that uses the text protocol.</span><span class="w">
+</span><span class="n">query</span><span class="p" data-group-id="0329181324-3">(</span><span class="s">&quot;select nextval($1::text::regclass)&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0329181324-4">[</span><span class="s">&quot;some_sequence&quot;</span><span class="p" data-group-id="0329181324-4">]</span><span class="p" data-group-id="0329181324-3">)</span><span class="w">
+
+</span><span class="c1"># Determine the oid once and store it for later usage. This is the most</span><span class="w">
+</span><span class="c1"># efficient way, since PostgreSQL only has to perform the lookup once. Client</span><span class="w">
+</span><span class="c1"># libraries using the text protocol do not support this.</span><span class="w">
+</span><span class="p" data-group-id="0329181324-5">%{</span><span class="ss">rows</span><span class="p">:</span><span class="w"> </span><span class="p" data-group-id="0329181324-6">[</span><span class="p" data-group-id="0329181324-7">{</span><span class="n">sequence_oid</span><span class="p" data-group-id="0329181324-7">}</span><span class="p" data-group-id="0329181324-6">]</span><span class="p" data-group-id="0329181324-5">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">query</span><span class="p" data-group-id="0329181324-8">(</span><span class="s">&quot;select $1::text::regclass&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0329181324-9">[</span><span class="s">&quot;some_sequence&quot;</span><span class="p" data-group-id="0329181324-9">]</span><span class="p" data-group-id="0329181324-8">)</span><span class="w">
+</span><span class="n">query</span><span class="p" data-group-id="0329181324-10">(</span><span class="s">&quot;select nextval($1)&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="0329181324-11">[</span><span class="n">sequence_oid</span><span class="p" data-group-id="0329181324-11">]</span><span class="p" data-group-id="0329181324-10">)</span></code></pre><h2 id="pgbouncer" class="section-heading"><a href="#pgbouncer" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">PgBouncer</span></h2><p>PgBouncer versions 1.21.0 and later support named prepared statements. If you are using an older version of PgBouncer with transaction or statement pooling, named prepared queries cannot be used because the bouncer may route requests from the same Postgrex connection to different PostgreSQL backend processes and discards named queries after the transaction closes. To force unnamed prepared queries in such older versions:</p><pre><code class="makeup elixir" translate="no"><span class="nc">Postgrex</span><span class="o">.</span><span class="n">start_link</span><span class="p" data-group-id="3550389127-1">(</span><span class="ss">prepare</span><span class="p">:</span><span class="w"> </span><span class="ss">:unnamed</span><span class="p" data-group-id="3550389127-1">)</span></code></pre><p><a href="https://www.pgbouncer.org/changelog.html#pgbouncer-121x">PgBouncer 1.21.0 release notes</a></p><h2 id="contributing" class="section-heading"><a href="#contributing" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Contributing</span></h2><p>To contribute you need to compile Postgrex from source and test it:</p><pre><code class="makeup shell" translate="no"><span class="gp unselectable">$ </span><span class="">git clone https://github.com/elixir-ecto/postgrex.git
+</span><span class="gp unselectable">$ </span><span class="">cd postgrex
+</span><span class="gp unselectable">$ </span><span class="">mix test
+</span></code></pre><p>The tests requires some modifications to your <a href="http://www.postgresql.org/docs/9.3/static/auth-pg-hba-conf.html">hba file</a>. The path to it can be found by running <code class="inline">$ psql -U postgres -c &quot;SHOW hba_file&quot;</code> in your shell. Put the following above all other configurations (so that they override):</p><pre><code class="makeup elixir" translate="no"><span class="n">local</span><span class="w">   </span><span class="n">all</span><span class="w">             </span><span class="n">all</span><span class="w">                     </span><span class="n">trust</span><span class="w">
+</span><span class="n">host</span><span class="w">    </span><span class="n">all</span><span class="w">             </span><span class="n">postgrex_md5_pw</span><span class="w">         </span><span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="o">/</span><span class="mi">32</span><span class="w">    </span><span class="n">md5</span><span class="w">
+</span><span class="n">host</span><span class="w">    </span><span class="n">all</span><span class="w">             </span><span class="n">postgrex_cleartext_pw</span><span class="w">   </span><span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="o">/</span><span class="mi">32</span><span class="w">    </span><span class="n">password</span><span class="w">
+</span><span class="n">host</span><span class="w">    </span><span class="n">all</span><span class="w">             </span><span class="n">postgrex_scram_pw</span><span class="w">       </span><span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="o">/</span><span class="mi">32</span><span class="w">    </span><span class="n">scram</span><span class="o">-</span><span class="n">sha</span><span class="o">-</span><span class="mi">256</span></code></pre><p>The server needs to be restarted for the changes to take effect. Additionally you need to setup a PostgreSQL user with the same username as the local user and give it trust or ident in your hba file. Or you can export $PGUSER and $PGPASSWORD before running tests.</p><h3 id="testing-hstore-on-9-0" class="section-heading"><a href="#testing-hstore-on-9-0" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Testing hstore on 9.0</span></h3><p>PostgreSQL versions 9.0 does not have the <code class="inline">CREATE EXTENSION</code> commands. This means we have to locate the postgres installation and run the <code class="inline">hstore.sql</code> in <code class="inline">contrib</code> to install <code class="inline">hstore</code>. Below is an example command to test 9.0 on OS X with homebrew installed postgres:</p><pre><code class="makeup shell" translate="no"><span class="gp unselectable">$ </span><span class="">PGVERSION=9.0 PGPATH=/usr/local/share/postgresql9/ mix test
+</span></code></pre><h2 id="license" class="section-heading"><a href="#license" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">License</span></h2><p>Copyright 2013 Eric Meadows-Jönsson</p><p>Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at</p><pre><code class="makeup elixir" translate="no"><span class="n">http</span><span class="ss">://</span><span class="n">www</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="n">licenses</span><span class="o">/</span><span class="nc">LICENSE</span><span class="o">-</span><span class="mf">2.0</span></code></pre><p>Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+  </div>
+  <div class="bottom-actions-item">
+
+      <a href="changelog.html" class="bottom-actions-button" rel="next">
+        <span class="subheader">
+          Next Page →
+        </span>
+        <span class="title">
+Changelog
+        </span>
+      </a>
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+            <span class="line">
+              <a href="https://hex.pm/packages/postgrex/0.22.0" class="footer-hex-package">Hex Package</a>
+
+              <a href="https://preview.hex.pm/preview/postgrex/0.22.0">Hex Preview</a>
+
+                (<a href="https://preview.hex.pm/preview/postgrex/0.22.0/show/README.md">current file</a>)
+
+            </span>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="Postgrex.epub" title="ePub version">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.39.3) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "driver_id": "",
+  "driver_version": "",
+  "commit": "",
+  "build_timestamp_utc": "",
+  "runtime_matrix": [],
+  "suite_results": [],
+  "pass_count": 0,
+  "fail_count": 0,
+  "skip_count": 0,
+  "skips": [],
+  "artifact_links": []
+}

@@ -1,17 +1,39 @@
-# Pascal/Delphi Driver Testing Criteria
+# Pascal / Delphi Driver Testing Criteria
 
-Status: Draft
-Priority: P0
+Status: Current
+Priority: P1
 
-## Required Coverage
+## Deterministic Offline Coverage
 
-- Unit tests for encode/decode of all wire types.
-- Integration tests against live ScratchBird server.
-- Conformance harness integration where applicable.
-- Metadata contract validation tests for sys.* queries.
+- static spec/doc authority checks
+- fixture and manifest alignment checks
+- build/bootstrap command validity against repo-local package metadata
+- release-evidence template and path validation
 
-## Performance Tests
+## Later Server-Backed Verification
 
-- Batch fetch with `fetch_size`.
-- Large result set streaming.
-- Prepared statement reuse.
+Required environment inputs:
+
+- `SCRATCHBIRD_PASCAL_URL`
+- `SCRATCHBIRD_PASCAL_STREAM_SQL`
+- `SCRATCHBIRD_PASCAL_GENERATED_KEY_SQL`
+- `SCRATCHBIRD_PASCAL_GENERATED_KEY_EXPECTED`
+- `SCRATCHBIRD_PASCAL_CANCEL_SQL`
+
+Required execution commands:
+
+- `./tracks/p3/drivers/pascal/tests/TlsCryptoAndPolicyTests`
+
+## Required Release Evidence
+
+- `CONTRACT_TEST_RESULTS.json`
+- `CONFORMANCE_REPORT.md`
+- `COMPATIBILITY_MATRIX.md`
+- `PERFORMANCE_NUMBERS.md`
+- `KNOWN_GAPS.md`
+- `PACKAGING_AND_RELEASE_CADENCE.md`
+- `SUMMARY.json`
+
+Use the shared templates in:
+
+`docs/development/release-evidence/`

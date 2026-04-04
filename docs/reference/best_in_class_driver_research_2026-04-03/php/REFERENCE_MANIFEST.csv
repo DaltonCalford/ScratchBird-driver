@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+php,PDO_PGSQL source,selected_docs,https://github.com/php/php-src/tree/master/ext/pdo_pgsql,docs/reference/best_in_class_driver_research_2026-04-03/php/downloads/01_PDO_PGSQL_source.html,2026-04-03,downloaded,,text/html
+php,PHP source repo,selected_repo,https://github.com/php/php-src,docs/reference/best_in_class_driver_research_2026-04-03/php/downloads/02_PHP_source_repo.html,2026-04-03,downloaded,refs/heads/master b7c855f4c2d9a79e6f9bd84a4a40805980542e97,text/html
+php,ext-pgsql source,candidate_docs,https://github.com/php/php-src/tree/master/ext/pgsql,docs/reference/best_in_class_driver_research_2026-04-03/php/downloads/03_ext-pgsql_source.html,2026-04-03,downloaded,,text/html
+php,amphp/postgres repo,candidate_repo,https://github.com/amphp/postgres,docs/reference/best_in_class_driver_research_2026-04-03/php/downloads/04_amphp_postgres_repo.html,2026-04-03,downloaded,refs/heads/2.x b68c4d5929d0ec1701781dbbb0bb81dd8d0a42d7,text/html

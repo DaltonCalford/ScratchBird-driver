@@ -1,5 +1,17 @@
 # R Driver
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `RPostgres`
+- Authoritative lane spec: `docs/specifications/drivers/language/r/SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/r.md`
+- Remaining gap summary: Connection/auth integration proof remains environment-gated, and richer privilege/key/type plus DDL-editor metadata parity is still incomplete.
+<!-- lane-status:end -->
+
 ## Install
 
 From the repo:

@@ -1,12 +1,15 @@
 # Driver Conformance Test Harness (Shared)
 
 Status: Draft
-Last Updated: 2026-02-18
+Last Updated: 2026-04-03
 
 ## Purpose
 
-Provide a shared, language-agnostic conformance test harness so all drivers
-can verify SBWP v1.1 protocol compliance and full wire type coverage.
+Provide the protocol-contract test pillar used by every driver release.
+
+This harness proves SBWP v1.1 protocol compliance and wire-type coverage, but a
+driver release is not considered complete until the broader evidence set in
+`DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md` is also published.
 
 ## Scope
 
@@ -16,6 +19,14 @@ can verify SBWP v1.1 protocol compliance and full wire type coverage.
 - Type encoding/decoding for all wire types
 - Cancellation behavior
 - Metadata queries (sys.*)
+
+## Relationship To Release Readiness
+
+This document defines executable contract tests and normalized conformance
+output. It does not replace driver-specific compatibility, performance,
+packaging, or known-gap evidence. Released drivers must stage this harness
+output into the per-driver release evidence pack defined by
+`DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`.
 
 ## Harness Shape
 
@@ -130,3 +141,6 @@ Fixtures live under `docs/fixtures/` (e.g., `core_fixture.sql`,
 - Cross-driver closure summaries normalize raw manifest output plus SQLSTATE
   coverage through `docs/fixtures/driver_closure_substrate.json` and
   `scripts/driver_closure_substrate.py`
+- Released drivers must feed the normalized output into:
+  - `release/readiness/<driver-id>/<version>/CONTRACT_TEST_RESULTS.json`
+  - `release/readiness/<driver-id>/<version>/CONFORMANCE_REPORT.md`

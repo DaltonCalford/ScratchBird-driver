@@ -1,0 +1,25 @@
+lane,selected_benchmark,current_state,at_parity,partial_gap,full_gap,intentional_non_goal,better_than_benchmark
+cpp,libpqxx,full_parity,10,4,0,0,0
+cli,psql,partial_tooling,4,10,0,0,0
+dart,postgres (Dart),partial,2,12,0,0,0
+dbeaver,DBeaver PostgreSQL extension,partial_plugin,3,11,0,0,0
+dotnet,Npgsql,full_parity,10,4,0,0,0
+elixir,Postgrex,partial,7,7,0,0,0
+go,pgx,full_parity,10,4,0,0,0
+hibernate,Hibernate PostgreSQLDialect,partial_contract_only,3,10,1,0,0
+jdbc,pgjdbc,full_parity,10,4,0,0,0
+metabase,Metabase PostgreSQL driver,partial_adapter,3,11,0,0,0
+mojo,Composite (asyncpg + pgx + PostgresNIO),hybrid_native_gap,0,14,0,0,0
+node,node-postgres,full_parity,10,4,0,0,0
+odbc,Microsoft ODBC Driver for SQL Server,partial,8,6,0,0,0
+pascal,FireDAC,full_parity,10,4,0,0,0
+php,PDO_PGSQL,full_parity,10,4,0,0,0
+prisma,Prisma PostgreSQL connector,partial_contract_only,3,10,1,0,0
+python,psycopg3,full_parity,10,4,0,0,0
+r,RPostgres,partial,7,7,0,0,0
+ruby,ruby-pg,full_parity,10,4,0,0,0
+rust,tokio-postgres,full_parity,10,4,0,0,0
+sqlalchemy,SQLAlchemy PostgreSQL dialect,partial_adapter,3,11,0,0,0
+superset,Superset PostgreSQL engine spec,partial_adapter,3,11,0,0,0
+swift,PostgresNIO,partial,3,11,0,0,0
+typeorm,TypeORM PostgreSQL driver,partial_contract_only,3,10,1,0,0

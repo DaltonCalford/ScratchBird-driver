@@ -1,7 +1,19 @@
 # Dart Database API Specification (ScratchBird)
 
-Status: In development (post-0.1.0)
-Last Updated: 2026-02-18
+Status: Partial
+Last Updated: 2026-04-03
+
+## Implementation Status
+
+- Current lane verdict: partial against the lane-local JDBC/.NET-class baseline mapping.
+- Source of truth: `tracks/p3/drivers/dart/BASELINE_REQUIREMENT_MAPPING.md`
+- Outstanding baseline gaps:
+  - `TXN`: live server-side failure-path validation is still missing.
+  - `EXEC`: live pagination / `portalSuspended` and SBLR execution coverage is still missing.
+  - `META`: live restrictions, wildcard handling, and DDL-editor payload coverage is still missing.
+  - `TYPE`: live complex-type binary roundtrip coverage is still missing.
+  - `ERR`: live SQLSTATE/code propagation coverage is still missing.
+  - `RES`: live resilience cleanup and idle-validation coverage is still missing.
 
 ## Goal
 
@@ -87,9 +99,64 @@ Wrapper types:
 
 - Use `SCRATCHBIRD_TEST_DSN`.
 - Execute fixtures in `docs/fixtures/`.
+- Publish release evidence per `DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`.
 
 ## Deliverables
 
 - Pub package.
 - Flutter usage examples.
 - Integration tests gated by `SCRATCHBIRD_TEST_DSN`.
+- Release evidence pack with compatibility, performance, known-gap, and
+  packaging/cadence artifacts.
+
+<!-- dart-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `postgres (Dart)`
+- Current state: `partial`
+- Track root: `tracks/p3/drivers/dart`
+
+Competitive closure targets:
+
+- freeze async ergonomics, metadata, and codec expectations against postgres(Dart)
+- promote live metadata and failure-path validation from optional to required release evidence
+
+Remaining implementation or proof deltas:
+
+- TXN: live failure-path validation remains open
+- EXEC: live pagination, portalSuspended, and SBLR execution proof remains open
+- META: live restrictions, wildcard handling, and DDL-editor payload coverage remains open
+- TYPE: live complex-type binary roundtrip coverage remains open
+- ERR: live SQLSTATE/code propagation proof remains open
+- RES: live resilience cleanup and idle-validation proof remains open
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/dart/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/dart.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_TEST_DSN`
+- `SCRATCHBIRD_TEST_CANCEL_SQL`
+
+Build/bootstrap commands:
+
+- `cd tracks/p3/drivers/dart`
+- `dart pub get`
+
+Verification commands:
+
+- `dart test`
+
+<!-- dart-server-independent-closure:end -->

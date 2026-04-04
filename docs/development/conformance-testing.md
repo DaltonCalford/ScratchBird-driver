@@ -12,6 +12,10 @@ fixtures and a manifest.
 
 See [DRIVER_CONFORMANCE_TEST_HARNESS.md](../specifications/DRIVER_CONFORMANCE_TEST_HARNESS.md).
 
+Released lanes must also stage normalized output into the per-driver release
+evidence pack defined by
+[DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md](../specifications/DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md).
+
 ## Runtime Setup Helper
 
 Use the bundled runtime helper to start ScratchBird server/parser/listener and
@@ -58,3 +62,8 @@ python3 scripts/driver_closure_substrate.py matrix \
   --output-json /path/to/driver_matrix.json \
   --output-csv /path/to/driver_matrix.csv
 ```
+
+For release candidates, copy the normalized per-driver output into:
+
+- `release/readiness/<driver-id>/<version>/CONTRACT_TEST_RESULTS.json`
+- `release/readiness/<driver-id>/<version>/CONFORMANCE_REPORT.md`

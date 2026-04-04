@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.1">
+    <meta name="project" content="Tds v2.3.7">
+
+
+    <title>Overview — Tds v2.3.7</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-YJO4MOOW.css" />
+
+    <script defer src="dist/sidebar_items-AC02A82F.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-YU4BZFVS.js"></script>
+
+  <script async defer src="https://s.hexdocs.pm/js/script.js"></script><script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init({endpoint:"https://s.hexdocs.pm/api/event"})</script></head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+      <div>
+        <a href="readme.html" class="sidebar-projectName" translate="no">
+Tds
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v2.3.7
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of Tds</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>Tds - MSSQL Driver for Elixir</h1>
+
+
+
+      <a href="https://github.com/elixir-ecto/tds/blob/v2.3.7/README.md#L1" title="View Source" class="icon-action" rel="help nofollow">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+<p><a href="https://hex.pm/packages/tds"><img src="https://img.shields.io/hexpm/v/tds.svg" alt="Hex.pm"/></a>
+<img src="https://github.com/elixir-ecto/tds/workflows/Elixir%20TDS%20CI/badge.svg" alt="Elixir TDS CI"/></p><p>MSSQL / TDS Database driver for Elixir.</p><h3 id="note" class="section-heading"><a href="#note" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">NOTE:</span></h3><p>Since TDS version 2.0, <code class="inline">tds_ecto</code> package is deprecated, this version supports <code class="inline">ecto_sql</code> since version 3.3.4.</p><p>Please check out the issues for a more complete overview. This branch should not be considered stable or ready for production yet.</p><p>For stable versions always use <a href="https://hex.pm/packages/tds">hex.pm</a> as source for your mix.exs.</p><h2 id="usage" class="section-heading"><a href="#usage" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Usage</span></h2><p>Add <code class="inline">:tds</code> as a dependency in your <code class="inline">mix.exs</code> file.</p><pre><code class="makeup elixir" translate="no"><span class="kd">def</span><span class="w"> </span><span class="nf">deps</span><span class="w"> </span><span class="k" data-group-id="2793980221-1">do</span><span class="w">
+  </span><span class="p" data-group-id="2793980221-2">[</span><span class="w">
+    </span><span class="p" data-group-id="2793980221-3">{</span><span class="ss">:tds</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;~&gt; 2.3&quot;</span><span class="p" data-group-id="2793980221-3">}</span><span class="w">
+  </span><span class="p" data-group-id="2793980221-2">]</span><span class="w">
+</span><span class="k" data-group-id="2793980221-1">end</span></code></pre><p>As of TDS version <code class="inline">&gt;= 1.2</code>, tds can support windows codepages other than <code class="inline">windows-1252</code> (latin1).
+If you need such support you will need to include additional dependency <code class="inline">{:excoding, &quot;~&gt; 0.1&quot;}</code>
+and configure <code class="inline">:tds</code> app to use <code class="inline">Excoding</code> module like this:</p><pre><code class="makeup elixir" translate="no"><span class="kn">import</span><span class="w"> </span><span class="nc">Mix.Config</span><span class="w">
+
+</span><span class="n">config</span><span class="w"> </span><span class="ss">:tds</span><span class="p">,</span><span class="w"> </span><span class="ss">:text_encoder</span><span class="p">,</span><span class="w"> </span><span class="nc">Excoding</span></code></pre><p>When you are done, run <a href="https://hexdocs.pm/mix/Mix.Tasks.Deps.Get.html"><code class="inline">mix deps.get</code></a> in your shell to fetch and compile Tds.
+Start an interactive Elixir shell with <code class="inline">iex -S mix</code>.</p><pre><code class="makeup elixir" translate="no"><span class="gp unselectable">iex&gt; </span><span class="p" data-group-id="4841240418-1">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="n">pid</span><span class="p" data-group-id="4841240418-1">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Tds</span><span class="o">.</span><span class="n">start_link</span><span class="p" data-group-id="4841240418-2">(</span><span class="p" data-group-id="4841240418-3">[</span><span class="ss">hostname</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_user&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_password&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">database</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_db&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">port</span><span class="p">:</span><span class="w"> </span><span class="mi">4000</span><span class="p" data-group-id="4841240418-3">]</span><span class="p" data-group-id="4841240418-2">)</span><span class="w">
+</span><span class="p" data-group-id="4841240418-4">{</span><span class="ss">:ok</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="4841240418-5">#</span><span class="nc" data-group-id="4841240418-5">PID</span><span class="p" data-group-id="4841240418-5">&lt;</span><span class="mi">0</span><span class="o">.</span><span class="mi">69</span><span class="o">.</span><span class="mi">0</span><span class="p" data-group-id="4841240418-5">&gt;</span><span class="p" data-group-id="4841240418-4">}</span><span class="w">
+
+</span><span class="gp unselectable">iex&gt; </span><span class="nc">Tds</span><span class="o">.</span><span class="n">query!</span><span class="p" data-group-id="4841240418-6">(</span><span class="n">pid</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;SELECT &#39;Some Awesome Text&#39; AS MyColumn&quot;</span><span class="p">,</span><span class="w"> </span><span class="p" data-group-id="4841240418-7">[</span><span class="p" data-group-id="4841240418-7">]</span><span class="p" data-group-id="4841240418-6">)</span><span class="w">
+</span><span class="p" data-group-id="4841240418-8">%</span><span class="nc" data-group-id="4841240418-8">Tds.Result</span><span class="p" data-group-id="4841240418-8">{</span><span class="ss">columns</span><span class="p">:</span><span class="w"> </span><span class="p" data-group-id="4841240418-9">[</span><span class="s">&quot;MyColumn&quot;</span><span class="p" data-group-id="4841240418-9">]</span><span class="p">,</span><span class="w"> </span><span class="ss">rows</span><span class="p">:</span><span class="w"> </span><span class="p" data-group-id="4841240418-10">[</span><span class="p" data-group-id="4841240418-11">{</span><span class="s">&quot;Some Awesome Text&quot;</span><span class="p" data-group-id="4841240418-11">}</span><span class="p" data-group-id="4841240418-10">]</span><span class="p">,</span><span class="w"> </span><span class="ss">num_rows</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p" data-group-id="4841240418-8">}</span><span class="err">}</span><span class="w">
+
+</span><span class="gp unselectable">iex&gt; </span><span class="nc">Tds</span><span class="o">.</span><span class="n">query!</span><span class="p" data-group-id="4841240418-12">(</span><span class="n">pid</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;INSERT INTO MyTable (MyColumn) VALUES (@my_value)&quot;</span><span class="p">,</span><span class="w">
+</span><span class="gp unselectable">...&gt; </span><span class="p" data-group-id="4841240418-13">[</span><span class="p" data-group-id="4841240418-14">%</span><span class="nc" data-group-id="4841240418-14">Tds.Parameter</span><span class="p" data-group-id="4841240418-14">{</span><span class="ss">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;@my_value&quot;</span><span class="p">,</span><span class="w"> </span><span class="ss">value</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;My Actual Value&quot;</span><span class="p" data-group-id="4841240418-14">}</span><span class="p" data-group-id="4841240418-13">]</span><span class="p" data-group-id="4841240418-12">)</span><span class="w">
+</span><span class="p" data-group-id="4841240418-15">%</span><span class="nc" data-group-id="4841240418-15">Tds.Result</span><span class="p" data-group-id="4841240418-15">{</span><span class="ss">columns</span><span class="p">:</span><span class="w"> </span><span class="no">nil</span><span class="p">,</span><span class="w"> </span><span class="ss">rows</span><span class="p">:</span><span class="w"> </span><span class="no">nil</span><span class="p">,</span><span class="w"> </span><span class="ss">num_rows</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p" data-group-id="4841240418-15">}</span><span class="err">}</span></code></pre><h2 id="features" class="section-heading"><a href="#features" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Features</span></h2><ul><li>Automatic decoding and encoding of Elixir values to and from MSSQL's binary format</li><li>Support of TDS Versions 7.3, 7.4</li></ul><h2 id="configuration" class="section-heading"><a href="#configuration" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Configuration</span></h2><p>Example configuration</p><pre><code class="makeup elixir" translate="no"><span class="kn">import</span><span class="w"> </span><span class="nc">Mix.Config</span><span class="w">
+
+</span><span class="n">config</span><span class="w"> </span><span class="ss">:your_app</span><span class="p">,</span><span class="w"> </span><span class="ss">:tds_conn</span><span class="p">,</span><span class="w">
+  </span><span class="ss">hostname</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_user&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_password&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">database</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_db&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">port</span><span class="p">:</span><span class="w"> </span><span class="mi">1433</span></code></pre><p>Then using <code class="inline">Application.get_env(:your_app, :tds_conn)</code> use this as first parameter in <a href="Tds.html#start_link/1"><code class="inline">Tds.start_link/1</code></a> function.</p><p>There is additional parameter that can be used in configuration and
+can improve query execution in SQL Server. If you find out that
+your queries suffer from &quot;density estimation&quot; as described <a rel="nofollow" href="https://www.brentozar.com/archive/2018/03/sp_prepare-isnt-good-sp_executesql-performance/">here</a></p><p>You can try switching how tds executes queries as below:</p><pre><code class="makeup elixir" translate="no"><span class="kn">import</span><span class="w"> </span><span class="nc">Mix.Config</span><span class="w">
+
+</span><span class="n">config</span><span class="w"> </span><span class="ss">:your_app</span><span class="p">,</span><span class="w"> </span><span class="ss">:tds_conn</span><span class="p">,</span><span class="w">
+  </span><span class="ss">hostname</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_user&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_password&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">database</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_db&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">port</span><span class="p">:</span><span class="w"> </span><span class="mi">1433</span><span class="p">,</span><span class="w">
+  </span><span class="ss">execution_mode</span><span class="p">:</span><span class="w"> </span><span class="ss">:executesql</span></code></pre><p>This will skip calling <code class="inline">sp_prepare</code> and query will be executed using <code class="inline">sp_executesql</code> instead.
+Please note that only one execution mode can be set at a time, and SQL Server will probably
+use single execution plan (since it is NOT estimated by checking data density!).</p><h2 id="ssl-tls-support" class="section-heading"><a href="#ssl-tls-support" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">SSL / TLS support</span></h2><p>tds <code class="inline">&gt;= 2.3.0</code> supports encrypted connections to the SQL Server.</p><p>The following encryption behaviours are currently supported:</p><ul><li><code class="inline">:required</code>: Requires the server to use TLS</li><li><code class="inline">:on</code>: Same as required</li><li><code class="inline">:not_supported</code>: Indicates to the server that encryption is not supported. If server requires encryption, the connection will not be established.</li><li><code class="inline">:ssl_opts</code>: Allow pass options for ssl connection (this options are the same as ssl erlang standart library).</li></ul><p>Currently not supported:</p><ul><li><code class="inline">:off</code>: This setting allows the server to upgrade the connection (if server encryption is <code class="inline">:on</code> or <code class="inline">:required</code>) and only encrypts the LOGIN packet when the server has encryption set to <code class="inline">:off</code>.</li><li><code class="inline">:client_cert</code>: This will make the server check the client cerfiticate.</li></ul><p>Setting <code class="inline">ssl: true</code> or <code class="inline">ssl: false</code> is also allowed. In that case <code class="inline">true</code> is mapped to <code class="inline">:required</code> and <code class="inline">false</code> to <code class="inline">:not_supported</code>.</p><pre><code class="makeup elixir" translate="no"><span class="n">config</span><span class="w"> </span><span class="ss">:your_app</span><span class="p">,</span><span class="w"> </span><span class="ss">:tds_conn</span><span class="p">,</span><span class="w">
+  </span><span class="ss">hostname</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;localhost&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_user&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">password</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_password&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">database</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;test_db&quot;</span><span class="p">,</span><span class="w">
+  </span><span class="ss">ssl</span><span class="p">:</span><span class="w"> </span><span class="ss">:required</span><span class="p">,</span><span class="w">
+  </span><span class="ss">port</span><span class="p">:</span><span class="w"> </span><span class="mi">1433</span><span class="p">,</span><span class="w">
+  </span><span class="ss">execution_mode</span><span class="p">:</span><span class="w"> </span><span class="ss">:executesql</span><span class="w">
+</span></code></pre><h2 id="connecting-to-sql-server-instances" class="section-heading"><a href="#connecting-to-sql-server-instances" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Connecting to SQL Server Instances</span></h2><p>Tds supports SQL Server instances by passing <code class="inline">instance: &quot;instancename&quot;</code> to the connection options.
+Since v1.0.16, additional connection parameters are:</p><ul><li><code class="inline">:set_language</code> - check stored procedure output <code class="inline">exec sp_helplanguage</code> name column value should be used here</li><li><code class="inline">:set_datefirst</code> - number in range <code class="inline">1..7</code></li><li><p><code class="inline">:set_dateformat</code> - atom, one of <code class="inline">:mdy | :dmy | :ymd | :ydm | :myd | :dym</code></p></li><li><p><code class="inline">:set_deadlock_priority</code> - atom, one of <code class="inline">:low | :high | :normal | -10..10</code></p></li><li><code class="inline">:set_lock_timeout</code> - number in milliseconds &gt; 0</li><li><p><code class="inline">:set_remote_proc_transactions</code> - atom, one of <code class="inline">:on | :off</code></p></li><li><p><code class="inline">:set_implicit_transactions</code> - atom, one of <code class="inline">:on | :off</code></p></li><li><p><code class="inline">:set_transaction_isolation_level</code> - atom, one of <code class="inline">:read_uncommitted | :read_committed | :repeatable_read | :snapshot | :serializable</code></p></li><li><p><code class="inline">:set_allow_snapshot_isolation</code> - atom, one of <code class="inline">:on | :off</code></p></li><li><p><code class="inline">:set_cursor_close_on_commit</code> - atom, one of <code class="inline">:on | :off</code></p></li><li><p><code class="inline">:set_read_committed_snapshot</code> - atom, one of <code class="inline">:on | :off</code></p></li></ul><p>Set this option to enable snapshot isolation on the database level.
+Requires connecting with a user with appropriate rights.
+More info <a rel="nofollow" href="https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/sql/snapshot-isolation-in-sql-server">here</a>.</p><h2 id="federation-authentication" class="section-heading"><a href="#federation-authentication" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Federation Authentication</span></h2><p>This Authentication mechanism is not supported.
+This functionality requires specific environment to be developed.</p><h2 id="data-representation" class="section-heading"><a href="#data-representation" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Data representation</span></h2><table><thead><tr><th style="text-align: left;">TDS</th><th style="text-align: left;">Elixir</th></tr></thead><tbody><tr><td style="text-align: left;">NULL</td><td style="text-align: left;">nil</td></tr><tr><td style="text-align: left;">bool</td><td style="text-align: left;">true / false</td></tr><tr><td style="text-align: left;">char</td><td style="text-align: left;">&quot;é&quot;</td></tr><tr><td style="text-align: left;">int</td><td style="text-align: left;">42</td></tr><tr><td style="text-align: left;">float</td><td style="text-align: left;">42.0</td></tr><tr><td style="text-align: left;">text</td><td style="text-align: left;">&quot;text&quot;</td></tr><tr><td style="text-align: left;">binary</td><td style="text-align: left;">&lt;&lt;42&gt;&gt;</td></tr><tr><td style="text-align: left;">numeric</td><td style="text-align: left;">#Decimal&lt;42.0&gt;</td></tr><tr><td style="text-align: left;">date</td><td style="text-align: left;">{2013, 10, 12} or %Date{}</td></tr><tr><td style="text-align: left;">time</td><td style="text-align: left;">{0, 37, 14} or {0, 37, 14, 123456} or %Time{}</td></tr><tr><td style="text-align: left;">smalldatetime</td><td style="text-align: left;">{{2013, 10, 12}, {0, 37, 14}} or {{2013, 10, 12}, {0, 37, 14, 123456}}</td></tr><tr><td style="text-align: left;">datetime</td><td style="text-align: left;">{{2013, 10, 12}, {0, 37, 14}} or {{2013, 10, 12}, {0, 37, 14, 123456}} or %NaiveDateTime{}</td></tr><tr><td style="text-align: left;">datetime2</td><td style="text-align: left;">{{2013, 10, 12}, {0, 37, 14}} or {{2013, 10, 12}, {0, 37, 14, 123456}} or %NaiveDateTime{}</td></tr><tr><td style="text-align: left;">datetimeoffset(n)</td><td style="text-align: left;">{{2013, 10, 12}, {0, 37, 14}} or {{2013, 10, 12}, {0, 37, 14, 123456}} or %DateTime{}</td></tr><tr><td style="text-align: left;">uuid</td><td style="text-align: left;">&lt;&lt;160,238,188,153,156,11,78,248,187,109,107,185,189,56,10,17&gt;&gt;</td></tr></tbody></table><p>Currently unsupported: <a rel="nofollow" href="https://docs.microsoft.com/en-us/sql/relational-databases/clr-integration-database-objects-user-defined-types/working-with-user-defined-types-in-sql-server">User-Defined Types</a>, XML</p><h3 id="dates-and-times" class="section-heading"><a href="#dates-and-times" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Dates and Times</span></h3><p>Tds can work with dates and times in either a tuple format or as Elixir calendar types. Calendar types can be enabled in the config with <code class="inline">config :tds, opts: [use_elixir_calendar_types: true]</code>.</p><p><strong>Tuple forms:</strong></p><ul><li>Date: <code class="inline">{yr, mth, day}</code></li><li>Time: <code class="inline">{hr, min, sec}</code> or <code class="inline">{hr, min, sec, fractional_seconds}</code></li><li>DateTime: <code class="inline">{date, time}</code></li><li>DateTimeOffset: <code class="inline">{utc_date, utc_time, offset_mins}</code></li></ul><p>In SQL Server, the <code class="inline">fractional_seconds</code> of a <code class="inline">time</code>, <code class="inline">datetime2</code> or <code class="inline">datetimeoffset(n)</code> column can have a precision of 0-7, where the <code class="inline">microsecond</code> field of a <code class="inline">%Time{}</code> or <code class="inline">%DateTime{}</code> struct can have a precision of 0-6.</p><p>Note that the DateTimeOffset tuple expects the date and time in UTC and the offset in minutes. For example, <code class="inline">{{2020, 4, 5}, {5, 30, 59}, 600}</code> is equal to <code class="inline">'2020-04-05 15:30:59+10:00'</code>.</p><h3 id="uuids" class="section-heading"><a href="#uuids" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">UUIDs</span></h3><p><a rel="nofollow" href="https://dba.stackexchange.com/a/121878">MSSQL stores UUIDs in mixed-endian
+format</a>, and these mixed-endian UUIDs
+are returned in <a href="https://hexdocs.pm/tds/Tds.Result.html">Tds.Result</a>.</p><p>To convert a mixed-endian UUID binary to a big-endian string, use
+<a href="https://hexdocs.pm/tds/Tds.Types.UUID.html#load/1">Tds.Types.UUID.load/1</a></p><p>To convert a big-endian UUID string to a mixed-endian binary, use
+<a href="https://hexdocs.pm/tds/Tds.Types.UUID.html#dump/1">Tds.Types.UUID.dump/1</a></p><h2 id="contributing" class="section-heading"><a href="#contributing" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Contributing</span></h2><p>Clone and compile Tds with:</p><pre><code class="makeup bash" translate="no"><span class="">git clone https://github.com/elixir-ecto/tds.git
+</span><span class="">cd tds
+</span><span class="">mix deps.get
+</span></code></pre><p>You can test the library with <a href="https://hexdocs.pm/mix/Mix.Tasks.Test.html"><code class="inline">mix test</code></a>. Use <a href="https://hexdocs.pm/credo/1.7.13/Mix.Tasks.Credo.html"><code class="inline">mix credo</code></a> for linting and
+<code class="inline">mix dialyzer</code> for static code analysis. Dialyzer will take a while when you
+use it for the first time.</p><h3 id="development-sql-server-setup" class="section-heading"><a href="#development-sql-server-setup" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Development SQL Server Setup</span></h3><p>The tests require an SQL Server database to be available on localhost.
+If you are not using Windows OS you can start sql server instance using Docker.
+Official SQL Server Docker image can be found <a rel="nofollow" href="https://hub.docker.com/r/microsoft/mssql-server-linux">here</a>.</p><p>If you do not have specific requirements on how you would like to start sql server
+in docker, you can use script for this repo.</p><pre><code class="makeup bash" translate="no"><span class="gp unselectable">$ </span><span class="">docker compose up -d --profile=&lt;check_profile_in_compose&gt;
+</span></code></pre><p>👉🏻 OR  you can let mix task to detect platform you are using and chose best option for you.</p><pre><code class="makeup elixir" translate="no"><span class="n">mix</span><span class="w"> </span><span class="n">docker</span><span class="o">.</span><span class="n">compose</span><span class="w"> </span><span class="n">up</span></code></pre><p>you can see more details about options for <a href="Mix.Tasks.Docker.Compose.html"><code class="inline">mix docker.compose</code></a> taks by running help <a href="Mix.Tasks.Docker.Compose.html"><code class="inline">mix help docker.compose</code></a></p><p>it will do but in some cases you may want to use <code class="inline">mix docker.compose up</code> so it detects for you which platform you are using, so it will use appropriate image.</p><p>If you prefer to install SQL Server directly on your computer, you can find
+installation instructions here:</p><ul><li><a rel="nofollow" href="https://docs.microsoft.com/en-us/sql/database-engine/install-windows/install-sql-server-from-the-installation-wizard-setup">Windows</a></li><li><a rel="nofollow" href="https://docs.microsoft.com/en-us/sql/linux/sql-server-linux-setup">Linux</a></li></ul><p>Make sure your SQL Server accepts the credentials defined in <code class="inline">test/test_helper.exs</code>.</p><p>You also will need to have the <em>sqlcmd</em> command line tools installed. Setup
+instructions can be found here:</p><ul><li><a rel="nofollow" href="https://docs.microsoft.com/en-us/sql/linux/sql-server-linux-setup-tools">Linux</a></li><li><a rel="nofollow" href="https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/install-microsoft-odbc-driver-sql-server-macos">macOS</a></li></ul><h2 id="special-thanks" class="section-heading"><a href="#special-thanks" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Special Thanks</span></h2><p>Thanks to <a rel="nofollow" href="https://github.com/ericmj">ericmj</a>, this driver takes a lot of inspiration from postgrex.</p><p>Also thanks to everyone in the Elixir Google group and on the Elixir IRC Channel.</p><h2 id="copyright-and-license" class="section-heading"><a href="#copyright-and-license" class="hover-link"><i class="ri-link-m" aria-hidden="true"></i></a><span class="text">Copyright and License</span></h2><p>Copyright (c) 2015 LiveHelpNow</p><p>Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at <a rel="nofollow" href="https://www.apache.org/licenses/LICENSE-2.0">https://www.apache.org/licenses/LICENSE-2.0</a></p><p>Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.</p>
+
+</div>
+
+<div class="bottom-actions" id="bottom-actions">
+  <div class="bottom-actions-item">
+
+      <a href="license.html" class="bottom-actions-button" rel="prev">
+        <span class="subheader">
+          ← Previous Page
+        </span>
+        <span class="title">
+License
+        </span>
+      </a>
+
+  </div>
+  <div class="bottom-actions-item">
+
+  </div>
+</div>
+    <footer class="footer">
+
+        <p>
+
+            <span class="line">
+              <a href="https://hex.pm/packages/tds/2.3.7">Hex Package</a>
+
+              <a href="https://preview.hex.pm/preview/tds/2.3.7">Hex Preview</a>
+
+                (<a href="https://preview.hex.pm/preview/tds/2.3.7/show/README.md">current file</a>)
+
+            </span>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener nofollow" translate="no">ExDoc</a> (v0.40.1) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

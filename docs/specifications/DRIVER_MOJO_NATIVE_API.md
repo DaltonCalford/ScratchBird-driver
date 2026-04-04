@@ -1,7 +1,19 @@
 # Mojo Native Driver Specification (ScratchBird)
 
-Status: In development (post-0.1.0)
-Last Updated: 2026-02-18
+Status: Hybrid surface-complete / native transport gap outstanding
+Last Updated: 2026-04-03
+
+## Implementation Status
+
+- Current lane verdict: baseline surface is marked implemented in `tracks/p3/drivers/mojo/BASELINE_REQUIREMENT_MAPPING.md`, but the lane is not yet fully closed as a native driver.
+- Source of truth:
+  - `tracks/p3/drivers/mojo/BASELINE_REQUIREMENT_MAPPING.md`
+  - `tracks/p3/drivers/mojo/README.md`
+  - `docs/planning/driver-checklists/mojo.md`
+- Outstanding architectural gap:
+  - replace the Python bridge with a native SBWP client / native Mojo socket and TLS transport
+- Important note:
+  - this lane should not be described as fully complete while `tracks/p3/drivers/mojo/README.md` still states that native Mojo transport/auth remains future work and the checklist item to replace the Python bridge remains open.
 
 ## Goal
 
@@ -87,8 +99,58 @@ Wrapper types:
 
 - Use `SCRATCHBIRD_TEST_DSN` when available.
 - Execute shared fixtures in `docs/fixtures/`.
+- Publish release evidence per `DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md`.
 
 ## Deliverables
 
 - `scratchbird_mojo` package with minimal examples.
 - Integration tests gated by `SCRATCHBIRD_TEST_DSN`.
+- Release evidence pack with compatibility, performance, known-gap, and
+  packaging/cadence artifacts.
+
+<!-- mojo-server-independent-closure:start -->
+
+## Competitive Closure Status
+
+- Selected benchmark: `Composite (asyncpg + pgx + PostgresNIO)`
+- Current state: `hybrid_native_gap`
+- Track root: `tracks/p3/drivers/mojo`
+
+Competitive closure targets:
+
+- promote native transport cutover from checklist work to a hard competitive-closure requirement
+- require composite benchmark evidence after native transport lands
+
+Remaining implementation or proof deltas:
+
+- architectural gap: replace the Python bridge with a native SBWP client / native Mojo transport
+- full live evidence remains blocked until native transport is implemented and a server is available
+
+## Release Evidence And Later Verification
+
+Release evidence path:
+
+- `release/readiness/mojo/<version>/`
+
+Shared evidence templates:
+
+- `docs/development/release-evidence/README.md`
+
+Later server-verification packet:
+
+- `docs/development/server-verification/mojo.md`
+
+Required environment inputs:
+
+- `SCRATCHBIRD_MOJO_URL`
+- `MOJO_ENABLED`
+
+Build/bootstrap commands:
+
+- `cd tracks/p3/drivers/mojo/tests`
+
+Verification commands:
+
+- `mojo integration.mojo`
+
+<!-- mojo-server-independent-closure:end -->

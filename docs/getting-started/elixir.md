@@ -1,8 +1,16 @@
 # Elixir (Ecto) Driver
 
-## Status
+<!-- lane-status:start -->
+## Current Status
 
-SBWP v1.1 core implementation with TLS-required/binary-only guards, SQLSTATE class mapping, metadata helper queries, and env-gated integration coverage.
+- Lane kind: `driver`
+- Current state: `partial`
+- Best-in-class benchmark: `Postgrex`
+- Authoritative lane spec: `docs/specifications/DRIVER_ELIXIR_ECTO_ADAPTER.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/elixir.md`
+- Remaining gap summary: Public portal-resume helpers, deterministic stream/paging proof, and transparent in-place reconnect remain incomplete.
+<!-- lane-status:end -->
 
 ## Install
 

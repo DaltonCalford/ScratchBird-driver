@@ -1,0 +1,6 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+jdbc,pgjdbc docs,selected_docs,https://jdbc.postgresql.org/documentation/,docs/reference/best_in_class_driver_research_2026-04-03/jdbc/downloads/01_pgjdbc_docs.html,2026-04-03,downloaded,,text/html
+jdbc,pgjdbc repo,selected_repo,https://github.com/pgjdbc/pgjdbc,docs/reference/best_in_class_driver_research_2026-04-03/jdbc/downloads/02_pgjdbc_repo.html,2026-04-03,downloaded,refs/heads/master 99f6c0ebebe17a4788602e39d65010cbab0ca658,text/html
+jdbc,Connector/J repo,candidate_repo,https://github.com/mysql/mysql-connector-j,docs/reference/best_in_class_driver_research_2026-04-03/jdbc/downloads/03_Connector_J_repo.html,2026-04-03,downloaded,refs/heads/release/9.x fdef61f4af21fa9e0ac334ff0664ec754c164cc0,text/html
+jdbc,Microsoft JDBC docs,candidate_docs,https://learn.microsoft.com/en-us/sql/connect/jdbc/overview-of-the-jdbc-driver?view=sql-server-ver17,docs/reference/best_in_class_driver_research_2026-04-03/jdbc/downloads/04_Microsoft_JDBC_docs.html,2026-04-03,downloaded,,text/html
+jdbc,mssql-jdbc repo,candidate_repo,https://github.com/microsoft/mssql-jdbc,docs/reference/best_in_class_driver_research_2026-04-03/jdbc/downloads/05_mssql-jdbc_repo.html,2026-04-03,downloaded,refs/heads/main e8d39f3907dd80c36732ade6730bda3b6de2e1ab,text/html

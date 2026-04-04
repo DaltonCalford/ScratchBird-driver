@@ -1,5 +1,17 @@
 # Python Driver
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `baseline_complete`
+- Best-in-class benchmark: `psycopg3`
+- Authoritative lane spec: `docs/specifications/drivers/language/python/SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/python.md`
+- Remaining gap summary: No lane-local JDBC/.NET-class baseline gaps remain. Remaining work is live proof collection and release evidence staging.
+<!-- lane-status:end -->
+
 ## Install
 
 For repo-local development:
@@ -56,6 +68,18 @@ parameters use `:name` placeholders in SQL.
 ```python
 cur.execute("SELECT :v::INTEGER", {"v": 42})
 ```
+
+## Cursor Re-execution
+
+Reusing the same cursor for a new `execute()` call discards any unread rows and
+pending protocol trailers from the previous statement. Fetch the remaining rows
+or advance with `nextset()` before re-executing if the earlier results still
+matter.
+
+Statement errors are also synchronized before control returns to the caller.
+After catching a `ProgrammingError` or other DB-API exception, the same
+connection can issue `rollback()` and continue with a new `execute()` without
+manual reconnect just to clear protocol state.
 
 ## Tests
 

@@ -1,238 +1,115 @@
 # ScratchBird Database Drivers
 
-Official database drivers for the [ScratchBird Database Engine](https://github.com/DaltonCalford/ScratchBird).
+Official drivers, tooling, and application adapters for the ScratchBird
+Database Engine.
 
----
+## Current State
 
-## Project Status
+This repository is in the Beta 1 driver program. The current audited state is:
 
-ScratchBird-driver is in **Initial Early Beta (`1.0`)**.
+- `10` application-driver lanes are `baseline_complete` against the repo's
+  JDBC/.NET-class baseline:
+  `cpp`, `dotnet`, `go`, `jdbc`, `node`, `pascal`, `php`, `python`, `ruby`,
+  `rust`
+- `5` application-driver lanes are still `partial`:
+  `dart`, `elixir`, `odbc`, `r`, `swift`
+- `1` driver lane is functionally strong but still has a native-architecture
+  gap:
+  `mojo`
+- `1` tooling lane remains partial:
+  `cli`
+- `7` BI/application adapters are still partial or contract-first:
+  `dbeaver`, `hibernate`, `metabase`, `prisma`, `sqlalchemy`, `superset`,
+  `typeorm`
 
-All released drivers implement the **ScratchBird Wire Protocol (SBWP v1.1)**
-baseline handshake and core execution path, but closure status still varies by
-lane.
+Authoritative status sources:
 
-Current PH5 closure progress:
+- [Driver implementation audit](docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md)
+- [Lane authority index](docs/specifications/DRIVER_LANE_AUTHORITY_INDEX.md)
+- [Server-blocked remaining work](docs/audit/DRIVER_SERVER_BLOCKED_REMAINING_WORK.md)
 
-- `NCW-050..056` are complete.
-- `NCW-054D` closed the downstream JDBC consumer uplift for Metabase and
-  Superset, including current-schema/default-schema alignment, downstream
-  adapter option surfacing, and finalized metadata/index reflection behavior.
-- `NCW-055` closed the beta lanes for R, Dart, and Swift, including live
-  manager-proxy parity, always-in-transaction behavior, full-surface metadata
-  helpers, and the remaining cancel/resilience gaps on their supported
-  surfaces.
-- `NCW-056` closed the specialty lanes for Mojo and Elixir on their claimed
-  PH5 surfaces: Mojo now validates live direct and manager-proxy parity with
-  corrected wire-transport transaction control, prepared execution, stream
-  recovery, and expanded schema-parent payload shaping; Elixir now passes its
-  lane suite against the shared runtime stack.
-- Required closure slices are complete for JDBC, ODBC, Go, Node, Python, PHP,
-  Rust, Ruby, Pascal, .NET, C/C++, R, Dart, Swift, Mojo, and Elixir.
-- PH5 driver implementation and promotion-regeneration work is complete through
-  `NCW-057`; subsequent remaining work is in later shared readiness/release
-  phases, not open driver-lane closure tickets.
+## Where To Start
 
-This README reflects the current implementation-closure state, not the final
-cross-driver promotion decision. PH5 no longer treats convenience, downstream
-consumer, or other previously residual driver surfaces as optional.
+- [Getting started](docs/getting-started/README.md)
+- [API reference](docs/api-reference/README.md)
+- [Application adapter reference](docs/application-reference/README.md)
+- [Specifications](docs/specifications/README.md)
+- [Audit reports](docs/audit/README.md)
+- [Development and verification docs](docs/development/README.md)
 
-Recovery note:
+## Driver Lanes
 
-- ScratchBird drivers follow the engine MGA/state-recovery model.
-- Driver reconnect logic restores transport/session state; it does not perform WAL replay or resurrect lost in-flight transactions.
-- Auditor entry point: `docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`
+| Lane | Current State | Benchmark | Public Docs |
+| --- | --- | --- | --- |
+| `cpp` | `baseline_complete` | `libpqxx` | [guide](docs/getting-started/cpp.md) / [api](docs/api-reference/cpp.md) |
+| `dart` | `partial` | `postgres (Dart)` | [guide](docs/getting-started/dart.md) / [api](docs/api-reference/dart.md) |
+| `dotnet` | `baseline_complete` | `Npgsql` | [guide](docs/getting-started/dotnet.md) / [api](docs/api-reference/dotnet.md) |
+| `elixir` | `partial` | `Postgrex` | [guide](docs/getting-started/elixir.md) / [api](docs/api-reference/elixir.md) |
+| `go` | `baseline_complete` | `pgx` | [guide](docs/getting-started/go.md) / [api](docs/api-reference/go.md) |
+| `jdbc` | `baseline_complete` | `pgjdbc` | [guide](docs/getting-started/jdbc.md) / [api](docs/api-reference/jdbc.md) |
+| `mojo` | `hybrid_native_gap` | `Composite (asyncpg + pgx + PostgresNIO)` | [guide](docs/getting-started/mojo.md) / [api](docs/api-reference/mojo.md) |
+| `node` | `baseline_complete` | `node-postgres` | [guide](docs/getting-started/node.md) / [api](docs/api-reference/node.md) |
+| `odbc` | `partial` | `Microsoft ODBC Driver for SQL Server` | [guide](docs/getting-started/odbc.md) / [api](docs/api-reference/odbc.md) |
+| `pascal` | `baseline_complete` | `FireDAC` | [guide](docs/getting-started/pascal.md) / [api](docs/api-reference/pascal.md) |
+| `php` | `baseline_complete` | `PDO_PGSQL` | [guide](docs/getting-started/php.md) / [api](docs/api-reference/php.md) |
+| `python` | `baseline_complete` | `psycopg3` | [guide](docs/getting-started/python.md) / [api](docs/api-reference/python.md) |
+| `r` | `partial` | `RPostgres` | [guide](docs/getting-started/r.md) / [api](docs/api-reference/r.md) |
+| `ruby` | `baseline_complete` | `ruby-pg` | [guide](docs/getting-started/ruby.md) / [api](docs/api-reference/ruby.md) |
+| `rust` | `baseline_complete` | `tokio-postgres` | [guide](docs/getting-started/rust.md) / [api](docs/api-reference/rust.md) |
+| `swift` | `partial` | `PostgresNIO` | [guide](docs/getting-started/swift.md) / [api](docs/api-reference/swift.md) |
 
-**Parent Project:** [ScratchBird](https://github.com/DaltonCalford/ScratchBird)
-**Release Targets:** `docs/planning/RELEASE_TARGETS.md`
+## Tooling And Adapters
 
----
+| Lane | Current State | Benchmark | Public Docs |
+| --- | --- | --- | --- |
+| `cli` | `tooling_partial` | `psql` | [guide](docs/getting-started/cli.md) / [api](docs/api-reference/cli.md) |
+| `dbeaver` | `partial_plugin` | `DBeaver PostgreSQL extension` | [guide](docs/getting-started/dbeaver.md) / [api](docs/api-reference/dbeaver.md) |
+| `hibernate` | `partial_contract_only` | `Hibernate PostgreSQLDialect` | [guide](docs/getting-started/hibernate.md) / [api](docs/api-reference/hibernate.md) |
+| `metabase` | `partial_adapter` | `Metabase PostgreSQL driver` | [guide](docs/getting-started/metabase.md) / [api](docs/api-reference/metabase.md) |
+| `prisma` | `partial_contract_only` | `Prisma PostgreSQL connector` | [guide](docs/getting-started/prisma.md) / [api](docs/api-reference/prisma.md) |
+| `sqlalchemy` | `partial_adapter` | `SQLAlchemy PostgreSQL dialect` | [guide](docs/getting-started/sqlalchemy.md) / [api](docs/api-reference/sqlalchemy.md) |
+| `superset` | `partial_adapter` | `Superset PostgreSQL engine spec` | [guide](docs/getting-started/superset.md) / [api](docs/api-reference/superset.md) |
+| `typeorm` | `partial_contract_only` | `TypeORM PostgreSQL driver` | [guide](docs/getting-started/typeorm.md) / [api](docs/api-reference/typeorm.md) |
 
-## Capability Model
+## Release Evidence And Verification
 
-Each driver is evaluated across the following capability groups:
+Every lane is expected to ship with a deterministic evidence pack and a later
+live verification packet.
 
-- **CONN** – Connection lifecycle, TLS enforcement, auth, manager-proxy
-- **TXN** – Transaction semantics (autocommit mapping, savepoints)
-- **EXEC** – Query execution (prepare/bind/execute, streaming, multi-result)
-- **META** – Metadata surfaces (sys.* alignment, schema helpers)
-- **TYPE** – Type encode/decode coverage
-- **ERR** – Error mapping and SQLSTATE alignment
-- **RES** – Resource lifecycle (cursors, statements, pooling, cleanup)
+- Shared evidence contract:
+  [DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md](docs/specifications/DRIVER_RELEASE_READINESS_EVIDENCE_CONTRACT.md)
+- Evidence templates:
+  [docs/development/release-evidence/README.md](docs/development/release-evidence/README.md)
+- Later live verification packets:
+  [docs/development/server-verification/README.md](docs/development/server-verification/README.md)
 
-Legend:
+## Repository Layout
 
-- ✅ Required PH5 closure slice complete on the currently supported surface
-- 🟡 Partial (usable but still has active closure work)
-- 🔴 Gap (explicitly incomplete or scaffold-only)
-
----
-
-# Driver Capability Matrix (Work Snapshot: 2026-03-12, after `NCW-056`)
-
-This matrix reflects the current PH5 closure state after `NCW-056`. A `✅`
-entry means the required closure slice is complete for the lane's actively
-supported surface. `NCW-054A..054D` absorbed the primary alpha,
-secondary alpha, C/C++, and downstream JDBC consumer residuals, and
-`NCW-055` and `NCW-056` closed the remaining beta and specialty full-surface
-parity lanes. PH5 now hands off to the shared promotion/regeneration pass.
-
-## Pre-Release Drivers
-
-| Driver          | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                        |
-| --------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Java / JDBC** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Baseline reference lane; `NCW-054` closed schema-resolution, metadata anchoring, always-in-transaction, and pool-reset ambiguity, and `NCW-054D` aligned the downstream Metabase/Superset consumer surfaces on top of that JDBC baseline. |
-| **ODBC 3.8**    | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green on the packaged runtime/catalog/type surface; broader promotion regeneration remains in `NCW-057`.                                                              |
-| **.NET**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes deterministic `DataReader.NextResult()` multi-result traversal on the supported protocol surface.                                     |
-| **Node.js**     | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed the former residuals for routine metadata, metadata convenience wrappers, wire-level autocommit handling, and `users.public` schema fallback alignment.                            |
-| **Python**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed executable procedure/function/routine metadata plus `users.public` session-schema fallback alignment on the live wrapper surface.                                                 |
-| **Go**          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green across the primary live select/prepare/type/cancel and metadata helper surface.                                                                                  |
-| **Rust**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes deterministic callable, batch-helper, and generated-key helper parity on the supported runtime-gate surface.                         |
-| **Ruby**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes cancel-path sequence targeting and interruption behavior with explicit deterministic tests.                                           |
-| **PHP**         | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054A` also closed schema-aware routine metadata, first-class metadata convenience wrappers, and session-schema convenience handling aligned to `users.public`.                                       |
-| **Pascal**      | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054B` also closes routine-wrapper, generated-key, and stream-control residuals on the supported live and source-built surface.                         |
-| **Mojo**        | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-056` is closed on the claimed PH5 surface: the Mojo lane now validates live direct and manager-proxy parity through the supported listener-mediated Python wire bridge, including corrected prepared execution, transaction control, stream recovery, and expanded schema-parent payload shaping. |
-
----
-
-## Additional Pre-Release Drivers
-
-| Driver                            | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                                                                                                                                                               |
-| --------------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **C/C++ (libscratchbird_client)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | Required PH5 closure slice is green, and `NCW-054C` also closes listener-bound transport/config convenience, C++ prepared-statement parity, and RAII pool/lease surfaces without bypassing the listener/parser boundary.                                  |
-| **R (DBI)**                       | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the DBI lane now has native and manager-proxy live parity, explicit always-in-transaction handling, reconnect-on-cancel safety, schema-aware metadata, and the remaining type/error/resource surfaces closed on the supported runtime boundary.                               |
-| **Swift (Async/Await)**           | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the async/await lane is green across live connection, pool, manager-proxy, metadata, type, error, and resource coverage on the supported listener-mediated surface.                                                                                                                  |
-| **Dart**                          | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-055` is closed; the Dart lane now has full live parity across connection, transaction/savepoint, metadata helpers, typed execution, manager-proxy access, and resilience/error behavior on the supported runtime surface.                                                                          |
-
----
-
-## Specialty Pre-Release Drivers
-
-| Driver                    | CONN | TXN | EXEC | META | TYPE | ERR | RES | Overall State                                                                                                                                                     |
-| ------------------------- | ---- | --- | ---- | ---- | ---- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Elixir (Ecto Adapter)** | ✅    | ✅   | ✅    | ✅    | ✅    | ✅   | ✅   | `NCW-056` is closed on the supported listener-mediated surface; the lane now passes its connection, metadata, type, Ecto-adapter, and live integration suite. |
-
----
-
-## Ecosystem Adapter Status (Track Status Unchanged)
-
-| Adapter                | Current State                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Metabase plugin**    | JDBC-backed adapter is now aligned with the current JDBC surface: full JDBC `sslmode` set, optional `currentSchema`, manager-proxy property surfacing, and metadata capability declarations now match the supported JDBC metadata/index surface. |
-| **Superset adapter**   | SQLAlchemy dialect + EngineSpec are now aligned to the finalized catalog shape: JDBC-style DSN aliases normalize to the Python driver, default schema resolves from the live session with `users.public` fallback, and index reflection uses `sys.index_columns`. |
-| **Prisma adapter**     | Deterministic adapter and contract suite implemented; runtime remains blocked by Prisma provider registration (`provider="scratchbird"` unsupported by stock Prisma CLI).         |
-| **SQLAlchemy dialect** | Deterministic dialect and ORM/reflection contract suite implemented; live runtime matrix is blocked in this shell by endpoint TLS posture mismatch.                               |
-| **Hibernate dialect**  | Deterministic dialect and contract suite implemented; runtime JDBC probe now passes with local JDBC jar auto-detected, while full JPA lifecycle/migration matrix remains pending. |
-| **TypeORM adapter**    | Deterministic adapter and contract suite implemented; runtime remains blocked because stock TypeORM does not recognize `type="scratchbird"` (driver registry gap).                |
-
----
-
-## Overview
-
-This repository contains native database drivers for ScratchBird in multiple programming languages. These drivers target the ScratchBird native protocol (SBWP v1.1) and provide idiomatic APIs for each supported language.
-
-Emulated protocols (PostgreSQL/MySQL/Firebird) are handled by their own native client drivers against ScratchBird's emulation listeners.
-
----
-
-## Target Features (SBWP v1.1 Baseline)
-
-All baseline drivers aim to implement:
-
-- **Native Wire Protocol (SBWP v1.1)** – ScratchBird native protocol (port 3092)
-- **TLS 1.3 Support** – Driver lanes expose configurable TLS posture; production defaults use TLS and lane-specific parity paths may allow explicit disable
-- **Server-side Prepare/Bind** – PARSE/BIND/EXECUTE for parameters
-- **Transactions** – Always-in-transaction semantics with autocommit mapping
-- **Reconnect and recovery discipline** – Drivers reset, rollback, reopen, or retry against engine MGA truth instead of replaying transaction history
-- **Type Mapping** – Full wire type coverage (including composite/geometry/range)
-- **Binary transfer and compression policy follow lane parity contracts (for example JDBC-compatible lanes accept `binary_transfer=false` and `compression=zstd`; unknown compression values are rejected)**
-
----
-
-## Current Enterprise Readiness Tracking
-
-Authoritative gap tracking lives in:
-
-- `docs/planning/DRIVER_ENTERPRISE_READINESS_STRICT_IMPLEMENTATION_MATRIX_*.md`
-- `docs/planning/DRIVER_ENTERPRISE_READINESS_REMAINING_GAPS_STRICT_*.md`
-- `docs/planning/DRIVER_ENTERPRISE_READINESS_TICKETS_*.md`
-
-This README provides a high-level executive summary. The planning documents remain the ticket-level source of truth.
-
----
-
-## CLI Tools
-
-| Tool                     | Purpose                              | Status                                                                                                                                                                              |
-| ------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **sb_isql**              | Native ScratchBird interactive shell | CONN ✅ / TXN 🟡 / EXEC ✅ / META 🟡 / TYPE 🟡 / ERR ✅ / RES 🟡                                                                                                                       |
-| **sb_admin**             | Server administration CLI            | Baseline implemented                                                                                                                                                                |
-| **sb_backup**            | Backup/restore CLI                   | Baseline implemented                                                                                                                                                                |
-| **sb_security**          | User/role management CLI             | Baseline implemented                                                                                                                                                                |
-| **sb_verify**            | Database verification CLI            | Baseline implemented                                                                                                                                                                |
-| **sbdriver-conformance** | SBWP conformance adapter             | CONN ✅ / TXN 🟡 / EXEC ✅ / META 🟡 / TYPE 🟡 / ERR ✅ / RES 🟡 (`txn_exec`/`res_loop_exec` parity and typed manifest assertions implemented; live DSN-backed matrix remains partial) |
-
-FDW-based emulation CLI tools remain gated by engine-side adapters.
-
----
-
-## Project Structure
-
-```
+```text
 ScratchBird-driver/
 ├── docs/
-├── wiki/
-├── tracks/p3/drivers/cli/
-├── tracks/p3/drivers/cpp/
-├── tracks/p3/drivers/odbc/
-├── tracks/p3/drivers/go/
-├── tracks/p3/drivers/python/
-├── tracks/p3/drivers/node/
-├── tracks/p3/drivers/ruby/
-├── tracks/p3/drivers/rust/
-├── tracks/p3/drivers/php/
-├── tracks/p3/drivers/r/
-├── tracks/p3/drivers/pascal/
-├── tracks/p3/drivers/dotnet/
-├── tracks/p3/drivers/jdbc/
-├── tracks/p3/drivers/dart/
-├── tracks/p3/drivers/swift/
-├── tracks/p3/drivers/elixir/
-├── tracks/p3/drivers/mojo/
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-└── LICENSE
+│   ├── api-reference/
+│   ├── application-reference/
+│   ├── audit/
+│   ├── development/
+│   ├── getting-started/
+│   ├── planning/
+│   ├── reference/
+│   └── specifications/
+├── scripts/
+├── tracks/
+│   ├── alpha/
+│   ├── beta/
+│   └── p3/
+└── wiki/
 ```
 
----
+## Notes
 
-## Documentation
+- ScratchBird drivers follow the engine MGA/state-recovery model.
+- Driver reconnect logic restores transport/session state; it does not replay
+  or resurrect lost in-flight transactions.
+- For current user-facing behavior, prefer the getting-started and API
+  reference pages over older planning artifacts.
 
-- **Documentation Index:** `docs/README.md`
-- **Getting Started:** `docs/getting-started/`
-- **API Reference:** `docs/api-reference/`
-- **User Documentation:** `docs/user-documentation/`
-- **Connection Modes and Auth:** `docs/user-documentation/connectivity/connection-modes-and-auth.md`
-- **Specifications:** `docs/specifications/`
-- **Development Guides:** `docs/development/`
-
-For current installation, connection, and public API guidance, prefer the
-getting-started guides, API references, and lane READMEs. Planning and
-specification artifacts remain useful implementation references, but user-facing
-guides are the intended entry point for the current driver behavior.
-
----
-
-## Contributing
-
-We welcome contributions. Please review `CONTRIBUTING.md` before submitting pull requests.
-
----
-
-## License
-
-Licensed under the Initial Developer's Public License (IDPL). See `LICENSE` for details.
-
----
-
-**Last Updated:** 2026-03-12
+Last updated: 2026-04-03

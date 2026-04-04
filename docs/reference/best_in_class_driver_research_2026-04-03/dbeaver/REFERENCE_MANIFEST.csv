@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+dbeaver,DBeaver driver docs,selected_docs,https://dbeaver.com/docs/dbeaver/Database-drivers/,docs/reference/best_in_class_driver_research_2026-04-03/dbeaver/downloads/01_DBeaver_driver_docs.html,2026-04-03,downloaded,,text/html
+dbeaver,DBeaver PostgreSQL plugin,selected_repo,https://github.com/dbeaver/dbeaver/tree/devel/plugins/org.jkiss.dbeaver.ext.postgresql,docs/reference/best_in_class_driver_research_2026-04-03/dbeaver/downloads/02_DBeaver_PostgreSQL_plugin.postgresql,2026-04-03,downloaded,,text/html
+dbeaver,DBeaver MySQL plugin,candidate_repo,https://github.com/dbeaver/dbeaver/tree/devel/plugins/org.jkiss.dbeaver.ext.mysql,docs/reference/best_in_class_driver_research_2026-04-03/dbeaver/downloads/03_DBeaver_MySQL_plugin.mysql,2026-04-03,downloaded,,text/html
+dbeaver,DBeaver SQL Server plugin,candidate_repo,https://github.com/dbeaver/dbeaver/tree/devel/plugins/org.jkiss.dbeaver.ext.mssql,docs/reference/best_in_class_driver_research_2026-04-03/dbeaver/downloads/04_DBeaver_SQL_Server_plugin.mssql,2026-04-03,downloaded,,text/html

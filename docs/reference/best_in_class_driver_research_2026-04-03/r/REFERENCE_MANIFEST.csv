@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+r,RPostgres docs,selected_docs,https://rpostgres.r-dbi.org/,docs/reference/best_in_class_driver_research_2026-04-03/r/downloads/01_RPostgres_docs.html,2026-04-03,downloaded,,text/html
+r,RPostgres repo,selected_repo,https://github.com/r-dbi/RPostgres,docs/reference/best_in_class_driver_research_2026-04-03/r/downloads/02_RPostgres_repo.html,2026-04-03,downloaded,refs/heads/main 8645e6a8f55e258393509c04d0b47f978ac47615,text/html
+r,RMariaDB docs,candidate_docs,https://rmariadb.r-dbi.org/,docs/reference/best_in_class_driver_research_2026-04-03/r/downloads/03_RMariaDB_docs.html,2026-04-03,downloaded,,text/html
+r,R odbc docs,candidate_docs,https://odbc.r-dbi.org/,docs/reference/best_in_class_driver_research_2026-04-03/r/downloads/04_R_odbc_docs.html,2026-04-03,downloaded,,text/html

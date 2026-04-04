@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+sqlalchemy,SQLAlchemy PostgreSQL dialect docs,selected_docs,https://docs.sqlalchemy.org/en/20/dialects/postgresql.html,docs/reference/best_in_class_driver_research_2026-04-03/sqlalchemy/downloads/01_SQLAlchemy_PostgreSQL_dialect_docs.html,2026-04-03,downloaded,,text/html
+sqlalchemy,SQLAlchemy repo,selected_repo,https://github.com/sqlalchemy/sqlalchemy,docs/reference/best_in_class_driver_research_2026-04-03/sqlalchemy/downloads/02_SQLAlchemy_repo.html,2026-04-03,downloaded,refs/heads/main d3a85fbd07fbd88e5872df39290db050c0a6f0a9,text/html
+sqlalchemy,SQLAlchemy MySQL dialect docs,candidate_docs,https://docs.sqlalchemy.org/en/20/dialects/mysql.html,docs/reference/best_in_class_driver_research_2026-04-03/sqlalchemy/downloads/03_SQLAlchemy_MySQL_dialect_docs.html,2026-04-03,downloaded,,text/html
+sqlalchemy,SQLAlchemy MSSQL dialect docs,candidate_docs,https://docs.sqlalchemy.org/en/20/dialects/mssql.html,docs/reference/best_in_class_driver_research_2026-04-03/sqlalchemy/downloads/04_SQLAlchemy_MSSQL_dialect_docs.html,2026-04-03,downloaded,,text/html

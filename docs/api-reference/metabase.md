@@ -1,23 +1,34 @@
-# Metabase Plugin API Reference
+# Metabase Plugin API / Integration Reference
 
-The Metabase driver is a thin adapter on top of the ScratchBird JDBC driver.
-It exposes ScratchBird as a Metabase database type and provides metadata
-queries required by Metabase.
+<!-- lane-status:start -->
+## Current Status
 
-## Driver Namespace
+- Lane kind: `adapter`
+- Current state: `partial_adapter`
+- Best-in-class benchmark: `Metabase PostgreSQL driver`
+- Authoritative lane spec: `docs/application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/metabase.md`
+- Remaining gap summary: Schema sync, field fingerprinting, native-query validation, and packaged plugin proof remain open.
+<!-- lane-status:end -->
 
-- `metabase.driver.scratchbird`
+## Authority
 
-## Key Behaviors
+- Compatibility specification: `../application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- Track root: `tracks/alpha/integrations/scratchbird-metabase-driver`
+- Later verification packet: `../development/server-verification/metabase.md`
 
-- Connection details normalize to JDBC properties, including optional
-  `currentSchema`, manager-proxy ingress (`front_door_mode`,
-  `manager_auth_token`), and the full JDBC `sslmode` set.
-- If no `currentSchema` is supplied, the adapter leaves schema resolution to
-  the server-side user/role/group policy, which falls back to `users.public`.
-- Capabilities are gated via `driver/database-supports?` and now match the
-  supported JDBC metadata/index surface explicitly.
-- Metadata uses the SQL JDBC sync utilities.
+## Integration Surface
 
-See `tracks/alpha/integrations/scratchbird-metabase-driver/src/metabase/driver/scratchbird.clj` for the
-full adapter behavior.
+- benchmark target: `Metabase PostgreSQL driver`
+- current state: `partial_adapter`
+
+## Required Integration Families
+
+- freeze schema sync, fingerprinting, native query, and feature-flag behavior against the PostgreSQL driver
+- require packaging and sync-performance evidence
+
+## Remaining Server-Blocked Validation
+
+- schema sync, field fingerprinting, and native-query validation remain server-blocked
+- packaged plugin/runtime validation remains open

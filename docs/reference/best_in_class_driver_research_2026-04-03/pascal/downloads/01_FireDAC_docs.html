@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html class="client-nojs" lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8"/>
+<title>Connect to PostgreSQL (FireDAC) - RAD Studio</title>
+<script type="3e97744c3d8f2836440d1417-text/javascript">document.documentElement.className = document.documentElement.className.replace( /(^|\s)client-nojs(\s|$)/, "$1client-js$2" );</script>
+<script type="3e97744c3d8f2836440d1417-text/javascript">(window.RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgCanonicalNamespace":"","wgCanonicalSpecialPageName":false,"wgNamespaceNumber":0,"wgPageName":"Connect_to_PostgreSQL_(FireDAC)","wgTitle":"Connect to PostgreSQL (FireDAC)","wgCurRevisionId":273276,"wgRevisionId":273276,"wgArticleId":31768,"wgIsArticle":true,"wgIsRedirect":false,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":["AMMigrate","FireDAC"],"wgBreakFrames":false,"wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgMonthNamesShort":["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],"wgRelevantPageName":"Connect_to_PostgreSQL_(FireDAC)","wgRelevantArticleId":31768,"wgRequestId":"adBRDApXuse0OtY0YfifYwAAAAc","wgIsProbablyEditable":false,"wgRelevantPageIsProbablyEditable":false,"wgRestrictionEdit":[],"wgRestrictionMove":[],"wgWikiEditorEnabledModules":[],"wgPreferredVariant":"en","wgMFExpandAllSectionsUserOption":true,"wgMFEnableFontChanger":true,"wgMFDisplayWikibaseDescriptions":{"search":false,"nearby":false,"watchlist":false,"tagline":false}});mw.loader.state({"site.styles":"ready","noscript":"ready","user.styles":"ready","user":"ready","site":"ready","user.options":"ready","user.tokens":"loading","ext.pygments":"ready","mediawiki.legacy.shared":"ready","mediawiki.legacy.commonPrint":"ready","mediawiki.sectionAnchor":"ready","mediawiki.skinning.interface":"ready","skins.duobook2.styles":"ready"});mw.loader.implement("user.tokens@1i71g4j",function($,jQuery,require,module){/*@nomin*/mw.user.tokens.set({"editToken":"+\\","patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
+});mw.loader.load(["mediawiki.page.startup","mediawiki.user","mediawiki.hidpi","mediawiki.page.ready","mediawiki.toc","mediawiki.searchSuggest","skins.duobook2.js"]);});</script>
+<link rel="stylesheet" href="/RADStudio/Alexandria/e/load.php?debug=false&amp;lang=en&amp;modules=ext.pygments%7Cmediawiki.legacy.commonPrint%2Cshared%7Cmediawiki.sectionAnchor%7Cmediawiki.skinning.interface%7Cskins.duobook2.styles&amp;only=styles&amp;skin=duobook2"/>
+<script async="" src="/RADStudio/Alexandria/e/load.php?debug=false&amp;lang=en&amp;modules=startup&amp;only=scripts&amp;skin=duobook2" type="3e97744c3d8f2836440d1417-text/javascript"></script>
+<meta name="ResourceLoaderDynamicStyles" content=""/>
+<link rel="stylesheet" href="/RADStudio/Alexandria/e/load.php?debug=false&amp;lang=en&amp;modules=site.styles&amp;only=styles&amp;skin=duobook2"/>
+<meta name="generator" content="MediaWiki 1.31.16"/>
+<link rel="shortcut icon" href="/favicon.ico"/>
+<link rel="search" type="application/opensearchdescription+xml" href="/RADStudio/Alexandria/e/opensearch_desc.php" title="RAD Studio (en)"/>
+<link rel="EditURI" type="application/rsd+xml" href="https://docwiki.embarcadero.com/RADStudio/Alexandria/e/api.php?action=rsd"/>
+<link rel="alternate" type="application/atom+xml" title="RAD Studio Atom feed" href="/RADStudio/Alexandria/e/index.php?title=Special:RecentChanges&amp;feed=atom"/>
+<style type="text/css">.appmethod { display:none; }</style>
+<!--[if lt IE 9]><script src="/RADStudio/Alexandria/e/load.php?debug=false&amp;lang=en&amp;modules=html5shiv&amp;only=scripts&amp;skin=duobook2&amp;sync=1"></script><![endif]-->
+</head>
+<body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject page-Connect_to_PostgreSQL_FireDAC rootpage-Connect_to_PostgreSQL_FireDAC skin-duobook2 action-view">		<div id="mw-page-base" class="noprint"></div>
+		<div id="mw-head-base" class="noprint"></div>
+		<div id="content" class="mw-body" role="main">
+			<a id="top"></a>
+			<div id="siteNotice" class="mw-body-content"><div id="localNotice" lang="en" dir="ltr"><div class="mw-parser-output"><div style="background-color: white; color: black; font-size: 1em; font-style: normal; font-family: Arial, Helvetica, sans-serif; padding: 0em; margin: 0em; white-space: normal; word-wrap: break-word;"><b><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.embarcadero.com/products/rad-studio/whats-new-in-13-florence">13.0 release available - Learn More!</a></b></div>
+</div></div></div><div class="mw-indicators mw-body-content">
+</div>
+<h1 id="firstHeading" class="firstHeading" lang="en">Connect to PostgreSQL (FireDAC)</h1>			<div id="bodyContent" class="mw-body-content">
+				<div id="siteSub" class="noprint">From RAD Studio</div>				<div id="contentSub"></div>
+								<div id="jump-to-nav" class="mw-jump">
+					Jump to:					<a href="#mw-head">navigation</a>, 					<a href="#p-search">search</a>
+				</div>
+				<div id="mw-content-text" lang="en" dir="ltr" class="mw-content-ltr"><div class="mw-parser-output"><p><i>Go Up to <a href="/RADStudio/Alexandria/en/Database_Connectivity_(FireDAC)" title="Database Connectivity (FireDAC)">Database Connectivity (FireDAC)</a></i>
+</p><p>This topic describes how to connect to PostgreSQL.
+</p>
+<div id="toc" class="toc"><div class="toctitle" lang="en" dir="ltr"><h2>Contents</h2></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#Supported_Versions"><span class="tocnumber">1</span> <span class="toctext">Supported Versions</span></a></li>
+<li class="toclevel-1 tocsection-2"><a href="#Client_Software"><span class="tocnumber">2</span> <span class="toctext">Client Software</span></a>
+<ul>
+<li class="toclevel-2 tocsection-3"><a href="#Windows_Client_Software"><span class="tocnumber">2.1</span> <span class="toctext">Windows Client Software</span></a></li>
+<li class="toclevel-2 tocsection-4"><a href="#OS_X_Client_Software"><span class="tocnumber">2.2</span> <span class="toctext">OS X Client Software</span></a></li>
+<li class="toclevel-2 tocsection-5"><a href="#iOS_Client_Software"><span class="tocnumber">2.3</span> <span class="toctext">iOS Client Software</span></a></li>
+<li class="toclevel-2 tocsection-6"><a href="#Linux_Client_Software"><span class="tocnumber">2.4</span> <span class="toctext">Linux Client Software</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-7"><a href="#Driver_Linkage"><span class="tocnumber">3</span> <span class="toctext">Driver Linkage</span></a></li>
+<li class="toclevel-1 tocsection-8"><a href="#Additional_Setup"><span class="tocnumber">4</span> <span class="toctext">Additional Setup</span></a></li>
+<li class="toclevel-1 tocsection-9"><a href="#Connection_Definition_Parameters"><span class="tocnumber">5</span> <span class="toctext">Connection Definition Parameters</span></a></li>
+<li class="toclevel-1 tocsection-10"><a href="#Use_Cases"><span class="tocnumber">6</span> <span class="toctext">Use Cases</span></a></li>
+<li class="toclevel-1 tocsection-11"><a href="#See_Also"><span class="tocnumber">7</span> <span class="toctext">See Also</span></a></li>
+</ul>
+</div>
+
+<h2><span class="mw-headline" id="Supported_Versions">Supported Versions</span></h2>
+<p>The FireDAC native driver supports PostgreSQL Server and PostgreSQL Advanced Server version 7.4 and later, because it requires a PG protocol 3.0 connection.
+</p>
+<h2><span class="mw-headline" id="Client_Software">Client Software</span></h2>
+<h3><span class="mw-headline" id="Windows_Client_Software">Windows Client Software</span></h3>
+<p>FireDAC requires the <b>LIBPQ.DLL</b> x86 or x64 client library for connecting to the PostgreSQL server.
+Using libpq.dll also requires the "Microsoft Visual C++ 2010 Redistributable Package" installed.
+You can get this package from <a target="_blank" rel="nofollow noreferrer noopener" class="external free" href="http://www.microsoft.com/en-us/download/details.aspx?id=8328">http://www.microsoft.com/en-us/download/details.aspx?id=8328</a>.
+Ideally, the libpq.dll version should be equal to the server version. The full set of the v 9.0 client files:
+</p>
+<ul><li>libpq.dll</li>
+<li>ssleay32.dll</li>
+<li>libeay32.dll</li>
+<li>libintl-8.dll</li>
+<li>libiconv-2.dll</li></ul>
+<p>You can take them from the server (<a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="http://www.postgresql.org/download/windows/">details</a>) installation Bin folder and place them in:
+</p>
+<ul><li>a folder listed in your PATH environment variable</li>
+<li>your application EXE folder</li></ul>
+<p>Alternatively you may put the required files in any other folder, and specify their path in <a href="/RADStudio/Alexandria/en/Configuring_Drivers_(FireDAC)" title="Configuring Drivers (FireDAC)">FDDrivers.ini</a>:
+</p>
+<div class="mw-highlight mw-content-ltr" dir="ltr"><pre><span></span><span class="k">[PG]</span>
+<span class="na">VendorLib</span><span class="o">=</span><span class="s">&lt;folder&gt;\libpq.dll</span>
+</pre></div> 
+<p>If the PostgreSQL client library has not been installed properly, an exception is raised when you try to connect: 
+</p>
+<div style="background-color: #f9f9f9; border: 1px solid #efefef; color: black; font-size: 1.1em; line-height: 1.1em; padding: 1em; margin: 1em 0; white-space: pre-wrap; word-wrap: break-word; font-family: monospace,Courier;">[FireDAC][Phys][PGSQL]-314. Cannot load vendor library [LIBPQ.DLL]. The specified module could not be found.
+Check [LIBPQ.DLL], which is located in one of the PATH directories or in application EXE directory.</div>
+<p>or 
+</p>
+<div style="background-color: #f9f9f9; border: 1px solid #efefef; color: black; font-size: 1.1em; line-height: 1.1em; padding: 1em; margin: 1em 0; white-space: pre-wrap; word-wrap: break-word; font-family: monospace,Courier;">The ordinal Nnn could not be located in the dynamic link library SSLEAY32.dll.</div>
+<h3><span class="mw-headline" id="OS_X_Client_Software">OS X Client Software</span></h3>
+<p>FireDAC requires:
+</p>
+<ul><li>the <b>libpq.dylib</b> x86 client library.</li></ul>
+<p>It comes pre-installed on OS X or can be installed separately (<a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="http://www.enterprisedb.com/resources-community/pginst-guide">more</a>). 
+</p>
+<h3><span class="mw-headline" id="iOS_Client_Software">iOS Client Software</span></h3>
+<p>The article (<a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://github.com/spacialdb/libpq-ios">more</a>) explains how to build <b>libpq.dylib</b> for iOS. 
+</p><p>Note, Embarcadero Technologies has not tested this and does not provide assistance with it. 
+</p>
+<h3><span class="mw-headline" id="Linux_Client_Software">Linux Client Software</span></h3>
+<p>To install the PostgreSQL client library:
+</p>
+<ol>
+<li>
+On <b>Ubuntu Server 16.04 LTS</b>, run:
+<div class="mw-highlight mw-content-ltr" dir="ltr"><pre><span></span>sudo apt-get install libpq5
+sudo ln -s /usr/lib/x86_64-linux-gnu/libpq.so.5 /usr/lib/x86_64-linux-gnu/libpq.so
+</pre></div>
+</li>
+<li>
+On <b>Red Hat Enterprise Linux 7</b>, run:
+<div class="mw-highlight mw-content-ltr" dir="ltr"><pre><span></span>sudo yum install postgresql-libs
+sudo ln -s /usr/lib64/libpq.so.5 /usr/lib64/libpq.so
+</pre></div>
+</li>
+</ol>
+<h2><span class="mw-headline" id="Driver_Linkage">Driver Linkage</span></h2>
+<p>To link the driver:
+</p>
+<ul><li>drop a <a href="https://docwiki.embarcadero.com/Libraries/Alexandria/en/FireDAC.Phys.PG.TFDPhysPgDriverLink" class="extiw" title="lib en:FireDAC.Phys.PG.TFDPhysPgDriverLink">TFDPhysPgDriverLink</a> component from the "FireDAC Links" palette page</li>
+<li>or include the <a href="https://docwiki.embarcadero.com/Libraries/Alexandria/en/FireDAC.Phys.PG" class="extiw" title="lib en:FireDAC.Phys.PG">FireDAC.Phys.PG</a> unit in a uses clause.</li></ul>
+<h2><span class="mw-headline" id="Additional_Setup">Additional Setup</span></h2>
+<p>If an application is using the {TIMESTAMPDIFF(MONTH, ....)} escape function, then we recommend that you create 3 PostgreSQL functions with the following types of arguments:
+</p>
+<ul><li>DATE</li>
+<li>TIMESTAMP</li>
+<li>TIMESTAMP WITH TIME ZONE</li></ul>
+<p>The function template: 
+</p>
+<div class="mw-highlight mw-content-ltr" dir="ltr"><pre><span></span><span class="k">CREATE</span> <span class="k">OR</span> <span class="k">REPLACE</span> <span class="k">FUNCTION</span> <span class="n">MONTHS_BETWEEN</span> <span class="p">(</span><span class="k">timestamp</span> <span class="k">with</span> <span class="k">time</span> <span class="k">zone</span><span class="p">,</span> <span class="k">timestamp</span> <span class="k">with</span> <span class="k">time</span> <span class="k">zone</span><span class="p">)</span> <span class="k">RETURNS</span> <span class="nb">integer</span> <span class="k">AS</span>
+<span class="err">$</span><span class="n">body$</span>
+<span class="k">DECLARE</span>
+  <span class="n">mes</span> <span class="nb">INTEGER</span><span class="p">;</span>
+  <span class="n">mes1</span> <span class="nb">INTEGER</span><span class="p">;</span>
+  <span class="n">ano</span> <span class="nb">INTEGER</span><span class="p">;</span>
+<span class="k">begin</span>
+  <span class="n">mes</span><span class="o">=</span><span class="k">extract</span><span class="p">(</span><span class="k">month</span> <span class="k">from</span> <span class="p">(</span><span class="n">age</span><span class="p">(</span><span class="err">$</span><span class="mi">1</span><span class="p">,</span><span class="err">$</span><span class="mi">2</span><span class="p">)));</span>
+  <span class="n">ano</span><span class="o">=</span><span class="k">extract</span><span class="p">(</span><span class="k">year</span> <span class="k">from</span> <span class="p">(</span><span class="n">age</span><span class="p">(</span><span class="err">$</span><span class="mi">1</span><span class="p">,</span><span class="err">$</span><span class="mi">2</span><span class="p">)));</span>
+  <span class="n">mes1</span><span class="o">=</span><span class="k">abs</span><span class="p">((</span><span class="n">ano</span><span class="o">*</span><span class="mi">12</span><span class="p">)</span> <span class="o">+</span> <span class="n">mes</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">mes1</span><span class="p">;</span>
+<span class="k">end</span>
+<span class="err">$</span><span class="n">body$</span>
+<span class="k">LANGUAGE</span> <span class="s1">&#39;plpgsql&#39;</span> <span class="k">VOLATILE</span> <span class="k">CALLED</span> <span class="k">ON</span> <span class="k">NULL</span> <span class="k">INPUT</span> <span class="k">SECURITY</span> <span class="k">INVOKER</span><span class="p">;</span>
+</pre></div>
+<h2><span class="mw-headline" id="Connection_Definition_Parameters">Connection Definition Parameters</span></h2>
+<p>To connect to a PostgreSQL DBMS, most applications require that you specify <b>DriverID</b>, <b>Server</b>, <b>Database</b>, <b>User_Name</b>, <b>Password</b>, and <b>CharacterSet</b> (see <a href="/RADStudio/Alexandria/en/Defining_Connection_(FireDAC)" title="Defining Connection (FireDAC)">Defining Connection (FireDAC)</a> for details). 
+</p><p><b>DriverID=PG</b>
+</p>
+<table border="1" frame="hsides" rules="rows">
+<tbody><tr>
+<th><b>Parameter</b>
+</th>
+<th><b>Description</b>
+</th>
+<th><b>Example value</b>
+</th></tr>
+<tr>
+<td align="left" valign="top"><b>Server </b>
+</td>
+<td align="left" valign="top">The TCP/IP address or host name of the server running a PostgreSQL server.
+</td>
+<td align="left" valign="top">127.0.0.1
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>Port </b>
+</td>
+<td align="left" valign="top">The TCP/IP port on which PostgreSQL server is listening.
+</td>
+<td align="left" valign="top">5432
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>Database </b>
+</td>
+<td align="left" valign="top">Name of the current database for the connection. If the Database is not specified, no current database is set up.
+</td>
+<td align="left" valign="top">MyDB
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>User_Name </b>
+</td>
+<td align="left" valign="top">The PostgreSQL user ID.
+</td>
+<td align="left" valign="top">postgres
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>Password </b>
+</td>
+<td align="left" valign="top">The PostgreSQL user password.
+</td>
+<td align="left" valign="top">
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>CharacterSet </b>
+</td>
+<td align="left" valign="top">The default character set for the connection. For details, see the <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="http://www.postgresql.org/docs/8.3/static/multibyte.html">Character Set Support</a> chapter.
+</td>
+<td align="left" valign="top">WIN1251
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>LoginTimeout </b>
+</td>
+<td align="left" valign="top">Controls the amount of time, in seconds, before an application times out while attempting to establish a connection.
+</td>
+<td align="left" valign="top">30
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>ExtendedMetadata </b>
+</td>
+<td align="left" valign="top">
+<p>Controls the <a href="/RADStudio/Alexandria/en/Extended_Metadata_(FireDAC)" title="Extended Metadata (FireDAC)">extended description</a> of the query result sets:
+</p>
+<ul><li><b>True</b> - FireDAC describes a result set to get all the possible column attributes - is nullable, is auto incrementing, to which domain it belongs, etc. Setting this option to <b>True</b>, slightly slows down a dataset opening.</li>
+<li><b>False</b> - FireDAC uses the restricted information about the query columns (default).</li></ul>
+</td>
+<td align="left" valign="top">False
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>OidAsBlob </b>
+</td>
+<td align="left" valign="top">
+<p>Controls the interpretation of an OID column in a table:
+</p>
+<ul><li><b>No</b> -- an OID column is a dtUInt32 column (contains unsigned integer values).</li>
+<li><b>Yes</b> -- an OID column is a dtHBlob column (contains Large Object values).</li>
+<li><b>Choose</b> -- if a query selects data from the dictionary tables or a column that is not of a LO, LargeObject or BLOB domain, then an OID column is a dtUInt32 one, otherwise - a dtHBlob one. The ExtendedMetadata option must be <b>True</b> to get a column domain (default).</li></ul>
+</td>
+<td align="left" valign="top">Yes
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>UnknownFormat </b>
+</td>
+<td align="left" valign="top">
+<p>Controls the handling of an unknown PostgreSQL data type:
+</p>
+<ul><li><b>Error</b> -- raises the exception "Cannot describe type" (default).</li>
+<li><b>BYTEA</b> -- represents as a BLOB value.</li></ul>
+</td>
+<td align="left" valign="top">BYTEA
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>ArrayScanSample </b>
+</td>
+<td align="left" valign="top">Determines whether the constrained arrays are mapped to <code>ftArray</code> or <code>ftDataSet</code>.
+<p>To specify this connection parameter use <b>ArrayScanSample</b>=&lt;RowsToScan&gt;[;&lt;DefaultArraySize&gt;].
+</p><p>It performs as follows:
+</p>
+<ul><li>If specified, FireDAC analyzes the PostgreSQL array-type fields to get their constraints and define them as <code>ftArray</code>. First, FireDAC scans &lt;RowsToScan&gt; rows to get the array size. If all rows has NULL value or empty array for the array field, then FireDAC uses &lt;DefaultArraySize&gt; as the default array size. The default value is 5.</li>
+<li>Otherwise the fields will be defined as <code>ftDataSet</code>. This includes when:
+<ul><li><b>ArrayScanSample</b> is not specified (default).</li>
+<li><b>ArrayScanSample</b> is specified but &lt;RowsToScan&gt; is zero.</li>
+<li><b>ArrayScanSample</b> is specified but the evaluated array size is zero.</li></ul></li></ul>
+</td>
+<td align="left" valign="top">
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>ApplicationName </b>
+</td>
+<td align="left" valign="top">Name of the application. If specified, this value is stored in the pg_stat_activity table, application_name column.
+</td>
+<td align="left" valign="top">AllBooks
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>PGAdvanced </b>
+</td>
+<td align="left" valign="top">Additional PostgreSQL server connection options. For details, see the <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="http://www.postgresql.org/docs/8.3/static/libpq-connect.html">Database Connection Control Functions</a> chapter, PQconnectdb paragraph. A value format is - &lt;option&gt;=&lt;value&gt;[;...].
+</td>
+<td align="left" valign="top">
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>MetaDefSchema </b>
+</td>
+<td align="left" valign="top">Default schema name. The design time code excludes the catalog name from the object name if it is equal to MetaDefSchema. Setting MetaDefSchema does not change the current schema search path in the PostgreSQL session. 'public' is the default value.
+</td>
+<td align="left" valign="top">MySchema
+</td></tr>
+<tr>
+<td align="left" valign="top"><b>GUIDEndian </b>
+</td>
+<td align="left" valign="top">It defines how the GUID value is represented on the client. 'Little' is the default value.
+</td>
+<td align="left" valign="top">Big
+</td></tr></tbody></table>
+<h2><span class="mw-headline" id="Use_Cases">Use Cases</span></h2>
+<ul><li>Connect to a server running locally, listening on the default (5432) port:</li></ul>
+<pre>DriverID=PG
+Database=addemo
+</pre>
+<ul><li>Connect to a remote server, listening on a non-default port, using Unicode for character data:</li></ul>
+<pre>DriverID=PG
+Server=pgsrv
+Port=5433
+Database=addemo
+CharacterSet=utf8
+MetaDefSchema=MySchema
+ExtendedMetadata=True
+</pre>
+<h2><span class="mw-headline" id="See_Also">See Also</span></h2>
+<ul><li><a href="/RADStudio/Alexandria/en/Common_Connection_Parameters_(FireDAC)" title="Common Connection Parameters (FireDAC)">Common Connection Parameters</a></li>
+<li><a href="/RADStudio/Alexandria/en/FAQ_(FireDAC)" title="FAQ (FireDAC)">FAQs</a></li>
+<li><a href="/RADStudio/Alexandria/en/Configuring_Drivers_(FireDAC)" title="Configuring Drivers (FireDAC)">How to configure FireDAC Drivers</a></li>
+<li><a href="/RADStudio/Alexandria/en/Defining_Connection_(FireDAC)" title="Defining Connection (FireDAC)">How to manage FireDAC Connection Definitions</a></li></ul>
+
+<!-- 
+NewPP limit report
+Cached time: 20260403234517
+Cache expiry: 0
+Dynamic content: true
+CPU time usage: 0.071 seconds
+Real time usage: 0.556 seconds
+Preprocessor visited node count: 154/1000000
+Preprocessor generated node count: 390/1000000
+Post‐expand include size: 1025/2097152 bytes
+Template argument size: 349/2097152 bytes
+Highest expansion depth: 4/40
+Expensive parser function count: 0/100
+Unstrip recursion depth: 0/20
+Unstrip post‐expand size: 3470/5000000 bytes
+-->
+<!--
+Transclusion expansion time report (%,ms,calls,template)
+100.00%  488.543      1 -total
+  0.67%    3.253      1 Template:Parent
+  0.64%    3.135      4 Template:Code
+  0.60%    2.934      2 Template:Quote
+  0.50%    2.447      1 Template:SupportedRHEL
+  0.49%    2.414      1 Template:Company
+  0.49%    2.410      1 Template:SupportedUbuntu
+-->
+</div></div>					<div class="printfooter">
+						Retrieved from "<a dir="ltr" href="https://docwiki.embarcadero.com/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;oldid=273276">https://docwiki.embarcadero.com/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;oldid=273276</a>"					</div>
+				<div id="catlinks" class="catlinks" data-mw="interface"><div id="mw-normal-catlinks" class="mw-normal-catlinks"><a href="/RADStudio/Alexandria/en/Special:Categories" title="Special:Categories">Category</a>: <ul><li><a href="/RADStudio/Alexandria/en/Category:FireDAC" title="Category:FireDAC">FireDAC</a></li></ul></div><div id="mw-hidden-catlinks" class="mw-hidden-catlinks mw-hidden-cats-hidden">Hidden category: <ul><li><a href="/RADStudio/Alexandria/en/Category:AMMigrate" title="Category:AMMigrate">AMMigrate</a></li></ul></div></div>				<div class="visualClear"></div>
+							</div>
+		</div>
+		<div id="mw-navigation">
+			<h2>Navigation menu</h2>
+			<div id="mw-head">
+									<div id="p-personal" role="navigation" class="" aria-labelledby="p-personal-label">
+						<h3 id="p-personal-label">Personal tools</h3>
+						<ul>
+							<li id="pt-login"><a href="/RADStudio/Alexandria/e/index.php?title=Special:UserLogin&amp;returnto=Connect+to+PostgreSQL+%28FireDAC%29" title="You are encouraged to log in; however, it is not mandatory [o]" accesskey="o">Log in</a></li>						</ul>
+					</div>
+									<div id="left-navigation">
+										<div id="p-namespaces" role="navigation" class="duobook2Tabs" aria-labelledby="p-namespaces-label">
+						<h3 id="p-namespaces-label">Namespaces</h3>
+						<ul>
+							<li id="ca-nstab-main" class="selected"><span><a href="/RADStudio/Alexandria/en/Connect_to_PostgreSQL_(FireDAC)" title="View the content page [c]" accesskey="c">Page</a></span></li><li id="ca-talk" class="new"><span><a href="/RADStudio/Alexandria/e/index.php?title=Talk:Connect_to_PostgreSQL_(FireDAC)&amp;action=edit&amp;redlink=1" rel="discussion" title="Discussion about the content page (page does not exist) [t]" accesskey="t">Discussion</a></span></li>						</ul>
+					</div>
+										<div id="p-variants" role="navigation" class="duobook2Menu emptyPortlet" aria-labelledby="p-variants-label">
+												<input type="checkbox" class="duobook2MenuCheckbox" aria-labelledby="p-variants-label" />
+						<h3 id="p-variants-label">
+							<span>Variants</span>
+						</h3>
+						<div class="menu">
+							<ul>
+															</ul>
+						</div>
+					</div>
+									</div>
+				<div id="right-navigation">
+										<div id="p-views" role="navigation" class="duobook2Tabs" aria-labelledby="p-views-label">
+						<h3 id="p-views-label">Views</h3>
+						<ul>
+							<li id="ca-view" class="collapsible selected"><span><a href="/RADStudio/Alexandria/en/Connect_to_PostgreSQL_(FireDAC)">Read</a></span></li><li id="ca-viewsource" class="collapsible"><span><a href="/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;action=edit" title="This page is protected.&#10;You can view its source [e]" accesskey="e">View source</a></span></li><li id="ca-history" class="collapsible"><span><a href="/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;action=history" title="Past revisions of this page [h]" accesskey="h">View history</a></span></li>						</ul>
+					</div>
+										<div id="p-cactions" role="navigation" class="duobook2Menu emptyPortlet" aria-labelledby="p-cactions-label">
+						<input type="checkbox" class="duobook2MenuCheckbox" aria-labelledby="p-cactions-label" />
+						<h3 id="p-cactions-label"><span>More</span></h3>
+						<div class="menu">
+							<ul>
+															</ul>
+						</div>
+					</div>
+										<div id="p-search" role="search">
+						<h3>
+							<label for="searchInput">Search</label>
+						</h3>
+						<form action="/RADStudio/Alexandria/e/index.php" id="searchform">
+							<div id="simpleSearch">
+								<input type="search" name="search" placeholder="Search RAD Studio" title="Search RAD Studio [f]" accesskey="f" id="searchInput"/><input type="hidden" value="Special:Search" name="title"/><input type="submit" name="fulltext" value="Search" title="Search the pages for this text" id="mw-searchButton" class="searchButton mw-fallbackSearchButton"/><input type="submit" name="go" value="Go" title="Go to a page with this exact name if it exists" id="searchButton" class="searchButton"/>							</div>
+						</form>
+					</div>
+									</div>
+			</div>
+			<div id="mw-panel">
+				<div id="p-logo" role="banner"><a class="mw-wiki-logo" href="/RADStudio/Alexandria/en/Main_Page"  title="Visit the main page"></a></div>
+						<div class="portal" role="navigation" id="p-RAD_Studio_11_Alexandria" aria-labelledby="p-RAD_Studio_11_Alexandria-label">
+			<h3 id="p-RAD_Studio_11_Alexandria-label">RAD Studio 11 Alexandria</h3>
+			<div class="body">
+								<ul>
+					<li id="n-Topics"><a href="/RADStudio/Alexandria/en/Main_Page">Topics</a></li><li id="n-Libraries-Reference"><a href="https://docwiki.embarcadero.com/Libraries/Alexandria/en/Main_Page">Libraries Reference</a></li><li id="n-Code-Examples"><a href="https://docwiki.embarcadero.com/CodeExamples/Alexandria/en/Main_Page">Code Examples</a></li>				</ul>
+							</div>
+		</div>
+			<div class="portal" role="navigation" id="p-RAD_Studio_11_Topics" aria-labelledby="p-RAD_Studio_11_Topics-label">
+			<h3 id="p-RAD_Studio_11_Topics-label">RAD Studio 11 Topics</h3>
+			<div class="body">
+								<ul>
+					<li id="n-What.27s-New"><a href="/RADStudio/Alexandria/en/What%27s_New">What&#039;s New</a></li><li id="n-Tutorials"><a href="/RADStudio/Alexandria/en/Tutorials">Tutorials</a></li><li id="n-FireMonkey-Application-Platform"><a href="/RADStudio/Alexandria/en/FireMonkey_Application_Platform">FireMonkey Application Platform</a></li><li id="n-Multi-Device-Applications"><a href="/RADStudio/Alexandria/en/Multi-Device_Applications_Index">Multi-Device Applications</a></li><li id="n-Getting-Started"><a href="/RADStudio/Alexandria/en/Getting_Started_with_RAD_Studio">Getting Started</a></li><li id="n-Steps-in-Developing-a-Project"><a href="/RADStudio/Alexandria/en/Steps_in_Developing_a_Project">Steps in Developing a Project</a></li><li id="n-Key-Application-Types"><a href="/RADStudio/Alexandria/en/Key_Application_Types">Key Application Types</a></li><li id="n-FireDAC"><a href="/RADStudio/Alexandria/en/FireDAC">FireDAC</a></li><li id="n-Windows-Developer.27s-Guide"><a href="/RADStudio/Alexandria/en/Windows_Developer%27s_Guide_Index">Windows Developer&#039;s Guide</a></li><li id="n-Modeling-Tools"><a href="/RADStudio/Alexandria/en/Using_the_Modeling_Tools">Modeling Tools</a></li><li id="n-IDE-Reference-and-Utilities"><a href="/RADStudio/Alexandria/en/IDE_Reference_and_Utilities">IDE Reference and Utilities</a></li><li id="n-Delphi-Reference"><a href="/RADStudio/Alexandria/en/Delphi_Reference">Delphi Reference</a></li><li id="n-C.2B.2B-Reference"><a href="/RADStudio/Alexandria/en/C%2B%2B_Reference">C++ Reference</a></li><li id="n-Subject-Index"><a href="/RADStudio/Alexandria/en/Index">Subject Index</a></li>				</ul>
+							</div>
+		</div>
+			<div class="portal" role="navigation" id="p-lang" aria-labelledby="p-lang-label">
+			<h3 id="p-lang-label">In other languages</h3>
+			<div class="body">
+								<ul>
+					<li class="interlanguage-link interwiki-de"><a href="https://docwiki.embarcadero.com/RADStudio/Alexandria/de/Herstellen_einer_Verbindung_zu_PostgreSQL_(FireDAC)" title="Herstellen einer Verbindung zu PostgreSQL (FireDAC) – Deutsch" lang="de" hreflang="de" class="interlanguage-link-target">Deutsch</a></li><li class="interlanguage-link interwiki-fr"><a href="https://docwiki.embarcadero.com/RADStudio/Alexandria/fr/Connexion_%C3%A0_PostgreSQL_(FireDAC)" title="Connexion à PostgreSQL (FireDAC) – français" lang="fr" hreflang="fr" class="interlanguage-link-target">Français</a></li><li class="interlanguage-link interwiki-ja"><a href="https://docwiki.embarcadero.com/RADStudio/Alexandria/ja/PostgreSQL_%E3%81%B8%E3%81%AE%E6%8E%A5%E7%B6%9A%EF%BC%88FireDAC%EF%BC%89" title="PostgreSQL への接続（FireDAC） – 日本語" lang="ja" hreflang="ja" class="interlanguage-link-target">日本語</a></li>				</ul>
+							</div>
+		</div>
+			<div class="portal" role="navigation" id="p-Other_Versions" aria-labelledby="p-Other_Versions-label">
+			<h3 id="p-Other_Versions-label">Other Versions</h3>
+			<div class="body">
+								<ul>
+					<li id="n-Latest-version"><a href="https://docwiki.embarcadero.com/RADStudio/Athens/en/Main_Page" rel="nofollow" target="_blank">Latest version</a></li><li id="n-Sydney-Topics"><a href="https://docwiki.embarcadero.com/RADStudio/Sydney/en/Main_Page" rel="nofollow" target="_blank">Sydney Topics</a></li><li id="n-Rio-Topics"><a href="https://docwiki.embarcadero.com/RADStudio/Rio/en/Main_Page" rel="nofollow" target="_blank">Rio Topics</a></li><li id="n-Older-Versions"><a href="/RADStudio/Alexandria/en/Help_of_Previous_Versions">Older Versions</a></li>				</ul>
+							</div>
+		</div>
+			<div class="portal" role="navigation" id="p-Assistance" aria-labelledby="p-Assistance-label">
+			<h3 id="p-Assistance-label">Assistance</h3>
+			<div class="body">
+								<ul>
+					<li id="n-recentchanges"><a href="/RADStudio/Alexandria/en/Special:RecentChanges" title="A list of recent changes in the wiki [r]" accesskey="r">Recent changes</a></li>				</ul>
+							</div>
+		</div>
+			<div class="portal" role="navigation" id="p-tb" aria-labelledby="p-tb-label">
+			<h3 id="p-tb-label">Tools</h3>
+			<div class="body">
+								<ul>
+					<li id="t-whatlinkshere"><a href="/RADStudio/Alexandria/en/Special:WhatLinksHere/Connect_to_PostgreSQL_(FireDAC)" title="A list of all wiki pages that link here [j]" accesskey="j">What links here</a></li><li id="t-recentchangeslinked"><a href="/RADStudio/Alexandria/en/Special:RecentChangesLinked/Connect_to_PostgreSQL_(FireDAC)" rel="nofollow" title="Recent changes in pages linked from this page [k]" accesskey="k">Related changes</a></li><li id="t-specialpages"><a href="/RADStudio/Alexandria/en/Special:SpecialPages" title="A list of all special pages [q]" accesskey="q">Special pages</a></li><li id="t-print"><a href="/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;printable=yes" rel="alternate" title="Printable version of this page [p]" accesskey="p">Printable version</a></li><li id="t-permalink"><a href="/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;oldid=273276" title="Permanent link to this revision of the page">Permanent link</a></li><li id="t-info"><a href="/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;action=info" title="More information about this page">Page information</a></li>				</ul>
+							</div>
+		</div>
+				</div>
+		</div>
+				<div id="footer" role="contentinfo">
+						<ul id="footer-info">
+								<li id="footer-info-lastmod"> This page was last edited on 18 April 2022, at 21:02.</li>
+							</ul>
+						<ul id="footer-places">
+								<li id="footer-places-privacy"><a href="/RADStudio/Alexandria/en/RAD_Studio:Privacy_policy" title="RAD Studio:Privacy policy">Privacy policy</a></li>
+								<li id="footer-places-about"><a href="/RADStudio/Alexandria/en/RAD_Studio:About" title="RAD Studio:About">About RAD Studio</a></li>
+								<li id="footer-places-disclaimer"><a href="/RADStudio/Alexandria/en/RAD_Studio:General_disclaimer" title="RAD Studio:General disclaimer">Disclaimers</a></li>
+								<li id="footer-places-emailtext"><li id="contactus">Help Feedback (<a title="Create a Jira ticket with your EDN account" href="https://qp.embarcadero.com">QP</a>, <a title="Send us an email" href="/cdn-cgi/l/email-protection#24404b475149414a5045504d4b4a64414946455647454041564b0a474b491b5751464e414750190111666548415c454a40564d45011160011614674b4a4a414750011614504b011614744b575043564177756801161401161c624d564160656701161d">email</a>)</li></li>
+								<li id="footer-places-mobileview"><a href="https://docwiki.embarcadero.com/RADStudio/Alexandria/e/index.php?title=Connect_to_PostgreSQL_(FireDAC)&amp;mobileaction=toggle_view_mobile" class="noprint stopMobileRedirectToggle">Mobile view</a></li>
+							</ul>
+									<div style="clear: both;"></div>
+		</div>
+		<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script type="3e97744c3d8f2836440d1417-text/javascript">(window.RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgPageParseReport":{"limitreport":{"cputime":"0.071","walltime":"0.556","ppvisitednodes":{"value":154,"limit":1000000},"ppgeneratednodes":{"value":390,"limit":1000000},"postexpandincludesize":{"value":1025,"limit":2097152},"templateargumentsize":{"value":349,"limit":2097152},"expansiondepth":{"value":4,"limit":40},"expensivefunctioncount":{"value":0,"limit":100},"unstrip-depth":{"value":0,"limit":20},"unstrip-size":{"value":3470,"limit":5000000},"timingprofile":["100.00%  488.543      1 -total","  0.67%    3.253      1 Template:Parent","  0.64%    3.135      4 Template:Code","  0.60%    2.934      2 Template:Quote","  0.50%    2.447      1 Template:SupportedRHEL","  0.49%    2.414      1 Template:Company","  0.49%    2.410      1 Template:SupportedUbuntu"]},"cachereport":{"timestamp":"20260403234517","ttl":0,"transientcontent":true}}});});</script><script type="3e97744c3d8f2836440d1417-text/javascript">(window.RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgBackendResponseTime":761});});</script>
+	<script src="/cdn-cgi/scripts/7d0fa10a/cloudflare-static/rocket-loader.min.js" data-cf-settings="3e97744c3d8f2836440d1417-|49" defer></script></body>
+</html>

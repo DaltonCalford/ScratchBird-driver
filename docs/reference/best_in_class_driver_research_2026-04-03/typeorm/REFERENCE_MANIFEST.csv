@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+typeorm,TypeORM PostgreSQL docs,selected_docs,https://typeorm.io/docs/drivers/postgres/,docs/reference/best_in_class_driver_research_2026-04-03/typeorm/downloads/01_TypeORM_PostgreSQL_docs.html,2026-04-03,downloaded,,text/html
+typeorm,TypeORM repo,selected_repo,https://github.com/typeorm/typeorm,docs/reference/best_in_class_driver_research_2026-04-03/typeorm/downloads/02_TypeORM_repo.html,2026-04-03,downloaded,refs/heads/master e8b7f50a260f77107c8e107507479876a84beaaa,text/html
+typeorm,TypeORM MySQL docs,candidate_docs,https://typeorm.io/docs/drivers/mysql/,docs/reference/best_in_class_driver_research_2026-04-03/typeorm/downloads/03_TypeORM_MySQL_docs.html,2026-04-03,downloaded,,text/html
+typeorm,TypeORM SQL Server docs,candidate_docs,https://typeorm.io/docs/drivers/microsoft-sqlserver/,docs/reference/best_in_class_driver_research_2026-04-03/typeorm/downloads/04_TypeORM_SQL_Server_docs.html,2026-04-03,downloaded,,text/html

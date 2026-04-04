@@ -1,0 +1,5 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+go,pgx docs,selected_docs,https://pkg.go.dev/github.com/jackc/pgx/v5,docs/reference/best_in_class_driver_research_2026-04-03/go/downloads/01_pgx_docs.html,2026-04-03,downloaded,,text/html
+go,pgx repo,selected_repo,https://github.com/jackc/pgx,docs/reference/best_in_class_driver_research_2026-04-03/go/downloads/02_pgx_repo.html,2026-04-03,downloaded,refs/heads/master 08c9bb1f0d8fa6cc10ed8c713e68b1baa64dfe2c,text/html
+go,go-sql-driver/mysql repo,candidate_repo,https://github.com/go-sql-driver/mysql,docs/reference/best_in_class_driver_research_2026-04-03/go/downloads/03_go-sql-driver_mysql_repo.html,2026-04-03,downloaded,refs/heads/master fed2c72bc5183941d1907934a52d7fbf513b2ced,text/html
+go,go-mssqldb repo,candidate_repo,https://github.com/microsoft/go-mssqldb,docs/reference/best_in_class_driver_research_2026-04-03/go/downloads/04_go-mssqldb_repo.html,2026-04-03,downloaded,refs/heads/main 17636aa5108e0c334caaf2008813e4860188dc5b,text/html

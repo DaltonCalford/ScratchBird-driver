@@ -1,0 +1,3161 @@
+ <!DOCTYPE html>
+		<html
+			class="layout layout-holy-grail   show-table-of-contents conceptual show-breadcrumb default-focus"
+			lang="en-us"
+			dir="ltr"
+			data-authenticated="false"
+			data-auth-status-determined="false"
+			data-target="docs"
+			x-ms-format-detection="none"
+		>
+			
+		<head>
+			<title>Introduction to Microsoft.Data.SqlClient Namespace - ADO.NET Provider for SQL Server | Microsoft Learn</title>
+			<meta charset="utf-8" />
+			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+			<meta name="color-scheme" content="light dark" />
+
+			<meta name="description" content="Learn about the Microsoft.Data.SqlClient namespace and how it&#39;s the preferred way to connect to SQL for .NET applications." />
+			<link rel="canonical" href="https://learn.microsoft.com/en-us/sql/connect/ado-net/introduction-microsoft-data-sqlclient-namespace?view=sql-server-ver17" /> 
+
+			<!-- Non-customizable open graph and sharing-related metadata -->
+			<meta name="twitter:card" content="summary_large_image" />
+			<meta name="twitter:site" content="@MicrosoftLearn" />
+			<meta property="og:type" content="website" />
+			<meta property="og:image:alt" content="Microsoft Learn" />
+			<meta property="og:image" content="https://learn.microsoft.com/en-us/media/open-graph-image.png" />
+			<!-- Page specific open graph and sharing-related metadata -->
+			<meta property="og:title" content="Introduction to Microsoft.Data.SqlClient Namespace - ADO.NET Provider for SQL Server" />
+			<meta property="og:url" content="https://learn.microsoft.com/en-us/sql/connect/ado-net/introduction-microsoft-data-sqlclient-namespace?view=sql-server-ver17" />
+			<meta property="og:description" content="Learn about the Microsoft.Data.SqlClient namespace and how it&#39;s the preferred way to connect to SQL for .NET applications." />
+			<meta name="platform_id" content="e335d2bc-fce0-407c-e2a2-7483c7eedd1f" /> <meta name="scope" content="sql" />
+			<meta name="locale" content="en-us" />
+			 
+			<meta name="uhfHeaderId" content="MSDocsHeader-DocsSQL" />
+
+			<meta name="page_type" content="conceptual" />
+
+			<!--page specific meta tags-->
+			
+
+			<!-- custom meta tags -->
+			
+		<meta name="toc_preview" content="true" />
+	
+		<meta name="feedback_system" content="Standard" />
+	
+		<meta name="feedback_product_url" content="https://feedback.azure.com/d365community/forum/04fe6ee0-3b25-ec11-b6e6-000d3a4f0da0" />
+	
+		<meta name="feedback_help_link_url" content="https://learn.microsoft.com/answers/tags/191/sql-server" />
+	
+		<meta name="feedback_help_link_type" content="get-help-at-qna" />
+	
+		<meta name="recommendations" content="true" />
+	
+		<meta name="manager" content="jroth" />
+	
+		<meta name="breadcrumb_path" content="../../breadcrumb/toc.json" />
+	
+		<meta name="monikerRange" content="&gt;=sql-server-2016 || &gt;=sql-server-linux-2017 || =azuresqldb-current || =azuresqldb-mi-current || =azure-sqldw-latest || &gt;=aps-pdw-2016 || =fabric" />
+	
+		<meta name="ms.update-cycle" content="1825-days" />
+	
+		<meta name="author" content="cheenamalhotra" />
+	
+		<meta name="ms.author" content="cmalhotra" />
+	
+		<meta name="ms.reviewer" content="randolphwest" />
+	
+		<meta name="ms.date" content="2026-03-17T00:00:00Z" />
+	
+		<meta name="ms.service" content="sql" />
+	
+		<meta name="ms.subservice" content="connectivity" />
+	
+		<meta name="ms.topic" content="whats-new" />
+	
+		<meta name="ms.custom" content="sfi-ropc-nochange" />
+	
+		<meta name="ms.custom" content="ignite-2025" />
+	
+		<meta name="document_id" content="c88ed436-3315-c7c4-8536-62396c0a2525" />
+	
+		<meta name="document_version_independent_id" content="1126c22e-62b7-da3a-fb31-b367dc7f3414" />
+	
+		<meta name="updated_at" content="2026-03-25T17:35:00Z" />
+	
+		<meta name="original_content_git_url" content="https://github.com/MicrosoftDocs/sql-docs-pr/blob/live/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md" />
+	
+		<meta name="gitcommit" content="https://github.com/MicrosoftDocs/sql-docs-pr/blob/b429f0b76a905ec53fc425ab070a419e7928f920/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md" />
+	
+		<meta name="git_commit_id" content="b429f0b76a905ec53fc425ab070a419e7928f920" />
+	
+		<meta name="monikers" content="fabric" />
+	
+		<meta name="monikers" content="azure-sqldw-latest" />
+	
+		<meta name="monikers" content="azuresqldb-current" />
+	
+		<meta name="monikers" content="azuresqldb-mi-current" />
+	
+		<meta name="monikers" content="aps-pdw-2016" />
+	
+		<meta name="monikers" content="aps-pdw-2016-au7" />
+	
+		<meta name="monikers" content="sql-server-linux-2017" />
+	
+		<meta name="monikers" content="sql-server-linux-ver15" />
+	
+		<meta name="monikers" content="sql-server-linux-ver16" />
+	
+		<meta name="monikers" content="sql-server-linux-ver17" />
+	
+		<meta name="monikers" content="sql-server-2016" />
+	
+		<meta name="monikers" content="sql-server-2017" />
+	
+		<meta name="monikers" content="sql-server-ver15" />
+	
+		<meta name="monikers" content="sql-server-ver16" />
+	
+		<meta name="monikers" content="sql-server-ver17" />
+	
+		<meta name="default_moniker" content="sql-server-ver17" />
+	
+		<meta name="site_name" content="Docs" />
+	
+		<meta name="depot_name" content="SQL.sql-content" />
+	
+		<meta name="schema" content="Conceptual" />
+	
+		<meta name="toc_rel" content="../toc.json" />
+	
+		<meta name="pdf_url_template" content="https://learn.microsoft.com/pdfstore/en-us/SQL.sql-content/{branchName}{pdfName}" />
+	
+		<meta name="word_count" content="8866" />
+	
+		<meta name="config_moniker_range" content="=azuresqldb-current || =azuresqldb-mi-current || =azure-sqldw-latest || &gt;=aps-pdw-2016 || &gt;=sql-server-2016 || &gt;=sql-server-linux-2017 || =fabric || =fabric-sqldb" />
+	
+		<meta name="asset_id" content="connect/ado-net/introduction-microsoft-data-sqlclient-namespace" />
+	
+		<meta name="moniker_range_name" content="adb48d2d57fffdfa927a9947b75b3c26" />
+	
+		<meta name="item_type" content="Content" />
+	
+		<meta name="source_path" content="docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md" />
+	
+		<meta name="previous_tlsh_hash" content="6061FD33D70C962AFF935A063A13F75063F0C444ADB06ACC10257A7242063F376BEE5682D256B7547633477311C3B20A92826B3E91FE2B975264152CC56CB5F2ABFA3BF6D7" />
+	
+		<meta name="github_feedback_content_git_url" content="https://github.com/MicrosoftDocs/sql-docs/blob/live/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md" />
+	
+		<meta name="markdown_url" content="https://learn.microsoft.com/en-us/sql/connect/ado-net/introduction-microsoft-data-sqlclient-namespace?view=sql-server-ver17&amp;accept=text/markdown" />
+	 
+		<meta name="cmProducts" content="https://authoring-docs-microsoft.poolparty.biz/devrel/7696cda6-0510-47f6-8302-71bb5d2e28cf" data-source="generated" />
+	
+		<meta name="cmProducts" content="https://authoring-docs-microsoft.poolparty.biz/devrel/bcbcbad5-4208-4783-8035-8481272c98b8" data-source="generated" />
+	
+		<meta name="spProducts" content="https://authoring-docs-microsoft.poolparty.biz/devrel/69c76c32-967e-4c65-b89a-74cc527db725" data-source="generated" />
+	
+		<meta name="spProducts" content="https://authoring-docs-microsoft.poolparty.biz/devrel/43b2e5aa-8a6d-4de2-a252-692232e5edc8" data-source="generated" />
+	
+
+			<!-- assets and js globals -->
+			
+			<link rel="stylesheet" href="/static/assets/0.4.03377.7675-f5f342ae/styles/site-ltr.css" />
+			
+			<script src="https://wcpstatic.microsoft.com/mscc/lib/v2/wcp-consent.js"></script>
+			<script src="https://js.monitor.azure.com/scripts/c/ms.jsll-4.min.js"></script>
+			<script src="/_themes/docs.theme/master/en-us/_themes/global/deprecation.js"></script>
+
+			<!-- msdocs global object -->
+			<script id="msdocs-script">
+		var msDocs = {
+  "environment": {
+    "accessLevel": "online",
+    "azurePortalHostname": "portal.azure.com",
+    "reviewFeatures": false,
+    "supportLevel": "production",
+    "systemContent": true,
+    "siteName": "learn",
+    "legacyHosting": false
+  },
+  "data": {
+    "contentLocale": "en-us",
+    "contentDir": "ltr",
+    "userLocale": "en-us",
+    "userDir": "ltr",
+    "pageTemplate": "Conceptual",
+    "brand": "",
+    "context": {},
+    "standardFeedback": true,
+    "showFeedbackReport": false,
+    "feedbackHelpLinkType": "get-help-at-qna",
+    "feedbackHelpLinkUrl": "https://learn.microsoft.com/answers/tags/191/sql-server",
+    "feedbackSystem": "Standard",
+    "feedbackGitHubRepo": "MicrosoftDocs/sql-docs",
+    "feedbackProductUrl": "https://feedback.azure.com/d365community/forum/04fe6ee0-3b25-ec11-b6e6-000d3a4f0da0",
+    "extendBreadcrumb": false,
+    "isEditDisplayable": true,
+    "isPrivateUnauthorized": false,
+    "hideViewSource": false,
+    "isPermissioned": false,
+    "hasRecommendations": true,
+    "contributors": [
+      {
+        "name": "cheenamalhotra",
+        "url": "https://github.com/cheenamalhotra"
+      },
+      {
+        "name": "TimShererWithAquent",
+        "url": "https://github.com/TimShererWithAquent"
+      },
+      {
+        "name": "rmca14",
+        "url": "https://github.com/rmca14"
+      },
+      {
+        "name": "MikeRayMSFT",
+        "url": "https://github.com/MikeRayMSFT"
+      },
+      {
+        "name": "Dickson-Mwendia",
+        "url": "https://github.com/Dickson-Mwendia"
+      },
+      {
+        "name": "rwestMSFT",
+        "url": "https://github.com/rwestMSFT"
+      },
+      {
+        "name": "Stacyrch140",
+        "url": "https://github.com/Stacyrch140"
+      },
+      {
+        "name": "scottaddie",
+        "url": "https://github.com/scottaddie"
+      },
+      {
+        "name": "arellegue",
+        "url": "https://github.com/arellegue"
+      },
+      {
+        "name": "MashaMSFT",
+        "url": "https://github.com/MashaMSFT"
+      },
+      {
+        "name": "alexbuckgit",
+        "url": "https://github.com/alexbuckgit"
+      },
+      {
+        "name": "David-Engel",
+        "url": "https://github.com/David-Engel"
+      },
+      {
+        "name": "lcheunglci",
+        "url": "https://github.com/lcheunglci"
+      },
+      {
+        "name": "rothja",
+        "url": "https://github.com/rothja"
+      },
+      {
+        "name": "Kaur-Parminder",
+        "url": "https://github.com/Kaur-Parminder"
+      },
+      {
+        "name": "DCtheGeek",
+        "url": "https://github.com/DCtheGeek"
+      },
+      {
+        "name": "johnnypham",
+        "url": "https://github.com/johnnypham"
+      },
+      {
+        "name": "yukiwongky",
+        "url": "https://github.com/yukiwongky"
+      }
+    ]
+  },
+  "functions": {}
+};;
+	</script>
+
+			<!-- base scripts, msdocs global should be before this -->
+			<script src="/static/assets/0.4.03377.7675-f5f342ae/scripts/en-us/index-docs.js"></script>
+			
+
+			<!-- json-ld -->
+			
+		</head>
+	
+			<body
+				id="body"
+				data-bi-name="body"
+				class="layout-body "
+				lang="en-us"
+				dir="ltr"
+			>
+				<header class="layout-body-header">
+		<div class="header-holder has-default-focus">
+			
+		<a
+			href="#main"
+			
+			style="z-index: 1070"
+			class="outline-color-text visually-hidden-until-focused position-fixed inner-focus focus-visible top-0 left-0 right-0 padding-xs text-align-center background-color-body"
+			
+		>
+			Skip to main content
+		</a>
+	
+		<a
+			href="#"
+			data-skip-to-ask-learn
+			style="z-index: 1070"
+			class="outline-color-text visually-hidden-until-focused position-fixed inner-focus focus-visible top-0 left-0 right-0 padding-xs text-align-center background-color-body"
+			hidden
+		>
+			Skip to Ask Learn chat experience
+		</a>
+	
+
+			<div hidden id="cookie-consent-holder" data-test-id="cookie-consent-container"></div>
+			<!-- Unsupported browser warning -->
+			<div
+				id="unsupported-browser"
+				style="background-color: white; color: black; padding: 16px; border-bottom: 1px solid grey;"
+				hidden
+			>
+				<div style="max-width: 800px; margin: 0 auto;">
+					<p style="font-size: 24px">This browser is no longer supported.</p>
+					<p style="font-size: 16px; margin-top: 16px;">
+						Upgrade to Microsoft Edge to take advantage of the latest features, security updates, and technical support.
+					</p>
+					<div style="margin-top: 12px;">
+						<a
+							href="https://go.microsoft.com/fwlink/p/?LinkID=2092881 "
+							style="background-color: #0078d4; border: 1px solid #0078d4; color: white; padding: 6px 12px; border-radius: 2px; display: inline-block;"
+						>
+							Download Microsoft Edge
+						</a>
+						<a
+							href="https://learn.microsoft.com/en-us/lifecycle/faq/internet-explorer-microsoft-edge"
+							style="background-color: white; padding: 6px 12px; border: 1px solid #505050; color: #171717; border-radius: 2px; display: inline-block;"
+						>
+							More info about Internet Explorer and Microsoft Edge
+						</a>
+					</div>
+				</div>
+			</div>
+			<!-- site header -->
+			<div
+				id="ms--site-header"
+				data-test-id="site-header-wrapper"
+				itemscope="itemscope"
+				itemtype="http://schema.org/Organization"
+			>
+				<div
+					id="ms--mobile-nav"
+					class="site-header display-none-tablet padding-inline-none gap-none"
+					data-bi-name="mobile-header"
+					data-test-id="mobile-header"
+				></div>
+				<div
+					id="ms--primary-nav"
+					class="site-header display-none display-flex-tablet"
+					data-bi-name="L1-header"
+					data-test-id="primary-header"
+				></div>
+				<div
+					id="ms--secondary-nav"
+					class="site-header display-none display-flex-tablet"
+					data-bi-name="L2-header"
+					data-test-id="secondary-header"
+					
+				></div>
+			</div>
+			
+		<!-- banner -->
+		<div data-banner>
+			<div id="disclaimer-holder"></div>
+			
+		</div>
+		<!-- banner end -->
+	
+		</div>
+	</header>
+				 <section
+					id="layout-body-menu"
+					class="layout-body-menu display-flex"
+					data-bi-name="menu"
+			  >
+					
+		<div
+			id="left-container"
+			class="left-container display-none display-block-tablet padding-inline-sm padding-bottom-sm width-full"
+			data-toc-container="true"
+		>
+			<!-- Regular TOC content (default) -->
+			<div id="ms--toc-content" class="height-full">
+				<nav
+					id="affixed-left-container"
+					class="margin-top-sm-tablet position-sticky display-flex flex-direction-column"
+					aria-label="Primary"
+					data-bi-name="left-toc"
+					role="navigation"
+				></nav>
+			</div>
+			<!-- Collapsible TOC content (hidden by default) -->
+			<div id="ms--toc-content-collapsible" class="height-full" hidden>
+				<nav
+					id="affixed-left-container"
+					class="margin-top-sm-tablet position-sticky display-flex flex-direction-column"
+					aria-label="Primary"
+					data-bi-name="left-toc"
+					role="navigation"
+				>
+					<div
+						id="ms--collapsible-toc-header"
+						class="display-flex flex-direction-row-reverse justify-content-space-between align-items-center margin-bottom-xxs"
+					>
+						<button
+							type="button"
+							class="button button-clear inner-focus"
+							data-collapsible-toc-toggle
+							aria-expanded="true"
+							aria-controls="ms--collapsible-toc-content"
+							aria-label="Table of contents"
+						>
+							<span class="icon font-size-xxl" aria-hidden="true">
+								<span class="docon docon-panel-left-contract"></span>
+							</span>
+						</button>
+						<div id="ms--collapsible-toc-moniker-slot" class="flex-grow-1"></div>
+					</div>
+				</nav>
+			</div>
+		</div>
+	
+			  </section>
+
+				<main
+					id="main"
+					role="main"
+					class="layout-body-main "
+					data-bi-name="content"
+					lang="en-us"
+					dir="ltr"
+				>
+					
+			<div
+		id="ms--content-header"
+		class="content-header default-focus border-bottom-none"
+		data-bi-name="content-header"
+	>
+		<div class="content-header-controls margin-xxs margin-inline-sm-tablet">
+			<button
+				type="button"
+				class="contents-button button button-sm margin-right-xxs"
+				data-bi-name="contents-expand"
+				aria-haspopup="true"
+				data-contents-button
+			>
+				<span class="icon" aria-hidden="true"><span class="docon docon-menu"></span></span>
+				<span class="contents-expand-title"> Table of contents </span>
+			</button>
+			<button
+				type="button"
+				class="ap-collapse-behavior ap-expanded button button-sm"
+				data-bi-name="ap-collapse"
+				aria-controls="action-panel"
+			>
+				<span class="icon" aria-hidden="true"><span class="docon docon-exit-mode"></span></span>
+				<span>Exit editor mode</span>
+			</button>
+		</div>
+	</div>
+			<div data-main-column class="padding-sm padding-top-none padding-top-sm-tablet">
+				<div>
+					
+		<div id="article-header" class="background-color-body margin-bottom-xs display-none-print">
+			<div class="display-flex align-items-center justify-content-space-between">
+				
+		<details
+			id="article-header-breadcrumbs-overflow-popover"
+			class="popover"
+			data-for="article-header-breadcrumbs"
+		>
+			<summary
+				class="button button-clear button-primary button-sm inner-focus"
+				aria-label="All breadcrumbs"
+			>
+				<span class="icon">
+					<span class="docon docon-more"></span>
+				</span>
+			</summary>
+			<div id="article-header-breadcrumbs-overflow" class="popover-content padding-none"></div>
+		</details>
+
+		<bread-crumbs
+			id="article-header-breadcrumbs"
+			role="group"
+			aria-label="Breadcrumbs"
+			data-test-id="article-header-breadcrumbs"
+			class="overflow-hidden flex-grow-1 margin-right-sm margin-right-md-tablet margin-right-lg-desktop margin-left-negative-xxs padding-left-xxs"
+		></bread-crumbs>
+	 
+		<div
+			id="article-header-page-actions"
+			class="opacity-none margin-left-auto display-flex flex-wrap-no-wrap align-items-stretch"
+		>
+			
+		<button
+			class="button button-sm border-none inner-focus display-none-tablet flex-shrink-0 "
+			data-bi-name="ask-learn-assistant-entry"
+			data-test-id="ask-learn-assistant-modal-entry-mobile"
+			data-ask-learn-modal-entry
+			
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-label="Ask Learn"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+		</button>
+		<button
+			class="button button-sm display-none display-inline-flex-tablet display-none-desktop flex-shrink-0 margin-right-xxs border-color-ask-learn "
+			data-bi-name="ask-learn-assistant-entry"
+			
+			data-test-id="ask-learn-assistant-modal-entry-tablet"
+			data-ask-learn-modal-entry
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+		<button
+			class="button button-sm display-none flex-shrink-0 display-inline-flex-desktop margin-right-xxs border-color-ask-learn "
+			data-bi-name="ask-learn-assistant-entry"
+			
+			data-test-id="ask-learn-assistant-flyout-entry"
+			data-ask-learn-flyout-entry
+			data-flyout-button="toggle"
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-controls="ask-learn-flyout"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+	 
+		<button
+			type="button"
+			id="ms--focus-mode-button"
+			data-focus-mode
+			data-bi-name="focus-mode-entry"
+			class="button button-sm flex-shrink-0 margin-right-xxs display-none display-inline-flex-desktop"
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-glasses"></span>
+			</span>
+			<span>Focus mode</span>
+		</button>
+	 
+
+			<details class="popover popover-right" id="article-header-page-actions-overflow">
+				<summary
+					class="justify-content-flex-start button button-clear button-sm button-primary inner-focus"
+					aria-label="More actions"
+					title="More actions"
+				>
+					<span class="icon" aria-hidden="true">
+						<span class="docon docon-more-vertical"></span>
+					</span>
+				</summary>
+				<div class="popover-content">
+					
+		<button
+			data-page-action-item="overflow-mobile"
+			type="button"
+			class="button-block button-sm inner-focus button button-clear display-none-tablet justify-content-flex-start text-align-left"
+			data-bi-name="contents-expand"
+			data-contents-button
+			data-popover-close
+		>
+			<span class="icon">
+				<span class="docon docon-editor-list-bullet" aria-hidden="true"></span>
+			</span>
+			<span class="contents-expand-title">Table of contents</span>
+		</button>
+	 
+		<a
+			id="lang-link-overflow"
+			class="button-sm inner-focus button button-clear button-block justify-content-flex-start text-align-left"
+			data-bi-name="language-toggle"
+			data-page-action-item="overflow-all"
+			data-check-hidden="true"
+			data-read-in-link
+			href="#"
+			hidden
+		>
+			<span class="icon" aria-hidden="true" data-read-in-link-icon>
+				<span class="docon docon-locale-globe"></span>
+			</span>
+			<span data-read-in-link-text>Read in English</span>
+		</a>
+	 
+		<button
+			type="button"
+			class="collection button button-clear button-sm button-block justify-content-flex-start text-align-left inner-focus"
+			data-list-type="collection"
+			data-bi-name="collection"
+			data-page-action-item="overflow-all"
+			data-check-hidden="true"
+			data-popover-close
+		>
+			<span class="icon" aria-hidden="true">
+				<span class="docon docon-circle-addition"></span>
+			</span>
+			<span class="collection-status">Add</span>
+		</button>
+	
+					
+		<button
+			type="button"
+			class="collection button button-block button-clear button-sm justify-content-flex-start text-align-left inner-focus"
+			data-list-type="plan"
+			data-bi-name="plan"
+			data-page-action-item="overflow-all"
+			data-check-hidden="true"
+			data-popover-close
+			hidden
+		>
+			<span class="icon" aria-hidden="true">
+				<span class="docon docon-circle-addition"></span>
+			</span>
+			<span class="plan-status">Add to plan</span>
+		</button>
+	  
+		<a
+			data-contenteditbtn
+			class="button button-clear button-block button-sm inner-focus justify-content-flex-start text-align-left text-decoration-none"
+			data-bi-name="edit"
+			
+			href="https://github.com/MicrosoftDocs/sql-docs/blob/live/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md"
+			data-original_content_git_url="https://github.com/MicrosoftDocs/sql-docs-pr/blob/live/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md"
+			data-original_content_git_url_template="{repo}/blob/{branch}/docs/connect/ado-net/introduction-microsoft-data-sqlclient-namespace.md"
+			data-pr_repo=""
+			data-pr_branch=""
+		>
+			<span class="icon" aria-hidden="true">
+				<span class="docon docon-edit-outline"></span>
+			</span>
+			<span>Edit</span>
+		</a>
+	
+					
+		<hr class="margin-block-xxs" />
+		<h4 class="font-size-sm padding-left-xxs">Share via</h4>
+		
+					<a
+						class="button button-clear button-sm inner-focus button-block justify-content-flex-start text-align-left text-decoration-none share-facebook"
+						data-bi-name="facebook"
+						data-page-action-item="overflow-all"
+						href="#"
+					>
+						<span class="icon color-primary" aria-hidden="true">
+							<span class="docon docon-facebook-share"></span>
+						</span>
+						<span>Facebook</span>
+					</a>
+
+					<a
+						href="#"
+						class="button button-clear button-sm inner-focus button-block justify-content-flex-start text-align-left text-decoration-none share-twitter"
+						data-bi-name="twitter"
+						data-page-action-item="overflow-all"
+					>
+						<span class="icon color-text" aria-hidden="true">
+							<span class="docon docon-xlogo-share"></span>
+						</span>
+						<span>x.com</span>
+					</a>
+
+					<a
+						href="#"
+						class="button button-clear button-sm inner-focus button-block justify-content-flex-start text-align-left text-decoration-none share-linkedin"
+						data-bi-name="linkedin"
+						data-page-action-item="overflow-all"
+					>
+						<span class="icon color-primary" aria-hidden="true">
+							<span class="docon docon-linked-in-logo"></span>
+						</span>
+						<span>LinkedIn</span>
+					</a>
+					<a
+						href="#"
+						class="button button-clear button-sm inner-focus button-block justify-content-flex-start text-align-left text-decoration-none share-email"
+						data-bi-name="email"
+						data-page-action-item="overflow-all"
+					>
+						<span class="icon color-primary" aria-hidden="true">
+							<span class="docon docon-mail-message"></span>
+						</span>
+						<span>Email</span>
+					</a>
+			  
+	 
+		<hr class="margin-block-xxs" />
+		
+				<button
+					class="button button-block button-clear button-sm justify-content-flex-start text-align-left inner-focus"
+					type="button"
+					data-bi-name="copy-markdown"
+					data-page-action-item="overflow-all"
+					data-copy-markdown
+					data-copy-state="idle"
+					data-check-hidden="true"
+				>
+					<span class="icon color-primary" aria-hidden="true">
+						<span data-show-when="idle" class="docon docon-code-lang"></span>
+						<span data-show-when="loading" class="loader" hidden></span>
+						<span data-show-when="success" class="docon docon-check-mark" hidden></span>
+					</span>
+					<span>Copy Markdown</span>
+				</button>
+		   
+				<button
+					class="button button-block button-clear button-sm justify-content-flex-start text-align-left inner-focus"
+					type="button"
+					data-bi-name="print"
+					data-page-action-item="overflow-all"
+					data-popover-close
+					data-print-page
+					data-check-hidden="true"
+				>
+					<span class="icon color-primary" aria-hidden="true">
+						<span class="docon docon-print"></span>
+					</span>
+					<span>Print</span>
+				</button>
+		  
+	
+				</div>
+			</details>
+		</div>
+	
+			</div>
+		</div>
+	  
+		<!-- privateUnauthorizedTemplate is hidden by default -->
+		<div unauthorized-private-section data-bi-name="permission-content-unauthorized-private" hidden>
+			<hr class="hr margin-top-xs margin-bottom-sm" />
+			<div class="notification notification-info">
+				<div class="notification-content">
+					<p class="margin-top-none notification-title">
+						<span class="icon">
+							<span class="docon docon-exclamation-circle-solid" aria-hidden="true"></span>
+						</span>
+						<span>Note</span>
+					</p>
+					<p class="margin-top-none authentication-determined not-authenticated">
+						Access to this page requires authorization. You can try <a class="docs-sign-in" href="#" data-bi-name="permission-content-sign-in">signing in</a> or <a  class="docs-change-directory" data-bi-name="permisson-content-change-directory">changing directories</a>.
+					</p>
+					<p class="margin-top-none authentication-determined authenticated">
+						Access to this page requires authorization. You can try <a class="docs-change-directory" data-bi-name="permisson-content-change-directory">changing directories</a>.
+					</p>
+				</div>
+			</div>
+		</div>
+	
+					<div class="content"><h1 id="introduction-to-microsoftdatasqlclient-namespace">Introduction to Microsoft.Data.SqlClient namespace</h1></div>
+					
+		<div
+			id="article-metadata"
+			data-bi-name="article-metadata"
+			data-test-id="article-metadata"
+			class="page-metadata-container display-flex gap-xxs justify-content-space-between align-items-center flex-wrap-wrap"
+		>
+			 
+				<div
+					id="user-feedback"
+					class="margin-block-xxs display-none display-none-print"
+					hidden
+					data-hide-on-archived
+				>
+					
+		<button
+			id="user-feedback-button"
+			data-test-id="conceptual-feedback-button"
+			class="button button-sm button-clear button-primary display-none"
+			type="button"
+			data-bi-name="user-feedback-button"
+			data-user-feedback-button
+			hidden
+		>
+			<span class="icon" aria-hidden="true">
+				<span class="docon docon-like"></span>
+			</span>
+			<span>Feedback</span>
+		</button>
+	
+				</div>
+		  
+		</div>
+	 
+		<div data-id="ai-summary" class="display-none-print">
+			<div id="ms--ai-summary-cta" class="margin-top-xs display-flex align-items-center">
+				<span class="icon" aria-hidden="true">
+					<span class="docon docon-sparkle-fill gradient-text-vivid"></span>
+				</span>
+				<button
+					id="ms--ai-summary"
+					type="button"
+					class="tag tag-sm tag-suggestion margin-left-xxs"
+					data-test-id="ai-summary-cta"
+					data-bi-name="ai-summary-cta"
+					data-an="ai-summary"
+				>
+					<span class="ai-summary-cta-text">
+						Summarize this article for me
+					</span>
+				</button>
+			</div>
+			<!-- Slot where the client will render the summary card after the user clicks the CTA -->
+			<div id="ms--ai-summary-header" class="margin-top-xs"></div>
+		</div>
+	 
+		<nav
+			id="center-doc-outline"
+			class="doc-outline is-hidden-desktop display-none-print margin-bottom-sm"
+			data-bi-name="intopic toc"
+			aria-label="In this article"
+		>
+			<h2 id="ms--in-this-article" class="title is-6 margin-block-xs">
+				In this article
+			</h2>
+		</nav>
+	
+					<div class="content"><p><img src="../../includes/media/download.svg?view=sql-server-ver17" role="presentation" data-linktype="relative-path">
+ <strong><a href="../sql-connection-libraries?view=sql-server-ver17#anchor-20-drivers-relational-access" data-linktype="relative-path">Download ADO.NET</a></strong></p>
+<p>The Microsoft.Data.SqlClient namespace is essentially a new version of the System.Data.SqlClient namespace. Microsoft.Data.SqlClient generally maintains the same API and backward compatibility with System.Data.SqlClient. To migrate from System.Data.SqlClient to Microsoft.Data.SqlClient, for most applications, it's simple. Add a NuGet dependency on Microsoft.Data.SqlClient and update references and <code>using</code> statements to Microsoft.Data.SqlClient.</p>
+<p>There are a few differences in less-used APIs compared to System.Data.SqlClient that might affect some applications. For those differences, refer to the useful <a href="https://github.com/dotnet/SqlClient/blob/main/porting-cheat-sheet.md" data-linktype="external">porting cheat sheet</a>.</p>
+<h2 id="api-reference">API reference</h2>
+<p>The Microsoft.Data.SqlClient API details can be found in the <a href="/en-us/dotnet/api/microsoft.data.sqlclient" data-linktype="absolute-path">.NET API Browser</a>.</p>
+<h2 id="release-notes-for-70">Release notes for 7.0</h2>
+<p>This is the general availability release of <strong>Microsoft.Data.SqlClient 7.0</strong>, a major milestone for the .NET data provider for SQL Server. This release addresses the most upvoted issue in the repository's history — extracting Azure dependencies from the core package — introduces pluggable SSPI authentication, adds enhanced routing for Azure, and delivers async read performance improvements.</p>
+<p>Also released as part of this milestone:</p>
+<ul>
+<li>Released Microsoft.Data.SqlClient.Extensions.Abstractions 1.0.0. See <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/Extensions/Abstractions/1.0/1.0.0.md" data-linktype="external">release notes</a>.</li>
+<li>Released Microsoft.Data.SqlClient.Extensions.Azure 1.0.0. See <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/Extensions/Azure/1.0/1.0.0.md" data-linktype="external">release notes</a>.</li>
+<li>Released Microsoft.Data.SqlClient.Internal.Logging 1.0.0. See <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/Internal/Logging/1.0/1.0.0.md" data-linktype="external">release notes</a>.</li>
+<li>Released Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider 7.0.0. See <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/add-ons/AzureKeyVaultProvider/7.0/7.0.0.md" data-linktype="external">release notes</a>.</li>
+</ul>
+<h3 id="breaking-changes-in-70">Breaking changes in 7.0</h3>
+<h4 id="azure-dependencies-removed-from-core-package">Azure dependencies removed from core package</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li>The core <code>Microsoft.Data.SqlClient</code> package no longer depends on <code>Azure.Core</code>, <code>Azure.Identity</code>, or their transitive dependencies (e.g., <code>Microsoft.Identity.Client</code>, <code>Microsoft.Web.WebView2</code>). Azure Active Directory / Entra ID authentication functionality (<code>ActiveDirectoryAuthenticationProvider</code> and related types) has been extracted into a new <code>Microsoft.Data.SqlClient.Extensions.Azure</code> package.
+(<a href="https://github.com/dotnet/SqlClient/issues/1108" data-linktype="external">#1108</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3680" data-linktype="external">#3680</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3902" data-linktype="external">#3902</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3904" data-linktype="external">#3904</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3908" data-linktype="external">#3908</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3917" data-linktype="external">#3917</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3982" data-linktype="external">#3982</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3978" data-linktype="external">#3978</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3986" data-linktype="external">#3986</a>)</li>
+<li>Two additional packages are introduced to support this separation: <code>Microsoft.Data.SqlClient.Extensions.Abstractions</code> (shared types between the core driver and extensions) and <code>Microsoft.Data.SqlClient.Internal.Logging</code> (shared ETW tracing infrastructure).<br>
+(<a href="https://github.com/dotnet/SqlClient/pull/3626" data-linktype="external">#3626</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3628" data-linktype="external">#3628</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3967" data-linktype="external">#3967</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/4038" data-linktype="external">#4038</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>All users benefit from a significantly lighter core package. Previously, the Azure dependency chain pulled in numerous assemblies even for applications that only needed basic SQL Server connectivity. This was the <a href="https://github.com/dotnet/SqlClient/issues/1108" data-linktype="external">most upvoted open issue</a> in the repository.</li>
+<li>Users who do not use Entra ID authentication no longer carry Azure-related assemblies in their build output.</li>
+<li>Users who do use Entra ID authentication can now manage Azure dependency versions independently from the core driver.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>Applications using Entra ID authentication (e.g., <code>ActiveDirectoryInteractive</code>, <code>ActiveDirectoryDefault</code>, <code>ActiveDirectoryManagedIdentity</code>, etc.) must now install the <code>Microsoft.Data.SqlClient.Extensions.Azure</code> NuGet package separately:</li>
+</ul>
+<pre><code class="lang-console">dotnet add package Microsoft.Data.SqlClient.Extensions.Azure
+</code></pre>
+<ul>
+<li>No code changes are required beyond adding the package reference.</li>
+<li>If an Entra ID authentication method is used without the Azure package installed, the driver now provides an actionable error message guiding users to install the correct package.</li>
+</ul>
+<h4 id="other-breaking-changes-in-70">Other breaking changes in 7.0</h4>
+<ul>
+<li>Reverted public visibility of internal interop enums (<code>IoControlCodeAccess</code> and <code>IoControlTransferType</code>) that were accidentally made public during the project merge.
+(<a href="https://github.com/dotnet/SqlClient/pull/3900" data-linktype="external">#3900</a>)</li>
+</ul>
+<h3 id="new-features-in-70">New Features in 7.0</h3>
+<h4 id="pluggable-authentication-with-sspicontextprovider">Pluggable authentication with SspiContextProvider</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li>Added a public <code>SspiContextProvider</code> property on <code>SqlConnection</code>, completing the SSPI extensibility work begun in 6.1.0. Applications can now supply a custom SSPI context provider for integrated authentication, enabling custom Kerberos ticket negotiation and NTLM username/password authentication scenarios.
+(<a href="https://github.com/dotnet/SqlClient/issues/2253" data-linktype="external">#2253</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/2494" data-linktype="external">#2494</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>Users authenticating across untrusted domains, non-domain-joined machines, or cross-platform environments where configuring integrated authentication is difficult.</li>
+<li>Users running in containers who need manual Kerberos negotiation without deploying sidecars or external ticket-refresh mechanisms.</li>
+<li>Users who need NTLM username/password authentication to SQL Server, which the driver does not provide natively.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>Applications can set a custom <code>SspiContextProvider</code> on <code>SqlConnection</code> before opening the connection:</li>
+</ul>
+<pre><code class="lang-c#">var connection = new SqlConnection(connectionString);
+connection.SspiContextProvider = new MyKerberosProvider();
+connection.Open();
+</code></pre>
+<ul>
+<li>The provider handles the authentication token exchange during integrated authentication. Existing authentication behavior is unchanged when no custom provider is set. See <a href="https://github.com/dotnet/SqlClient/tree/main/doc/samples/SspiContextProvider_CustomProvider.cs" data-linktype="external">SspiContextProvider_CustomProvider.cs</a> for a sample implementation.</li>
+<li><strong>Note:</strong> The <code>SspiContextProvider</code> is part of the connection pool key. Ensure the implementation returns a consistent identity per resource.</li>
+</ul>
+<h4 id="async-read-performance-packet-multiplexing-preview">Async read performance: Packet multiplexing (preview)</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li>Continued refinement of packet multiplexing with bug fixes and stability improvements since 6.1.0, plus new app context switches for opt-in control.
+(<a href="https://github.com/dotnet/SqlClient/pull/3534" data-linktype="external">#3534</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3537" data-linktype="external">#3537</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3605" data-linktype="external">#3605</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>Applications performing large async reads (<code>ExecuteReaderAsync</code> with big result sets, streaming scenarios, or bulk data retrieval).</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>Packet multiplexing ships behind two opt-in feature switches:</li>
+</ul>
+<pre><code class="lang-c#">AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseCompatibilityAsyncBehaviour", false);
+AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseCompatibilityProcessSni", false);
+</code></pre>
+<ul>
+<li>Setting both switches to <code>false</code> enables the new async processing path. By default, the driver uses the existing (compatible) behavior.</li>
+</ul>
+<h4 id="enhanced-routing-support">Enhanced Routing Support</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li>Added support for enhanced routing, a TDS feature that allows the server to redirect connections to a specific server <em>and</em> database during login.
+(<a href="https://github.com/dotnet/SqlClient/issues/3641" data-linktype="external">#3641</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3969" data-linktype="external">#3969</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3970" data-linktype="external">#3970</a>,
+<a href="https://github.com/dotnet/SqlClient/pull/3973" data-linktype="external">#3973</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>Users connecting to Azure environments that use named read replicas and gateway-based load balancing.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>Enhanced routing is negotiated automatically during login when the server supports it. No application code changes are required.</li>
+</ul>
+<h4 id="support-for-net-10">Support for .NET 10</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li>Updated pipelines and test suites to compile the driver using the .NET 10 SDK.
+(<a href="https://github.com/dotnet/SqlClient/pull/3686" data-linktype="external">#3686</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>Developers targeting .NET 10 on day one.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>SqlClient 7.0 compiles and tests against .NET 10, ensuring compatibility.</li>
+</ul>
+<h4 id="strongly-typed-diagnostic-events-on-net-framework">Strongly-typed diagnostic events on .NET Framework</h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li><p>Enabled <code>SqlClientDiagnosticListener</code> for <code>SqlCommand</code> on .NET Framework, closing a long-standing observability gap where diagnostic events were previously only emitted on .NET Core.
+(<a href="https://github.com/dotnet/SqlClient/pull/3658" data-linktype="external">#3658</a>)</p>
+</li>
+<li><p>Brought the 15 strongly-typed diagnostic event classes in the <code>Microsoft.Data.SqlClient.Diagnostics</code> namespace — originally introduced for .NET Core in 6.0 — to .NET Framework as part of the codebase merge. Both platforms now use the same strongly-typed event model. The types cover command, connection, and transaction lifecycle events:</p>
+<ul>
+<li><code>SqlClientCommandBefore</code>, <code>SqlClientCommandAfter</code>, <code>SqlClientCommandError</code></li>
+<li><code>SqlClientConnectionOpenBefore</code>, <code>SqlClientConnectionOpenAfter</code>, <code>SqlClientConnectionOpenError</code></li>
+<li><code>SqlClientConnectionCloseBefore</code>, <code>SqlClientConnectionCloseAfter</code>, <code>SqlClientConnectionCloseError</code></li>
+<li><code>SqlClientTransactionCommitBefore</code>, <code>SqlClientTransactionCommitAfter</code>, <code>SqlClientTransactionCommitError</code></li>
+<li><code>SqlClientTransactionRollbackBefore</code>, <code>SqlClientTransactionRollbackAfter</code>, <code>SqlClientTransactionRollbackError</code></li>
+</ul>
+<p>(<a href="https://github.com/dotnet/SqlClient/pull/3493" data-linktype="external">#3493</a>)</p>
+</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>.NET Framework users subscribing to <code>SqlClientDiagnosticListener</code> events for observability, distributed tracing, or custom telemetry. These users now have parity with .NET Core, gaining IntelliSense, compile-time safety, and eliminating the need to access diagnostic payloads via reflection or dictionary lookups.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>On .NET Framework, <code>SqlCommand</code> now emits the same diagnostic events that were previously only available on .NET Core. Subscribers to <code>DiagnosticListener</code> events (e.g., <code>Microsoft.Data.SqlClient.WriteCommandBefore</code>) receive the strongly-typed objects:</li>
+</ul>
+<pre><code class="lang-c#">listener.Subscribe(new Observer&lt;KeyValuePair&lt;string, object?&gt;&gt;(kvp =&gt;
+{
+    if (kvp.Value is SqlClientCommandBefore before)
+    {
+        Console.WriteLine($"Executing: {before.Command.CommandText}");
+    }
+}));
+</code></pre>
+<ul>
+<li>The types implement <code>IReadOnlyList&lt;KeyValuePair&lt;string, object&gt;&gt;</code> for backward compatibility with code that iterates properties generically.</li>
+</ul>
+<h4 id="other-additions-in-70">Other additions in 7.0</h4>
+<ul>
+<li><p>Added <code>SqlConfigurableRetryFactory.BaselineTransientErrors</code> static property exposing the default transient error codes list as a <code>ReadOnlyCollection&lt;int&gt;</code>, making it easier to extend the default list with application-specific error codes.
+(<a href="https://github.com/dotnet/SqlClient/pull/3903" data-linktype="external">#3903</a>)</p>
+</li>
+<li><p>Added app context switch <code>Switch.Microsoft.Data.SqlClient.EnableMultiSubnetFailoverByDefault</code> to set <code>MultiSubnetFailover=true</code> globally without modifying connection strings.
+(<a href="https://github.com/dotnet/SqlClient/pull/3841" data-linktype="external">#3841</a>)</p>
+</li>
+<li><p>Added app context switch <code>Switch.Microsoft.Data.SqlClient.IgnoreServerProvidedFailoverPartner</code> to let the client ignore server-provided failover partner info in Basic Availability Groups.
+(<a href="https://github.com/dotnet/SqlClient/pull/3625" data-linktype="external">#3625</a>)</p>
+</li>
+<li><p>Enabled User Agent Feature Extension (opt-in via <code>Switch.Microsoft.Data.SqlClient.EnableUserAgent</code>).
+(<a href="https://github.com/dotnet/SqlClient/pull/3606" data-linktype="external">#3606</a>)</p>
+</li>
+</ul>
+<h3 id="changes-in-70">Changes in 7.0</h3>
+<h4 id="deprecation-of-sqlauthenticationmethodactivedirectorypassword">Deprecation of <code>SqlAuthenticationMethod.ActiveDirectoryPassword</code></h4>
+<p><em>What Changed:</em></p>
+<ul>
+<li><code>SqlAuthenticationMethod.ActiveDirectoryPassword</code> (the ROPC flow) is now marked <code>[Obsolete]</code> and will generate compiler warnings. This aligns with Microsoft's move toward <a href="/en-us/entra/identity/authentication/concept-mandatory-multifactor-authentication" data-linktype="absolute-path">mandatory multifactor authentication</a>.
+(<a href="https://github.com/dotnet/SqlClient/pull/3671" data-linktype="external">#3671</a>)</li>
+</ul>
+<p><em>Who Benefits:</em></p>
+<ul>
+<li>Teams moving toward stronger, passwordless or MFA-compliant authentication.</li>
+</ul>
+<p><em>Impact:</em></p>
+<ul>
+<li>If you use <code>Authentication=Active Directory Password</code>, migrate to a supported alternative:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Recommended Authentication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Interactive / desktop apps</td>
+<td><code>Active Directory Interactive</code></td>
+</tr>
+<tr>
+<td>Service-to-service</td>
+<td><code>Active Directory Service Principal</code></td>
+</tr>
+<tr>
+<td>Azure-hosted workloads</td>
+<td><code>Active Directory Managed Identity</code></td>
+</tr>
+<tr>
+<td>Developer / CI environments</td>
+<td><code>Active Directory Default</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>See <a href="sql/azure-active-directory-authentication?view=sql-server-ver17" data-linktype="relative-path">Connect to Azure SQL with Microsoft Entra authentication</a> for more information.</li>
+</ul>
+<h3 id="70-target-platform-support">7.0 Target Platform Support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows x86, Windows x64, Windows ARM64)</li>
+<li>.NET 8.0+ (Windows x86, Windows x64, Windows ARM, Windows ARM64, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/7.0" data-linktype="external">7.0 Release Notes</a>.</p>
+<h2 id="release-notes-for-61">Release notes for 6.1</h2>
+<h3 id="new-features-in-61">New features in 6.1</h3>
+<h4 id="added-dedicated-sql-server-vector-data-type-support">Added dedicated SQL Server vector data type support</h4>
+<p><em>What changed:</em></p>
+<ul>
+<li><p>Optimized vector communications between MDS and SQL Server 2025 (17.x), employing a custom binary format over the TDS protocol (<a href="https://github.com/dotnet/SqlClient/pull/3433" data-linktype="external">#3433</a>, <a href="https://github.com/dotnet/SqlClient/pull/3443" data-linktype="external">#3443</a>).</p>
+</li>
+<li><p>Reduced processing load compared to existing JSON-based vector support.</p>
+</li>
+<li><p>Initial support for 32-bit single-precision floating point vectors.</p>
+</li>
+</ul>
+<p><em>Who benefits:</em></p>
+<ul>
+<li>Applications moving large vector data sets see beneficial improvements to processing times and memory requirements.</li>
+<li>Vector-specific APIs are ready to support future numeric representations with a consistent look-and-feel.</li>
+</ul>
+<p><em>Effect:</em></p>
+<ul>
+<li><p>Reduced transmission and processing times for vector operations versus JSON using SQL Server 2025 (17.x):</p>
+<ul>
+<li>Reads: 50x improvement</li>
+<li>Writes: 3.3x improvement</li>
+<li>Bulk Copy: 19x improvement</li>
+<li>(Observed with vector column of max 1998 size, and 10,000 records for each operation.)</li>
+</ul>
+</li>
+<li><p>Improved memory footprint due to the elimination of JSON serialization/deserialization and string representation bloat.</p>
+</li>
+<li><p>For backward compatibility with earlier SQL Server Vector implementations, applications might continue to use JSON strings to send/receive vector data, although they don't see any of the performance improvements noted previously.</p>
+</li>
+</ul>
+<h4 id="revived-net-standard-20-target-support">Revived .NET Standard 2.0 target support</h4>
+<p><em>What changed:</em></p>
+<ul>
+<li>Support for targeting .NET Standard 2.0 has returned (<a href="https://github.com/dotnet/SqlClient/pull/3381" data-linktype="external">#3381</a>)</li>
+<li>Support had previously been removed in the 6.0 release, with the <a href="https://github.com/dotnet/SqlClient/discussions/3115" data-linktype="external">community voicing concerns</a>.</li>
+</ul>
+<p><em>Who benefits:</em></p>
+<ul>
+<li>Libraries that depend on MDS might seamlessly target any of the following frameworks:
+<ul>
+<li>.NET Standard 2.0</li>
+<li>.NET Framework 4.6.2 and above</li>
+<li>.NET 8.0</li>
+<li>.NET 9.0</li>
+</ul>
+</li>
+<li>Applications should continue to target runtimes.
+<ul>
+<li>The MDS .NET Standard 2.0 target framework support doesn't include an actual implementation, and can't be used with a runtime.</li>
+<li>An application's build/publish process should always pick the appropriate MDS .NET/.NET Framework runtime implementation.</li>
+<li>Custom build/publish actions that incorrectly try to deploy the MDS .NET Standard 2.0 reference DLL at runtime aren't supported.</li>
+</ul>
+</li>
+</ul>
+<p><em>Effect:</em></p>
+<ul>
+<li><p>Libraries targeting .NET Standard 2.0 no longer receive warnings such as:</p>
+<pre><code class="lang-output">warning NU1701: Package 'Microsoft.Data.SqlClient 6.0.2' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+</code></pre>
+</li>
+</ul>
+<h4 id="other-additions">Other additions</h4>
+<ul>
+<li>Added support for special casing with Fabric endpoints.
+(<a href="https://github.com/dotnet/SqlClient/pull/3084" data-linktype="external">#3084</a>)</li>
+</ul>
+<h3 id="61-target-platform-support">6.1 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows Arm64, Windows x86, Windows x64)</li>
+<li>.NET 8.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/6.1" data-linktype="external">6.1 Release Notes</a>.</p>
+<h2 id="release-notes-for-60">Release notes for 6.0</h2>
+<h3 id="breaking-changes-in-60">Breaking changes in 6.0</h3>
+<ul>
+<li>Dropped support for .NET Standard. <a href="https://github.com/dotnet/SqlClient/pull/2386" data-linktype="external">#2386</a></li>
+<li>Dropped support for .NET 6 <a href="https://github.com/dotnet/SqlClient/pull/2927" data-linktype="external">#2927</a></li>
+<li>Dropped UWP (UAP) references. <a href="https://github.com/dotnet/SqlClient/pull/2483" data-linktype="external">#2483</a></li>
+<li>Dropped SQL 2000 client-side debugging support for .NET Framework <a href="https://github.com/dotnet/SqlClient/pull/2981" data-linktype="external">#2981</a>, <a href="https://github.com/dotnet/SqlClient/pull/2940" data-linktype="external">#2940</a></li>
+</ul>
+<h3 id="new-features-in-60">New features in 6.0</h3>
+<ul>
+<li>Added support for JSON data type <a href="https://github.com/dotnet/SqlClient/pull/2916" data-linktype="external">#2916</a>, <a href="https://github.com/dotnet/SqlClient/pull/2892" data-linktype="external">#2892</a>, <a href="https://github.com/dotnet/SqlClient/pull/2891" data-linktype="external">#2891</a>, <a href="https://github.com/dotnet/SqlClient/pull/2880" data-linktype="external">#2880</a>, <a href="https://github.com/dotnet/SqlClient/pull/2882" data-linktype="external">#2882</a>, <a href="https://github.com/dotnet/SqlClient/pull/2829" data-linktype="external">#2829</a>, <a href="https://github.com/dotnet/SqlClient/pull/2830" data-linktype="external">#2830</a></li>
+<li>Added support for .NET 9 <a href="https://github.com/dotnet/SqlClient/pull/2946" data-linktype="external">#2946</a></li>
+<li>Added <code>Microsoft.Data.SqlClient.Diagnostics.SqlClientDiagnostic</code> type in .NET. <a href="https://github.com/dotnet/SqlClient/pull/2226" data-linktype="external">#2226</a></li>
+<li>Added <code>DateOnly</code> and <code>TimeOnly</code> support to <code>DataTable</code> as a structured parameter. <a href="https://github.com/dotnet/SqlClient/pull/2258" data-linktype="external">#2258</a></li>
+<li>Added support for <code>SqlConnectionOverrides</code> in <code>OpenAsync()</code> API <a href="https://github.com/dotnet/SqlClient/pull/2433" data-linktype="external">#2433</a></li>
+<li>Added localization in Czech, Polish, and Turkish <a href="https://github.com/dotnet/SqlClient/pull/2987" data-linktype="external">#2987</a></li>
+<li>Added <code>TokenCredential</code> object to take advantage of token caching in <code>ActiveDirectoryAuthenticationProvider</code>. <a href="https://github.com/dotnet/SqlClient/pull/2380" data-linktype="external">#2380</a></li>
+<li>Added readme to NuGet package <a href="https://github.com/dotnet/SqlClient/pull/2826" data-linktype="external">#2826</a></li>
+<li>Enabled NuGet package auditing via NuGet.org audit source <a href="https://github.com/dotnet/SqlClient/pull/3024" data-linktype="external">#3024</a></li>
+<li>Added missing SqlCommand_BeginExecuteReader code sample <a href="https://github.com/dotnet/SqlClient/pull/3009" data-linktype="external">#3009</a></li>
+<li>Added scope trace for <code>GenerateSspiClientContext</code>. <a href="https://github.com/dotnet/SqlClient/pull/2497" data-linktype="external">#2497</a>, <a href="https://github.com/dotnet/SqlClient/pull/2725" data-linktype="external">#2725</a></li>
+</ul>
+<h3 id="json-data-type-support">JSON data type support</h3>
+<p>JSON data type support is now available in Microsoft.Data.SqlClient v6.0. This release introduces the <code>SqlJson</code> type available as an extension to <code>System.Data.SqlDbTypes</code>:</p>
+<pre><code class="lang-csharp">using System;
+using System.Data.SqlTypes;
+using System.Text.Json;
+
+namespace Microsoft.Data.SqlTypes
+{
+    /// &lt;summary&gt;
+    /// Represents the Json data type in SQL Server.
+    /// &lt;/summary&gt;
+    public class SqlJson : INullable
+    {
+        /// &lt;summary&gt;
+        /// Parameterless constructor. Initializes a new instance of the SqlJson class which
+        /// represents a null JSON value.
+        /// &lt;/summary&gt;
+        public SqlJson() { }
+
+        /// &lt;summary&gt;
+        /// Takes a &lt;see cref="string"/&gt; as input and initializes a new instance of the SqlJson class.
+        /// &lt;/summary&gt;
+        /// &lt;param name="jsonString"&gt;&lt;/param&gt;
+        public SqlJson(string jsonString) { }
+
+        /// &lt;summary&gt;
+        /// Takes a &lt;see cref="JsonDocument"/&gt; as input and initializes a new instance of the SqlJson class.
+        /// &lt;/summary&gt;
+        /// &lt;param name="jsonDoc"&gt;&lt;/param&gt;
+        public SqlJson(JsonDocument jsonDoc) { }
+
+        /// &lt;inheritdoc/&gt;
+        public bool IsNull =&gt; throw null;
+
+        /// &lt;summary&gt;
+        /// Represents a null instance of the &lt;see cref="SqlJson"/&gt; type.
+        /// &lt;/summary&gt;
+        public static SqlJson Null { get { throw null; } }
+
+        /// &lt;summary&gt;
+        /// Gets the string representation of the JSON content of this &lt;see cref="SqlJson" /&gt; instance.
+        /// &lt;/summary&gt;
+        public string Value { get ; }
+    }
+}
+</code></pre>
+<p>The JSON data type supports reading, writing, streaming, and bulk copy operations.</p>
+<h3 id="introducing-sqlclientdiagnostics">Introducing SqlClientDiagnostics</h3>
+<p>New types are available in the <code>Microsoft.Data.SqlClient.Diagnostics</code> namespace that provide a strongly typed collection of key-value pairs. These types can be captured by consuming applications for gathering diagnostic events emitted by the driver. This release introduces the following types:</p>
+<ul>
+<li><code>SqlClientCommandBefore</code></li>
+<li><code>SqlClientCommandAfter</code></li>
+<li><code>SqlClientCommandError</code></li>
+<li><code>SqlClientConnectionOpenBefore</code></li>
+<li><code>SqlClientConnectionOpenAfter</code></li>
+<li><code>SqlClientConnectionOpenError</code></li>
+<li><code>SqlClientConnectionCloseBefore</code></li>
+<li><code>SqlClientConnectionCloseAfter</code></li>
+<li><code>SqlClientConnectionCloseError</code></li>
+<li><code>SqlClientTransactionCommitBefore</code></li>
+<li><code>SqlClientTransactionCommitAfter</code></li>
+<li><code>SqlClientTransactionCommitError</code></li>
+<li><code>SqlClientTransactionRollbackBefore</code></li>
+<li><code>SqlClientTransactionRollbackAfter</code></li>
+<li><code>SqlClientTransactionRollbackError</code></li>
+</ul>
+<h3 id="added-support-for-connection-overrides-in-openasync-api">Added support for Connection Overrides in OpenAsync() API</h3>
+<p>The default behavior of <code>SqlConnection.OpenAsync()</code> can be overridden to disable the ten-second delay and automatic connection retries triggered by transient errors.</p>
+<pre><code class="lang-csharp">using(SqlConnection sqlConnection = new SqlConnection("Data Source=(local);Integrated Security=true;Initial Catalog=AdventureWorks;"))
+{
+    await sqlConnection.OpenAsync(SqlConnectionOverrides.OpenWithoutRetry, cancellationToken);
+}
+</code></pre>
+<h3 id="60-target-platform-support">6.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows x86, Windows x64)</li>
+<li>.NET 8.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/6.0" data-linktype="external">6.0 Release Notes</a>.</p>
+<h2 id="release-notes-for-52">Release notes for 5.2</h2>
+<h3 id="new-features-in-52">New features in 5.2</h3>
+<ul>
+<li>Added support of <code>SqlDiagnosticListener</code> on <strong>.NET Standard</strong>. <a href="https://github.com/dotnet/SqlClient/pull/1931" data-linktype="external">#1931</a></li>
+<li>Added new property <code>RowsCopied64</code> to <code>SqlBulkCopy</code>. <a href="https://github.com/dotnet/SqlClient/pull/2004" data-linktype="external">#2004</a> <a href="#added-new-property-rowscopied64-to-sqlbulkcopy" data-linktype="self-bookmark">Read more</a></li>
+<li>Added a new <code>AccessTokenCallBack</code> API to <code>SqlConnection</code>. <a href="https://github.com/dotnet/SqlClient/pull/1260" data-linktype="external">#1260</a> <a href="#added-new-property-accesstokencallback-to-sqlconnection" data-linktype="self-bookmark">Read more</a></li>
+<li>Added support for the <code>SuperSocketNetLib</code> registry option for Encrypt on .NET on Windows. <a href="https://github.com/dotnet/SqlClient/pull/2047" data-linktype="external">#2047</a></li>
+<li>Added <code>SqlBatch</code> support on .NET 6+ <a href="https://github.com/dotnet/SqlClient/pull/1825" data-linktype="external">#1825</a>, <a href="https://github.com/dotnet/SqlClient/pull/2223" data-linktype="external">#2223</a> <a href="#sqlbatch-api" data-linktype="self-bookmark">Read more</a></li>
+<li>Added Workload Identity authentication support <a href="https://github.com/dotnet/SqlClient/pull/2159" data-linktype="external">#2159</a>, <a href="https://github.com/dotnet/SqlClient/pull/2264" data-linktype="external">#2264</a></li>
+<li>Added Localization support on .NET <a href="https://github.com/dotnet/SqlClient/pull/2110" data-linktype="external">#2210</a></li>
+<li>Added support for Georgian collation <a href="https://github.com/dotnet/SqlClient/pull/2194" data-linktype="external">#2194</a></li>
+<li>Added support for Big Endian systems <a href="https://github.com/dotnet/SqlClient/pull/2170" data-linktype="external">#2170</a></li>
+<li>Added .NET 8 support <a href="https://github.com/dotnet/SqlClient/pull/2230" data-linktype="external">#2230</a></li>
+<li>Added explicit version for major .NET version dependencies on System.Runtime.Caching 8.0.0, System.Configuration.ConfigurationManager 8.0.0, and System.Diagnostics.DiagnosticSource 8.0.0 <a href="https://github.com/dotnet/SqlClient/pull/2303" data-linktype="external">#2303</a></li>
+<li>Added the ability to generate debugging symbols in a separate package file <a href="https://github.com/dotnet/SqlClient/pull/2137" data-linktype="external">#2137</a></li>
+</ul>
+<h4 id="added-new-property-rowscopied64-to-sqlbulkcopy">Added new property <code>RowsCopied64</code> to SqlBulkCopy</h4>
+<p>SqlBulkCopy has a new property <code>RowsCopied64</code> which supports <code>long</code> value types.</p>
+<p><strong>The existing <code>SqlBulkCopy.RowsCopied</code> behavior is unchanged. When the value exceeds <code>int.MaxValue</code>, <code>RowsCopied</code> can return a negative number.</strong></p>
+<p>Example usage:</p>
+<pre><code class="lang-csharp">    using (SqlConnection srcConn = new SqlConnection(srcConstr))
+    using (SqlCommand srcCmd = new SqlCommand("select top 5 * from employees", srcConn))
+    {
+        srcConn.Open();
+        using (DbDataReader reader = srcCmd.ExecuteReader())
+        {
+            using (SqlBulkCopy bulkcopy = new SqlBulkCopy(dstConn))
+            {
+                bulkcopy.DestinationTableName = dstTable;
+                SqlBulkCopyColumnMappingCollection ColumnMappings = bulkcopy.ColumnMappings;
+
+                ColumnMappings.Add("EmployeeID", "col1");
+                ColumnMappings.Add("LastName", "col2");
+                ColumnMappings.Add("FirstName", "col3");
+
+                bulkcopy.WriteToServer(reader);
+                long rowsCopied = bulkcopy.RowsCopied64;
+            }
+        }
+    }
+</code></pre>
+<h4 id="added-new-property-accesstokencallback-to-sqlconnection">Added new property <code>AccessTokenCallBack</code> to SqlConnection</h4>
+<p>SqlConnection supports <code>TokenCredential</code> authentication by introducing a new <code>AccessTokenCallBack</code> property as a <code>Func&lt;SqlAuthenticationParameters, CancellationToken,Task&lt;SqlAuthenticationToken&gt;&gt;</code> delegate to return a federated authentication access token.</p>
+<p>Example usage:</p>
+<pre><code class="lang-csharp">using Microsoft.Data.SqlClient;
+using Azure.Identity;
+
+const string defaultScopeSuffix = "/.default";
+string connectionString = GetConnectionString();
+DefaultAzureCredential credential = new();
+using SqlConnection connection = new(connectionString);
+
+connection.AccessTokenCallback = async (authParams, cancellationToken) =&gt;
+{
+    string scope = authParams.Resource.EndsWith(defaultScopeSuffix)
+        ? authParams.Resource
+        : $"{authParams.Resource}{defaultScopeSuffix}";
+    AccessToken token = await credential.GetTokenAsync(
+        new TokenRequestContext([scope]),
+        cancellationToken);
+
+    return new SqlAuthenticationToken(token.Token, token.ExpiresOn);
+}
+
+connection.Open();
+Console.WriteLine("ServerVersion: {0}", connection.ServerVersion);
+Console.WriteLine("State: {0}", connection.State);
+</code></pre>
+<h4 id="sqlbatch-api">SqlBatch API</h4>
+<p>Example usage:</p>
+<pre><code class="lang-csharp">using Microsoft.Data.SqlClient;
+
+class Program
+{
+    static void Main()
+    {
+        string str = "Data Source=(local);Initial Catalog=Northwind;"
+        + "Integrated Security=SSPI;Encrypt=False";
+        RunBatch(str);
+    }
+
+    static void RunBatch(string connString)
+    {
+        using var connection = new SqlConnection(connString);
+        connection.Open();
+
+        var batch = new SqlBatch(connection);
+
+        const int count = 10;
+        const string parameterName = "parameter";
+        for (int i = 0; i &lt; count; i++)
+        {
+            var batchCommand = new SqlBatchCommand($"SELECT @{parameterName} as value");
+            batchCommand.Parameters.Add(new SqlParameter(parameterName, i));
+            batch.BatchCommands.Add(batchCommand);
+        }
+
+        // Optionally Prepare
+        batch.Prepare();
+
+        var results = new List&lt;int&gt;(count);
+        using (SqlDataReader reader = batch.ExecuteReader())
+        {
+            do
+            {
+                while (reader.Read())
+                {
+                    results.Add(reader.GetFieldValue&lt;int&gt;(0));
+                }
+            } while (reader.NextResult());
+        }
+        Console.WriteLine(string.Join(", ", results));
+    }
+}
+</code></pre>
+<h3 id="52-target-platform-support">5.2 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows x86, Windows x64)</li>
+<li>.NET 6.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/5.2" data-linktype="external">5.2 Release Notes</a>.</p>
+<h2 id="release-notes-for-51">Release notes for 5.1</h2>
+<h3 id="breaking-changes-in-51">Breaking changes in 5.1</h3>
+<ul>
+<li>Dropped support for .NET Core 3.1. <a href="https://github.com/dotnet/SqlClient/pull/1704" data-linktype="external">#1704</a> <a href="https://github.com/dotnet/SqlClient/pull/1823" data-linktype="external">#1823</a></li>
+</ul>
+<h3 id="new-features-in-51">New features in 5.1</h3>
+<ul>
+<li>Added support for <code>DateOnly</code> and <code>TimeOnly</code> for <code>SqlParameter</code> value and <code>GetFieldValue</code>. <a href="https://github.com/dotnet/SqlClient/pull/1813" data-linktype="external">#1813</a></li>
+<li>Added support for TLS 1.3 for .NET Core and SNI Native. <a href="https://github.com/dotnet/SqlClient/pull/1821" data-linktype="external">#1821</a></li>
+<li>Added <code>ServerCertificate</code> setting for <code>Encrypt=Mandatory</code> or <code>Encrypt=Strict</code>. <a href="https://github.com/dotnet/SqlClient/pull/1822" data-linktype="external">#1822</a> <a href="#server-certificate" data-linktype="self-bookmark">Read more</a></li>
+<li>Added Windows Arm64 support when targeting .NET Framework. <a href="https://github.com/dotnet/SqlClient/pull/1828" data-linktype="external">#1828</a></li>
+</ul>
+<h4 id="server-certificate">Server certificate</h4>
+<p>The default value of the <code>ServerCertificate</code> connection setting is an empty string. When <code>Encrypt</code> is set to <code>Mandatory</code> or <code>Strict</code>, <code>ServerCertificate</code> can be used to specify a path on the file system to a certificate file to match against the server's TLS/SSL certificate. The certificate specified must be an exact match to be valid. The accepted certificate formats are <code>PEM</code>, <code>DER</code>, and <code>CER</code>. Here's a usage example:</p>
+<pre><code class="lang-csharp">"Data Source=...;Encrypt=Strict;ServerCertificate=C:\\certificates\\server.cer"
+</code></pre>
+<h3 id="51-target-platform-support">5.1 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows x86, Windows x64)</li>
+<li>.NET 6.0+ (Windows x86, Windows x64, Windows Arm64, Azure Resource Manager, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/5.1" data-linktype="external">5.1 Release Notes</a>.</p>
+<h2 id="release-notes-for-50">Release notes for 5.0</h2>
+<h3 id="breaking-changes-in-50">Breaking changes in 5.0</h3>
+<ul>
+<li>Dropped support for .NET Framework 4.6.1 <a href="https://github.com/dotnet/SqlClient/pull/1574" data-linktype="external">#1574</a></li>
+<li>Added a dependency on the <a href="https://github.com/dotnet/SqlClient/tree/main/src/Microsoft.SqlServer.Server" data-linktype="external">Microsoft.SqlServer.Server</a> package. This new dependency might cause namespace conflicts if your application references that namespace and still has package references (direct or indirect) to System.Data.SqlClient from .NET Core.</li>
+<li>Dropped classes from the <code>Microsoft.Data.SqlClient.Server</code> namespace and replaced them with supported types from the <a href="https://github.com/dotnet/SqlClient/tree/main/src/Microsoft.SqlServer.Server" data-linktype="external">Microsoft.SqlServer.Server</a> package.<a href="https://github.com/dotnet/SqlClient/pull/1585" data-linktype="external">#1585</a>. The affected classes and enums are:
+<ul>
+<li>Microsoft.Data.SqlClient.Server.IBinarySerialize -&gt; Microsoft.SqlServer.Server.IBinarySerialize</li>
+<li>Microsoft.Data.SqlClient.Server.InvalidUdtException -&gt; Microsoft.SqlServer.Server.InvalidUdtException</li>
+<li>Microsoft.Data.SqlClient.Server.SqlFacetAttribute -&gt; Microsoft.SqlServer.Server.SqlFacetAttribute</li>
+<li>Microsoft.Data.SqlClient.Server.SqlFunctionAttribute -&gt; Microsoft.SqlServer.Server.SqlFunctionAttribute</li>
+<li>Microsoft.Data.SqlClient.Server.SqlMethodAttribute -&gt; Microsoft.SqlServer.Server.SqlMethodAttribute</li>
+<li>Microsoft.Data.SqlClient.Server.SqlUserDefinedAggregateAttribute -&gt; Microsoft.SqlServer.Server.SqlUserDefinedAggregateAttribute</li>
+<li>Microsoft.Data.SqlClient.Server.SqlUserDefinedTypeAttribute -&gt; Microsoft.SqlServer.Server.SqlUserDefinedTypeAttribute</li>
+<li>(enum) Microsoft.Data.SqlClient.Server.DataAccessKind -&gt; Microsoft.SqlServer.Server.DataAccessKind</li>
+<li>(enum) Microsoft.Data.SqlClient.Server.Format -&gt; Microsoft.SqlServer.Server.Format</li>
+<li>(enum) Microsoft.Data.SqlClient.Server.SystemDataAccessKind -&gt; Microsoft.SqlServer.Server.SystemDataAccessKind</li>
+</ul>
+</li>
+</ul>
+<h3 id="new-features-in-50">New features in 5.0</h3>
+<ul>
+<li>Added support for <code>TDS8</code>. To use TDS 8, users should specify Encrypt=Strict in the connection string. <a href="https://github.com/dotnet/SqlClient/pull/1608" data-linktype="external">#1608</a> <a href="#tds-80-enhanced-security" data-linktype="self-bookmark">Read more</a></li>
+<li>Added support for specifying Server SPN and Failover Server SPN on the connection. <a href="https://github.com/dotnet/SqlClient/pull/1607" data-linktype="external">#1607</a> <a href="#server-spn" data-linktype="self-bookmark">Read more</a></li>
+<li>Added support for aliases when targeting .NET Core on Windows. <a href="https://github.com/dotnet/SqlClient/pull/1588" data-linktype="external">#1588</a> <a href="#support-for-sql-aliases" data-linktype="self-bookmark">Read more</a></li>
+<li>Added SqlDataSourceEnumerator. <a href="https://github.com/dotnet/SqlClient/pull/1430" data-linktype="external">#1430</a>, <a href="#sql-data-source-enumerator-support" data-linktype="self-bookmark">Read more</a></li>
+<li>Added a new AppContext switch to suppress insecure TLS warnings. <a href="https://github.com/dotnet/SqlClient/pull/1457" data-linktype="external">#1457</a>, <a href="#suppress-insecure-tls-warnings" data-linktype="self-bookmark">Read more</a></li>
+</ul>
+<h4 id="tds-80-enhanced-security">TDS 8.0 enhanced security</h4>
+<p>To use TDS 8.0, specify Encrypt=Strict in the connection string. Strict mode disables TrustServerCertificate (always treated as False in Strict mode). HostNameInCertificate has been added to help some Strict mode scenarios. TDS 8.0 begins and continues all server communication inside a secure, encrypted TLS connection.</p>
+<p>New Encrypt values have been added to clarify connection encryption behavior. <code>Encrypt=Mandatory</code> is equivalent to <code>Encrypt=True</code> and encrypts connections during the TDS connection negotiation. <code>Encrypt=Optional</code> is equivalent to <code>Encrypt=False</code> and only encrypts the connection if the server tells the client that encryption is required during the TDS connection negotiation.</p>
+<p>For more information on encrypting connections to the server, see <a href="encryption-and-certificate-validation?view=sql-server-ver17" data-linktype="relative-path">Encryption and certificate validation in Microsoft.Data.SqlClient</a>.</p>
+<p><code>HostNameInCertificate</code> can be specified in the connection string when using aliases to connect with encryption to a server that has a server certificate with a different name or alternate subject name than the name used by the client to identify the server (DNS aliases, for example). Example usage: <code>HostNameInCertificate=MyDnsAliasName</code></p>
+<h4 id="server-spn">Server SPN</h4>
+<p>When connecting in an environment that has unique domain/forest topography, you might have specific requirements for Server SPNs. The ServerSPN/Server SPN and FailoverServerSPN/Failover Server SPN connection string settings can be used to override the autogenerated server SPNs used during integrated authentication in a domain environment</p>
+<h4 id="support-for-sql-aliases">Support for SQL aliases</h4>
+<p>Users can configure Aliases by using the SQL Server Configuration Manager. These aliases are stored in the Windows registry and are already supported when targeting .NET Framework. This release brings support for aliases when targeting .NET or .NET Core on Windows.</p>
+<h4 id="sql-data-source-enumerator-support">SQL data source enumerator support</h4>
+<p>Provides a mechanism for enumerating all available instances of SQL Server within the local network.</p>
+<pre><code class="lang-csharp">using Microsoft.Data.Sql;
+static void Main()
+  {
+    // Retrieve the enumerator instance and then the data.
+    SqlDataSourceEnumerator instance =
+      SqlDataSourceEnumerator.Instance;
+    System.Data.DataTable table = instance.GetDataSources();
+
+    // Display the contents of the table.
+    DisplayData(table);
+
+    Console.WriteLine("Press any key to continue.");
+    Console.ReadKey();
+  }
+
+  private static void DisplayData(System.Data.DataTable table)
+  {
+    foreach (System.Data.DataRow row in table.Rows)
+    {
+      foreach (System.Data.DataColumn col in table.Columns)
+      {
+        Console.WriteLine("{0} = {1}", col.ColumnName, row[col]);
+      }
+      Console.WriteLine("============================");
+    }
+  }
+</code></pre>
+<h4 id="suppress-insecure-tls-warnings">Suppress insecure TLS warnings</h4>
+<p>A security warning is output on the console if the TLS version less than 1.2 is used to negotiate with the server. This warning could be suppressed on SQL connection while <code>Encrypt = false</code> by enabling the following AppContext switch on the application startup:</p>
+<pre><code class="lang-csharp">Switch.Microsoft.Data.SqlClient.SuppressInsecureTLSWarning
+</code></pre>
+<h3 id="50-target-platform-support">5.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.2+ (Windows x86, Windows x64)</li>
+<li>.NET Core 3.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/5.0" data-linktype="external">5.0 Release Notes</a>.</p>
+<h2 id="release-notes-for-41">Release notes for 4.1</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/4.1" data-linktype="external">4.1 Release Notes</a>.</p>
+<h3 id="new-features-in-41">New features in 4.1</h3>
+<h4 id="introduce-attestation-protocol-none">Introduce attestation protocol None</h4>
+<p>A new attestation protocol called <code>None</code> is allowed in the connection string. This protocol allows users to forgo enclave attestation for <code>VBS</code> enclaves. When this protocol is set, the enclave attestation URL property is optional.</p>
+<p>Connection string example:</p>
+<pre><code class="lang-csharp">//Attestation protocol NONE with no URL
+"Data Source = {server}; Initial Catalog = {db}; Column Encryption Setting = Enabled; Attestation Protocol = None;"
+</code></pre>
+<h3 id="41-target-platform-support">4.1 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.1+ (Windows x86, Windows x64)</li>
+<li>.NET Core 3.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-40">Release notes for 4.0</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/4.0" data-linktype="external">4.0 Release Notes</a>.</p>
+<h3 id="breaking-changes-in-40">Breaking changes in 4.0</h3>
+<ul>
+<li>Changed <code>Encrypt</code> connection string property to be <code>true</code> by default. <a href="https://github.com/dotnet/SqlClient/pull/1210" data-linktype="external">#1210</a> <a href="#encrypt-default-value-set-to-true" data-linktype="self-bookmark">Read more</a></li>
+<li>The driver now throws <code>SqlException</code> replacing <code>AggregateException</code> for active directory authentication modes. <a href="https://github.com/dotnet/SqlClient/pull/1213" data-linktype="external">#1213</a></li>
+<li>Dropped obsolete <code>Asynchronous Processing</code> connection property from .NET Framework. <a href="https://github.com/dotnet/SqlClient/pull/1148" data-linktype="external">#1148</a></li>
+<li>Removed <code>Configurable Retry Logic</code> safety switch. <a href="https://github.com/dotnet/SqlClient/pull/1254" data-linktype="external">#1254</a> <a href="#remove-configurable-retry-logic-safety-switch" data-linktype="self-bookmark">Read more</a></li>
+<li>Dropped support for .NET Core 2.1 <a href="https://github.com/dotnet/SqlClient/pull/1272" data-linktype="external">#1272</a></li>
+<li>[.NET Framework] Exception isn't thrown if a User ID is provided in the connection string when using <code>Active Directory Integrated</code> authentication <a href="https://github.com/dotnet/SqlClient/pull/1359" data-linktype="external">#1359</a></li>
+</ul>
+<h3 id="new-features-in-40">New features in 4.0</h3>
+<h4 id="encrypt-default-value-set-to-true">Encrypt default value set to true</h4>
+<p>The default value of the <code>Encrypt</code> connection setting has been changed from <code>false</code> to <code>true</code>. With the growing use of cloud databases and the need to ensure those connections are secure, it's time for this backward-compatibility-breaking change.</p>
+<h4 id="ensure-connections-fail-when-encryption-is-required">Ensure connections fail when encryption is required</h4>
+<p>In scenarios where client encryption libraries were disabled or unavailable, it was possible for unencrypted connections to be made when Encrypt was set to true or the server required encryption.</p>
+<h4 id="app-context-switch-for-using-system-default-protocols">App Context Switch for using System default protocols</h4>
+<p>TLS 1.3 isn't supported by the driver; therefore, it has been removed from the supported protocols list by default. Users can switch back to forcing use of the Operating System's client protocols, by enabling the following App Context switch:</p>
+<p><code>Switch.Microsoft.Data.SqlClient.UseSystemDefaultSecureProtocols</code></p>
+<h4 id="enable-optimized-parameter-binding">Enable optimized parameter binding</h4>
+<p>Microsoft.Data.SqlClient introduces a new <code>SqlCommand</code> API, <code>EnableOptimizedParameterBinding</code> to improve performance of queries with large number of parameters. This property is disabled by default. When set to <code>true</code>, parameter names aren't sent to the SQL Server instance when the command is executed.</p>
+<pre><code class="lang-csharp">public class SqlCommand
+{
+    public bool EnableOptimizedParameterBinding { get; set; }
+}
+</code></pre>
+<h4 id="remove-configurable-retry-logic-safety-switch">Remove configurable retry logic safety switch</h4>
+<p>The App Context switch "Switch.Microsoft.Data.SqlClient.EnableRetryLogic" is no longer required to use the configurable retry logic feature. The feature is now supported in production. The default behavior of the feature continues to be a non-retry policy, which client applications need to override to enable retries.</p>
+<h4 id="sqllocaldb-shared-instance-support">SqlLocalDb shared instance support</h4>
+<p>SqlLocalDb shared instances are now supported when using Managed SNI.</p>
+<ul>
+<li>Possible scenarios:
+<ul>
+<li><code>(localdb)\.</code> (connects to default instance of SqlLocalDb)</li>
+<li><code>(localdb)\&lt;named instance&gt;</code></li>
+<li><code>(localdb)\.\&lt;shared instance name&gt;</code> (*newly added support)</li>
+</ul>
+</li>
+</ul>
+<h4 id="getfieldvalueasynct-and-getfieldvaluet-support-for-xmlreader-textreader-stream-types"><code>GetFieldValueAsync&lt;T&gt;</code> and <code>GetFieldValue&lt;T&gt;</code> support for <code>XmlReader</code>, <code>TextReader</code>, <code>Stream</code> types</h4>
+<p><code>XmlReader</code>, <code>TextReader</code>, <code>Stream</code> types are now supported when using <code>GetFieldValueAsync&lt;T&gt;</code> and <code>GetFieldValue&lt;T&gt;</code>.</p>
+<p>Example usage:</p>
+<pre><code class="lang-csharp">using (SqlConnection connection = new SqlConnection(connectionString))
+{
+    using (SqlCommand command = new SqlCommand(query, connection))
+    {
+        connection.Open();
+        using (SqlDataReader reader = await command.ExecuteReaderAsync())
+        {
+            if (await reader.ReadAsync())
+            {
+                using (Stream stream = await reader.GetFieldValueAsync&lt;Stream&gt;(1))
+                {
+                    // Continue to read from stream
+                }
+            }
+        }
+    }
+}
+</code></pre>
+<h3 id="40-target-platform-support">4.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.1+ (Windows x86, Windows x64)</li>
+<li>.NET Core 3.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-31">Release notes for 3.1</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/main/release-notes/3.1" data-linktype="external">3.1 Release Notes</a>.</p>
+<h3 id="new-features-in-31">New features in 3.1</h3>
+<h4 id="introduced-attestation-protocol-none">Introduced Attestation Protocol 'None'</h4>
+<p>A new attestation protocol called <code>None</code> will be allowed in the connection string. This protocol will allow users to forgo enclave attestation for <code>VBS</code> enclaves. When this protocol is set, the enclave attestation URL property is optional.</p>
+<p>Connection string example:</p>
+<pre><code class="lang-cs">//Attestation protocol NONE with no URL
+"Data Source = {server}; Initial Catalog = {db}; Column Encryption Setting = Enabled; Attestation Protocol = None;"
+</code></pre>
+<h2 id="target-platform-support">Target Platform Support</h2>
+<ul>
+<li>.NET Framework 4.6.1+ (Windows x86, Windows x64)</li>
+<li>.NET Core 3.1+ (Windows x86, Windows x64, Windows ARM64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows ARM64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-30">Release notes for 3.0</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/3.0" data-linktype="external">3.0 Release Notes</a>.</p>
+<h3 id="breaking-changes-in-30">Breaking changes in 3.0</h3>
+<ul>
+<li>The minimum supported .NET Framework version has been increased to v4.6.1. .NET Framework v4.6.0 is no longer supported. <a href="https://github.com/dotnet/SqlClient/pull/899" data-linktype="external">#899</a></li>
+<li><code>User Id</code> connection property now requires <code>Client Id</code> instead of <code>Object Id</code> for <strong>User-Assigned Managed Identity</strong> <a href="https://github.com/dotnet/SqlClient/pull/1010" data-linktype="external">#1010</a> <a href="#azure-identity-dependency-introduction" data-linktype="self-bookmark">Read more</a></li>
+<li><code>SqlDataReader</code> now returns a <code>DBNull</code> value instead of an empty <code>byte[]</code>. Legacy behavior can be enabled by setting <code>AppContext</code> switch <strong>Switch.Microsoft.Data.SqlClient.LegacyRowVersionNullBehavior</strong> <a href="https://github.com/dotnet/SqlClient/pull/998" data-linktype="external">#998</a> <a href="#enable-row-version-null-behavior" data-linktype="self-bookmark">Read more</a>.</li>
+</ul>
+<h3 id="new-features-in-30">New features in 3.0</h3>
+<h4 id="configurable-retry-logic">Configurable retry logic</h4>
+<p>This new feature introduces configurable support for client applications to retry on "transient" or "retriable" errors. Configuration can be done through code or app config files and retry operations can be applied to opening a connection or executing a command. This feature is disabled by default and is currently in preview. To enable this support, client applications must turn on the following safety switch:</p>
+<p><code>AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.EnableRetryLogic", true);</code></p>
+<p>Once the .NET AppContext switch is enabled, a retry logic policy can be defined for <code>SqlConnection</code> and <code>SqlCommand</code> independently, or together using various customization options.</p>
+<p>New public APIs are introduced in <code>SqlConnection</code> and <code>SqlCommand</code> for registering a custom <code>SqlRetryLogicBaseProvider</code> implementation:</p>
+<pre><code class="lang-csharp">public SqlConnection
+{
+    public SqlRetryLogicBaseProvider RetryLogicProvider;
+}
+
+public SqlCommand
+{
+    public SqlRetryLogicBaseProvider RetryLogicProvider;
+}
+</code></pre>
+<p>API Usage examples can be found here:</p>
+<pre><code class="lang-csharp" name="SqlConnection retry sample1">using Microsoft.Data.SqlClient;
+
+/// Detecting retriable exceptions is a vital part of the retry pattern.
+/// Before applying retry logic it is important to investigate exceptions and choose a retry provider that best fits your scenario.
+/// First, log your exceptions and find transient faults.
+/// The purpose of this sample is to illustrate how to use this feature and the condition might not be realistic.
+class RetryLogicSample
+{
+    private const string DefaultDB = "Northwind";
+    private const string CnnStringFormat = "Server=localhost; Initial Catalog={0}; Integrated Security=true; pooling=false;";
+    private const string DropDatabaseFormat = "DROP DATABASE {0}";
+
+    // For general use
+    private static SqlConnection s_generalConnection = new SqlConnection(string.Format(CnnStringFormat, DefaultDB));
+
+    static void Main(string[] args)
+    {
+        // 1. Define the retry logic parameters
+        var options = new SqlRetryLogicOption()
+        {
+            NumberOfTries = 5,
+            MaxTimeInterval = TimeSpan.FromSeconds(20),
+            DeltaTime = TimeSpan.FromSeconds(1)
+        };
+
+        // 2. Create a retry provider
+        var provider = SqlConfigurableRetryFactory.CreateExponentialRetryProvider(options);
+
+        // define the retrying event to report the execution attempts
+        provider.Retrying += (object s, SqlRetryingEventArgs e) =&gt;
+            {
+                int attempts = e.RetryCount + 1;
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"attempt {attempts} - current delay time:{e.Delay} \n");
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                if (e.Exceptions[e.Exceptions.Count - 1] is SqlException ex)
+                {
+                    Console.WriteLine($"{ex.Number}-{ex.Message}\n");
+                }
+                else
+                {
+                    Console.WriteLine($"{e.Exceptions[e.Exceptions.Count - 1].Message}\n");
+                }
+
+                // It is not a good practice to do time-consuming tasks inside the retrying event which blocks the running task.
+                // Use parallel programming patterns to mitigate it.
+                if (e.RetryCount == provider.RetryLogic.NumberOfTries - 1)
+                {
+                    Console.WriteLine("This is the last chance to execute the command before throwing the exception.");
+                    Console.WriteLine("Press Enter when you're ready:");
+                    Console.ReadLine();
+                    Console.WriteLine("continue ...");
+                }
+            };
+
+        // Open the general connection.
+        s_generalConnection.Open();
+
+        try
+        {
+            // Assume the database is being created and other services are going to connect to it.
+            RetryConnection(provider);
+        }
+        catch
+        {
+            // exception is thrown if connecting to the database isn't successful.
+            throw;
+        }
+    }
+
+    private static void ExecuteCommand(SqlConnection cn, string command)
+    {
+        using var cmd = cn.CreateCommand();
+        cmd.CommandText = command;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void RetryConnection(SqlRetryLogicBaseProvider provider)
+    {
+        // Change this if you already have a database with the same name in your database.
+        string dbName = "Invalid_DB_Open";
+
+        // Create a connection to an invalid database.
+        using var cnn = new SqlConnection(string.Format(CnnStringFormat, dbName));
+        // 3. Assign the `provider` to the connection
+        cnn.RetryLogicProvider = provider;
+        Console.WriteLine($"Connecting to the [{dbName}] ...");
+        // Manually execute the following command in SSMS to create the invalid database while the SqlConnection is attempting to connect to it.
+        // &gt;&gt; CREATE DATABASE Invalid_DB_Open;
+        Console.WriteLine($"Manually, run the 'CREATE DATABASE {dbName};' in the SQL Server before exceeding the {provider.RetryLogic.NumberOfTries} attempts.");
+        // the connection tries to connect to the database 5 times
+        Console.WriteLine("The first attempt, before getting into the retry logic.");
+        cnn.Open();
+        Console.WriteLine($"Connected to the [{dbName}] successfully.");
+
+        cnn.Close();
+
+        // Drop it after test
+        ExecuteCommand(s_generalConnection, string.Format(DropDatabaseFormat, dbName));
+        Console.WriteLine($"The [{dbName}] is removed.");
+    }
+}
+</code></pre><pre><code class="lang-csharp" name="SqlCommand retry sample">/// Detecting retriable exceptions is a vital part of the retry pattern.
+/// Before applying retry logic it is important to investigate exceptions and choose a retry provider that best fits your scenario.
+/// First, log your exceptions and find transient faults.
+/// The purpose of this sample is to illustrate how to use this feature and the condition might not be realistic.
+
+    private const string DefaultDB = "Northwind";
+    private const string CnnStringFormat = "Server=localhost; Initial Catalog={0}; Integrated Security=true; pooling=false;";
+    private const string DropDatabaseFormat = "DROP DATABASE {0}";
+    private const string CreateDatabaseFormat = "CREATE DATABASE {0}";
+
+    // For general use
+    private static SqlConnection s_generalConnection = new SqlConnection(string.Format(CnnStringFormat, DefaultDB));
+
+    static void Main(string[] args)
+    {
+        // 1. Define the retry logic parameters
+        var options = new SqlRetryLogicOption()
+        {
+            NumberOfTries = 5,
+            MaxTimeInterval = TimeSpan.FromSeconds(20),
+            DeltaTime = TimeSpan.FromSeconds(1),
+            AuthorizedSqlCondition = null,
+            // error number 3702 : Cannot drop database "xxx" because it is currently in use.
+            TransientErrors = new int[] {3702}
+        };
+
+        // 2. Create a retry provider
+        var provider = SqlConfigurableRetryFactory.CreateExponentialRetryProvider(options);
+
+        // define the retrying event to report execution attempts
+        provider.Retrying += (object s, SqlRetryingEventArgs e) =&gt;
+            {
+                int attempts = e.RetryCount + 1;
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"attempt {attempts} - current delay time:{e.Delay} \n");
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                if (e.Exceptions[e.Exceptions.Count - 1] is SqlException ex)
+                {
+                    Console.WriteLine($"{ex.Number}-{ex.Message}\n");
+                }
+                else
+                {
+                    Console.WriteLine($"{e.Exceptions[e.Exceptions.Count - 1].Message}\n");
+                }
+
+                // It is not good practice to do time-consuming tasks inside the retrying event which blocks the running task.
+                // Use parallel programming patterns to mitigate it.
+                if (e.RetryCount == provider.RetryLogic.NumberOfTries - 1)
+                {
+                    Console.WriteLine("This is the last chance to execute the command before throwing the exception.");
+                    Console.WriteLine("Press Enter when you're ready:");
+                    Console.ReadLine();
+                    Console.WriteLine("continue ...");
+                }
+            };
+
+        // Open a general connection.
+        s_generalConnection.Open();
+
+        try
+        {
+            // Assume the database is creating and other services are going to connect to it.
+            RetryCommand(provider);
+        }
+        catch
+        {
+            s_generalConnection.Close();
+            // exception is thrown if connecting to the database isn't successful.
+            throw;
+        }
+        s_generalConnection.Close();
+    }
+
+    private static void ExecuteCommand(SqlConnection cn, string command)
+    {
+        using var cmd = cn.CreateCommand();
+        cmd.CommandText = command;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void FindActiveSessions(SqlConnection cnn, string dbName)
+    {
+        using var cmd = cnn.CreateCommand();
+        cmd.CommandText = "DECLARE @query NVARCHAR(max) = '';" + Environment.NewLine +
+            $"SELECT @query = @query + 'KILL ' + CAST(spid as varchar(50)) + ';' FROM sys.sysprocesses WHERE dbid = DB_ID('{dbName}')" + Environment.NewLine +
+            "SELECT @query AS Active_sessions;";
+        var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write($"&gt;&gt; Execute the '{reader.GetString(0)}' command in SQL Server to unblock the running task.");
+            Console.ResetColor();
+        }
+        reader.Close();
+    }
+</code></pre><pre><code class="lang-csharp" name="Sample for retry logic options">var RetryLogicOption = new SqlRetryLogicOption()
+{
+    NumberOfTries = 5,
+    // Declare the error number 102 as a transient error to apply the retry logic when it occurs.
+    TransientErrors = new int[] { 102 },
+    // When a SqlCommand executes out of a transaction, 
+    // the retry logic will apply if it contains a 'select' keyword.
+    AuthorizedSqlCondition = x =&gt; string.IsNullOrEmpty(x)
+            || Regex.IsMatch(x, @"\b(SELECT)\b", RegexOptions.IgnoreCase),
+    DeltaTime = TimeSpan.FromSeconds(1),
+    MaxTimeInterval = TimeSpan.FromSeconds(60),
+    MinTimeInterval = TimeSpan.FromSeconds(3)
+};
+</code></pre>
+<p>New configuration sections have also been introduced to do the same registration from configuration files, without having to modify existing code:</p>
+<pre><code class="lang-xml">&lt;section name="SqlConfigurableRetryLogicConnection"
+            type="Microsoft.Data.SqlClient.SqlConfigurableRetryConnectionSection, Microsoft.Data.SqlClient"/&gt;
+
+&lt;section name="SqlConfigurableRetryLogicCommand"
+            type="Microsoft.Data.SqlClient.SqlConfigurableRetryCommandSection, Microsoft.Data.SqlClient"/&gt;
+</code></pre>
+<p>Here's a simple example of using the new configuration sections in configuration files:</p>
+<pre><code class="lang-xml">&lt;?xml version="1.0" encoding="utf-8" ?&gt;
+&lt;configuration&gt;
+  &lt;configSections&gt;
+    &lt;section name="SqlConfigurableRetryLogicConnection"
+             type="Microsoft.Data.SqlClient.SqlConfigurableRetryConnectionSection, Microsoft.Data.SqlClient"/&gt;
+    &lt;section name="SqlConfigurableRetryLogicCommand"
+             type="Microsoft.Data.SqlClient.SqlConfigurableRetryCommandSection, Microsoft.Data.SqlClient"/&gt;
+
+    &lt;section name="AppContextSwitchOverrides"
+             type="Microsoft.Data.SqlClient.AppContextSwitchOverridesSection, Microsoft.Data.SqlClient"/&gt;
+  &lt;/configSections&gt;
+
+  &lt;!--Enable safety switch in .NET Core--&gt;
+  &lt;AppContextSwitchOverrides value="Switch.Microsoft.Data.SqlClient.EnableRetryLogic=true"/&gt;
+
+  &lt;!--Retry method for SqlConnection--&gt;
+  &lt;SqlConfigurableRetryLogicConnection retryMethod ="CreateFixedRetryProvider" numberOfTries ="3" deltaTime ="00:00:10" maxTime ="00:00:30"
+                                    transientErrors="40615" /&gt;
+
+  &lt;!--Retry method for SqlCommand containing SELECT queries--&gt;
+  &lt;SqlConfigurableRetryLogicCommand retryMethod ="CreateIncrementalRetryProvider" numberOfTries ="5" deltaTime ="00:00:10" maxTime ="00:01:10"
+                                    authorizedSqlCondition="\b(SELECT)\b" transientErrors="102, 4060, 0"/&gt;
+&lt;/configuration&gt;
+</code></pre>
+<p>Alternatively, applications can implement their own provider of the <code>SqlRetryLogicBaseProvider</code> base class, and register it with <code>SqlConnection</code>/<code>SqlCommand</code>.</p>
+<h4 id="event-counters">Event counters</h4>
+<p>The following counters are now available for applications targeting .NET Core 3.1+ and .NET Standard 2.1+:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Display name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>active-hard-connections</strong></td>
+<td>Actual active connections currently made to servers</td>
+<td>The number of connections currently open to database servers.</td>
+</tr>
+<tr>
+<td><strong>hard-connects</strong></td>
+<td>Actual connection rate to servers</td>
+<td>The number of connections per second being opened to database servers.</td>
+</tr>
+<tr>
+<td><strong>hard-disconnects</strong></td>
+<td>Actual disconnection rate from servers</td>
+<td>The number of disconnects per second being made to database servers.</td>
+</tr>
+<tr>
+<td><strong>active-soft-connects</strong></td>
+<td>Active connections retrieved from the connection pool</td>
+<td>The number of already-open connections being consumed from the connection pool.</td>
+</tr>
+<tr>
+<td><strong>soft-connects</strong></td>
+<td>Rate of connections retrieved from the connection pool</td>
+<td>The number of connections per second being consumed from the connection pool.</td>
+</tr>
+<tr>
+<td><strong>soft-disconnects</strong></td>
+<td>Rate of connections returned to the connection pool</td>
+<td>The number of connections per second being returned to the connection pool.</td>
+</tr>
+<tr>
+<td><strong>number-of-non-pooled-connections</strong></td>
+<td>Number of connections not using connection pooling</td>
+<td>The number of active connections that aren't pooled.</td>
+</tr>
+<tr>
+<td><strong>number-of-pooled-connections</strong></td>
+<td>Number of connections managed by the connection pool</td>
+<td>The number of active connections managed the connection pooling infrastructure.</td>
+</tr>
+<tr>
+<td><strong>number-of-active-connection-pool-groups</strong></td>
+<td>Number of active unique connection strings</td>
+<td>The number of active, unique connection pool groups. This counter is based on the number of unique connection strings found in the AppDomain.</td>
+</tr>
+<tr>
+<td><strong>number-of-inactive-connection-pool-groups</strong></td>
+<td>Number of unique connection strings waiting for pruning</td>
+<td>The number of unique connection pool groups marked for pruning. This counter is based on the number of unique connection strings found in the AppDomain.</td>
+</tr>
+<tr>
+<td><strong>number-of-active-connection-pools</strong></td>
+<td>Number of active connection pools</td>
+<td>The total number of connection pools.</td>
+</tr>
+<tr>
+<td><strong>number-of-inactive-connection-pools</strong></td>
+<td>Number of inactive connection pools</td>
+<td>The number of inactive connection pools with no recent activity and waiting to be disposed.</td>
+</tr>
+<tr>
+<td><strong>number-of-active-connections</strong></td>
+<td>Number of active connections</td>
+<td>The number of active connections currently in use.</td>
+</tr>
+<tr>
+<td><strong>number-of-free-connections</strong></td>
+<td>Number of ready connections in the connection pool</td>
+<td>The number of open connections available for use in the connection pools.</td>
+</tr>
+<tr>
+<td><strong>number-of-stasis-connections</strong></td>
+<td>Number of connections currently waiting to be ready</td>
+<td>The number of connections currently awaiting completion of an action and which are unavailable for use by the application.</td>
+</tr>
+<tr>
+<td><strong>number-of-reclaimed-connections</strong></td>
+<td>Number of reclaimed connections from GC</td>
+<td>The number of connections reclaimed through garbage collection where <code>Close</code> or <code>Dispose</code> wasn't called by the application. <strong>Note</strong> Not explicitly closing or disposing connections hurts performance.</td>
+</tr>
+</tbody>
+</table>
+<p>These counters can be used with .NET Core global CLI tools: <code>dotnet-counters</code> and <code>dotnet-trace</code> in Windows or Linux and PerfView in Windows, using <code>Microsoft.Data.SqlClient.EventSource</code> as the provider name. For more information, see <a href="event-counters?view=sql-server-ver17#retrieve-event-counter-values" data-linktype="relative-path">Retrieve event counter values</a>.</p>
+<pre><code class="lang-console">dotnet-counters monitor Microsoft.Data.SqlClient.EventSource -p
+PerfView /onlyProviders=*Microsoft.Data.SqlClient.EventSource:EventCounterIntervalSec=1 collect
+</code></pre>
+<h4 id="azure-identity-dependency-introduction">Azure Identity dependency introduction</h4>
+<p><strong>Microsoft.Data.SqlClient</strong> now depends on the <strong>Azure.Identity</strong> library to acquire tokens for "Active Directory Managed Identity/MSI" and "Active Directory Service Principal" authentication modes. This change brings the following changes to the public surface area:</p>
+<ul>
+<li><p><strong>Breaking change</strong></p>
+<p>The "User ID" connection property now requires "Client ID" instead of "Object ID" for "User-Assigned Managed Identity".</p>
+</li>
+<li><p><strong>Public API</strong></p>
+<p>New read-only public property: <code>SqlAuthenticationParameters.ConnectionTimeout</code></p>
+</li>
+<li><p><strong>Dependency</strong></p>
+<p>Azure.Identity v1.3.0</p>
+</li>
+</ul>
+<h4 id="event-tracing-improvements-in-snidll">Event tracing improvements in SNI.dll</h4>
+<p><code>Microsoft.Data.SqlClient.SNI</code> (.NET Framework dependency) and <code>Microsoft.Data.SqlClient.SNI.runtime</code> (.NET Core/Standard dependency) versions have been updated to <code>v3.0.0-preview1.21104.2</code>. Event tracing in SNI.dll is no longer enabled through a client application. Subscribing a session to the <strong>Microsoft.Data.SqlClient.EventSource</strong> provider through tools like <code>xperf</code> or <code>perfview</code> is sufficient. For more information, see <a href="enable-eventsource-tracing?view=sql-server-ver17#event-tracing-support-in-native-sni" data-linktype="relative-path">Event tracing support in Native SNI</a>.</p>
+<h4 id="enable-row-version-null-behavior">Enable row version null behavior</h4>
+<p><code>SqlDataReader</code> returns a <code>DBNull</code> value instead of an empty <code>byte[]</code>. To enable the legacy behavior, you must enable the following AppContext switch on application startup:
+<strong>"Switch.Microsoft.Data.SqlClient.LegacyRowVersionNullBehavior"</strong></p>
+<h4 id="microsoft-entra-default-authentication-support">Microsoft Entra default authentication support</h4>
+<div class="NOTE">
+<p>Note</p>
+<p>While Microsoft Entra ID is the <a href="/en-us/entra/fundamentals/new-name" data-linktype="absolute-path">new name for Azure Active Directory (Azure AD)</a>, to prevent disrupting existing environments, Azure AD still remains in some hardcoded elements such as UI fields, connection providers, error codes, and cmdlets. In this article, the two names are interchangeable.</p>
+</div>
+<p>This PR introduces a new SQL Authentication method, <strong>Active Directory Default</strong>. This authentication mode widens the possibilities of user authentication with Microsoft Entra ID, extending login solutions to the client environment, Visual Studio Code, Visual Studio, Azure CLI, etc.</p>
+<p>With this authentication mode, the driver acquires a token by passing "<a href="/en-us/dotnet/api/azure.identity.defaultazurecredential" data-linktype="absolute-path">DefaultAzureCredential</a>" from the Azure Identity library to acquire an access token. This mode attempts to use these credential types to acquire an access token in the following order:</p>
+<ul>
+<li><strong>EnvironmentCredential</strong>
+<ul>
+<li>Enables authentication with Microsoft Entra ID using client and secret, or username and password, details configured in the following environment variables: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_CLIENT_CERTIFICATE_PATH, AZURE_USERNAME, AZURE_PASSWORD (<a href="/en-us/dotnet/api/azure.identity.environmentcredential" data-linktype="absolute-path">More details</a>)</li>
+</ul>
+</li>
+<li><strong>ManagedIdentityCredential</strong>
+<ul>
+<li>Attempts authentication with Microsoft Entra ID using a managed identity that has been assigned to the deployment environment. <strong>The "Client Id" of a "user-assigned managed identity"</strong> is read from the <strong>"User Id" connection property</strong>.</li>
+</ul>
+</li>
+<li><strong>SharedTokenCacheCredential</strong>
+<ul>
+<li>Authenticates using tokens in the local cache shared between Microsoft applications.</li>
+</ul>
+</li>
+<li><strong>VisualStudioCredential</strong>
+<ul>
+<li>Enables authentication with Microsoft Entra ID using data from Visual Studio</li>
+</ul>
+</li>
+<li><strong>VisualStudioCodeCredential</strong>
+<ul>
+<li>Enables authentication with Microsoft Entra ID using data from Visual Studio Code.</li>
+</ul>
+</li>
+<li><strong>AzureCliCredential</strong>
+<ul>
+<li>Enables authentication with Microsoft Entra ID using Azure CLI to obtain an access token.</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p>InteractiveBrowserCredential is disabled in the driver implementation of "Active Directory Default", and "Active Directory Interactive" is the only option available to acquire a token using MFA/Interactive authentication.</p>
+</blockquote>
+<blockquote>
+<p>Further customization options aren't available at the moment.</p>
+</blockquote>
+<h4 id="custom-master-key-store-provider-registration-enhancements">Custom master key store provider registration enhancements</h4>
+<p>Microsoft.Data.SqlClient now offers more control of where master key store providers are accessible in an application to better support multitenant applications and their use of column encryption/decryption. The following APIs are introduced to allow registration of custom master key store providers on instances of <code>SqlConnection</code> and <code>SqlCommand</code>:</p>
+<pre><code class="lang-csharp">public class SqlConnection
+{
+    public void RegisterColumnEncryptionKeyStoreProvidersOnConnection(IDictionary&lt;string, SqlColumnEncryptionKeyStoreProvider&gt; customProviders)
+}
+public class SqlCommand
+{
+    public void RegisterColumnEncryptionKeyStoreProvidersOnCommand(IDictionary&lt;string, SqlColumnEncryptionKeyStoreProvider&gt; customProviders)
+}
+</code></pre>
+<p>The static API on <code>SqlConnection</code>, <code>SqlConnection.RegisterColumnEncryptionKeyStoreProviders</code>, used to register custom master key store providers globally, continues to be supported. The column encryption key cache maintained globally only applies to globally registered providers.</p>
+<h5 id="column-master-key-store-provider-registration-precedence">Column master key store provider registration precedence</h5>
+<p>The built-in column master key store providers that are available for the Windows Certificate Store, CNG Store, and CSP are preregistered. No providers should be registered on the connection or command instances if one of the built-in column master key store providers is needed.</p>
+<p>Custom master key store providers can be registered with the driver at three different layers. The global level is as it currently is. The new per-connection and per-command level registrations are empty initially and can be set more than once.</p>
+<p>The precedences of the three registrations are as follows:</p>
+<ul>
+<li>The per-command registration is checked if it isn't empty.</li>
+<li>If the per-command registration is empty, the per-connection registration is checked if it isn't empty.</li>
+<li>If the per-connection registration is empty, the global registration is checked.</li>
+</ul>
+<p>Once any key store provider is found at a registration level, the driver <strong>doesn't</strong> fall back to the other registrations to search for a provider. If providers are registered but the proper provider isn't found at a level, an exception is thrown containing only the registered providers in the registration checked.</p>
+<h4 id="column-encryption-key-cache-precedence">Column encryption key cache precedence</h4>
+<p>The driver doesn't cache the column encryption keys (CEKs) for custom key store providers registered using the new instance-level APIs. The key store providers need to implement their own cache to gain performance. The driver disables the local cache of column encryption keys implemented by custom key store providers if the key store provider instance is registered in the driver at the global level.</p>
+<p>A new API has also been introduced on the <code>SqlColumnEncryptionKeyStoreProvider</code> base class to set the cache time to live:</p>
+<pre><code class="lang-csharp">public abstract class SqlColumnEncryptionKeyStoreProvider
+{
+    // The default value of Column Encryption Key Cache Time to Live is 0.
+    // Provider's local cache is disabled for globally registered providers.
+    // Custom key store provider implementation must include column encryption key cache to provide caching support to locally registered providers.
+    public virtual TimeSpan? ColumnEncryptionKeyCacheTtl { get; set; } = new TimeSpan(0);
+}
+</code></pre>
+<h4 id="ip-address-preference">IP address preference</h4>
+<p>A new connection property <code>IPAddressPreference</code> is introduced to specify the IP address family preference to the driver when establishing TCP connections. If <code>Transparent Network IP Resolution</code> (in .NET Framework) or <code>Multi Subnet Failover</code> is set to <code>true</code>, this setting has no effect. There are the three accepted values for this property:</p>
+<ul>
+<li><p><strong>IPv4First</strong></p>
+<ul>
+<li>This value is the default. The driver uses resolved IPv4 addresses first. If none of them can be connected to successfully, it tries resolved IPv6 addresses.</li>
+</ul>
+</li>
+<li><p><strong>IPv6First</strong></p>
+<ul>
+<li>The driver uses resolved IPv6 addresses first. If none of them can be connected to successfully, it tries resolved IPv4 addresses.</li>
+</ul>
+</li>
+<li><p><strong>UsePlatformDefault</strong></p>
+<ul>
+<li>The driver tries IP addresses in the order received from the DNS resolution response.</li>
+</ul>
+</li>
+</ul>
+<h3 id="30-target-platform-support">3.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6.1+ (Windows x86, Windows x64)</li>
+<li>.NET Core 2.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-21">Release notes for 2.1</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/2.1" data-linktype="external">2.1 Release Notes</a>.</p>
+<h3 id="new-features-in-21">New features in 2.1</h3>
+<h4 id="cross-platform-support-for-always-encrypted">Cross-platform support for Always Encrypted</h4>
+<p>Microsoft.Data.SqlClient v2.1 extends support for Always Encrypted on the following platforms:</p>
+<table>
+<thead>
+<tr>
+<th>Support Always Encrypted</th>
+<th>Support Always Encrypted with Secure Enclave</th>
+<th>Target framework</th>
+<th style="text-align: right;">Microsoft.Data.SqlClient Version</th>
+<th style="text-align: right;">Operating system</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Yes</td>
+<td>Yes</td>
+<td>.NET Framework 4.6+</td>
+<td style="text-align: right;">1.1.0+</td>
+<td style="text-align: right;">Windows</td>
+</tr>
+<tr>
+<td>Yes</td>
+<td>Yes</td>
+<td>.NET Core 2.1+</td>
+<td style="text-align: right;">2.1.0+<sup>1</sup></td>
+<td style="text-align: right;">Windows, Linux, macOS</td>
+</tr>
+<tr>
+<td>Yes</td>
+<td>No<sup>2</sup></td>
+<td>.NET Standard 2.0</td>
+<td style="text-align: right;">2.1.0+</td>
+<td style="text-align: right;">Windows, Linux, macOS</td>
+</tr>
+<tr>
+<td>Yes</td>
+<td>Yes</td>
+<td>.NET Standard 2.1+</td>
+<td style="text-align: right;">2.1.0+</td>
+<td style="text-align: right;">Windows, Linux, macOS</td>
+</tr>
+</tbody>
+</table>
+<p><sup>1</sup> Before Microsoft.Data.SqlClient version v2.1, Always Encrypted is only supported on Windows.<br>
+<sup>2</sup> Always Encrypted with secure enclaves isn't supported on .NET Standard 2.0.</p>
+<p><a id="azure-active-directory-device-code-flow-authentication"></a></p>
+<h4 id="microsoft-entra-device-code-flow-authentication">Microsoft Entra Device Code Flow authentication</h4>
+<p>Microsoft.Data.SqlClient v2.1 provides support for "Device Code Flow" authentication with MSAL.NET.
+Reference documentation: <a href="/en-us/azure/active-directory/develop/v2-oauth2-device-code" data-linktype="absolute-path">OAuth2.0 Device Authorization Grant flow</a></p>
+<p>Connection string example:</p>
+<p><code>Server=&lt;server&gt;.database.windows.net; Authentication=Active Directory Device Code Flow; Database=Northwind;Encrypt=True</code></p>
+<p>The following API enables customization of the Device Code Flow callback mechanism:</p>
+<pre><code class="lang-csharp">public class ActiveDirectoryAuthenticationProvider
+{
+    // For .NET Framework, .NET Core and .NET Standard targeted applications
+    public void SetDeviceCodeFlowCallback(Func&lt;DeviceCodeResult, Task&gt; deviceCodeFlowCallbackMethod)
+}
+</code></pre>
+<p><a id="azure-active-directory-managed-identity-authentication"></a></p>
+<h4 id="microsoft-entra-managed-identity-authentication">Microsoft Entra managed identity authentication</h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces support for Microsoft Entra authentication using <a href="/en-us/azure/active-directory/managed-identities-azure-resources/overview" data-linktype="absolute-path">managed identities</a>.</p>
+<p>The following authentication mode keywords are supported:</p>
+<ul>
+<li>Active Directory Managed Identity</li>
+<li>Active Directory MSI (for cross MS SQL drivers compatibility)</li>
+</ul>
+<p>Connection string examples:</p>
+<pre><code class="lang-csharp">// For System Assigned Managed Identity
+"Server={serverURL}; Authentication=Active Directory MSI; Encrypt=True; Initial Catalog={db};"
+
+// For System Assigned Managed Identity
+"Server={serverURL}; Authentication=Active Directory Managed Identity; Initial Catalog={db};"
+
+// For User Assigned Managed Identity
+"Server={serverURL}; Authentication=Active Directory MSI; Encrypt=True; User Id={ObjectIdOfManagedIdentity}; Initial Catalog={db};"
+
+// For User Assigned Managed Identity
+"Server={serverURL}; Authentication=Active Directory Managed Identity; Encrypt=True; User Id={ObjectIdOfManagedIdentity}; Initial Catalog={db};"
+</code></pre>
+<p><a id="azure-active-directory-interactive-authentication-enhancements"></a></p>
+<h4 id="microsoft-entra-interactive-authentication-enhancements">Microsoft Entra Interactive authentication enhancements</h4>
+<p>Microsoft.Data.SqlClient v2.1 adds the following APIs to customize the <strong>Microsoft Entra Interactive</strong> authentication experience:</p>
+<pre><code class="lang-csharp">public class ActiveDirectoryAuthenticationProvider
+{
+    // For .NET Framework targeted applications only
+    public void SetIWin32WindowFunc(Func&lt;IWin32Window&gt; iWin32WindowFunc);
+
+    // For .NET Standard targeted applications only
+    public void SetParentActivityOrWindowFunc(Func&lt;object&gt; parentActivityOrWindowFunc);
+
+    // For .NET Framework, .NET Core and .NET Standard targeted applications
+    public void SetAcquireAuthorizationCodeAsyncCallback(Func&lt;Uri, Uri, CancellationToken, Task&lt;Uri&gt;&gt; acquireAuthorizationCodeAsyncCallback);
+
+    // For .NET Framework, .NET Core and .NET Standard targeted applications
+    public void ClearUserTokenCache();
+}
+</code></pre>
+<h4 id="sqlclientauthenticationproviders-configuration-section"><code>SqlClientAuthenticationProviders</code> configuration section</h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces a new configuration section, <code>SqlClientAuthenticationProviders</code> (a clone of the existing <code>SqlAuthenticationProviders</code>). The existing configuration section, <code>SqlAuthenticationProviders</code>, is still supported for backward compatibility when the appropriate type is defined.</p>
+<p>The new section allows application config files to contain both a SqlAuthenticationProviders section for System.Data.SqlClient and a SqlClientAuthenticationProviders section for Microsoft.Data.SqlClient.</p>
+<p><a id="azure-active-directory-authentication-using-an-application-client-id"></a></p>
+<h4 id="microsoft-entra-authentication-using-an-application-client-id">Microsoft Entra authentication using an application client ID</h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces support for passing a user-defined application client ID to the Microsoft Authentication Library. Application Client ID is used when authenticating with Microsoft Entra ID.</p>
+<p>The following new APIs are introduced:</p>
+<ol>
+<li><p>A new constructor has been introduced in ActiveDirectoryAuthenticationProvider:</p>
+<p><strong>Applies to</strong>: <em>All .NET Platforms (.NET Framework, .NET Core, and .NET Standard)</em></p>
+<pre><code class="lang-csharp">public ActiveDirectoryAuthenticationProvider(string applicationClientId)
+</code></pre>
+<p>Usage:</p>
+<pre><code class="lang-csharp">string APP_CLIENT_ID = "&lt;GUID&gt;";
+SqlAuthenticationProvider customAuthProvider = new ActiveDirectoryAuthenticationProvider(APP_CLIENT_ID);
+SqlAuthenticationProvider.SetProvider(SqlAuthenticationMethod.ActiveDirectoryInteractive, customAuthProvider);
+
+using (SqlConnection sqlConnection = new SqlConnection("&lt;connection_string&gt;"))
+{
+    sqlConnection.Open();
+}
+</code></pre>
+</li>
+<li><p>A new configuration property has been introduced under <code>SqlAuthenticationProviderConfigurationSection</code> and <code>SqlClientAuthenticationProviderConfigurationSection</code>:</p>
+<p><strong>Applies to</strong>: <em>.NET Framework and .NET Core</em></p>
+<pre><code class="lang-csharp">internal class SqlAuthenticationProviderConfigurationSection : ConfigurationSection
+{
+    ...
+    [ConfigurationProperty("applicationClientId", IsRequired = false)]
+    public string ApplicationClientId =&gt; this["applicationClientId"] as string;
+}
+
+// Inheritance
+internal class SqlClientAuthenticationProviderConfigurationSection : SqlAuthenticationProviderConfigurationSection
+{ ... }
+</code></pre>
+<p>Usage:</p>
+<pre><code class="lang-xml">&lt;configuration&gt;
+    &lt;configSections&gt;
+        &lt;section name="SqlClientAuthenticationProviders"
+                         type="Microsoft.Data.SqlClient.SqlClientAuthenticationProviderConfigurationSection, Microsoft.Data.SqlClient" /&gt;
+    &lt;/configSections&gt;
+    &lt;SqlClientAuthenticationProviders applicationClientId ="&lt;GUID&gt;" /&gt;
+&lt;/configuration&gt;
+
+&lt;!--or--&gt;
+
+&lt;configuration&gt;
+    &lt;configSections&gt;
+        &lt;section name="SqlAuthenticationProviders"
+                         type="Microsoft.Data.SqlClient.SqlAuthenticationProviderConfigurationSection, Microsoft.Data.SqlClient" /&gt;
+    &lt;/configSections&gt;
+    &lt;SqlAuthenticationProviders applicationClientId ="&lt;GUID&gt;" /&gt;
+&lt;/configuration&gt;
+</code></pre>
+</li>
+</ol>
+<h4 id="data-classification-v2-support">Data Classification v2 support</h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces support for Data Classification's "Sensitivity Rank" information. The following new APIs are now available:</p>
+<pre><code class="lang-csharp">public class SensitivityClassification
+{
+    public SensitivityRank SensitivityRank;
+}
+
+public class SensitivityProperty
+{
+    public SensitivityRank SensitivityRank;
+}
+
+public enum SensitivityRank
+{
+    NOT_DEFINED = -1,
+    NONE = 0,
+    LOW = 10,
+    MEDIUM = 20,
+    HIGH = 30,
+    CRITICAL = 40
+}
+</code></pre>
+<h4 id="session-id-for-an-active-sqlconnection">Session ID for an active <code>SqlConnection</code></h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces a new <code>SqlConnection</code> property, <code>ServerProcessId</code>, on an active connection.</p>
+<pre><code class="lang-csharp">public class SqlConnection
+{
+    // Returns the session ID (SPID) of the active connection.
+    public int ServerProcessId;
+}
+</code></pre>
+<h4 id="trace-logging-support-in-native-sni">Trace logging support in native SNI</h4>
+<p>Microsoft.Data.SqlClient v2.1 extends the existing <code>SqlClientEventSource</code> implementation to enable event tracing in SNI.dll. Events must be captured using a tool like Xperf.</p>
+<p>Tracing can be enabled by sending a command to <code>SqlClientEventSource</code> as illustrated:</p>
+<pre><code class="lang-csharp">// Enables trace events:
+EventSource.SendCommand(eventSource, (EventCommand)8192, null);
+
+// Enables flow events:
+EventSource.SendCommand(eventSource, (EventCommand)16384, null);
+
+// Enables both trace and flow events:
+EventSource.SendCommand(eventSource, (EventCommand)(8192 | 16384), null);
+</code></pre>
+<h4 id="command-timeout-connection-string-property">"Command Timeout" connection string property</h4>
+<p>Microsoft.Data.SqlClient v2.1 introduces the "Command Timeout" connection string property to override the default of 30 seconds. The timeout for individual commands can be overridden using the <code>CommandTimeout</code> property on the SqlCommand.</p>
+<p>Connection string examples:</p>
+<p><code>"Server={serverURL}; Initial Catalog={db}; Encrypt=True; Integrated Security=true; Command Timeout=60"</code></p>
+<h4 id="removal-of-symbols-from-native-sni">Removal of symbols from native SNI</h4>
+<p>With Microsoft.Data.SqlClient v2.1, we've removed the symbols introduced in <a href="https://www.nuget.org/packages/Microsoft.Data.SqlClient.SNI/2.0.0" data-linktype="external">v2.0.0</a> from <a href="https://www.nuget.org/packages/Microsoft.Data.SqlClient.SNI.runtime" data-linktype="external">Microsoft.Data.SqlClient.SNI.runtime</a> NuGet starting with <a href="https://www.nuget.org/packages/Microsoft.Data.SqlClient.SNI.runtime/2.1.1" data-linktype="external">v2.1.1</a>. The public symbols are now published to Microsoft Symbols Server for tools like BinSkim that require access to public symbols.</p>
+<h4 id="source-linking-of-microsoftdatasqlclient-symbols">Source-linking of Microsoft.Data.SqlClient symbols</h4>
+<p>Starting with Microsoft.Data.SqlClient v2.1, Microsoft.Data.SqlClient symbols are source-linked and published to the Microsoft Symbols Server for an enhanced debugging experience without the need to download source code.</p>
+<h3 id="21-target-platform-support">2.1 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6+ (Windows x86, Windows x64)</li>
+<li>.NET Core 2.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-20">Release notes for 2.0</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/2.0" data-linktype="external">2.0 Release Notes</a>.</p>
+<h3 id="breaking-changes-in-20">Breaking changes in 2.0</h3>
+<ul>
+<li>The access modifier for the enclave provider interface <code>SqlColumnEncryptionEnclaveProvider</code> has been changed from <code>public</code> to <code>internal</code>.</li>
+<li>Constants in the <code>SqlClientMetaDataCollectionNames</code> class have been updated to reflect changes in SQL Server.</li>
+<li>The driver now performs Server Certificate validation when the target SQL Server enforces TLS encryption, which is the default for Azure connections.</li>
+<li><code>SqlDataReader.GetSchemaTable()</code> now returns an empty <code>DataTable</code> instead <code>null</code>.</li>
+<li>The driver now performs decimal scale rounding to match SQL Server behavior. For backward compatibility, the previous behavior of truncation can be enabled using an AppContext switch.</li>
+<li>For .NET Framework applications consuming <strong>Microsoft.Data.SqlClient</strong>, the SNI.dll files previously downloaded to the <code>bin\x64</code> and <code>bin\x86</code> folders are now named <code>Microsoft.Data.SqlClient.SNI.x64.dll</code> and <code>Microsoft.Data.SqlClient.SNI.x86.dll</code> and are downloaded to the <code>bin</code> directory.</li>
+<li>New connection string property synonyms replace old properties when fetching connection string from <code>SqlConnectionStringBuilder</code> for consistency. <a href="#new-connection-string-property-synonyms" data-linktype="self-bookmark">Read More</a></li>
+</ul>
+<h3 id="new-features-in-20">New features in 2.0</h3>
+<p>The following new features have been introduced in Microsoft.Data.SqlClient 2.0.</p>
+<h4 id="dns-failure-resiliency">DNS failure resiliency</h4>
+<p>The driver now caches IP addresses from every successful connection to a SQL Server endpoint that supports the feature. If a DNS resolution failure occurs during a connection attempt, the driver tries establishing a connection using a cached IP address for that server, if any exists.</p>
+<h4 id="eventsource-tracing">EventSource tracing</h4>
+<p>This release introduces support for capturing event trace logs for debugging applications. To capture these events, client applications must listen for events from SqlClient's EventSource implementation:</p>
+<pre><code class="lang-csharp">Microsoft.Data.SqlClient.EventSource
+</code></pre>
+<p>For more information, see how to <a href="enable-eventsource-tracing?view=sql-server-ver17" data-linktype="relative-path">Enable event tracing in SqlClient</a>.</p>
+<h4 id="enable-managed-networking-on-windows">Enable managed networking on Windows</h4>
+<p>A new AppContext switch, <strong>"Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows"</strong>, enables the use of a managed SNI implementation on Windows for testing and debugging purposes. This switch toggles the driver's behavior to use a managed SNI in .NET Core 2.1+ and .NET Standard 2.0+ projects on Windows, eliminating all dependencies on native libraries for the Microsoft.Data.SqlClient library.</p>
+<pre><code class="lang-csharp">AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
+</code></pre>
+<p>See <a href="appcontext-switches?view=sql-server-ver17" data-linktype="relative-path">AppContext switches in SqlClient</a> for a full list of available switches in the driver.</p>
+<h4 id="enable-decimal-truncation-behavior">Enable decimal truncation behavior</h4>
+<p>The driver rounds the decimal data scale, by default, as is done by SQL Server. For backward compatibility, you can set the AppContext switch <strong>"Switch.Microsoft.Data.SqlClient.TruncateScaledDecimal"</strong> to <strong>true</strong>.</p>
+<pre><code class="lang-csharp">AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.TruncateScaledDecimal", true);
+</code></pre>
+<h4 id="new-connection-string-property-synonyms">New connection string property synonyms</h4>
+<p>New synonyms have been added for the following existing connection string properties to avoid spacing confusion around properties with more than one word. Old property names continue to be supported for backward compatibility. But the new connection string properties are now included when fetching the connection string from <a href="/en-us/dotnet/api/microsoft.data.sqlclient.sqlconnectionstringbuilder" data-linktype="absolute-path">SqlConnectionStringBuilder</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Existing connection string property</th>
+<th>New synonym</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ApplicationIntent</td>
+<td>Application Intent</td>
+</tr>
+<tr>
+<td>ConnectRetryCount</td>
+<td>Connect Retry Count</td>
+</tr>
+<tr>
+<td>ConnectRetryInterval</td>
+<td>Connect Retry Interval</td>
+</tr>
+<tr>
+<td>PoolBlockingPeriod</td>
+<td>Pool Blocking Period</td>
+</tr>
+<tr>
+<td>MultipleActiveResultSets</td>
+<td>Multiple Active Result Sets</td>
+</tr>
+<tr>
+<td>MultiSubnetFailover</td>
+<td>Multiple Subnet Failover</td>
+</tr>
+<tr>
+<td>TransparentNetworkIPResolution</td>
+<td>Transparent Network IP Resolution</td>
+</tr>
+<tr>
+<td>TrustServerCertificate</td>
+<td>Trust Server Certificate</td>
+</tr>
+</tbody>
+</table>
+<h4 id="sqlbulkcopy-rowscopied-property">SqlBulkCopy RowsCopied property</h4>
+<p>The RowsCopied property provides read-only access to the number of rows that have been processed in the ongoing bulk copy operation. This value might not necessarily be equal to the final number of rows added to the destination table.</p>
+<h4 id="connection-open-overrides">Connection open overrides</h4>
+<p>The default behavior of SqlConnection.Open() can be overridden to disable the ten-second delay and automatic connection retries triggered by transient errors.</p>
+<pre><code class="lang-csharp">using(SqlConnection sqlConnection = new SqlConnection("Data Source=(local);Integrated Security=true;Initial Catalog=AdventureWorks;"))
+{
+    sqlConnection.Open(SqlConnectionOverrides.OpenWithoutRetry);
+}
+</code></pre>
+<div class="NOTE">
+<p>Note</p>
+<p>This override can be applied to <code>SqlConnection.OpenAsync()</code> starting with Microsoft.Data.SqlClient v6.0.0.</p>
+</div>
+<h4 id="username-support-for-active-directory-interactive-mode">Username support for Active Directory Interactive mode</h4>
+<p>A username can be specified in the connection string when using Microsoft Entra Interactive authentication mode for both .NET Framework and .NET Core</p>
+<p>Set a username using the <strong>User ID</strong> or <strong>UID</strong> connection string property:</p>
+<pre><code class="lang-csharp">"Server=&lt;server name&gt;; Database=&lt;db name&gt;; Authentication=Active Directory Interactive; User Id=&lt;username&gt;;Encrypt=True;"
+</code></pre>
+<h4 id="order-hints-for-sqlbulkcopy">Order hints for SqlBulkCopy</h4>
+<p>Order hints can be provided to improve performance for bulk copy operations on tables with clustered indexes. For more information, see the <a href="sql/bulk-copy-order-hints?view=sql-server-ver17" data-linktype="relative-path">bulk copy operations</a> section.</p>
+<h4 id="sni-dependency-changes">SNI dependency changes</h4>
+<p>Microsoft.Data.SqlClient (.NET Core and .NET Standard) on Windows is now dependent on <strong>Microsoft.Data.SqlClient.SNI.runtime</strong>, replacing the previous dependency on <strong>runtime.native.System.Data.SqlClient.SNI</strong>. The new dependency adds support for the ARM platform along with the already supported platforms Arm64, x64, and x86 on Windows.</p>
+<h3 id="20-target-platform-support">2.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6+ (Windows x86, Windows x64)</li>
+<li>.NET Core 2.1+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Windows Arm64, Windows ARM, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-11">Release notes for 1.1</h2>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/1.1" data-linktype="external">1.1 Release Notes</a>.</p>
+<h3 id="new-features-in-11">New features in 1.1</h3>
+<h4 id="always-encrypted-with-secure-enclaves">Always Encrypted with secure enclaves</h4>
+<p>Always Encrypted is available starting in Microsoft SQL Server 2016. Secure enclaves are available starting in Microsoft SQL Server 2019. To use the enclave feature, connection strings should include the required attestation protocol and attestation URL. For example:</p>
+<pre><code class="lang-csharp">"Attestation Protocol=HGS;Enclave Attestation Url=&lt;attestation_url_for_HGS&gt;"
+</code></pre>
+<p>For more information, see:</p>
+<ul>
+<li><a href="sql/sqlclient-support-always-encrypted?view=sql-server-ver17" data-linktype="relative-path">Using Always Encrypted with the Microsoft .NET Data Provider for SQL Server</a></li>
+<li><a href="sql/tutorial-always-encrypted-enclaves-develop-net-apps?view=sql-server-ver17" data-linktype="relative-path">Tutorial: Develop a .NET application using Always Encrypted with secure enclaves</a></li>
+</ul>
+<h3 id="11-target-platform-support">1.1 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6+ (Windows x86, Windows x64)</li>
+<li>.NET Core 2.1+ (Windows x86, Windows x64, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Linux, macOS)</li>
+</ul>
+<h2 id="release-notes-for-10">Release notes for 1.0</h2>
+<p>The initial release for the Microsoft.Data.SqlClient namespace offers more functionality over the existing System.Data.SqlClient namespace.</p>
+<p>Full release notes, including dependencies, are available in the GitHub Repository: <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/1.0" data-linktype="external">1.0 Release Notes</a>.</p>
+<h3 id="new-features-in-10">New features in 1.0</h3>
+<h4 id="new-features-over-net-framework-472-systemdatasqlclient">New features over .NET Framework 4.7.2 System.Data.SqlClient</h4>
+<ul>
+<li><p><strong>Data Classification</strong> - Available in Azure SQL Database and Microsoft SQL Server 2019.</p>
+</li>
+<li><p><strong>UTF-8 support</strong> - Available in Microsoft SQL Server 2019.</p>
+</li>
+</ul>
+<h4 id="new-features-over-net-core-22-systemdatasqlclient">New features over .NET Core 2.2 System.Data.SqlClient</h4>
+<ul>
+<li><p><strong>Data Classification</strong> - Available in Azure SQL Database and Microsoft SQL Server 2019.</p>
+</li>
+<li><p><strong>UTF-8 support</strong> - Available in Microsoft SQL Server 2019.</p>
+</li>
+<li><p><strong>Authentication</strong> - Active Directory Password authentication mode.</p>
+</li>
+</ul>
+<h4 id="data-classification">Data Classification</h4>
+<p>Data Classification brings a new set of APIs exposing read-only Data Sensitivity and Classification information about objects retrieved via SqlDataReader when the underlying source supports the feature and contains metadata about <a href="../../relational-databases/security/sql-data-discovery-and-classification?view=sql-server-ver17" data-linktype="relative-path">data sensitivity and classification</a>. See the sample application at <a href="https://github.com/dotnet/SqlClient/tree/master/release-notes/1.1" data-linktype="external">Data Discovery and Classification in SqlClient</a>.</p>
+<pre><code class="lang-csharp">public class SqlDataReader
+{
+    public Microsoft.Data.SqlClient.DataClassification.SensitivityClassification SensitivityClassification
+}
+
+namespace Microsoft.Data.SqlClient.DataClassification
+{
+    public class ColumnSensitivity
+    {
+        public System.Collections.ObjectModel.ReadOnlyCollection&lt;Microsoft.Data.SqlClient.DataClassification.SensitivityProperty&gt; SensitivityProperties
+    }
+    public class InformationType
+    {
+        public string Id
+        public string Name
+    }
+    public class Label
+    {
+        public string Id
+        public string Name
+    }
+    public class SensitivityClassification
+    {
+        public System.Collections.ObjectModel.ReadOnlyCollection&lt;Microsoft.Data.SqlClient.DataClassification.ColumnSensitivity&gt; ColumnSensitivities
+        public System.Collections.ObjectModel.ReadOnlyCollection&lt;Microsoft.Data.SqlClient.DataClassification.InformationType&gt; InformationTypes
+        public System.Collections.ObjectModel.ReadOnlyCollection&lt;Microsoft.Data.SqlClient.DataClassification.Label&gt; Labels
+    }
+    public class SensitivityProperty
+    {
+        public Microsoft.Data.SqlClient.DataClassification.InformationType InformationType
+        public Microsoft.Data.SqlClient.DataClassification.Label Label
+    }
+}
+</code></pre>
+<h4 id="utf-8-support">UTF-8 support</h4>
+<p>UTF-8 support doesn't require any application code changes. These SqlClient changes optimize client-server communication when the server supports UTF-8 and the underlying column collation is UTF-8. See the UTF-8 section under <a href="../../sql-server/what-s-new-in-sql-server-2019?view=sql-server-ver17" data-linktype="relative-path">What's new in SQL Server 2019</a>.</p>
+<h4 id="always-encrypted-with-secure-enclaves-1">Always Encrypted with secure enclaves</h4>
+<p>In general, existing documentation that uses System.Data.SqlClient on .NET Framework <strong>and built-in column master key store providers</strong> should now work with .NET Core, too.</p>
+<ul>
+<li><a href="../../relational-databases/security/encryption/develop-using-always-encrypted-with-net-framework-data-provider?view=sql-server-ver17" data-linktype="relative-path">Using Always Encrypted with the .NET Framework Data Provider for SQL Server</a></li>
+<li><a href="/en-us/azure/sql-database/sql-database-always-encrypted" data-linktype="absolute-path">Always Encrypted: Protect sensitive data and store encryption keys in the Windows certificate store</a></li>
+</ul>
+<h4 id="authentication">Authentication</h4>
+<p>Different authentication modes can be specified by using the <strong>Authentication</strong> connection string option. For more information, see the <a href="/en-us/dotnet/api/system.data.sqlclient.sqlauthenticationmethod?view=netframework-4.7.2&amp;preserve-view=true" data-linktype="absolute-path">documentation for SqlAuthenticationMethod</a>.</p>
+<p>Custom key store providers, like the Azure Key Vault provider, need to be updated to support Microsoft.Data.SqlClient. Similarly, enclave providers also need to be updated to support Microsoft.Data.SqlClient.</p>
+<p>Always Encrypted is only supported against .NET Framework and .NET Core targets. It isn't supported against .NET Standard since .NET Standard is missing certain encryption dependencies.</p>
+<h3 id="10-target-platform-support">1.0 Target platform support</h3>
+<ul>
+<li>.NET Framework 4.6+ (Windows x86, Windows x64)</li>
+<li>.NET Core 2.1+ (Windows x86, Windows x64, Linux, macOS)</li>
+<li>.NET Standard 2.0+ (Windows x86, Windows x64, Linux, macOS)</li>
+</ul>
+</div>
+					
+		<div
+			id="ms--inline-notifications"
+			class="margin-block-xs"
+			data-bi-name="inline-notification"
+		></div>
+	 
+		<div
+			id="assertive-live-region"
+			role="alert"
+			aria-live="assertive"
+			class="visually-hidden"
+			aria-relevant="additions"
+			aria-atomic="true"
+		></div>
+		<div
+			id="polite-live-region"
+			role="status"
+			aria-live="polite"
+			class="visually-hidden"
+			aria-relevant="additions"
+			aria-atomic="true"
+		></div>
+	
+					
+		<!-- feedback section -->
+		<section
+			id="site-user-feedback-footer"
+			class="font-size-sm margin-top-md display-none-print display-none-desktop"
+			data-test-id="site-user-feedback-footer"
+			data-bi-name="site-feedback-section"
+		>
+			<hr class="hr" />
+			<h2 id="ms--feedback" class="title is-3">Feedback</h2>
+			<div class="display-flex flex-wrap-wrap align-items-center">
+				<p class="font-weight-semibold margin-xxs margin-left-none">
+					Was this page helpful?
+				</p>
+				<div class="buttons">
+					<button
+						class="thumb-rating-button like button button-primary button-sm"
+						data-test-id="footer-rating-yes"
+						data-binary-rating-response="rating-yes"
+						type="button"
+						title="This article is helpful"
+						data-bi-name="button-rating-yes"
+						aria-pressed="false"
+					>
+						<span class="icon" aria-hidden="true">
+							<span class="docon docon-like"></span>
+						</span>
+						<span>Yes</span>
+					</button>
+					<button
+						class="thumb-rating-button dislike button button-primary button-sm"
+						id="standard-rating-no-button"
+						hidden
+						data-test-id="footer-rating-no"
+						data-binary-rating-response="rating-no"
+						type="button"
+						title="This article is not helpful"
+						data-bi-name="button-rating-no"
+						aria-pressed="false"
+					>
+						<span class="icon" aria-hidden="true">
+							<span class="docon docon-dislike"></span>
+						</span>
+						<span>No</span>
+					</button>
+					<details
+						class="popover popover-top"
+						id="mobile-help-popover"
+						data-test-id="footer-feedback-popover"
+					>
+						<summary
+							class="thumb-rating-button dislike button button-primary button-sm"
+							data-test-id="details-footer-rating-no"
+							data-binary-rating-response="rating-no"
+							title="This article is not helpful"
+							data-bi-name="button-rating-no"
+							aria-pressed="false"
+							data-bi-an="feedback-unhelpful-popover"
+						>
+							<span class="icon" aria-hidden="true">
+								<span class="docon docon-dislike"></span>
+							</span>
+							<span>No</span>
+						</summary>
+						<div
+							class="popover-content width-200 width-300-tablet"
+							role="dialog"
+							aria-labelledby="popover-heading"
+							aria-describedby="popover-description"
+						>
+							<p id="popover-heading" class="font-size-lg margin-bottom-xxs font-weight-semibold">
+								Need help with this topic?
+							</p>
+							<p id="popover-description" class="font-size-sm margin-bottom-xs">
+								Want to try using Ask Learn to clarify or guide you through this topic?
+							</p>
+							
+		<div class="buttons flex-direction-row flex-wrap justify-content-center gap-xxs">
+			<div>
+		<button
+			class="button button-sm border inner-focus display-none margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-test-id="ask-learn-assistant-modal-entry-mobile-feedback"
+			data-ask-learn-modal-entry-feedback
+			data-bi-an=feedback-unhelpful-popover
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-label="Ask Learn"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+		</button>
+		<button
+			class="button button-sm display-inline-flex display-none-desktop flex-shrink-0 margin-right-xxs border-color-ask-learn margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-bi-an=feedback-unhelpful-popover
+			data-test-id="ask-learn-assistant-modal-entry-tablet-feedback"
+			data-ask-learn-modal-entry-feedback
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+		<button
+			class="button button-sm display-none flex-shrink-0 display-inline-flex-desktop margin-right-xxs border-color-ask-learn margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-bi-an=feedback-unhelpful-popover
+			data-test-id="ask-learn-assistant-flyout-entry-feedback"
+			data-ask-learn-flyout-entry-show-only
+			data-flyout-button="toggle"
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-controls="ask-learn-flyout"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+	</div>
+			<button
+				type="button"
+				class="button button-sm margin-right-xxs"
+				data-help-option="suggest-fix"
+				data-bi-name="feedback-suggest"
+				data-bi-an="feedback-unhelpful-popover"
+				data-test-id="suggest-fix"
+			>
+				<span class="icon" aria-hidden="true">
+					<span class="docon docon-feedback"></span>
+				</span>
+				<span> Suggest a fix? </span>
+			</button>
+		</div>
+	
+						</div>
+					</details>
+				</div>
+			</div>
+		</section>
+		<!-- end feedback section -->
+	
+				</div>
+				
+		<div id="ms--additional-resources-mobile" class="display-none-print">
+			<hr class="hr" hidden />
+			<h2 id="ms--additional-resources-mobile-heading" class="title is-3" hidden>
+				Additional resources
+			</h2>
+			
+		<section
+			id="right-rail-recommendations-mobile"
+			class=""
+			data-bi-name="recommendations"
+			hidden
+		></section>
+	 
+		<section
+			id="right-rail-training-mobile"
+			class=""
+			data-bi-name="learning-resource-card"
+			hidden
+		></section>
+	 
+		<section
+			id="right-rail-events-mobile"
+			class=""
+			data-bi-name="events-card"
+			hidden
+		></section>
+	
+		</div>
+	 
+		<div
+			id="article-metadata-footer"
+			data-bi-name="article-metadata-footer"
+			data-test-id="article-metadata-footer"
+			class="page-metadata-container"
+		>
+			<hr class="hr" />
+			<ul class="metadata page-metadata" data-bi-name="page info" lang="en-us" dir="ltr">
+				<li class="visibility-hidden-visual-diff">
+			<span class="badge badge-sm text-wrap-pretty">
+				<span>Last updated on <local-time format="twoDigitNumeric"
+		datetime="2026-03-25T17:35:00.000Z"
+		data-article-date-source="calculated"
+		class="is-invisible"
+	>
+		2026-03-25
+	</local-time></span>
+			</span>
+		</li>
+			</ul>
+		</div>
+	
+			</div>
+			
+		<div
+			id="action-panel"
+			role="region"
+			aria-label="Action Panel"
+			class="action-panel"
+			tabindex="-1"
+		></div>
+	
+		
+				</main>
+				<aside
+					id="layout-body-aside"
+					class="layout-body-aside "
+					data-bi-name="aside"
+					aria-label="Additional resources"
+			  >
+					
+		<div
+			id="ms--additional-resources"
+			class="right-container padding-sm display-none display-block-desktop height-full"
+			data-bi-name="pageactions"
+		>
+			<div id="affixed-right-container" data-bi-name="right-column">
+				
+		<nav
+			id="side-doc-outline"
+			class="doc-outline border-bottom padding-bottom-xs margin-bottom-xs"
+			data-bi-name="intopic toc"
+			aria-label="In this article"
+		>
+			<h3>In this article</h3>
+		</nav>
+	
+				<!-- Feedback -->
+				
+		<section
+			id="ms--site-user-feedback-right-rail"
+			class="font-size-sm display-none-print"
+			data-test-id="site-user-feedback-right-rail"
+			data-bi-name="site-feedback-right-rail"
+		>
+			<p class="font-weight-semibold margin-bottom-xs">Was this page helpful?</p>
+			<div class="buttons">
+				<button
+					class="thumb-rating-button like button button-primary button-sm"
+					data-test-id="right-rail-rating-yes"
+					data-binary-rating-response="rating-yes"
+					type="button"
+					title="This article is helpful"
+					data-bi-name="button-rating-yes"
+					aria-pressed="false"
+				>
+					<span class="icon" aria-hidden="true">
+						<span class="docon docon-like"></span>
+					</span>
+					<span>Yes</span>
+				</button>
+				<button
+					class="thumb-rating-button dislike button button-primary button-sm"
+					id="right-rail-no-button"
+					hidden
+					data-test-id="right-rail-rating-no"
+					data-binary-rating-response="rating-no"
+					type="button"
+					title="This article is not helpful"
+					data-bi-name="button-rating-no"
+					aria-pressed="false"
+				>
+					<span class="icon" aria-hidden="true">
+						<span class="docon docon-dislike"></span>
+					</span>
+					<span>No</span>
+				</button>
+				<details class="popover popover-right" id="help-popover" data-test-id="feedback-popover">
+					<summary
+						tabindex="0"
+						class="thumb-rating-button dislike button button-primary button-sm"
+						data-test-id="details-right-rail-rating-no"
+						data-binary-rating-response="rating-no"
+						title="This article is not helpful"
+						data-bi-name="button-rating-no"
+						aria-pressed="false"
+						data-bi-an="feedback-unhelpful-popover"
+					>
+						<span class="icon" aria-hidden="true">
+							<span class="docon docon-dislike"></span>
+						</span>
+						<span>No</span>
+					</summary>
+					<div
+						class="popover-content width-200 width-300-tablet"
+						role="dialog"
+						aria-labelledby="popover-heading"
+						aria-describedby="popover-description"
+					>
+						<p
+							id="popover-heading-right-rail"
+							class="font-size-lg margin-bottom-xxs font-weight-semibold"
+						>
+							Need help with this topic?
+						</p>
+						<p id="popover-description-right-rail" class="font-size-sm margin-bottom-xs">
+							Want to try using Ask Learn to clarify or guide you through this topic?
+						</p>
+						
+		<div class="buttons flex-direction-row flex-wrap justify-content-center gap-xxs">
+			<div>
+		<button
+			class="button button-sm border inner-focus display-none margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-test-id="ask-learn-assistant-modal-entry-mobile-feedback"
+			data-ask-learn-modal-entry-feedback
+			data-bi-an=feedback-unhelpful-popover
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-label="Ask Learn"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+		</button>
+		<button
+			class="button button-sm display-inline-flex display-none-desktop flex-shrink-0 margin-right-xxs border-color-ask-learn margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-bi-an=feedback-unhelpful-popover
+			data-test-id="ask-learn-assistant-modal-entry-tablet-feedback"
+			data-ask-learn-modal-entry-feedback
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+		<button
+			class="button button-sm display-none flex-shrink-0 display-inline-flex-desktop margin-right-xxs border-color-ask-learn margin-right-xxs"
+			data-bi-name="ask-learn-assistant-entry-troubleshoot"
+			data-bi-an=feedback-unhelpful-popover
+			data-test-id="ask-learn-assistant-flyout-entry-feedback"
+			data-ask-learn-flyout-entry-show-only
+			data-flyout-button="toggle"
+			type="button"
+			style="min-width: max-content;"
+			aria-expanded="false"
+			aria-controls="ask-learn-flyout"
+			hidden
+		>
+			<span class="icon font-size-lg" aria-hidden="true">
+				<span class="docon docon-chat-sparkle-fill gradient-ask-learn-logo"></span>
+			</span>
+			<span>Ask Learn</span>
+		</button>
+	</div>
+			<button
+				type="button"
+				class="button button-sm margin-right-xxs"
+				data-help-option="suggest-fix"
+				data-bi-name="feedback-suggest"
+				data-bi-an="feedback-unhelpful-popover"
+				data-test-id="suggest-fix"
+			>
+				<span class="icon" aria-hidden="true">
+					<span class="docon docon-feedback"></span>
+				</span>
+				<span> Suggest a fix? </span>
+			</button>
+		</div>
+	
+					</div>
+				</details>
+			</div>
+		</section>
+	
+			</div>
+		</div>
+	
+			  </aside> <section
+					id="layout-body-flyout"
+					class="layout-body-flyout "
+					data-bi-name="flyout"
+			  >
+					 <div
+	class="height-full border-left background-color-body-medium"
+	id="ask-learn-flyout"
+></div>
+			  </section> <div class="layout-body-footer " data-bi-name="layout-footer">
+		<footer
+			id="footer"
+			data-test-id="footer"
+			data-bi-name="footer"
+			class="footer-layout has-padding has-default-focus border-top  uhf-container"
+			role="contentinfo"
+		>
+			<div class="display-flex gap-xs flex-wrap-wrap is-full-height padding-right-lg-desktop">
+				
+		<a
+			data-mscc-ic="false"
+			href="#"
+			data-bi-name="select-locale"
+			class="locale-selector-link flex-shrink-0 button button-sm button-clear external-link-indicator"
+			id=""
+			title=""
+			><span class="icon" aria-hidden="true"
+				><span class="docon docon-world"></span></span
+			><span class="local-selector-link-text">en-us</span></a
+		>
+	 <div class="ccpa-privacy-link" data-ccpa-privacy-link hidden>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://aka.ms/yourcaliforniaprivacychoices"
+			data-bi-name="your-privacy-choices"
+			class="button button-sm button-clear flex-shrink-0 external-link-indicator"
+			id=""
+			title=""
+			>
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 30 14"
+			xml:space="preserve"
+			height="16"
+			width="43"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path
+				d="M7.4 12.8h6.8l3.1-11.6H7.4C4.2 1.2 1.6 3.8 1.6 7s2.6 5.8 5.8 5.8z"
+				style="fill-rule:evenodd;clip-rule:evenodd;fill:#fff"
+			></path>
+			<path
+				d="M22.6 0H7.4c-3.9 0-7 3.1-7 7s3.1 7 7 7h15.2c3.9 0 7-3.1 7-7s-3.2-7-7-7zm-21 7c0-3.2 2.6-5.8 5.8-5.8h9.9l-3.1 11.6H7.4c-3.2 0-5.8-2.6-5.8-5.8z"
+				style="fill-rule:evenodd;clip-rule:evenodd;fill:#06f"
+			></path>
+			<path
+				d="M24.6 4c.2.2.2.6 0 .8L22.5 7l2.2 2.2c.2.2.2.6 0 .8-.2.2-.6.2-.8 0l-2.2-2.2-2.2 2.2c-.2.2-.6.2-.8 0-.2-.2-.2-.6 0-.8L20.8 7l-2.2-2.2c-.2-.2-.2-.6 0-.8.2-.2.6-.2.8 0l2.2 2.2L23.8 4c.2-.2.6-.2.8 0z"
+				style="fill:#fff"
+			></path>
+			<path
+				d="M12.7 4.1c.2.2.3.6.1.8L8.6 9.8c-.1.1-.2.2-.3.2-.2.1-.5.1-.7-.1L5.4 7.7c-.2-.2-.2-.6 0-.8.2-.2.6-.2.8 0L8 8.6l3.8-4.5c.2-.2.6-.2.9 0z"
+				style="fill:#06f"
+			></path>
+		</svg>
+	
+			<span>Your Privacy Choices</span></a
+		>
+	
+	</div>
+				<div class="flex-shrink-0">
+		<div class="dropdown has-caret-up">
+			<button
+				data-test-id="theme-selector-button"
+				class="dropdown-trigger button button-clear button-sm inner-focus theme-dropdown-trigger"
+				aria-controls="{{ themeMenuId }}"
+				aria-expanded="false"
+				title="Theme"
+				data-bi-name="theme"
+			>
+				<span class="icon">
+					<span class="docon docon-sun" aria-hidden="true"></span>
+				</span>
+				<span>Theme</span>
+				<span class="icon expanded-indicator" aria-hidden="true">
+					<span class="docon docon-chevron-down-light"></span>
+				</span>
+			</button>
+			<div class="dropdown-menu" id="{{ themeMenuId }}" role="menu">
+				<ul class="theme-selector padding-xxs" data-test-id="theme-dropdown-menu">
+					<li class="theme display-block">
+						<button
+							class="button button-clear button-sm theme-control button-block justify-content-flex-start text-align-left"
+							data-theme-to="light"
+						>
+							<span class="theme-light margin-right-xxs">
+								<span
+									class="theme-selector-icon border display-inline-block has-body-background"
+									aria-hidden="true"
+								>
+									<svg class="svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 14">
+										<rect width="22" height="14" class="has-fill-body-background" />
+										<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+										<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+										<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+										<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+										<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+									</svg>
+								</span>
+							</span>
+							<span role="menuitem"> Light </span>
+						</button>
+					</li>
+					<li class="theme display-block">
+						<button
+							class="button button-clear button-sm theme-control button-block justify-content-flex-start text-align-left"
+							data-theme-to="dark"
+						>
+							<span class="theme-dark margin-right-xxs">
+								<span
+									class="border theme-selector-icon display-inline-block has-body-background"
+									aria-hidden="true"
+								>
+									<svg class="svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 14">
+										<rect width="22" height="14" class="has-fill-body-background" />
+										<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+										<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+										<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+										<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+										<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+									</svg>
+								</span>
+							</span>
+							<span role="menuitem"> Dark </span>
+						</button>
+					</li>
+					<li class="theme display-block">
+						<button
+							class="button button-clear button-sm theme-control button-block justify-content-flex-start text-align-left"
+							data-theme-to="high-contrast"
+						>
+							<span class="theme-high-contrast margin-right-xxs">
+								<span
+									class="border theme-selector-icon display-inline-block has-body-background"
+									aria-hidden="true"
+								>
+									<svg class="svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 14">
+										<rect width="22" height="14" class="has-fill-body-background" />
+										<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+										<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+										<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+										<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+										<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+										<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+									</svg>
+								</span>
+							</span>
+							<span role="menuitem"> High contrast </span>
+						</button>
+					</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+			</div>
+			<ul class="links" data-bi-name="footerlinks">
+				<li class="manage-cookies-holder" hidden=""></li>
+				<li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://learn.microsoft.com/en-us/principles-for-ai-generated-content"
+			data-bi-name="aiDisclaimer"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>AI Disclaimer</a
+		>
+	
+	</li><li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://learn.microsoft.com/en-us/previous-versions/"
+			data-bi-name="archivelink"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Previous Versions</a
+		>
+	
+	</li> <li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://techcommunity.microsoft.com/t5/microsoft-learn-blog/bg-p/MicrosoftLearnBlog"
+			data-bi-name="bloglink"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Blog</a
+		>
+	
+	</li> <li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://learn.microsoft.com/en-us/contribute"
+			data-bi-name="contributorGuide"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Contribute</a
+		>
+	
+	</li><li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://go.microsoft.com/fwlink/?LinkId=521839"
+			data-bi-name="privacy"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Privacy</a
+		>
+	
+	</li><li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://go.microsoft.com/fwlink/?linkid=2259814"
+			data-bi-name="consumer-health-privacy"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Consumer Health Privacy</a
+		>
+	
+	</li><li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://learn.microsoft.com/en-us/legal/termsofuse"
+			data-bi-name="termsofuse"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Terms of Use</a
+		>
+	
+	</li><li>
+		
+		<a
+			data-mscc-ic="false"
+			href="https://www.microsoft.com/legal/intellectualproperty/Trademarks/"
+			data-bi-name="trademarks"
+			class=" external-link-indicator"
+			id=""
+			title=""
+			>Trademarks</a
+		>
+	
+	</li>
+				<li>&copy; Microsoft 2026</li>
+			</ul>
+		</footer>
+	</footer>
+			</body>
+		</html>

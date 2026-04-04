@@ -1,0 +1,4 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+hibernate,Hibernate dialect docs,selected_docs,https://docs.jboss.org/hibernate/orm/current/dialect/dialect.html,docs/reference/best_in_class_driver_research_2026-04-03/hibernate/downloads/01_Hibernate_dialect_docs.html,2026-04-03,downloaded,,text/html
+hibernate,Hibernate ORM repo,selected_repo,https://github.com/hibernate/hibernate-orm,docs/reference/best_in_class_driver_research_2026-04-03/hibernate/downloads/02_Hibernate_ORM_repo.html,2026-04-03,downloaded,refs/heads/main b6a7117ad17f2032093581bb934b6e8b5050182f,text/html
+hibernate,Hibernate user guide,candidate_docs,https://docs.jboss.org/hibernate/orm/current/userguide/html_single/Hibernate_User_Guide.html,docs/reference/best_in_class_driver_research_2026-04-03/hibernate/downloads/03_Hibernate_user_guide.html,2026-04-03,downloaded,,text/html

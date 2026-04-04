@@ -1,25 +1,33 @@
 # R Driver Implementation Plan
 
-Status: Draft
+Status: Current
 Priority: P2
 
-## Phase 1 - Core Connectivity
+## Phase 1 - Offline-Complete Work
 
-- DSN parsing per DRIVER_DSN_AND_CONFIG_STANDARD.md.
-- TLS enforcement and binary-only mode.
-- Basic query execution and result decoding.
+- freeze benchmark target `RPostgres`
+- push current lane truth into authoritative lane docs
+- enumerate remaining implementation deltas with no hidden assumptions
+- wire shared release-evidence requirements into this lane
+- define later server-verification commands and artifact paths
 
-## Phase 2 - Type Mapping
+## Phase 2 - Remaining Code Or Live-Proof Work
 
-- Implement TYPE_MAPPING_MATRIX.md for encode/decode.
-- Array/composite/range/vector/geometry coverage.
+- CONN: connection/auth integration coverage remains environment-gated
+- META: richer privilege/key/type and DDL-editor metadata parity remains incomplete
 
-## Phase 3 - Metadata
+## Later Build / Verification Commands
 
-- Implement sys.* metadata helpers.
-- Align JDBC/ODBC metadata mappings.
+Build/bootstrap commands:
 
-## Phase 4 - Conformance & Tooling
+- `cd tracks/p3/drivers/r`
+- `R CMD build .`
 
-- Run conformance harness and publish reports.
-- Add performance regression tests.
+Verification commands:
+
+- `R CMD check scratchbird_*.tar.gz`
+
+## Output Contracts
+
+- release evidence under `release/readiness/r/<version>/`
+- later verification packet in `docs/development/server-verification/r.md`

@@ -1,0 +1,6 @@
+lane,label,source_type,url,download_path,retrieved_on,download_status,repo_head,content_type
+metabase,Metabase databases docs,selected_docs,https://www.metabase.com/docs/latest/databases/start,docs/reference/best_in_class_driver_research_2026-04-03/metabase/downloads/01_Metabase_databases_docs.html,2026-04-03,downloaded,,text/html
+metabase,Metabase repo,selected_repo,https://github.com/metabase/metabase,docs/reference/best_in_class_driver_research_2026-04-03/metabase/downloads/02_Metabase_repo.html,2026-04-03,downloaded,refs/heads/master 672bd07e35ed7a70214c79fcd6b05668fb477f83,text/html
+metabase,Metabase PostgreSQL docs,candidate_docs,https://www.metabase.com/docs/latest/databases/connections/postgresql,docs/reference/best_in_class_driver_research_2026-04-03/metabase/downloads/03_Metabase_PostgreSQL_docs.html,2026-04-03,downloaded,,text/html
+metabase,Metabase MySQL docs,candidate_docs,https://www.metabase.com/docs/latest/databases/connections/mysql,docs/reference/best_in_class_driver_research_2026-04-03/metabase/downloads/04_Metabase_MySQL_docs.html,2026-04-03,downloaded,,text/html
+metabase,Metabase SQL Server docs,candidate_docs,https://www.metabase.com/docs/latest/databases/connections/sql-server,docs/reference/best_in_class_driver_research_2026-04-03/metabase/downloads/05_Metabase_SQL_Server_docs.html,2026-04-03,downloaded,,text/html

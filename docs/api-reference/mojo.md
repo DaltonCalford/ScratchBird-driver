@@ -1,5 +1,17 @@
 # Mojo API Reference
 
+<!-- lane-status:start -->
+## Current Status
+
+- Lane kind: `driver`
+- Current state: `hybrid_native_gap`
+- Best-in-class benchmark: `Composite (asyncpg + pgx + PostgresNIO)`
+- Authoritative lane spec: `docs/specifications/DRIVER_MOJO_NATIVE_API.md`
+- Shared release evidence templates: `docs/development/release-evidence/README.md`
+- Later verification packet: `docs/development/server-verification/mojo.md`
+- Remaining gap summary: The lane is functionally strong but still depends on the Python bridge; native Mojo transport/auth remains the primary architectural gap.
+<!-- lane-status:end -->
+
 ## ScratchBirdConfig
 
 - `ScratchBirdConfig(dsn = "")`

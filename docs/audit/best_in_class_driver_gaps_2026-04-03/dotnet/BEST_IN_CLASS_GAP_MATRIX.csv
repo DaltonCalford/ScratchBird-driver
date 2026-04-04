@@ -1,0 +1,15 @@
+category_id,category_label,classification,beta1_requirement,notes
+connection_config,Connection/config surface,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+auth_tls,Auth/TLS/secrets,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+bootstrap_protocol,Protocol/bootstrap/connect,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+transaction_model,Transactions/savepoints,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+execution_lifecycle,Prepared/batching/generated keys/callable or equivalent,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+result_handling,Results/streaming/paging/cancellation,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+metadata_reflection,Metadata/schema discovery/reflection,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+type_fidelity,Type encode/decode and wrappers,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+error_surface,Error surfaces and diagnostics,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+pooling_resilience,Pooling/resilience/reconnect/cleanup,at_parity,maintain_and_verify,Current lane truth is already competitive with Npgsql in this category.
+observability,Observability/diagnostics,partial_gap,required_for_beta1,Current lane truth still trails Npgsql in this category and requires explicit spec closure.
+packaging_release,Package layout/release artifacts/cadence,partial_gap,required_for_beta1,"Npgsql currently sets a higher bar for packaging, releases, and install ergonomics."
+performance,Performance and benchmark evidence,partial_gap,required_for_beta1,ScratchBird lacks benchmark-backed evidence at the level expected from Npgsql.
+ecosystem_fit,Language/tool/application ecosystem expectations,partial_gap,required_for_beta1,Npgsql is better aligned to mainstream ecosystem expectations today.

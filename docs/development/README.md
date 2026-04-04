@@ -1,6 +1,7 @@
 # Development Guides
 
-This section covers build, test, and packaging workflows for the driver set.
+This section covers build, test, packaging, release evidence, and later
+server-verification workflows for the driver set.
 
 ## Guides
 
@@ -9,3 +10,5 @@ This section covers build, test, and packaging workflows for the driver set.
 - [Toolchain setup](toolchain-setup.md)
 - [Conformance testing](conformance-testing.md)
 - [Packaging and release](release-packaging.md)
+- [Release evidence templates](release-evidence/README.md)
+- [Server verification packets](server-verification/README.md)
