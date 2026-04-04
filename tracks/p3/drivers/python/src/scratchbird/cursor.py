@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Iterable, List, Optional
 
 from . import errors
@@ -64,6 +65,16 @@ class GeneratedKeysResultSet:
 
 
 class Cursor:
+    _BATCHABLE_INSERT_RE = re.compile(
+        r"^\s*(INSERT\s+INTO\b.+?\bVALUES\s*)\(([^()]*)\)\s*;?\s*$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _DEFAULT_EXECUTEMANY_BATCH_ROWS = 1024
+    # Keep multi-row VALUES batches below the current native front-door
+    # invalid-query boundary observed in the bounded stress probes.
+    _MAX_EXECUTEMANY_BATCH_PARAMS = 6144
+    _MAX_EXECUTEMANY_BATCH_SQL_BYTES = 256 * 1024
+
     def __init__(self, connection):
         self._connection = connection
         self._closed = False
@@ -102,6 +113,49 @@ class Cursor:
         total = 0
         rowcount_known = True
         page_size = self.arraysize if self.arraysize and self.arraysize > 1 else 0
+        batched_insert = self._build_batched_insert(sql)
+        if batched_insert is not None:
+            statement_prefix, tuple_sql, placeholder_count = batched_insert
+            max_batch_rows = self._effective_batched_insert_rows(
+                statement_prefix,
+                tuple_sql,
+                placeholder_count,
+            )
+            batch_rows: List = []
+            for params in seq_of_params:
+                batch_rows.append(params)
+                if len(batch_rows) < max_batch_rows:
+                    continue
+
+                rowcount = self._execute_batched_insert(
+                    statement_prefix,
+                    tuple_sql,
+                    placeholder_count,
+                    batch_rows,
+                    page_size,
+                )
+                if rowcount is None or rowcount < 0:
+                    rowcount_known = False
+                else:
+                    total += rowcount
+                batch_rows = []
+
+            if batch_rows:
+                rowcount = self._execute_batched_insert(
+                    statement_prefix,
+                    tuple_sql,
+                    placeholder_count,
+                    batch_rows,
+                    page_size,
+                )
+                if rowcount is None or rowcount < 0:
+                    rowcount_known = False
+                else:
+                    total += rowcount
+
+            self.rowcount = total if rowcount_known else -1
+            return
+
         for params in seq_of_params:
             stream = self._connection._execute_query(sql, params, page_size)
             self._prime_stream_metadata(stream)
@@ -246,6 +300,8 @@ class Cursor:
             raise errors.InterfaceError("cursor is closed")
 
     def _reset_state(self) -> None:
+        if self._stream is not None:
+            self._discard_pending_stream(self._stream)
         self._results = []
         self._pos = 0
         self._stream = None
@@ -291,6 +347,108 @@ class Cursor:
         self.statusmessage = getattr(stream, "command", None)
         self._capture_generated_key(self.lastrowid)
         return stream.rowcount if stream.rowcount is not None else count
+
+    def _discard_pending_stream(self, stream) -> None:
+        while stream is not None:
+            while stream.read_row() is not None:
+                continue
+            has_next = getattr(stream, "has_next_result_set", None)
+            next_result = getattr(stream, "next_result_set", None)
+            if callable(has_next) and has_next() and callable(next_result) and next_result():
+                continue
+            return
+
+    def _build_batched_insert(self, sql: str):
+        match = self._BATCHABLE_INSERT_RE.match(sql)
+        if match is None:
+            return None
+
+        tuple_body = match.group(2).strip()
+        placeholder_count = tuple_body.count("?")
+        if placeholder_count <= 0:
+            return None
+
+        # Keep batching conservative and only optimize qmark-style single-row
+        # VALUES clauses. More complex shapes still use the row-wise fallback.
+        if re.search(r":[A-Za-z_]", tuple_body):
+            return None
+
+        statement_prefix = match.group(1).rstrip()
+        tuple_sql = f"({tuple_body})"
+        return statement_prefix, tuple_sql, placeholder_count
+
+    def _effective_batched_insert_rows(
+        self,
+        statement_prefix: str,
+        tuple_sql: str,
+        placeholder_count: int,
+    ) -> int:
+        if placeholder_count <= 0:
+            return 1
+        max_rows_by_param_count = max(
+            1,
+            self._MAX_EXECUTEMANY_BATCH_PARAMS // placeholder_count,
+        )
+        base_sql_bytes = len(statement_prefix) + 1
+        per_row_sql_bytes = len(tuple_sql) + 2
+        remaining_sql_bytes = max(1, self._MAX_EXECUTEMANY_BATCH_SQL_BYTES - base_sql_bytes)
+        max_rows_by_sql_bytes = max(1, remaining_sql_bytes // max(1, per_row_sql_bytes))
+        return max(
+            1,
+            min(
+                self._DEFAULT_EXECUTEMANY_BATCH_ROWS,
+                max_rows_by_param_count,
+                max_rows_by_sql_bytes,
+            ),
+        )
+
+    def _execute_batched_insert(
+        self,
+        statement_prefix: str,
+        tuple_sql: str,
+        placeholder_count: int,
+        batch_rows: List,
+        page_size: int,
+    ):
+        flattened = []
+        for params in batch_rows:
+            if not isinstance(params, (list, tuple)):
+                return self._execute_batched_insert_fallback(
+                    f"{statement_prefix} {tuple_sql}",
+                    batch_rows,
+                    page_size,
+                )
+            if len(params) != placeholder_count:
+                raise errors.ProgrammingError(
+                    f"expected {placeholder_count} parameters per row, got {len(params)}"
+                )
+            flattened.extend(params)
+
+        batch_sql = f"{statement_prefix} {', '.join([tuple_sql] * len(batch_rows))}"
+        if getattr(self._connection, "_batched_insert_statement_cache", False):
+            stream = self._connection._execute_cached_query_shape(batch_sql, flattened, page_size)
+        else:
+            stream = self._connection._execute_query(batch_sql, flattened, page_size)
+        self._prime_stream_metadata(stream)
+        self._stream = stream
+        self._results = []
+        self._pos = 0
+        self._update_description(stream)
+        return self._drain_stream(stream)
+
+    def _execute_batched_insert_fallback(self, sql: str, batch_rows: List, page_size: int):
+        total = 0
+        for params in batch_rows:
+            stream = self._connection._execute_query(sql, params, page_size)
+            self._prime_stream_metadata(stream)
+            self._stream = stream
+            self._results = []
+            self._pos = 0
+            self._update_description(stream)
+            rowcount = self._drain_stream(stream)
+            if rowcount is not None and rowcount >= 0:
+                total += rowcount
+        return total
 
     def _capture_generated_key(self, key) -> None:
         if key is None:

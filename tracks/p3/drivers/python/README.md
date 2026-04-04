@@ -50,6 +50,14 @@ This lane follows ScratchBird's MGA/state-based engine recovery model.
 - internal result paging now enables portal resume only after
   `PORTAL_SUSPENDED`, and `_resume_suspended_portal(...)` rejects unsuspended
   resume with `55000`
+- native batched `executemany(...)` now reuses session-local prepared
+  statement shapes for repeated multi-row `INSERT ... VALUES` batches, so
+  high-volume loads do not pay parse/describe cost on every identical batch
+- native batched `executemany(...)` now admits larger multi-row batches by
+  default, capped by both total placeholder count and generated SQL text
+  size, and tuned to stay inside the current native front-door acceptance
+  envelope, so high-volume loads reduce per-statement overhead without
+  emitting unbounded batch text or tripping the live parser limit
 
 See `../../../../docs/audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md`.
 

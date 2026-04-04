@@ -511,6 +511,9 @@ class Connection:
         self._cancel_timeout_seconds = 0.2
         self._keepalive_tracker = None
         self._skip_schema_apply_once = False
+        self._batched_insert_statement_cache = True
+        self._prepared_exec_counter = 0
+        self._prepared_exec_cache: Dict[Tuple[str, Tuple[int, ...]], Tuple[str, int]] = {}
         self._circuit_breaker = CircuitBreaker(CircuitBreakerConfig(), name=self._conn_id)
         self._telemetry = TelemetryCollector(TelemetryConfig())
         self._keepalive = KeepaliveManager(KeepaliveConfig())
@@ -596,6 +599,7 @@ class Connection:
             self._closed = True
             self._connected = False
             self._portal_resume_pending = False
+            self._prepared_exec_cache.clear()
             self._clear_transaction_state()
             self._clear_cancel_timeout()
             try:
@@ -628,6 +632,7 @@ class Connection:
         self._portal_resume_pending = False
         self._attachment_id = b"\x00" * 16
         self._parameters.clear()
+        self._prepared_exec_cache.clear()
         self._clear_transaction_state()
         self._clear_cancel_timeout()
         if self._keepalive and getattr(self, "_keepalive_tracker", None):
@@ -1713,6 +1718,43 @@ class Connection:
         if max_rows == 0:
             self._send_message(MessageType.SYNC, b"")
 
+    def _next_prepared_exec_name(self) -> str:
+        self._prepared_exec_counter += 1
+        return f"__py_exec_{self._prepared_exec_counter}"
+
+    def _send_cached_extended_query(self, sql: str, params, max_rows: int = 0) -> None:
+        self._portal_resume_pending = False
+        param_values = []
+        param_types = []
+        for param in params:
+            value, oid = encode_param(param)
+            param_values.append(value)
+            param_types.append(oid)
+
+        cache_key = (sql, tuple(param_types))
+        cached = self._prepared_exec_cache.get(cache_key)
+        if cached is None:
+            statement_name = self._next_prepared_exec_name()
+            parse_payload = build_parse_payload(statement_name, sql, param_types)
+            self._send_message(MessageType.PARSE, parse_payload)
+            param_count = self._describe_statement(statement_name)
+            if param_count >= 0 and param_count != len(param_types):
+                raise errors.ProgrammingError("parameter count mismatch (07001)")
+            self._prepared_exec_cache[cache_key] = (statement_name, len(param_types))
+        else:
+            statement_name, expected_count = cached
+            if expected_count != len(param_types):
+                del self._prepared_exec_cache[cache_key]
+                raise errors.ProgrammingError("parameter count mismatch (07001)")
+
+        result_formats = [FORMAT_BINARY] if self._config.binary_transfer else []
+        bind_payload = build_bind_payload("", statement_name, param_values, result_formats)
+        self._send_message(MessageType.BIND, bind_payload)
+        exec_payload = build_execute_payload("", max_rows)
+        self._send_message(MessageType.EXECUTE, exec_payload)
+        if max_rows == 0:
+            self._send_message(MessageType.SYNC, b"")
+
     def _execute_query(self, sql: str, params=None, max_rows: int = 0):
         try:
             normalized_sql, ordered = normalize_query(sql, params)
@@ -1722,6 +1764,23 @@ class Connection:
         try:
             if ordered:
                 self._send_extended_query(normalized_sql, ordered, max_rows)
+            else:
+                self._send_simple_query(normalized_sql, max_rows)
+            self._end_operation(span, True)
+        except Exception:
+            self._end_operation(span, False)
+            raise
+        return ResultStream(self, max_rows)
+
+    def _execute_cached_query_shape(self, sql: str, params=None, max_rows: int = 0):
+        try:
+            normalized_sql, ordered = normalize_query(sql, params)
+        except ValueError as exc:
+            raise errors.ProgrammingError(str(exc)) from exc
+        span = self._begin_operation("execute_query", normalized_sql)
+        try:
+            if ordered:
+                self._send_cached_extended_query(normalized_sql, ordered, max_rows)
             else:
                 self._send_simple_query(normalized_sql, max_rows)
             self._end_operation(span, True)
@@ -1740,7 +1799,7 @@ class Connection:
             if self._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.PARAMETER_DESCRIPTION:
                 param_count = len(parse_parameter_description(payload))
             elif header.msg_type == MessageType.READY:
@@ -1754,7 +1813,7 @@ class Connection:
             if self._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.READY:
                 status, txn_id, _ = parse_ready(payload)
                 self._apply_runtime_ready_state(status, txn_id)
@@ -1776,7 +1835,7 @@ class Connection:
             if self._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.READY:
                 status, txn_id, _ = parse_ready(payload)
                 self._apply_runtime_ready_state(status, txn_id)
@@ -1794,11 +1853,11 @@ class Connection:
         exec_payload = build_execute_payload("", page_size)
         self._send_message(MessageType.EXECUTE, exec_payload)
 
-    def _raise_protocol_error(self, payload: bytes) -> None:
+    def _build_protocol_error(self, payload: bytes) -> Exception:
         try:
             _, sqlstate, message, detail, hint = parse_error_message(payload)
         except ValueError:
-            raise errors.DatabaseError("query failed") from None
+            return errors.DatabaseError("query failed")
         parts = []
         if message:
             parts.append(message)
@@ -1809,8 +1868,27 @@ class Connection:
         text = "\n".join(parts) if parts else "query failed"
         if sqlstate:
             text = f"[{sqlstate}] {text}"
-            raise _map_sqlstate(sqlstate)(text)
-        raise errors.DatabaseError(text)
+            return _map_sqlstate(sqlstate)(text)
+        return errors.DatabaseError(text)
+
+    def _drain_error_ready_boundary(self) -> None:
+        while True:
+            header, payload = self._recv_message()
+            if self._handle_async(header, payload):
+                continue
+            if header.msg_type == MessageType.READY:
+                status, txn_id, _ = parse_ready(payload)
+                self._apply_runtime_ready_state(status, txn_id)
+                self._portal_resume_pending = False
+                return
+
+    def _raise_protocol_error(self, payload: bytes) -> None:
+        raise self._build_protocol_error(payload)
+
+    def _raise_protocol_error_and_sync(self, payload: bytes) -> None:
+        exc = self._build_protocol_error(payload)
+        self._drain_error_ready_boundary()
+        raise exc
 
     def copy_in(self, sql: str, data: bytes, format: int = COPY_FORMAT_TEXT) -> int:
         """Execute a COPY FROM operation, sending data to the server.
@@ -1840,7 +1918,7 @@ class Connection:
                 continue
             if header.msg_type == MessageType.ERROR:
                 self._end_operation(span, False)
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.COPY_IN_RESPONSE:
                 response = parse_copy_in_response(payload)
                 # Use response.window_bytes if needed for flow control
@@ -1870,7 +1948,7 @@ class Connection:
                 continue
             if header.msg_type == MessageType.ERROR:
                 self._end_operation(span, False)
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.COMMAND_COMPLETE:
                 _, rows_copied, _, _ = parse_command_complete(payload)
                 break
@@ -1916,7 +1994,7 @@ class Connection:
                 continue
             if header.msg_type == MessageType.ERROR:
                 self._end_operation(span, False)
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.COPY_OUT_RESPONSE:
                 response = parse_copy_out_response(payload)
                 _ = response
@@ -1933,7 +2011,7 @@ class Connection:
                 continue
             if header.msg_type == MessageType.ERROR:
                 self._end_operation(span, False)
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.COPY_DATA:
                 chunks.append(payload)
             elif header.msg_type == MessageType.COPY_DONE:
@@ -1952,7 +2030,7 @@ class Connection:
                 continue
             if header.msg_type == MessageType.ERROR:
                 self._end_operation(span, False)
-                self._raise_protocol_error(payload)
+                self._raise_protocol_error_and_sync(payload)
             if header.msg_type == MessageType.COMMAND_COMPLETE:
                 _ = parse_command_complete(payload)
                 break
@@ -2098,7 +2176,7 @@ class ResultStream:
             if self._connection._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
-                self._connection._raise_protocol_error(payload)
+                self._fail_with_protocol_error(payload)
             if header.msg_type == MessageType.ROW_DESCRIPTION:
                 self._response_started = True
                 self.columns = parse_row_description(payload)
@@ -2147,7 +2225,7 @@ class ResultStream:
             if self._connection._handle_async(header, payload):
                 continue
             if header.msg_type == MessageType.ERROR:
-                self._connection._raise_protocol_error(payload)
+                self._fail_with_protocol_error(payload)
             if header.msg_type == MessageType.ROW_DESCRIPTION:
                 self._response_started = True
                 self.columns = parse_row_description(payload)
@@ -2198,6 +2276,14 @@ class ResultStream:
             self._prefetched_message = None
             return msg
         return self._connection._recv_message()
+
+    def _fail_with_protocol_error(self, payload: bytes):
+        self._done = True
+        self._has_next_result_set = False
+        self._result_set_boundary = False
+        self._prefetched_message = None
+        self._prefetched_rows = []
+        self._connection._raise_protocol_error_and_sync(payload)
 
     def _mark_result_set_boundary(self) -> None:
         while True:

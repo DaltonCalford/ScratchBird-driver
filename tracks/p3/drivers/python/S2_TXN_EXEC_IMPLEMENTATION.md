@@ -31,6 +31,17 @@ Scope: `tracks/p3/drivers/python` lane only.
   - `_execute_query()` now maps SQL normalization `ValueError` into DB-API `ProgrammingError`.
 - Added lane-local execution input validation in `src/scratchbird/cursor.py`:
   - `executemany(..., seq_of_params)` now raises `ProgrammingError` when `seq_of_params` is `None`.
+- Added batched native execute reuse in `src/scratchbird/connection.py` and
+  `src/scratchbird/cursor.py`:
+  - repeated multi-row `INSERT ... VALUES` shapes emitted by
+    `Cursor.executemany(...)` now reuse a session-local prepared statement
+    handle instead of reparsing the same batch SQL every time.
+  - the Python lane now admits materially larger default batch sizes for
+    multi-row inserts, bounded by both total placeholder count and generated
+    SQL text size, with the placeholder ceiling tuned below the current
+    native front-door invalid-query boundary so high-volume loads reduce
+    per-statement overhead without turning `executemany(...)` into an
+    unbounded statement generator or tripping the live parser limit.
 - Implemented command-complete generated-key parity in `src/scratchbird/connection.py` and `src/scratchbird/cursor.py`:
   - `ResultStream` now captures `COMMAND_COMPLETE.last_id` as `lastrowid`.
   - Cursor drain paths (`fetchone()` completion and `executemany()`) now propagate stream `lastrowid` consistently.
@@ -69,6 +80,7 @@ Scope: `tracks/p3/drivers/python` lane only.
 - Added deterministic binary-transfer toggle parity tests in `tests/test_txn_exec_parity.py`:
   - `test_send_simple_query_respects_binary_transfer_toggle`
   - `test_send_extended_query_uses_text_result_format_when_binary_transfer_disabled`
+  - `test_send_cached_extended_query_reuses_prepared_statement_for_identical_sql_shape`
 - Added always-on runtime TXN/EXEC contract coverage in `tests/test_runtime_contract_gate.py`:
   - `test_runtime_gate_txn_exec_without_env` validates transaction/savepoint lifecycle and multi-result execution flow without env-gated integration dependencies.
 
@@ -100,5 +112,5 @@ Scope: `tracks/p3/drivers/python` lane only.
 
 - Recommendation: `IMPLEMENTED`
 - Reason:
-  - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
+  - Execution normalization and dispatch parity now includes `native_sql`/`native_callable_sql`, callable execution (`Connection.call` / `Cursor.callproc`), normalization-error mapping to DB-API `ProgrammingError`, cast-safe named parameter rewrite, explicit `executemany` input validation, repeated batched-insert prepared-shape reuse on the native lane, first-class batch summaries (`execute_batch`/`query_batch`), first-class multi-result summaries (`query_multi`/`execute_multi`), dedicated generated-keys result-set retrieval (`get_generated_keys` / `execute_with_generated_keys`), generated-key propagation (`COMMAND_COMPLETE.last_id` to `cursor.lastrowid`), command-tag propagation (`cursor.statusmessage`), and multi-result traversal via `Cursor.nextset()`, all with lane-local tests.
   - Deterministic always-on runtime contract coverage now validates transaction/multi-result wire behavior and binary-result toggles without environment gating.

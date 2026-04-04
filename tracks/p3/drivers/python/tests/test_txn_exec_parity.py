@@ -29,6 +29,7 @@ from scratchbird.protocol import (
     TXN_FLAG_HAS_TIMEOUT,
     TXN_FLAG_HAS_WAIT,
     build_cancel_payload,
+    build_txn_rollback_payload,
     build_txn_savepoint_payload,
 )
 
@@ -44,6 +45,11 @@ def _new_connection(txn_id: int = 0, active: bool = False) -> Connection:
     conn._connected = True
     conn._parameters = {}
     conn._skip_schema_apply_once = False
+    conn._batched_insert_statement_cache = False
+    conn._prepared_exec_counter = 0
+    conn._prepared_exec_cache = {}
+    conn._circuit_breaker = None
+    conn._telemetry = None
     conn._keepalive_tracker = None
     conn._keepalive = None
     conn._socket = None
@@ -85,7 +91,18 @@ class _ResultConnection:
         return False
 
     def _raise_protocol_error(self, payload):
-        raise AssertionError(f"unexpected protocol error: {payload!r}")
+        Connection._raise_protocol_error(self, payload)
+
+    def _raise_protocol_error_and_sync(self, payload):
+        while self._messages:
+            header, ready_payload = self._recv_message()
+            if header.msg_type != MessageType.READY:
+                continue
+            status, txn_id, _ = struct.unpack("<B3xQQ", ready_payload)
+            self._apply_runtime_ready_state(status, txn_id)
+            self._portal_resume_pending = False
+            break
+        Connection._raise_protocol_error(self, payload)
 
     def _send_message(self, msg_type, payload):
         self.sent_messages.append((msg_type, payload))
@@ -135,6 +152,16 @@ def _data_row_payload(value: str) -> bytes:
     payload += struct.pack("<i", len(value_bytes))
     payload += value_bytes
     return bytes(payload)
+
+
+def _error_payload(**fields: str) -> bytes:
+    out = bytearray()
+    for tag, value in fields.items():
+        out += tag.encode("ascii")
+        out += value.encode("utf-8")
+        out += b"\x00"
+    out += b"\x00"
+    return bytes(out)
 
 
 def _txn_status_payload(status: str, txn_id: int) -> bytes:
@@ -561,6 +588,26 @@ def test_send_extended_query_uses_text_result_format_when_binary_transfer_disabl
     assert bind_payload.endswith(b"\x01\x00\x01\x00")
 
 
+def test_send_cached_extended_query_reuses_prepared_statement_for_identical_sql_shape():
+    conn = _new_connection()
+    sent = []
+    describe_calls = []
+    conn._send_message = lambda msg_type, payload, flags=0, force_zero=False: sent.append((msg_type, payload, flags, force_zero))
+    conn._describe_statement = lambda name: describe_calls.append(name) or 2
+
+    conn._send_cached_extended_query("INSERT INTO t VALUES ($1, $2)", [1, 2], max_rows=0)
+    conn._send_cached_extended_query("INSERT INTO t VALUES ($1, $2)", [3, 4], max_rows=0)
+
+    parse_messages = [msg for msg in sent if msg[0] == MessageType.PARSE]
+    bind_messages = [msg for msg in sent if msg[0] == MessageType.BIND]
+    execute_messages = [msg for msg in sent if msg[0] == MessageType.EXECUTE]
+
+    assert len(parse_messages) == 1
+    assert len(bind_messages) == 2
+    assert len(execute_messages) == 2
+    assert describe_calls == ["__py_exec_1"]
+
+
 def test_set_session_schema_none_resets_to_users_public(monkeypatch):
     conn = _new_connection()
     conn._session_schema = "analytics"
@@ -971,6 +1018,88 @@ def test_cursor_execute_sets_description_before_first_fetch(monkeypatch):
     assert cursor.fetchone() == ("1",)
 
 
+def test_cursor_execute_discards_unread_single_row_stream_before_next_execute(monkeypatch):
+    ready_payload = struct.pack("<B3xQQ", 1, 77, 0)
+    shared_conn = _ResultConnection(
+        [
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("first_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+            (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("second_value")),
+            (_Header(MessageType.DATA_ROW), _data_row_payload("2")),
+            (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+            (_Header(MessageType.READY), ready_payload),
+        ]
+    )
+    conn = _new_connection()
+    monkeypatch.setattr(conn, "_execute_query", lambda *_args, **_kwargs: ResultStream(shared_conn, page_size=0))
+
+    cursor = Cursor(conn)
+    cursor.execute("SELECT 1")
+
+    assert cursor.fetchone() == ("1",)
+
+    cursor.execute("SELECT 2")
+
+    assert cursor.description is not None
+    assert cursor.description[0][0] == "second_value"
+    assert cursor.fetchone() == ("2",)
+    assert cursor.fetchone() is None
+
+
+def test_cursor_execute_error_then_rollback_keeps_connection_usable(monkeypatch):
+    ready_active_payload = struct.pack("<B3xQQ", 1, 44, 0)
+    ready_idle_payload = struct.pack("<B3xQQ", 0, 0, 0)
+    messages = [
+        (
+            _Header(MessageType.ERROR),
+            _error_payload(
+                S="ERROR",
+                C="42P01",
+                M="DROP TABLE resolve failed for definitely_missing_ddl_probe: Object not found",
+            ),
+        ),
+        (_Header(MessageType.READY), ready_active_payload),
+        (_Header(MessageType.READY), ready_idle_payload),
+        (_Header(MessageType.ROW_DESCRIPTION), _row_description_payload("value_col")),
+        (_Header(MessageType.DATA_ROW), _data_row_payload("1")),
+        (_Header(MessageType.COMMAND_COMPLETE), struct.pack("<B3xQQ", 1, 1, 0) + b"SELECT 1\x00"),
+        (_Header(MessageType.READY), ready_idle_payload),
+    ]
+
+    conn = _new_connection(txn_id=44, active=True)
+    sent = []
+
+    def _recv_message():
+        if not messages:
+            raise AssertionError("unexpected _recv_message call")
+        return messages.pop(0)
+
+    monkeypatch.setattr(conn, "_recv_message", _recv_message)
+    monkeypatch.setattr(conn, "_handle_async", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(conn, "_send_simple_query", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        conn,
+        "_send_message",
+        lambda msg_type, payload, flags=0, force_zero=False: sent.append((msg_type, payload)),
+    )
+
+    cursor = Cursor(conn)
+
+    with pytest.raises(errors.ProgrammingError, match="42P01"):
+        cursor.execute("DROP TABLE definitely_missing_ddl_probe")
+
+    conn.rollback()
+    cursor.execute("SELECT 1")
+
+    assert cursor.fetchone() == ("1",)
+    assert cursor.fetchone() is None
+    assert cursor.description is not None
+    assert cursor.description[0][0] == "value_col"
+    assert sent == [(MessageType.TXN_ROLLBACK, build_txn_rollback_payload(0))]
+
+
 def test_cursor_execute_synthesizes_description_without_row_description(monkeypatch):
     ready_payload = struct.pack("<B3xQQ", 1, 88, 0)
     stream_conn = _ResultConnection(
@@ -1018,29 +1147,70 @@ def test_cursor_callproc_rejects_empty_procedure_name():
 
 def test_cursor_executemany_sets_final_lastrowid_and_total_rowcount(monkeypatch):
     conn = _new_connection()
-    streams = [
-        _FakeStream(rows=[], rowcount=1, lastrowid=10, command="INSERT 0 1"),
-        _FakeStream(rows=[], rowcount=2, lastrowid=11, command="INSERT 0 2"),
-    ]
     calls = []
 
     def _fake_execute_query(sql, params, max_rows=0):
         calls.append((sql, tuple(params), max_rows))
-        return streams[len(calls) - 1]
+        return _FakeStream(rows=[], rowcount=2, lastrowid=11, command="INSERT 0 2")
 
     monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
 
     cursor = Cursor(conn)
     cursor.executemany("INSERT INTO t VALUES (?)", [(1,), (2,)])
 
-    assert calls == [
-        ("INSERT INTO t VALUES (?)", (1,), 0),
-        ("INSERT INTO t VALUES (?)", (2,), 0),
-    ]
-    assert cursor.rowcount == 3
+    assert calls == [("INSERT INTO t VALUES (?), (?)", (1, 2), 0)]
+    assert cursor.rowcount == 2
     assert cursor.lastrowid == 11
     assert cursor.statusmessage == "INSERT 0 2"
-    assert cursor.get_generated_keys().fetchall() == [(10,), (11,)]
+    assert cursor.get_generated_keys().fetchall() == [(11,)]
+
+
+def test_cursor_executemany_caps_batched_insert_by_total_placeholder_count(monkeypatch):
+    conn = _new_connection()
+    calls = []
+
+    def _fake_execute_query(sql, params, max_rows=0):
+        calls.append((sql, tuple(params), max_rows))
+        batch_rows = max(1, len(params) // 4)
+        return _FakeStream(rows=[], rowcount=batch_rows, lastrowid=batch_rows, command=f"INSERT 0 {batch_rows}")
+
+    monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
+
+    cursor = Cursor(conn)
+    cursor._DEFAULT_EXECUTEMANY_BATCH_ROWS = 4096
+    rows = [(i, f"status-{i}", i % 10, f"payload-{i}") for i in range(2000)]
+
+    cursor.executemany("INSERT INTO t VALUES (?, ?, ?, ?)", rows)
+
+    assert len(calls) == 2
+    assert len(calls[0][1]) == 6144
+    assert len(calls[1][1]) == 1856
+    assert cursor.rowcount == 2000
+    assert cursor.lastrowid == 464
+    assert cursor.statusmessage == "INSERT 0 464"
+
+
+def test_cursor_executemany_caps_batched_insert_by_sql_text_size(monkeypatch):
+    conn = _new_connection()
+    calls = []
+
+    def _fake_execute_query(sql, params, max_rows=0):
+        calls.append((sql, tuple(params), max_rows))
+        batch_rows = max(1, len(params))
+        return _FakeStream(rows=[], rowcount=batch_rows, lastrowid=batch_rows, command=f"INSERT 0 {batch_rows}")
+
+    monkeypatch.setattr(conn, "_execute_query", _fake_execute_query)
+
+    cursor = Cursor(conn)
+    cursor._DEFAULT_EXECUTEMANY_BATCH_ROWS = 4096
+    cursor._MAX_EXECUTEMANY_BATCH_PARAMS = 65535
+    cursor._MAX_EXECUTEMANY_BATCH_SQL_BYTES = 80
+    rows = [(i,) for i in range(24)]
+
+    cursor.executemany("INSERT INTO t VALUES (?)", rows)
+
+    assert len(calls) > 1
+    assert all(len(call[0]) <= 80 for call in calls)
 
 
 def test_connection_execute_batch_returns_summary(monkeypatch):
