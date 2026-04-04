@@ -12,11 +12,16 @@ See:
 Targeted adapters now use top-level authoritative compatibility specs in:
 
 - `docs/application-reference/DBEAVER_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/DBT_ADAPTER_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/AIRBYTE_CONNECTOR_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/HIBERNATE_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/LOOKER_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/METABASE_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/POWERBI_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/PRISMA_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/SQLALCHEMY_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- `docs/application-reference/TABLEAU_COMPATIBILITY_SPECIFICATION.md`
 - `docs/application-reference/TYPEORM_COMPATIBILITY_SPECIFICATION.md`
 
 ## Group Classification

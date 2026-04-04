@@ -3,11 +3,20 @@
 This directory contains the user-facing and implementation-facing
 documentation for the ScratchBird drivers.
 
+Current repo state:
+
+- baseline-complete lanes remain the primary Beta 1 ready surface
+- partial lanes and adapters have explicit outstanding-gap documentation
+- ten newly promoted Beta 1 expansion lanes now have benchmark research,
+  lane-local gap reports, implementation-ready specs, and later
+  server-verification packets, but still await implementation
+
 For day-to-day driver use, start with:
 
 - [Getting Started](getting-started/README.md)
 - [API Reference](api-reference/README.md)
 - [User Documentation](user-documentation/README.md)
+- [Reference Packets](reference/README.md)
 - [Connection Modes and Auth](user-documentation/connectivity/connection-modes-and-auth.md)
 - [MGA Reconnect And Transaction Recovery Audit](audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md)
 
@@ -22,6 +31,7 @@ READMEs are the primary sources for install and usage guidance.
 | **getting-started/** | Installation and quick start guides for each driver |
 | **api-reference/** | API documentation for each language driver |
 | **development/** | Development guides, testing, and contribution information |
+| **reference/** | Benchmark research packets and implementation anchors |
 | **specifications/** | Wire protocol and driver specifications |
 | **audit/** | Implementation audits and gap analysis |
 | **planning/** | Remediation plans and implementation checklists |
@@ -60,6 +70,7 @@ Quick links:
 
 - [Getting Started Index](getting-started/README.md)
 - [API Reference Index](api-reference/README.md)
+- [Reference Packet Index](reference/README.md)
 - [CLI Tools](user-documentation/tools/README.md)
 - [User Documentation](user-documentation/README.md)
 - [Development Guides](development/README.md)
@@ -69,6 +80,7 @@ Quick links:
 - [Main ScratchBird Project](https://github.com/DaltonCalford/ScratchBird)
 - [Native Protocol Alignment](specifications/NATIVE_PROTOCOL_ALIGNMENT.md)
 - [Driver Audit](audit/DRIVER_IMPLEMENTATION_AUDIT.md)
+- [Expansion Remaining Work](audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md)
 - [MGA Reconnect / Transaction Recovery Audit](audit/MGA_RECONNECT_AND_TRANSACTION_RECOVERY_AUDIT.md)
 - [Driver Remediation Plan](planning/DRIVER_REMEDIATION_PLAN.md)
 - [Contributing Guide](../CONTRIBUTING.md)

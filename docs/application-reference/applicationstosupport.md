@@ -1,33 +1,47 @@
-## 1. Business Intelligence (BI) & Visualization
+## Active Beta 1 Authority Targets
 
-Modern enterprises expect to "see" their data without writing code. These tools are the primary windows through which business users interact with your database.
+These integrations are now promoted into the active Beta 1 authority surface in
+the driver repository.
 
-- **Microsoft Power BI:** The dominant enterprise player. It requires strong **ODBC** or **ADO.NET** support.
+For the newly promoted targets, the repo now has:
 
-- **Tableau:** Critical for data scientists and analysts. Support for their **Named Connector** SDK is a major competitive advantage.
+- authoritative compatibility specs
+- public getting-started and API/reference pages
+- benchmark research packets
+- lane-local gap reports
+- deterministic later server-verification packets
 
-- **Looker (Google Cloud):** Essential for modern "Data Modeling" workflows.
+Implementation and live validation remain separate follow-on work.
 
-- **Metabase / Apache Superset:** The "Open Source Gold Standard." If you are an open-source DB, you must have a plugin for these two to gain community traction.
+### Business Intelligence And Visualization
 
----
+- **Microsoft Power BI**
+  Authority: `POWERBI_COMPATIBILITY_SPECIFICATION.md`
+- **Tableau**
+  Authority: `TABLEAU_COMPATIBILITY_SPECIFICATION.md`
+- **Looker**
+  Authority: `LOOKER_COMPATIBILITY_SPECIFICATION.md`
+- **Metabase**
+  Authority: `METABASE_COMPATIBILITY_SPECIFICATION.md`
+- **Apache Superset**
+  Authority: `SUPERSET_COMPATIBILITY_SPECIFICATION.md`
+- **DBeaver**
+  Authority: `DBEAVER_COMPATIBILITY_SPECIFICATION.md`
 
-## 2. Data Integration (ETL / ELT)
+### Data Integration And Transformation
 
-Data is rarely useful in a vacuum. These applications move data into and out of your database.
+- **dbt**
+  Authority: `DBT_ADAPTER_COMPATIBILITY_SPECIFICATION.md`
+- **Airbyte**
+  Authority: `AIRBYTE_CONNECTOR_COMPATIBILITY_SPECIFICATION.md`
 
-- **Fivetran & Airbyte:** These are the modern standards for "low-code" data movement. Airbyte is open-source and very friendly to new database contributors.
+## Additional Future Targets
 
-- **Informatica & Talend:** Necessary for "Old Guard" enterprise accounts (Fortune 500).
+Still useful, but not yet promoted into the active top-level Beta 1 authority
+surface:
 
-- **dbt (data build tool):** This is the **most critical** integration for 2026. A database without a `dbt-adapter` is often disqualified from modern analytics stacks.
-
----
-
-## 3. Automation & iPaaS
-
-Automated workflows continue to expand in operational and business systems.
-
-- **Zapier / Make.com:** High-volume, no-code automation. If a user can't "Add a row to my DB when a Shopify order is placed," you lose the SMB market.
-
-- **MuleSoft:** Essential for high-end enterprise API orchestration.
+- Fivetran
+- Informatica
+- Talend
+- Zapier / Make.com
+- MuleSoft

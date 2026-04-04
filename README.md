@@ -21,11 +21,18 @@ This repository is in the Beta 1 driver program. The current audited state is:
 - `7` BI/application adapters are still partial or contract-first:
   `dbeaver`, `hibernate`, `metabase`, `prisma`, `sqlalchemy`, `superset`,
   `typeorm`
+- `10` additional lanes are now active Beta 1 authority targets with
+  specification, public docs, benchmark research packets, lane-local gap
+  reports, and deterministic later verification packets in place, but are not
+  implemented yet:
+  `r2dbc`, `dbt`, `airbyte`, `powerbi`, `tableau`, `looker`, `adbc`,
+  `flightsql`, `julia`, `perl`
 
 Authoritative status sources:
 
 - [Driver implementation audit](docs/audit/DRIVER_IMPLEMENTATION_AUDIT.md)
 - [Lane authority index](docs/specifications/DRIVER_LANE_AUTHORITY_INDEX.md)
+- [Beta 1 expansion remaining work](docs/audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md)
 - [Server-blocked remaining work](docs/audit/DRIVER_SERVER_BLOCKED_REMAINING_WORK.md)
 
 ## Where To Start
@@ -34,6 +41,7 @@ Authoritative status sources:
 - [API reference](docs/api-reference/README.md)
 - [Application adapter reference](docs/application-reference/README.md)
 - [Specifications](docs/specifications/README.md)
+- [Reference packets](docs/reference/README.md)
 - [Audit reports](docs/audit/README.md)
 - [Development and verification docs](docs/development/README.md)
 
@@ -58,6 +66,16 @@ Authoritative status sources:
 | `rust` | `baseline_complete` | `tokio-postgres` | [guide](docs/getting-started/rust.md) / [api](docs/api-reference/rust.md) |
 | `swift` | `partial` | `PostgresNIO` | [guide](docs/getting-started/swift.md) / [api](docs/api-reference/swift.md) |
 
+## Planned Beta 1 Expansion Lanes
+
+| Lane | Current State | Benchmark | Public Docs |
+| --- | --- | --- | --- |
+| `adbc` | `planned_beta1` | `Apache Arrow ADBC PostgreSQL driver` | [guide](docs/getting-started/adbc.md) / [api](docs/api-reference/adbc.md) |
+| `flightsql` | `planned_beta1` | `Apache Arrow Flight SQL client stack` | [guide](docs/getting-started/flightsql.md) / [api](docs/api-reference/flightsql.md) |
+| `julia` | `planned_beta1` | `LibPQ.jl` | [guide](docs/getting-started/julia.md) / [api](docs/api-reference/julia.md) |
+| `perl` | `planned_beta1` | `DBD::Pg` | [guide](docs/getting-started/perl.md) / [api](docs/api-reference/perl.md) |
+| `r2dbc` | `planned_beta1` | `PostgreSQL R2DBC driver` | [guide](docs/getting-started/r2dbc.md) / [api](docs/api-reference/r2dbc.md) |
+
 ## Tooling And Adapters
 
 | Lane | Current State | Benchmark | Public Docs |
@@ -70,6 +88,11 @@ Authoritative status sources:
 | `sqlalchemy` | `partial_adapter` | `SQLAlchemy PostgreSQL dialect` | [guide](docs/getting-started/sqlalchemy.md) / [api](docs/api-reference/sqlalchemy.md) |
 | `superset` | `partial_adapter` | `Superset PostgreSQL engine spec` | [guide](docs/getting-started/superset.md) / [api](docs/api-reference/superset.md) |
 | `typeorm` | `partial_contract_only` | `TypeORM PostgreSQL driver` | [guide](docs/getting-started/typeorm.md) / [api](docs/api-reference/typeorm.md) |
+| `airbyte` | `planned_beta1` | `Airbyte PostgreSQL source/destination` | [guide](docs/getting-started/airbyte.md) / [api](docs/api-reference/airbyte.md) |
+| `dbt` | `planned_beta1` | `dbt-postgres` | [guide](docs/getting-started/dbt.md) / [api](docs/api-reference/dbt.md) |
+| `looker` | `planned_beta1` | `Looker PostgreSQL dialect` | [guide](docs/getting-started/looker.md) / [api](docs/api-reference/looker.md) |
+| `powerbi` | `planned_beta1` | `Power BI PostgreSQL / ODBC custom connector surface` | [guide](docs/getting-started/powerbi.md) / [api](docs/api-reference/powerbi.md) |
+| `tableau` | `planned_beta1` | `Tableau PostgreSQL / Named Connector SDK` | [guide](docs/getting-started/tableau.md) / [api](docs/api-reference/tableau.md) |
 
 ## Release Evidence And Verification
 
@@ -82,6 +105,10 @@ live verification packet.
   [docs/development/release-evidence/README.md](docs/development/release-evidence/README.md)
 - Later live verification packets:
   [docs/development/server-verification/README.md](docs/development/server-verification/README.md)
+- New-lane benchmark research:
+  [docs/reference/beta1_expansion_server_independent_2026-04-03/README.md](docs/reference/beta1_expansion_server_independent_2026-04-03/README.md)
+- New-lane remaining-work split:
+  [docs/audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md](docs/audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md)
 
 ## Repository Layout
 

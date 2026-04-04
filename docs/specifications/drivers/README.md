@@ -17,6 +17,11 @@ ODBC/JDBC, and shared metadata/query contracts.
 
 - **[JDBC_DRIVER_SPECIFICATION.md](JDBC_DRIVER_SPECIFICATION.md)** - JDBC driver requirements
 - **[ODBC_DRIVER_SPECIFICATION.md](ODBC_DRIVER_SPECIFICATION.md)** - ODBC 3.8 driver requirements
+- **[R2DBC_DRIVER_SPECIFICATION.md](R2DBC_DRIVER_SPECIFICATION.md)** - Reactive Java driver requirements
+- **[ADBC_DRIVER_SPECIFICATION.md](ADBC_DRIVER_SPECIFICATION.md)** - Arrow-native database driver requirements
+- **[FLIGHT_SQL_DRIVER_SPECIFICATION.md](FLIGHT_SQL_DRIVER_SPECIFICATION.md)** - Flight SQL driver requirements
+- **[JULIA_DRIVER_SPECIFICATION.md](JULIA_DRIVER_SPECIFICATION.md)** - Julia database driver requirements
+- **[PERL_DBI_DRIVER_SPECIFICATION.md](PERL_DBI_DRIVER_SPECIFICATION.md)** - Perl DBI driver requirements
 - **[CLI_TOOLS_SPECIFICATION.md](CLI_TOOLS_SPECIFICATION.md)** - CLI tooling competitive-closure requirements
 - **[ALPHA_DRIVER_BOOTSTRAP.md](ALPHA_DRIVER_BOOTSTRAP.md)** - SBWP v1.1 bootstrap rules
 - **[NATIVE_DRIVER_CONFORMANCE.md](NATIVE_DRIVER_CONFORMANCE.md)** - SBWP v1.1 conformance checklist
@@ -41,6 +46,12 @@ Current headline state:
 - partial application-driver lanes: `dart`, `elixir`, `odbc`, `r`, `swift`
 - hybrid lane with remaining native-transport closure gap: `mojo`
 - tooling lane outside the JDBC/.NET parity baseline but now in the Beta 1 competitive-closure program: `cli`
+- research-backed planned Beta 1 expansion lanes with implementation-ready specs: `r2dbc`, `adbc`, `flightsql`, `julia`, `perl`
+
+Expansion companion material:
+
+- [../reference/beta1_expansion_server_independent_2026-04-03/README.md](../reference/beta1_expansion_server_independent_2026-04-03/README.md)
+- [../audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md](../audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md)
 
 ## Protocol Reference (External)
 

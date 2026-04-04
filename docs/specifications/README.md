@@ -8,7 +8,13 @@ Current implementation status by lane is tracked in:
 
 - [../audit/DRIVER_IMPLEMENTATION_AUDIT.md](../audit/DRIVER_IMPLEMENTATION_AUDIT.md)
 - [../audit/DRIVER_IMPLEMENTATION_AUDIT_MATRIX.csv](../audit/DRIVER_IMPLEMENTATION_AUDIT_MATRIX.csv)
+- [../audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md](../audit/DRIVER_BETA1_EXPANSION_SERVER_INDEPENDENT_REMAINING_WORK.md)
 - [../audit/DRIVER_SERVER_BLOCKED_REMAINING_WORK.md](../audit/DRIVER_SERVER_BLOCKED_REMAINING_WORK.md)
+
+Benchmark-reference packets for the active closure work are in:
+
+- [../reference/best_in_class_driver_research_2026-04-03/README.md](../reference/best_in_class_driver_research_2026-04-03/README.md)
+- [../reference/beta1_expansion_server_independent_2026-04-03/README.md](../reference/beta1_expansion_server_independent_2026-04-03/README.md)
 
 ## Core Specifications
 
@@ -40,6 +46,11 @@ Current implementation status by lane is tracked in:
 - [DRIVER_SWIFT_ASYNC_ADAPTER.md](DRIVER_SWIFT_ASYNC_ADAPTER.md)
 - [DRIVER_DART_DATABASE_API.md](DRIVER_DART_DATABASE_API.md)
 - [DRIVER_MOJO_NATIVE_API.md](DRIVER_MOJO_NATIVE_API.md)
+- [drivers/R2DBC_DRIVER_SPECIFICATION.md](drivers/R2DBC_DRIVER_SPECIFICATION.md)
+- [drivers/ADBC_DRIVER_SPECIFICATION.md](drivers/ADBC_DRIVER_SPECIFICATION.md)
+- [drivers/FLIGHT_SQL_DRIVER_SPECIFICATION.md](drivers/FLIGHT_SQL_DRIVER_SPECIFICATION.md)
+- [drivers/JULIA_DRIVER_SPECIFICATION.md](drivers/JULIA_DRIVER_SPECIFICATION.md)
+- [drivers/PERL_DBI_DRIVER_SPECIFICATION.md](drivers/PERL_DBI_DRIVER_SPECIFICATION.md)
 
 ## Migrated Driver Specs
 
@@ -58,3 +69,4 @@ Current implementation status by lane is tracked in:
 - [../application-reference/README.md](../application-reference/README.md)
 - [../api-reference/README.md](../api-reference/README.md)
 - [../getting-started/README.md](../getting-started/README.md)
+- [../reference/README.md](../reference/README.md)

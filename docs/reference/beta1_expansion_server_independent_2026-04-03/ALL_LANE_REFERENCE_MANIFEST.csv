@@ -1,0 +1,28 @@
+lane,kind,benchmark,source_kind,title,url,role
+r2dbc,driver,PostgreSQL R2DBC driver,official_spec,R2DBC 1.0 Specification,https://r2dbc.io/spec/1.0.0.RELEASE/spec/html/,primary_protocol_contract
+r2dbc,driver,PostgreSQL R2DBC driver,implementation_anchor,pgjdbc r2dbc-postgresql,https://github.com/pgjdbc/r2dbc-postgresql,benchmark_impl_anchor
+adbc,driver,Apache Arrow ADBC PostgreSQL driver,official_docs,ADBC documentation root,https://arrow.apache.org/adbc/current/,primary_api_contract
+adbc,driver,Apache Arrow ADBC PostgreSQL driver,official_docs,ADBC PostgreSQL driver docs,https://arrow.apache.org/adbc/current/driver/postgresql.html,benchmark_driver_contract
+adbc,driver,Apache Arrow ADBC PostgreSQL driver,implementation_anchor,apache/arrow-adbc,https://github.com/apache/arrow-adbc,benchmark_impl_anchor
+flightsql,driver,Apache Arrow Flight SQL client stack,official_docs,Arrow Flight SQL format docs,https://arrow.apache.org/docs/format/FlightSql.html,primary_protocol_contract
+flightsql,driver,Apache Arrow Flight SQL client stack,implementation_anchor,apache/arrow,https://github.com/apache/arrow,benchmark_impl_anchor
+julia,driver,LibPQ.jl,official_docs,LibPQ.jl stable docs,https://juliadatabases.org/LibPQ.jl/stable/,primary_api_contract
+julia,driver,LibPQ.jl,implementation_anchor,JuliaDatabases LibPQ.jl,https://github.com/JuliaDatabases/LibPQ.jl,benchmark_impl_anchor
+perl,driver,DBD::Pg,official_docs,DBD::Pg MetaCPAN distribution page,https://metacpan.org/dist/DBD-Pg,primary_driver_contract
+perl,driver,DBD::Pg,official_docs,DBI MetaCPAN docs,https://metacpan.org/pod/DBI,host_api_contract
+perl,driver,DBD::Pg,implementation_anchor,bucardo dbdpg,https://github.com/bucardo/dbdpg,benchmark_impl_anchor
+dbt,adapter,dbt-postgres,official_docs,dbt PostgreSQL setup docs,https://docs.getdbt.com/docs/local/connect-data-platform/postgres-setup,warehouse_contract
+dbt,adapter,dbt-postgres,official_docs,dbt adapter creation guide,https://docs.getdbt.com/guides/adapter-creation,adapter_contract
+dbt,adapter,dbt-postgres,implementation_anchor,dbt-postgres,https://github.com/dbt-labs/dbt-postgres,benchmark_impl_anchor
+airbyte,adapter,Airbyte PostgreSQL source/destination,official_docs,Airbyte PostgreSQL source docs,https://docs.airbyte.com/integrations/sources/postgres,source_contract
+airbyte,adapter,Airbyte PostgreSQL source/destination,official_docs,Airbyte PostgreSQL destination docs,https://docs.airbyte.com/integrations/destinations/postgres,destination_contract
+airbyte,adapter,Airbyte PostgreSQL source/destination,official_docs,Airbyte protocol docs,https://docs.airbyte.com/platform/understanding-airbyte/airbyte-protocol,protocol_contract
+airbyte,adapter,Airbyte PostgreSQL source/destination,implementation_anchor,airbytehq airbyte,https://github.com/airbytehq/airbyte,benchmark_impl_anchor
+powerbi,adapter,Power BI PostgreSQL / ODBC custom connector surface,official_docs,Power Query PostgreSQL connector docs,https://learn.microsoft.com/en-us/power-query/connectors/postgresql,product_surface_contract
+powerbi,adapter,Power BI PostgreSQL / ODBC custom connector surface,official_docs,Power Query SDK install docs,https://learn.microsoft.com/en-us/power-query/install-sdk,custom_connector_contract
+powerbi,adapter,Power BI PostgreSQL / ODBC custom connector surface,implementation_anchor,microsoft DataConnectors,https://github.com/microsoft/DataConnectors,benchmark_impl_anchor
+tableau,adapter,Tableau PostgreSQL / Named Connector SDK,official_docs,Tableau PostgreSQL connectivity docs,https://help.tableau.com/current/pro/desktop/en-us/examples_postgresql.htm,product_surface_contract
+tableau,adapter,Tableau PostgreSQL / Named Connector SDK,official_docs,Tableau Connector Plugin SDK,https://tableau.github.io/connector-plugin-sdk/,sdk_contract
+tableau,adapter,Tableau PostgreSQL / Named Connector SDK,implementation_anchor,tableau connector-plugin-sdk,https://github.com/tableau/connector-plugin-sdk,benchmark_impl_anchor
+looker,adapter,Looker PostgreSQL dialect,official_docs,Looker PostgreSQL configuration docs,https://docs.cloud.google.com/looker/docs/db-config-postgresql,product_surface_contract
+
